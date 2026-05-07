@@ -36,8 +36,15 @@ def write_research(meeting_dir: Path, research: dict[str, Any]) -> None:
     research_dir.mkdir(parents=True, exist_ok=True)
     write_json(research_dir / "research.json", research)
 
+    depth = research.get("research_depth", {})
     lines = [
         f"# Research: {research['display_name']}",
+        "",
+        "## Depth",
+        f"- Name: {depth.get('name', 'unknown')}",
+        f"- Target sources: {depth.get('target_sources', 'unknown')}",
+        f"- Minimum claims: {depth.get('min_claims', 'unknown')}",
+        f"- Minimum counterclaims: {depth.get('min_counterclaims', 'unknown')}",
         "",
         "## Queries",
         *[f"- {query}" for query in research["queries"]],
@@ -48,10 +55,15 @@ def write_research(meeting_dir: Path, research: dict[str, Any]) -> None:
         lines.extend(
             [
                 f"- {source['url']}",
-                f"  - Note: {source['note']}",
-                f"  - Snippet: {source['snippet']}",
+                f"  - Title: {source.get('title', '')}",
+                f"  - Type: {source.get('source_type', 'unknown')}",
+                f"  - Quality: {source.get('quality', 'unknown')}",
+                f"  - Note: {source.get('note', '')}",
+                f"  - Snippet: {source.get('snippet', '')}",
             ]
         )
+        for note in source.get("extracted_notes", []):
+            lines.append(f"  - Extracted: {note}")
     lines.extend(
         [
             "",
@@ -63,8 +75,45 @@ def write_research(meeting_dir: Path, research: dict[str, Any]) -> None:
             "",
             "## Uncertainty",
             research["uncertainty"],
+            "",
+            "## Coverage Gaps",
+            *[f"- {gap}" for gap in research.get("coverage_gaps", [])],
+            "",
+            "## Claim Evidence",
         ]
     )
+    for claim in research.get("claim_evidence", []):
+        lines.extend(
+            [
+                f"- Claim: {claim.get('claim', '')}",
+                f"  - Confidence: {claim.get('confidence', '')}",
+                f"  - Source quality: {claim.get('source_quality', '')}",
+                f"  - Interpretation: {claim.get('interpretation', '')}",
+            ]
+        )
+        for url in claim.get("evidence", []):
+            lines.append(f"  - Evidence: {url}")
+    lines.extend(["", "## Counterclaims"])
+    for claim in research.get("counterclaims", []):
+        lines.extend(
+            [
+                f"- Claim: {claim.get('claim', '')}",
+                f"  - Confidence: {claim.get('confidence', '')}",
+                f"  - Why it matters: {claim.get('why_it_matters', '')}",
+            ]
+        )
+        for url in claim.get("evidence", []):
+            lines.append(f"  - Evidence: {url}")
+    lines.extend(["", "## Rejected Claims"])
+    for claim in research.get("rejected_claims", []):
+        lines.extend(
+            [
+                f"- Claim: {claim.get('claim', '')}",
+                f"  - Reason: {claim.get('reason', '')}",
+            ]
+        )
+        for url in claim.get("sources", []):
+            lines.append(f"  - Source: {url}")
     (research_dir / "research.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -73,6 +122,7 @@ def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
         "# Agenda",
         "",
         f"Question: {meeting.get('display_question', meeting['question'])}",
+        f"Research depth: {meeting.get('research_depth', {}).get('name', 'unknown')}",
         "",
         "1. Independent research",
         "2. Round 1: opening positions",

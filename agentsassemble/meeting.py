@@ -8,7 +8,7 @@ from uuid import uuid4
 from agentsassemble.adapters import CodexAdapter, MockAdapter, ProviderAdapter
 from agentsassemble.artifacts import write_public_artifacts, write_research, write_role_files
 from agentsassemble.config import load_council_config
-from agentsassemble.models import MeetingResult
+from agentsassemble.models import MeetingResult, ResearchDepthName, get_research_depth
 
 
 def get_adapter(
@@ -29,12 +29,14 @@ def run_demo_meeting(
     reporter: Callable[[str], None] | None = None,
     codex_timeout_seconds: int = 240,
     codex_search_enabled: bool = True,
+    research_depth: ResearchDepthName = "smoke",
 ) -> MeetingResult:
     def report(message: str) -> None:
         if reporter is not None:
             reporter(message)
 
     config = load_council_config()
+    depth = get_research_depth(research_depth)
     adapter = get_adapter(
         adapter_name,
         codex_timeout_seconds=codex_timeout_seconds,
@@ -46,6 +48,11 @@ def run_demo_meeting(
     meeting_dir.mkdir(parents=True, exist_ok=False)
     report(f"Meeting {meeting_id}")
     report(f"Question: {config.display_question}")
+    report(
+        "Research depth: "
+        f"{depth.name} (target {depth.target_sources} sources, "
+        f"{depth.min_claims} claims, {depth.min_counterclaims} counterclaims per role)"
+    )
 
     context: dict[str, Any] = {
         "meeting_id": meeting_id,
@@ -54,6 +61,7 @@ def run_demo_meeting(
         "display_question": config.display_question,
         "display_topic": config.display_topic,
         "meeting_dir": str(meeting_dir),
+        "research_depth": depth.name,
     }
 
     roles = [role.__dict__ for role in config.roles]
@@ -66,7 +74,7 @@ def run_demo_meeting(
     research_records = []
     for role in config.roles:
         report(f"Research: {role.display_name}")
-        research = adapter.run_research(role, sessions[role.id], config.question)
+        research = adapter.run_research(role, sessions[role.id], config.question, depth)
         research_records.append(research)
         write_research(meeting_dir, research)
 
@@ -78,7 +86,7 @@ def run_demo_meeting(
                 role,
                 sessions[role.id],
                 "round_1",
-                "Present your opening position from your private research.",
+                "Present your opening position from your private research. Cite your strongest evidence and at least one uncertainty.",
                 {"own_research": research},
             )
         )
@@ -92,7 +100,7 @@ def run_demo_meeting(
                 role,
                 sessions[role.id],
                 "round_2",
-                "Compare evidence and rebut weak reasoning without reading private research.",
+                "Compare evidence and rebut weak reasoning without reading private research. Challenge source quality, unsupported leaps, and missing counterevidence.",
                 public_round_one,
             )
         )
@@ -114,6 +122,8 @@ def run_demo_meeting(
                     "summary": research["summary"],
                     "confidence": research["confidence"],
                     "claim_evidence": research["claim_evidence"],
+                    "counterclaims": research.get("counterclaims", []),
+                    "coverage_gaps": research.get("coverage_gaps", []),
                 }
                 for research in research_records
             ],
@@ -131,6 +141,18 @@ def run_demo_meeting(
         "display_topic": config.display_topic,
         "roles": roles,
         "adapter_config": {"name": adapter.name},
+        "research_depth": {
+            "name": depth.name,
+            "label": depth.label,
+            "min_sources": depth.min_sources,
+            "target_sources": depth.target_sources,
+            "min_queries": depth.min_queries,
+            "min_claims": depth.min_claims,
+            "min_counterclaims": depth.min_counterclaims,
+            "notes_per_source": depth.notes_per_source,
+            "source_mix": depth.source_mix,
+            "instructions": depth.instructions,
+        },
         "isolation": {
             role.id: {
                 "role_dir": f"roles/{role.id}",
@@ -162,6 +184,7 @@ def run_demo_meeting(
         "audit_metadata": {
             "created_at": datetime.now(UTC).isoformat(),
             "adapter": adapter.name,
+            "research_depth": depth.name,
             "reproducibility": "auditable and resumable, not deterministic replay",
         },
         "failure_state": {"status": "none", "failures": []},

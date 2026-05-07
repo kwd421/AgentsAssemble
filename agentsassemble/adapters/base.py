@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from agentsassemble.models import Role
+from agentsassemble.models import ResearchDepth, Role
 
 
 class ProviderAdapter(ABC):
@@ -19,6 +19,7 @@ class ProviderAdapter(ABC):
         role: Role,
         session: dict[str, Any],
         question: str,
+        depth: ResearchDepth,
     ) -> dict[str, Any]:
         raise NotImplementedError
 

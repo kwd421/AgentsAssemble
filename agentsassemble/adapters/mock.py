@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from agentsassemble.adapters.base import ProviderAdapter
-from agentsassemble.models import Role
+from agentsassemble.models import ResearchDepth, Role
 
 
 class MockAdapter(ProviderAdapter):
@@ -22,6 +22,7 @@ class MockAdapter(ProviderAdapter):
         role: Role,
         session: dict[str, Any],
         question: str,
+        depth: ResearchDepth,
     ) -> dict[str, Any]:
         source_map = {
             "lore_lawyer": [
@@ -49,31 +50,81 @@ class MockAdapter(ProviderAdapter):
             f"{question} {role.display_name}",
             f"One Piece admirals strength {role.lens}",
         ]
-        urls = source_map[role.id]
+        urls = self._expand_sources(source_map[role.id], depth.target_sources, role.id)
+        claim_evidence = [
+            {
+                "claim": f"{claims[role.id]} (근거 항목 {index + 1})",
+                "evidence": urls[index : index + max(1, min(3, len(urls)))],
+                "interpretation": role.research_focus,
+                "confidence": "medium",
+                "source_quality": "mixed",
+            }
+            for index in range(depth.min_claims)
+        ]
+        counterclaims = [
+            {
+                "claim": f"키자루나 쿠잔을 더 높게 볼 여지도 있다. (반론 {index + 1})",
+                "evidence": urls[-(index + 1) :],
+                "why_it_matters": "전투력 비교는 직접 승패, 설정, 미공개 전력의 가중치에 따라 결론이 흔들릴 수 있습니다.",
+                "confidence": "medium",
+            }
+            for index in range(max(1, depth.min_counterclaims))
+        ]
         return {
             "role_id": role.id,
             "display_name": role.display_name,
-            "queries": queries,
+            "research_depth": {
+                "name": depth.name,
+                "label": depth.label,
+                "min_sources": depth.min_sources,
+                "target_sources": depth.target_sources,
+                "min_queries": depth.min_queries,
+                "min_claims": depth.min_claims,
+                "min_counterclaims": depth.min_counterclaims,
+                "notes_per_source": depth.notes_per_source,
+            },
+            "queries": self._expand_queries(queries, depth.min_queries, role),
             "sources": [
                 {
                     "url": url,
                     "note": f"{role.display_name} 관점에서 {role.research_focus} 기준으로 본 참고 자료입니다.",
                     "snippet": "목 데모용 짧은 출처 메모입니다. 실제 웹 리서치 단계에서는 원문 근거나 요약이 들어갑니다.",
+                    "source_type": "mock",
+                    "quality": "demo",
+                    "extracted_notes": [
+                        f"{role.display_name}의 {depth.name} 리서치 노트 {index + 1}: 이 자료가 주장 검증에 어떻게 쓰이는지 기록합니다."
+                        for index in range(depth.notes_per_source)
+                    ],
                 }
                 for url in urls
             ],
             "summary": claims[role.id],
             "confidence": "medium",
             "uncertainty": "전투력 비교는 공식 언급, 전투 맥락, 아직 덜 공개된 전력이 완전히 맞물리지 않아서 해석 여지가 있습니다.",
-            "claim_evidence": [
+            "claim_evidence": claim_evidence,
+            "counterclaims": counterclaims,
+            "rejected_claims": [
                 {
-                    "claim": claims[role.id],
-                    "evidence": urls,
-                    "interpretation": role.research_focus,
-                    "confidence": "medium",
+                    "claim": "팬덤에서 자주 보이지만 근거가 약한 확정식 서열 주장",
+                    "reason": "직접 근거와 공식 근거가 부족해서 보류 처리합니다.",
+                    "sources": urls[-2:],
                 }
             ],
         }
+
+    @staticmethod
+    def _expand_queries(queries: list[str], count: int, role: Role) -> list[str]:
+        expanded = list(queries)
+        while len(expanded) < count:
+            expanded.append(f"{role.display_name} depth query {len(expanded) + 1} {role.research_focus}")
+        return expanded
+
+    @staticmethod
+    def _expand_sources(urls: list[str], count: int, role_id: str) -> list[str]:
+        expanded = list(urls)
+        while len(expanded) < count:
+            expanded.append(f"https://example.com/agentsassemble/mock/{role_id}/source-{len(expanded) + 1}")
+        return expanded
 
     def run_round(
         self,

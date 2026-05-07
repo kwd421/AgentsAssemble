@@ -5,7 +5,7 @@ from pathlib import Path
 from subprocess import TimeoutExpired
 
 from agentsassemble.adapters.codex import CodexAdapter
-from agentsassemble.models import Role
+from agentsassemble.models import get_research_depth, Role
 
 
 class CodexAdapterTests(unittest.TestCase):
@@ -14,8 +14,10 @@ class CodexAdapterTests(unittest.TestCase):
             meeting_dir = Path(temp_dir)
             role_dir = meeting_dir / "roles" / "lore_lawyer"
             role_dir.mkdir(parents=True)
+            seen_inputs = []
 
             def fake_runner(command, input, text, capture_output, timeout, check):
+                seen_inputs.append(input)
                 output_path = Path(command[command.index("--output-last-message") + 1])
                 output_path.write_text(
                     '{"queries":["q"],"sources":[],"summary":"s","confidence":"medium","uncertainty":"u","claim_evidence":[]}',
@@ -32,13 +34,16 @@ class CodexAdapterTests(unittest.TestCase):
             role = Role("lore_lawyer", "설정충", "Canon Analyst", "canon")
             session = adapter.start_session(role, {"meeting_dir": str(meeting_dir)})
 
-            research = adapter.run_research(role, session, "Question?")
+            research = adapter.run_research(role, session, "Question?", get_research_depth("standard"))
 
             self.assertEqual(research["summary"], "s")
+            self.assertEqual(research["research_depth"]["name"], "standard")
             self.assertEqual(session["session_id"], "019e0346-f384-74f2-914e-c95f535edf46")
             self.assertEqual(research["codex"]["returncode"], 0)
             self.assertIn("codex", research["codex"]["command"])
             self.assertIn("--search", research["codex"]["command"])
+            self.assertIn("Minimum sources: 12", seen_inputs[0])
+            self.assertIn("Minimum claim_evidence items: 6", seen_inputs[0])
 
     def test_codex_round_calls_do_not_use_search(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -74,7 +79,7 @@ class CodexAdapterTests(unittest.TestCase):
             role = Role("lore_lawyer", "설정충", "Canon Analyst", "canon")
             session = adapter.start_session(role, {"meeting_dir": str(meeting_dir)})
 
-            research = adapter.run_research(role, session, "Question?")
+            research = adapter.run_research(role, session, "Question?", get_research_depth("smoke"))
 
             self.assertEqual(research["confidence"], "low")
             self.assertTrue(research["codex"]["timed_out"])

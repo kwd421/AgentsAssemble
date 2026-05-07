@@ -7,7 +7,7 @@ from subprocess import TimeoutExpired
 from typing import Any
 
 from agentsassemble.adapters.base import ProviderAdapter
-from agentsassemble.models import Role
+from agentsassemble.models import ResearchDepth, Role
 
 
 class CodexAdapter(ProviderAdapter):
@@ -38,6 +38,7 @@ class CodexAdapter(ProviderAdapter):
         role: Role,
         session: dict[str, Any],
         question: str,
+        depth: ResearchDepth,
     ) -> dict[str, Any]:
         prompt = f"""You are {role.display_name} ({role.lens}) in an AgentsAssemble council.
 
@@ -45,19 +46,34 @@ Research question: {question}
 Research focus: {role.research_focus}
 Source preferences: {json.dumps(role.source_preferences or [], ensure_ascii=False)}
 Personality/style: {json.dumps(role.personality or {}, ensure_ascii=False)}
+Research depth: {depth.name} / {depth.label}
+Minimum sources: {depth.min_sources}
+Target sources: {depth.target_sources}
+Minimum search queries: {depth.min_queries}
+Minimum claim_evidence items: {depth.min_claims}
+Minimum counterclaims: {depth.min_counterclaims}
+Notes per source: {depth.notes_per_source}
+Required source mix: {depth.source_mix}
+Depth instructions: {depth.instructions}
 
 Act independently. Do not assume access to other agents' notes.
 If source preferences are provided, use them to guide search queries and source selection.
 Treat fan/community sources as claims to inspect, not as canon authority.
+For standard/deep research, do not stop after a handful of search results. Iterate queries, compare contradictory sources, and gather enough material for a dense evidence archive.
+If you cannot reach the target source count within tool limits, still return the best evidence and explain the gap in "coverage_gaps".
 Write all user-visible fields in Korean. URLs and source titles may stay in their original language.
 Return only JSON with this exact shape:
 {{
+  "research_depth": {{"name": "{depth.name}", "label": "{depth.label}", "min_sources": {depth.min_sources}, "target_sources": {depth.target_sources}, "min_queries": {depth.min_queries}, "min_claims": {depth.min_claims}, "min_counterclaims": {depth.min_counterclaims}, "notes_per_source": {depth.notes_per_source}}},
   "queries": ["..."],
-  "sources": [{{"url": "...", "note": "...", "snippet": "short paraphrase or short excerpt"}}],
+  "sources": [{{"url": "...", "title": "...", "source_type": "official|primary|wiki|community|analysis|other", "quality": "high|medium|low", "note": "...", "snippet": "short paraphrase or compliant short excerpt", "extracted_notes": ["..."]}}],
   "summary": "...",
   "confidence": "low|medium|high",
   "uncertainty": "...",
-  "claim_evidence": [{{"claim": "...", "evidence": ["url"], "interpretation": "...", "confidence": "low|medium|high"}}]
+  "coverage_gaps": ["..."],
+  "claim_evidence": [{{"claim": "...", "evidence": ["url"], "interpretation": "...", "confidence": "low|medium|high", "source_quality": "..."}}],
+  "counterclaims": [{{"claim": "...", "evidence": ["url"], "why_it_matters": "...", "confidence": "low|medium|high"}}],
+  "rejected_claims": [{{"claim": "...", "reason": "...", "sources": ["url"]}}]
 }}
 """
         result = self._invoke_codex(session, "research", prompt, use_search=True)
@@ -66,6 +82,10 @@ Return only JSON with this exact shape:
             parsed = self._fallback_research(role, result["text"])
         parsed["role_id"] = role.id
         parsed["display_name"] = role.display_name
+        parsed.setdefault("research_depth", self._depth_payload(depth))
+        parsed.setdefault("coverage_gaps", [])
+        parsed.setdefault("counterclaims", [])
+        parsed.setdefault("rejected_claims", [])
         parsed["codex"] = result["metadata"]
         session["session_id"] = result["metadata"].get("session_id") or session.get("session_id")
         return parsed
@@ -227,6 +247,19 @@ Return only JSON:
         return value if isinstance(value, dict) else None
 
     @staticmethod
+    def _depth_payload(depth: ResearchDepth) -> dict[str, Any]:
+        return {
+            "name": depth.name,
+            "label": depth.label,
+            "min_sources": depth.min_sources,
+            "target_sources": depth.target_sources,
+            "min_queries": depth.min_queries,
+            "min_claims": depth.min_claims,
+            "min_counterclaims": depth.min_counterclaims,
+            "notes_per_source": depth.notes_per_source,
+        }
+
+    @staticmethod
     def _fallback_research(role: Role, text: str) -> dict[str, Any]:
         return {
             "queries": [],
@@ -234,12 +267,16 @@ Return only JSON:
             "summary": text.strip(),
             "confidence": "low",
             "uncertainty": "Codex research output was not parseable as structured JSON.",
+            "coverage_gaps": ["Codex research output was not parseable as structured JSON."],
             "claim_evidence": [
                 {
                     "claim": text.strip(),
                     "evidence": [],
                     "interpretation": role.research_focus,
                     "confidence": "low",
+                    "source_quality": "unknown",
                 }
             ],
+            "counterclaims": [],
+            "rejected_claims": [],
         }
