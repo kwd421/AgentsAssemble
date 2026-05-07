@@ -17,3 +17,12 @@ class Role:
 class MeetingResult:
     meeting_id: str
     meeting_dir: Path
+
+
+@dataclass(frozen=True)
+class CouncilConfig:
+    topic: str
+    display_topic: str
+    question: str
+    display_question: str
+    roles: list[Role]

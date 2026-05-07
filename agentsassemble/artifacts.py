@@ -71,7 +71,7 @@ def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
     agenda = [
         "# Agenda",
         "",
-        f"Question: {meeting['question']}",
+        f"Question: {meeting.get('display_question', meeting['question'])}",
         "",
         "1. Independent research",
         "2. Round 1: opening positions",

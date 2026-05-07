@@ -35,11 +35,14 @@ const roundLabels = {
 };
 
 function displayTopic(meeting) {
+  if (meeting.display_topic) return meeting.display_topic;
   if (meeting.topic === "One Piece admiral strength debate") return "원피스 3대장 최강자 토론";
   return meeting.topic || "회의";
 }
 
 function displayQuestion(question) {
+  const meeting = state.payload?.meeting;
+  if (meeting?.display_question) return meeting.display_question;
   if (question === "Who is the strongest One Piece admiral?") return "원피스 3대장 중 누가 제일 센가?";
   return question || "";
 }

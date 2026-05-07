@@ -7,55 +7,8 @@ from uuid import uuid4
 
 from agentsassemble.adapters import CodexAdapter, MockAdapter, ProviderAdapter
 from agentsassemble.artifacts import write_public_artifacts, write_research, write_role_files
-from agentsassemble.models import MeetingResult, Role
-
-
-DEMO_QUESTION = "Who is the strongest One Piece admiral?"
-
-DEMO_ROLES = [
-    Role(
-        id="lore_lawyer",
-        display_name="설정충",
-        lens="Canon Analyst",
-        research_focus="official statements, canon hierarchy, and internal consistency",
-        personality={
-            "preset": "pedantic_lore_nerd",
-            "tone": "precise, lore-obsessed, stubborn about source hierarchy",
-            "directness": "medium",
-            "humor": "low",
-            "verbosity": "medium",
-            "catchphrases": ["공식 설정상", "근거 등급부터 따져야 함"],
-        },
-    ),
-    Role(
-        id="show_me_the_feats",
-        display_name="공식이뭘알아",
-        lens="Feats Analyst",
-        research_focus="demonstrated combat performance, fight scenes, and concrete outcomes",
-        personality={
-            "preset": "feat_first_pragmatist",
-            "tone": "direct, practical, impatient with unsupported statements",
-            "directness": "high",
-            "humor": "medium",
-            "verbosity": "medium",
-            "catchphrases": ["보여준 걸 가져와", "전투 결과가 말해줌"],
-        },
-    ),
-    Role(
-        id="fanboard_skeptic",
-        display_name="만갤러",
-        lens="Skeptical Critic",
-        research_focus="fandom claims, overinterpretation, counterexamples, and uncertainty",
-        personality={
-            "preset": "fanboard_skeptic",
-            "tone": "skeptical, playful, community-aware, sharp about overclaims",
-            "directness": "high",
-            "humor": "high",
-            "verbosity": "medium",
-            "catchphrases": ["그거 뇌피셜 아님?", "표본 부족"],
-        },
-    ),
-]
+from agentsassemble.config import load_council_config
+from agentsassemble.models import MeetingResult
 
 
 def get_adapter(adapter_name: str) -> ProviderAdapter:
@@ -75,38 +28,41 @@ def run_demo_meeting(
         if reporter is not None:
             reporter(message)
 
+    config = load_council_config()
     adapter = get_adapter(adapter_name)
     root = output_root or Path(".agentsassemble")
     meeting_id = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
     meeting_dir = root / "meetings" / meeting_id
     meeting_dir.mkdir(parents=True, exist_ok=False)
     report(f"Meeting {meeting_id}")
-    report(f"Question: {DEMO_QUESTION}")
+    report(f"Question: {config.display_question}")
 
     context: dict[str, Any] = {
         "meeting_id": meeting_id,
-        "question": DEMO_QUESTION,
-        "topic": "One Piece admiral strength debate",
+        "question": config.question,
+        "topic": config.topic,
+        "display_question": config.display_question,
+        "display_topic": config.display_topic,
         "meeting_dir": str(meeting_dir),
     }
 
-    roles = [role.__dict__ for role in DEMO_ROLES]
+    roles = [role.__dict__ for role in config.roles]
     sessions = {}
-    for role in DEMO_ROLES:
+    for role in config.roles:
         report(f"Preparing role: {role.display_name} ({role.id})")
         write_role_files(meeting_dir, role)
         sessions[role.id] = adapter.start_session(role, context)
 
     research_records = []
-    for role in DEMO_ROLES:
+    for role in config.roles:
         report(f"Research: {role.display_name}")
-        research = adapter.run_research(role, sessions[role.id], DEMO_QUESTION)
+        research = adapter.run_research(role, sessions[role.id], config.question)
         research_records.append(research)
         write_research(meeting_dir, research)
 
     round_one = []
     report("Round 1: opening positions")
-    for role, research in zip(DEMO_ROLES, research_records, strict=True):
+    for role, research in zip(config.roles, research_records, strict=True):
         round_one.append(
             adapter.run_round(
                 role,
@@ -120,7 +76,7 @@ def run_demo_meeting(
     round_two = []
     public_round_one = {"round_1": round_one}
     report("Round 2: rebuttal and evidence comparison")
-    for role in DEMO_ROLES:
+    for role in config.roles:
         round_two.append(
             adapter.run_round(
                 role,
@@ -139,7 +95,7 @@ def run_demo_meeting(
     report("Moderator synthesis")
     synthesis = adapter.synthesize(
         moderator_session,
-        DEMO_QUESTION,
+        config.question,
         {
             "research_summaries": [
                 {
@@ -158,8 +114,10 @@ def run_demo_meeting(
     meeting = {
         "meeting_id": meeting_id,
         "command": f"assemble demo --adapter {adapter_name}",
-        "question": DEMO_QUESTION,
-        "topic": "One Piece admiral strength debate",
+        "question": config.question,
+        "display_question": config.display_question,
+        "topic": config.topic,
+        "display_topic": config.display_topic,
         "roles": roles,
         "adapter_config": {"name": adapter.name},
         "isolation": {
@@ -168,7 +126,7 @@ def run_demo_meeting(
                 "private_research_dir": f"private_research/{role.id}",
                 "session": sessions[role.id],
             }
-            for role in DEMO_ROLES
+            for role in config.roles
         },
         "research_artifacts": [
             {
