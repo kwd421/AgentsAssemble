@@ -8,7 +8,8 @@ from uuid import uuid4
 from agentsassemble.adapters import CodexAdapter, MockAdapter, ProviderAdapter
 from agentsassemble.artifacts import write_public_artifacts, write_research, write_role_files
 from agentsassemble.config import load_council_config
-from agentsassemble.models import MeetingResult, ResearchDepthName, get_research_depth
+from agentsassemble.evidence import apply_evidence_gate, summarize_evidence_gates
+from agentsassemble.models import MeetingResult, ResearchDepthName, ResearchSteering, get_research_depth
 
 
 def get_adapter(
@@ -30,6 +31,7 @@ def run_demo_meeting(
     codex_timeout_seconds: int = 240,
     codex_search_enabled: bool = True,
     research_depth: ResearchDepthName = "smoke",
+    research_steering: str | None = None,
 ) -> MeetingResult:
     def report(message: str) -> None:
         if reporter is not None:
@@ -37,6 +39,10 @@ def run_demo_meeting(
 
     config = load_council_config()
     depth = get_research_depth(research_depth)
+    steering = ResearchSteering(
+        stance="user_leaning" if research_steering else "open",
+        prompt=research_steering,
+    )
     adapter = get_adapter(
         adapter_name,
         codex_timeout_seconds=codex_timeout_seconds,
@@ -53,6 +59,8 @@ def run_demo_meeting(
         f"{depth.name} (target {depth.target_sources} sources, "
         f"{depth.min_claims} claims, {depth.min_counterclaims} counterclaims per role)"
     )
+    if not steering.is_open:
+        report(f"Research steering: {steering.prompt}")
 
     context: dict[str, Any] = {
         "meeting_id": meeting_id,
@@ -62,6 +70,7 @@ def run_demo_meeting(
         "display_topic": config.display_topic,
         "meeting_dir": str(meeting_dir),
         "research_depth": depth.name,
+        "research_steering": steering.to_dict(),
     }
 
     roles = [role.__dict__ for role in config.roles]
@@ -74,9 +83,11 @@ def run_demo_meeting(
     research_records = []
     for role in config.roles:
         report(f"Research: {role.display_name}")
-        research = adapter.run_research(role, sessions[role.id], config.question, depth)
+        research = adapter.run_research(role, sessions[role.id], config.question, depth, steering)
+        research = apply_evidence_gate(research, depth)
         research_records.append(research)
         write_research(meeting_dir, research)
+    evidence_gate = summarize_evidence_gates(research_records)
 
     round_one = []
     report("Round 1: opening positions")
@@ -87,12 +98,19 @@ def run_demo_meeting(
                 sessions[role.id],
                 "round_1",
                 "Present your opening position from your private research. Cite your strongest evidence and at least one uncertainty.",
-                {"own_research": research},
+                {
+                    "own_research": research,
+                    "evidence_gate_rule": "Use supported claim_evidence as grounds. Mention unsupported_claims only as discarded or uncertain material.",
+                },
             )
         )
 
     round_two = []
-    public_round_one = {"round_1": round_one}
+    public_round_one = {
+        "round_1": round_one,
+        "evidence_gate": evidence_gate,
+        "evidence_gate_rule": "Do not treat unsupported claims as accepted facts.",
+    }
     report("Round 2: rebuttal and evidence comparison")
     for role in config.roles:
         round_two.append(
@@ -122,6 +140,8 @@ def run_demo_meeting(
                     "summary": research["summary"],
                     "confidence": research["confidence"],
                     "claim_evidence": research["claim_evidence"],
+                    "unsupported_claims": research.get("unsupported_claims", []),
+                    "evidence_gate": research.get("evidence_gate", {}),
                     "counterclaims": research.get("counterclaims", []),
                     "coverage_gaps": research.get("coverage_gaps", []),
                 }
@@ -129,6 +149,8 @@ def run_demo_meeting(
             ],
             "round_1": round_one,
             "round_2": round_two,
+            "evidence_gate": evidence_gate,
+            "moderator_rule": "Base the decision on supported claim_evidence. Unsupported claims may be listed as caveats but must not determine the winner.",
         },
     )
 
@@ -141,6 +163,7 @@ def run_demo_meeting(
         "display_topic": config.display_topic,
         "roles": roles,
         "adapter_config": {"name": adapter.name},
+        "research_steering": steering.to_dict(),
         "research_depth": {
             "name": depth.name,
             "label": depth.label,
@@ -173,6 +196,7 @@ def run_demo_meeting(
             {"id": "round_2", "title": "Round 2", "messages": round_two},
         ],
         "moderator_synthesis": synthesis,
+        "evidence_gate": evidence_gate,
         "artifacts": {
             "agenda": "agenda.md",
             "transcript": "transcript.md",
@@ -185,6 +209,7 @@ def run_demo_meeting(
             "created_at": datetime.now(UTC).isoformat(),
             "adapter": adapter.name,
             "research_depth": depth.name,
+            "research_steering": steering.to_dict(),
             "reproducibility": "auditable and resumable, not deterministic replay",
         },
         "failure_state": {"status": "none", "failures": []},

@@ -7,7 +7,7 @@ from subprocess import TimeoutExpired
 from typing import Any
 
 from agentsassemble.adapters.base import ProviderAdapter
-from agentsassemble.models import ResearchDepth, Role
+from agentsassemble.models import ResearchDepth, ResearchSteering, Role
 
 
 class CodexAdapter(ProviderAdapter):
@@ -39,7 +39,16 @@ class CodexAdapter(ProviderAdapter):
         session: dict[str, Any],
         question: str,
         depth: ResearchDepth,
+        steering: ResearchSteering,
     ) -> dict[str, Any]:
+        steering_instruction = (
+            "Default stance: investigate freely and form your own conclusion from evidence."
+            if steering.is_open
+            else (
+                "User-requested steering: investigate this angle in extra detail, but do not force the conclusion "
+                f"if evidence does not support it: {steering.prompt}"
+            )
+        )
         prompt = f"""You are {role.display_name} ({role.lens}) in an AgentsAssemble council.
 
 Research question: {question}
@@ -55,15 +64,20 @@ Minimum counterclaims: {depth.min_counterclaims}
 Notes per source: {depth.notes_per_source}
 Required source mix: {depth.source_mix}
 Depth instructions: {depth.instructions}
+Research steering: {json.dumps(steering.to_dict(), ensure_ascii=False)}
+Steering instruction: {steering_instruction}
 
 Act independently. Do not assume access to other agents' notes.
 If source preferences are provided, use them to guide search queries and source selection.
 Treat fan/community sources as claims to inspect, not as canon authority.
+You may hold a free opinion by default, but every conclusion must be traceable to evidence.
+If the user steers toward a preferred angle, spend more research effort on that angle and its best objections. Do not hide contrary evidence.
 For standard/deep research, do not stop after a handful of search results. Iterate queries, compare contradictory sources, and gather enough material for a dense evidence archive.
 If you cannot reach the target source count within tool limits, still return the best evidence and explain the gap in "coverage_gaps".
 Write all user-visible fields in Korean. URLs and source titles may stay in their original language.
 Return only JSON with this exact shape:
 {{
+  "research_steering": {json.dumps(steering.to_dict(), ensure_ascii=False)},
   "research_depth": {{"name": "{depth.name}", "label": "{depth.label}", "min_sources": {depth.min_sources}, "target_sources": {depth.target_sources}, "min_queries": {depth.min_queries}, "min_claims": {depth.min_claims}, "min_counterclaims": {depth.min_counterclaims}, "notes_per_source": {depth.notes_per_source}}},
   "queries": ["..."],
   "sources": [{{"url": "...", "title": "...", "source_type": "official|primary|wiki|community|analysis|other", "quality": "high|medium|low", "note": "...", "snippet": "short paraphrase or compliant short excerpt", "extracted_notes": ["..."]}}],
@@ -82,6 +96,7 @@ Return only JSON with this exact shape:
             parsed = self._fallback_research(role, result["text"])
         parsed["role_id"] = role.id
         parsed["display_name"] = role.display_name
+        parsed.setdefault("research_steering", steering.to_dict())
         parsed.setdefault("research_depth", self._depth_payload(depth))
         parsed.setdefault("coverage_gaps", [])
         parsed.setdefault("counterclaims", [])

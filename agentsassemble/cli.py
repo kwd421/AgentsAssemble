@@ -17,6 +17,11 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--codex-timeout", type=int, default=240)
     demo.add_argument("--no-codex-search", action="store_true")
     demo.add_argument("--research-depth", choices=["smoke", "standard", "deep"], default="smoke")
+    demo.add_argument(
+        "--research-steering",
+        default=None,
+        help="Optional user-preferred angle to investigate in extra detail without forcing the conclusion.",
+    )
 
     gui = subparsers.add_parser("gui", help="Run the local browser GUI.")
     gui.add_argument("--host", default="127.0.0.1")
@@ -37,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
             codex_timeout_seconds=args.codex_timeout,
             codex_search_enabled=not args.no_codex_search,
             research_depth=args.research_depth,
+            research_steering=args.research_steering,
         )
         return 0
     if args.command == "gui":

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from agentsassemble.adapters.base import ProviderAdapter
-from agentsassemble.models import ResearchDepth, Role
+from agentsassemble.models import ResearchDepth, ResearchSteering, Role
 
 
 class MockAdapter(ProviderAdapter):
@@ -23,6 +23,7 @@ class MockAdapter(ProviderAdapter):
         session: dict[str, Any],
         question: str,
         depth: ResearchDepth,
+        steering: ResearchSteering,
     ) -> dict[str, Any]:
         source_map = {
             "lore_lawyer": [
@@ -73,6 +74,7 @@ class MockAdapter(ProviderAdapter):
         return {
             "role_id": role.id,
             "display_name": role.display_name,
+            "research_steering": steering.to_dict(),
             "research_depth": {
                 "name": depth.name,
                 "label": depth.label,

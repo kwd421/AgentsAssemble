@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 ResearchDepthName = Literal["smoke", "standard", "deep"]
+ResearchStance = Literal["open", "user_leaning"]
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,19 @@ class ResearchDepth:
     notes_per_source: int
     source_mix: str
     instructions: str
+
+
+@dataclass(frozen=True)
+class ResearchSteering:
+    stance: ResearchStance = "open"
+    prompt: str | None = None
+
+    @property
+    def is_open(self) -> bool:
+        return self.stance == "open" or not self.prompt
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {"stance": self.stance, "prompt": self.prompt}
 
 
 RESEARCH_DEPTHS: dict[ResearchDepthName, ResearchDepth] = {

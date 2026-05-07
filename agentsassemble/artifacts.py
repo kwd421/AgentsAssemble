@@ -79,6 +79,12 @@ def write_research(meeting_dir: Path, research: dict[str, Any]) -> None:
             "## Coverage Gaps",
             *[f"- {gap}" for gap in research.get("coverage_gaps", [])],
             "",
+            "## Evidence Gate",
+            f"- Status: {research.get('evidence_gate', {}).get('status', 'unknown')}",
+            f"- Supported claims: {research.get('evidence_gate', {}).get('supported_claim_count', 0)}",
+            f"- Unsupported claims: {research.get('evidence_gate', {}).get('unsupported_claim_count', 0)}",
+            f"- Confidence after gate: {research.get('evidence_gate', {}).get('confidence_after', research.get('confidence', 'low'))}",
+            "",
             "## Claim Evidence",
         ]
     )
@@ -89,6 +95,16 @@ def write_research(meeting_dir: Path, research: dict[str, Any]) -> None:
                 f"  - Confidence: {claim.get('confidence', '')}",
                 f"  - Source quality: {claim.get('source_quality', '')}",
                 f"  - Interpretation: {claim.get('interpretation', '')}",
+            ]
+        )
+        for url in claim.get("evidence", []):
+            lines.append(f"  - Evidence: {url}")
+    lines.extend(["", "## Unsupported Claims"])
+    for claim in research.get("unsupported_claims", []):
+        lines.extend(
+            [
+                f"- Claim: {claim.get('claim', '')}",
+                f"  - Reason: {claim.get('reason', '')}",
             ]
         )
         for url in claim.get("evidence", []):
@@ -123,6 +139,7 @@ def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
         "",
         f"Question: {meeting.get('display_question', meeting['question'])}",
         f"Research depth: {meeting.get('research_depth', {}).get('name', 'unknown')}",
+        f"Research steering: {meeting.get('research_steering', {}).get('prompt') or 'open'}",
         "",
         "1. Independent research",
         "2. Round 1: opening positions",
@@ -154,6 +171,11 @@ def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
         "",
         "## Caveats",
         *[f"- {caveat}" for caveat in synthesis["caveats"]],
+        "",
+        "## Evidence Gate",
+        f"Status: {meeting.get('evidence_gate', {}).get('status', 'unknown')}",
+        f"Supported claims: {meeting.get('evidence_gate', {}).get('total_supported_claims', 0)}",
+        f"Unsupported claims: {meeting.get('evidence_gate', {}).get('total_unsupported_claims', 0)}",
         "",
         "## Rationale",
         synthesis["summary"],

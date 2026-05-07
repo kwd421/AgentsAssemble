@@ -22,6 +22,8 @@ class DemoMeetingTests(unittest.TestCase):
             meeting = json.loads((meeting_dir / "meeting.json").read_text(encoding="utf-8"))
             self.assertEqual(meeting["adapter_config"]["name"], "mock")
             self.assertEqual(meeting["research_depth"]["name"], "smoke")
+            self.assertEqual(meeting["research_steering"]["stance"], "open")
+            self.assertEqual(meeting["evidence_gate"]["status"], "pass")
             self.assertEqual(meeting["question"], "Who is the strongest One Piece admiral?")
             self.assertEqual(
                 [role["id"] for role in meeting["roles"]],
@@ -70,6 +72,24 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertEqual(len(deep_research["claim_evidence"]), 12)
             self.assertEqual(len(smoke_research["counterclaims"]), 1)
             self.assertEqual(len(deep_research["counterclaims"]), 6)
+
+    def test_research_steering_is_recorded(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_demo_meeting(
+                adapter_name="mock",
+                output_root=Path(temp_dir),
+                research_steering="키자루가 최강이라는 관점을 더 자세히 조사",
+            )
+            meeting = json.loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+            research = json.loads(
+                (result.meeting_dir / "private_research" / "fanboard_skeptic" / "research.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+            self.assertEqual(meeting["research_steering"]["stance"], "user_leaning")
+            self.assertIn("키자루", meeting["research_steering"]["prompt"])
+            self.assertEqual(research["research_steering"]["stance"], "user_leaning")
 
     def test_round_one_does_not_include_other_private_research(self):
         with tempfile.TemporaryDirectory() as temp_dir:
