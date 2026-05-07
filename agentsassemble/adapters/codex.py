@@ -60,7 +60,7 @@ Return only JSON with this exact shape:
   "claim_evidence": [{{"claim": "...", "evidence": ["url"], "interpretation": "...", "confidence": "low|medium|high"}}]
 }}
 """
-        result = self._invoke_codex(session, "research", prompt)
+        result = self._invoke_codex(session, "research", prompt, use_search=True)
         parsed = self._parse_json_object(result["text"])
         if parsed is None:
             parsed = self._fallback_research(role, result["text"])
@@ -90,7 +90,7 @@ Write the visible message in Korean and follow the configured personality/style.
 Return only JSON:
 {{"content": "...", "confidence": "low|medium|high"}}
 """
-        result = self._invoke_codex(session, round_name, council_prompt)
+        result = self._invoke_codex(session, round_name, council_prompt, use_search=False)
         parsed = self._parse_json_object(result["text"]) or {
             "content": result["text"].strip(),
             "confidence": "medium",
@@ -128,7 +128,7 @@ Return only JSON:
   "tasks": {{"role_id": "task"}}
 }}
 """
-        result = self._invoke_codex(session, "synthesis", prompt)
+        result = self._invoke_codex(session, "synthesis", prompt, use_search=False)
         parsed = self._parse_json_object(result["text"]) or {
             "winner": "Undetermined",
             "ranking": [],
@@ -140,7 +140,7 @@ Return only JSON:
         parsed["codex"] = result["metadata"]
         return parsed
 
-    def _invoke_codex(self, session: dict[str, Any], step: str, prompt: str) -> dict[str, Any]:
+    def _invoke_codex(self, session: dict[str, Any], step: str, prompt: str, use_search: bool) -> dict[str, Any]:
         meeting_dir = session.get("meeting_dir")
         if not meeting_dir:
             raise ValueError("CodexAdapter requires meeting_dir in session metadata.")
@@ -151,7 +151,7 @@ Return only JSON:
         output_path = meeting_path / "roles" / session["role_id"] / f"codex-{step}-last-message.txt"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         command = ["codex"]
-        if self.search_enabled:
+        if self.search_enabled and use_search:
             command.append("--search")
         command.extend(
             [
