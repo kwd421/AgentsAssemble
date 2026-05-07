@@ -88,14 +88,14 @@ class MockAdapter(ProviderAdapter):
             openers = {
                 "lore_lawyer": "공식 설정상 먼저 근거 등급부터 따져야 합니다.",
                 "show_me_the_feats": "보여준 걸 가져와야죠. 말보다 전투 결과가 우선입니다.",
-                "fanboard_skeptic": "그거 팬덤 뇌피셜인지부터 의심하고 봐야 합니다.",
+                "fanboard_skeptic": "게이야 그건 근거가 아니라 팬심인지부터 봐야 한다 ㅋㅋ",
             }
             content = f"{role.display_name}: {openers[role.id]} 내 결론은 아카이누 우세입니다. 근거는 {research['summary']} 다만 {research['uncertainty']}"
         else:
             rebuttals = {
                 "lore_lawyer": "전적만 보면 맥락을 놓칩니다. 공식 지위와 서사 배치도 같이 봐야 합니다.",
                 "show_me_the_feats": "설정은 말이고 전투는 결과입니다. 실제로 승부가 난 쪽을 무시하면 안 됩니다.",
-                "fanboard_skeptic": "둘 다 너무 단정은 금물입니다. 키자루는 표본 부족이라 caveat를 크게 남겨야 합니다.",
+                "fanboard_skeptic": "작중에 안 나온 걸 왜 확정 박노? 키자루는 표본 부족이라 보류가 맞다.",
             }
             content = f"{role.display_name}: {rebuttals[role.id]} 그래서 아카이누 1위는 유지하되, 근거별 확신도는 분리해서 적어야 합니다."
         return {

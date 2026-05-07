@@ -101,6 +101,7 @@ def run_demo_meeting(
         "adapter": adapter.name,
         "role_id": "moderator",
         "session_id": f"{adapter.name}-{meeting_id}-moderator",
+        "meeting_dir": str(meeting_dir),
     }
     report("Moderator synthesis")
     synthesis = adapter.synthesize(
