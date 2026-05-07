@@ -35,9 +35,9 @@ class MockAdapter(ProviderAdapter):
                 "https://onepiece.fandom.com/wiki/Sabaody_Archipelago_Arc",
             ],
             "fanboard_skeptic": [
-                "https://www.reddit.com/r/OnePiece/",
+                "https://gall.dcinside.com/mgallery/board/lists/?id=onepieceblood",
+                "https://gall.dcinside.com/board/lists/?id=comic_new3",
                 "https://onepiece.fandom.com/wiki/Admiral",
-                "https://onepiece.fandom.com/wiki/Haki",
             ],
         }
         claims = {

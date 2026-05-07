@@ -30,4 +30,5 @@ def _role_from_dict(data: dict[str, Any]) -> Role:
         lens=data["lens"],
         research_focus=data["research_focus"],
         personality=data.get("personality"),
+        source_preferences=data.get("source_preferences"),
     )

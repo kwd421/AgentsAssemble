@@ -43,9 +43,12 @@ class CodexAdapter(ProviderAdapter):
 
 Research question: {question}
 Research focus: {role.research_focus}
+Source preferences: {json.dumps(role.source_preferences or [], ensure_ascii=False)}
 Personality/style: {json.dumps(role.personality or {}, ensure_ascii=False)}
 
 Act independently. Do not assume access to other agents' notes.
+If source preferences are provided, use them to guide search queries and source selection.
+Treat fan/community sources as claims to inspect, not as canon authority.
 Write all user-visible fields in Korean. URLs and source titles may stay in their original language.
 Return only JSON with this exact shape:
 {{

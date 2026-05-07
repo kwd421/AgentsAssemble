@@ -15,7 +15,8 @@ def write_role_files(meeting_dir: Path, role: Role) -> None:
     role_dir = meeting_dir / "roles" / role.id
     role_dir.mkdir(parents=True, exist_ok=True)
     (role_dir / "role.md").write_text(
-        f"# {role.display_name}\n\nLens: {role.lens}\n\nFocus: {role.research_focus}\n",
+        f"# {role.display_name}\n\nLens: {role.lens}\n\nFocus: {role.research_focus}\n\n"
+        f"Source preferences: {role.source_preferences or []}\n",
         encoding="utf-8",
     )
     (role_dir / "persona.md").write_text(

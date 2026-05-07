@@ -11,6 +11,7 @@ class Role:
     lens: str
     research_focus: str
     personality: dict[str, object] | None = None
+    source_preferences: list[str] | None = None
 
 
 @dataclass(frozen=True)
