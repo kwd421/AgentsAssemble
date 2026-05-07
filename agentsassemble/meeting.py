@@ -11,11 +11,15 @@ from agentsassemble.config import load_council_config
 from agentsassemble.models import MeetingResult
 
 
-def get_adapter(adapter_name: str) -> ProviderAdapter:
+def get_adapter(
+    adapter_name: str,
+    codex_timeout_seconds: int = 240,
+    codex_search_enabled: bool = True,
+) -> ProviderAdapter:
     if adapter_name == "mock":
         return MockAdapter()
     if adapter_name == "codex":
-        return CodexAdapter()
+        return CodexAdapter(timeout_seconds=codex_timeout_seconds, search_enabled=codex_search_enabled)
     raise ValueError(f"Unknown adapter: {adapter_name}")
 
 
@@ -23,13 +27,19 @@ def run_demo_meeting(
     adapter_name: str = "mock",
     output_root: Path | None = None,
     reporter: Callable[[str], None] | None = None,
+    codex_timeout_seconds: int = 240,
+    codex_search_enabled: bool = True,
 ) -> MeetingResult:
     def report(message: str) -> None:
         if reporter is not None:
             reporter(message)
 
     config = load_council_config()
-    adapter = get_adapter(adapter_name)
+    adapter = get_adapter(
+        adapter_name,
+        codex_timeout_seconds=codex_timeout_seconds,
+        codex_search_enabled=codex_search_enabled,
+    )
     root = output_root or Path(".agentsassemble")
     meeting_id = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
     meeting_dir = root / "meetings" / meeting_id

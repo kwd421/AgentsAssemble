@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from subprocess import TimeoutExpired
 from typing import Any
 
 from agentsassemble.adapters.base import ProviderAdapter
@@ -160,14 +161,29 @@ Return only JSON:
                 "-",
             ]
         )
-        completed = self.command_runner(
-            command,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            timeout=self.timeout_seconds,
-            check=False,
-        )
+        try:
+            completed = self.command_runner(
+                command,
+                input=prompt,
+                text=True,
+                capture_output=True,
+                timeout=self.timeout_seconds,
+                check=False,
+            )
+        except TimeoutExpired as error:
+            return {
+                "text": f"Codex call timed out after {self.timeout_seconds} seconds during {step}.",
+                "metadata": {
+                    "command": command,
+                    "returncode": 124,
+                    "stdout": error.stdout or "",
+                    "stderr": error.stderr or "",
+                    "session_id": None,
+                    "output_last_message": str(output_path),
+                    "timeout_seconds": self.timeout_seconds,
+                    "timed_out": True,
+                },
+            }
         text = output_path.read_text(encoding="utf-8") if output_path.exists() else completed.stdout
         session_id = self._extract_session_id(completed.stdout + "\n" + completed.stderr)
         return {

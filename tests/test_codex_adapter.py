@@ -2,6 +2,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from subprocess import TimeoutExpired
 
 from agentsassemble.adapters.codex import CodexAdapter
 from agentsassemble.models import Role
@@ -38,6 +39,24 @@ class CodexAdapterTests(unittest.TestCase):
             self.assertEqual(research["codex"]["returncode"], 0)
             self.assertIn("codex", research["codex"]["command"])
             self.assertIn("--search", research["codex"]["command"])
+
+    def test_codex_timeout_becomes_low_confidence_research(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            (meeting_dir / "roles" / "lore_lawyer").mkdir(parents=True)
+
+            def fake_timeout_runner(command, input, text, capture_output, timeout, check):
+                raise TimeoutExpired(command, timeout)
+
+            adapter = CodexAdapter(command_runner=fake_timeout_runner, timeout_seconds=1)
+            role = Role("lore_lawyer", "설정충", "Canon Analyst", "canon")
+            session = adapter.start_session(role, {"meeting_dir": str(meeting_dir)})
+
+            research = adapter.run_research(role, session, "Question?")
+
+            self.assertEqual(research["confidence"], "low")
+            self.assertTrue(research["codex"]["timed_out"])
+            self.assertIn("timed out", research["summary"])
 
 
 if __name__ == "__main__":
