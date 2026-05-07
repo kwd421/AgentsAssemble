@@ -46,7 +46,9 @@ class CodexAdapterTests(unittest.TestCase):
             (meeting_dir / "roles" / "lore_lawyer").mkdir(parents=True)
 
             def fake_timeout_runner(command, input, text, capture_output, timeout, check):
-                raise TimeoutExpired(command, timeout)
+                error = TimeoutExpired(command, timeout)
+                error.stderr = b"byte stderr"
+                raise error
 
             adapter = CodexAdapter(command_runner=fake_timeout_runner, timeout_seconds=1)
             role = Role("lore_lawyer", "설정충", "Canon Analyst", "canon")
@@ -56,6 +58,7 @@ class CodexAdapterTests(unittest.TestCase):
 
             self.assertEqual(research["confidence"], "low")
             self.assertTrue(research["codex"]["timed_out"])
+            self.assertIsInstance(research["codex"]["stderr"], str)
             self.assertIn("timed out", research["summary"])
 
 

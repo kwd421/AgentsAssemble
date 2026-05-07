@@ -176,8 +176,8 @@ Return only JSON:
                 "metadata": {
                     "command": command,
                     "returncode": 124,
-                    "stdout": error.stdout or "",
-                    "stderr": error.stderr or "",
+                    "stdout": self._text(error.stdout),
+                    "stderr": self._text(error.stderr),
                     "session_id": None,
                     "output_last_message": str(output_path),
                     "timeout_seconds": self.timeout_seconds,
@@ -191,8 +191,8 @@ Return only JSON:
             "metadata": {
                 "command": command,
                 "returncode": completed.returncode,
-                "stdout": completed.stdout,
-                "stderr": completed.stderr,
+                "stdout": self._text(completed.stdout),
+                "stderr": self._text(completed.stderr),
                 "session_id": session_id,
                 "output_last_message": str(output_path),
             },
@@ -202,6 +202,14 @@ Return only JSON:
     def _extract_session_id(output: str) -> str | None:
         match = re.search(r"session id:\s*([0-9a-fA-F-]+)", output)
         return match.group(1) if match else None
+
+    @staticmethod
+    def _text(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return str(value)
 
     @staticmethod
     def _parse_json_object(text: str) -> dict[str, Any] | None:
