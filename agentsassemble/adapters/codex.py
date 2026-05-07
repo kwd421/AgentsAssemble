@@ -12,9 +12,15 @@ from agentsassemble.models import Role
 class CodexAdapter(ProviderAdapter):
     name = "codex"
 
-    def __init__(self, timeout_seconds: int = 240, command_runner: Any | None = None) -> None:
+    def __init__(
+        self,
+        timeout_seconds: int = 240,
+        command_runner: Any | None = None,
+        search_enabled: bool = True,
+    ) -> None:
         self.timeout_seconds = timeout_seconds
         self.command_runner = command_runner or subprocess.run
+        self.search_enabled = search_enabled
 
     def start_session(self, role: Role, meeting_context: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -140,16 +146,20 @@ Return only JSON:
         meeting_path = Path(meeting_dir)
         output_path = meeting_path / "roles" / session["role_id"] / f"codex-{step}-last-message.txt"
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        command = [
-            "codex",
-            "exec",
-            "--skip-git-repo-check",
-            "--cd",
-            str(meeting_path),
-            "--output-last-message",
-            str(output_path),
-            "-",
-        ]
+        command = ["codex"]
+        if self.search_enabled:
+            command.append("--search")
+        command.extend(
+            [
+                "exec",
+                "--skip-git-repo-check",
+                "--cd",
+                str(meeting_path),
+                "--output-last-message",
+                str(output_path),
+                "-",
+            ]
+        )
         completed = self.command_runner(
             command,
             input=prompt,

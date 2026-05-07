@@ -37,6 +37,7 @@ class CodexAdapterTests(unittest.TestCase):
             self.assertEqual(session["session_id"], "019e0346-f384-74f2-914e-c95f535edf46")
             self.assertEqual(research["codex"]["returncode"], 0)
             self.assertIn("codex", research["codex"]["command"])
+            self.assertIn("--search", research["codex"]["command"])
 
 
 if __name__ == "__main__":
