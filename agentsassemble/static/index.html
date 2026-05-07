@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgentsAssemble</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>AgentsAssemble</h1>
+          <p id="meeting-subtitle">로컬 council 회의실</p>
+        </div>
+        <div class="actions">
+          <select id="meeting-select" aria-label="회의 선택"></select>
+          <button id="run-demo" type="button">Mock Demo</button>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="회의 보기">
+        <button class="tab is-active" data-tab="live" type="button">실황</button>
+        <button class="tab" data-tab="board" type="button">작전판</button>
+        <button class="tab" data-tab="archive" type="button">아카이브</button>
+      </nav>
+
+      <section id="empty-state" class="empty">
+        <h2>아직 열린 회의가 없습니다.</h2>
+        <p>Mock Demo를 실행하면 설정충, 공식이뭘알아, 만갤러가 회의를 시작합니다.</p>
+      </section>
+
+      <section id="live" class="panel is-active"></section>
+      <section id="board" class="panel"></section>
+      <section id="archive" class="panel"></section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

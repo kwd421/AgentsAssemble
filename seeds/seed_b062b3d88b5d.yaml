@@ -1,0 +1,151 @@
+goal: >-
+  Build a terminal-first v0 demo of a local-first multi-agent council
+  orchestrator where three isolated agent roles independently research a
+  question, debate their evidence and reasoning, produce a moderated
+  decision/task-style synthesis, and persist auditable human-readable plus
+  machine-readable meeting records.
+task_type: code
+brownfield_context:
+  project_type: greenfield
+  context_references: []
+  existing_patterns: []
+  existing_dependencies: []
+constraints:
+  - v0 targets the user and open-source/power users, not product-grade teams.
+  - Terminal-first command with streamed role-by-role output is acceptable for the first demo.
+  - File-based local storage only for v0 artifacts.
+  - Persistent records must include both human-readable Markdown and machine-readable YAML/JSON.
+  - Mock adapter is allowed, but architecture must include a common provider adapter interface and support Codex as the first real adapter.
+  - Demo must use separate role sessions rather than one shared session with role prompts.
+  - Role isolation must include separate conversation histories, separate Codex session IDs where available, separate memory/context files, and separate artifact directories.
+  - Separate OS processes and separate worktrees are not required for the first meeting demo.
+  - First demo scope excludes post-meeting implementation execution, commits, pushes, PRs, blocker loops, and full handoff validation.
+  - First demo scope excludes remote/federated councils where other users' AI agents join over the network.
+  - Three agents must independently research the same question before debate.
+  - Agents must not see other agents' sources, notes, or conclusions before debate round 1.
+  - Shared search tooling may be used only through isolated per-agent research contexts.
+  - Agents are not pre-assigned conclusions and may converge if evidence supports it.
+  - Debate must compare evidence and reasoning rather than force artificial disagreement.
+  - Role IDs and filesystem paths must use safe English slugs.
+  - Korean display names must appear in transcripts.
+  - Persona/role identity should persist across meetings while configurable personality/style may vary.
+  - Persona memory may evolve but must preserve distinct role/personality diversity.
+  - Role/lens and personality/style must be modeled separately, with defaults plus future user selection and direct customization.
+  - Reproducibility requires auditability plus handoff/resume capability, not exact deterministic replay.
+  - Future design should leave room for remote/federated councils through structured event/message boundaries, but v0 remains local-first and single-user.
+acceptance_criteria:
+  - One terminal command runs the canned demo end-to-end.
+  - Demo council includes exactly three independent research/debate roles.
+  - Roles are persisted with ids lore_lawyer, show_me_the_feats, and fanboard_skeptic.
+  - Role display names shown in transcript are 설정충, 공식이뭘알아, and 만갤러.
+  - Each role independently performs web research for the shared question.
+  - Each role persists private research artifacts containing search queries, source URL list, key notes per source, useful source snippets, research summary, confidence/uncertainty, and mapping of final claims to supporting evidence.
+  - Debate visibly includes agenda, Round 1, Round 2, moderator synthesis, decision, and task assignment.
+  - If agents reach the same conclusion, debate compares evidence quality, reasoning, confidence, and uncertainty instead of inventing disagreement.
+  - Final output includes a cited winner or ranking with caveats and confidence.
+  - Public transcript and meeting minutes persist beyond console output.
+  - Machine-readable meeting record persists enough metadata to audit what happened and support future handoff/resume implementation.
+  - Meeting record explains which statements and evidence led to which conclusion.
+  - Demo fails if outputs are hardcoded, roles are not distinct, adapter behavior is hollow, no real provider/adapter path exists, no decision is produced, no tasks are assigned, logs/records are non-reproducible, private research boundaries leak before debate, or persistent artifacts are missing.
+ontology_schema:
+  name: CouncilMeetingDemo
+  description: >-
+    File-based model for a v0 multi-agent council meeting with isolated role
+    personas, independent research, structured debate, moderated synthesis, and
+    persistent audit artifacts.
+  fields:
+    - name: meeting_id
+      type: string
+      required: true
+    - name: command
+      type: string
+      required: true
+    - name: question
+      type: string
+      required: true
+    - name: topic
+      type: string
+      required: true
+    - name: roles
+      type: array
+      required: true
+    - name: adapter_config
+      type: object
+      required: true
+    - name: isolation
+      type: object
+      required: true
+    - name: research_artifacts
+      type: array
+      required: true
+    - name: transcript
+      type: array
+      required: true
+    - name: debate_rounds
+      type: array
+      required: true
+    - name: moderator_synthesis
+      type: object
+      required: true
+    - name: artifacts
+      type: object
+      required: true
+    - name: audit_metadata
+      type: object
+      required: true
+    - name: failure_state
+      type: object
+      required: true
+evaluation_principles:
+  - name: Independence
+    description: Each role researches in isolated context without seeing other roles' private sources, notes, or conclusions before debate.
+    weight: 0.18
+  - name: Substantiveness
+    description: Meeting output contains real evidence-driven discussion, distinct reasoning, decisions, and tasks rather than hardcoded or hollow text.
+    weight: 0.18
+  - name: Persistence
+    description: Human-readable and machine-readable artifacts survive beyond console output and are sufficient for audit and future resume/handoff work.
+    weight: 0.16
+  - name: AdapterArchitecture
+    description: System has a provider adapter interface with mock support and a Codex real-adapter path from the beginning.
+    weight: 0.14
+  - name: RoleDistinctness
+    description: Roles preserve stable identity/lens and Korean display names while maintaining visibly different analytical contributions.
+    weight: 0.12
+  - name: ResearchTraceability
+    description: Claims in debate and synthesis map back to per-agent sources, notes, snippets, confidence, and uncertainty.
+    weight: 0.12
+  - name: TerminalDemoUsability
+    description: A single terminal command streams an understandable end-to-end council meeting flow.
+    weight: 0.10
+exit_conditions:
+  - name: DemoPass
+    description: First v0 demo completes successfully.
+    criteria: >-
+      One command runs independent per-role research, two debate rounds,
+      moderated synthesis, final cited decision/ranking, task assignment,
+      Markdown minutes, machine-readable record, public transcript, and private
+      research artifacts.
+  - name: DemoFail
+    description: Core council behavior is invalid.
+    criteria: >-
+      Missing distinct roles, hardcoded outputs, missing real adapter path,
+      leaked private research before debate, missing decision/tasks, missing
+      artifacts, or non-auditable records.
+  - name: ScopeBoundary
+    description: Requested behavior exceeds first demo scope.
+    criteria: >-
+      Post-meeting implementation, commits, pushes, PRs, blocker loops, or full
+      handoff validation are explicitly deferred.
+  - name: RecoverableRoleFailure
+    description: One role fails or times out.
+    criteria: >-
+      Failure is recorded with low-confidence/incomplete status and council
+      behavior follows configured retry/continue/abort policy.
+metadata:
+  seed_id: seed_b062b3d88b5d
+  version: 1.0.0
+  created_at: "2026-05-07T14:58:12.614740Z"
+  ambiguity_score: 0.158
+  interview_id: interview_20260507_134612
+  parent_seed_id: null
