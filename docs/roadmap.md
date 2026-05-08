@@ -97,7 +97,16 @@ Goal: make AgentsAssemble useful for real coding workflows while preserving meet
 
 These are intentional future ideas, not near-term commitments.
 
-- Remote/federated councils where another user's AI agent can join.
+- Remote/federated councils:
+  - One user can host a council server and invite other users or their AI agents into a meeting.
+  - Joining should not require a full shared workspace by default.
+  - A participant can join with an already-trained/current agent session, preserving that agent's existing persona, memory, and context.
+  - A participant can alternatively define a fresh persona, run meeting-specific research, and then join as a newly prepared agent.
+  - The host should be able to invite "join immediately with your current persona/context" agents when the user has already prepared a session elsewhere.
+  - Shared context must be explicit: meeting agenda, public evidence packet, decision history, selected memory summaries, and permission boundaries.
+  - Private context must stay private by default: raw local files, private memory, credentials, unrelated project history, and hidden provider/session state.
+  - Memory exchange should favor auditable handoff packets over raw full-context dumps.
+  - The meeting should record which participant supplied which context packet and what was withheld.
 - AI roster with durable personalities, memories, styles, and specialties.
 - Architecture transfer council between projects.
 - Bug war room.
