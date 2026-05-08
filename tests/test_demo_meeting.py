@@ -37,6 +37,8 @@ class DemoMeetingTests(unittest.TestCase):
             transcript = (meeting_dir / "transcript.md").read_text(encoding="utf-8")
             self.assertIn("## Round 1", transcript)
             self.assertIn("## Round 2", transcript)
+            self.assertIn("Position:", transcript)
+            self.assertIn("Change conditions:", transcript)
             self.assertIn("## Moderator Synthesis", transcript)
 
             for role_id in ("lore_lawyer", "show_me_the_feats", "fanboard_skeptic"):
@@ -104,6 +106,9 @@ class DemoMeetingTests(unittest.TestCase):
             round_one = meeting["debate_rounds"][0]["messages"]
             for message in round_one:
                 own_role = message["role_id"]
+                self.assertEqual(message["stance_status"], "held")
+                self.assertTrue(message["position"])
+                self.assertTrue(message["change_conditions"])
                 for other_role in ("lore_lawyer", "show_me_the_feats", "fanboard_skeptic"):
                     if other_role != own_role:
                         self.assertNotIn(f"private_research/{other_role}", message["content"])

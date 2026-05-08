@@ -144,6 +144,12 @@ class MockAdapter(ProviderAdapter):
                 "fanboard_skeptic": "게이야 그건 근거가 아니라 팬심인지부터 봐야 한다 ㅋㅋ",
             }
             content = f"{role.display_name}: {openers[role.id]} 내 결론은 아카이누 우세입니다. 근거는 {research['summary']} 다만 {research['uncertainty']}"
+            position = "아카이누 우세"
+            stance_status = "held"
+            change_conditions = [
+                "아카이누보다 높은 공식 직접 비교 근거",
+                "키자루나 쿠잔의 명확한 상위 전투 결과",
+            ]
         else:
             rebuttals = {
                 "lore_lawyer": "전적만 보면 맥락을 놓칩니다. 공식 지위와 서사 배치도 같이 봐야 합니다.",
@@ -151,11 +157,19 @@ class MockAdapter(ProviderAdapter):
                 "fanboard_skeptic": "작중에 안 나온 걸 왜 확정 박노? 키자루는 표본 부족이라 보류가 맞다.",
             }
             content = f"{role.display_name}: {rebuttals[role.id]} 그래서 아카이누 1위는 유지하되, 근거별 확신도는 분리해서 적어야 합니다."
+            position = "아카이누 우세, 확신도는 근거별 분리"
+            stance_status = "held"
+            change_conditions = [
+                "반대편이 supported claim으로 직접 승패나 공식 비교를 제시할 때",
+            ]
         return {
             "role_id": role.id,
             "display_name": role.display_name,
             "round": round_name,
             "content": content,
+            "position": position,
+            "stance_status": stance_status,
+            "change_conditions": change_conditions,
             "confidence": "medium",
         }
 

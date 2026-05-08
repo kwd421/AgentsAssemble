@@ -189,7 +189,19 @@ def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
     for round_record in meeting["debate_rounds"]:
         transcript_lines.extend([f"## {round_record['title']}", ""])
         for message in round_record["messages"]:
-            transcript_lines.extend([f"### {message['display_name']}", "", message["content"], ""])
+            transcript_lines.extend([f"### {message['display_name']}", ""])
+            if message.get("position"):
+                transcript_lines.append(f"Position: {message.get('position')}")
+            if message.get("stance_status"):
+                transcript_lines.append(f"Stance: {message.get('stance_status')}")
+            if message.get("change_conditions"):
+                transcript_lines.extend(
+                    [
+                        "Change conditions:",
+                        *[f"- {condition}" for condition in message.get("change_conditions", [])],
+                    ]
+                )
+            transcript_lines.extend(["", message["content"], ""])
     transcript_lines.extend(["## Moderator Synthesis", "", meeting["moderator_synthesis"]["summary"], ""])
     (meeting_dir / "transcript.md").write_text("\n".join(transcript_lines), encoding="utf-8")
 

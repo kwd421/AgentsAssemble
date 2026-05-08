@@ -124,12 +124,19 @@ Public context:
 {json.dumps(public_context, ensure_ascii=False, indent=2)}
 
 Write the visible message in Korean and follow the configured personality/style.
+Maintain your role's distinct stance. Do not converge just to sound cooperative.
+Return stance_status as "held", "revised", or "conceded".
+Use "revised" or "conceded" only when specific evidence in the public context changes your position.
+State change_conditions: what evidence would make you change your mind further.
 Return only JSON:
-{{"content": "...", "confidence": "low|medium|high"}}
+{{"content": "...", "position": "...", "stance_status": "held|revised|conceded", "change_conditions": ["..."], "confidence": "low|medium|high"}}
 """
         result = self._invoke_codex(session, round_name, council_prompt, use_search=False)
         parsed = self._parse_json_object(result["text"]) or {
             "content": result["text"].strip(),
+            "position": "",
+            "stance_status": "held",
+            "change_conditions": [],
             "confidence": "medium",
         }
         session["session_id"] = result["metadata"].get("session_id") or session.get("session_id")
@@ -138,6 +145,9 @@ Return only JSON:
             "display_name": role.display_name,
             "round": round_name,
             "content": parsed.get("content", result["text"].strip()),
+            "position": parsed.get("position", ""),
+            "stance_status": parsed.get("stance_status", "held"),
+            "change_conditions": parsed.get("change_conditions", []),
             "confidence": parsed.get("confidence", "medium"),
             "codex": result["metadata"],
         }

@@ -179,6 +179,7 @@ function renderMessage(message) {
         </span>
         <span>${escapeHtml(label)} · <span class="confidence">${escapeHtml(message.confidence || "")}</span></span>
       </div>
+      ${message.position ? `<p class="stance-line"><strong>입장</strong> ${escapeHtml(message.position)} · ${escapeHtml(message.stance_status || "held")}</p>` : ""}
       <p>${escapeHtml(message.content)}</p>
       </div>
     </article>
@@ -226,7 +227,7 @@ function renderBoardCard(role, payload, researchPath) {
       </div>
       <p>${escapeHtml(lensLabels[role.lens] || role.lens)} · ${escapeHtml(focusLabels[role.id] || role.research_focus)}</p>
       <p><strong>리서치 요약</strong><br>${escapeHtml(researchSummary)}</p>
-      ${messages.map((message) => `<p><strong>${escapeHtml(roundLabels[message.round] || message.round)}</strong><br>${escapeHtml(message.content)}</p>`).join("")}
+      ${messages.map((message) => `<p><strong>${escapeHtml(roundLabels[message.round] || message.round)}</strong><br>${message.position ? `입장: ${escapeHtml(message.position)} · ${escapeHtml(message.stance_status || "held")}<br>` : ""}${escapeHtml(message.content)}</p>`).join("")}
     </article>
   `;
 }

@@ -100,10 +100,15 @@ def run_demo_meeting(
                 role,
                 sessions[role.id],
                 "round_1",
-                "Present your opening position from your private research. Cite your strongest evidence and at least one uncertainty.",
+                (
+                    "Present your opening position from your private research. Cite your strongest evidence "
+                    "and at least one uncertainty. State the position you are defending and the evidence that "
+                    "would make you change your mind."
+                ),
                 {
                     "own_research": research,
                     "evidence_gate_rule": "Use supported claim_evidence as grounds. Mention unsupported_claims only as discarded or uncertain material.",
+                    "stance_rule": "Keep your role's own position distinct. Do not soften your stance just to agree with the room.",
                 },
             )
         )
@@ -113,6 +118,10 @@ def run_demo_meeting(
         "round_1": round_one,
         "evidence_gate": evidence_gate,
         "evidence_gate_rule": "Do not treat unsupported claims as accepted facts.",
+        "stance_rule": (
+            "You may revise your position only when another role gives supported evidence that changes your reasoning. "
+            "Otherwise, hold your position and attack the weakest premise."
+        ),
     }
     report("Round 2: rebuttal and evidence comparison")
     for role in config.roles:
@@ -121,7 +130,11 @@ def run_demo_meeting(
                 role,
                 sessions[role.id],
                 "round_2",
-                "Compare evidence and rebut weak reasoning without reading private research. Challenge source quality, unsupported leaps, and missing counterevidence.",
+                (
+                    "Compare evidence and rebut weak reasoning without reading private research. Challenge source "
+                    "quality, unsupported leaps, and missing counterevidence. Hold your position unless the public "
+                    "evidence crosses your stated change conditions; if you revise, say exactly which evidence caused it."
+                ),
                 public_round_one,
             )
         )
@@ -157,6 +170,7 @@ def run_demo_meeting(
             "round_2": round_two,
             "evidence_gate": evidence_gate,
             "moderator_rule": "Base the decision on supported claim_evidence. Unsupported, weak, verifier-rejected, irrelevant, or contradictory claims may be listed as caveats but must not determine the winner.",
+            "stance_rule": "Treat held, revised, and conceded stances as debate state. Do not collapse disagreement into fake consensus.",
         },
     )
     memory_input = {
