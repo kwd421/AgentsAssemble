@@ -500,11 +500,13 @@ function renderBoard(payload) {
     (meeting.research_artifacts || []).map((artifact) => [artifact.role_id, artifact.path])
   );
   const synthesis = meeting.moderator_synthesis || {};
+  const stanceSummary = buildStanceSummary(meeting);
   board.innerHTML = `
     <section class="board-legend">
-      <div><strong>작전판</strong><span>각 에이전트가 어떤 관점으로 봤고, 어디서 같은 결론/다른 근거가 나왔는지 정리합니다.</span></div>
+      <div><strong>작전판</strong><span>입장, 근거, 반박 이후의 변화, 아직 갈린 부분을 정리합니다.</span></div>
       <div><strong>판정</strong><span>${escapeHtml(synthesis.winner || "미정")} · ${escapeHtml(synthesis.confidence || "unknown")}</span></div>
     </section>
+    ${renderStanceOverview(stanceSummary, synthesis)}
     ${renderEvidenceOverview(meeting)}
     <section class="board-grid">
       ${(meeting.roles || []).map((role) => renderBoardCard(role, payload, researchByRole[role.id])).join("")}
@@ -515,6 +517,64 @@ function renderBoard(payload) {
       <p>${escapeHtml(synthesis.summary || "")}</p>
       <p>${escapeHtml((synthesis.caveats || []).join(" / "))}</p>
     </section>
+  `;
+}
+
+function buildStanceSummary(meeting) {
+  const items = new Map();
+  for (const round of meeting.debate_rounds || []) {
+    for (const message of round.messages || []) {
+      const stance = message.position || "입장 미정";
+      const item = items.get(stance) || { stance, count: 0, roles: new Set(), statuses: new Map() };
+      item.count += 1;
+      item.roles.add(message.display_name || message.role_id || "agent");
+      const status = stanceLabel(message.stance_status);
+      item.statuses.set(status, (item.statuses.get(status) || 0) + 1);
+      items.set(stance, item);
+    }
+  }
+  return Array.from(items.values())
+    .map((item) => ({
+      stance: item.stance,
+      count: item.count,
+      roles: Array.from(item.roles),
+      statuses: Array.from(item.statuses.entries()).sort((a, b) => b[1] - a[1]),
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function renderStanceOverview(items, synthesis) {
+  const total = items.reduce((sum, item) => sum + item.count, 0) || 1;
+  return `
+    <section class="stance-overview">
+      <div class="stance-lead">
+        <strong>우세 흐름</strong>
+        <span>${escapeHtml(synthesis.winner || "판정 대기")} · ${escapeHtml(synthesis.confidence || "unknown")}</span>
+      </div>
+      <div class="stance-bars">
+        ${
+          items.length
+            ? items.map((item) => renderStanceBar(item, total)).join("")
+            : '<p class="stance-empty">아직 비교할 입장이 없습니다.</p>'
+        }
+      </div>
+    </section>
+  `;
+}
+
+function renderStanceBar(item, total) {
+  const percent = Math.max(8, Math.round((item.count / total) * 100));
+  const status = item.statuses[0]?.[0] || "입장 유지";
+  return `
+    <article class="stance-bar">
+      <div>
+        <strong>${escapeHtml(item.stance)}</strong>
+        <span>${escapeHtml(item.roles.join(", "))} · ${escapeHtml(status)}</span>
+      </div>
+      <div class="stance-meter" aria-label="${escapeHtml(item.stance)} ${percent}%">
+        <span style="width:${percent}%"></span>
+      </div>
+    </article>
   `;
 }
 
@@ -535,6 +595,9 @@ function renderBoardCard(role, payload, researchPath) {
         <span>${escapeHtml(meta.badge)}</span>
       </div>
       <p>${escapeHtml(lensLabels[role.lens] || role.lens)} · ${escapeHtml(focusLabels[role.id] || role.research_focus)}</p>
+      <div class="stance-mini">
+        ${messages.map((message) => `<span>${escapeHtml(roundLabel(payload.meeting, message.round, message.round))}: ${escapeHtml(stanceLabel(message.stance_status))}</span>`).join("")}
+      </div>
       ${renderEvidenceTable(researchJson)}
       <p><strong>리서치 요약</strong><br>${escapeHtml(researchSummary)}</p>
       ${messages.map((message) => `<p><strong>${escapeHtml(roundLabel(payload.meeting, message.round, message.round))}</strong><br>${message.position ? `입장: ${escapeHtml(message.position)} · ${escapeHtml(message.stance_status || "held")}<br>` : ""}${escapeHtml(message.content)}</p>`).join("")}
@@ -623,9 +686,19 @@ function renderArchive(payload) {
   archive.innerHTML = `
     <div class="archive-layout">
       <aside class="archive-list">
+        <div class="archive-head">
+          <strong>아카이브</strong>
+          <span>회의 산출물과 인수인계 기록</span>
+        </div>
         ${renderArchiveGroups(payload, entries)}
       </aside>
-      <pre class="archive-preview">${escapeHtml(entries[state.archiveKey] || "")}</pre>
+      <section class="archive-document">
+        <div class="archive-document-head">
+          <strong>${escapeHtml(state.archiveKey || "문서")}</strong>
+          <span>${escapeHtml(archiveKindLabel(state.archiveKey))}</span>
+        </div>
+        <pre class="archive-preview">${escapeHtml(entries[state.archiveKey] || "")}</pre>
+      </section>
     </div>
   `;
   archive.querySelectorAll("[data-archive]").forEach((button) => {
@@ -634,6 +707,17 @@ function renderArchive(payload) {
       renderArchive(payload);
     });
   });
+}
+
+function archiveKindLabel(key) {
+  if (!key) return "기록";
+  if (key.includes("research/")) return "리서치";
+  if (key.includes("tasks/")) return "작업 배정";
+  if (key.includes("return_packets/")) return "세션 복귀";
+  if (key === "decision.md") return "결정";
+  if (key === "transcript.md") return "회의록";
+  if (key === "agenda.md") return "안건";
+  return "기록";
 }
 
 function buildArchiveEntries(payload) {

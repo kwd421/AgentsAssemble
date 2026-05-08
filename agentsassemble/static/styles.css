@@ -1043,6 +1043,69 @@ button {
   line-height: 1.45;
 }
 
+.stance-overview {
+  background:
+    linear-gradient(180deg, rgba(255, 245, 226, 0.035), transparent 40%),
+    var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  margin-bottom: 14px;
+  padding: 12px;
+}
+
+.stance-lead strong,
+.stance-lead span {
+  display: block;
+}
+
+.stance-lead span {
+  color: var(--muted);
+  margin-top: 5px;
+}
+
+.stance-bars {
+  display: grid;
+  gap: 8px;
+}
+
+.stance-bar {
+  display: grid;
+  gap: 7px;
+}
+
+.stance-bar strong,
+.stance-bar span {
+  display: block;
+}
+
+.stance-bar strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.stance-bar span,
+.stance-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stance-meter {
+  background: rgba(255, 246, 231, 0.055);
+  border: 1px solid rgba(255, 223, 174, 0.1);
+  border-radius: 999px;
+  height: 9px;
+  overflow: hidden;
+}
+
+.stance-meter span {
+  background: linear-gradient(90deg, rgba(240, 168, 60, 0.92), rgba(69, 217, 245, 0.62));
+  display: block;
+  height: 100%;
+}
+
 .board-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
@@ -1100,6 +1163,21 @@ button {
 
 .board-card p strong {
   color: #efe8d5;
+}
+
+.stance-mini {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.stance-mini span {
+  border: 1px solid rgba(255, 223, 174, 0.12);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 5px 7px;
 }
 
 .evidence-overview {
@@ -1279,6 +1357,23 @@ button {
   padding: 12px;
 }
 
+.archive-head {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+}
+
+.archive-head strong,
+.archive-head span {
+  display: block;
+}
+
+.archive-head span {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
 .archive-group + .archive-group {
   border-top: 1px solid var(--line);
   margin-top: 12px;
@@ -1338,7 +1433,38 @@ button {
   color: var(--accent);
 }
 
+.archive-document {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.archive-document-head {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+
+.archive-document-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-document-head span {
+  border: 1px solid rgba(240, 168, 60, 0.28);
+  border-radius: 999px;
+  color: var(--accent);
+  flex: none;
+  font-size: 11px;
+  padding: 5px 7px;
+}
+
 .archive-preview {
+  flex: 1;
   margin: 0;
   padding: 16px;
   overflow: auto;
