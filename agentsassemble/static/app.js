@@ -144,26 +144,30 @@ function render() {
 function renderLobby() {
   const lobby = document.querySelector("#lobby");
   if (!lobby) return;
+  const roster = buildLobbyRoster(state.lobbyEvents);
   lobby.innerHTML = `
     <section class="lobby-layout">
-      <div class="lobby-panel">
-        <div class="lobby-title">
-          <strong>멀티 로비</strong>
-          <span>공식 회의록과 분리된 대기실입니다.</span>
+      <div class="lobby-main">
+        <div class="lobby-panel">
+          <div class="lobby-title">
+            <strong>멀티 로비</strong>
+            <span>공식 회의록과 분리된 대기실입니다.</span>
+          </div>
+          <form id="lobby-form" class="lobby-form">
+            <select id="lobby-side" aria-label="보내는 쪽">
+              ${renderLobbySideOptions()}
+            </select>
+            <input id="lobby-name" maxlength="32" placeholder="이름" value="${escapeHtml(localStorage.getItem("agentsassemble.name") || "")}" />
+            <input id="lobby-message" maxlength="240" placeholder="짧은 메시지" />
+            <button type="submit">보내기</button>
+            <button type="button" id="lobby-ready">준비</button>
+            <button type="button" id="lobby-deploy">Deploy</button>
+          </form>
+          <div class="lobby-feed">
+            ${state.lobbyEvents.length ? state.lobbyEvents.map(renderLobbyEvent).join("") : '<p class="lobby-empty">아직 로비 메시지가 없습니다.</p>'}
+          </div>
         </div>
-        <form id="lobby-form" class="lobby-form">
-          <select id="lobby-side" aria-label="보내는 쪽">
-            ${renderLobbySideOptions()}
-          </select>
-          <input id="lobby-name" maxlength="32" placeholder="이름" value="${escapeHtml(localStorage.getItem("agentsassemble.name") || "")}" />
-          <input id="lobby-message" maxlength="240" placeholder="짧은 메시지" />
-          <button type="submit">보내기</button>
-          <button type="button" id="lobby-ready">준비</button>
-          <button type="button" id="lobby-deploy">Deploy</button>
-        </form>
-        <div class="lobby-feed">
-          ${state.lobbyEvents.length ? state.lobbyEvents.map(renderLobbyEvent).join("") : '<p class="lobby-empty">아직 로비 메시지가 없습니다.</p>'}
-        </div>
+        ${renderLobbyRoster(roster)}
       </div>
     </section>
   `;
@@ -194,6 +198,79 @@ function renderLobbyEvent(event) {
         <p>${escapeHtml(event.message || "")}</p>
       </div>
     </article>
+  `;
+}
+
+function buildLobbyRoster(events) {
+  const users = new Map();
+  for (const event of events) {
+    const side = lobbySides.has(event.side) ? event.side : "other";
+    const name = String(event.name || defaultLobbyName(side)).trim() || defaultLobbyName(side);
+    const isAgent = side === "my-agent" || side === "other-agent";
+    const ownerKey = side === "mine" || side === "my-agent" ? "mine" : "other";
+    const ownerName = ownerKey === "mine" ? "나" : "상대";
+    if (!users.has(ownerKey)) {
+      users.set(ownerKey, { key: ownerKey, name: ownerName, messageCount: 0, agents: new Map() });
+    }
+    const user = users.get(ownerKey);
+    user.messageCount += 1;
+    if (isAgent) {
+      const agent = user.agents.get(name) || { name, messageCount: 0, ready: false, deploy: false };
+      agent.messageCount += 1;
+      agent.ready = agent.ready || event.kind === "ready";
+      agent.deploy = agent.deploy || event.kind === "deploy";
+      user.agents.set(name, agent);
+    }
+  }
+  return Array.from(users.values()).map((user) => ({ ...user, agents: Array.from(user.agents.values()) }));
+}
+
+function renderLobbyRoster(roster) {
+  const participantCount = roster.length;
+  const agentCount = roster.reduce((count, user) => count + user.agents.length, 0);
+  return `
+    <aside class="lobby-roster" aria-label="로비 참여자">
+      <div class="roster-head">
+        <strong>참여자</strong>
+        <span>${participantCount}명 · 에이전트 ${agentCount}</span>
+      </div>
+      ${
+        roster.length
+          ? roster.map(renderRosterUser).join("")
+          : '<p class="roster-empty">아직 관찰된 참여자가 없습니다.</p>'
+      }
+    </aside>
+  `;
+}
+
+function renderRosterUser(user) {
+  return `
+    <section class="roster-user roster-${escapeHtml(user.key)}">
+      <div class="roster-user-title">
+        <span class="roster-avatar">${escapeHtml(initials(user.name))}</span>
+        <div>
+          <strong>${escapeHtml(user.name)}</strong>
+          <small>${escapeHtml(user.messageCount)}개 이벤트</small>
+        </div>
+      </div>
+      <div class="roster-agents">
+        ${
+          user.agents.length
+            ? user.agents.map(renderRosterAgent).join("")
+            : '<span class="roster-none">대기 중인 에이전트 없음</span>'
+        }
+      </div>
+    </section>
+  `;
+}
+
+function renderRosterAgent(agent) {
+  const state = agent.deploy ? "deploy" : agent.ready ? "준비" : "대기";
+  return `
+    <div class="roster-agent">
+      <span>${escapeHtml(agent.name)}</span>
+      <em>${escapeHtml(state)}</em>
+    </div>
   `;
 }
 

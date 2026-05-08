@@ -180,8 +180,15 @@ button {
   background: var(--panel);
   border-radius: 8px;
   margin: 0 auto;
-  max-width: 960px;
+  max-width: 1120px;
   padding: clamp(8px, calc(12px * var(--ui-scale)), 12px);
+}
+
+.lobby-main {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 820px) 230px;
+  justify-content: center;
 }
 
 .lobby-title {
@@ -369,6 +376,105 @@ button {
   color: inherit;
   line-height: 1.42;
   overflow-wrap: anywhere;
+}
+
+.lobby-roster {
+  background: #1c1c1c;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.roster-head {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 10px;
+  padding-bottom: 9px;
+}
+
+.roster-head strong,
+.roster-head span {
+  display: block;
+}
+
+.roster-head span,
+.roster-user-title small,
+.roster-empty,
+.roster-none {
+  color: var(--muted);
+  font-size: clamp(10px, calc(12px * var(--text-scale)), 12px);
+}
+
+.roster-user {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 8px;
+}
+
+.roster-user + .roster-user {
+  margin-top: 8px;
+}
+
+.roster-mine {
+  border-color: var(--mine-line);
+}
+
+.roster-other {
+  border-color: var(--other-agent-line);
+}
+
+.roster-user-title {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 28px minmax(0, 1fr);
+}
+
+.roster-user-title strong,
+.roster-user-title small {
+  display: block;
+}
+
+.roster-avatar {
+  align-items: center;
+  background: #303030;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  display: flex;
+  font-size: 11px;
+  font-weight: 800;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.roster-agents {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.roster-agent {
+  align-items: center;
+  background: #242424;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 6px 7px;
+}
+
+.roster-agent span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-agent em {
+  color: var(--accent);
+  flex: none;
+  font-size: 11px;
+  font-style: normal;
 }
 
 .live-layout {
@@ -932,6 +1038,7 @@ button {
   .live-layout,
   .archive-layout,
   .evidence-overview,
+  .lobby-main,
   .lobby-form,
   .board-grid,
   .board-legend {
