@@ -12,6 +12,15 @@
   --cyan: #63d4ff;
   --green: #82d173;
   --purple: #c7a4ff;
+  --mine-bg: #2f2c20;
+  --mine-line: rgba(181, 158, 83, 0.42);
+  --mine-avatar: #5e5532;
+  --my-agent-bg: #20362b;
+  --my-agent-line: rgba(130, 209, 115, 0.42);
+  --other-bg: #303030;
+  --other-line: #484848;
+  --other-agent-bg: #20333c;
+  --other-agent-line: rgba(99, 212, 255, 0.42);
   --red-bg: rgba(255, 118, 104, 0.11);
   --cyan-bg: rgba(99, 212, 255, 0.1);
   --green-bg: rgba(130, 209, 115, 0.1);
@@ -170,6 +179,8 @@ button {
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 8px;
+  margin: 0 auto;
+  max-width: 960px;
   padding: clamp(8px, calc(12px * var(--ui-scale)), 12px);
 }
 
@@ -218,7 +229,10 @@ button {
   display: grid;
   gap: 8px;
   grid-template-columns: clamp(26px, calc(32px * var(--ui-scale)), 34px) minmax(0, 1fr);
-  max-width: 72%;
+  justify-self: start;
+  max-width: 67.5%;
+  min-width: 0;
+  width: fit-content;
 }
 
 .lobby-mine,
@@ -257,41 +271,49 @@ button {
   background: #333333;
   border: 1px solid var(--line);
   border-radius: 12px 12px 12px 4px;
+  max-width: 100%;
+  min-width: min(100%, 136px);
   padding: calc(7px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  width: fit-content;
+}
+
+.lobby-mine .lobby-bubble,
+.lobby-my-agent .lobby-bubble {
+  justify-self: end;
 }
 
 .lobby-mine .lobby-bubble {
-  background: #ffdf21;
-  border-color: #ffdf21;
-  box-shadow: 0 0 0 1px rgba(255, 223, 33, 0.2);
+  background: var(--mine-bg);
+  border-color: var(--mine-line);
+  box-shadow: 0 0 0 1px rgba(231, 200, 111, 0.08);
   border-radius: 12px 12px 4px 12px;
-  color: #171300;
+  color: #f7edca;
 }
 
 .lobby-my-agent .lobby-bubble {
-  background: linear-gradient(135deg, #173928, #24563d);
-  border-color: rgba(130, 209, 115, 0.72);
+  background: var(--my-agent-bg);
+  border-color: var(--my-agent-line);
   border-radius: 12px 12px 4px 12px;
   box-shadow: 0 0 0 1px rgba(130, 209, 115, 0.12);
   color: #efffed;
 }
 
 .lobby-other .lobby-bubble {
-  background: #343434;
-  border-color: #484848;
+  background: var(--other-bg);
+  border-color: var(--other-line);
   color: #f2f2ee;
 }
 
 .lobby-other-agent .lobby-bubble {
-  background: linear-gradient(135deg, #172b36, #203c49);
-  border-color: rgba(99, 212, 255, 0.58);
+  background: var(--other-agent-bg);
+  border-color: var(--other-agent-line);
   color: #effaff;
 }
 
 .lobby-mine .lobby-avatar {
-  background: #ffdf21;
-  border-color: #ffdf21;
-  color: #171300;
+  background: var(--mine-avatar);
+  border-color: var(--mine-line);
+  color: #fff8de;
 }
 
 .lobby-my-agent .lobby-avatar {
@@ -331,7 +353,7 @@ button {
 }
 
 .lobby-mine .lobby-meta span {
-  color: #6f5b00;
+  color: #d7be64;
 }
 
 .lobby-my-agent .lobby-meta span {
@@ -346,6 +368,7 @@ button {
 .lobby-empty {
   color: inherit;
   line-height: 1.42;
+  overflow-wrap: anywhere;
 }
 
 .live-layout {
@@ -918,5 +941,9 @@ button {
   .archive-list {
     border-right: none;
     border-bottom: 1px solid var(--line);
+  }
+
+  .lobby-event {
+    max-width: 82%;
   }
 }
