@@ -192,11 +192,12 @@ button {
 .lobby-form {
   display: grid;
   gap: clamp(6px, calc(8px * var(--ui-scale)), 8px);
-  grid-template-columns: 140px minmax(0, 1fr) repeat(3, auto);
+  grid-template-columns: 132px 140px minmax(0, 1fr) repeat(3, auto);
   margin-bottom: calc(10px * var(--ui-scale));
 }
 
-.lobby-form input {
+.lobby-form input,
+.lobby-form select {
   background: #1d1d1d;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -220,17 +221,20 @@ button {
   max-width: 72%;
 }
 
-.lobby-mine {
+.lobby-mine,
+.lobby-my-agent {
   grid-template-columns: minmax(0, 1fr) clamp(26px, calc(32px * var(--ui-scale)), 34px);
   justify-self: end;
 }
 
-.lobby-mine .lobby-avatar {
+.lobby-mine .lobby-avatar,
+.lobby-my-agent .lobby-avatar {
   grid-column: 2;
   grid-row: 1;
 }
 
-.lobby-mine .lobby-bubble {
+.lobby-mine .lobby-bubble,
+.lobby-my-agent .lobby-bubble {
   grid-column: 1;
   grid-row: 1;
 }
@@ -259,8 +263,47 @@ button {
 .lobby-mine .lobby-bubble {
   background: #ffdf21;
   border-color: #ffdf21;
+  box-shadow: 0 0 0 1px rgba(255, 223, 33, 0.2);
   border-radius: 12px 12px 4px 12px;
   color: #171300;
+}
+
+.lobby-my-agent .lobby-bubble {
+  background: linear-gradient(135deg, #173928, #24563d);
+  border-color: rgba(130, 209, 115, 0.72);
+  border-radius: 12px 12px 4px 12px;
+  box-shadow: 0 0 0 1px rgba(130, 209, 115, 0.12);
+  color: #efffed;
+}
+
+.lobby-other .lobby-bubble {
+  background: #343434;
+  border-color: #484848;
+  color: #f2f2ee;
+}
+
+.lobby-other-agent .lobby-bubble {
+  background: linear-gradient(135deg, #172b36, #203c49);
+  border-color: rgba(99, 212, 255, 0.58);
+  color: #effaff;
+}
+
+.lobby-mine .lobby-avatar {
+  background: #ffdf21;
+  border-color: #ffdf21;
+  color: #171300;
+}
+
+.lobby-my-agent .lobby-avatar {
+  background: #24563d;
+  border-color: rgba(130, 209, 115, 0.72);
+  color: #efffed;
+}
+
+.lobby-other-agent .lobby-avatar {
+  background: #203c49;
+  border-color: rgba(99, 212, 255, 0.58);
+  color: #effaff;
 }
 
 .lobby-ready .lobby-bubble {
@@ -289,6 +332,14 @@ button {
 
 .lobby-mine .lobby-meta span {
   color: #6f5b00;
+}
+
+.lobby-my-agent .lobby-meta span {
+  color: #9be78c;
+}
+
+.lobby-other-agent .lobby-meta span {
+  color: #8de2ff;
 }
 
 .lobby-event p,

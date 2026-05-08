@@ -11,6 +11,7 @@ from agentsassemble.meeting import run_demo_meeting
 
 TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
 TABS = ["lobby", "live", "board", "archive"]
+LOBBY_SIDES = {"mine", "my-agent", "other", "other-agent"}
 
 
 def list_meetings(output_root: Path) -> list[dict[str, object]]:
@@ -122,6 +123,7 @@ def append_lobby_event(output_root: Path, event: dict[str, object]) -> dict[str,
         "id": uuid4().hex[:12],
         "created_at": datetime.now(UTC).isoformat(),
         "name": _clean_lobby_text(event.get("name", "guest"), limit=32) or "guest",
+        "side": event.get("side") if event.get("side") in LOBBY_SIDES else "other",
         "kind": event.get("kind") if event.get("kind") in {"message", "ready", "deploy"} else "message",
         "message": _clean_lobby_text(event.get("message", ""), limit=240),
     }
@@ -205,6 +207,7 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", guessed)
             self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)
 

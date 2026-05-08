@@ -33,14 +33,19 @@ class GuiServerTests(unittest.TestCase):
             root = Path(temp_dir)
 
             append_lobby_event(root, {"name": "seinel\nbad", "kind": "ready", "message": ""})
-            append_lobby_event(root, {"name": "friend", "kind": "message", "message": "만갤러 준비됐냐?"})
+            append_lobby_event(
+                root,
+                {"name": "friend", "side": "other-agent", "kind": "message", "message": "만갤러 준비됐냐?"},
+            )
 
             events = read_lobby(root)
 
             self.assertEqual(len(events), 2)
             self.assertEqual(events[0]["kind"], "ready")
+            self.assertEqual(events[0]["side"], "other")
             self.assertEqual(events[0]["message"], "준비됐습니다.")
             self.assertEqual(events[0]["name"], "seinel bad")
+            self.assertEqual(events[1]["side"], "other-agent")
             self.assertEqual(events[1]["message"], "만갤러 준비됐냐?")
 
     def test_list_meetings_orders_latest_first(self):
