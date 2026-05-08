@@ -837,6 +837,7 @@ function renderArchive(payload) {
   const archive = document.querySelector("#archive");
   const entries = buildArchiveEntries(payload);
   if (!entries[state.archiveKey]) state.archiveKey = Object.keys(entries)[0];
+  const currentDocument = entries[state.archiveKey] || "";
   archive.innerHTML = `
     <div class="archive-layout">
       <aside class="archive-list">
@@ -848,10 +849,17 @@ function renderArchive(payload) {
       </aside>
       <section class="archive-document">
         <div class="archive-document-head">
-          <strong>${escapeHtml(state.archiveKey || "문서")}</strong>
-          <span>${escapeHtml(archiveKindLabel(state.archiveKey))}</span>
+          <div>
+            <strong>${escapeHtml(state.archiveKey || "문서")}</strong>
+            <small>${escapeHtml(documentStat(currentDocument))}</small>
+          </div>
+          <div class="archive-actions">
+            <span>${escapeHtml(archiveKindLabel(state.archiveKey))}</span>
+            <button type="button">복사</button>
+            <button type="button">내보내기</button>
+          </div>
         </div>
-        <pre class="archive-preview">${escapeHtml(entries[state.archiveKey] || "")}</pre>
+        <pre class="archive-preview">${escapeHtml(currentDocument)}</pre>
       </section>
     </div>
   `;
@@ -861,6 +869,12 @@ function renderArchive(payload) {
       renderArchive(payload);
     });
   });
+}
+
+function documentStat(value) {
+  const text = String(value || "");
+  const lines = text ? text.split("\n").length : 0;
+  return `${lines} lines · ${text.length} chars`;
 }
 
 function archiveKindLabel(key) {
