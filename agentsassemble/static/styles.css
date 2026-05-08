@@ -98,6 +98,10 @@ select {
   min-width: 0;
 }
 
+.brand-lockup > div {
+  min-width: 0;
+}
+
 .brand-mark {
   align-items: center;
   background:
@@ -131,12 +135,24 @@ p {
   margin-top: 4px;
   color: var(--muted);
   font-size: clamp(11px, calc(13px * var(--text-scale)), 14px);
+  max-width: min(42vw, 360px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .actions {
   display: flex;
   gap: calc(8px * var(--ui-scale));
   align-items: center;
+  min-width: 0;
+}
+
+#meeting-select {
+  max-width: min(34vw, 360px);
+  min-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 select,
@@ -1523,6 +1539,7 @@ button {
   color: #e8e2d2;
   line-height: 1.5;
   font-size: 13px;
+  tab-size: 2;
 }
 
 @keyframes messageEnter {
@@ -1550,6 +1567,13 @@ button {
   .lobby-title {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  #meeting-subtitle,
+  #meeting-select {
+    max-width: none;
+    min-width: 0;
+    width: 100%;
   }
 
   .live-layout,
