@@ -34,6 +34,11 @@ const roundLabels = {
   round_2: "2라운드 · 반박/비교",
 };
 
+function roundLabel(meeting, roundId, fallback) {
+  const templateRound = (meeting.meeting_template?.rounds || []).find((round) => round.id === roundId);
+  return roundLabels[roundId] || templateRound?.title || fallback || roundId;
+}
+
 function displayTopic(meeting) {
   if (meeting.display_topic) return meeting.display_topic;
   if (meeting.topic === "One Piece admiral strength debate") return "원피스 3대장 최강자 토론";
@@ -120,7 +125,7 @@ function renderLive(payload) {
   const rounds = payload.meeting.debate_rounds || [];
   const live = document.querySelector("#live");
   const messages = rounds.flatMap((round) =>
-    (round.messages || []).map((message) => ({ ...message, roundTitle: round.title }))
+    (round.messages || []).map((message) => ({ ...message, roundTitle: roundLabel(payload.meeting, round.id, round.title) }))
   );
   const synthesis = payload.meeting.moderator_synthesis || {};
   live.innerHTML = `
@@ -167,7 +172,7 @@ function renderAgent(role) {
 
 function renderMessage(message) {
   const meta = roleMeta[message.role_id] || { color: "purple", title: "Moderator", badge: "진행", avatar: "/static/avatar-moderator.svg" };
-  const label = roundLabels[message.round] || message.roundTitle || message.round;
+  const label = message.roundTitle || message.round;
   return `
     <article class="message message-${meta.color}">
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
@@ -227,7 +232,7 @@ function renderBoardCard(role, payload, researchPath) {
       </div>
       <p>${escapeHtml(lensLabels[role.lens] || role.lens)} · ${escapeHtml(focusLabels[role.id] || role.research_focus)}</p>
       <p><strong>리서치 요약</strong><br>${escapeHtml(researchSummary)}</p>
-      ${messages.map((message) => `<p><strong>${escapeHtml(roundLabels[message.round] || message.round)}</strong><br>${message.position ? `입장: ${escapeHtml(message.position)} · ${escapeHtml(message.stance_status || "held")}<br>` : ""}${escapeHtml(message.content)}</p>`).join("")}
+      ${messages.map((message) => `<p><strong>${escapeHtml(roundLabel(payload.meeting, message.round, message.round))}</strong><br>${message.position ? `입장: ${escapeHtml(message.position)} · ${escapeHtml(message.stance_status || "held")}<br>` : ""}${escapeHtml(message.content)}</p>`).join("")}
     </article>
   `;
 }

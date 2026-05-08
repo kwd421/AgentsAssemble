@@ -11,6 +11,7 @@ from agentsassemble.config import load_council_config
 from agentsassemble.evidence import apply_evidence_gate, summarize_evidence_gates
 from agentsassemble.memory import load_memory_context, write_memory_artifacts
 from agentsassemble.models import MeetingResult, ResearchDepthName, ResearchSteering, get_research_depth
+from agentsassemble.templates import DEMO_MEETING_TEMPLATE
 
 
 def get_adapter(
@@ -92,51 +93,55 @@ def run_demo_meeting(
         write_research(meeting_dir, research)
     evidence_gate = summarize_evidence_gates(research_records)
 
-    round_one = []
-    report("Round 1: opening positions")
-    for role, research in zip(config.roles, research_records, strict=True):
-        round_one.append(
-            adapter.run_round(
-                role,
-                sessions[role.id],
-                "round_1",
-                (
-                    "Present your opening position from your private research. Cite your strongest evidence "
-                    "and at least one uncertainty. State the position you are defending and the evidence that "
-                    "would make you change your mind."
+    debate_rounds = []
+    rounds_by_id: dict[str, list[dict[str, Any]]] = {}
+    for round_definition in DEMO_MEETING_TEMPLATE["rounds"]:
+        report(round_definition.report_label)
+        messages = []
+        if round_definition.context_scope == "own_research":
+            for role, research in zip(config.roles, research_records, strict=True):
+                messages.append(
+                    adapter.run_round(
+                        role,
+                        sessions[role.id],
+                        round_definition.id,
+                        round_definition.instruction,
+                        {
+                            "own_research": research,
+                            "evidence_gate_rule": "Use supported claim_evidence as grounds. Mention unsupported_claims only as discarded or uncertain material.",
+                            "stance_rule": "Keep your role's own position distinct. Do not soften your stance just to agree with the room.",
+                        },
+                    )
+                )
+        else:
+            public_context = {
+                **rounds_by_id,
+                "evidence_gate": evidence_gate,
+                "evidence_gate_rule": "Do not treat unsupported claims as accepted facts.",
+                "stance_rule": (
+                    "You may revise your position only when another role gives supported evidence that changes your reasoning. "
+                    "Otherwise, hold your position and attack the weakest premise."
                 ),
-                {
-                    "own_research": research,
-                    "evidence_gate_rule": "Use supported claim_evidence as grounds. Mention unsupported_claims only as discarded or uncertain material.",
-                    "stance_rule": "Keep your role's own position distinct. Do not soften your stance just to agree with the room.",
-                },
-            )
-        )
-
-    round_two = []
-    public_round_one = {
-        "round_1": round_one,
-        "evidence_gate": evidence_gate,
-        "evidence_gate_rule": "Do not treat unsupported claims as accepted facts.",
-        "stance_rule": (
-            "You may revise your position only when another role gives supported evidence that changes your reasoning. "
-            "Otherwise, hold your position and attack the weakest premise."
-        ),
-    }
-    report("Round 2: rebuttal and evidence comparison")
-    for role in config.roles:
-        round_two.append(
-            adapter.run_round(
-                role,
-                sessions[role.id],
-                "round_2",
-                (
-                    "Compare evidence and rebut weak reasoning without reading private research. Challenge source "
-                    "quality, unsupported leaps, and missing counterevidence. Hold your position unless the public "
-                    "evidence crosses your stated change conditions; if you revise, say exactly which evidence caused it."
-                ),
-                public_round_one,
-            )
+            }
+            for role in config.roles:
+                messages.append(
+                    adapter.run_round(
+                        role,
+                        sessions[role.id],
+                        round_definition.id,
+                        round_definition.instruction,
+                        public_context,
+                    )
+                )
+        rounds_by_id[round_definition.id] = messages
+        debate_rounds.append(
+            {
+                "id": round_definition.id,
+                "title": round_definition.title,
+                "context_scope": round_definition.context_scope,
+                "instruction": round_definition.instruction,
+                "messages": messages,
+            }
         )
 
     moderator_session = {
@@ -166,8 +171,7 @@ def run_demo_meeting(
                 }
                 for research in research_records
             ],
-            "round_1": round_one,
-            "round_2": round_two,
+            "rounds": {round_record["id"]: round_record["messages"] for round_record in debate_rounds},
             "evidence_gate": evidence_gate,
             "moderator_rule": "Base the decision on supported claim_evidence. Unsupported, weak, verifier-rejected, irrelevant, or contradictory claims may be listed as caveats but must not determine the winner.",
             "stance_rule": "Treat held, revised, and conceded stances as debate state. Do not collapse disagreement into fake consensus.",
@@ -194,6 +198,19 @@ def run_demo_meeting(
         "topic": config.topic,
         "display_topic": config.display_topic,
         "roles": roles,
+        "meeting_template": {
+            "id": DEMO_MEETING_TEMPLATE["id"],
+            "display_name": DEMO_MEETING_TEMPLATE["display_name"],
+            "rounds": [
+                {
+                    "id": round_definition.id,
+                    "title": round_definition.title,
+                    "context_scope": round_definition.context_scope,
+                    "instruction": round_definition.instruction,
+                }
+                for round_definition in DEMO_MEETING_TEMPLATE["rounds"]
+            ],
+        },
         "adapter_config": {"name": adapter.name},
         "memory_context": memory_context,
         "memory_input": memory_input,
@@ -225,10 +242,7 @@ def run_demo_meeting(
             }
             for research in research_records
         ],
-        "debate_rounds": [
-            {"id": "round_1", "title": "Round 1", "messages": round_one},
-            {"id": "round_2", "title": "Round 2", "messages": round_two},
-        ],
+        "debate_rounds": debate_rounds,
         "moderator_synthesis": synthesis,
         "evidence_gate": evidence_gate,
         "artifacts": {

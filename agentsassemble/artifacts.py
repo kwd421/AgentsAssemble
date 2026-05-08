@@ -175,14 +175,21 @@ def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
         f"Question: {meeting.get('display_question', meeting['question'])}",
         f"Research depth: {meeting.get('research_depth', {}).get('name', 'unknown')}",
         f"Research steering: {meeting.get('research_steering', {}).get('prompt') or 'open'}",
+        f"Meeting template: {meeting.get('meeting_template', {}).get('display_name', 'default')}",
         f"Recent episodes loaded: {len(meeting.get('memory_context', {}).get('recent_episodes', []))}",
         "",
         "1. Independent research",
-        "2. Round 1: opening positions",
-        "3. Round 2: rebuttal and evidence comparison",
-        "4. Moderator synthesis",
-        "5. Decision and task assignment",
     ]
+    next_step = 2
+    for index, round_definition in enumerate(meeting.get("meeting_template", {}).get("rounds", []), start=next_step):
+        agenda.append(f"{index}. {round_definition.get('title', round_definition.get('id', 'Round'))}")
+        next_step = index + 1
+    agenda.extend(
+        [
+            f"{next_step}. Moderator synthesis",
+            f"{next_step + 1}. Decision and task assignment",
+        ]
+    )
     (meeting_dir / "agenda.md").write_text("\n".join(agenda) + "\n", encoding="utf-8")
 
     transcript_lines = ["# Transcript", ""]

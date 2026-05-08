@@ -29,6 +29,8 @@ The near-term product is not a polished chat app. It is a reliable local council
 - GUI prototype has `실황`, `작전판`, and `아카이브` tabs.
 - Research depth profiles exist: `smoke`, `standard`, `deep`.
 - Research steering allows user-preferred angles without forcing conclusions.
+- Demo meeting rounds are defined through an internal template structure instead of being fully inline in the meeting runner.
+- Debate messages track position, stance status, and change conditions so agents do not silently collapse into consensus.
 - Evidence Gate separates supported and unsupported claims by evidence URL presence.
 - Claim Verifier v0 classifies explicit claim/source relations as supported, weak, contradictory, or irrelevant without pretending to do semantic verification.
 - File-based Memory Layer v0 writes project, agent, episode, and reflection memory.
@@ -45,6 +47,7 @@ Remaining v0 work:
 - Exercise Claim Verifier v0 with real Codex deep research runs and tune prompt/output reliability.
 - Improve Codex deep research timeout and chunking strategy with real runs.
 - Add failure handling policy for role timeout, parse failure, and incomplete research.
+- Expand round templates toward user-defined meeting templates.
 - Add CLI help/docs for research depth, steering, memory files, and adapter modes.
 - Keep mock mode clearly labeled as demo output.
 

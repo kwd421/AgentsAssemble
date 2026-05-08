@@ -23,6 +23,11 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertEqual(meeting["adapter_config"]["name"], "mock")
             self.assertEqual(meeting["research_depth"]["name"], "smoke")
             self.assertEqual(meeting["research_steering"]["stance"], "open")
+            self.assertEqual(meeting["meeting_template"]["id"], "one_piece_admiral_debate_v0")
+            self.assertEqual(
+                [round_definition["id"] for round_definition in meeting["meeting_template"]["rounds"]],
+                ["round_1", "round_2"],
+            )
             self.assertEqual(meeting["evidence_gate"]["status"], "pass")
             self.assertEqual(meeting["question"], "Who is the strongest One Piece admiral?")
             self.assertEqual(
@@ -40,6 +45,8 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertIn("Position:", transcript)
             self.assertIn("Change conditions:", transcript)
             self.assertIn("## Moderator Synthesis", transcript)
+            agenda = (meeting_dir / "agenda.md").read_text(encoding="utf-8")
+            self.assertIn("Meeting template: 원피스 3대장 최강자 토론", agenda)
 
             for role_id in ("lore_lawyer", "show_me_the_feats", "fanboard_skeptic"):
                 self.assertTrue((meeting_dir / "private_research" / role_id / "research.md").exists())

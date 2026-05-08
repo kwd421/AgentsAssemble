@@ -60,6 +60,15 @@ class ResearchSteering:
         return {"stance": self.stance, "prompt": self.prompt}
 
 
+@dataclass(frozen=True)
+class MeetingRound:
+    id: str
+    title: str
+    report_label: str
+    instruction: str
+    context_scope: Literal["own_research", "public_debate"]
+
+
 RESEARCH_DEPTHS: dict[ResearchDepthName, ResearchDepth] = {
     "smoke": ResearchDepth(
         name="smoke",
