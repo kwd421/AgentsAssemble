@@ -252,6 +252,129 @@ button {
   padding: 10px;
 }
 
+.assemble-ring {
+  align-items: center;
+  align-self: center;
+  background:
+    radial-gradient(circle at center, rgba(240, 168, 60, 0.1), transparent 38%),
+    radial-gradient(circle at center, rgba(69, 217, 245, 0.055), transparent 62%);
+  border: 1px solid rgba(255, 223, 174, 0.1);
+  border-radius: 10px;
+  display: flex;
+  height: clamp(176px, calc(220px * var(--ui-scale)), 230px);
+  justify-content: center;
+  margin-bottom: 10px;
+  position: relative;
+  width: min(100%, 520px);
+}
+
+.assemble-ring::before,
+.assemble-ring::after {
+  border: 1px solid rgba(255, 223, 174, 0.12);
+  border-radius: 999px;
+  content: "";
+  inset: 22px 50%;
+  position: absolute;
+  transform: translateX(-50%);
+  width: clamp(126px, calc(164px * var(--ui-scale)), 172px);
+}
+
+.assemble-ring::after {
+  border-color: rgba(69, 217, 245, 0.12);
+  inset: 42px 50%;
+  width: clamp(86px, calc(112px * var(--ui-scale)), 120px);
+}
+
+.assemble-core {
+  align-items: center;
+  background: rgba(14, 11, 10, 0.78);
+  border: 1px solid rgba(240, 168, 60, 0.22);
+  border-radius: 999px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: clamp(72px, calc(88px * var(--ui-scale)), 92px);
+  justify-content: center;
+  position: relative;
+  width: clamp(72px, calc(88px * var(--ui-scale)), 92px);
+  z-index: 2;
+}
+
+.assemble-core span,
+.assemble-core small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.assemble-core strong {
+  color: var(--text);
+  font-size: clamp(20px, calc(26px * var(--text-scale)), 28px);
+  line-height: 1;
+}
+
+.assemble-member {
+  align-items: center;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform:
+    rotate(var(--angle))
+    translateY(calc(-1 * clamp(66px, calc(88px * var(--ui-scale)), 94px)))
+    rotate(calc(-1 * var(--angle)))
+    translate(-50%, -50%);
+  transform-origin: 0 0;
+  z-index: 3;
+}
+
+.assemble-member span {
+  align-items: center;
+  background: rgba(255, 246, 231, 0.08);
+  border: 1px solid rgba(255, 223, 174, 0.18);
+  border-radius: 999px;
+  display: flex;
+  font-size: 11px;
+  font-weight: 800;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.assemble-member small {
+  color: var(--muted);
+  font-size: 10px;
+  max-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assemble-mine span {
+  background: rgba(240, 168, 60, 0.18);
+  border-color: rgba(240, 168, 60, 0.45);
+  color: #fff4d8;
+}
+
+.assemble-my-agent span {
+  background: rgba(69, 217, 245, 0.13);
+  border-color: rgba(69, 217, 245, 0.4);
+  color: #d9f9ff;
+}
+
+.assemble-other span {
+  background: rgba(255, 246, 231, 0.08);
+  border-color: rgba(255, 246, 231, 0.18);
+}
+
+.assemble-other-agent span {
+  background: rgba(122, 160, 255, 0.14);
+  border-color: rgba(122, 160, 255, 0.4);
+  color: #edf2ff;
+}
+
 .lobby-title {
   display: flex;
   justify-content: space-between;

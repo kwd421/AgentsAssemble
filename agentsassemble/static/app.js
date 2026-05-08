@@ -156,6 +156,7 @@ function renderLobby() {
       </div>
       <div class="lobby-main">
         <div class="lobby-panel">
+          ${renderAssembleRing(roster)}
           <div class="lobby-feed">
             ${state.lobbyEvents.length ? state.lobbyEvents.map(renderLobbyEvent).join("") : '<p class="lobby-empty">아직 로비 메시지가 없습니다.</p>'}
           </div>
@@ -180,6 +181,49 @@ function renderLobby() {
   lobby.querySelectorAll("[data-lobby-action]").forEach((button) => {
     button.addEventListener("click", () => sendLobbyAction(button));
   });
+}
+
+function renderAssembleRing(roster) {
+  const allMembers = buildAssembleMembers(roster);
+  const members = allMembers.slice(0, 12);
+  const hiddenCount = Math.max(0, allMembers.length - members.length);
+  const countLabel = hiddenCount ? `${members.length}+${hiddenCount}` : String(members.length);
+  return `
+    <section class="assemble-ring" aria-label="집결 현황">
+      <div class="assemble-core">
+        <span>ASSEMBLE</span>
+        <strong>${escapeHtml(countLabel)}</strong>
+        <small>집결 중</small>
+      </div>
+      ${members.map((member, index) => renderAssembleMember(member, index, members.length)).join("")}
+    </section>
+  `;
+}
+
+function buildAssembleMembers(roster) {
+  return roster.flatMap((user) => {
+    const owner = {
+      kind: user.key === "mine" ? "mine" : "other",
+      label: user.name,
+      title: user.key === "mine" ? "나" : "상대",
+    };
+    const agents = user.agents.map((agent) => ({
+      kind: user.key === "mine" ? "my-agent" : "other-agent",
+      label: agent.name,
+      title: agent.deploy ? "투입" : agent.ready ? "준비" : "대기",
+    }));
+    return [owner, ...agents];
+  });
+}
+
+function renderAssembleMember(member, index, total) {
+  const angle = total <= 1 ? -90 : -90 + (360 / total) * index;
+  return `
+    <div class="assemble-member assemble-${escapeHtml(member.kind)}" style="--angle:${angle}deg">
+      <span>${escapeHtml(initials(member.label))}</span>
+      <small>${escapeHtml(member.title)}</small>
+    </div>
+  `;
 }
 
 function renderLobbyEvent(event) {
