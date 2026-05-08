@@ -53,10 +53,16 @@ def build_meeting_payload(meeting_dir: Path) -> dict[str, object]:
         for task_path in sorted((meeting_dir / "tasks").glob("*.md"))
     }
     research = {}
+    research_json = {}
     research_root = meeting_dir / "private_research"
     if research_root.exists():
         for research_path in sorted(research_root.glob("*/research.md")):
             research[f"{research_path.parent.name}/research.md"] = research_path.read_text(encoding="utf-8")
+        for research_path in sorted(research_root.glob("*/research.json")):
+            try:
+                research_json[research_path.parent.name] = json.loads(research_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                research_json[research_path.parent.name] = {"error": "Research JSON could not be parsed."}
     return {
         "tabs": TABS,
         "tab_labels": TAB_LABELS,
@@ -64,6 +70,7 @@ def build_meeting_payload(meeting_dir: Path) -> dict[str, object]:
         "artifacts": artifacts,
         "tasks": tasks,
         "research": research,
+        "research_json": research_json,
     }
 
 

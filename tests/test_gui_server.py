@@ -19,6 +19,8 @@ class GuiServerTests(unittest.TestCase):
             self.assertIn("decision.md", payload["artifacts"])
             self.assertIn("meeting.json", payload["artifacts"])
             self.assertIn("lore_lawyer/research.md", payload["research"])
+            self.assertIn("lore_lawyer", payload["research_json"])
+            self.assertIn("evidence_gate", payload["research_json"]["lore_lawyer"])
             self.assertEqual(payload["tabs"], ["live", "board", "archive"])
             self.assertEqual(payload["tab_labels"]["live"], "실황")
             self.assertEqual(payload["tab_labels"]["board"], "작전판")

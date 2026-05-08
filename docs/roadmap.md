@@ -28,6 +28,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Per-role research is isolated before Round 1.
 - Meeting artifacts are written as Markdown and JSON.
 - GUI prototype has `실황`, `작전판`, and `아카이브` tabs.
+- GUI board shows Evidence Gate totals and per-role evidence tables from structured research JSON.
 - Research depth profiles exist: `smoke`, `standard`, `deep`.
 - Research steering allows user-preferred angles without forcing conclusions.
 - Demo meeting rounds are defined through an internal template structure instead of being fully inline in the meeting runner.
@@ -44,7 +45,7 @@ V0 is complete enough when the demo can be trusted as an auditable meeting proto
 
 Remaining v0 work:
 
-- Show Evidence Gate results clearly in the GUI archive and board views.
+- Show Evidence Gate results clearly in the GUI archive view.
 - Exercise Claim Verifier v0 with real Codex deep research runs and tune prompt/output reliability.
 - Improve Codex deep research timeout and chunking strategy with real runs.
 - Add failure handling policy for role timeout, parse failure, and incomplete research.

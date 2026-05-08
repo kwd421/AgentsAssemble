@@ -203,6 +203,7 @@ function renderBoard(payload) {
       <div><strong>작전판</strong><span>각 에이전트가 어떤 관점으로 봤고, 어디서 같은 결론/다른 근거가 나왔는지 정리합니다.</span></div>
       <div><strong>판정</strong><span>${escapeHtml(synthesis.winner || "미정")} · ${escapeHtml(synthesis.confidence || "unknown")}</span></div>
     </section>
+    ${renderEvidenceOverview(meeting)}
     <section class="board-grid">
       ${(meeting.roles || []).map((role) => renderBoardCard(role, payload, researchByRole[role.id])).join("")}
     </section>
@@ -217,6 +218,7 @@ function renderBoard(payload) {
 
 function renderBoardCard(role, payload, researchPath) {
   const meta = roleMeta[role.id] || { color: "purple", title: role.lens, badge: role.lens };
+  const researchJson = payload.research_json?.[role.id] || {};
   const rounds = payload.meeting.debate_rounds || [];
   const messages = rounds
     .map((round) => (round.messages || []).find((message) => message.role_id === role.id))
@@ -231,9 +233,84 @@ function renderBoardCard(role, payload, researchPath) {
         <span>${escapeHtml(meta.badge)}</span>
       </div>
       <p>${escapeHtml(lensLabels[role.lens] || role.lens)} · ${escapeHtml(focusLabels[role.id] || role.research_focus)}</p>
+      ${renderEvidenceTable(researchJson)}
       <p><strong>리서치 요약</strong><br>${escapeHtml(researchSummary)}</p>
       ${messages.map((message) => `<p><strong>${escapeHtml(roundLabel(payload.meeting, message.round, message.round))}</strong><br>${message.position ? `입장: ${escapeHtml(message.position)} · ${escapeHtml(message.stance_status || "held")}<br>` : ""}${escapeHtml(message.content)}</p>`).join("")}
     </article>
+  `;
+}
+
+function renderEvidenceOverview(meeting) {
+  const gate = meeting.evidence_gate || {};
+  return `
+    <section class="evidence-overview">
+      <div>
+        <strong>Evidence Gate</strong>
+        <span class="status-pill status-${escapeHtml(gate.status || "unknown")}">${escapeHtml(gate.status || "unknown")}</span>
+      </div>
+      ${renderMetric("Supported", gate.total_supported_claims)}
+      ${renderMetric("Weak", gate.total_weak_claims)}
+      ${renderMetric("Unsupported", gate.total_unsupported_claims)}
+      ${renderMetric("Rejected", gate.total_verifier_rejected_claims)}
+    </section>
+  `;
+}
+
+function renderMetric(label, value) {
+  return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? 0)}</strong></div>`;
+}
+
+function renderEvidenceTable(research) {
+  const gate = research.evidence_gate || {};
+  const rows = [
+    ["지원", gate.supported_claim_count || 0, "supported"],
+    ["약함", gate.weak_claim_count || 0, "weak"],
+    ["미지원", gate.unsupported_claim_count || 0, "unsupported"],
+    ["탈락", gate.verifier_rejected_claim_count || 0, "rejected"],
+  ];
+  const failures = gate.failures || [];
+  return `
+    <div class="evidence-table">
+      <div class="evidence-head">
+        <strong>근거 검증</strong>
+        <span class="status-pill status-${escapeHtml(gate.status || "unknown")}">${escapeHtml(gate.status || "unknown")}</span>
+      </div>
+      <div class="evidence-counts">
+        ${rows.map(([label, count, kind]) => `<span class="count-${kind}"><strong>${escapeHtml(count)}</strong>${escapeHtml(label)}</span>`).join("")}
+      </div>
+      <div class="evidence-detail">
+        <span>sources ${escapeHtml(gate.source_count || 0)}</span>
+        <span>confidence ${escapeHtml(gate.confidence_after || research.confidence || "unknown")}</span>
+      </div>
+      ${failures.length ? `<ul class="evidence-failures">${failures.map((failure) => `<li>${escapeHtml(failure)}</li>`).join("")}</ul>` : ""}
+      ${renderEvidenceClaims("지원 근거", research.claim_evidence || [], "supported")}
+      ${renderEvidenceClaims("약한 근거", research.weak_claims || [], "weak")}
+      ${renderEvidenceClaims("미지원 근거", research.unsupported_claims || [], "unsupported")}
+      ${renderEvidenceClaims("검증 탈락", research.verifier_rejected_claims || [], "rejected")}
+    </div>
+  `;
+}
+
+function renderEvidenceClaims(title, claims, kind) {
+  const preview = claims.slice(0, 2);
+  if (!preview.length) return "";
+  return `
+    <details class="claim-group claim-${kind}">
+      <summary>${escapeHtml(title)} · ${claims.length}</summary>
+      ${preview.map(renderClaim).join("")}
+      ${claims.length > preview.length ? `<p class="claim-more">+${claims.length - preview.length} more in archive</p>` : ""}
+    </details>
+  `;
+}
+
+function renderClaim(claim) {
+  const urls = claim.evidence || claim.sources || [];
+  return `
+    <div class="claim-row">
+      <strong>${escapeHtml(claim.claim || "")}</strong>
+      ${claim.reason ? `<span>${escapeHtml(claim.reason)}</span>` : ""}
+      ${urls.length ? `<small>${urls.map((url) => escapeHtml(url)).join(" · ")}</small>` : ""}
+    </div>
   `;
 }
 
