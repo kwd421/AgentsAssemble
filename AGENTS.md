@@ -173,6 +173,44 @@ Do not claim done, fixed, verified, release-ready, signed, notarized, or final w
 
 If a check fails, do not hide it. Report the exact command, the failure summary, and whether it appears related to the change. Do not claim success because unrelated checks passed.
 
+## Commit And Push Discipline
+
+Commit only when the current change is coherent, reviewed enough to explain, and verified at the level appropriate to its risk.
+
+Prefer commits that:
+
+- Have one clear reason to exist.
+- Separate refactoring from behavior changes.
+- Separate UI changes from logic changes when practical.
+- Preserve a clean build/test boundary.
+- Can be reverted without taking unrelated work with it.
+
+Before committing:
+
+- Inspect `git status`.
+- Inspect the diff or summary.
+- Run the relevant verification.
+- Make sure unrelated or user-owned dirty work is not included.
+
+Do not commit:
+
+- Unrelated formatting churn.
+- Temporary debug code.
+- Generated debris unless it is an intended artifact.
+- User changes you did not make, unless explicitly asked.
+
+Push only when explicitly requested by the user.
+
+Before pushing:
+
+- Confirm the target branch and remote.
+- Make sure local commits are intentional.
+- Make sure no secrets, credentials, private data, or accidental large artifacts are included.
+
+Open PRs, draft PRs, release notes, public comments, packages, deployments, or externally visible releases only when explicitly requested.
+
+Never force-push, rewrite shared history, publish packages, deploy, or create externally visible releases without explicit approval.
+
 ## Side Effects And Approval
 
 Ask before destructive, externally visible, credential-related, production, payment, messaging, publishing, or irreversible actions.
