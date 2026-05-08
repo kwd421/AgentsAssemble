@@ -9,8 +9,8 @@ from urllib.parse import unquote, urlparse
 
 from agentsassemble.meeting import run_demo_meeting
 
-TAB_LABELS = {"live": "실황", "board": "작전판", "archive": "아카이브"}
-TABS = ["live", "board", "archive"]
+TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
+TABS = ["lobby", "live", "board", "archive"]
 
 
 def list_meetings(output_root: Path) -> list[dict[str, object]]:
@@ -96,6 +96,48 @@ def _read_optional(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
+def read_lobby(output_root: Path, limit: int = 80) -> list[dict[str, object]]:
+    path = output_root / "lobby.jsonl"
+    if not path.exists():
+        return []
+    entries = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries[-limit:]
+
+
+def append_lobby_event(output_root: Path, event: dict[str, object]) -> dict[str, object]:
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "id": uuid4().hex[:12],
+        "created_at": datetime.now(UTC).isoformat(),
+        "name": _clean_lobby_text(event.get("name", "guest"), limit=32) or "guest",
+        "kind": event.get("kind") if event.get("kind") in {"message", "ready", "deploy"} else "message",
+        "message": _clean_lobby_text(event.get("message", ""), limit=240),
+    }
+    if entry["kind"] == "ready" and not entry["message"]:
+        entry["message"] = "준비됐습니다."
+    if entry["kind"] == "deploy" and not entry["message"]:
+        entry["message"] = "deploy 대기 상태로 전환했습니다."
+    with (output_root / "lobby.jsonl").open("a", encoding="utf-8") as file:
+        file.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+    return entry
+
+
+def _clean_lobby_text(value: object, limit: int) -> str:
+    return str(value or "").replace("\n", " ").replace("\r", " ").strip()[:limit]
+
+
 def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
     static_root = Path(__file__).parent / "static"
 
@@ -112,6 +154,9 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                 return
             if path == "/api/meetings":
                 self._send_json({"meetings": list_meetings(output_root)})
+                return
+            if path == "/api/lobby":
+                self._send_json({"events": read_lobby(output_root)})
                 return
             if path == "/api/meetings/latest":
                 meetings = list_meetings(output_root)
@@ -135,6 +180,16 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/api/demo":
                 result = run_demo_meeting(adapter_name="mock", output_root=output_root)
                 self._send_json({"meeting_id": result.meeting_id, "path": str(result.meeting_dir)})
+                return
+            if parsed.path == "/api/lobby":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                event = append_lobby_event(output_root, payload if isinstance(payload, dict) else {})
+                self._send_json({"event": event, "events": read_lobby(output_root)})
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 

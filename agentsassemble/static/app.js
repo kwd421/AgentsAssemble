@@ -1,8 +1,9 @@
 const state = {
-  currentTab: "live",
+  currentTab: "lobby",
   meetings: [],
   payload: null,
   archiveKey: "decision.md",
+  lobbyEvents: [],
 };
 
 const roleClass = {
@@ -58,6 +59,17 @@ const emptyState = document.querySelector("#empty-state");
 const runDemo = document.querySelector("#run-demo");
 const meetingSelect = document.querySelector("#meeting-select");
 const subtitle = document.querySelector("#meeting-subtitle");
+const uiScale = document.querySelector("#ui-scale");
+const textScale = document.querySelector("#text-scale");
+
+function applyScaleSettings() {
+  const ui = localStorage.getItem("agentsassemble.uiScale") || "90";
+  const text = localStorage.getItem("agentsassemble.textScale") || "90";
+  document.documentElement.style.setProperty("--ui-scale", String(Number(ui) / 100));
+  document.documentElement.style.setProperty("--text-scale", String(Number(text) / 100));
+  if (uiScale) uiScale.value = ui;
+  if (textScale) textScale.value = text;
+}
 
 function escapeHtml(value) {
   return String(value)
@@ -98,6 +110,12 @@ async function loadMeeting(meetingId) {
   render();
 }
 
+async function loadLobby() {
+  const payload = await fetchJson("/api/lobby");
+  state.lobbyEvents = payload.events || [];
+  renderLobby();
+}
+
 function setActiveTab(tabId) {
   state.currentTab = tabId;
   tabs.forEach((tab) => tab.classList.toggle("is-active", tab.dataset.tab === tabId));
@@ -107,17 +125,98 @@ function setActiveTab(tabId) {
 function render() {
   const payload = state.payload;
   const hasMeeting = payload && payload.meeting;
-  emptyState.classList.toggle("is-active", !hasMeeting);
-  panels.forEach((panel) => {
-    if (!hasMeeting) panel.classList.remove("is-active");
-  });
-  if (!hasMeeting) return;
+  renderLobby();
+  if (!hasMeeting) {
+    setActiveTab(state.currentTab);
+    emptyState.classList.toggle("is-active", state.currentTab !== "lobby");
+    return;
+  }
+  emptyState.classList.remove("is-active");
 
   setActiveTab(state.currentTab);
   subtitle.textContent = `${displayTopic(payload.meeting)} · ${payload.meeting.meeting_id}`;
   renderLive(payload);
   renderBoard(payload);
   renderArchive(payload);
+}
+
+function renderLobby() {
+  const lobby = document.querySelector("#lobby");
+  if (!lobby) return;
+  lobby.innerHTML = `
+    <section class="lobby-layout">
+      <div class="lobby-panel">
+        <div class="lobby-title">
+          <strong>멀티 로비</strong>
+          <span>공식 회의록과 분리된 대기실입니다.</span>
+        </div>
+        <form id="lobby-form" class="lobby-form">
+          <input id="lobby-name" maxlength="32" placeholder="이름" value="${escapeHtml(localStorage.getItem("agentsassemble.name") || "")}" />
+          <input id="lobby-message" maxlength="240" placeholder="짧은 메시지" />
+          <button type="submit">보내기</button>
+          <button type="button" id="lobby-ready">준비</button>
+          <button type="button" id="lobby-deploy">Deploy</button>
+        </form>
+        <div class="lobby-feed">
+          ${state.lobbyEvents.length ? state.lobbyEvents.map(renderLobbyEvent).join("") : '<p class="lobby-empty">아직 로비 메시지가 없습니다.</p>'}
+        </div>
+      </div>
+    </section>
+  `;
+  const form = lobby.querySelector("#lobby-form");
+  const ready = lobby.querySelector("#lobby-ready");
+  const deploy = lobby.querySelector("#lobby-deploy");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await sendLobbyEvent("message");
+  });
+  ready.addEventListener("click", () => sendLobbyEvent("ready"));
+  deploy.addEventListener("click", () => sendLobbyEvent("deploy"));
+}
+
+function renderLobbyEvent(event) {
+  const currentName = localStorage.getItem("agentsassemble.name") || "";
+  const isMine = currentName && event.name === currentName;
+  const side = isMine ? "mine" : "other";
+  return `
+    <article class="lobby-event lobby-${escapeHtml(event.kind || "message")} lobby-${side}">
+      <div class="lobby-avatar">${escapeHtml(initials(event.name || "G"))}</div>
+      <div class="lobby-bubble">
+        <div class="lobby-meta">
+          <strong>${escapeHtml(event.name || "guest")}</strong>
+          <span>${escapeHtml(lobbyKindLabel(event.kind))}</span>
+        </div>
+        <p>${escapeHtml(event.message || "")}</p>
+      </div>
+    </article>
+  `;
+}
+
+function initials(name) {
+  return String(name || "?").trim().slice(0, 2).toUpperCase();
+}
+
+function lobbyKindLabel(kind) {
+  if (kind === "ready") return "준비";
+  if (kind === "deploy") return "deploy";
+  return "메시지";
+}
+
+async function sendLobbyEvent(kind) {
+  const nameInput = document.querySelector("#lobby-name");
+  const messageInput = document.querySelector("#lobby-message");
+  const name = nameInput?.value.trim() || "guest";
+  const message = messageInput?.value.trim() || "";
+  if (kind === "message" && !message) return;
+  localStorage.setItem("agentsassemble.name", name);
+  const payload = await fetchJson("/api/lobby", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, kind, message }),
+  });
+  state.lobbyEvents = payload.events || [];
+  if (messageInput) messageInput.value = "";
+  renderLobby();
 }
 
 function renderLive(payload) {
@@ -391,7 +490,18 @@ function renderArchiveButton(key, entries) {
 tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     setActiveTab(tab.dataset.tab);
+    render();
   });
+});
+
+uiScale?.addEventListener("input", () => {
+  localStorage.setItem("agentsassemble.uiScale", uiScale.value);
+  applyScaleSettings();
+});
+
+textScale?.addEventListener("input", () => {
+  localStorage.setItem("agentsassemble.textScale", textScale.value);
+  applyScaleSettings();
 });
 
 runDemo.addEventListener("click", async () => {
@@ -413,6 +523,9 @@ meetingSelect.addEventListener("change", () => {
 });
 
 (async function init() {
+  applyScaleSettings();
+  await loadLobby();
   const latest = await loadMeetings();
   await loadMeeting(latest);
+  setInterval(loadLobby, 4000);
 })();
