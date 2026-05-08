@@ -82,6 +82,74 @@ This file records external papers, frameworks, and product references used while
   - Release decision council.
   - Implementation task delegation by role.
 
+### MemGPT: Towards LLMs as Operating Systems
+
+- Link: https://arxiv.org/abs/2310.08560
+- Type: paper/system architecture
+- Used for:
+  - Candidate Memory Layer architecture.
+  - Treating context as a managed resource rather than a single ever-growing transcript.
+  - Separating small always-loaded working context from larger searchable/archival memory.
+  - Future handoff and context-saturation handling.
+- Not used for:
+  - Current v0 runtime.
+  - Current prompt assembly.
+  - Any automatic memory paging or retrieval.
+- Implementation status: candidate for Memory Layer.
+- Related roadmap ideas:
+  - Project memory, agent memory, episode log, and archival meeting memory.
+  - Context budget planning before starting long meetings.
+  - Handoff generation when a session becomes saturated.
+
+### Memory Matters: The Need to Improve Long-Term Memory in LLM-Agents
+
+- Link: https://ojs.aaai.org/index.php/AAAI-SS/article/view/27688
+- Type: paper
+- Used for:
+  - Candidate memory taxonomy and long-term agent design.
+  - Separating memory into semantic, episodic, and procedural categories.
+  - Highlighting metadata and lifetime memory management as design concerns.
+- Not used for:
+  - Current storage schema.
+  - Current retrieval logic.
+- Implementation status: candidate for Memory Layer.
+- Related roadmap ideas:
+  - Semantic memory: stable project facts, preferences, architecture decisions.
+  - Episodic memory: meetings, incidents, handoffs, debates, failed attempts.
+  - Procedural memory: repeatable workflows, testing rituals, release gates.
+
+### A Survey on the Memory Mechanism of LLM-based Agents
+
+- Link: https://arxiv.org/abs/2404.13501
+- Type: survey paper
+- Used for:
+  - Candidate overview of memory mechanisms for LLM agents.
+  - Future comparison of file-based memory, vector retrieval, summarization, and reflection.
+- Not used for:
+  - Current implementation.
+- Implementation status: candidate for Memory Layer.
+- Related roadmap ideas:
+  - Choosing a minimal file-first memory architecture before adding embeddings or a database.
+  - Evaluating whether memory improves handoff quality and reduces repeated mistakes.
+
+### Memory for Autonomous LLM Agents: Mechanisms, Evaluation, and Emerging Frontiers
+
+- Link: https://arxiv.org/abs/2603.07670
+- Type: survey paper
+- Used for:
+  - Candidate guide for production-grade memory concerns.
+  - Write-path filtering, contradiction handling, latency budgets, privacy governance, and multi-agent teamwork memory.
+  - Connecting Evidence Gate with future Memory Gate behavior.
+- Not used for:
+  - Current Evidence Gate implementation.
+  - Current meeting artifact schema.
+- Implementation status: candidate for Memory Layer.
+- Related roadmap ideas:
+  - Memory write approval/gating.
+  - Contradiction detection between old memory and new meeting decisions.
+  - Memory privacy boundaries per project, role, and provider.
+  - Evaluation metrics for whether memory actually improves future meetings.
+
 ## Implemented Research-Informed Decisions
 
 ### Structured Council Rounds
@@ -128,6 +196,18 @@ This file records external papers, frameworks, and product references used while
 ## Future Research Topics
 
 - Debate and deliberation papers for claim verification, adversarial review, and judge/moderator design.
-- Long-term memory and reflection architectures for durable agent identity and handoff.
+- Long-term memory and reflection architectures for durable agent identity and handoff, especially MemGPT-style virtual context and Generative Agents-style reflection.
 - Human-computer interaction papers on meeting support, decision logs, and collaborative sensemaking.
 - Game UI and social deduction design references for playful council themes.
+
+## Candidate Memory Layer Translation
+
+These are not yet implemented. They are the current design hypotheses for translating memory research into AgentsAssemble.
+
+- Working context: small, always-loaded meeting instructions, current question, selected relevant memories, and active role persona.
+- Semantic memory: stable facts and decisions such as project architecture, user preferences, coding standards, provider permissions, and standing constraints.
+- Episodic memory: time-stamped events such as meetings, debugging sessions, handoffs, failed attempts, release decisions, and conflict resolutions.
+- Procedural memory: repeatable workflows such as how to run tests, how to cut a release, how to review a PR, or how to migrate architecture patterns.
+- Reflection: post-meeting synthesis that extracts lessons, unresolved risks, and behavior changes for each agent.
+- Handoff memory: compact successor packet generated when a session is saturated or an agent is replaced.
+- Memory gate: future rule that decides what is allowed to enter long-term memory, rejects unsupported claims, and flags contradictions with existing memory.
