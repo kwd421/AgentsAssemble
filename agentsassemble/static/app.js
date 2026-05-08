@@ -149,14 +149,24 @@ function renderLobby() {
     <section class="lobby-layout">
       <div class="room-strip">
         <div>
-          <strong>로비</strong>
-          <small>${roster.length}명 · 에이전트 ${roster.reduce((count, user) => count + user.agents.length, 0)}</small>
+          <strong>집결 로비</strong>
+          <small>${escapeHtml(state.payload?.meeting ? displayTopic(state.payload.meeting) : "회의 준비")} · ${roster.length}명 · 에이전트 ${roster.reduce((count, user) => count + user.agents.length, 0)}</small>
         </div>
-        <span class="room-status">대기 중</span>
+        <div class="room-actions">
+          <span class="room-status">대기 중</span>
+          <span class="room-status room-status-hot">투입 준비</span>
+        </div>
       </div>
       <div class="lobby-main">
         <div class="lobby-panel">
           ${renderAssembleRing(roster)}
+          <div class="lobby-feed-head">
+            <div>
+              <strong>최근 활동</strong>
+              <span>참여자와 에이전트가 입장, 준비, 투입되는 기록입니다.</span>
+            </div>
+            <em>${state.lobbyEvents.length} events</em>
+          </div>
           <div class="lobby-feed">
             ${state.lobbyEvents.length ? state.lobbyEvents.map(renderLobbyEvent).join("") : '<p class="lobby-empty">아직 로비 메시지가 없습니다.</p>'}
           </div>

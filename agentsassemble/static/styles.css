@@ -82,7 +82,7 @@ select {
 }
 
 .shell {
-  max-width: 1120px;
+  max-width: min(100%, 1440px);
   margin: 0 auto;
   padding: clamp(10px, calc(16px * var(--ui-scale)), 18px);
   width: 100%;
@@ -289,6 +289,14 @@ button {
   padding: 4px 2px 12px;
 }
 
+.room-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .room-strip strong,
 .room-strip small {
   display: block;
@@ -312,10 +320,16 @@ button {
   padding: 5px 8px;
 }
 
+.room-status-hot {
+  background: rgba(242, 184, 75, 0.1);
+  border-color: rgba(242, 184, 75, 0.32);
+  color: #ffe0a0;
+}
+
 .lobby-main {
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(0, 780px) 260px;
+  grid-template-columns: minmax(0, 1fr) clamp(260px, 28vw, 340px);
   justify-content: center;
 }
 
@@ -482,6 +496,39 @@ button {
   padding: 8px;
 }
 
+.lobby-feed-head {
+  align-items: center;
+  background: rgba(7, 10, 16, 0.42);
+  border: 1px solid rgba(212, 225, 255, 0.1);
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 10px;
+}
+
+.lobby-feed-head strong,
+.lobby-feed-head span {
+  display: block;
+}
+
+.lobby-feed-head span {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.lobby-feed-head em {
+  border: 1px solid rgba(242, 184, 75, 0.22);
+  border-radius: 999px;
+  color: var(--accent);
+  flex: none;
+  font-size: 11px;
+  font-style: normal;
+  padding: 5px 7px;
+}
+
 .lobby-form input,
 .lobby-form select,
 .my-name-editor input {
@@ -509,7 +556,7 @@ button {
   display: grid;
   gap: clamp(5px, calc(7px * var(--ui-scale)), 8px);
   flex: 1;
-  align-content: end;
+  align-content: start;
   overflow: auto;
   padding: 8px 4px 10px;
   scroll-behavior: smooth;
@@ -648,7 +695,11 @@ button {
 }
 
 .lobby-meta span + span {
-  display: none;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(212, 225, 255, 0.11);
+  border-radius: 999px;
+  display: inline-block;
+  padding: 2px 6px;
 }
 
 .lobby-mine .lobby-meta span {
@@ -797,7 +848,7 @@ button {
 .war-room {
   display: grid;
   gap: 12px;
-  grid-template-columns: 220px minmax(0, 1fr) 240px;
+  grid-template-columns: clamp(210px, 18vw, 260px) minmax(620px, 1fr) clamp(230px, 20vw, 300px);
   min-height: 720px;
 }
 
@@ -895,12 +946,12 @@ button {
 .war-main {
   display: grid;
   gap: 12px;
-  grid-template-rows: minmax(290px, 36vh) minmax(0, 1fr);
+  grid-template-rows: clamp(360px, 42vh, 470px) minmax(360px, 1fr);
   min-width: 0;
 }
 
 .council-stage {
-  overflow: hidden;
+  overflow: visible;
   padding: 14px;
   position: relative;
 }
@@ -918,6 +969,7 @@ button {
 .stage-heading {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 12px;
   position: relative;
@@ -942,11 +994,12 @@ button {
 }
 
 .live-council {
-  height: calc(100% - 52px);
-  margin: 6px auto 0;
+  height: calc(100% - 64px);
+  margin: 14px auto 0;
   max-width: 560px;
   min-height: 230px;
   position: relative;
+  --seat-radius: clamp(100px, 13vw, 142px);
   z-index: 2;
 }
 
@@ -1009,7 +1062,7 @@ button {
   top: 50%;
   transform:
     rotate(var(--angle))
-    translateY(calc(-1 * clamp(96px, 17vh, 145px)))
+    translateY(calc(-1 * var(--seat-radius)))
     rotate(calc(-1 * var(--angle)))
     translate(-50%, -50%);
   transform-origin: 0 0;
@@ -1442,6 +1495,7 @@ button {
 
 .message-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
   margin-bottom: clamp(6px, calc(10px * var(--ui-scale)), 10px);
@@ -2003,11 +2057,35 @@ button {
     max-width: 82%;
   }
 
+  .war-room {
+    min-height: auto;
+  }
+
   .war-main {
     grid-template-rows: auto auto;
   }
 
   .live-council {
     height: 280px;
+    --seat-radius: 108px;
+  }
+
+  .stage-heading,
+  .message-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .message-route {
+    text-align: left;
+  }
+
+  .stance-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .archive-layout {
+    min-height: auto;
+    overflow: visible;
   }
 }
