@@ -849,7 +849,56 @@ button {
 }
 
 .message-list {
+  background:
+    linear-gradient(180deg, rgba(255, 245, 226, 0.028), transparent 28%),
+    var(--panel);
   padding: clamp(8px, calc(13px * var(--ui-scale)), 13px);
+}
+
+.live-stage {
+  align-items: center;
+  background: rgba(14, 11, 10, 0.58);
+  border: 1px solid rgba(255, 223, 174, 0.12);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: clamp(10px, calc(14px * var(--ui-scale)), 14px);
+  padding: clamp(9px, calc(12px * var(--ui-scale)), 12px);
+}
+
+.live-stage strong,
+.live-stage span {
+  display: block;
+}
+
+.live-stage strong {
+  font-size: clamp(15px, calc(18px * var(--text-scale)), 19px);
+}
+
+.live-stage span {
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.channel-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.channel-tabs span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+  padding: 6px 8px;
+}
+
+.channel-tabs .is-active {
+  background: rgba(240, 168, 60, 0.14);
+  border-color: rgba(240, 168, 60, 0.36);
+  color: #ffd89a;
 }
 
 .event {
@@ -873,13 +922,25 @@ button {
 .message {
   align-items: flex-start;
   border: 1px solid var(--line);
-  background: #1d1d1d;
+  background: rgba(29, 29, 29, 0.78);
   border-radius: 8px;
   display: grid;
   gap: clamp(7px, calc(9px * var(--ui-scale)), 9px);
   grid-template-columns: clamp(32px, calc(38px * var(--ui-scale)), 38px) minmax(0, 1fr);
   margin-bottom: clamp(7px, calc(10px * var(--ui-scale)), 10px);
   padding: clamp(7px, calc(10px * var(--ui-scale)), 10px) clamp(8px, calc(12px * var(--ui-scale)), 12px);
+  position: relative;
+}
+
+.message::before {
+  background: var(--line);
+  border-radius: 999px;
+  content: "";
+  height: 7px;
+  left: calc(clamp(15px, calc(19px * var(--ui-scale)), 19px) + clamp(8px, calc(12px * var(--ui-scale)), 12px));
+  position: absolute;
+  top: -5px;
+  width: 7px;
 }
 
 .message-red {
@@ -902,6 +963,10 @@ button {
   border-color: var(--purple-line);
 }
 
+.message-moderator {
+  box-shadow: 0 0 0 1px rgba(240, 168, 60, 0.08);
+}
+
 .message-body {
   min-width: 0;
 }
@@ -913,6 +978,12 @@ button {
   margin-bottom: clamp(6px, calc(10px * var(--ui-scale)), 10px);
   color: var(--muted);
   font-size: clamp(11px, calc(13px * var(--text-scale)), 13px);
+}
+
+.message-route {
+  color: var(--muted);
+  flex: none;
+  text-align: right;
 }
 
 .message strong {
@@ -930,6 +1001,21 @@ button {
 
 .confidence {
   color: var(--accent);
+}
+
+.stance-line {
+  background: rgba(255, 246, 231, 0.045);
+  border: 1px solid rgba(255, 223, 174, 0.1);
+  border-radius: 7px;
+  color: var(--muted) !important;
+  margin-bottom: 8px !important;
+  padding: 7px 8px;
+}
+
+.stance-line strong {
+  color: var(--accent);
+  font-size: 12px;
+  margin-right: 6px;
 }
 
 .board-legend {

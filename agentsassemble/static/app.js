@@ -417,13 +417,24 @@ function renderLive(payload) {
         ${roles.map(renderAgent).join("")}
       </aside>
       <div class="message-list">
-        <p class="event">회의 시작 · ${escapeHtml(displayQuestion(payload.meeting.question))}</p>
+        <section class="live-stage">
+          <div>
+            <strong>실황</strong>
+            <span>${escapeHtml(displayQuestion(payload.meeting.question))}</span>
+          </div>
+          <div class="channel-tabs" aria-label="발언 대상">
+            <span class="is-active">전체</span>
+            <span>팀</span>
+            <span>귓속말</span>
+          </div>
+        </section>
+        <p class="event">회의 시작</p>
         <p class="event">독립 리서치 완료 · Round 1 진입</p>
         ${messages.map(renderMessage).join("")}
-        <article class="message message-purple">
+        <article class="message message-purple message-moderator">
           <img class="profile" src="/static/avatar-moderator.svg" alt="" />
           <div class="message-body">
-          <div class="message-header"><span class="speaker"><strong>Moderator</strong><em>종합</em></span><span class="confidence">${escapeHtml(synthesis.confidence || "")}</span></div>
+          <div class="message-header"><span class="speaker"><strong>Moderator</strong><em>종합</em></span><span class="message-route">전체 · <span class="confidence">${escapeHtml(synthesis.confidence || "")}</span></span></div>
           <p>${escapeHtml(synthesis.summary || "")}</p>
           </div>
         </article>
@@ -456,6 +467,7 @@ function renderAgent(role) {
 function renderMessage(message) {
   const meta = roleMeta[message.role_id] || { color: "purple", title: "Moderator", badge: "진행", avatar: "/static/avatar-moderator.svg" };
   const label = message.roundTitle || message.round;
+  const stance = stanceLabel(message.stance_status);
   return `
     <article class="message message-${meta.color}">
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
@@ -465,13 +477,20 @@ function renderMessage(message) {
           <strong>${escapeHtml(message.display_name)}</strong>
           <em>${escapeHtml(meta.badge)}</em>
         </span>
-        <span>${escapeHtml(label)} · <span class="confidence">${escapeHtml(message.confidence || "")}</span></span>
+        <span class="message-route">전체 · ${escapeHtml(label)} · <span class="confidence">${escapeHtml(message.confidence || "")}</span></span>
       </div>
-      ${message.position ? `<p class="stance-line"><strong>입장</strong> ${escapeHtml(message.position)} · ${escapeHtml(message.stance_status || "held")}</p>` : ""}
+      ${message.position ? `<p class="stance-line"><strong>${escapeHtml(stance)}</strong> ${escapeHtml(message.position)}</p>` : ""}
       <p>${escapeHtml(message.content)}</p>
       </div>
     </article>
   `;
+}
+
+function stanceLabel(status) {
+  if (status === "changed") return "입장 변화";
+  if (status === "softened") return "입장 약화";
+  if (status === "strengthened") return "입장 강화";
+  return "입장 유지";
 }
 
 function renderBoard(payload) {
