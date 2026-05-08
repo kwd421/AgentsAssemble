@@ -243,3 +243,18 @@ When reporting work, separate:
 - What was verified.
 - What remains unverified or blocked.
 - What commit, if any, records the work.
+
+## Starting A New Project Or Session
+
+When starting a new project or handing work to a new agent/session, provide a short startup brief rather than relying on repository files alone.
+
+The brief should include:
+
+- The immediate goal or first slice.
+- The source-of-truth files to read first.
+- Explicit non-goals.
+- Allowed side effects, including whether commits are allowed.
+- Verification expectations.
+- The next decision point where the agent should stop or report back.
+
+Do not ask an agent to "follow the roadmap" without assigning a narrow next slice.

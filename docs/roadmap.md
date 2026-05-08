@@ -145,6 +145,12 @@ Do not update it for mechanical refactors, formatting, tests, or internal cleanu
 
 Prefer updating the roadmap in the same commit as the capability change, or in the next dedicated documentation commit.
 
+User requests are not automatically roadmap items. Promote a request into the roadmap only when it changes product direction, priority, non-goals, acceptance criteria, or a committed future slice.
+
+If concrete observed issues start competing with roadmap work, create `docs/known-issues.md`. Until then, keep issue tracking inside this roadmap or the current task context.
+
+When the user asks what to do next, brief from this roadmap, any known-issues file if it exists, recent commits, and the current worktree state.
+
 ## Recommended Next Step
 
 Implement Claim Verifier v0 or GUI Evidence Tables.
