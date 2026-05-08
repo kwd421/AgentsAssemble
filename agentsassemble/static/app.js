@@ -160,12 +160,6 @@ function renderLobby() {
             ${state.lobbyEvents.length ? state.lobbyEvents.map(renderLobbyEvent).join("") : '<p class="lobby-empty">아직 로비 메시지가 없습니다.</p>'}
           </div>
           <form id="lobby-form" class="lobby-form">
-            <div class="composer-identity">
-              <select id="lobby-side" aria-label="보내는 쪽">
-                ${renderLobbySideOptions()}
-              </select>
-              <input id="lobby-name" maxlength="32" placeholder="이름" value="${escapeHtml(localStorage.getItem("agentsassemble.name") || "")}" />
-            </div>
             <input id="lobby-message" maxlength="240" placeholder="메시지를 입력하세요" />
             <button type="submit">보내기</button>
           </form>
@@ -179,6 +173,10 @@ function renderLobby() {
     event.preventDefault();
     await sendLobbyEvent("message");
   });
+  const myNameInput = lobby.querySelector("#lobby-my-name");
+  myNameInput?.addEventListener("input", () => {
+    localStorage.setItem("agentsassemble.name", myNameInput.value.trim());
+  });
   lobby.querySelectorAll("[data-lobby-action]").forEach((button) => {
     button.addEventListener("click", () => sendLobbyAction(button));
   });
@@ -189,13 +187,16 @@ function renderLobbyEvent(event) {
   const storedSide = lobbySides.has(event.side) ? event.side : "";
   const side = storedSide || (currentName && event.name === currentName ? "mine" : "other");
   const content = event.message || defaultLobbyMessage(event.kind, side);
+  const name = event.name || "guest";
+  const sideLabel = lobbySideLabel(side);
+  const showSideLabel = name !== sideLabel;
   return `
     <article class="lobby-event lobby-${escapeHtml(event.kind || "message")} lobby-${side}">
-      <div class="lobby-avatar">${escapeHtml(initials(event.name || "G"))}</div>
+      <div class="lobby-avatar">${escapeHtml(initials(name))}</div>
       <div class="lobby-bubble">
         <div class="lobby-meta">
-          <strong>${escapeHtml(event.name || "guest")}</strong>
-          <span>${escapeHtml(lobbySideLabel(side))}</span>
+          <strong>${escapeHtml(name)}</strong>
+          ${showSideLabel ? `<span>${escapeHtml(sideLabel)}</span>` : ""}
           <span>${escapeHtml(lobbyKindLabel(event.kind))}</span>
         </div>
         <p>${escapeHtml(content)}</p>
@@ -231,12 +232,17 @@ function buildLobbyRoster(events) {
 function renderLobbyRoster(roster) {
   const participantCount = roster.length;
   const agentCount = roster.reduce((count, user) => count + user.agents.length, 0);
+  const myName = localStorage.getItem("agentsassemble.name") || defaultLobbyName("mine");
   return `
     <aside class="lobby-roster" aria-label="로비 참여자">
       <div class="roster-head">
         <strong>참여자</strong>
         <span>${participantCount}명 · 에이전트 ${agentCount}</span>
       </div>
+      <label class="my-name-editor">
+        <span>내 이름</span>
+        <input id="lobby-my-name" maxlength="32" value="${escapeHtml(myName)}" />
+      </label>
       ${
         roster.length
           ? roster.map(renderRosterUser).join("")
@@ -316,15 +322,11 @@ function defaultLobbyMessage(kind, side) {
 }
 
 async function sendLobbyEvent(kind) {
-  const sideInput = document.querySelector("#lobby-side");
-  const nameInput = document.querySelector("#lobby-name");
   const messageInput = document.querySelector("#lobby-message");
-  const side = lobbySides.has(sideInput?.value) ? sideInput.value : "mine";
-  const name = nameInput?.value.trim() || defaultLobbyName(side);
+  const side = "mine";
+  const name = localStorage.getItem("agentsassemble.name") || defaultLobbyName(side);
   const message = messageInput?.value.trim() || "";
   if (kind === "message" && !message) return;
-  localStorage.setItem("agentsassemble.lobbySide", side);
-  if (side === "mine") localStorage.setItem("agentsassemble.name", name);
   const payload = await fetchJson("/api/lobby", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

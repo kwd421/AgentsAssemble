@@ -275,13 +275,14 @@ button {
   border-radius: 10px;
   display: grid;
   gap: clamp(6px, calc(8px * var(--ui-scale)), 8px);
-  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   margin-top: calc(10px * var(--ui-scale));
   padding: 8px;
 }
 
 .lobby-form input,
-.lobby-form select {
+.lobby-form select,
+.my-name-editor input {
   background: rgba(255, 246, 231, 0.06);
   border: 1px solid rgba(255, 223, 174, 0.12);
   border-radius: 6px;
@@ -291,10 +292,15 @@ button {
   padding: 0 10px;
 }
 
-.composer-identity {
+.my-name-editor {
   display: grid;
   gap: 6px;
-  grid-template-columns: 110px minmax(0, 1fr);
+  margin-bottom: 10px;
+}
+
+.my-name-editor span {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .lobby-feed {
@@ -830,7 +836,7 @@ button {
 
 .board-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: calc(10px * var(--ui-scale));
   padding: clamp(8px, calc(12px * var(--ui-scale)), 12px);
 }
@@ -843,6 +849,10 @@ button {
   background: var(--panel-2);
   border-radius: 8px;
   padding: clamp(8px, calc(11px * var(--ui-scale)), 11px);
+}
+
+.board-card {
+  min-width: 0;
 }
 
 .board-red {
@@ -1051,7 +1061,7 @@ button {
 
 .archive-layout {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   min-height: 620px;
 }
 
