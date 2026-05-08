@@ -45,6 +45,11 @@ class DemoMeetingTests(unittest.TestCase):
                 self.assertTrue((meeting_dir / "roles" / role_id / "memory.md").exists())
                 self.assertTrue((meeting_dir / "roles" / role_id / "history.jsonl").exists())
                 self.assertTrue((meeting_dir / "tasks" / f"{role_id}.md").exists())
+                self.assertTrue((Path(temp_dir) / "memory" / "agents" / f"{role_id}.md").exists())
+            self.assertTrue((Path(temp_dir) / "memory" / "project.md").exists())
+            self.assertTrue((Path(temp_dir) / "memory" / "episodes.jsonl").exists())
+            self.assertTrue((Path(temp_dir) / "memory" / "reflections" / f"{result.meeting_id}.md").exists())
+            self.assertEqual(meeting["memory_artifacts"]["project"], "memory/project.md")
 
     def test_research_depth_changes_mock_source_volume(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -102,6 +107,20 @@ class DemoMeetingTests(unittest.TestCase):
                 for other_role in ("lore_lawyer", "show_me_the_feats", "fanboard_skeptic"):
                     if other_role != own_role:
                         self.assertNotIn(f"private_research/{other_role}", message["content"])
+
+    def test_second_meeting_loads_previous_memory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = run_demo_meeting(adapter_name="mock", output_root=root)
+            second = run_demo_meeting(adapter_name="mock", output_root=root)
+
+            meeting = json.loads((second.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(meeting["memory_context"]["recent_episodes"]), 1)
+            self.assertEqual(meeting["memory_context"]["recent_episodes"][0]["meeting_id"], first.meeting_id)
+            role_memory = (second.meeting_dir / "roles" / "lore_lawyer" / "memory.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn(first.meeting_id, role_memory)
 
 
 if __name__ == "__main__":

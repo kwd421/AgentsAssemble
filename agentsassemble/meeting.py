@@ -9,6 +9,7 @@ from agentsassemble.adapters import CodexAdapter, MockAdapter, ProviderAdapter
 from agentsassemble.artifacts import write_public_artifacts, write_research, write_role_files
 from agentsassemble.config import load_council_config
 from agentsassemble.evidence import apply_evidence_gate, summarize_evidence_gates
+from agentsassemble.memory import load_memory_context, write_memory_artifacts
 from agentsassemble.models import MeetingResult, ResearchDepthName, ResearchSteering, get_research_depth
 
 
@@ -49,6 +50,7 @@ def run_demo_meeting(
         codex_search_enabled=codex_search_enabled,
     )
     root = output_root or Path(".agentsassemble")
+    memory_context = load_memory_context(root, config.roles)
     meeting_id = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
     meeting_dir = root / "meetings" / meeting_id
     meeting_dir.mkdir(parents=True, exist_ok=False)
@@ -71,6 +73,7 @@ def run_demo_meeting(
         "meeting_dir": str(meeting_dir),
         "research_depth": depth.name,
         "research_steering": steering.to_dict(),
+        "memory_context": memory_context,
     }
 
     roles = [role.__dict__ for role in config.roles]
@@ -153,6 +156,18 @@ def run_demo_meeting(
             "moderator_rule": "Base the decision on supported claim_evidence. Unsupported claims may be listed as caveats but must not determine the winner.",
         },
     )
+    memory_input = {
+        "research_summaries": [
+            {
+                "role_id": research["role_id"],
+                "display_name": research["display_name"],
+                "summary": research["summary"],
+                "confidence": research["confidence"],
+                "evidence_gate": research.get("evidence_gate", {}),
+            }
+            for research in research_records
+        ]
+    }
 
     meeting = {
         "meeting_id": meeting_id,
@@ -163,6 +178,8 @@ def run_demo_meeting(
         "display_topic": config.display_topic,
         "roles": roles,
         "adapter_config": {"name": adapter.name},
+        "memory_context": memory_context,
+        "memory_input": memory_input,
         "research_steering": steering.to_dict(),
         "research_depth": {
             "name": depth.name,
@@ -215,6 +232,8 @@ def run_demo_meeting(
         "failure_state": {"status": "none", "failures": []},
     }
 
+    meeting["memory_artifacts"] = write_memory_artifacts(root, meeting)
+    meeting["artifacts"]["memory"] = "memory/"
     write_public_artifacts(meeting_dir, meeting)
     report(f"Decision: {synthesis['winner']} ({synthesis['confidence']} confidence)")
     report(f"Artifacts: {meeting_dir}")

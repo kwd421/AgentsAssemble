@@ -24,8 +24,9 @@ def write_role_files(meeting_dir: Path, role: Role) -> None:
         f"{role.personality or {}}\n",
         encoding="utf-8",
     )
+    memory = meeting_dir.parent.parent / "memory" / "agents" / f"{role.id}.md"
     (role_dir / "memory.md").write_text(
-        "# Memory\n\nNo prior meetings recorded yet.\n",
+        memory.read_text(encoding="utf-8") if memory.exists() else "# Memory\n\nNo prior meetings recorded yet.\n",
         encoding="utf-8",
     )
     (role_dir / "history.jsonl").write_text("", encoding="utf-8")
@@ -140,6 +141,7 @@ def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
         f"Question: {meeting.get('display_question', meeting['question'])}",
         f"Research depth: {meeting.get('research_depth', {}).get('name', 'unknown')}",
         f"Research steering: {meeting.get('research_steering', {}).get('prompt') or 'open'}",
+        f"Recent episodes loaded: {len(meeting.get('memory_context', {}).get('recent_episodes', []))}",
         "",
         "1. Independent research",
         "2. Round 1: opening positions",
