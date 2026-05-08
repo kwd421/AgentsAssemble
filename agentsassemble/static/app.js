@@ -147,45 +147,48 @@ function renderLobby() {
   const roster = buildLobbyRoster(state.lobbyEvents);
   lobby.innerHTML = `
     <section class="lobby-layout">
+      <div class="room-strip">
+        <div>
+          <strong>로비</strong>
+          <small>${roster.length}명 · 에이전트 ${roster.reduce((count, user) => count + user.agents.length, 0)}</small>
+        </div>
+        <span class="room-status">대기 중</span>
+      </div>
       <div class="lobby-main">
         <div class="lobby-panel">
-          <div class="lobby-title">
-            <strong>멀티 로비</strong>
-            <span>공식 회의록과 분리된 대기실입니다.</span>
-          </div>
-          <form id="lobby-form" class="lobby-form">
-            <select id="lobby-side" aria-label="보내는 쪽">
-              ${renderLobbySideOptions()}
-            </select>
-            <input id="lobby-name" maxlength="32" placeholder="이름" value="${escapeHtml(localStorage.getItem("agentsassemble.name") || "")}" />
-            <input id="lobby-message" maxlength="240" placeholder="짧은 메시지" />
-            <button type="submit">보내기</button>
-            <button type="button" id="lobby-ready">준비</button>
-            <button type="button" id="lobby-deploy">Deploy</button>
-          </form>
           <div class="lobby-feed">
             ${state.lobbyEvents.length ? state.lobbyEvents.map(renderLobbyEvent).join("") : '<p class="lobby-empty">아직 로비 메시지가 없습니다.</p>'}
           </div>
+          <form id="lobby-form" class="lobby-form">
+            <div class="composer-identity">
+              <select id="lobby-side" aria-label="보내는 쪽">
+                ${renderLobbySideOptions()}
+              </select>
+              <input id="lobby-name" maxlength="32" placeholder="이름" value="${escapeHtml(localStorage.getItem("agentsassemble.name") || "")}" />
+            </div>
+            <input id="lobby-message" maxlength="240" placeholder="메시지를 입력하세요" />
+            <button type="submit">보내기</button>
+          </form>
         </div>
         ${renderLobbyRoster(roster)}
       </div>
     </section>
   `;
   const form = lobby.querySelector("#lobby-form");
-  const ready = lobby.querySelector("#lobby-ready");
-  const deploy = lobby.querySelector("#lobby-deploy");
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     await sendLobbyEvent("message");
   });
-  ready.addEventListener("click", () => sendLobbyEvent("ready"));
-  deploy.addEventListener("click", () => sendLobbyEvent("deploy"));
+  lobby.querySelectorAll("[data-lobby-action]").forEach((button) => {
+    button.addEventListener("click", () => sendLobbyAction(button));
+  });
 }
 
 function renderLobbyEvent(event) {
   const currentName = localStorage.getItem("agentsassemble.name") || "";
   const storedSide = lobbySides.has(event.side) ? event.side : "";
   const side = storedSide || (currentName && event.name === currentName ? "mine" : "other");
+  const content = event.message || defaultLobbyMessage(event.kind, side);
   return `
     <article class="lobby-event lobby-${escapeHtml(event.kind || "message")} lobby-${side}">
       <div class="lobby-avatar">${escapeHtml(initials(event.name || "G"))}</div>
@@ -195,7 +198,7 @@ function renderLobbyEvent(event) {
           <span>${escapeHtml(lobbySideLabel(side))}</span>
           <span>${escapeHtml(lobbyKindLabel(event.kind))}</span>
         </div>
-        <p>${escapeHtml(event.message || "")}</p>
+        <p>${escapeHtml(content)}</p>
       </div>
     </article>
   `;
@@ -252,11 +255,12 @@ function renderRosterUser(user) {
           <strong>${escapeHtml(user.name)}</strong>
           <small>${escapeHtml(user.messageCount)}개 이벤트</small>
         </div>
+        <button type="button" data-lobby-action="ready" data-lobby-side="${escapeHtml(user.key)}" data-lobby-name="${escapeHtml(user.name)}">준비</button>
       </div>
       <div class="roster-agents">
         ${
           user.agents.length
-            ? user.agents.map(renderRosterAgent).join("")
+            ? user.agents.map((agent) => renderRosterAgent(agent, user.key)).join("")
             : '<span class="roster-none">대기 중인 에이전트 없음</span>'
         }
       </div>
@@ -264,12 +268,14 @@ function renderRosterUser(user) {
   `;
 }
 
-function renderRosterAgent(agent) {
+function renderRosterAgent(agent, ownerKey) {
   const state = agent.deploy ? "deploy" : agent.ready ? "준비" : "대기";
+  const side = ownerKey === "mine" ? "my-agent" : "other-agent";
   return `
     <div class="roster-agent">
       <span>${escapeHtml(agent.name)}</span>
       <em>${escapeHtml(state)}</em>
+      <button type="button" data-lobby-action="deploy" data-lobby-side="${escapeHtml(side)}" data-lobby-name="${escapeHtml(agent.name)}">투입</button>
     </div>
   `;
 }
@@ -299,8 +305,14 @@ function lobbySideLabel(side) {
 
 function lobbyKindLabel(kind) {
   if (kind === "ready") return "준비";
-  if (kind === "deploy") return "deploy";
+  if (kind === "deploy") return "투입";
   return "메시지";
+}
+
+function defaultLobbyMessage(kind, side) {
+  if (kind === "ready") return `${lobbySideLabel(side)} 준비 완료`;
+  if (kind === "deploy") return `${lobbySideLabel(side)} 투입 요청`;
+  return "";
 }
 
 async function sendLobbyEvent(kind) {
@@ -320,6 +332,21 @@ async function sendLobbyEvent(kind) {
   });
   state.lobbyEvents = payload.events || [];
   if (messageInput) messageInput.value = "";
+  renderLobby();
+}
+
+async function sendLobbyAction(button) {
+  const kind = button.dataset.lobbyAction || "message";
+  let side = button.dataset.lobbySide || "mine";
+  if (side === "mine" && button.dataset.lobbyName !== "나") side = "mine";
+  if (side === "other" && button.dataset.lobbyName !== "상대") side = "other";
+  const name = button.dataset.lobbyName || defaultLobbyName(side);
+  const payload = await fetchJson("/api/lobby", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, side, kind, message: "" }),
+  });
+  state.lobbyEvents = payload.events || [];
   renderLobby();
 }
 
