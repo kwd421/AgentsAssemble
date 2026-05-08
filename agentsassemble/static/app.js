@@ -422,30 +422,30 @@ function renderLive(payload) {
   );
   const synthesis = payload.meeting.moderator_synthesis || {};
   live.innerHTML = `
-    <div class="war-room">
-      ${renderLiveStatusRail(payload, messages)}
-      <main class="war-main">
-        <section class="council-stage">
-          <div class="stage-heading">
-            <div>
-              <strong>실황</strong>
-              <span>${escapeHtml(displayQuestion(payload.meeting.question))}</span>
-            </div>
-            <div class="channel-tabs" aria-label="발언 대상">
-              <span class="is-active">전체</span>
-              <span>팀</span>
-              <span>귓속말</span>
-            </div>
+    <div class="live-room">
+      <section class="live-hero">
+        <div class="live-statusbar">
+          <span class="live-pill">LIVE</span>
+          <strong>Round ${escapeHtml(rounds.length || 0)}</strong>
+          <span>합의도 ${escapeHtml(synthesis.confidence || "unknown")}</span>
+        </div>
+        <div class="live-hero-title">
+          <h2>${escapeHtml(displayQuestion(payload.meeting.question))}</h2>
+          <div class="channel-tabs" aria-label="발언 대상">
+            <span class="is-active">전체</span>
+            <span>팀</span>
+            <span>귓속말</span>
           </div>
-          ${renderLiveCouncilRing(roles)}
-        </section>
-        <section class="message-list debate-feed">
+        </div>
+        ${renderLiveCouncilRing(roles)}
+      </section>
+      <section class="live-bottom">
+        ${renderLiveTimeline(payload, messages)}
+        <main class="message-list live-transcript">
           <div class="feed-head">
             <strong>토론 feed</strong>
             <span>독립 리서치 완료 · Round 1/2 진행 기록</span>
           </div>
-          <p class="event">회의 시작</p>
-          <p class="event">독립 리서치 완료 · Round 1 진입</p>
           ${messages.map(renderMessage).join("")}
           <article class="message message-purple message-moderator">
             <img class="profile" src="/static/avatar-moderator.svg" alt="" />
@@ -454,11 +454,52 @@ function renderLive(payload) {
             <p>${escapeHtml(synthesis.summary || "")}</p>
             </div>
           </article>
-          <p class="event">결정 생성 · ${escapeHtml(synthesis.winner || "Undetermined")}</p>
-        </section>
-      </main>
-      ${renderLiveRoster(payload)}
+        </main>
+        ${renderLiveOutcome(payload, messages)}
+      </section>
     </div>
+  `;
+}
+
+function renderLiveTimeline(payload, messages) {
+  const rounds = payload.meeting.debate_rounds || [];
+  return `
+    <aside class="live-timeline">
+      <strong>진행</strong>
+      <ol>
+        <li class="is-done"><span></span>회의 시작</li>
+        <li class="is-done"><span></span>독립 리서치</li>
+        <li class="${rounds.length > 1 ? "is-current" : "is-done"}"><span></span>Round ${escapeHtml(rounds.length || 1)}</li>
+        <li><span></span>결정 생성</li>
+      </ol>
+      ${renderRailMetric("발언 수", messages.length)}
+      ${renderRailMetric("라운드", `${rounds.length || 0} / 3`)}
+    </aside>
+  `;
+}
+
+function renderLiveOutcome(payload, messages) {
+  const synthesis = payload.meeting.moderator_synthesis || {};
+  return `
+    <aside class="live-outcome">
+      <div class="outcome-card">
+        <span>현재 판정</span>
+        <strong>${escapeHtml(synthesis.winner || "판정 대기")}</strong>
+        <p>${escapeHtml(synthesis.summary || "아직 종합 의견이 없습니다.")}</p>
+      </div>
+      <div class="consensus-card">
+        <strong>합의도 추이</strong>
+        <div class="consensus-score">${escapeHtml(synthesis.confidence || "unknown")}</div>
+        <div class="consensus-track"><span></span></div>
+        <p>${escapeHtml(messages.length)}개 발언 기반</p>
+      </div>
+      <section class="rail-card rail-compact">
+        <strong>최근 산출물</strong>
+        ${renderArtifactRow("결정안", "decision.md")}
+        ${renderArtifactRow("발언 로그", "transcript.md")}
+        ${renderArtifactRow("의제", "agenda.md")}
+      </section>
+    </aside>
   `;
 }
 
@@ -476,13 +517,13 @@ function renderLiveStatusRail(payload, messages) {
         <p>${escapeHtml(displayQuestion(payload.meeting.question))}</p>
         <button type="button">토론 정보</button>
       </section>
-      <section class="rail-card">
+      <section class="rail-card rail-compact">
         <strong>진행 상황</strong>
         ${renderRailMetric("라운드", `${roundCount} / 3`)}
         ${renderRailMetric("발언 수", messages.length)}
         ${renderRailMetric("합의도", synthesis.confidence || "unknown")}
       </section>
-      <section class="rail-card">
+      <section class="rail-card rail-compact">
         <strong>최근 산출물</strong>
         ${renderArtifactRow("결정안", "decision.md")}
         ${renderArtifactRow("근거 요약", "evidence.md")}
@@ -855,8 +896,8 @@ function renderArchive(payload) {
           </div>
           <div class="archive-actions">
             <span>${escapeHtml(archiveKindLabel(state.archiveKey))}</span>
-            <button type="button">복사</button>
-            <button type="button">내보내기</button>
+            <button type="button" data-archive-command="copy">복사</button>
+            <button type="button" data-archive-command="download">내보내기</button>
           </div>
         </div>
         <pre class="archive-preview">${escapeHtml(currentDocument)}</pre>
@@ -869,12 +910,37 @@ function renderArchive(payload) {
       renderArchive(payload);
     });
   });
+  archive.querySelectorAll("[data-archive-command]").forEach((button) => {
+    button.addEventListener("click", () => handleArchiveCommand(button.dataset.archiveCommand, state.archiveKey, currentDocument));
+  });
 }
 
 function documentStat(value) {
   const text = String(value || "");
   const lines = text ? text.split("\n").length : 0;
   return `${lines} lines · ${text.length} chars`;
+}
+
+async function handleArchiveCommand(command, key, content) {
+  if (command === "copy") {
+    await navigator.clipboard?.writeText(content);
+    return;
+  }
+  if (command === "download") {
+    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = archiveDownloadName(key);
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+}
+
+function archiveDownloadName(key) {
+  return String(key || "archive.md").split("/").pop() || "archive.md";
 }
 
 function archiveKindLabel(key) {
