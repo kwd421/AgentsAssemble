@@ -13,6 +13,7 @@ The product should make AI agents behave more like a durable software team:
 - Meetings produce durable artifacts before implementation begins.
 - Evidence, decisions, tasks, and handoffs are written to files.
 - Agents can return to their own sessions/worktrees with assigned scope.
+- Returning agents must be able to explain the meeting afterward from their own perspective, including what they argued, what changed, why they won or lost, and what they should do next.
 - Long-running team context survives session saturation.
 
 The near-term product is not a polished chat app. It is a reliable local council engine with simple terminal and browser surfaces.
@@ -76,6 +77,8 @@ Goal: make meetings more trustworthy and inspectable.
   - Keep memory context compact and auditable.
 - Handoff v0:
   - Generate `handoff.md` from meeting, memory, current tasks, risks, and unresolved questions.
+  - Generate per-agent return packets so each agent can answer "what happened?", "why did we win/lose?", "what evidence changed?", and "what is my next task?" after returning to its own session.
+  - Preserve each agent's own stance history rather than only the moderator's final decision.
 
 ## V0.2
 
