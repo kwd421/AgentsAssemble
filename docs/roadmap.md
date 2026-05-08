@@ -137,6 +137,14 @@ The next implementation slice should satisfy all of these:
 - It keeps meeting and implementation separate.
 - It does not introduce push, PR, release, or deploy behavior.
 
+## Roadmap Maintenance
+
+Update this roadmap when a change alters implemented capability, priority, non-goals, acceptance criteria, or recommended next steps.
+
+Do not update it for mechanical refactors, formatting, tests, or internal cleanup unless they change product direction or delivery confidence.
+
+Prefer updating the roadmap in the same commit as the capability change, or in the next dedicated documentation commit.
+
 ## Recommended Next Step
 
 Implement Claim Verifier v0 or GUI Evidence Tables.
