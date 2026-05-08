@@ -468,6 +468,7 @@ function renderMessage(message) {
   const meta = roleMeta[message.role_id] || { color: "purple", title: "Moderator", badge: "진행", avatar: "/static/avatar-moderator.svg" };
   const label = message.roundTitle || message.round;
   const stance = stanceLabel(message.stance_status);
+  const position = messagePosition(message, state.payload?.meeting);
   return `
     <article class="message message-${meta.color}">
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
@@ -479,7 +480,7 @@ function renderMessage(message) {
         </span>
         <span class="message-route">전체 · ${escapeHtml(label)} · <span class="confidence">${escapeHtml(message.confidence || "")}</span></span>
       </div>
-      ${message.position ? `<p class="stance-line"><strong>${escapeHtml(stance)}</strong> ${escapeHtml(message.position)}</p>` : ""}
+      ${position ? `<p class="stance-line"><strong>${escapeHtml(stance)}</strong> ${escapeHtml(position)}</p>` : ""}
       <p>${escapeHtml(message.content)}</p>
       </div>
     </article>
@@ -522,9 +523,10 @@ function renderBoard(payload) {
 
 function buildStanceSummary(meeting) {
   const items = new Map();
+  const fallbackPosition = meeting.moderator_synthesis?.winner || "입장 미정";
   for (const round of meeting.debate_rounds || []) {
     for (const message of round.messages || []) {
-      const stance = message.position || "입장 미정";
+      const stance = messagePosition(message, meeting, fallbackPosition);
       const item = items.get(stance) || { stance, count: 0, roles: new Set(), statuses: new Map() };
       item.count += 1;
       item.roles.add(message.display_name || message.role_id || "agent");
@@ -541,6 +543,13 @@ function buildStanceSummary(meeting) {
       statuses: Array.from(item.statuses.entries()).sort((a, b) => b[1] - a[1]),
     }))
     .sort((a, b) => b.count - a.count);
+}
+
+function messagePosition(message, meeting, fallbackPosition) {
+  if (message.position) return message.position;
+  const synthesisWinner = fallbackPosition || meeting?.moderator_synthesis?.winner;
+  if (synthesisWinner) return synthesisWinner;
+  return "입장 미정";
 }
 
 function renderStanceOverview(items, synthesis) {
@@ -600,7 +609,7 @@ function renderBoardCard(role, payload, researchPath) {
       </div>
       ${renderEvidenceTable(researchJson)}
       <p><strong>리서치 요약</strong><br>${escapeHtml(researchSummary)}</p>
-      ${messages.map((message) => `<p><strong>${escapeHtml(roundLabel(payload.meeting, message.round, message.round))}</strong><br>${message.position ? `입장: ${escapeHtml(message.position)} · ${escapeHtml(message.stance_status || "held")}<br>` : ""}${escapeHtml(message.content)}</p>`).join("")}
+      ${messages.map((message) => `<p><strong>${escapeHtml(roundLabel(payload.meeting, message.round, message.round))}</strong><br>입장: ${escapeHtml(messagePosition(message, payload.meeting))} · ${escapeHtml(stanceLabel(message.stance_status))}<br>${escapeHtml(message.content)}</p>`).join("")}
     </article>
   `;
 }
