@@ -54,9 +54,10 @@ select {
 }
 
 .shell {
-  max-width: 1360px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: clamp(10px, calc(16px * var(--ui-scale)), 18px);
+  width: 100%;
 }
 
 .topbar {
@@ -198,8 +199,6 @@ button {
     rgba(18, 13, 11, 0.92);
   border-radius: 10px;
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 245, 226, 0.05);
-  margin: 0 auto;
-  max-width: 1120px;
   padding: clamp(8px, calc(12px * var(--ui-scale)), 12px);
 }
 
