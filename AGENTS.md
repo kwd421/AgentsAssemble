@@ -248,6 +248,8 @@ When reporting work, separate:
 
 When starting a new project or handing work to a new agent/session, provide a short startup brief rather than relying on repository files alone.
 
+Use the roadmap as product direction and priority guidance, not as permission to implement everything listed there.
+
 The brief should include:
 
 - The immediate goal or first slice.
