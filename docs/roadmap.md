@@ -110,6 +110,12 @@ These are intentional future ideas, not near-term commitments.
   - Private context must stay private by default: raw local files, private memory, credentials, unrelated project history, and hidden provider/session state.
   - Memory exchange should favor auditable handoff packets over raw full-context dumps.
   - The meeting should record which participant supplied which context packet and what was withheld.
+- Security / abuse resistance:
+  - Treat remote users, external agents, tool outputs, retrieved documents, and incoming memory packets as untrusted input.
+  - Keep the project defensive-only: security review, permission analysis, prompt-injection checks, context-leak checks, dependency risk review, and patch validation are allowed goals.
+  - Do not support credential theft, stealth, persistence, malware deployment, unauthorized exploitation, or third-party system access.
+  - Use least-privilege tool grants, explicit permission gates, context firewalls, and audit logs for any remote or multi-user mode.
+  - Security-specialized models or trusted cyber access may be used later for defensive review, but they do not remove the need for local permission boundaries and audit artifacts.
 - AI roster with durable personalities, memories, styles, and specialties.
 - Architecture transfer council between projects.
 - Bug war room.
