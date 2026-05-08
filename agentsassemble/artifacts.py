@@ -84,6 +84,8 @@ def write_research(meeting_dir: Path, research: dict[str, Any]) -> None:
             f"- Status: {research.get('evidence_gate', {}).get('status', 'unknown')}",
             f"- Supported claims: {research.get('evidence_gate', {}).get('supported_claim_count', 0)}",
             f"- Unsupported claims: {research.get('evidence_gate', {}).get('unsupported_claim_count', 0)}",
+            f"- Weak claims: {research.get('evidence_gate', {}).get('weak_claim_count', 0)}",
+            f"- Verifier rejected claims: {research.get('evidence_gate', {}).get('verifier_rejected_claim_count', 0)}",
             f"- Confidence after gate: {research.get('evidence_gate', {}).get('confidence_after', research.get('confidence', 'low'))}",
             "",
             "## Claim Evidence",
@@ -96,6 +98,38 @@ def write_research(meeting_dir: Path, research: dict[str, Any]) -> None:
                 f"  - Confidence: {claim.get('confidence', '')}",
                 f"  - Source quality: {claim.get('source_quality', '')}",
                 f"  - Interpretation: {claim.get('interpretation', '')}",
+            ]
+        )
+        for url in claim.get("evidence", []):
+            lines.append(f"  - Evidence: {url}")
+    lines.extend(["", "## Claim Verification"])
+    for record in research.get("claim_verification", []):
+        lines.extend(
+            [
+                f"- Claim: {record.get('claim', '')}",
+                f"  - URL: {record.get('url', '')}",
+                f"  - Verdict: {record.get('verdict', '')}",
+                f"  - Reason: {record.get('reason', '')}",
+                f"  - Source quality: {record.get('source_quality', '')}",
+                f"  - Source type: {record.get('source_type', '')}",
+            ]
+        )
+    lines.extend(["", "## Weak Claims"])
+    for claim in research.get("weak_claims", []):
+        lines.extend(
+            [
+                f"- Claim: {claim.get('claim', '')}",
+                f"  - Reason: {claim.get('reason', '')}",
+            ]
+        )
+        for url in claim.get("evidence", []):
+            lines.append(f"  - Evidence: {url}")
+    lines.extend(["", "## Verifier Rejected Claims"])
+    for claim in research.get("verifier_rejected_claims", []):
+        lines.extend(
+            [
+                f"- Claim: {claim.get('claim', '')}",
+                f"  - Reason: {claim.get('reason', '')}",
             ]
         )
         for url in claim.get("evidence", []):
@@ -178,6 +212,8 @@ def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
         f"Status: {meeting.get('evidence_gate', {}).get('status', 'unknown')}",
         f"Supported claims: {meeting.get('evidence_gate', {}).get('total_supported_claims', 0)}",
         f"Unsupported claims: {meeting.get('evidence_gate', {}).get('total_unsupported_claims', 0)}",
+        f"Weak claims: {meeting.get('evidence_gate', {}).get('total_weak_claims', 0)}",
+        f"Verifier rejected claims: {meeting.get('evidence_gate', {}).get('total_verifier_rejected_claims', 0)}",
         "",
         "## Rationale",
         synthesis["summary"],

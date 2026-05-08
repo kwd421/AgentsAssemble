@@ -144,6 +144,9 @@ def run_demo_meeting(
                     "confidence": research["confidence"],
                     "claim_evidence": research["claim_evidence"],
                     "unsupported_claims": research.get("unsupported_claims", []),
+                    "weak_claims": research.get("weak_claims", []),
+                    "verifier_rejected_claims": research.get("verifier_rejected_claims", []),
+                    "claim_verification": research.get("claim_verification", []),
                     "evidence_gate": research.get("evidence_gate", {}),
                     "counterclaims": research.get("counterclaims", []),
                     "coverage_gaps": research.get("coverage_gaps", []),
@@ -153,7 +156,7 @@ def run_demo_meeting(
             "round_1": round_one,
             "round_2": round_two,
             "evidence_gate": evidence_gate,
-            "moderator_rule": "Base the decision on supported claim_evidence. Unsupported claims may be listed as caveats but must not determine the winner.",
+            "moderator_rule": "Base the decision on supported claim_evidence. Unsupported, weak, verifier-rejected, irrelevant, or contradictory claims may be listed as caveats but must not determine the winner.",
         },
     )
     memory_input = {

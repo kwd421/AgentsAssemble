@@ -29,6 +29,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Research depth profiles exist: `smoke`, `standard`, `deep`.
 - Research steering allows user-preferred angles without forcing conclusions.
 - Evidence Gate separates supported and unsupported claims by evidence URL presence.
+- Claim Verifier v0 classifies explicit claim/source relations as supported, weak, contradictory, or irrelevant without pretending to do semantic verification.
 - File-based Memory Layer v0 writes project, agent, episode, and reflection memory.
 - Research influences are recorded in `docs/research-log.md`.
 - Repository operating rules are recorded in `AGENTS.md`.
@@ -40,7 +41,7 @@ V0 is complete enough when the demo can be trusted as an auditable meeting proto
 Remaining v0 work:
 
 - Show Evidence Gate results clearly in the GUI archive and board views.
-- Add a basic Claim Verifier design or first implementation.
+- Exercise Claim Verifier v0 with real Codex deep research runs and tune prompt/output reliability.
 - Improve Codex deep research prompt/output reliability with real runs.
 - Add failure handling policy for role timeout, parse failure, and incomplete research.
 - Add CLI help/docs for research depth, steering, memory files, and adapter modes.
@@ -60,9 +61,9 @@ V0 should still exclude:
 Goal: make meetings more trustworthy and inspectable.
 
 - Claim Verifier:
-  - Classify claim/source pairs as `supports`, `contradicts`, `weak`, or `irrelevant`.
-  - Lower confidence when a claim is weakly supported.
-  - Prevent moderator synthesis from using unsupported or irrelevant claims as decisive evidence.
+  - Expand beyond explicit metadata into provider-assisted claim verification.
+  - Compare verifier decisions against source excerpts rather than URL presence alone.
+  - Keep rejected verifier claims separate from research notes that agents themselves rejected.
 - GUI evidence tables:
   - Show supported claims, unsupported claims, counterclaims, rejected claims, and coverage gaps by role.
   - Make source quality visible without turning the UI into a raw log dump.
@@ -153,6 +154,6 @@ When the user asks what to do next, brief from this roadmap, any known-issues fi
 
 ## Recommended Next Step
 
-Implement Claim Verifier v0 or GUI Evidence Tables.
+Implement GUI Evidence Tables or run Codex deep research against Claim Verifier v0.
 
-Claim Verifier is the stronger engine step. GUI Evidence Tables are the stronger product-feedback step. If uncertain, implement Claim Verifier first because it improves the quality of data that the UI will display later.
+GUI Evidence Tables are the stronger product-feedback step. A Codex deep research run is the stronger reliability step because it tests whether real adapter output gives the verifier useful explicit relations.

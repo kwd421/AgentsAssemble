@@ -73,6 +73,7 @@ Treat fan/community sources as claims to inspect, not as canon authority.
 You may hold a free opinion by default, but every conclusion must be traceable to evidence.
 If the user steers toward a preferred angle, spend more research effort on that angle and its best objections. Do not hide contrary evidence.
 For standard/deep research, do not stop after a handful of search results. Iterate queries, compare contradictory sources, and gather enough material for a dense evidence archive.
+For each claim_evidence item, set evidence_relation to "supports", "weak", "contradicts", or "irrelevant" when the source relationship is explicit. Use "weak" when the source is only indirect, contested, or insufficient for the exact claim.
 If you cannot reach the target source count within tool limits, still return the best evidence and explain the gap in "coverage_gaps".
 Write all user-visible fields in Korean. URLs and source titles may stay in their original language.
 Return only JSON with this exact shape:
@@ -85,7 +86,7 @@ Return only JSON with this exact shape:
   "confidence": "low|medium|high",
   "uncertainty": "...",
   "coverage_gaps": ["..."],
-  "claim_evidence": [{{"claim": "...", "evidence": ["url"], "interpretation": "...", "confidence": "low|medium|high", "source_quality": "..."}}],
+  "claim_evidence": [{{"claim": "...", "evidence": ["url"], "evidence_relation": "supports|weak|contradicts|irrelevant", "interpretation": "...", "confidence": "low|medium|high", "source_quality": "..."}}],
   "counterclaims": [{{"claim": "...", "evidence": ["url"], "why_it_matters": "...", "confidence": "low|medium|high"}}],
   "rejected_claims": [{{"claim": "...", "reason": "...", "sources": ["url"]}}]
 }}
