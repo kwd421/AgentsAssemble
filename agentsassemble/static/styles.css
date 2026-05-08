@@ -1679,6 +1679,58 @@ button {
   font-size: clamp(14px, calc(16px * var(--text-scale)), 16px);
 }
 
+.board-position {
+  background:
+    linear-gradient(135deg, rgba(242, 184, 75, 0.12), rgba(91, 215, 255, 0.055)),
+    rgba(7, 10, 16, 0.48);
+  border: 1px solid rgba(242, 184, 75, 0.18);
+  border-radius: 12px;
+  margin: 12px 0;
+  padding: 10px;
+}
+
+.board-position span,
+.board-position strong {
+  display: block;
+}
+
+.board-position span,
+.board-insight-grid span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.board-position strong {
+  color: var(--text);
+  font-size: 15px;
+  margin-top: 5px;
+}
+
+.board-insight-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 12px 0;
+}
+
+.board-insight-grid section {
+  background: rgba(7, 10, 16, 0.44);
+  border: 1px solid rgba(212, 225, 255, 0.1);
+  border-radius: 11px;
+  min-width: 0;
+  padding: 9px;
+}
+
+.board-insight-grid p {
+  display: -webkit-box;
+  margin-top: 6px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
 .board-card p,
 .synthesis p {
   color: #c7c2b8;
@@ -1781,7 +1833,7 @@ button {
 .evidence-counts {
   display: grid;
   gap: 6px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 10px 0;
 }
 

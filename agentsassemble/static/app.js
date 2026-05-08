@@ -720,6 +720,8 @@ function renderBoardCard(role, payload, researchPath) {
   const researchKey = researchPath ? researchPath.replace("private_research/", "").replace(".json", ".md") : "";
   const research = payload.research[researchKey] || "";
   const researchSummary = research.split("## Summary")[1]?.split("## Confidence")[0]?.trim() || "Research summary unavailable.";
+  const latestMessage = messages[messages.length - 1] || {};
+  const firstMessage = messages[0] || {};
   return `
     <article class="board-card board-${meta.color}">
       <div class="board-card-title">
@@ -727,12 +729,32 @@ function renderBoardCard(role, payload, researchPath) {
         <span>${escapeHtml(meta.badge)}</span>
       </div>
       <p>${escapeHtml(lensLabels[role.lens] || role.lens)} · ${escapeHtml(focusLabels[role.id] || role.research_focus)}</p>
+      <div class="board-position">
+        <span>현재 입장</span>
+        <strong>${escapeHtml(messagePosition(latestMessage, payload.meeting))}</strong>
+      </div>
+      <div class="board-insight-grid">
+        <section>
+          <span>핵심 근거</span>
+          <p>${escapeHtml(researchSummary)}</p>
+        </section>
+        <section>
+          <span>변화</span>
+          <p>${escapeHtml(messages.map((message) => stanceLabel(message.stance_status)).join(" → ") || "기록 없음")}</p>
+        </section>
+        <section>
+          <span>첫 주장</span>
+          <p>${escapeHtml(firstMessage.content || "기록 없음")}</p>
+        </section>
+        <section>
+          <span>마지막 반박</span>
+          <p>${escapeHtml(latestMessage.content || "기록 없음")}</p>
+        </section>
+      </div>
       <div class="stance-mini">
         ${messages.map((message) => `<span>${escapeHtml(roundLabel(payload.meeting, message.round, message.round))}: ${escapeHtml(stanceLabel(message.stance_status))}</span>`).join("")}
       </div>
       ${renderEvidenceTable(researchJson)}
-      <p><strong>리서치 요약</strong><br>${escapeHtml(researchSummary)}</p>
-      ${messages.map((message) => `<p><strong>${escapeHtml(roundLabel(payload.meeting, message.round, message.round))}</strong><br>입장: ${escapeHtml(messagePosition(message, payload.meeting))} · ${escapeHtml(stanceLabel(message.stance_status))}<br>${escapeHtml(message.content)}</p>`).join("")}
     </article>
   `;
 }
