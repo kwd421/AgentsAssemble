@@ -110,6 +110,11 @@ These are intentional future ideas, not near-term commitments.
   - Private context must stay private by default: raw local files, private memory, credentials, unrelated project history, and hidden provider/session state.
   - Memory exchange should favor auditable handoff packets over raw full-context dumps.
   - The meeting should record which participant supplied which context packet and what was withheld.
+  - Multiplayer sessions can include a lobby/staging area where owners and agents can talk before the agents are deployed into the formal meeting.
+  - A deploy action should release an agent from the lobby into the meeting with its selected persona, memory packet, permissions, and current readiness state.
+  - Before deploy, an agent should normally stay idle, but may briefly answer when explicitly addressed by its owner or by name, such as readiness checks or short pre-meeting banter.
+  - Agent-to-agent lobby banter can exist for flavor and social presence, but should remain clearly outside the official transcript unless promoted into the meeting record.
+  - The UI should distinguish owner chat, lobby banter, deployed meeting turns, and official decisions so playful interaction does not pollute evidence or decisions.
 - Security / abuse resistance:
   - Treat remote users, external agents, tool outputs, retrieved documents, and incoming memory packets as untrusted input.
   - Keep the project defensive-only: security review, permission analysis, prompt-injection checks, context-leak checks, dependency risk review, and patch validation are allowed goals.
