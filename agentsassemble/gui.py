@@ -52,6 +52,10 @@ def build_meeting_payload(meeting_dir: Path) -> dict[str, object]:
         task_path.name: task_path.read_text(encoding="utf-8")
         for task_path in sorted((meeting_dir / "tasks").glob("*.md"))
     }
+    return_packets = {
+        packet_path.name: packet_path.read_text(encoding="utf-8")
+        for packet_path in sorted((meeting_dir / "return_packets").glob("*.md"))
+    }
     research = {}
     research_json = {}
     research_root = meeting_dir / "private_research"
@@ -69,6 +73,7 @@ def build_meeting_payload(meeting_dir: Path) -> dict[str, object]:
         "meeting": meeting,
         "artifacts": artifacts,
         "tasks": tasks,
+        "return_packets": return_packets,
         "research": research,
         "research_json": research_json,
     }

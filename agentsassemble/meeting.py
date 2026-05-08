@@ -185,6 +185,10 @@ def run_demo_meeting(
                 "summary": research["summary"],
                 "confidence": research["confidence"],
                 "evidence_gate": research.get("evidence_gate", {}),
+                "claim_evidence": research.get("claim_evidence", []),
+                "weak_claims": research.get("weak_claims", []),
+                "unsupported_claims": research.get("unsupported_claims", []),
+                "verifier_rejected_claims": research.get("verifier_rejected_claims", []),
             }
             for research in research_records
         ]

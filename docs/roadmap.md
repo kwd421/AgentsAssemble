@@ -29,6 +29,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Meeting artifacts are written as Markdown and JSON.
 - GUI prototype has `실황`, `작전판`, and `아카이브` tabs.
 - GUI board shows Evidence Gate totals and per-role evidence tables from structured research JSON.
+- Meetings generate per-agent return packets that explain each agent's stance, outcome, evidence state, and next task.
 - Research depth profiles exist: `smoke`, `standard`, `deep`.
 - Research steering allows user-preferred angles without forcing conclusions.
 - Demo meeting rounds are defined through an internal template structure instead of being fully inline in the meeting runner.
@@ -78,8 +79,7 @@ Goal: make meetings more trustworthy and inspectable.
   - Keep memory context compact and auditable.
 - Handoff v0:
   - Generate `handoff.md` from meeting, memory, current tasks, risks, and unresolved questions.
-  - Generate per-agent return packets so each agent can answer "what happened?", "why did we win/lose?", "what evidence changed?", and "what is my next task?" after returning to its own session.
-  - Preserve each agent's own stance history rather than only the moderator's final decision.
+  - Feed per-agent return packets back into persistent sessions when real provider session handoff is implemented.
 
 ## V0.2
 

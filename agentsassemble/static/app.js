@@ -338,6 +338,7 @@ function buildArchiveEntries(payload) {
   return {
     ...payload.artifacts,
     ...Object.fromEntries(Object.entries(payload.tasks).map(([key, value]) => [`tasks/${key}`, value])),
+    ...Object.fromEntries(Object.entries(payload.return_packets || {}).map(([key, value]) => [`return_packets/${key}`, value])),
     ...Object.fromEntries(Object.entries(payload.research).map(([key, value]) => [`research/${key}`, value])),
   };
 }
