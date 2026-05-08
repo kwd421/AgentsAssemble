@@ -248,10 +248,10 @@ function renderEvidenceOverview(meeting) {
         <strong>Evidence Gate</strong>
         <span class="status-pill status-${escapeHtml(gate.status || "unknown")}">${escapeHtml(gate.status || "unknown")}</span>
       </div>
-      ${renderMetric("Supported", gate.total_supported_claims)}
-      ${renderMetric("Weak", gate.total_weak_claims)}
-      ${renderMetric("Unsupported", gate.total_unsupported_claims)}
-      ${renderMetric("Rejected", gate.total_verifier_rejected_claims)}
+      ${renderMetric("지원", gate.total_supported_claims)}
+      ${renderMetric("약함", gate.total_weak_claims)}
+      ${renderMetric("미지원", gate.total_unsupported_claims)}
+      ${renderMetric("탈락", gate.total_verifier_rejected_claims)}
     </section>
   `;
 }
@@ -279,8 +279,8 @@ function renderEvidenceTable(research) {
         ${rows.map(([label, count, kind]) => `<span class="count-${kind}"><strong>${escapeHtml(count)}</strong>${escapeHtml(label)}</span>`).join("")}
       </div>
       <div class="evidence-detail">
-        <span>sources ${escapeHtml(gate.source_count || 0)}</span>
-        <span>confidence ${escapeHtml(gate.confidence_after || research.confidence || "unknown")}</span>
+        <span>출처 ${escapeHtml(gate.source_count || 0)}</span>
+        <span>신뢰도 ${escapeHtml(gate.confidence_after || research.confidence || "unknown")}</span>
       </div>
       ${failures.length ? `<ul class="evidence-failures">${failures.map((failure) => `<li>${escapeHtml(failure)}</li>`).join("")}</ul>` : ""}
       ${renderEvidenceClaims("지원 근거", research.claim_evidence || [], "supported")}
