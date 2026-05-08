@@ -23,6 +23,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Roles are loaded from config with Korean display names and stable English ids.
 - Mock adapter supports deterministic local demos.
 - Codex adapter supports web-search research calls and non-search debate/synthesis calls.
+- Codex adapter has basic structured-output hardening: exact evidence URL instructions, wrapped JSON extraction, synthesis repair, and conservative local fallback.
 - Per-role research is isolated before Round 1.
 - Meeting artifacts are written as Markdown and JSON.
 - GUI prototype has `실황`, `작전판`, and `아카이브` tabs.
@@ -42,7 +43,7 @@ Remaining v0 work:
 
 - Show Evidence Gate results clearly in the GUI archive and board views.
 - Exercise Claim Verifier v0 with real Codex deep research runs and tune prompt/output reliability.
-- Improve Codex deep research prompt/output reliability with real runs.
+- Improve Codex deep research timeout and chunking strategy with real runs.
 - Add failure handling policy for role timeout, parse failure, and incomplete research.
 - Add CLI help/docs for research depth, steering, memory files, and adapter modes.
 - Keep mock mode clearly labeled as demo output.

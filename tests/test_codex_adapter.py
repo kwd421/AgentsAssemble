@@ -51,6 +51,7 @@ class CodexAdapterTests(unittest.TestCase):
             self.assertIn("Minimum sources: 12", seen_inputs[0])
             self.assertIn("Minimum claim_evidence items: 6", seen_inputs[0])
             self.assertIn("Default stance: investigate freely", seen_inputs[0])
+            self.assertIn("MUST exactly match one sources[].url", seen_inputs[0])
 
     def test_codex_research_accepts_user_steering_without_forcing_conclusion(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -129,6 +130,76 @@ class CodexAdapterTests(unittest.TestCase):
             self.assertTrue(research["codex"]["timed_out"])
             self.assertIsInstance(research["codex"]["stderr"], str)
             self.assertIn("timed out", research["summary"])
+
+    def test_codex_parser_extracts_json_from_wrapped_text(self):
+        parsed = CodexAdapter._parse_json_object('Here is JSON:\n```json\n{"winner":"Akainu"}\n```\nThanks')
+
+        self.assertEqual(parsed, {"winner": "Akainu"})
+
+    def test_codex_synthesis_retries_unparseable_output(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            (meeting_dir / "roles" / "moderator").mkdir(parents=True)
+            calls = []
+
+            def fake_runner(command, input, text, capture_output, timeout, check):
+                calls.append(input)
+                output_path = Path(command[command.index("--output-last-message") + 1])
+                if len(calls) == 1:
+                    output_path.write_text("Winner is probably Akainu, but this is not JSON.", encoding="utf-8")
+                else:
+                    output_path.write_text(
+                        '{"winner":"Akainu","ranking":["Akainu"],"confidence":"medium","caveats":[],"summary":"s","tasks":{}}',
+                        encoding="utf-8",
+                    )
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+            adapter = CodexAdapter(command_runner=fake_runner)
+            session = {"meeting_dir": str(meeting_dir), "role_id": "moderator"}
+
+            synthesis = adapter.synthesize(session, "Question?", {"evidence_gate": {"status": "warn"}})
+
+            self.assertEqual(synthesis["winner"], "Akainu")
+            self.assertEqual(len(calls), 2)
+            self.assertIn("strict JSON only", calls[1])
+            self.assertIn("Public council context", calls[1])
+            self.assertIn("evidence_gate", calls[1])
+            self.assertIn("repair", synthesis["codex"])
+
+    def test_codex_synthesis_fallback_is_not_empty_when_repair_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            (meeting_dir / "roles" / "moderator").mkdir(parents=True)
+
+            def fake_runner(command, input, text, capture_output, timeout, check):
+                output_path = Path(command[command.index("--output-last-message") + 1])
+                output_path.write_text("", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 1, stdout="", stderr="failed")
+
+            adapter = CodexAdapter(command_runner=fake_runner)
+            session = {"meeting_dir": str(meeting_dir), "role_id": "moderator"}
+
+            synthesis = adapter.synthesize(
+                session,
+                "Question?",
+                {
+                    "evidence_gate": {
+                        "status": "warn",
+                        "total_supported_claims": 2,
+                        "total_unsupported_claims": 1,
+                        "total_weak_claims": 1,
+                        "total_verifier_rejected_claims": 0,
+                    },
+                    "research_summaries": [
+                        {"role_id": "lore_lawyer", "confidence": "low", "summary": "아카이누 근거가 가장 강함."}
+                    ],
+                },
+            )
+
+            self.assertEqual(synthesis["winner"], "Undetermined")
+            self.assertEqual(synthesis["fallback"], "local_synthesis")
+            self.assertIn("Evidence Gate status is warn", synthesis["summary"])
+            self.assertIn("lore_lawyer", synthesis["summary"])
 
 
 if __name__ == "__main__":

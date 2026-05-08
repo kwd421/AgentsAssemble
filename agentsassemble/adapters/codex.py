@@ -72,7 +72,8 @@ If source preferences are provided, use them to guide search queries and source 
 Treat fan/community sources as claims to inspect, not as canon authority.
 You may hold a free opinion by default, but every conclusion must be traceable to evidence.
 If the user steers toward a preferred angle, spend more research effort on that angle and its best objections. Do not hide contrary evidence.
-For standard/deep research, do not stop after a handful of search results. Iterate queries, compare contradictory sources, and gather enough material for a dense evidence archive.
+For standard/deep research, do not stop after a handful of search results. Iterate queries, compare contradictory sources, and gather enough material for a dense evidence archive. In this single call, satisfy minimum counts before trying to reach target counts.
+Every URL in claim_evidence[].evidence, counterclaims[].evidence, and rejected_claims[].sources MUST exactly match one sources[].url string. If you want to cite a URL, include that same URL in sources first.
 For each claim_evidence item, set evidence_relation to "supports", "weak", "contradicts", or "irrelevant" when the source relationship is explicit. Use "weak" when the source is only indirect, contested, or insufficient for the exact claim.
 If you cannot reach the target source count within tool limits, still return the best evidence and explain the gap in "coverage_gaps".
 Write all user-visible fields in Korean. URLs and source titles may stay in their original language.
@@ -163,16 +164,36 @@ Return only JSON:
   "summary": "...",
   "tasks": {{"role_id": "task"}}
 }}
-"""
+        """
         result = self._invoke_codex(session, "synthesis", prompt, use_search=False)
-        parsed = self._parse_json_object(result["text"]) or {
-            "winner": "Undetermined",
-            "ranking": [],
-            "confidence": "low",
-            "caveats": ["Codex synthesis did not return parseable JSON."],
-            "summary": result["text"].strip(),
-            "tasks": {},
-        }
+        parsed = self._parse_json_object(result["text"])
+        if parsed is None and not result["metadata"].get("timed_out"):
+            retry_prompt = f"""Convert the following moderator output into strict JSON only.
+
+Question: {question}
+Public council context:
+{json.dumps(public_context, ensure_ascii=False, indent=2)}
+
+Original output:
+{result["text"]}
+
+Return only this JSON shape:
+{{
+  "winner": "...",
+  "ranking": ["..."],
+  "confidence": "low|medium|high",
+  "caveats": ["..."],
+  "summary": "...",
+  "tasks": {{"role_id": "task"}}
+}}
+"""
+            retry_result = self._invoke_codex(session, "synthesis-repair", retry_prompt, use_search=False)
+            parsed = self._parse_json_object(retry_result["text"])
+            if parsed is not None:
+                result["metadata"]["repair"] = retry_result["metadata"]
+            else:
+                result["metadata"]["repair_failed"] = retry_result["metadata"]
+        parsed = parsed or self._fallback_synthesis(public_context, result["text"])
         parsed["codex"] = result["metadata"]
         return parsed
 
@@ -256,11 +277,24 @@ Return only JSON:
         if stripped.startswith("```"):
             stripped = re.sub(r"^```(?:json)?\s*", "", stripped)
             stripped = re.sub(r"\s*```$", "", stripped)
-        try:
-            value = json.loads(stripped)
-        except json.JSONDecodeError:
+        for candidate in (stripped, CodexAdapter._extract_json_candidate(stripped)):
+            if not candidate:
+                continue
+            try:
+                value = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                return value
+        return None
+
+    @staticmethod
+    def _extract_json_candidate(text: str) -> str | None:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
             return None
-        return value if isinstance(value, dict) else None
+        return text[start : end + 1]
 
     @staticmethod
     def _depth_payload(depth: ResearchDepth) -> dict[str, Any]:
@@ -295,4 +329,42 @@ Return only JSON:
             ],
             "counterclaims": [],
             "rejected_claims": [],
+        }
+
+    @staticmethod
+    def _fallback_synthesis(public_context: dict[str, Any], text: str) -> dict[str, Any]:
+        gate = public_context.get("evidence_gate", {})
+        role_summaries = public_context.get("research_summaries", [])
+        evidence_status = gate.get("status", "unknown")
+        supported = gate.get("total_supported_claims", 0)
+        unsupported = gate.get("total_unsupported_claims", 0)
+        weak = gate.get("total_weak_claims", 0)
+        rejected = gate.get("total_verifier_rejected_claims", 0)
+        role_lines = []
+        for research in role_summaries:
+            role_lines.append(
+                f"{research.get('role_id', 'unknown')}: "
+                f"{research.get('confidence', 'low')} confidence, "
+                f"{research.get('summary', '').strip()[:220]}"
+            )
+        summary_parts = [
+            "Codex moderator synthesis did not return parseable JSON, so AgentsAssemble produced a conservative local fallback.",
+            f"Evidence Gate status is {evidence_status}: {supported} supported, {unsupported} unsupported, {weak} weak, {rejected} verifier-rejected claims.",
+        ]
+        if role_lines:
+            summary_parts.append("Role research summaries: " + " | ".join(role_lines))
+        original = text.strip()
+        if original:
+            summary_parts.append("Unparsed moderator output: " + original[:500])
+        return {
+            "winner": "Undetermined",
+            "ranking": [],
+            "confidence": "low",
+            "caveats": [
+                "Codex synthesis did not return parseable JSON.",
+                "Fallback synthesis avoids choosing a winner without a parseable moderator decision.",
+            ],
+            "summary": "\n".join(summary_parts),
+            "tasks": {},
+            "fallback": "local_synthesis",
         }
