@@ -402,6 +402,7 @@ input:focus-visible {
 }
 
 .lobby-main {
+  align-items: stretch;
   display: grid;
   gap: 14px;
   grid-template-columns: minmax(0, 1fr) clamp(260px, 28vw, 340px);
@@ -414,9 +415,11 @@ input:focus-visible {
     rgba(6, 8, 13, 0.52);
   border: 1px solid rgba(212, 225, 255, 0.11);
   border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  min-height: clamp(540px, 62vh, 720px);
+  display: grid;
+  gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: clamp(500px, calc(100vh - 220px), 680px);
+  min-height: 0;
   overflow: hidden;
   padding: 10px;
   position: relative;
@@ -438,6 +441,36 @@ input:focus-visible {
   z-index: 1;
 }
 
+.lobby-stage {
+  align-items: center;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(91, 215, 255, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(2, 4, 8, 0.16), rgba(2, 4, 8, 0.58));
+  border: 1px solid rgba(212, 225, 255, 0.08);
+  border-radius: 12px;
+  display: flex;
+  justify-content: center;
+  min-height: clamp(172px, 28vh, 300px);
+  overflow: hidden;
+  position: relative;
+}
+
+.lobby-stage::after {
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 223, 174, 0.1), transparent),
+    linear-gradient(0deg, transparent 0 48%, rgba(212, 225, 255, 0.06) 49% 51%, transparent 52%);
+  bottom: 0;
+  content: "";
+  height: 38%;
+  left: 8%;
+  opacity: 0.56;
+  pointer-events: none;
+  position: absolute;
+  right: 8%;
+  transform: perspective(320px) rotateX(58deg);
+  transform-origin: bottom center;
+}
+
 .assemble-ring {
   align-items: center;
   align-self: center;
@@ -450,9 +483,9 @@ input:focus-visible {
   display: flex;
   height: clamp(176px, calc(220px * var(--ui-scale)), 230px);
   justify-content: center;
-  margin-bottom: 10px;
   position: relative;
   width: min(100%, 520px);
+  z-index: 1;
 }
 
 .assemble-ring::before,
@@ -580,26 +613,39 @@ input:focus-visible {
 
 .lobby-form {
   align-items: center;
-  background: rgba(9, 11, 17, 0.88);
+  background: rgba(9, 11, 17, 0.92);
   border: 1px solid rgba(212, 225, 255, 0.14);
   border-radius: 12px;
   display: grid;
   gap: clamp(6px, calc(8px * var(--ui-scale)), 8px);
   grid-template-columns: minmax(0, 1fr) auto;
-  margin-top: calc(10px * var(--ui-scale));
   padding: 8px;
+}
+
+.lobby-activity {
+  backdrop-filter: blur(10px);
+  background:
+    linear-gradient(180deg, rgba(17, 22, 32, 0.72), rgba(9, 11, 17, 0.86));
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-radius: 12px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 .lobby-feed-head {
   align-items: center;
-  background: rgba(7, 10, 16, 0.42);
-  border: 1px solid rgba(212, 225, 255, 0.1);
-  border-radius: 12px;
+  background: transparent;
+  border-bottom: 1px solid rgba(212, 225, 255, 0.09);
+  border-radius: 0;
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 8px;
-  padding: 10px;
+  margin-bottom: 0;
+  padding: 4px 2px 8px;
 }
 
 .lobby-feed-head strong,
@@ -649,10 +695,9 @@ input:focus-visible {
 .lobby-feed {
   display: grid;
   gap: clamp(5px, calc(7px * var(--ui-scale)), 8px);
-  flex: 1;
   align-content: start;
   overflow: auto;
-  padding: 8px 4px 10px;
+  padding: 10px 4px 2px;
   scroll-behavior: smooth;
 }
 
@@ -822,6 +867,8 @@ input:focus-visible {
     rgba(17, 20, 29, 0.82);
   border: 1px solid rgba(212, 225, 255, 0.14);
   border-radius: 12px;
+  max-height: clamp(500px, calc(100vh - 220px), 680px);
+  overflow: auto;
   padding: 10px;
 }
 

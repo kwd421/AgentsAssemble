@@ -169,16 +169,20 @@ function renderLobby() {
       </div>
       <div class="lobby-main">
         <div class="lobby-panel">
-          ${renderAssembleRing(roster)}
-          <div class="lobby-feed-head">
-            <div>
-              <strong>최근 활동</strong>
-              <span>참여자와 에이전트가 입장, 준비, 투입되는 기록입니다.</span>
-            </div>
-            <em>${state.lobbyEvents.length} events</em>
+          <div class="lobby-stage">
+            ${renderAssembleRing(roster)}
           </div>
-          <div class="lobby-feed">
-            ${state.lobbyEvents.length ? state.lobbyEvents.map(renderLobbyEvent).join("") : '<p class="lobby-empty">아직 로비 메시지가 없습니다.</p>'}
+          <div class="lobby-activity">
+            <div class="lobby-feed-head">
+              <div>
+                <strong>최근 활동</strong>
+                <span>참여자와 에이전트가 입장, 준비, 투입되는 기록입니다.</span>
+              </div>
+              <em>${state.lobbyEvents.length} events</em>
+            </div>
+            <div class="lobby-feed">
+              ${state.lobbyEvents.length ? state.lobbyEvents.map(renderLobbyEvent).join("") : '<p class="lobby-empty">아직 로비 메시지가 없습니다.</p>'}
+            </div>
           </div>
           <form id="lobby-form" class="lobby-form">
             <input id="lobby-message" maxlength="240" placeholder="메시지를 입력하세요" />

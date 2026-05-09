@@ -24,6 +24,16 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("contain: layout paint;", css)
         self.assertIn(":focus-visible", css)
 
+    def test_lobby_separates_stage_from_activity_feed(self):
+        script = (STATIC_DIR / "app.js").read_text()
+        css = (STATIC_DIR / "styles.css").read_text()
+
+        self.assertIn('class="lobby-stage"', script)
+        self.assertIn('class="lobby-activity"', script)
+        self.assertIn(".lobby-stage", css)
+        self.assertIn(".lobby-activity", css)
+        self.assertIn("grid-template-rows: auto minmax(0, 1fr) auto;", css)
+
     def test_tabs_expose_semantic_state(self):
         html = (STATIC_DIR / "index.html").read_text()
         script = (STATIC_DIR / "app.js").read_text()
