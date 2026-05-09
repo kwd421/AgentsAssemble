@@ -960,9 +960,10 @@ function renderArchive(payload) {
         <div class="archive-document-head">
           <div>
             <strong>${escapeHtml(state.archiveKey || "문서")}</strong>
-            <small>${escapeHtml(documentStat(currentDocument))}</small>
+            <small>${escapeHtml(archiveOwnerLabel(state.archiveKey, payload))} · ${escapeHtml(documentStat(currentDocument))}</small>
           </div>
           <div class="archive-actions">
+            <span>${escapeHtml(archiveOwnerLabel(state.archiveKey, payload))}</span>
             <span>${escapeHtml(archiveKindLabel(state.archiveKey))}</span>
             <button type="button" data-archive-command="copy">복사</button>
             <button type="button" data-archive-command="download">내보내기</button>
@@ -1053,6 +1054,14 @@ function archiveKindLabel(key) {
   return "기록";
 }
 
+function archiveOwnerLabel(key, payload) {
+  if (!key) return "공용 기록";
+  const roles = payload?.meeting?.roles || [];
+  const role = roles.find((candidate) => key.includes(`/${candidate.id}/`) || key.endsWith(`/${candidate.id}.md`));
+  if (role) return role.display_name;
+  return "공용 기록";
+}
+
 function buildArchiveEntries(payload) {
   return {
     ...payload.artifacts,
@@ -1104,7 +1113,12 @@ function renderArchiveButton(key, entries) {
     .replace("research/", "")
     .replace("tasks/", "task · ")
     .replace("/research.md", " · research.md");
-  return `<button type="button" class="${key === state.archiveKey ? "is-active" : ""}" data-archive="${escapeHtml(key)}">${escapeHtml(label)}</button>`;
+  return `
+    <button type="button" class="${key === state.archiveKey ? "is-active" : ""}" data-archive="${escapeHtml(key)}">
+      <strong>${escapeHtml(label)}</strong>
+      <span>${escapeHtml(archiveKindLabel(key))}</span>
+    </button>
+  `;
 }
 
 tabs.forEach((tab) => {

@@ -2397,18 +2397,41 @@ input:focus-visible {
 }
 
 .archive-list button {
+  display: grid;
+  gap: 3px;
   width: 100%;
   text-align: left;
   margin-bottom: 8px;
   background: rgba(7, 10, 16, 0.34);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .archive-list button.is-active {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.archive-list button strong,
+.archive-list button span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-list button strong {
+  color: inherit;
+  font-size: 13px;
+}
+
+.archive-list button span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.archive-list button.is-active span {
+  color: #f0c66e;
 }
 
 .archive-document {
@@ -2446,15 +2469,20 @@ input:focus-visible {
   display: flex;
   flex: none;
   gap: 8px;
+  max-width: 52%;
+  min-width: 0;
 }
 
 .archive-actions span {
   border: 1px solid rgba(240, 168, 60, 0.28);
   border-radius: 999px;
   color: var(--accent);
-  flex: none;
   font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
   padding: 5px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .archive-actions button {

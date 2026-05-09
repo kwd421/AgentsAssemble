@@ -50,6 +50,16 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("grid-template-columns: repeat(auto-fit", css)
         self.assertIn("max-height: clamp(520px, 72vh, 780px);", css)
 
+    def test_archive_surfaces_owner_and_document_type(self):
+        script = (STATIC_DIR / "app.js").read_text()
+        css = (STATIC_DIR / "styles.css").read_text()
+
+        self.assertIn("archiveOwnerLabel(state.archiveKey, payload)", script)
+        self.assertIn("function archiveOwnerLabel", script)
+        self.assertIn("archiveKindLabel(key)", script)
+        self.assertIn(".archive-list button strong", css)
+        self.assertIn(".archive-list button span", css)
+
     def test_tabs_expose_semantic_state(self):
         html = (STATIC_DIR / "index.html").read_text()
         script = (STATIC_DIR / "app.js").read_text()
