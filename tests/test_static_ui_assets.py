@@ -7,6 +7,10 @@ STATIC_DIR = ROOT / "agentsassemble" / "static"
 PYPROJECT = ROOT / "pyproject.toml"
 
 
+def static_js() -> str:
+    return "\n".join(path.read_text() for path in sorted(STATIC_DIR.glob("*.js")))
+
+
 class StaticUiAssetTests(unittest.TestCase):
     def test_hero_asset_is_packaged_and_within_budget(self):
         hero = STATIC_DIR / "council-hero.jpg"
@@ -28,18 +32,19 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_app_status_region_reports_demo_state(self):
         html = (STATIC_DIR / "index.html").read_text()
-        script = (STATIC_DIR / "app.js").read_text()
+        script = static_js()
         css = (STATIC_DIR / "styles.css").read_text()
 
         self.assertIn('id="app-status"', html)
         self.assertIn('role="status"', html)
+        self.assertIn('type="module"', html)
         self.assertIn("function showAppStatus", script)
         self.assertIn('showAppStatus("Mock Demo 실행 중"', script)
         self.assertIn('showAppStatus("Mock Demo 생성 완료"', script)
         self.assertIn(".app-status", css)
 
     def test_lobby_separates_stage_from_activity_feed(self):
-        script = (STATIC_DIR / "app.js").read_text()
+        script = static_js()
         css = (STATIC_DIR / "styles.css").read_text()
 
         self.assertIn('class="lobby-stage"', script)
@@ -49,7 +54,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("grid-template-rows: minmax(210px, 0.8fr) minmax(220px, 1fr) auto;", css)
 
     def test_live_view_prioritizes_official_chat(self):
-        script = (STATIC_DIR / "app.js").read_text()
+        script = static_js()
         css = (STATIC_DIR / "styles.css").read_text()
 
         self.assertIn('class="live-chat-header"', script)
@@ -69,7 +74,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn(".record-badge", css)
 
     def test_board_cards_are_dynamic_and_scrollable(self):
-        script = (STATIC_DIR / "app.js").read_text()
+        script = static_js()
         css = (STATIC_DIR / "styles.css").read_text()
 
         self.assertIn("(meeting.roles || []).map", script)
@@ -78,7 +83,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("max-height: clamp(520px, 72vh, 780px);", css)
 
     def test_archive_surfaces_owner_and_document_type(self):
-        script = (STATIC_DIR / "app.js").read_text()
+        script = static_js()
         css = (STATIC_DIR / "styles.css").read_text()
 
         self.assertIn("archiveOwnerLabel(state.archiveKey, payload)", script)
@@ -95,7 +100,7 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_tabs_expose_semantic_state(self):
         html = (STATIC_DIR / "index.html").read_text()
-        script = (STATIC_DIR / "app.js").read_text()
+        script = static_js()
         spec = (ROOT / "docs" / "gui-v0-spec.md").read_text()
 
         self.assertIn('role="tablist"', html)

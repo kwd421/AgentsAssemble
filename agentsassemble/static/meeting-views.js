@@ -1,0 +1,440 @@
+import { displayQuestion, escapeHtml, focusLabels, lensLabels, roleMeta, roundLabel, state } from "./shared.js";
+
+export function renderLive(payload) {
+  const roles = payload.meeting.roles || [];
+  const rounds = payload.meeting.debate_rounds || [];
+  const live = document.querySelector("#live");
+  const shouldFollowLatest = isLiveTranscriptNearBottom(live);
+  const messages = rounds.flatMap((round) =>
+    (round.messages || []).map((message) => ({ ...message, roundTitle: roundLabel(payload.meeting, round.id, round.title) }))
+  );
+  const synthesis = payload.meeting.moderator_synthesis || {};
+  live.innerHTML = `
+    <div class="live-room">
+      <section class="live-chat-header">
+        <div>
+          <div class="live-statusbar">
+            <span class="live-pill">공식 실황</span>
+            <strong>Round ${escapeHtml(rounds.length || 0)}</strong>
+            <span>합의도 ${escapeHtml(synthesis.confidence || "unknown")}</span>
+          </div>
+          <div class="live-chat-title">
+            <h2>${escapeHtml(displayQuestion(payload.meeting.question))}</h2>
+            <div class="channel-tabs" aria-label="발언 대상">
+              <span class="is-active">전체</span>
+              <span>팀</span>
+              <span>귓속말</span>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="live-chat-room">
+        <main class="message-list live-transcript live-chat-feed" aria-label="공식 토론 기록" aria-live="polite">
+          <div class="feed-head">
+            <div>
+              <strong>공식 토론</strong>
+              <span>이 영역의 발언은 transcript.md와 decision.md의 근거가 됩니다.</span>
+            </div>
+            <em class="record-badge">공식 기록</em>
+          </div>
+          ${messages.map(renderMessage).join("")}
+          <article class="message message-purple message-moderator">
+            <img class="profile" src="/static/avatar-moderator.svg" alt="" />
+            <div class="message-body">
+            <div class="message-header"><span class="speaker"><strong>Moderator</strong><em>종합</em></span><span class="message-route">전체 · <span class="confidence">${escapeHtml(synthesis.confidence || "")}</span></span></div>
+            <p>${escapeHtml(synthesis.summary || "")}</p>
+            </div>
+          </article>
+        </main>
+        <aside class="live-chat-side">
+          ${renderLiveTimeline(payload, messages)}
+          ${renderLiveOutcome(payload, messages)}
+          ${renderOfficialRoster(roles)}
+        </aside>
+      </section>
+    </div>
+  `;
+  if (shouldFollowLatest) scrollLiveTranscriptToLatest(live);
+}
+
+function isLiveTranscriptNearBottom(live) {
+  const feed = live?.querySelector(".live-transcript");
+  if (!feed) return true;
+  const distanceFromBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
+  return distanceFromBottom < 64;
+}
+
+function scrollLiveTranscriptToLatest(live) {
+  const feed = live?.querySelector(".live-transcript");
+  if (!feed) return;
+  requestAnimationFrame(() => {
+    feed.scrollTop = feed.scrollHeight;
+  });
+}
+
+function renderLiveTimeline(payload, messages) {
+  const rounds = payload.meeting.debate_rounds || [];
+  return `
+    <aside class="live-timeline">
+      <strong>진행</strong>
+      <ol>
+        <li class="is-done"><span></span>회의 시작</li>
+        <li class="is-done"><span></span>독립 리서치</li>
+        <li class="${rounds.length > 1 ? "is-current" : "is-done"}"><span></span>Round ${escapeHtml(rounds.length || 1)}</li>
+        <li><span></span>결정 생성</li>
+      </ol>
+      ${renderRailMetric("발언 수", messages.length)}
+      ${renderRailMetric("라운드", `${rounds.length || 0} / 3`)}
+    </aside>
+  `;
+}
+
+function renderLiveOutcome(payload, messages) {
+  const synthesis = payload.meeting.moderator_synthesis || {};
+  return `
+    <aside class="live-outcome">
+      <div class="outcome-card">
+        <span>현재 판정</span>
+        <strong>${escapeHtml(synthesis.winner || "판정 대기")}</strong>
+        <p>${escapeHtml(synthesis.summary || "아직 종합 의견이 없습니다.")}</p>
+      </div>
+      <div class="consensus-card">
+        <strong>합의도 추이</strong>
+        <div class="consensus-score">${escapeHtml(synthesis.confidence || "unknown")}</div>
+        <div class="consensus-track"><span></span></div>
+        <p>${escapeHtml(messages.length)}개 발언 기반</p>
+      </div>
+      <section class="rail-card rail-compact">
+        <strong>최근 산출물</strong>
+        ${renderArtifactRow("결정안", "decision.md")}
+        ${renderArtifactRow("발언 로그", "transcript.md")}
+        ${renderArtifactRow("의제", "agenda.md")}
+      </section>
+    </aside>
+  `;
+}
+
+function renderOfficialRoster(roles) {
+  return `
+    <aside class="official-roster">
+      <div class="roster-head">
+        <strong>본회의 참여자</strong>
+        <span>공식 발언 권한 · 에이전트 ${roles.length}</span>
+      </div>
+      ${roles.map((role) => {
+        const meta = roleMeta[role.id] || { color: "purple", title: role.lens, badge: role.lens, avatar: "/static/avatar-moderator.svg" };
+        return `
+          <div class="official-speaker official-${escapeHtml(meta.color)}">
+            <img class="profile profile-tiny" src="${escapeHtml(meta.avatar)}" alt="" />
+            <div>
+              <strong>${escapeHtml(role.display_name)}</strong>
+              <span>${escapeHtml(meta.badge)}</span>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </aside>
+  `;
+}
+
+function renderRailMetric(label, value) {
+  return `<div class="rail-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+}
+
+function renderArtifactRow(label, filename) {
+  return `<div class="artifact-row"><span>${escapeHtml(label)}</span><em>${escapeHtml(filename)}</em></div>`;
+}
+
+function renderAgent(role) {
+  const personality = role.personality || {};
+  const tone = personality.tone || role.lens || "";
+  const meta = roleMeta[role.id] || { color: "purple", title: role.lens, badge: role.lens };
+  return `
+    <article class="agent agent-${meta.color}">
+      <div class="agent-head">
+        <img class="profile profile-small" src="${escapeHtml(meta.avatar)}" alt="" />
+        <div class="agent-name">
+          <strong>${escapeHtml(role.display_name)}</strong>
+          <span>${escapeHtml(meta.title)}</span>
+        </div>
+        <em>${escapeHtml(meta.badge)}</em>
+      </div>
+      <span>${escapeHtml(role.id)}</span>
+      <small>${escapeHtml(tone)}</small>
+    </article>
+  `;
+}
+
+function renderMessage(message) {
+  const meta = roleMeta[message.role_id] || { color: "purple", title: "Moderator", badge: "진행", avatar: "/static/avatar-moderator.svg" };
+  const label = message.roundTitle || message.round;
+  const stance = stanceLabel(message.stance_status);
+  const position = messagePosition(message, state.payload?.meeting);
+  return `
+    <article class="message message-${meta.color}">
+      <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
+      <div class="message-body">
+      <div class="message-header">
+        <span class="speaker">
+          <strong>${escapeHtml(message.display_name)}</strong>
+          <em>${escapeHtml(meta.badge)}</em>
+        </span>
+        <span class="message-route">전체 · ${escapeHtml(label)} · <span class="confidence">${escapeHtml(message.confidence || "")}</span></span>
+      </div>
+      ${position ? `<p class="stance-line"><strong>${escapeHtml(stance)}</strong> ${escapeHtml(position)}</p>` : ""}
+      <p>${escapeHtml(message.content)}</p>
+      </div>
+    </article>
+  `;
+}
+
+function stanceLabel(status) {
+  if (status === "changed") return "입장 변화";
+  if (status === "softened") return "입장 약화";
+  if (status === "strengthened") return "입장 강화";
+  return "입장 유지";
+}
+
+export function renderBoard(payload) {
+  const board = document.querySelector("#board");
+  const meeting = payload.meeting;
+  const researchByRole = Object.fromEntries(
+    (meeting.research_artifacts || []).map((artifact) => [artifact.role_id, artifact.path])
+  );
+  const synthesis = meeting.moderator_synthesis || {};
+  const stanceSummary = buildStanceSummary(meeting);
+  board.innerHTML = `
+    <section class="board-view">
+      <div class="room-strip">
+        <div>
+          <strong>작전판</strong>
+          <small>공식 기록을 압축해서 입장, 근거 품질, 충돌 지점을 한눈에 봅니다.</small>
+        </div>
+        <div class="room-actions">
+          <span class="room-status">에이전트 ${(meeting.roles || []).length}</span>
+          <span class="room-status room-status-hot">${escapeHtml(synthesis.winner || "판정 대기")}</span>
+          <span class="room-status">합의도 ${escapeHtml(synthesis.confidence || "unknown")}</span>
+        </div>
+      </div>
+      <section class="board-command">
+        <div class="board-command-copy">
+          <span class="room-kicker">decision map</span>
+          <strong>${escapeHtml(synthesis.winner || "판정 대기")}</strong>
+          <p>${escapeHtml(synthesis.summary || "모더레이터 합성이 아직 없습니다.")}</p>
+          <div class="board-command-meta">
+            <span>라운드 ${(meeting.debate_rounds || []).length}</span>
+            <span>역할 ${(meeting.roles || []).length}</span>
+            <span>근거 ${(meeting.research_artifacts || []).length}</span>
+          </div>
+        </div>
+        <div class="board-command-panel">
+          <div><strong>흐름</strong><span>어떤 입장이 반복됐고 누가 유지/수정했는지 봅니다.</span></div>
+          <div><strong>검증</strong><span>근거 품질과 탈락한 주장을 같이 봅니다.</span></div>
+        </div>
+      </section>
+      <section class="board-dashboard">
+        ${renderStanceOverview(stanceSummary, synthesis)}
+        ${renderEvidenceOverview(meeting)}
+      </section>
+      <section class="board-grid">
+        ${(meeting.roles || []).map((role) => renderBoardCard(role, payload, researchByRole[role.id])).join("")}
+      </section>
+      <section class="synthesis">
+        <h3>최종 판정</h3>
+        <p><strong>${escapeHtml(synthesis.winner || "Undetermined")}</strong> · confidence ${escapeHtml(synthesis.confidence || "")}</p>
+        <p>${escapeHtml(synthesis.summary || "")}</p>
+        <p>${escapeHtml((synthesis.caveats || []).join(" / "))}</p>
+      </section>
+    </section>
+  `;
+}
+
+function buildStanceSummary(meeting) {
+  const items = new Map();
+  const fallbackPosition = meeting.moderator_synthesis?.winner || "입장 미정";
+  for (const round of meeting.debate_rounds || []) {
+    for (const message of round.messages || []) {
+      const stance = messagePosition(message, meeting, fallbackPosition);
+      const item = items.get(stance) || { stance, count: 0, roles: new Set(), statuses: new Map() };
+      item.count += 1;
+      item.roles.add(message.display_name || message.role_id || "agent");
+      const status = stanceLabel(message.stance_status);
+      item.statuses.set(status, (item.statuses.get(status) || 0) + 1);
+      items.set(stance, item);
+    }
+  }
+  return Array.from(items.values())
+    .map((item) => ({
+      stance: item.stance,
+      count: item.count,
+      roles: Array.from(item.roles),
+      statuses: Array.from(item.statuses.entries()).sort((a, b) => b[1] - a[1]),
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function messagePosition(message, meeting, fallbackPosition) {
+  if (message.position) return message.position;
+  const synthesisWinner = fallbackPosition || meeting?.moderator_synthesis?.winner;
+  if (synthesisWinner) return synthesisWinner;
+  return "입장 미정";
+}
+
+function renderStanceOverview(items, synthesis) {
+  const total = items.reduce((sum, item) => sum + item.count, 0) || 1;
+  return `
+    <section class="stance-overview">
+      <div class="stance-lead">
+        <strong>우세 흐름</strong>
+        <span>${escapeHtml(synthesis.winner || "판정 대기")} · ${escapeHtml(synthesis.confidence || "unknown")}</span>
+      </div>
+      <div class="stance-bars">
+        ${
+          items.length
+            ? items.map((item) => renderStanceBar(item, total)).join("")
+            : '<p class="stance-empty">아직 비교할 입장이 없습니다.</p>'
+        }
+      </div>
+    </section>
+  `;
+}
+
+function renderStanceBar(item, total) {
+  const percent = Math.max(8, Math.round((item.count / total) * 100));
+  const status = item.statuses[0]?.[0] || "입장 유지";
+  return `
+    <article class="stance-bar">
+      <div>
+        <strong>${escapeHtml(item.stance)}</strong>
+        <span>${escapeHtml(item.roles.join(", "))} · ${escapeHtml(status)}</span>
+      </div>
+      <div class="stance-meter" aria-label="${escapeHtml(item.stance)} ${percent}%">
+        <span style="width:${percent}%"></span>
+      </div>
+    </article>
+  `;
+}
+
+function renderBoardCard(role, payload, researchPath) {
+  const meta = roleMeta[role.id] || { color: "purple", title: role.lens, badge: role.lens };
+  const researchJson = payload.research_json?.[role.id] || {};
+  const rounds = payload.meeting.debate_rounds || [];
+  const messages = rounds
+    .map((round) => (round.messages || []).find((message) => message.role_id === role.id))
+    .filter(Boolean);
+  const researchKey = researchPath ? researchPath.replace("private_research/", "").replace(".json", ".md") : "";
+  const research = payload.research[researchKey] || "";
+  const researchSummary = research.split("## Summary")[1]?.split("## Confidence")[0]?.trim() || "Research summary unavailable.";
+  const latestMessage = messages[messages.length - 1] || {};
+  const firstMessage = messages[0] || {};
+  return `
+    <article class="board-card board-${meta.color}">
+      <div class="board-card-title">
+        <h3>${escapeHtml(role.display_name)}</h3>
+        <span>${escapeHtml(meta.badge)}</span>
+      </div>
+      <p>${escapeHtml(lensLabels[role.lens] || role.lens)} · ${escapeHtml(focusLabels[role.id] || role.research_focus)}</p>
+      <div class="board-position">
+        <span>현재 입장</span>
+        <strong>${escapeHtml(messagePosition(latestMessage, payload.meeting))}</strong>
+      </div>
+      <div class="board-insight-grid">
+        <section>
+          <span>핵심 근거</span>
+          <p>${escapeHtml(researchSummary)}</p>
+        </section>
+        <section>
+          <span>변화</span>
+          <p>${escapeHtml(messages.map((message) => stanceLabel(message.stance_status)).join(" → ") || "기록 없음")}</p>
+        </section>
+        <section>
+          <span>첫 주장</span>
+          <p>${escapeHtml(firstMessage.content || "기록 없음")}</p>
+        </section>
+        <section>
+          <span>마지막 반박</span>
+          <p>${escapeHtml(latestMessage.content || "기록 없음")}</p>
+        </section>
+      </div>
+      <div class="stance-mini">
+        ${messages.map((message) => `<span>${escapeHtml(roundLabel(payload.meeting, message.round, message.round))}: ${escapeHtml(stanceLabel(message.stance_status))}</span>`).join("")}
+      </div>
+      ${renderEvidenceTable(researchJson)}
+    </article>
+  `;
+}
+
+function renderEvidenceOverview(meeting) {
+  const gate = meeting.evidence_gate || {};
+  return `
+    <section class="evidence-overview">
+      <div>
+        <strong>Evidence Gate</strong>
+        <span class="status-pill status-${escapeHtml(gate.status || "unknown")}">${escapeHtml(gate.status || "unknown")}</span>
+      </div>
+      ${renderMetric("지원", gate.total_supported_claims)}
+      ${renderMetric("약함", gate.total_weak_claims)}
+      ${renderMetric("미지원", gate.total_unsupported_claims)}
+      ${renderMetric("탈락", gate.total_verifier_rejected_claims)}
+    </section>
+  `;
+}
+
+function renderMetric(label, value) {
+  return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? 0)}</strong></div>`;
+}
+
+function renderEvidenceTable(research) {
+  const gate = research.evidence_gate || {};
+  const rows = [
+    ["지원", gate.supported_claim_count || 0, "supported"],
+    ["약함", gate.weak_claim_count || 0, "weak"],
+    ["미지원", gate.unsupported_claim_count || 0, "unsupported"],
+    ["탈락", gate.verifier_rejected_claim_count || 0, "rejected"],
+  ];
+  const failures = gate.failures || [];
+  return `
+    <div class="evidence-table">
+      <div class="evidence-head">
+        <strong>근거 검증</strong>
+        <span class="status-pill status-${escapeHtml(gate.status || "unknown")}">${escapeHtml(gate.status || "unknown")}</span>
+      </div>
+      <div class="evidence-counts">
+        ${rows.map(([label, count, kind]) => `<span class="count-${kind}"><strong>${escapeHtml(count)}</strong>${escapeHtml(label)}</span>`).join("")}
+      </div>
+      <div class="evidence-detail">
+        <span>출처 ${escapeHtml(gate.source_count || 0)}</span>
+        <span>신뢰도 ${escapeHtml(gate.confidence_after || research.confidence || "unknown")}</span>
+      </div>
+      ${failures.length ? `<ul class="evidence-failures">${failures.map((failure) => `<li>${escapeHtml(failure)}</li>`).join("")}</ul>` : ""}
+      ${renderEvidenceClaims("지원 근거", research.claim_evidence || [], "supported")}
+      ${renderEvidenceClaims("약한 근거", research.weak_claims || [], "weak")}
+      ${renderEvidenceClaims("미지원 근거", research.unsupported_claims || [], "unsupported")}
+      ${renderEvidenceClaims("검증 탈락", research.verifier_rejected_claims || [], "rejected")}
+    </div>
+  `;
+}
+
+function renderEvidenceClaims(title, claims, kind) {
+  const preview = claims.slice(0, 2);
+  if (!preview.length) return "";
+  return `
+    <details class="claim-group claim-${kind}">
+      <summary>${escapeHtml(title)} · ${claims.length}</summary>
+      ${preview.map(renderClaim).join("")}
+      ${claims.length > preview.length ? `<p class="claim-more">+${claims.length - preview.length} more in archive</p>` : ""}
+    </details>
+  `;
+}
+
+function renderClaim(claim) {
+  const urls = claim.evidence || claim.sources || [];
+  return `
+    <div class="claim-row">
+      <strong>${escapeHtml(claim.claim || "")}</strong>
+      ${claim.reason ? `<span>${escapeHtml(claim.reason)}</span>` : ""}
+      ${urls.length ? `<small>${urls.map((url) => escapeHtml(url)).join(" · ")}</small>` : ""}
+    </div>
+  `;
+}
+
