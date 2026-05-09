@@ -233,6 +233,12 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: progress;
+  filter: saturate(0.72);
+  opacity: 0.72;
+}
+
 button:focus-visible,
 select:focus-visible,
 input:focus-visible {
@@ -247,6 +253,10 @@ input:focus-visible {
   border-color: rgba(255, 213, 134, 0.66);
   font-weight: 700;
   box-shadow: 0 12px 32px rgba(242, 136, 62, 0.22);
+}
+
+#run-demo[aria-busy="true"] {
+  background: linear-gradient(135deg, #f3c767, #a86d38);
 }
 
 .tabs {

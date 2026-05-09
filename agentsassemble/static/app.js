@@ -1109,6 +1109,7 @@ textScale?.addEventListener("input", () => {
 
 runDemo.addEventListener("click", async () => {
   runDemo.disabled = true;
+  runDemo.setAttribute("aria-busy", "true");
   runDemo.textContent = "Running...";
   try {
     const result = await fetchJson("/api/demo", { method: "POST" });
@@ -1117,6 +1118,7 @@ runDemo.addEventListener("click", async () => {
     await loadMeeting(result.meeting_id);
   } finally {
     runDemo.disabled = false;
+    runDemo.removeAttribute("aria-busy");
     runDemo.textContent = "Mock Demo";
   }
 });
