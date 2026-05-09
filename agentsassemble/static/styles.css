@@ -233,6 +233,14 @@ button {
   cursor: pointer;
 }
 
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid rgba(91, 215, 255, 0.74);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px rgba(91, 215, 255, 0.12);
+}
+
 #run-demo {
   background: linear-gradient(135deg, #ffd56e, #f08a3e);
   color: #1a0e06;
@@ -277,6 +285,11 @@ button {
   border-color: var(--accent);
   background: linear-gradient(180deg, rgba(242, 184, 75, 0.18), rgba(91, 215, 255, 0.055));
   box-shadow: inset 0 1px 0 rgba(255, 246, 224, 0.16), 0 10px 22px rgba(0, 0, 0, 0.16);
+}
+
+.tab:focus-visible {
+  outline-color: rgba(242, 184, 75, 0.9);
+  box-shadow: 0 0 0 5px rgba(242, 184, 75, 0.14), 0 12px 30px rgba(0, 0, 0, 0.24);
 }
 
 .panel {
