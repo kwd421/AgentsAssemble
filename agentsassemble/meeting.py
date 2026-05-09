@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
-from agentsassemble.artifacts import write_public_artifacts
+from agentsassemble.artifacts import write_agenda, write_public_artifacts
 from agentsassemble.config import load_council_config
 from agentsassemble.meeting_phases import (
     run_debate_phase,
@@ -23,6 +23,7 @@ from agentsassemble.models import (
     ResearchSteering,
     get_research_depth,
 )
+from agentsassemble.templates import DEMO_MEETING_TEMPLATE
 
 
 def run_demo_meeting(
@@ -77,6 +78,28 @@ def run_demo_meeting(
             },
             "permission_profiles": {
                 profile_id: profile.to_dict() for profile_id, profile in setup.permissions.items()
+            },
+            "live_status": "running",
+        },
+    )
+    write_agenda(
+        meeting_dir,
+        {
+            "meeting_id": meeting_id,
+            "question": config.question,
+            "display_question": config.display_question,
+            "topic": config.topic,
+            "display_topic": config.display_topic,
+            "roles": roles,
+            "meeting_template": _meeting_template_snapshot(),
+            "memory_context": memory_context,
+            "research_steering": steering.to_dict(),
+            "research_depth": {
+                "name": depth.name,
+                "label": depth.label,
+                "target_sources": depth.target_sources,
+                "min_claims": depth.min_claims,
+                "min_counterclaims": depth.min_counterclaims,
             },
             "live_status": "running",
         },
@@ -194,3 +217,19 @@ def run_demo_meeting(
     report(f"Decision: {synthesis['winner']} ({synthesis['confidence']} confidence)")
     report(f"Artifacts: {meeting_dir}")
     return MeetingResult(meeting_id=meeting_id, meeting_dir=meeting_dir)
+
+
+def _meeting_template_snapshot() -> dict[str, object]:
+    return {
+        "id": DEMO_MEETING_TEMPLATE["id"],
+        "display_name": DEMO_MEETING_TEMPLATE["display_name"],
+        "rounds": [
+            {
+                "id": round_definition.id,
+                "title": round_definition.title,
+                "context_scope": round_definition.context_scope,
+                "instruction": round_definition.instruction,
+            }
+            for round_definition in DEMO_MEETING_TEMPLATE["rounds"]
+        ],
+    }

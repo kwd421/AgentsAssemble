@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agentsassemble.meeting import run_demo_meeting
 
@@ -246,6 +247,20 @@ class DemoMeetingTests(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn(first.meeting_id, role_memory)
+
+    def test_agenda_is_written_before_research_can_fail(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with patch("agentsassemble.meeting.run_research_phase", side_effect=RuntimeError("research stopped")):
+                with self.assertRaisesRegex(RuntimeError, "research stopped"):
+                    run_demo_meeting(adapter_name="mock", output_root=root)
+
+            meeting_dirs = list((root / "meetings").iterdir())
+            self.assertEqual(len(meeting_dirs), 1)
+            agenda = (meeting_dirs[0] / "agenda.md").read_text(encoding="utf-8")
+            self.assertIn("# Agenda", agenda)
+            self.assertIn("원피스 3대장 중 누가 제일 센가?", agenda)
+            self.assertIn("Meeting template: 원피스 3대장 최강자 토론", agenda)
 
 
 if __name__ == "__main__":
