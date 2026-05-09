@@ -6,6 +6,7 @@ from typing import Callable
 from agentsassemble.adapters.base import ProviderAdapter
 from agentsassemble.adapters.codex import CodexAdapter
 from agentsassemble.adapters.mock import MockAdapter
+from agentsassemble.adapters.unsupported import UnsupportedProviderAdapter
 from agentsassemble.models import AgentBinding, PermissionProfile, ProviderCapabilities, ProviderConfig
 
 
@@ -109,7 +110,125 @@ def default_provider_registry(
             cost_class="subscription",
         ),
     )
+    register_planned_provider_kinds(registry)
     return registry
+
+
+def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
+    planned: dict[str, tuple[ProviderCapabilities, str]] = {
+        "anthropic": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=False,
+                supports_tools=True,
+                supports_filesystem=False,
+                supports_session_resume=True,
+                supports_structured_output=True,
+                context_window=200_000,
+                cost_class="paid_api",
+            ),
+            "Claude API integration is planned; configure as an external meeting provider before enabling calls.",
+        ),
+        "gemini": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=True,
+                supports_tools=True,
+                supports_filesystem=False,
+                supports_session_resume=True,
+                supports_structured_output=True,
+                context_window=1_000_000,
+                cost_class="paid_api",
+            ),
+            "Gemini API integration is planned; grounding/search behavior must be wired explicitly.",
+        ),
+        "grok": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=True,
+                supports_tools=True,
+                supports_filesystem=False,
+                supports_session_resume=True,
+                supports_structured_output=True,
+                cost_class="paid_api",
+            ),
+            "Grok API integration is planned; evidence provenance must be strict before live use.",
+        ),
+        "local_openai_compatible": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=False,
+                supports_tools=False,
+                supports_filesystem=False,
+                supports_session_resume=False,
+                supports_structured_output=True,
+                cost_class="local",
+            ),
+            "Local OpenAI-compatible provider integration is planned; endpoint calls are not wired yet.",
+        ),
+        "cursor": (
+            ProviderCapabilities(
+                supports_research=False,
+                supports_web_search=False,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=False,
+                cost_class="subscription",
+            ),
+            "Cursor is reserved for implementation-phase work after a decision artifact exists.",
+        ),
+        "claude_code": (
+            ProviderCapabilities(
+                supports_research=False,
+                supports_web_search=False,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=False,
+                cost_class="subscription",
+            ),
+            "Claude Code is reserved for implementation-phase work after a decision artifact exists.",
+        ),
+        "hermes_memory": (
+            ProviderCapabilities(
+                supports_research=False,
+                supports_web_search=False,
+                supports_tools=False,
+                supports_filesystem=False,
+                supports_session_resume=True,
+                supports_structured_output=True,
+                cost_class="memory_pack",
+            ),
+            "Hermes-style memory is treated as an importable profile pack, not a live meeting adapter.",
+        ),
+        "openclaw_memory": (
+            ProviderCapabilities(
+                supports_research=False,
+                supports_web_search=False,
+                supports_tools=False,
+                supports_filesystem=False,
+                supports_session_resume=True,
+                supports_structured_output=True,
+                cost_class="memory_pack",
+            ),
+            "OpenClaw-style memory is treated as an importable profile pack, not a live meeting adapter.",
+        ),
+        "memory_pack": (
+            ProviderCapabilities(
+                supports_research=False,
+                supports_web_search=False,
+                supports_tools=False,
+                supports_filesystem=False,
+                supports_session_resume=True,
+                supports_structured_output=True,
+                cost_class="memory_pack",
+            ),
+            "Memory/profile packs must pass a memory gate before influencing meetings.",
+        ),
+    }
+    for kind, (capabilities, reason) in planned.items():
+        registry.register(kind, lambda provider, reason=reason: UnsupportedProviderAdapter(provider.kind, reason), capabilities)
 
 
 def validate_binding(
@@ -120,6 +239,10 @@ def validate_binding(
 ) -> None:
     if permission.web_search and not capabilities.supports_web_search:
         raise ValueError(f"Agent {binding.agent_id} requests web_search but provider {provider.id} cannot search.")
+    if permission.official_turn and not capabilities.supports_research:
+        raise ValueError(
+            f"Agent {binding.agent_id} requests official meeting turns but provider {provider.id} cannot run research."
+        )
     if permission.tool_use and not capabilities.supports_tools:
         raise ValueError(f"Agent {binding.agent_id} requests tools but provider {provider.id} has no tool support.")
     if permission.filesystem_read and not capabilities.supports_filesystem:
@@ -130,4 +253,3 @@ def validate_binding(
         raise ValueError(
             f"Agent {binding.agent_id} requests implementation-side permissions during a meeting-only run."
         )
-

@@ -13,7 +13,10 @@ ProviderKind = Literal[
     "gemini",
     "grok",
     "cursor",
+    "claude_code",
     "local_openai_compatible",
+    "hermes_memory",
+    "openclaw_memory",
     "memory_pack",
 ]
 

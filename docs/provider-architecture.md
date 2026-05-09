@@ -32,6 +32,20 @@ The current code still runs the same `mock` and `codex` demo paths, but meeting 
 
 The default demo still assigns all roles to one provider. The point of this slice is to make the future role-by-role routing auditable without changing the user-facing demo behavior.
 
+The default registry also exposes planned provider kinds with explicit capability snapshots and unsupported adapters:
+
+- `anthropic`
+- `gemini`
+- `grok`
+- `local_openai_compatible`
+- `cursor`
+- `claude_code`
+- `hermes_memory`
+- `openclaw_memory`
+- `memory_pack`
+
+These entries make provider intent visible without pretending live integrations exist. Meeting-time validation rejects implementation-only providers such as Cursor and Claude Code from official meeting turns.
+
 ## Provider Families
 
 ### API Meeting Providers
@@ -100,4 +114,3 @@ Remote or imported agents should join through explicit context and memory packet
 3. Add manual external review packets for Claude/Gemini/Grok before full API integrations.
 4. Add an importable memory/profile packet schema and memory gate report.
 5. Split meeting adapters from implementation/coding-agent adapters.
-
