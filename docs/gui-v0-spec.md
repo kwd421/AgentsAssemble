@@ -205,6 +205,10 @@ The UI should feel like a compact local operations room for AI agents:
 - No decorative gradient/orb background.
 - Tabs should be prominent and easy to rename.
 - The first viewport should immediately show the council UI, not an explanation page.
+- The visual system should feel like one continuous council facility across lobby, live, board, and archive, not four unrelated admin screens.
+- High-impact bitmap assets are allowed when they materially improve the product feel, but they must be optimized, packaged, and covered by an asset budget test.
+- Reuse existing visual assets before adding new ones. Avoid large uncompressed PNGs in the shipped app.
+- Prefer responsive surfaces, scroll containment, and compact controls over oversized static panels.
 
 Suggested layout:
 
@@ -214,6 +218,20 @@ AgentsAssemble
 
 <selected tab content>
 ```
+
+Current screen purposes:
+
+- `로비`: informal staging area for owners and agents before formal deployment. It may show social presence and readiness, but should stay visually distinct from the official meeting record.
+- `실황`: cinematic live council room and chronological debate feed. It carries the strongest visual atmosphere.
+- `작전판`: dense evidence and stance review surface. It should scale to many roles without hardcoded three-person assumptions.
+- `아카이브`: document reader for agenda, transcript, decision, return packets, and research artifacts. It should favor readable documents and independent scrolling over decorative layout.
+
+Current performance guardrails:
+
+- The main council hero image should stay under the tested asset budget.
+- Static package data must include any shipped bitmap assets.
+- Long repeated lists should use scroll containment or rendering containment where practical.
+- Any new visual asset should be justified by visible product value, not decoration alone.
 
 ## Acceptance Criteria
 
@@ -225,7 +243,9 @@ AgentsAssemble
 - `작전판` shows structured research, claims, rebuttals, and synthesis.
 - `아카이브` shows readable artifact previews.
 - Role/personality metadata is available in the meeting model and visible enough that agents do not all feel like the same generic AI voice.
-- The GUI uses stable internal tab ids: `live`, `board`, `archive`.
+- The GUI uses stable internal tab ids: `lobby`, `live`, `board`, `archive`.
+- The GUI keeps shipped bitmap assets packaged and within the tested size budget.
+- The GUI includes responsive breakpoints for narrow screens.
 - Existing CLI mock demo behavior remains working.
 
 ## Future Extensions
