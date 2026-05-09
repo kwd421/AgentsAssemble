@@ -336,20 +336,33 @@ function paragraphize(text) {
   const normalized = String(text || "").replace(/\s+/g, " ").trim();
   if (!normalized) return [""];
   const sentences = normalized.match(/[^.!?。！？]+[.!?。！？]?/g) || [normalized];
-  const lines = [];
+  return sentences.flatMap((sentence) => splitLongSentence(sentence.trim())).filter(Boolean);
+}
+
+function splitLongSentence(sentence) {
+  if (sentence.length <= 150) return [sentence];
+  const chunks = [];
   let current = "";
-  for (const sentence of sentences) {
-    const trimmed = sentence.trim();
-    if (!trimmed) continue;
-    if ((current + " " + trimmed).trim().length > 160 && current) {
-      lines.push(current);
-      current = trimmed;
+  for (const part of sentence.split(/([,;:，；：、])/)) {
+    const next = `${current}${part}`.trim();
+    if (next.length > 110 && current) {
+      chunks.push(current.trim());
+      current = part.trim();
     } else {
-      current = (current + " " + trimmed).trim();
+      current = next;
     }
   }
-  if (current) lines.push(current);
-  return lines;
+  if (current) chunks.push(current.trim());
+  return chunks.flatMap(splitOverlongText);
+}
+
+function splitOverlongText(text) {
+  if (text.length <= 150) return [text];
+  const chunks = [];
+  for (let index = 0; index < text.length; index += 110) {
+    chunks.push(text.slice(index, index + 110).trim());
+  }
+  return chunks.filter(Boolean);
 }
 
 function highlightImportant(html, needle) {

@@ -291,7 +291,9 @@
   margin: 0;
   padding: 20px;
   overflow: auto;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
+  word-break: keep-all;
   color: #edf2ff;
   line-height: 1.65;
   font-size: clamp(12px, calc(14px * var(--text-scale)), 15px);

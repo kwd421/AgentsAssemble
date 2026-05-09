@@ -80,6 +80,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function confidenceLabel", script)
         self.assertIn("function userVisibleSummary", script)
         self.assertIn("function highlightImportant", script)
+        self.assertIn("function splitLongSentence", script)
+        self.assertIn("function splitOverlongText", script)
+        self.assertIn("sentence.length <= 150", script)
+        self.assertIn("index += 110", script)
         self.assertIn("Codex moderator synthesis did not return parseable JSON", script)
         self.assertIn(".latest-jump", css)
         self.assertIn(".system-line", css)
@@ -126,6 +130,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn(".archive-stat", css)
         self.assertIn(".archive-list button strong", css)
         self.assertIn(".archive-list button span", css)
+        self.assertIn("overflow-wrap: anywhere;", css)
+        self.assertIn("word-break: keep-all;", css)
 
     def test_tabs_expose_semantic_state(self):
         html = (STATIC_DIR / "index.html").read_text()
