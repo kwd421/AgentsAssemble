@@ -37,6 +37,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("grid-template-rows: auto minmax(0, 1fr) auto;", css)
 
     def test_live_stage_leaves_room_for_transcript(self):
+        script = (STATIC_DIR / "app.js").read_text()
         css = (STATIC_DIR / "styles.css").read_text()
 
         self.assertIn("min-height: clamp(480px, calc(100vh - 210px), 720px);", css)
@@ -44,6 +45,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("font-size: clamp(30px, 4.25vw, 58px);", css)
         self.assertIn("min-height: 430px;", css)
         self.assertIn("height: clamp(220px, 34vh, 300px);", css)
+        self.assertIn("isLiveTranscriptNearBottom(live)", script)
+        self.assertIn("scrollLiveTranscriptToLatest(live)", script)
 
     def test_board_cards_are_dynamic_and_scrollable(self):
         script = (STATIC_DIR / "app.js").read_text()

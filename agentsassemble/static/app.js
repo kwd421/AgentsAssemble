@@ -447,6 +447,7 @@ function renderLive(payload) {
   const roles = payload.meeting.roles || [];
   const rounds = payload.meeting.debate_rounds || [];
   const live = document.querySelector("#live");
+  const shouldFollowLatest = isLiveTranscriptNearBottom(live);
   const messages = rounds.flatMap((round) =>
     (round.messages || []).map((message) => ({ ...message, roundTitle: roundLabel(payload.meeting, round.id, round.title) }))
   );
@@ -489,6 +490,22 @@ function renderLive(payload) {
       </section>
     </div>
   `;
+  if (shouldFollowLatest) scrollLiveTranscriptToLatest(live);
+}
+
+function isLiveTranscriptNearBottom(live) {
+  const feed = live?.querySelector(".live-transcript");
+  if (!feed) return true;
+  const distanceFromBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
+  return distanceFromBottom < 64;
+}
+
+function scrollLiveTranscriptToLatest(live) {
+  const feed = live?.querySelector(".live-transcript");
+  if (!feed) return;
+  requestAnimationFrame(() => {
+    feed.scrollTop = feed.scrollHeight;
+  });
 }
 
 function renderLiveTimeline(payload, messages) {
