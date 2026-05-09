@@ -192,6 +192,31 @@ p {
   min-width: 0;
 }
 
+.app-status {
+  border: 1px solid rgba(91, 215, 255, 0.22);
+  border-radius: 999px;
+  color: #bdf4ff;
+  flex: 0 1 160px;
+  font-size: 11px;
+  line-height: 1.2;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 6px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-status[data-tone="success"] {
+  border-color: var(--green-line);
+  color: var(--green);
+}
+
+.app-status[data-tone="error"] {
+  border-color: var(--red-line);
+  color: var(--red);
+}
+
 #meeting-select {
   max-width: min(34vw, 360px);
   min-width: 240px;
@@ -2715,6 +2740,10 @@ input:focus-visible {
   }
 
   #run-demo {
+    grid-column: 1 / -1;
+  }
+
+  .app-status {
     grid-column: 1 / -1;
   }
 

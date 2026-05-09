@@ -61,6 +61,7 @@ const meetingSelect = document.querySelector("#meeting-select");
 const subtitle = document.querySelector("#meeting-subtitle");
 const uiScale = document.querySelector("#ui-scale");
 const textScale = document.querySelector("#text-scale");
+const appStatus = document.querySelector("#app-status");
 const lobbySides = new Set(["mine", "my-agent", "other", "other-agent"]);
 
 function applyScaleSettings() {
@@ -79,6 +80,13 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function showAppStatus(message, tone = "info") {
+  if (!appStatus) return;
+  appStatus.textContent = message;
+  appStatus.dataset.tone = tone;
+  appStatus.hidden = !message;
 }
 
 async function fetchJson(url, options) {
@@ -1188,11 +1196,15 @@ runDemo.addEventListener("click", async () => {
   runDemo.disabled = true;
   runDemo.setAttribute("aria-busy", "true");
   runDemo.textContent = "Running...";
+  showAppStatus("Mock Demo 실행 중", "info");
   try {
     const result = await fetchJson("/api/demo", { method: "POST" });
     await loadMeetings();
     meetingSelect.value = result.meeting_id;
     await loadMeeting(result.meeting_id);
+    showAppStatus("Mock Demo 생성 완료", "success");
+  } catch (error) {
+    showAppStatus(error?.message || "Mock Demo 실행 실패", "error");
   } finally {
     runDemo.disabled = false;
     runDemo.removeAttribute("aria-busy");

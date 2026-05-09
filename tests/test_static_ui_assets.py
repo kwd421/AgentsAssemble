@@ -26,6 +26,18 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("width: min(28vw, 130px);", css)
         self.assertIn("#run-demo {\n    grid-column: 1 / -1;", css)
 
+    def test_app_status_region_reports_demo_state(self):
+        html = (STATIC_DIR / "index.html").read_text()
+        script = (STATIC_DIR / "app.js").read_text()
+        css = (STATIC_DIR / "styles.css").read_text()
+
+        self.assertIn('id="app-status"', html)
+        self.assertIn('role="status"', html)
+        self.assertIn("function showAppStatus", script)
+        self.assertIn('showAppStatus("Mock Demo 실행 중"', script)
+        self.assertIn('showAppStatus("Mock Demo 생성 완료"', script)
+        self.assertIn(".app-status", css)
+
     def test_lobby_separates_stage_from_activity_feed(self):
         script = (STATIC_DIR / "app.js").read_text()
         css = (STATIC_DIR / "styles.css").read_text()
