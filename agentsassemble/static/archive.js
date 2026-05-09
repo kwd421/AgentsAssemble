@@ -151,6 +151,7 @@ function archiveDownloadName(key) {
 
 function archiveKindLabel(key) {
   if (!key) return "기록";
+  if (key.includes("evidence/")) return "근거 표";
   if (key.includes("research/")) return "리서치";
   if (key.includes("tasks/")) return "작업 배정";
   if (key.includes("return_packets/")) return "세션 복귀";
@@ -174,7 +175,61 @@ function buildArchiveEntries(payload) {
     ...Object.fromEntries(Object.entries(payload.tasks).map(([key, value]) => [`tasks/${key}`, value])),
     ...Object.fromEntries(Object.entries(payload.return_packets || {}).map(([key, value]) => [`return_packets/${key}`, value])),
     ...Object.fromEntries(Object.entries(payload.research).map(([key, value]) => [`research/${key}`, value])),
+    ...buildEvidenceArchiveEntries(payload),
   };
+}
+
+function buildEvidenceArchiveEntries(payload) {
+  return Object.fromEntries(
+    Object.entries(payload.research_json || {})
+      .filter(([, research]) => research && typeof research === "object")
+      .map(([roleId, research]) => [`evidence/${roleId}.md`, renderEvidenceArchiveMarkdown(roleId, research, payload)])
+  );
+}
+
+function renderEvidenceArchiveMarkdown(roleId, research, payload) {
+  const role = (payload.meeting.roles || []).find((candidate) => candidate.id === roleId);
+  const gate = research.evidence_gate || {};
+  return [
+    `# Evidence Table: ${role?.display_name || roleId}`,
+    "",
+    `Status: ${gate.status || "unknown"}`,
+    `Sources: ${gate.source_count || 0}`,
+    `Confidence: ${gate.confidence_after || research.confidence || "unknown"}`,
+    "",
+    "## Counts",
+    "",
+    `- Supported: ${gate.supported_claim_count || 0}`,
+    `- Weak: ${gate.weak_claim_count || 0}`,
+    `- Unsupported: ${gate.unsupported_claim_count || 0}`,
+    `- Verifier rejected: ${gate.verifier_rejected_claim_count || 0}`,
+    "",
+    renderEvidenceArchiveSection("Supported Claims", research.claim_evidence || []),
+    renderEvidenceArchiveSection("Weak Claims", research.weak_claims || []),
+    renderEvidenceArchiveSection("Unsupported Claims", research.unsupported_claims || []),
+    renderEvidenceArchiveSection("Verifier Rejected Claims", research.verifier_rejected_claims || []),
+  ].join("\n");
+}
+
+function renderEvidenceArchiveSection(title, claims) {
+  if (!claims.length) return `## ${title}\n\nNone.\n`;
+  return [
+    `## ${title}`,
+    "",
+    "| Claim | Reason / Interpretation | Sources |",
+    "| --- | --- | --- |",
+    ...claims.map((claim) => {
+      const urls = claim.evidence || claim.sources || [];
+      return `| ${tableCell(claim.claim)} | ${tableCell(claim.reason || claim.interpretation || claim.why_it_matters)} | ${tableCell(urls.join("<br>") || "출처 없음")} |`;
+    }),
+    "",
+  ].join("\n");
+}
+
+function tableCell(value) {
+  return String(value || "")
+    .replaceAll("|", "\\|")
+    .replaceAll("\n", "<br>");
 }
 
 function renderArchiveGroups(payload, entries) {
@@ -217,6 +272,7 @@ function renderArchiveGroup(title, subtitle, keys, entries, meta) {
 function renderArchiveButton(key) {
   const label = key
     .replace("research/", "")
+    .replace("evidence/", "evidence · ")
     .replace("tasks/", "task · ")
     .replace("/research.md", " · research.md");
   return `

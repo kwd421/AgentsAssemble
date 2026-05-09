@@ -441,34 +441,53 @@
   font-weight: 700;
 }
 
-.claim-row {
-  background: rgba(8, 11, 17, 0.62);
+.claim-table-wrap {
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 10px;
   margin-top: 8px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.evidence-claims-table {
+  border-collapse: collapse;
+  min-width: 620px;
+  width: 100%;
+}
+
+.evidence-claims-table th,
+.evidence-claims-table td {
+  border-bottom: 1px solid rgba(212, 225, 255, 0.09);
   padding: 8px;
+  text-align: left;
+  vertical-align: top;
 }
 
-.claim-row strong,
-.claim-row span,
-.claim-row small {
-  display: block;
-}
-
-.claim-row strong {
+.evidence-claims-table th {
+  background: rgba(8, 11, 17, 0.82);
   color: var(--text);
-  font-size: 13px;
-  line-height: 1.35;
+  font-size: 11px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
-.claim-row span,
-.claim-row small,
-.claim-more {
+.evidence-claims-table td {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
-  margin-top: 5px;
   overflow-wrap: anywhere;
+}
+
+.evidence-claims-table td:first-child {
+  color: var(--text);
+  min-width: 220px;
+}
+
+.evidence-claims-table a {
+  color: var(--accent);
+  display: inline-block;
+  margin: 0 6px 4px 0;
 }
 
 .synthesis {

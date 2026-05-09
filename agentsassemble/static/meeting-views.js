@@ -608,24 +608,42 @@ function renderEvidenceTable(research) {
 }
 
 function renderEvidenceClaims(title, claims, kind) {
-  const preview = claims.slice(0, 2);
-  if (!preview.length) return "";
+  if (!claims.length) return "";
   return `
     <details class="claim-group claim-${kind}">
       <summary>${escapeHtml(title)} · ${claims.length}</summary>
-      ${preview.map(renderClaim).join("")}
-      ${claims.length > preview.length ? `<p class="claim-more">+${claims.length - preview.length} more in archive</p>` : ""}
+      <div class="claim-table-wrap">
+        <table class="evidence-claims-table">
+          <thead>
+            <tr>
+              <th>주장</th>
+              <th>근거/사유</th>
+              <th>출처</th>
+            </tr>
+          </thead>
+          <tbody>${claims.map(renderClaimRow).join("")}</tbody>
+        </table>
+      </div>
     </details>
   `;
 }
 
-function renderClaim(claim) {
+function renderClaimRow(claim) {
   const urls = claim.evidence || claim.sources || [];
   return `
-    <div class="claim-row">
-      <strong>${escapeHtml(claim.claim || "")}</strong>
-      ${claim.reason ? `<span>${escapeHtml(claim.reason)}</span>` : ""}
-      ${urls.length ? `<small>${urls.map((url) => escapeHtml(url)).join(" · ")}</small>` : ""}
-    </div>
+    <tr>
+      <td>${escapeHtml(claim.claim || "")}</td>
+      <td>${escapeHtml(claim.reason || claim.interpretation || claim.why_it_matters || "")}</td>
+      <td>${urls.length ? urls.map((url) => `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(url))}</a>`).join(" ") : "출처 없음"}</td>
+    </tr>
   `;
+}
+
+function shortUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return String(url || "");
+  }
 }
