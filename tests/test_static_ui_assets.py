@@ -41,6 +41,15 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("height: clamp(280px, 38vh, 470px);", css)
         self.assertIn("font-size: clamp(30px, 4.25vw, 58px);", css)
 
+    def test_board_cards_are_dynamic_and_scrollable(self):
+        script = (STATIC_DIR / "app.js").read_text()
+        css = (STATIC_DIR / "styles.css").read_text()
+
+        self.assertIn("(meeting.roles || []).map", script)
+        self.assertIn('에이전트 ${(meeting.roles || []).length}', script)
+        self.assertIn("grid-template-columns: repeat(auto-fit", css)
+        self.assertIn("max-height: clamp(520px, 72vh, 780px);", css)
+
     def test_tabs_expose_semantic_state(self):
         html = (STATIC_DIR / "index.html").read_text()
         script = (STATIC_DIR / "app.js").read_text()

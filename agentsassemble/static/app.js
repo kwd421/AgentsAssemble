@@ -718,6 +718,7 @@ function renderBoard(payload) {
           <small>입장, 근거, 반박 이후의 변화, 아직 갈린 부분을 정리합니다.</small>
         </div>
         <div class="room-actions">
+          <span class="room-status">에이전트 ${(meeting.roles || []).length}</span>
           <span class="room-status room-status-hot">${escapeHtml(synthesis.winner || "판정 대기")}</span>
           <span class="room-status">합의도 ${escapeHtml(synthesis.confidence || "unknown")}</span>
         </div>

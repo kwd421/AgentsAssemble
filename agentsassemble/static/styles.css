@@ -2023,7 +2023,9 @@ input:focus-visible {
 
 .board-card {
   contain: layout paint;
+  max-height: clamp(520px, 72vh, 780px);
   min-width: 0;
+  overflow: auto;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
