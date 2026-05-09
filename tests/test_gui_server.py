@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.gui import append_lobby_event, build_meeting_payload, list_meetings, read_lobby
+from agentsassemble.gui import _safe_static_path, append_lobby_event, build_meeting_payload, list_meetings, read_lobby
 from agentsassemble.meeting import run_demo_meeting
 
 
@@ -58,6 +58,16 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(meetings[0]["meeting_id"], second.meeting_id)
             self.assertEqual(meetings[1]["meeting_id"], first.meeting_id)
+
+    def test_static_paths_cannot_escape_static_root(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            static_root = root / "static"
+            static_root.mkdir()
+            (static_root / "app.js").write_text("", encoding="utf-8")
+
+            self.assertEqual(_safe_static_path(static_root, "app.js"), (static_root / "app.js").resolve())
+            self.assertIsNone(_safe_static_path(static_root, "../secret.txt"))
 
 
 if __name__ == "__main__":

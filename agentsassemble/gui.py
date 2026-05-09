@@ -152,7 +152,11 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                 return
             if path.startswith("/static/"):
                 rel = path.removeprefix("/static/")
-                self._send_file(static_root / rel)
+                static_path = _safe_static_path(static_root, rel)
+                if static_path is None:
+                    self._send_error(HTTPStatus.NOT_FOUND, "File not found")
+                    return
+                self._send_file(static_path)
                 return
             if path == "/api/meetings":
                 self._send_json({"meetings": list_meetings(output_root)})
@@ -228,3 +232,13 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(data)
 
     return AgentsAssembleHandler
+
+
+def _safe_static_path(static_root: Path, relative_path: str) -> Path | None:
+    root = static_root.resolve()
+    candidate = (root / relative_path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate
