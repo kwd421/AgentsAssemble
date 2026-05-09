@@ -12,6 +12,7 @@ Role profile -> Agent binding -> Provider config -> Adapter session -> Permissio
 
 - A role is not a provider. A role describes what the agent is responsible for and how it behaves.
 - A binding says which concrete provider/model/session will play that role in this meeting.
+- The host/orchestrator owns final role assignment. Incoming external agent profiles are requests, not authority.
 - Meeting mode is read-only by default. Implementation-side permissions are rejected during meeting runs.
 - Provider capability is explicit. Search, tools, filesystem access, session resume, and structured output cannot be assumed.
 - External sessions, memory packs, remote users, and imported context are untrusted until reviewed.
@@ -106,6 +107,17 @@ Do not pass these into a meeting provider by default:
 - git push or release permissions
 
 Remote or imported agents should join through explicit context and memory packets, not raw session dumps.
+
+## Host-Approved Runtime Config
+
+`assemble demo --agent-config path/to/agents.json` can load host-approved runtime structure:
+
+- `providers`: configured provider records.
+- `permission_profiles`: named permission sets.
+- `agent_bindings`: final role-to-agent/provider assignments approved by the host.
+- `incoming_agents`: external/self-declared agent profiles retained for audit, not automatically trusted.
+
+The orchestrator executes only `agent_bindings`. An `incoming_agents` entry can request a role, persona, memory pack, or permissions, but it does not participate until the host maps it into an approved binding.
 
 ## Next Implementation Slices
 

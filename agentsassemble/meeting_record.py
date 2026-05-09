@@ -71,6 +71,8 @@ def assemble_meeting_record(
             profile_id: profile.to_dict() for profile_id, profile in setup.permissions.items()
         },
         "agent_bindings": [binding.to_dict() for binding in setup.agent_bindings],
+        "agent_config_source": setup.config_source,
+        "incoming_agents": setup.incoming_agents,
         "provider_capabilities": {
             provider_id: setup.registry.capabilities_for(provider_config).to_dict()
             for provider_id, provider_config in setup.providers.items()

@@ -140,6 +140,77 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertIn("키자루", meeting["research_steering"]["prompt"])
             self.assertEqual(research["research_steering"]["stance"], "user_leaning")
 
+    def test_agent_config_records_host_approved_bindings_and_incoming_agents(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            agent_config = root / "agents.json"
+            agent_config.write_text(
+                json.dumps(
+                    {
+                        "providers": [
+                            {
+                                "id": "approved-mock",
+                                "kind": "mock",
+                                "display_name": "Approved Mock Provider",
+                            }
+                        ],
+                        "permission_profiles": [
+                            {
+                                "id": "meeting_guest_readonly",
+                                "meeting_read": True,
+                                "official_turn": True,
+                                "filesystem_write": False,
+                                "implementation": False,
+                            }
+                        ],
+                        "incoming_agents": [
+                            {
+                                "name": "친구봇",
+                                "requested_role": "lore_lawyer",
+                                "provider": "cursor",
+                                "requested_permissions": {"filesystem_write": True},
+                            }
+                        ],
+                        "agent_bindings": [
+                            {
+                                "agent_id": "approved-lore",
+                                "role_id": "lore_lawyer",
+                                "owner_id": "host",
+                                "provider_id": "approved-mock",
+                                "permission_profile_id": "meeting_guest_readonly",
+                            },
+                            {
+                                "agent_id": "approved-feats",
+                                "role_id": "show_me_the_feats",
+                                "owner_id": "host",
+                                "provider_id": "approved-mock",
+                                "permission_profile_id": "meeting_guest_readonly",
+                            },
+                            {
+                                "agent_id": "approved-skeptic",
+                                "role_id": "fanboard_skeptic",
+                                "owner_id": "host",
+                                "provider_id": "approved-mock",
+                                "permission_profile_id": "meeting_guest_readonly",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_demo_meeting(adapter_name="mock", output_root=root, agent_config_path=agent_config)
+            meeting = json.loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(meeting["agent_config_source"], str(agent_config))
+            self.assertEqual(meeting["provider_configs"]["approved-mock"]["display_name"], "Approved Mock Provider")
+            self.assertEqual(
+                [binding["agent_id"] for binding in meeting["agent_bindings"]],
+                ["approved-lore", "approved-feats", "approved-skeptic"],
+            )
+            self.assertEqual(meeting["incoming_agents"][0]["name"], "친구봇")
+            self.assertEqual(meeting["isolation"]["lore_lawyer"]["agent_binding"]["owner_id"], "host")
+
     def test_round_one_does_not_include_other_private_research(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = run_demo_meeting(adapter_name="mock", output_root=Path(temp_dir))

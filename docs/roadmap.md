@@ -45,6 +45,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Long-term memory/context engineering research notes now compare MemGPT-style memory tiers, Reflexion-style verbal reflection, LongMemEval-style evaluation questions, and LangGraph Store-style namespaced memory.
 - Provider binding groundwork records provider configs, agent bindings, capabilities, and meeting-only permissions in `meeting.json`.
 - The provider registry now includes planned capability entries for Claude/Anthropic, Gemini, Grok, Cursor, Claude Code, local OpenAI-compatible providers, and Hermes/OpenClaw-style memory packs, with unsupported adapters that fail explicitly until real integrations are implemented. Cursor and Claude Code are allowed as read-only meeting participants while implementation permissions remain gated until after `decision.md`.
+- Runtime agent config can be loaded from JSON with host-approved providers, permission profiles, agent bindings, and incoming external agent requests. Incoming agents are recorded for audit but only approved bindings execute.
 
 ## V0 Remaining
 
@@ -93,8 +94,8 @@ Goal: make meetings more trustworthy and inspectable.
 Goal: make AgentsAssemble useful for real coding workflows while preserving meeting/implementation separation.
 
 - User-defined projects in `projects.yaml`.
-- User-defined agents in `agents.yaml`.
-- Role-by-role provider bindings for Claude, Gemini, Grok, Codex, Cursor, local models, and memory/profile packs through a registry rather than hardcoded meeting-runner branches.
+- User-defined agents in `agents.yaml` or equivalent JSON/YAML config.
+- Role-by-role provider bindings for Claude, Gemini, Grok, Codex, Cursor, local models, and memory/profile packs through config and the provider registry rather than hardcoded meeting-runner branches.
 - User-defined meeting templates.
 - Worktree/branch planning without automatic push.
 - Per-agent task scopes with file/module ownership.

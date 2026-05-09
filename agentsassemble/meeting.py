@@ -33,6 +33,7 @@ def run_demo_meeting(
     codex_search_enabled: bool = True,
     research_depth: ResearchDepthName = "smoke",
     research_steering: str | None = None,
+    agent_config_path: Path | str | None = None,
 ) -> MeetingResult:
     def report(message: str) -> None:
         if reporter is not None:
@@ -49,6 +50,7 @@ def run_demo_meeting(
         adapter_name,
         codex_timeout_seconds,
         codex_search_enabled,
+        agent_config_path,
     )
     event_log = MeetingEventLog()
     root = output_root or Path(".agentsassemble")
@@ -83,6 +85,7 @@ def run_demo_meeting(
         "meeting_dir": str(meeting_dir),
         "research_depth": depth.name,
         "research_steering": steering.to_dict(),
+        "agent_config_source": setup.config_source,
         "memory_context": memory_context,
     }
 
