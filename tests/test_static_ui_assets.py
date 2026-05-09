@@ -23,6 +23,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("overflow-x: auto;", css)
         self.assertIn("contain: layout paint;", css)
         self.assertIn(":focus-visible", css)
+        self.assertIn("width: min(28vw, 130px);", css)
+        self.assertIn("#run-demo {\n    grid-column: 1 / -1;", css)
 
     def test_lobby_separates_stage_from_activity_feed(self):
         script = (STATIC_DIR / "app.js").read_text()

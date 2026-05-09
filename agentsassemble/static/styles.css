@@ -2691,7 +2691,7 @@ input:focus-visible {
   }
 
   .actions {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 
   .scale-control {
@@ -2699,7 +2699,11 @@ input:focus-visible {
   }
 
   .scale-control input {
-    width: min(54vw, 180px);
+    width: min(28vw, 130px);
+  }
+
+  #run-demo {
+    grid-column: 1 / -1;
   }
 
   .room-strip,
