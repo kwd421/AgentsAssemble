@@ -51,6 +51,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn(".lobby-summary", css)
         self.assertIn(".lobby-activity", css)
         self.assertIn("grid-template-rows: auto minmax(0, 1fr) auto;", css)
+        self.assertIn("function renderApprovedBindings", script)
+        self.assertIn('aria-label="승인된 본회의 에이전트"', script)
+        self.assertIn(".approved-bindings", css)
 
     def test_live_view_prioritizes_official_chat(self):
         script = static_js()
@@ -71,6 +74,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('aria-label="공식 토론 기록"', script)
         self.assertIn('aria-live="polite"', script)
         self.assertIn(".record-badge", css)
+        self.assertIn("function providerLabel", script)
+        self.assertIn("function agentLabel", script)
+        self.assertIn("meeting read-only", script)
 
     def test_board_cards_are_dynamic_and_scrollable(self):
         script = static_js()

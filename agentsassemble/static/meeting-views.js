@@ -1,4 +1,4 @@
-import { displayQuestion, escapeHtml, focusLabels, lensLabels, roleMeta, roundLabel, state } from "./shared.js";
+import { bindingSummary, displayQuestion, escapeHtml, focusLabels, lensLabels, roleMeta, roundLabel, state } from "./shared.js";
 
 export function renderLive(payload) {
   const roles = payload.meeting.roles || [];
@@ -128,13 +128,25 @@ function renderOfficialRoster(roles) {
             <img class="profile profile-tiny" src="${escapeHtml(meta.avatar)}" alt="" />
             <div>
               <strong>${escapeHtml(role.display_name)}</strong>
-              <span>${escapeHtml(meta.badge)}</span>
+              <span>${escapeHtml(meta.badge)} · ${escapeHtml(providerLabel(role))}</span>
+              <small>${escapeHtml(agentLabel(role))}</small>
             </div>
           </div>
         `;
       }).join("")}
     </aside>
   `;
+}
+
+function providerLabel(role) {
+  const { binding, provider } = bindingSummary(state.payload?.meeting, role.id);
+  return provider?.display_name || binding?.provider_id || "provider 없음";
+}
+
+function agentLabel(role) {
+  const { binding, permissions } = bindingSummary(state.payload?.meeting, role.id);
+  const mode = permissions?.implementation ? "implementation" : "meeting read-only";
+  return `${binding?.agent_id || "unbound"} · ${mode}`;
 }
 
 function renderRailMetric(label, value) {

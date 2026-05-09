@@ -502,3 +502,54 @@
   border-color: rgba(240, 168, 60, 0.36);
   color: #ffd89a;
 }
+
+.approved-bindings {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.approved-binding {
+  background: rgba(8, 11, 17, 0.55);
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-left-width: 4px;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+}
+
+.approved-binding strong,
+.approved-binding span,
+.approved-binding em {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approved-binding span,
+.approved-binding em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.binding-red {
+  border-left-color: var(--red);
+}
+
+.binding-cyan {
+  border-left-color: var(--cyan);
+}
+
+.binding-green {
+  border-left-color: var(--green);
+}
+
+.binding-purple {
+  border-left-color: var(--purple);
+}

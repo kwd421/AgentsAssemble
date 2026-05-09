@@ -62,3 +62,24 @@ export async function fetchJson(url, options) {
   if (!response.ok) throw new Error(`Request failed: ${response.status}`);
   return response.json();
 }
+
+export function bindingForRole(meeting, roleId) {
+  return (meeting?.agent_bindings || []).find((binding) => binding.role_id === roleId) || null;
+}
+
+export function providerForBinding(meeting, binding) {
+  if (!binding) return null;
+  return meeting?.provider_configs?.[binding.provider_id] || null;
+}
+
+export function permissionsForBinding(meeting, binding) {
+  if (!binding) return null;
+  return meeting?.permission_profiles?.[binding.permission_profile_id] || null;
+}
+
+export function bindingSummary(meeting, roleId) {
+  const binding = bindingForRole(meeting, roleId);
+  const provider = providerForBinding(meeting, binding);
+  const permissions = permissionsForBinding(meeting, binding);
+  return { binding, provider, permissions };
+}

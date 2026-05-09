@@ -265,17 +265,24 @@
 }
 
 .official-speaker strong,
-.official-speaker span {
+.official-speaker span,
+.official-speaker small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.official-speaker span {
+.official-speaker span,
+.official-speaker small {
   color: var(--muted);
   font-size: 11px;
   margin-top: 2px;
+}
+
+.official-speaker small {
+  color: #d8d1c5;
+  opacity: 0.78;
 }
 
 .official-red {

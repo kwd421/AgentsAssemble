@@ -1,4 +1,4 @@
-import { displayTopic, escapeHtml, fetchJson, state } from "./shared.js";
+import { bindingSummary, displayTopic, escapeHtml, fetchJson, roleMeta, state } from "./shared.js";
 
 const lobbySides = new Set(["mine", "my-agent", "other", "other-agent"]);
 
@@ -161,7 +161,35 @@ function renderLobbyRoster(roster) {
           ? roster.map(renderRosterUser).join("")
           : '<p class="roster-empty">아직 관찰된 참여자가 없습니다.</p>'
       }
+      ${renderApprovedBindings(state.payload?.meeting)}
     </aside>
+  `;
+}
+
+function renderApprovedBindings(meeting) {
+  const roles = meeting?.roles || [];
+  if (!roles.length) return "";
+  return `
+    <section class="approved-bindings" aria-label="승인된 본회의 에이전트">
+      <div class="roster-head">
+        <strong>본회의 승인</strong>
+        <span>host가 확정한 role → agent → provider</span>
+      </div>
+      ${roles.map(renderApprovedBinding).join("")}
+    </section>
+  `;
+}
+
+function renderApprovedBinding(role) {
+  const { binding, provider, permissions } = bindingSummary(state.payload?.meeting, role.id);
+  const meta = roleMeta[role.id] || { color: "purple", badge: role.lens };
+  const permissionLabel = permissions?.implementation ? "구현" : permissions?.filesystem_write ? "쓰기" : "회의";
+  return `
+    <div class="approved-binding binding-${escapeHtml(meta.color)}">
+      <strong>${escapeHtml(role.display_name)}</strong>
+      <span>${escapeHtml(binding?.agent_id || "unbound")}</span>
+      <em>${escapeHtml(provider?.display_name || binding?.provider_id || "provider 없음")} · ${escapeHtml(permissionLabel)}</em>
+    </div>
   `;
 }
 
