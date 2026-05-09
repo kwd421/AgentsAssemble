@@ -39,15 +39,12 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-color: rgba(212, 225, 255, 0.22) rgba(8, 11, 17, 0.35);
+  scrollbar-width: thin;
 }
 
 html {
   scrollbar-gutter: stable;
-}
-
-* {
-  scrollbar-color: rgba(212, 225, 255, 0.22) rgba(8, 11, 17, 0.35);
-  scrollbar-width: thin;
 }
 
 ::-webkit-scrollbar {
@@ -114,6 +111,7 @@ select {
   font: inherit;
 }
 
+/* App frame */
 .shell {
   max-width: min(100%, var(--page-max));
   margin: 0 auto;
@@ -378,6 +376,7 @@ input:focus-visible {
   color: var(--muted);
 }
 
+/* Lobby */
 .lobby-layout {
   border: 1px solid rgba(212, 225, 255, 0.13);
   background:
@@ -1060,12 +1059,7 @@ input:focus-visible {
   color: #ffd89a;
 }
 
-.live-layout {
-  display: grid;
-  grid-template-columns: clamp(214px, calc(260px * var(--ui-scale)), 260px) minmax(0, 1fr);
-  gap: calc(11px * var(--ui-scale));
-}
-
+/* Live discussion */
 .live-room {
   background:
     radial-gradient(circle at 50% -8%, rgba(91, 215, 255, 0.1), transparent 28rem),
@@ -1143,6 +1137,7 @@ input:focus-visible {
   border: 1px solid rgba(212, 225, 255, 0.13);
   border-radius: 18px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  padding: 14px;
 }
 
 .live-statusbar {
@@ -1191,12 +1186,6 @@ input:focus-visible {
   margin: 0;
   max-width: 780px;
   text-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
-}
-
-.live-timeline,
-.live-transcript,
-.live-outcome {
-  padding: 14px;
 }
 
 .live-chat-side .live-timeline,
@@ -1366,8 +1355,7 @@ input:focus-visible {
   border-left-color: var(--purple);
 }
 
-.rail-card,
-.debate-feed {
+.rail-card {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.034), transparent 36%),
     rgba(14, 17, 26, 0.86);
@@ -1396,13 +1384,6 @@ input:focus-visible {
   font-size: 10px;
   font-weight: 800;
   padding: 4px 7px;
-}
-
-.rail-live {
-  background:
-    radial-gradient(circle at 15% 0%, rgba(255, 112, 104, 0.18), transparent 46%),
-    linear-gradient(180deg, rgba(242, 184, 75, 0.08), rgba(14, 17, 26, 0.9));
-  border-color: rgba(242, 184, 75, 0.22);
 }
 
 .rail-card strong,
@@ -1456,16 +1437,6 @@ input:focus-visible {
 .feed-head span {
   color: var(--muted);
   margin-top: 4px;
-}
-
-.debate-feed {
-  max-height: 760px;
-  min-height: 0;
-  overflow: auto;
-}
-
-.debate-column {
-  min-height: 0;
 }
 
 .rail-compact {
@@ -1527,7 +1498,6 @@ input:focus-visible {
   margin-top: 9px;
 }
 
-.agent-rail,
 .message-list,
 .board-grid,
 .archive-layout {
@@ -1537,10 +1507,6 @@ input:focus-visible {
     var(--panel);
   border-radius: 12px;
   box-shadow: 0 18px 54px rgba(0, 0, 0, 0.2);
-}
-
-.agent-rail {
-  padding: clamp(8px, calc(11px * var(--ui-scale)), 11px);
 }
 
 .agent {
@@ -1671,34 +1637,6 @@ input:focus-visible {
   padding: clamp(8px, calc(13px * var(--ui-scale)), 13px);
 }
 
-.live-stage {
-  align-items: center;
-  background:
-    linear-gradient(135deg, rgba(242, 184, 75, 0.08), transparent 42%),
-    rgba(8, 11, 17, 0.58);
-  border: 1px solid rgba(212, 225, 255, 0.12);
-  border-radius: 12px;
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: clamp(10px, calc(14px * var(--ui-scale)), 14px);
-  padding: clamp(9px, calc(12px * var(--ui-scale)), 12px);
-}
-
-.live-stage strong,
-.live-stage span {
-  display: block;
-}
-
-.live-stage strong {
-  font-size: clamp(15px, calc(18px * var(--text-scale)), 19px);
-}
-
-.live-stage span {
-  color: var(--muted);
-  margin-top: 3px;
-}
-
 .channel-tabs {
   display: flex;
   gap: 6px;
@@ -1717,24 +1655,6 @@ input:focus-visible {
   background: rgba(240, 168, 60, 0.14);
   border-color: rgba(240, 168, 60, 0.36);
   color: #ffd89a;
-}
-
-.event {
-  align-items: center;
-  color: #c7c2b8;
-  display: flex;
-  font-size: clamp(11px, calc(13px * var(--text-scale)), 13px);
-  gap: 8px;
-  margin: 0 0 clamp(8px, calc(14px * var(--ui-scale)), 14px);
-}
-
-.event::before {
-  background: var(--line);
-  border-radius: 999px;
-  content: "";
-  display: inline-block;
-  height: 6px;
-  width: 6px;
 }
 
 .message {
@@ -1870,6 +1790,7 @@ input:focus-visible {
   margin-right: 6px;
 }
 
+/* Board */
 .board-command {
   background:
     radial-gradient(circle at 12% 10%, rgba(242, 184, 75, 0.18), transparent 18rem),
@@ -2360,6 +2281,7 @@ input:focus-visible {
   margin-top: 14px;
 }
 
+/* Archive */
 .archive-vault {
   background:
     radial-gradient(circle at 14% 12%, rgba(91, 215, 255, 0.16), transparent 18rem),
@@ -2732,7 +2654,6 @@ input:focus-visible {
     grid-column: 1 / -1;
   }
 
-  .live-layout,
   .live-chat-room,
   .archive-layout,
   .archive-vault,
