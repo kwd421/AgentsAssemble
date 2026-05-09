@@ -206,6 +206,58 @@ This file records external papers, frameworks, and product references used while
   - `tests/test_static_ui_assets.py`
 - Commit: `27e4001 Refine lobby staging room layout`
 
+### Deeper Frontend Mechanics Notes
+
+- Date: 2026-05-09
+- Reason:
+  - The first pass was too visual and not implementation-specific enough. This pass records concrete frontend mechanics that should influence AgentsAssemble GUI work.
+- Sites re-inspected:
+  - UI Magic: https://uimagic.co/
+  - Postiz: https://postiz.com/
+  - Topview AI: https://www.topview.ai/
+  - Q Industrial: https://www.q-industrial.com/
+  - Igloo: https://www.igloo.inc/
+- Implementation signals observed:
+  - UI Magic:
+    - Framer output, no linked CSS file, heavy inline generated layout.
+    - Rough page signals: about 378 KB HTML, 79 images, 68 `srcset` references, 27 lazy images, 12 high-priority image hints.
+    - Useful lesson: the premium feel comes from large cropped visual surfaces and responsive image selection, not from many small bordered UI panels.
+  - Postiz:
+    - Next.js page with a single CSS bundle around 87 KB, many optimized image tags, and compact mobile logo/menu variants.
+    - Rough page signals: 175 images, 166 lazy images, 36 `srcset` references, 3 preloads, desktop/mobile logo swap.
+    - CSS signals: multiple 767px mobile breakpoints, transform and transition use, limited grid and more flex composition.
+    - Useful lesson: commercial app pages make the main communication/product surface visually obvious, then defer secondary details.
+  - Topview AI:
+    - Next.js/Vercel app with large CSS bundles, many CDN media references, and high-priority hero assets.
+    - Rough page signals: about 1.7 MB HTML, 105 images, 1 video, 104 preloads, 3 high-priority image hints.
+    - CSS signals: breakpoint layers at 640px, 768px, 1024px, 1280px, 1400px; many transform/transition hooks and named keyframes such as fade/scale/slide/float/shimmer.
+    - Useful lesson: motion polish comes from many small transform/opacity transitions, but AgentsAssemble should not import that weight for a local-first tool.
+  - Q Industrial:
+    - Webflow site with a large shared CSS file around 149 KB, videos, lazy media, and strict breakpoint layers.
+    - CSS signals: common Webflow breakpoints at 991px, 767px, 479px; many flex layouts, several grids, and a few transform/transition hooks.
+    - Useful lesson: strong hero scenes use viewport-aware sections and large object framing; mobile is a redesigned composition, not a compressed desktop.
+  - Igloo:
+    - Minimal HTML shell with a bundled JS app and strong full-viewport visual scene.
+    - Useful lesson: the perceived quality is scene direction and interaction, not many visible controls. Directly copying this would risk weight and complexity.
+- Mechanics to translate into AgentsAssemble:
+  - Use one strong visual job per tab:
+    - Lobby: assembly staging and participant readiness.
+    - Live: official council stage plus transcript.
+    - Board: decision map with stance and evidence compression.
+    - Archive: durable document vault grouped by owner and artifact type.
+  - Use explicit responsive breakpoints around 860px and 560px now, but design each tab to recompose at those points instead of only stacking.
+  - Keep premium polish dependency-light:
+    - Prefer local optimized bitmap/SVG assets and CSS gradients over framework-heavy bundles.
+    - Keep motion to `transform` and `opacity`.
+    - Avoid video/WebGL until the product surface justifies it.
+  - Avoid the previous prototype failure mode:
+    - Do not make every tab `topbar + tabs + bordered panel + repeated cards`.
+    - Do not give the shell more visual weight than the active scene.
+    - Do not use many similar cards as the primary composition.
+    - Do not rely on color accents alone to distinguish ownership, role, or state.
+- Open design risk:
+  - Current GUI is still below the reference quality bar. The research supports the direction, but each tab still needs browser screenshot review after implementation.
+
 ## Implemented Research-Informed Decisions
 
 ### Structured Council Rounds
@@ -255,6 +307,74 @@ This file records external papers, frameworks, and product references used while
 - Long-term memory and reflection architectures for durable agent identity and handoff, especially MemGPT-style virtual context and Generative Agents-style reflection.
 - Human-computer interaction papers on meeting support, decision logs, and collaborative sensemaking.
 - Game UI and social deduction design references for playful council themes.
+
+## Long-Term Memory And Context Engineering Research
+
+### Initial Source Sweep
+
+- Date: 2026-05-09
+- Reason:
+  - AgentsAssemble depends on durable agent identity, handoff, meeting recall, and cross-session continuity. The memory layer should not become raw transcript hoarding.
+- Sources checked:
+  - MemGPT: https://arxiv.org/abs/2310.08560
+  - Reflexion: https://arxiv.org/abs/2303.11366
+  - LongMemEval: https://arxiv.org/abs/2410.10813
+  - LangGraph/LangChain long-term memory docs: https://docs.langchain.com/oss/python/langchain/long-term-memory
+  - Generative Agents remains an existing candidate reference from the earlier roadmap.
+- What each source contributes:
+  - MemGPT:
+    - Treats context as virtual memory with tiers rather than trying to stuff everything into the prompt.
+    - Useful translation: AgentsAssemble should have explicit hot context, working meeting context, searchable memory, archival artifacts, and interrupt-like handoff moments.
+  - Reflexion:
+    - Improves future trials through verbal reflection stored in episodic memory rather than model weight updates.
+    - Useful translation: after a meeting, implementation attempt, failed test, or lost debate, each agent should write a short reflection with evidence, mistake, and future behavior adjustment.
+  - LongMemEval:
+    - Evaluates long-term memory through information extraction, multi-session reasoning, temporal reasoning, knowledge updates, and abstention.
+    - Useful translation: AgentsAssemble memory should be tested on whether agents can answer "what changed?", "when did we decide this?", "which older fact was superseded?", and "what should I refuse to infer?".
+  - LangGraph Store:
+    - Models long-term memory as JSON documents organized by namespace and key, separate from short-term thread state.
+    - Useful translation: keep the current file-first direction, but structure memory with clear namespaces: project, user, agent, episode, decision, procedure, and imported pack.
+- Proposed memory tiers for AgentsAssemble:
+  - Hot context:
+    - Current meeting agenda, selected roles, active task, immediate constraints, and a compact source packet.
+    - Always small enough to inspect.
+  - Working context:
+    - Current thread/meeting state, recent turns, open questions, temporary scratch.
+    - Expires or gets summarized after the meeting.
+  - Semantic memory:
+    - Stable facts: project conventions, architecture decisions, user preferences, provider permissions, role definitions.
+    - Updated only through a memory gate.
+  - Episodic memory:
+    - Time-stamped meetings, implementation attempts, failures, wins, handoffs, and conflict resolutions.
+    - Supports "why did I lose/win?" and "what happened last time?" questions.
+  - Procedural memory:
+    - Repeatable workflows: how to run tests, how to review releases, how to prepare packets, how to split work.
+  - Reflection memory:
+    - Short self-critiques after outcomes, similar to Reflexion, but with evidence and scope.
+  - Archive:
+    - Full artifacts such as transcript, decision, task files, research JSON, and handoff packets.
+    - Not automatically loaded; referenced or summarized.
+- Design implications:
+  - Memory is not fine-tuning. It changes behavior through retrieval, summaries, reflection, and prompts, while remaining inspectable and editable.
+  - The memory system needs write gates:
+    - Save facts only when source/evidence is known.
+    - Mark superseded facts instead of silently overwriting.
+    - Keep private memory, imported packs, and remote user packets separated.
+    - Add abstention rules when memory is missing or contradictory.
+  - The GUI should eventually show memory provenance:
+    - What memory was loaded.
+    - Which meeting or source created it.
+    - Whether it is stable, stale, disputed, imported, or private.
+- Candidate evaluation questions:
+  - Can an agent explain a previous meeting outcome from its own perspective?
+  - Can a successor session reconstruct what to do next without raw transcript dumping?
+  - Can the system identify when an older decision was superseded?
+  - Can it refuse to answer when memory is missing or conflicting?
+  - Can an imported specialist pack be reviewed before it influences a meeting?
+- Open research items:
+  - Verify MemPalace from primary sources before treating it as a design reference.
+  - Verify Hermes/OpenClaw memory/profile evolution claims from primary sources before including them as concrete product commitments.
+  - Compare file-first memory against vector/embedding retrieval only after V0.1 proves manual retrieval is insufficient.
 
 ## Candidate Memory Layer Translation
 

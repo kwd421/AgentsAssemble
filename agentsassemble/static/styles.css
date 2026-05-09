@@ -2033,13 +2033,81 @@ input:focus-visible {
   margin-right: 6px;
 }
 
-.board-legend {
+.board-command {
+  background:
+    radial-gradient(circle at 12% 10%, rgba(242, 184, 75, 0.18), transparent 18rem),
+    radial-gradient(circle at 92% 0%, rgba(91, 215, 255, 0.13), transparent 22rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 48%),
+    rgba(7, 10, 16, 0.58);
+  border: 1px solid rgba(255, 236, 187, 0.16);
+  border-radius: 18px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: clamp(8px, calc(12px * var(--ui-scale)), 12px);
-  margin-bottom: clamp(9px, calc(14px * var(--ui-scale)), 14px);
+  gap: clamp(12px, calc(18px * var(--ui-scale)), 18px);
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.42fr);
+  margin-bottom: clamp(12px, calc(16px * var(--ui-scale)), 18px);
+  overflow: hidden;
+  padding: clamp(14px, calc(18px * var(--ui-scale)), 22px);
+  position: relative;
 }
 
+.board-command::after {
+  background:
+    linear-gradient(90deg, transparent, rgba(242, 184, 75, 0.5), rgba(91, 215, 255, 0.42), transparent),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 34px);
+  bottom: 0;
+  content: "";
+  height: 1px;
+  left: 28px;
+  opacity: 0.7;
+  position: absolute;
+  right: 28px;
+}
+
+.board-command-copy,
+.board-command-panel,
+.board-legend {
+  min-width: 0;
+}
+
+.board-command-copy strong {
+  color: var(--text);
+  display: block;
+  font-size: clamp(24px, calc(34px * var(--text-scale)), 38px);
+  letter-spacing: 0;
+  line-height: 1.04;
+  margin-top: 8px;
+}
+
+.board-command-copy p {
+  color: #d8d1c5;
+  font-size: clamp(13px, calc(15px * var(--text-scale)), 16px);
+  line-height: 1.58;
+  margin-top: 12px;
+  max-width: 78ch;
+}
+
+.board-command-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.board-command-meta span {
+  background: rgba(8, 11, 17, 0.48);
+  border: 1px solid rgba(255, 236, 187, 0.13);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 7px 9px;
+}
+
+.board-command-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.board-command-panel div,
 .board-legend div {
   border: 1px solid var(--line);
   background:
@@ -2049,15 +2117,40 @@ input:focus-visible {
   padding: clamp(9px, calc(14px * var(--ui-scale)), 14px);
 }
 
+.board-legend {
+  display: grid;
+  gap: clamp(8px, calc(12px * var(--ui-scale)), 12px);
+  grid-template-columns: minmax(0, 1fr) 260px;
+  margin-bottom: clamp(9px, calc(14px * var(--ui-scale)), 14px);
+}
+
+.board-command-panel div:first-child {
+  border-color: rgba(242, 184, 75, 0.24);
+}
+
+.board-command-panel div:last-child {
+  border-color: rgba(91, 215, 255, 0.22);
+}
+
+.board-command-panel strong,
+.board-command-panel span,
 .board-legend strong,
 .board-legend span {
   display: block;
 }
 
+.board-command-panel span,
 .board-legend span {
   color: var(--muted);
   margin-top: 5px;
   line-height: 1.45;
+}
+
+.board-dashboard {
+  display: grid;
+  gap: clamp(10px, calc(14px * var(--ui-scale)), 14px);
+  grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
+  margin-bottom: clamp(12px, calc(16px * var(--ui-scale)), 18px);
 }
 
 .stance-overview {
@@ -2068,8 +2161,8 @@ input:focus-visible {
   border-radius: 12px;
   display: grid;
   gap: 12px;
-  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
-  margin-bottom: 14px;
+  grid-template-columns: minmax(150px, 0.62fr) minmax(0, 1fr);
+  margin-bottom: 0;
   padding: 12px;
 }
 
@@ -2270,8 +2363,8 @@ input:focus-visible {
   border-radius: 12px;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(90px, 1fr));
-  margin-bottom: 14px;
+  grid-template-columns: minmax(0, 1.15fr) repeat(4, minmax(72px, 1fr));
+  margin-bottom: 0;
   padding: 12px;
 }
 
@@ -2728,6 +2821,8 @@ input:focus-visible {
   .lobby-main,
   .lobby-form,
   .board-grid,
+  .board-command,
+  .board-dashboard,
   .board-legend {
     grid-template-columns: 1fr;
   }
@@ -2790,6 +2885,10 @@ input:focus-visible {
 
   .stance-overview {
     grid-template-columns: 1fr;
+  }
+
+  .board-command-copy strong {
+    font-size: clamp(24px, 8vw, 34px);
   }
 
   .archive-layout {

@@ -746,7 +746,7 @@ function renderBoard(payload) {
       <div class="room-strip">
         <div>
           <strong>작전판</strong>
-          <small>입장, 근거, 반박 이후의 변화, 아직 갈린 부분을 정리합니다.</small>
+          <small>공식 기록을 압축해서 입장, 근거 품질, 충돌 지점을 한눈에 봅니다.</small>
         </div>
         <div class="room-actions">
           <span class="room-status">에이전트 ${(meeting.roles || []).length}</span>
@@ -754,12 +754,26 @@ function renderBoard(payload) {
           <span class="room-status">합의도 ${escapeHtml(synthesis.confidence || "unknown")}</span>
         </div>
       </div>
-      <section class="board-legend">
-        <div><strong>흐름</strong><span>어떤 입장이 얼마나 반복됐고 누가 유지/수정했는지 봅니다.</span></div>
-        <div><strong>검증</strong><span>근거 품질과 탈락한 주장을 같이 봅니다.</span></div>
+      <section class="board-command">
+        <div class="board-command-copy">
+          <span class="room-kicker">decision map</span>
+          <strong>${escapeHtml(synthesis.winner || "판정 대기")}</strong>
+          <p>${escapeHtml(synthesis.summary || "모더레이터 합성이 아직 없습니다.")}</p>
+          <div class="board-command-meta">
+            <span>라운드 ${(meeting.debate_rounds || []).length}</span>
+            <span>역할 ${(meeting.roles || []).length}</span>
+            <span>근거 ${(meeting.research_artifacts || []).length}</span>
+          </div>
+        </div>
+        <div class="board-command-panel">
+          <div><strong>흐름</strong><span>어떤 입장이 반복됐고 누가 유지/수정했는지 봅니다.</span></div>
+          <div><strong>검증</strong><span>근거 품질과 탈락한 주장을 같이 봅니다.</span></div>
+        </div>
       </section>
-      ${renderStanceOverview(stanceSummary, synthesis)}
-      ${renderEvidenceOverview(meeting)}
+      <section class="board-dashboard">
+        ${renderStanceOverview(stanceSummary, synthesis)}
+        ${renderEvidenceOverview(meeting)}
+      </section>
       <section class="board-grid">
         ${(meeting.roles || []).map((role) => renderBoardCard(role, payload, researchByRole[role.id])).join("")}
       </section>

@@ -41,6 +41,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - File-based Memory Layer v0 writes project, agent, episode, and reflection memory.
 - Research influences are recorded in `docs/research-log.md`.
 - Repository operating rules are recorded in `AGENTS.md`.
+- Long-term memory/context engineering research notes now compare MemGPT-style memory tiers, Reflexion-style verbal reflection, LongMemEval-style evaluation questions, and LangGraph Store-style namespaced memory.
 
 ## V0 Remaining
 
@@ -79,6 +80,7 @@ Goal: make meetings more trustworthy and inspectable.
 - Memory read path:
   - Inject relevant project/agent memory into role research and debate prompts.
   - Keep memory context compact and auditable.
+  - Track which memories were loaded into a meeting so later reviews can distinguish model reasoning from retrieved context.
 - Handoff v0:
   - Generate `handoff.md` from meeting, memory, current tasks, risks, and unresolved questions.
   - Feed per-agent return packets back into persistent sessions when real provider session handoff is implemented.
@@ -132,6 +134,10 @@ These are intentional future ideas, not near-term commitments.
   - Imported packs should be treated as untrusted input until reviewed by a memory gate, especially for prompt injection, stale claims, private data leakage, and unsupported expertise claims.
   - Reference candidates to study later: Hermes-style persistent memory, user modeling, and experience-to-skill accumulation; OpenClaw-style memory/profile sharing if verified from primary sources.
   - Agents may evolve toward a user's workflow over time, but evolution should preserve the agent's recognizable role identity and remain inspectable, editable, resettable, and exportable.
+- Memory evaluation suite:
+  - Test whether agents can answer prior-meeting questions, temporal update questions, successor handoff questions, and abstention questions without loading raw transcripts wholesale.
+  - Use LongMemEval-like categories as inspiration: information extraction, multi-session reasoning, temporal reasoning, knowledge updates, and abstention.
+  - Treat memory quality as a product behavior, not only a storage feature.
 - Architecture transfer council between projects.
 - Bug war room.
 - Refactor debate.
