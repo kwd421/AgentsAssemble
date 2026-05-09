@@ -191,6 +191,15 @@ function renderLobby() {
   lobby.querySelectorAll("[data-lobby-action]").forEach((button) => {
     button.addEventListener("click", () => sendLobbyAction(button));
   });
+  scrollLobbyFeedToLatest(lobby);
+}
+
+function scrollLobbyFeedToLatest(lobby) {
+  const feed = lobby.querySelector(".lobby-feed");
+  if (!feed) return;
+  requestAnimationFrame(() => {
+    feed.scrollTop = feed.scrollHeight;
+  });
 }
 
 function renderAssembleRing(roster) {
