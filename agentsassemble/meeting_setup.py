@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.adapters import ProviderAdapter, default_provider_registry
+from agentsassemble.adapters import default_provider_registry
 from agentsassemble.adapters.registry import ProviderRegistry, ResolvedAgentAdapter
 from agentsassemble.config import (
     agent_bindings_from_config,
@@ -26,18 +26,6 @@ class MeetingSetup:
     moderator_adapter: ProviderAdapter
     config_source: str
     incoming_agents: list[dict[str, Any]]
-
-
-def get_adapter(
-    adapter_name: str,
-    codex_timeout_seconds: int | None = None,
-    codex_search_enabled: bool = True,
-) -> ProviderAdapter:
-    provider = provider_config_for_adapter(adapter_name, codex_timeout_seconds, codex_search_enabled)
-    return default_provider_registry(
-        codex_timeout_seconds=codex_timeout_seconds,
-        codex_search_enabled=codex_search_enabled,
-    ).create(provider)
 
 
 def provider_config_for_adapter(

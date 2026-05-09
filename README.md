@@ -2,7 +2,7 @@
 
 AgentsAssemble is a local-first multi-agent council orchestrator for AI coding agents.
 
-The v0 prototype is a terminal-first demo. It runs a small council where three isolated roles research and debate a question, then writes Markdown and JSON artifacts to disk.
+The v0 prototype is a terminal-first council engine with a simple local browser GUI for inspection. It runs a small council where three isolated roles research and debate a question, then writes Markdown and JSON artifacts to disk.
 
 ## Current Demo
 

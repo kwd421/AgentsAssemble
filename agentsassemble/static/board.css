@@ -178,8 +178,7 @@
 }
 
 .board-card,
-.synthesis,
-.archive-card {
+.synthesis {
   border: 1px solid var(--line);
   border-left-width: 4px;
   background: var(--panel-2);
@@ -221,8 +220,7 @@
 }
 
 .board-card h3,
-.synthesis h3,
-.archive-card h3 {
+.synthesis h3 {
   margin: 0;
   font-size: clamp(14px, calc(16px * var(--text-scale)), 16px);
 }
