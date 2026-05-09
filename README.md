@@ -70,8 +70,9 @@ Default URL:
 http://127.0.0.1:8765
 ```
 
-The GUI has three tabs:
+The GUI has four tabs:
 
+- `lobby` / 로비: informal staging room, readiness, and deploy intent
 - `live` / 실황: chat-like council view
 - `board` / 작전판: structured claims, rebuttals, and synthesis
 - `archive` / 아카이브: generated artifacts and research notes
@@ -89,6 +90,19 @@ The current implementation:
 - keeps role files, history files, and research artifacts isolated by role
 
 The full Codex council demo may make several model calls, so use mock mode first when checking artifact flow.
+
+## Provider Architecture
+
+The current demo still supports `mock` and `codex`, but the meeting artifact now records provider configs, agent bindings, provider capabilities, and meeting-only permission profiles.
+
+Future provider families:
+
+- Claude/Gemini/Grok/API models for meeting research and critique
+- Codex/Claude Code/Cursor CLI for implementation after `decision.md`
+- local OpenAI-compatible or Ollama-style models for private/offline fallback
+- Hermes/OpenClaw-style memory/profile packs as reviewed artifacts, not raw session dumps
+
+See `docs/provider-architecture.md`.
 
 ## Seed And Plan
 

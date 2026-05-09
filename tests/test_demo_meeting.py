@@ -21,6 +21,16 @@ class DemoMeetingTests(unittest.TestCase):
 
             meeting = json.loads((meeting_dir / "meeting.json").read_text(encoding="utf-8"))
             self.assertEqual(meeting["adapter_config"]["name"], "mock")
+            self.assertEqual(meeting["provider_configs"]["mock"]["kind"], "mock")
+            self.assertEqual(meeting["provider_configs"]["mock"]["display_name"], "Mock Demo")
+            self.assertEqual(meeting["permission_profiles"]["meeting_read_only"]["implementation"], False)
+            self.assertEqual(meeting["permission_profiles"]["meeting_read_only"]["filesystem_write"], False)
+            self.assertEqual(meeting["provider_capabilities"]["mock"]["supports_structured_output"], True)
+            self.assertEqual(meeting["provider_capabilities"]["mock"]["supports_web_search"], False)
+            self.assertEqual(
+                [binding["provider_id"] for binding in meeting["agent_bindings"]],
+                ["mock", "mock", "mock"],
+            )
             self.assertEqual(meeting["research_depth"]["name"], "smoke")
             self.assertEqual(meeting["research_steering"]["stance"], "open")
             self.assertEqual(meeting["meeting_template"]["id"], "one_piece_admiral_debate_v0")
@@ -57,6 +67,10 @@ class DemoMeetingTests(unittest.TestCase):
                 self.assertTrue((meeting_dir / "return_packets" / f"{role_id}.md").exists())
                 self.assertTrue((meeting_dir / "return_packets" / f"{role_id}.json").exists())
                 self.assertTrue((Path(temp_dir) / "memory" / "agents" / f"{role_id}.md").exists())
+                isolation = meeting["isolation"][role_id]
+                self.assertEqual(isolation["agent_binding"]["role_id"], role_id)
+                self.assertEqual(isolation["provider"]["kind"], "mock")
+                self.assertEqual(isolation["permissions"]["implementation"], False)
             packet = json.loads((meeting_dir / "return_packets" / "fanboard_skeptic.json").read_text(encoding="utf-8"))
             self.assertEqual(packet["role_id"], "fanboard_skeptic")
             self.assertIn(packet["decision"]["outcome_for_role"], {"won_or_partially_supported", "lost_or_not_selected", "unresolved"})

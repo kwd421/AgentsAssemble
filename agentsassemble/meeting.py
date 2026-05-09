@@ -5,12 +5,20 @@ from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
-from agentsassemble.adapters import CodexAdapter, MockAdapter, ProviderAdapter
+from agentsassemble.adapters import ProviderAdapter, default_provider_registry
 from agentsassemble.artifacts import write_public_artifacts, write_research, write_role_files
 from agentsassemble.config import load_council_config
 from agentsassemble.evidence import apply_evidence_gate, summarize_evidence_gates
 from agentsassemble.memory import load_memory_context, write_memory_artifacts
-from agentsassemble.models import MeetingResult, ResearchDepthName, ResearchSteering, get_research_depth
+from agentsassemble.models import (
+    AgentBinding,
+    MeetingResult,
+    PermissionProfile,
+    ProviderConfig,
+    ResearchDepthName,
+    ResearchSteering,
+    get_research_depth,
+)
 from agentsassemble.templates import DEMO_MEETING_TEMPLATE
 
 
@@ -19,11 +27,59 @@ def get_adapter(
     codex_timeout_seconds: int = 240,
     codex_search_enabled: bool = True,
 ) -> ProviderAdapter:
+    provider = _provider_config_for_adapter(adapter_name, codex_timeout_seconds, codex_search_enabled)
+    return default_provider_registry(
+        codex_timeout_seconds=codex_timeout_seconds,
+        codex_search_enabled=codex_search_enabled,
+    ).create(provider)
+
+
+def _provider_config_for_adapter(
+    adapter_name: str,
+    codex_timeout_seconds: int,
+    codex_search_enabled: bool,
+) -> ProviderConfig:
     if adapter_name == "mock":
-        return MockAdapter()
+        return ProviderConfig(id="mock", kind="mock", display_name="Mock Demo", default_model="deterministic")
     if adapter_name == "codex":
-        return CodexAdapter(timeout_seconds=codex_timeout_seconds, search_enabled=codex_search_enabled)
+        return ProviderConfig(
+            id="codex",
+            kind="codex",
+            display_name="Codex CLI",
+            default_model="local-codex-session",
+            timeout_seconds=codex_timeout_seconds,
+            search_enabled=codex_search_enabled,
+        )
     raise ValueError(f"Unknown adapter: {adapter_name}")
+
+
+def _default_permissions(adapter_name: str, codex_search_enabled: bool) -> dict[str, PermissionProfile]:
+    return {
+        "meeting_read_only": PermissionProfile(
+            id="meeting_read_only",
+            web_search=adapter_name == "codex" and codex_search_enabled,
+            tool_use=False,
+            filesystem_read=False,
+            filesystem_write=False,
+            git_write=False,
+            push=False,
+            implementation=False,
+        )
+    }
+
+
+def _default_agent_bindings(config_roles: list[Any], provider_id: str) -> list[AgentBinding]:
+    return [
+        AgentBinding(
+            agent_id=f"{role.id}-agent",
+            role_id=role.id,
+            owner_id="local-user",
+            provider_id=provider_id,
+            model_id=None,
+            permission_profile_id="meeting_read_only",
+        )
+        for role in config_roles
+    ]
 
 
 def run_demo_meeting(
@@ -45,11 +101,19 @@ def run_demo_meeting(
         stance="user_leaning" if research_steering else "open",
         prompt=research_steering,
     )
-    adapter = get_adapter(
-        adapter_name,
+    provider = _provider_config_for_adapter(adapter_name, codex_timeout_seconds, codex_search_enabled)
+    providers = {provider.id: provider}
+    permissions = _default_permissions(adapter_name, codex_search_enabled)
+    agent_bindings = _default_agent_bindings(config.roles, provider.id)
+    registry = default_provider_registry(
         codex_timeout_seconds=codex_timeout_seconds,
         codex_search_enabled=codex_search_enabled,
     )
+    resolved_agents = {
+        binding.role_id: registry.resolve(binding, providers, permissions)
+        for binding in agent_bindings
+    }
+    moderator_adapter = registry.create(provider)
     root = output_root or Path(".agentsassemble")
     memory_context = load_memory_context(root, config.roles)
     meeting_id = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
@@ -82,12 +146,18 @@ def run_demo_meeting(
     for role in config.roles:
         report(f"Preparing role: {role.display_name} ({role.id})")
         write_role_files(meeting_dir, role)
-        sessions[role.id] = adapter.start_session(role, context)
+        sessions[role.id] = resolved_agents[role.id].adapter.start_session(role, context)
 
     research_records = []
     for role in config.roles:
         report(f"Research: {role.display_name}")
-        research = adapter.run_research(role, sessions[role.id], config.question, depth, steering)
+        research = resolved_agents[role.id].adapter.run_research(
+            role,
+            sessions[role.id],
+            config.question,
+            depth,
+            steering,
+        )
         research = apply_evidence_gate(research, depth)
         research_records.append(research)
         write_research(meeting_dir, research)
@@ -101,7 +171,7 @@ def run_demo_meeting(
         if round_definition.context_scope == "own_research":
             for role, research in zip(config.roles, research_records, strict=True):
                 messages.append(
-                    adapter.run_round(
+                    resolved_agents[role.id].adapter.run_round(
                         role,
                         sessions[role.id],
                         round_definition.id,
@@ -125,7 +195,7 @@ def run_demo_meeting(
             }
             for role in config.roles:
                 messages.append(
-                    adapter.run_round(
+                    resolved_agents[role.id].adapter.run_round(
                         role,
                         sessions[role.id],
                         round_definition.id,
@@ -145,13 +215,13 @@ def run_demo_meeting(
         )
 
     moderator_session = {
-        "adapter": adapter.name,
+        "adapter": moderator_adapter.name,
         "role_id": "moderator",
-        "session_id": f"{adapter.name}-{meeting_id}-moderator",
+        "session_id": f"{moderator_adapter.name}-{meeting_id}-moderator",
         "meeting_dir": str(meeting_dir),
     }
     report("Moderator synthesis")
-    synthesis = adapter.synthesize(
+    synthesis = moderator_adapter.synthesize(
         moderator_session,
         config.question,
         {
@@ -215,7 +285,16 @@ def run_demo_meeting(
                 for round_definition in DEMO_MEETING_TEMPLATE["rounds"]
             ],
         },
-        "adapter_config": {"name": adapter.name},
+        "adapter_config": {"name": moderator_adapter.name},
+        "provider_configs": {provider_id: config.public_dict() for provider_id, config in providers.items()},
+        "permission_profiles": {
+            profile_id: profile.to_dict() for profile_id, profile in permissions.items()
+        },
+        "agent_bindings": [binding.to_dict() for binding in agent_bindings],
+        "provider_capabilities": {
+            provider_id: registry.capabilities_for(config).to_dict()
+            for provider_id, config in providers.items()
+        },
         "memory_context": memory_context,
         "memory_input": memory_input,
         "research_steering": steering.to_dict(),
@@ -236,6 +315,10 @@ def run_demo_meeting(
                 "role_dir": f"roles/{role.id}",
                 "private_research_dir": f"private_research/{role.id}",
                 "session": sessions[role.id],
+                "agent_binding": resolved_agents[role.id].binding.to_dict(),
+                "provider": resolved_agents[role.id].provider.public_dict(),
+                "permissions": resolved_agents[role.id].permissions.to_dict(),
+                "capabilities": resolved_agents[role.id].capabilities.to_dict(),
             }
             for role in config.roles
         },
@@ -259,7 +342,8 @@ def run_demo_meeting(
         },
         "audit_metadata": {
             "created_at": datetime.now(UTC).isoformat(),
-            "adapter": adapter.name,
+            "adapter": moderator_adapter.name,
+            "provider_ids": list(providers),
             "research_depth": depth.name,
             "research_steering": steering.to_dict(),
             "reproducibility": "auditable and resumable, not deterministic replay",

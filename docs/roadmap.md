@@ -42,6 +42,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Research influences are recorded in `docs/research-log.md`.
 - Repository operating rules are recorded in `AGENTS.md`.
 - Long-term memory/context engineering research notes now compare MemGPT-style memory tiers, Reflexion-style verbal reflection, LongMemEval-style evaluation questions, and LangGraph Store-style namespaced memory.
+- Provider binding groundwork records provider configs, agent bindings, capabilities, and meeting-only permissions in `meeting.json`.
 
 ## V0 Remaining
 
@@ -91,6 +92,7 @@ Goal: make AgentsAssemble useful for real coding workflows while preserving meet
 
 - User-defined projects in `projects.yaml`.
 - User-defined agents in `agents.yaml`.
+- Role-by-role provider bindings for Claude, Gemini, Grok, Codex, Cursor, local models, and memory/profile packs through a registry rather than hardcoded meeting-runner branches.
 - User-defined meeting templates.
 - Worktree/branch planning without automatic push.
 - Per-agent task scopes with file/module ownership.
@@ -147,6 +149,17 @@ These are intentional future ideas, not near-term commitments.
 - Rich TUI or polished web UI.
 - Cost and usage dashboards.
 - Provider capability dashboard.
+
+## Provider Architecture Notes
+
+Detailed provider architecture lives in `docs/provider-architecture.md`.
+
+Current direction:
+
+- API providers such as Claude, Gemini, Grok, and OpenAI-compatible local models are meeting/research providers.
+- Shell-driven coding agents such as Codex CLI, Claude Code, and Cursor should be implementation-phase providers after `decision.md`.
+- Hermes/OpenClaw-style systems are memory/profile pack inspirations first, not raw session import mechanisms.
+- External or remote agents must join with explicit provider, permission, context, and memory packet metadata.
 
 ## Non-Goals For Now
 

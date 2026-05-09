@@ -6,6 +6,16 @@ from typing import Literal
 
 ResearchDepthName = Literal["smoke", "standard", "deep"]
 ResearchStance = Literal["open", "user_leaning"]
+ProviderKind = Literal[
+    "mock",
+    "codex",
+    "anthropic",
+    "gemini",
+    "grok",
+    "cursor",
+    "local_openai_compatible",
+    "memory_pack",
+]
 
 
 @dataclass(frozen=True)
@@ -16,6 +26,112 @@ class Role:
     research_focus: str
     personality: dict[str, object] | None = None
     source_preferences: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class ProviderCapabilities:
+    supports_research: bool
+    supports_web_search: bool
+    supports_tools: bool
+    supports_filesystem: bool
+    supports_session_resume: bool
+    supports_structured_output: bool
+    context_window: int | None = None
+    cost_class: str = "unknown"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "supports_research": self.supports_research,
+            "supports_web_search": self.supports_web_search,
+            "supports_tools": self.supports_tools,
+            "supports_filesystem": self.supports_filesystem,
+            "supports_session_resume": self.supports_session_resume,
+            "supports_structured_output": self.supports_structured_output,
+            "context_window": self.context_window,
+            "cost_class": self.cost_class,
+        }
+
+
+@dataclass(frozen=True)
+class PermissionProfile:
+    id: str
+    meeting_read: bool = True
+    lobby_chat: bool = True
+    official_turn: bool = True
+    web_search: bool = False
+    tool_use: bool = False
+    filesystem_read: bool = False
+    filesystem_write: bool = False
+    git_write: bool = False
+    push: bool = False
+    secrets: bool = False
+    implementation: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "meeting_read": self.meeting_read,
+            "lobby_chat": self.lobby_chat,
+            "official_turn": self.official_turn,
+            "web_search": self.web_search,
+            "tool_use": self.tool_use,
+            "filesystem_read": self.filesystem_read,
+            "filesystem_write": self.filesystem_write,
+            "git_write": self.git_write,
+            "push": self.push,
+            "secrets": self.secrets,
+            "implementation": self.implementation,
+        }
+
+
+@dataclass(frozen=True)
+class ProviderConfig:
+    id: str
+    kind: ProviderKind
+    display_name: str
+    default_model: str | None = None
+    endpoint: str | None = None
+    auth_ref: str | None = None
+    timeout_seconds: int | None = None
+    search_enabled: bool = False
+    notes: str | None = None
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "kind": self.kind,
+            "display_name": self.display_name,
+            "default_model": self.default_model,
+            "endpoint": self.endpoint,
+            "auth_ref": self.auth_ref,
+            "timeout_seconds": self.timeout_seconds,
+            "search_enabled": self.search_enabled,
+            "notes": self.notes,
+        }
+
+
+@dataclass(frozen=True)
+class AgentBinding:
+    agent_id: str
+    role_id: str
+    owner_id: str
+    provider_id: str
+    model_id: str | None
+    permission_profile_id: str
+    memory_profile_id: str | None = None
+    join_mode: Literal["fresh", "current_session", "imported_pack"] = "fresh"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "agent_id": self.agent_id,
+            "role_id": self.role_id,
+            "owner_id": self.owner_id,
+            "provider_id": self.provider_id,
+            "model_id": self.model_id,
+            "permission_profile_id": self.permission_profile_id,
+            "memory_profile_id": self.memory_profile_id,
+            "join_mode": self.join_mode,
+        }
 
 
 @dataclass(frozen=True)

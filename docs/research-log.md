@@ -376,6 +376,34 @@ This file records external papers, frameworks, and product references used while
   - Verify Hermes/OpenClaw memory/profile evolution claims from primary sources before including them as concrete product commitments.
   - Compare file-first memory against vector/embedding retrieval only after V0.1 proves manual retrieval is insufficient.
 
+## External Provider And Agent Integration Research
+
+### Initial Provider Sweep
+
+- Date: 2026-05-09
+- Reason:
+  - The product should eventually summon Claude, Gemini, Grok, Cursor, local models, and memory/profile agents into councils without collapsing meeting, implementation, memory, and permission boundaries.
+- Sources checked:
+  - Anthropic Claude web search/tool use docs: https://docs.claude.com/en/docs/agents-and-tools/tool-use/web-search-tool
+  - Claude Code CLI/headless docs: https://code.claude.com/docs/en/headless
+  - Gemini function calling docs: https://ai.google.dev/gemini-api/docs/function-calling
+  - Gemini Grounding with Google Search docs: https://ai.google.dev/gemini-api/docs/grounding
+  - xAI API docs: https://x.ai/api/
+  - xAI function calling docs: https://docs.x.ai/docs/guides/function-calling
+  - Cursor CLI docs: https://docs.cursor.com/en/cli/using
+  - Ollama API docs: https://docs.ollama.com/api
+  - Ollama OpenAI compatibility docs: https://docs.ollama.com/api/openai-compatibility
+  - Hermes memory docs: https://hermes-agent.nousresearch.com/docs/user-guide/features/memory/
+- Translation for AgentsAssemble:
+  - Claude/Gemini/Grok and local OpenAI-compatible APIs are meeting provider candidates.
+  - Codex, Claude Code, and Cursor are better modeled as implementation-phase coding agents when write permissions are approved.
+  - Hermes/OpenClaw-like systems should start as reviewed memory/profile packets, not raw hidden session imports.
+  - External provider support requires explicit provider configs, agent bindings, capability profiles, permission profiles, and session snapshots.
+- Implemented slice:
+  - Added provider config, agent binding, capability, and permission models.
+  - Added provider registry and validation for meeting-only permissions.
+  - Meeting artifacts now record provider configs, agent bindings, provider capabilities, and permission profiles while preserving existing mock/codex behavior.
+
 ## Candidate Memory Layer Translation
 
 These are not yet implemented. They are the current design hypotheses for translating memory research into AgentsAssemble.
