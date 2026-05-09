@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.gui import _safe_static_path, append_lobby_event, build_meeting_payload, list_meetings, read_lobby
+from agentsassemble.meeting_events import append_live_event, write_live_state
 from agentsassemble.meeting import run_demo_meeting
 
 
@@ -61,6 +62,32 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(meetings[0]["meeting_id"], second.meeting_id)
             self.assertEqual(meetings[1]["meeting_id"], first.meeting_id)
+
+    def test_live_meeting_payload_can_load_before_meeting_json_exists(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "live-1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "live-1",
+                    "topic": "Live topic",
+                    "question": "Live question?",
+                    "roles": [],
+                    "debate_rounds": [],
+                    "moderator_synthesis": {},
+                    "live_status": "running",
+                },
+            )
+            append_live_event(meeting_dir, {"kind": "status", "content": "회의 시작"})
+
+            meetings = list_meetings(root)
+            payload = build_meeting_payload(meeting_dir)
+
+            self.assertEqual(meetings[0]["meeting_id"], "live-1")
+            self.assertEqual(payload["meeting"]["live_status"], "running")
+            self.assertEqual(payload["live_events"][0]["content"], "회의 시작")
 
     def test_static_paths_cannot_escape_static_root(self):
         with tempfile.TemporaryDirectory() as temp_dir:

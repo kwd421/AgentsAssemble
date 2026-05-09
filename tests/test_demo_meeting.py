@@ -20,7 +20,14 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertTrue((meeting_dir / "meeting.json").exists())
 
             meeting = json.loads((meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+            live_events = [
+                json.loads(line)
+                for line in (meeting_dir / "live_events.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
             self.assertEqual(meeting["adapter_config"]["name"], "mock")
+            self.assertEqual(meeting["live_status"], "complete")
+            self.assertTrue(any(event["kind"] == "message" for event in live_events))
+            self.assertTrue(any(event["kind"] == "synthesis" for event in live_events))
             self.assertEqual(meeting["provider_configs"]["mock"]["kind"], "mock")
             self.assertEqual(meeting["provider_configs"]["mock"]["display_name"], "Mock Demo")
             self.assertEqual(meeting["permission_profiles"]["meeting_read_only"]["implementation"], False)

@@ -17,6 +17,7 @@ MeetingEventKind = Literal[
     "synthesis_completed",
     "artifacts_written",
 ]
+LiveEventKind = Literal["status", "research", "message", "synthesis", "artifact"]
 
 LOBBY_SIDES: set[str] = {"mine", "my-agent", "other", "other-agent"}
 LOBBY_KINDS: set[str] = {"message", "ready", "deploy"}
@@ -126,6 +127,50 @@ def append_lobby_event_to_file(path: Path, payload: dict[str, object]) -> dict[s
     with path.open("a", encoding="utf-8") as file:
         file.write(json.dumps(event.to_dict(), ensure_ascii=False, sort_keys=True) + "\n")
     return event.to_dict()
+
+
+def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str, object]:
+    event = {
+        "id": uuid4().hex[:12],
+        "created_at": datetime.now(UTC).isoformat(),
+        "kind": payload.get("kind", "status"),
+        "role_id": payload.get("role_id"),
+        "display_name": payload.get("display_name"),
+        "round": payload.get("round"),
+        "content": clean_lobby_text(payload.get("content", ""), limit=4000),
+        "position": clean_lobby_text(payload.get("position", ""), limit=1000),
+        "stance_status": payload.get("stance_status"),
+        "confidence": payload.get("confidence"),
+    }
+    path = meeting_dir / "live_events.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+    return event
+
+
+def read_live_events(meeting_dir: Path, limit: int = 200) -> list[dict[str, object]]:
+    path = meeting_dir / "live_events.jsonl"
+    if not path.exists():
+        return []
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events[-limit:]
+
+
+def write_live_state(meeting_dir: Path, payload: dict[str, object]) -> None:
+    (meeting_dir / "live_state.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 
 
 def clean_lobby_text(value: object, limit: int) -> str:

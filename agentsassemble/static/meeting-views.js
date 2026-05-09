@@ -8,6 +8,8 @@ export function renderLive(payload) {
   const messages = rounds.flatMap((round) =>
     (round.messages || []).map((message) => ({ ...message, roundTitle: roundLabel(payload.meeting, round.id, round.title) }))
   );
+  const liveEvents = payload.live_events || [];
+  const liveMessages = liveEvents.length ? liveEvents : messages;
   const synthesis = payload.meeting.moderator_synthesis || {};
   live.innerHTML = `
     <div class="live-room">
@@ -37,24 +39,51 @@ export function renderLive(payload) {
             </div>
             <em class="record-badge">공식 기록</em>
           </div>
-          ${messages.map(renderMessage).join("")}
-          <article class="message message-purple message-moderator">
+          ${liveMessages.map(renderLiveItem).join("")}
+          ${synthesis.summary ? `<article class="message message-purple message-moderator">
             <img class="profile" src="/static/avatar-moderator.svg" alt="" />
             <div class="message-body">
             <div class="message-header"><span class="speaker"><strong>Moderator</strong><em>종합</em></span><span class="message-route">전체 · <span class="confidence">${escapeHtml(synthesis.confidence || "")}</span></span></div>
             <p>${escapeHtml(synthesis.summary || "")}</p>
             </div>
-          </article>
+          </article>` : ""}
         </main>
         <aside class="live-chat-side">
-          ${renderLiveTimeline(payload, messages)}
-          ${renderLiveOutcome(payload, messages)}
+          ${renderLiveTimeline(payload, liveMessages)}
+          ${renderLiveOutcome(payload, liveMessages)}
           ${renderOfficialRoster(roles)}
         </aside>
       </section>
     </div>
   `;
   if (shouldFollowLatest) scrollLiveTranscriptToLatest(live);
+}
+
+function renderLiveItem(item) {
+  if (item.kind && item.kind !== "message") return renderLiveEvent(item);
+  return renderMessage(item);
+}
+
+function renderLiveEvent(event) {
+  const meta = roleMeta[event.role_id] || { color: event.role_id === "moderator" ? "purple" : "cyan", badge: event.kind || "진행", avatar: "/static/avatar-moderator.svg" };
+  const displayName = event.display_name || (event.role_id === "moderator" ? "Moderator" : "System");
+  const route = event.round ? `${event.round} · ${event.kind}` : event.kind || "status";
+  return `
+    <article class="message message-${escapeHtml(meta.color)} live-event-bubble">
+      <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
+      <div class="message-body">
+        <div class="message-header">
+          <span class="speaker">
+            <strong>${escapeHtml(displayName)}</strong>
+            <em>${escapeHtml(meta.badge || event.kind || "진행")}</em>
+          </span>
+          <span class="message-route">${escapeHtml(route)} · <span class="confidence">${escapeHtml(event.confidence || "")}</span></span>
+        </div>
+        ${event.position ? `<p class="stance-line"><strong>${escapeHtml(stanceLabel(event.stance_status))}</strong> ${escapeHtml(event.position)}</p>` : ""}
+        <p>${escapeHtml(event.content || "")}</p>
+      </div>
+    </article>
+  `;
 }
 
 function isLiveTranscriptNearBottom(live) {

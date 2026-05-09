@@ -15,12 +15,17 @@ def start_role_sessions(
     context: dict[str, Any],
     resolved_agents: dict[str, Any],
     report: Callable[[str], None],
+    live_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     sessions = {}
     for role in config.roles:
         report(f"Preparing role: {role.display_name} ({role.id})")
+        if live_event is not None:
+            live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": "세션 준비 중"})
         write_role_files(meeting_dir, role)
         sessions[role.id] = resolved_agents[role.id].adapter.start_session(role, context)
+        if live_event is not None:
+            live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": "세션 준비 완료"})
     return sessions
 
 
@@ -32,10 +37,13 @@ def run_research_phase(
     depth: ResearchDepth,
     steering: ResearchSteering,
     report: Callable[[str], None],
+    live_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     research_records = []
     for role in config.roles:
         report(f"Research: {role.display_name}")
+        if live_event is not None:
+            live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": "독립 리서치 시작"})
         research = resolved_agents[role.id].adapter.run_research(
             role,
             sessions[role.id],
@@ -46,6 +54,16 @@ def run_research_phase(
         research = apply_evidence_gate(research, depth)
         research_records.append(research)
         write_research(meeting_dir, research)
+        if live_event is not None:
+            live_event(
+                {
+                    "kind": "research",
+                    "role_id": role.id,
+                    "display_name": role.display_name,
+                    "content": research.get("summary", "리서치 완료"),
+                    "confidence": research.get("confidence"),
+                }
+            )
     return research_records, summarize_evidence_gates(research_records)
 
 
@@ -56,16 +74,18 @@ def run_debate_phase(
     research_records: list[dict[str, Any]],
     evidence_gate: dict[str, Any],
     report: Callable[[str], None],
+    live_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     debate_rounds = []
     rounds_by_id: dict[str, list[dict[str, Any]]] = {}
     for round_definition in DEMO_MEETING_TEMPLATE["rounds"]:
         report(round_definition.report_label)
+        if live_event is not None:
+            live_event({"kind": "status", "round": round_definition.id, "content": round_definition.report_label})
         messages = []
         if round_definition.context_scope == "own_research":
             for role, research in zip(config.roles, research_records, strict=True):
-                messages.append(
-                    resolved_agents[role.id].adapter.run_round(
+                message = resolved_agents[role.id].adapter.run_round(
                         role,
                         sessions[role.id],
                         round_definition.id,
@@ -76,7 +96,9 @@ def run_debate_phase(
                             "stance_rule": "Keep your role's own position distinct. Do not soften your stance just to agree with the room.",
                         },
                     )
-                )
+                messages.append(message)
+                if live_event is not None:
+                    live_event({"kind": "message", **message})
         else:
             public_context = {
                 **rounds_by_id,
@@ -88,15 +110,16 @@ def run_debate_phase(
                 ),
             }
             for role in config.roles:
-                messages.append(
-                    resolved_agents[role.id].adapter.run_round(
+                message = resolved_agents[role.id].adapter.run_round(
                         role,
                         sessions[role.id],
                         round_definition.id,
                         round_definition.instruction,
                         public_context,
                     )
-                )
+                messages.append(message)
+                if live_event is not None:
+                    live_event({"kind": "message", **message})
         rounds_by_id[round_definition.id] = messages
         debate_rounds.append(
             {
@@ -119,6 +142,7 @@ def synthesize_meeting(
     debate_rounds: list[dict[str, Any]],
     evidence_gate: dict[str, Any],
     report: Callable[[str], None],
+    live_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     moderator_session = {
         "adapter": moderator_adapter.name,
@@ -127,7 +151,9 @@ def synthesize_meeting(
         "meeting_dir": str(meeting_dir),
     }
     report("Moderator synthesis")
-    return moderator_adapter.synthesize(
+    if live_event is not None:
+        live_event({"kind": "status", "role_id": "moderator", "display_name": "Moderator", "content": "종합 시작"})
+    synthesis = moderator_adapter.synthesize(
         moderator_session,
         question,
         {
@@ -153,3 +179,15 @@ def synthesize_meeting(
             "stance_rule": "Treat held, revised, and conceded stances as debate state. Do not collapse disagreement into fake consensus.",
         },
     )
+    if live_event is not None:
+        live_event(
+            {
+                "kind": "synthesis",
+                "role_id": "moderator",
+                "display_name": "Moderator",
+                "content": synthesis.get("summary", "종합 완료"),
+                "position": synthesis.get("winner", ""),
+                "confidence": synthesis.get("confidence"),
+            }
+        )
+    return synthesis

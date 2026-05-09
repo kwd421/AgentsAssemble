@@ -15,7 +15,7 @@ from agentsassemble.meeting_phases import (
 )
 from agentsassemble.meeting_record import assemble_meeting_record
 from agentsassemble.meeting_setup import prepare_meeting_setup
-from agentsassemble.meeting_events import MeetingEventLog
+from agentsassemble.meeting_events import MeetingEventLog, append_live_event, write_live_state
 from agentsassemble.memory import load_memory_context, write_memory_artifacts
 from agentsassemble.models import (
     MeetingResult,
@@ -58,6 +58,31 @@ def run_demo_meeting(
     meeting_id = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
     meeting_dir = root / "meetings" / meeting_id
     meeting_dir.mkdir(parents=True, exist_ok=False)
+    roles = [role.__dict__ for role in config.roles]
+    write_live_state(
+        meeting_dir,
+        {
+            "meeting_id": meeting_id,
+            "question": config.question,
+            "display_question": config.display_question,
+            "topic": config.topic,
+            "display_topic": config.display_topic,
+            "roles": roles,
+            "debate_rounds": [],
+            "moderator_synthesis": {},
+            "agent_bindings": [binding.to_dict() for binding in setup.agent_bindings],
+            "provider_configs": {
+                provider_id: provider_config.public_dict()
+                for provider_id, provider_config in setup.providers.items()
+            },
+            "permission_profiles": {
+                profile_id: profile.to_dict() for profile_id, profile in setup.permissions.items()
+            },
+            "live_status": "running",
+        },
+    )
+    live_event = lambda payload: append_live_event(meeting_dir, payload)
+    live_event({"kind": "status", "content": "회의가 생성되었습니다."})
     report(f"Meeting {meeting_id}")
     report(f"Question: {config.display_question}")
     report(
@@ -89,13 +114,13 @@ def run_demo_meeting(
         "memory_context": memory_context,
     }
 
-    roles = [role.__dict__ for role in config.roles]
     sessions = start_role_sessions(
         config,
         meeting_dir,
         context,
         setup.resolved_agents,
         report,
+        live_event,
     )
     event_log.add("role_sessions_started", "Role sessions prepared.", role_count=len(sessions))
     research_records, evidence_gate = run_research_phase(
@@ -106,6 +131,7 @@ def run_demo_meeting(
         depth,
         steering,
         report,
+        live_event,
     )
     event_log.add(
         "research_completed",
@@ -120,6 +146,7 @@ def run_demo_meeting(
         research_records,
         evidence_gate,
         report,
+        live_event,
     )
     event_log.add("debate_completed", "Debate rounds completed.", round_count=len(debate_rounds))
     synthesis = synthesize_meeting(
@@ -131,6 +158,7 @@ def run_demo_meeting(
         debate_rounds,
         evidence_gate,
         report,
+        live_event,
     )
     event_log.add(
         "synthesis_completed",
@@ -159,7 +187,10 @@ def run_demo_meeting(
     meeting["artifacts"]["memory"] = "memory/"
     event_log.add("artifacts_written", "Public artifacts written.", meeting_dir=str(meeting_dir))
     meeting["event_log"] = event_log.to_list()
+    meeting["live_status"] = "complete"
     write_public_artifacts(meeting_dir, meeting)
+    write_live_state(meeting_dir, meeting)
+    live_event({"kind": "artifact", "content": "회의 기록과 산출물이 저장되었습니다."})
     report(f"Decision: {synthesis['winner']} ({synthesis['confidence']} confidence)")
     report(f"Artifacts: {meeting_dir}")
     return MeetingResult(meeting_id=meeting_id, meeting_dir=meeting_dir)

@@ -53,6 +53,12 @@ async function loadMeeting(meetingId) {
   render();
 }
 
+async function refreshCurrentMeeting() {
+  if (!state.payload?.meeting) return;
+  const meetingId = state.payload.meeting.meeting_id;
+  await loadMeeting(meetingId);
+}
+
 async function loadLobby() {
   const payload = await fetchJson("/api/lobby");
   state.lobbyEvents = payload.events || [];
@@ -157,4 +163,5 @@ meetingSelect.addEventListener("change", () => {
   const latest = await loadMeetings();
   await loadMeeting(latest);
   setInterval(loadLobby, 4000);
+  setInterval(refreshCurrentMeeting, 2000);
 })();

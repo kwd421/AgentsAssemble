@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from agentsassemble.meeting import run_demo_meeting
-from agentsassemble.meeting_events import append_lobby_event_to_file, read_lobby_events
+from agentsassemble.meeting_events import append_lobby_event_to_file, read_live_events, read_lobby_events
 
 TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
 TABS = ["lobby", "live", "board", "archive"]
@@ -22,13 +22,15 @@ def list_meetings(output_root: Path) -> list[dict[str, object]]:
     meetings = []
     for meeting_dir in meetings_dir.iterdir():
         record_path = meeting_dir / "meeting.json"
-        if not record_path.exists():
+        live_path = meeting_dir / "live_state.json"
+        if not record_path.exists() and not live_path.exists():
             continue
         try:
-            meeting = json.loads(record_path.read_text(encoding="utf-8"))
+            source_path = record_path if record_path.exists() else live_path
+            meeting = json.loads(source_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
-        stat = record_path.stat()
+        stat = source_path.stat()
         meetings.append(
             {
                 "meeting_id": meeting.get("meeting_id", meeting_dir.name),
@@ -44,7 +46,8 @@ def list_meetings(output_root: Path) -> list[dict[str, object]]:
 
 def build_meeting_payload(meeting_dir: Path) -> dict[str, object]:
     meeting_path = meeting_dir / "meeting.json"
-    meeting = json.loads(meeting_path.read_text(encoding="utf-8"))
+    live_path = meeting_dir / "live_state.json"
+    meeting = json.loads((meeting_path if meeting_path.exists() else live_path).read_text(encoding="utf-8"))
     artifacts = {
         name: _read_optional(meeting_dir / name)
         for name in ("agenda.md", "transcript.md", "decision.md", "meeting.json")
@@ -77,6 +80,7 @@ def build_meeting_payload(meeting_dir: Path) -> dict[str, object]:
         "return_packets": return_packets,
         "research": research,
         "research_json": research_json,
+        "live_events": read_live_events(meeting_dir),
     }
 
 
