@@ -23,6 +23,19 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("overflow-x: auto;", css)
         self.assertIn("contain: layout paint;", css)
 
+    def test_tabs_expose_semantic_state(self):
+        html = (STATIC_DIR / "index.html").read_text()
+        script = (STATIC_DIR / "app.js").read_text()
+
+        self.assertIn('role="tablist"', html)
+        self.assertEqual(html.count('role="tab"'), 4)
+        self.assertEqual(html.count('role="tabpanel"'), 4)
+        self.assertIn('aria-selected="true"', html)
+        self.assertIn('aria-controls="lobby"', html)
+        self.assertIn('aria-labelledby="tab-lobby"', html)
+        self.assertIn('tab.setAttribute("aria-selected"', script)
+        self.assertIn("panel.hidden = !isActive", script)
+
 
 if __name__ == "__main__":
     unittest.main()
