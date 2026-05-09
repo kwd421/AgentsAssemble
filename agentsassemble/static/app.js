@@ -981,23 +981,37 @@ function renderArchive(payload) {
   const entries = buildArchiveEntries(payload);
   if (!entries[state.archiveKey]) state.archiveKey = Object.keys(entries)[0];
   const currentDocument = entries[state.archiveKey] || "";
+  const manifest = buildArchiveManifest(payload, entries);
   archive.innerHTML = `
     <section class="archive-view">
     <div class="room-strip">
       <div>
         <strong>아카이브</strong>
-        <small>회의 산출물, 인수인계 기록, 에이전트별 자료를 검토합니다.</small>
+        <small>회의 산출물, 인수인계 기록, 에이전트별 자료를 장기 기록으로 보관합니다.</small>
       </div>
       <div class="room-actions">
         <span class="room-status">${escapeHtml(Object.keys(entries).length)}개 문서</span>
         <span class="room-status room-status-hot">${escapeHtml(archiveKindLabel(state.archiveKey))}</span>
       </div>
     </div>
+    <section class="archive-vault">
+      <div class="archive-vault-copy">
+        <span class="room-kicker">record vault</span>
+        <strong>${escapeHtml(archiveOwnerLabel(state.archiveKey, payload))}</strong>
+        <p>공식 결정, 회의록, 리서치, 복귀 패킷을 분리해서 보관합니다. 에이전트가 나중에 돌아와도 어떤 자료를 근거로 움직여야 하는지 추적할 수 있어야 합니다.</p>
+      </div>
+      <div class="archive-vault-stats">
+        ${renderArchiveStat("공용", manifest.publicCount)}
+        ${renderArchiveStat("역할별", manifest.roleCount)}
+        ${renderArchiveStat("리서치", manifest.researchCount)}
+        ${renderArchiveStat("복귀", manifest.returnCount)}
+      </div>
+    </section>
     <div class="archive-layout">
       <aside class="archive-list">
         <div class="archive-head">
           <strong>문서 목록</strong>
-          <span>회의 산출물과 인수인계 기록</span>
+          <span>소유자와 문서 유형별로 분리됩니다.</span>
         </div>
         ${renderArchiveGroups(payload, entries)}
       </aside>
@@ -1028,6 +1042,21 @@ function renderArchive(payload) {
   archive.querySelectorAll("[data-archive-command]").forEach((button) => {
     button.addEventListener("click", () => handleArchiveCommand(button.dataset.archiveCommand, state.archiveKey, currentDocument, button));
   });
+}
+
+function buildArchiveManifest(payload, entries) {
+  const keys = Object.keys(entries);
+  const roleIds = (payload.meeting.roles || []).map((role) => role.id);
+  return {
+    publicCount: keys.filter((key) => !key.includes("/")).length,
+    roleCount: keys.filter((key) => roleIds.some((roleId) => key.includes(`/${roleId}/`) || key.endsWith(`/${roleId}.md`))).length,
+    researchCount: keys.filter((key) => key.includes("research/")).length,
+    returnCount: keys.filter((key) => key.includes("return_packets/")).length,
+  };
+}
+
+function renderArchiveStat(label, value) {
+  return `<div class="archive-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? 0)}</strong></div>`;
 }
 
 function documentStat(value) {
@@ -1153,7 +1182,7 @@ function renderArchiveGroup(title, subtitle, keys, entries, meta) {
         ${avatar}
         <div>
           <strong>${escapeHtml(title)}</strong>
-          <span>${escapeHtml(subtitle)}</span>
+          <span>${escapeHtml(subtitle)} · ${keys.length}개</span>
         </div>
       </div>
       ${keys.map((key) => renderArchiveButton(key, entries)).join("")}

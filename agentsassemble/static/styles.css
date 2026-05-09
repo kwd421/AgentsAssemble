@@ -2523,12 +2523,96 @@ input:focus-visible {
   margin-top: 14px;
 }
 
-.archive-layout {
-  background: rgba(7, 10, 16, 0.44);
-  border: 1px solid rgba(212, 225, 255, 0.11);
-  border-radius: 12px;
+.archive-vault {
+  background:
+    radial-gradient(circle at 14% 12%, rgba(91, 215, 255, 0.16), transparent 18rem),
+    radial-gradient(circle at 88% 0%, rgba(242, 184, 75, 0.13), transparent 24rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.052), transparent 48%),
+    rgba(7, 10, 16, 0.58);
+  border: 1px solid rgba(212, 225, 255, 0.14);
+  border-radius: 18px;
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: clamp(12px, calc(18px * var(--ui-scale)), 18px);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.52fr);
+  margin-bottom: clamp(12px, calc(16px * var(--ui-scale)), 18px);
+  overflow: hidden;
+  padding: clamp(14px, calc(18px * var(--ui-scale)), 22px);
+  position: relative;
+}
+
+.archive-vault::after {
+  background:
+    linear-gradient(90deg, transparent, rgba(91, 215, 255, 0.5), rgba(242, 184, 75, 0.42), transparent),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.075) 0 1px, transparent 1px 42px);
+  bottom: 0;
+  content: "";
+  height: 1px;
+  left: 28px;
+  opacity: 0.74;
+  position: absolute;
+  right: 28px;
+}
+
+.archive-vault-copy {
+  min-width: 0;
+}
+
+.archive-vault-copy strong {
+  color: var(--text);
+  display: block;
+  font-size: clamp(24px, calc(32px * var(--text-scale)), 36px);
+  line-height: 1.05;
+  margin-top: 8px;
+}
+
+.archive-vault-copy p {
+  color: #d6d0c5;
+  font-size: clamp(13px, calc(15px * var(--text-scale)), 16px);
+  line-height: 1.58;
+  margin-top: 12px;
+  max-width: 76ch;
+}
+
+.archive-vault-stats {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.archive-stat {
+  background: rgba(8, 11, 17, 0.54);
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-radius: 13px;
+  min-width: 0;
+  padding: 13px;
+}
+
+.archive-stat span,
+.archive-stat strong {
+  display: block;
+}
+
+.archive-stat span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.archive-stat strong {
+  color: var(--text);
+  font-size: clamp(20px, calc(27px * var(--text-scale)), 30px);
+  margin-top: 5px;
+}
+
+.archive-layout {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.028), transparent 42%),
+    rgba(7, 10, 16, 0.44);
+  border: 1px solid rgba(212, 225, 255, 0.11);
+  border-radius: 18px;
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   min-height: 620px;
   overflow: hidden;
 }
@@ -2541,11 +2625,13 @@ input:focus-visible {
 }
 
 .archive-head {
-  border-bottom: 1px solid var(--line);
+  background: rgba(7, 10, 16, 0.86);
+  border: 1px solid rgba(212, 225, 255, 0.1);
+  border-radius: 12px;
   margin-bottom: 12px;
-  padding-bottom: 10px;
+  padding: 10px;
   position: sticky;
-  top: 0;
+  top: 12px;
   z-index: 2;
 }
 
@@ -2561,13 +2647,15 @@ input:focus-visible {
 }
 
 .archive-group + .archive-group {
-  border-top: 1px solid var(--line);
   margin-top: 12px;
-  padding-top: 12px;
 }
 
 .archive-group {
   contain: layout paint;
+  background: rgba(10, 13, 20, 0.44);
+  border: 1px solid rgba(212, 225, 255, 0.1);
+  border-radius: 14px;
+  padding: 10px;
 }
 
 .archive-group-title {
@@ -2614,13 +2702,20 @@ input:focus-visible {
   width: 100%;
   text-align: left;
   margin-bottom: 8px;
-  background: rgba(7, 10, 16, 0.34);
+  background: rgba(7, 10, 16, 0.5);
   overflow: hidden;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
 
 .archive-list button.is-active {
+  background: rgba(242, 184, 75, 0.1);
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.archive-list button:hover {
+  background: rgba(18, 23, 34, 0.8);
+  transform: translateX(1px);
 }
 
 .archive-list button strong,
@@ -2817,6 +2912,7 @@ input:focus-visible {
   .live-bottom,
   .war-room,
   .archive-layout,
+  .archive-vault,
   .evidence-overview,
   .lobby-main,
   .lobby-form,
@@ -2970,6 +3066,10 @@ input:focus-visible {
   .archive-actions,
   .room-actions {
     justify-content: flex-start;
+  }
+
+  .archive-vault-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .live-hero {
