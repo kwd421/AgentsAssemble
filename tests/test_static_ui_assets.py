@@ -48,15 +48,17 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn(".lobby-activity", css)
         self.assertIn("grid-template-rows: minmax(210px, 0.8fr) minmax(220px, 1fr) auto;", css)
 
-    def test_live_stage_leaves_room_for_transcript(self):
+    def test_live_view_prioritizes_official_chat(self):
         script = (STATIC_DIR / "app.js").read_text()
         css = (STATIC_DIR / "styles.css").read_text()
 
-        self.assertIn("min-height: clamp(520px, calc(100vh - 200px), 760px);", css)
-        self.assertIn("height: clamp(280px, 38vh, 470px);", css)
-        self.assertIn("font-size: clamp(30px, 4.25vw, 58px);", css)
-        self.assertIn("min-height: 430px;", css)
-        self.assertIn("height: clamp(220px, 34vh, 300px);", css)
+        self.assertIn('class="live-chat-header"', script)
+        self.assertIn('class="message-list live-transcript live-chat-feed"', script)
+        self.assertIn("function renderOfficialRoster", script)
+        self.assertIn(".live-chat-room", css)
+        self.assertIn("grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);", css)
+        self.assertIn("min-height: clamp(520px, calc(100vh - 300px), 760px);", css)
+        self.assertIn("이 영역의 발언은 transcript.md와 decision.md의 근거가 됩니다.", script)
         self.assertIn("isLiveTranscriptNearBottom(live)", script)
         self.assertIn("scrollLiveTranscriptToLatest(live)", script)
         self.assertIn('aria-label="공식 토론 기록"', script)

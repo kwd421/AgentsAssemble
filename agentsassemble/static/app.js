@@ -463,8 +463,8 @@ function renderLive(payload) {
   const synthesis = payload.meeting.moderator_synthesis || {};
   live.innerHTML = `
     <div class="live-room">
-      <section class="live-hero">
-        <div class="live-hero-copy">
+      <section class="live-chat-header">
+        <div>
           <div class="live-statusbar">
             <span class="live-pill">공식 실황</span>
             <strong>Round ${escapeHtml(rounds.length || 0)}</strong>
@@ -479,15 +479,13 @@ function renderLive(payload) {
             </div>
           </div>
         </div>
-        ${renderLiveCouncilRing(roles)}
       </section>
-      <section class="live-bottom">
-        ${renderLiveTimeline(payload, messages)}
-        <main class="message-list live-transcript" aria-label="공식 토론 기록" aria-live="polite">
+      <section class="live-chat-room">
+        <main class="message-list live-transcript live-chat-feed" aria-label="공식 토론 기록" aria-live="polite">
           <div class="feed-head">
             <div>
-              <strong>토론 feed</strong>
-              <span>독립 리서치 완료 · Round 1/2 진행 기록</span>
+              <strong>공식 토론</strong>
+              <span>이 영역의 발언은 transcript.md와 decision.md의 근거가 됩니다.</span>
             </div>
             <em class="record-badge">공식 기록</em>
           </div>
@@ -500,7 +498,11 @@ function renderLive(payload) {
             </div>
           </article>
         </main>
-        ${renderLiveOutcome(payload, messages)}
+        <aside class="live-chat-side">
+          ${renderLiveTimeline(payload, messages)}
+          ${renderLiveOutcome(payload, messages)}
+          ${renderOfficialRoster(roles)}
+        </aside>
       </section>
     </div>
   `;
@@ -560,6 +562,29 @@ function renderLiveOutcome(payload, messages) {
         ${renderArtifactRow("발언 로그", "transcript.md")}
         ${renderArtifactRow("의제", "agenda.md")}
       </section>
+    </aside>
+  `;
+}
+
+function renderOfficialRoster(roles) {
+  return `
+    <aside class="official-roster">
+      <div class="roster-head">
+        <strong>본회의 참여자</strong>
+        <span>공식 발언 권한 · 에이전트 ${roles.length}</span>
+      </div>
+      ${roles.map((role) => {
+        const meta = roleMeta[role.id] || { color: "purple", title: role.lens, badge: role.lens, avatar: "/static/avatar-moderator.svg" };
+        return `
+          <div class="official-speaker official-${escapeHtml(meta.color)}">
+            <img class="profile profile-tiny" src="${escapeHtml(meta.avatar)}" alt="" />
+            <div>
+              <strong>${escapeHtml(role.display_name)}</strong>
+              <span>${escapeHtml(meta.badge)}</span>
+            </div>
+          </div>
+        `;
+      }).join("")}
     </aside>
   `;
 }
