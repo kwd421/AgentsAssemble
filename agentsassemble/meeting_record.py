@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from agentsassemble.meeting_context import build_diagnostics, public_debate_rounds, public_synthesis
 from agentsassemble.models import CouncilConfig, ResearchDepth, ResearchSteering
 from agentsassemble.templates import DEMO_MEETING_TEMPLATE
 
@@ -111,10 +112,11 @@ def assemble_meeting_record(
             }
             for research in research_records
         ],
-        "debate_rounds": debate_rounds,
+        "debate_rounds": public_debate_rounds(debate_rounds),
         "event_log": event_log or [],
-        "moderator_synthesis": synthesis,
+        "moderator_synthesis": public_synthesis(synthesis),
         "evidence_gate": evidence_gate,
+        "diagnostics": build_diagnostics(debate_rounds, synthesis),
         "artifacts": {
             "agenda": "agenda.md",
             "transcript": "transcript.md",
@@ -131,5 +133,14 @@ def assemble_meeting_record(
             "research_steering": steering.to_dict(),
             "reproducibility": "auditable and resumable, not deterministic replay",
         },
-        "failure_state": {"status": "none", "failures": []},
+        "failure_state": _failure_state(synthesis),
     }
+
+
+def _failure_state(synthesis: dict[str, Any]) -> dict[str, Any]:
+    if synthesis.get("fallback") or synthesis.get("status") == "degraded":
+        return {
+            "status": "degraded",
+            "failures": ["moderator_synthesis_fallback"],
+        }
+    return {"status": "none", "failures": []}

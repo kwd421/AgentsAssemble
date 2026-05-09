@@ -11,14 +11,16 @@ export function renderLive(payload, options = {}) {
   const liveEvents = payload.live_events || [];
   const liveMessages = liveEvents.length ? liveEvents : messages;
   const synthesis = payload.meeting.moderator_synthesis || {};
+  const isComplete = payload.meeting.live_status === "complete" || Boolean(synthesis.winner);
+  const roundStatus = isComplete ? "회의 완료" : `Round ${escapeHtml(rounds.length || 0)}`;
   live.innerHTML = `
     <div class="live-room">
       <section class="live-chat-header">
         <div>
           <div class="live-statusbar">
             <span class="live-pill">공식 실황</span>
-            <strong>Round ${escapeHtml(rounds.length || 0)}</strong>
-            <span>합의도 ${escapeHtml(synthesis.confidence || "unknown")}</span>
+            <strong>${roundStatus}</strong>
+            <span>합의도 ${escapeHtml(confidenceLabel(synthesis.confidence))}</span>
           </div>
           <div class="live-chat-title">
             <h2>${escapeHtml(displayQuestion(payload.meeting.question))}</h2>
@@ -32,6 +34,7 @@ export function renderLive(payload, options = {}) {
       </section>
       <section class="live-chat-room">
         <main class="message-list live-transcript live-chat-feed" aria-label="공식 토론 기록" aria-live="polite">
+          <button type="button" class="latest-jump" hidden>최신으로 가기</button>
           <div class="feed-head">
             <div>
               <strong>공식 토론</strong>
@@ -43,8 +46,8 @@ export function renderLive(payload, options = {}) {
           ${synthesis.summary ? `<article class="message message-purple message-moderator">
             <img class="profile" src="/static/avatar-moderator.svg" alt="" />
             <div class="message-body">
-            <div class="message-header"><span class="speaker"><strong>Moderator</strong><em>종합</em></span><span class="message-route">전체 · <span class="confidence">${escapeHtml(synthesis.confidence || "")}</span></span></div>
-            <p>${escapeHtml(synthesis.summary || "")}</p>
+            <div class="message-header"><span class="speaker"><strong>진행자</strong><em>종합</em></span><span class="message-route">전체 · <span class="confidence">${escapeHtml(confidenceLabel(synthesis.confidence))}</span></span></div>
+            ${renderTextBlocks(userVisibleSummary(synthesis.summary || ""), { highlight: synthesis.winner })}
             </div>
           </article>` : ""}
         </main>
@@ -56,18 +59,22 @@ export function renderLive(payload, options = {}) {
       </section>
     </div>
   `;
+  bindLatestJump(live);
   if (shouldFollowLatest) scrollLiveTranscriptToLatest(live);
+  updateLatestJump(live);
 }
 
 function renderLiveItem(item) {
+  if (item.kind === "status" || item.kind === "artifact") return renderSystemLine(item);
+  if (item.kind === "research") return renderResearchEvent(item);
   if (item.kind && item.kind !== "message") return renderLiveEvent(item);
   return renderMessage(item);
 }
 
 function renderLiveEvent(event) {
   const meta = roleMeta[event.role_id] || { color: event.role_id === "moderator" ? "purple" : "cyan", badge: event.kind || "진행", avatar: "/static/avatar-moderator.svg" };
-  const displayName = event.display_name || (event.role_id === "moderator" ? "Moderator" : "System");
-  const route = event.round ? `${event.round} · ${event.kind}` : event.kind || "status";
+  const displayName = displayNameLabel(event);
+  const route = event.round ? `${roundKindLabel(event.round)} · ${eventKindLabel(event.kind)}` : eventKindLabel(event.kind);
   return `
     <article class="message message-${escapeHtml(meta.color)} live-event-bubble">
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
@@ -77,12 +84,35 @@ function renderLiveEvent(event) {
             <strong>${escapeHtml(displayName)}</strong>
             <em>${escapeHtml(meta.badge || event.kind || "진행")}</em>
           </span>
-          <span class="message-route">${escapeHtml(route)} · <span class="confidence">${escapeHtml(event.confidence || "")}</span></span>
+          <span class="message-route">${escapeHtml(route)} · <span class="confidence">${escapeHtml(confidenceLabel(event.confidence))}</span></span>
         </div>
         ${event.position ? `<p class="stance-line"><strong>${escapeHtml(stanceLabel(event.stance_status))}</strong> ${escapeHtml(event.position)}</p>` : ""}
-        <p>${escapeHtml(event.content || "")}</p>
+        ${renderTextBlocks(userVisibleSummary(event.content || ""), { highlight: event.position })}
       </div>
     </article>
+  `;
+}
+
+function renderSystemLine(event) {
+  return `
+    <div class="system-line" role="status">
+      <span>${escapeHtml(eventKindLabel(event.kind))}</span>
+      <p>${escapeHtml(userVisibleSummary(event.content || ""))}</p>
+    </div>
+  `;
+}
+
+function renderResearchEvent(event) {
+  const meta = roleMeta[event.role_id] || { color: "cyan", badge: "리서치", avatar: "/static/avatar-moderator.svg" };
+  const displayName = displayNameLabel(event);
+  return `
+    <details class="research-card research-${escapeHtml(meta.color)}">
+      <summary>
+        <img class="profile profile-tiny" src="${escapeHtml(meta.avatar)}" alt="" />
+        <span><strong>${escapeHtml(displayName)}</strong><em>리서치 요약 · ${escapeHtml(confidenceLabel(event.confidence))}</em></span>
+      </summary>
+      <div>${renderTextBlocks(event.content || "")}</div>
+    </details>
   `;
 }
 
@@ -98,7 +128,22 @@ function scrollLiveTranscriptToLatest(live) {
   if (!feed) return;
   requestAnimationFrame(() => {
     feed.scrollTop = feed.scrollHeight;
+    updateLatestJump(live);
   });
+}
+
+function bindLatestJump(live) {
+  const feed = live?.querySelector(".live-transcript");
+  const button = live?.querySelector(".latest-jump");
+  if (!feed || !button) return;
+  button.addEventListener("click", () => scrollLiveTranscriptToLatest(live));
+  feed.addEventListener("scroll", () => updateLatestJump(live), { passive: true });
+}
+
+function updateLatestJump(live) {
+  const button = live?.querySelector(".latest-jump");
+  if (!button) return;
+  button.hidden = isLiveTranscriptNearBottom(live);
 }
 
 function renderLiveTimeline(payload, messages) {
@@ -109,11 +154,11 @@ function renderLiveTimeline(payload, messages) {
       <ol>
         <li class="is-done"><span></span>회의 시작</li>
         <li class="is-done"><span></span>독립 리서치</li>
-        <li class="${rounds.length > 1 ? "is-current" : "is-done"}"><span></span>Round ${escapeHtml(rounds.length || 1)}</li>
-        <li><span></span>결정 생성</li>
+        <li class="${isMeetingComplete(payload.meeting) ? "is-done" : "is-current"}"><span></span>${escapeHtml(rounds.length ? `${rounds.length}라운드` : "라운드 대기")}</li>
+        <li class="${isMeetingComplete(payload.meeting) ? "is-done" : ""}"><span></span>결정 생성</li>
       </ol>
       ${renderRailMetric("발언 수", messages.length)}
-      ${renderRailMetric("라운드", `${rounds.length || 0} / 3`)}
+      ${renderRailMetric("라운드", `${rounds.length || 0} / ${(payload.meeting.meeting_template?.rounds || []).length}`)}
     </aside>
   `;
 }
@@ -125,11 +170,11 @@ function renderLiveOutcome(payload, messages) {
       <div class="outcome-card">
         <span>현재 판정</span>
         <strong>${escapeHtml(synthesis.winner || "판정 대기")}</strong>
-        <p>${escapeHtml(synthesis.summary || "아직 종합 의견이 없습니다.")}</p>
+        ${renderTextBlocks(userVisibleSummary(synthesis.summary || "아직 종합 의견이 없습니다."), { highlight: synthesis.winner })}
       </div>
       <div class="consensus-card">
         <strong>합의도 추이</strong>
-        <div class="consensus-score">${escapeHtml(synthesis.confidence || "unknown")}</div>
+        <div class="consensus-score">${escapeHtml(confidenceLabel(synthesis.confidence))}</div>
         <div class="consensus-track"><span></span></div>
         <p>${escapeHtml(messages.length)}개 발언 기반</p>
       </div>
@@ -187,7 +232,7 @@ function renderArtifactRow(label, filename) {
 }
 
 function renderMessage(message) {
-  const meta = roleMeta[message.role_id] || { color: "purple", title: "Moderator", badge: "진행", avatar: "/static/avatar-moderator.svg" };
+  const meta = roleMeta[message.role_id] || { color: "purple", title: "진행자", badge: "진행", avatar: "/static/avatar-moderator.svg" };
   const label = message.roundTitle || message.round;
   const stance = stanceLabel(message.stance_status);
   const position = messagePosition(message, state.payload?.meeting);
@@ -200,13 +245,101 @@ function renderMessage(message) {
           <strong>${escapeHtml(message.display_name)}</strong>
           <em>${escapeHtml(meta.badge)}</em>
         </span>
-        <span class="message-route">전체 · ${escapeHtml(label)} · <span class="confidence">${escapeHtml(message.confidence || "")}</span></span>
+        <span class="message-route">전체 · ${escapeHtml(label)} · <span class="confidence">${escapeHtml(confidenceLabel(message.confidence))}</span></span>
       </div>
       ${position ? `<p class="stance-line"><strong>${escapeHtml(stance)}</strong> ${escapeHtml(position)}</p>` : ""}
-      <p>${escapeHtml(message.content)}</p>
+      ${renderTextBlocks(message.content, { highlight: position })}
       </div>
     </article>
   `;
+}
+
+function displayNameLabel(event) {
+  if (event.display_name) return event.display_name === "Moderator" ? "진행자" : event.display_name;
+  if (event.role_id === "moderator") return "진행자";
+  return "시스템";
+}
+
+function eventKindLabel(kind) {
+  return {
+    status: "상태",
+    research: "리서치",
+    synthesis: "종합",
+    artifact: "산출물",
+    message: "발언",
+  }[kind] || "상태";
+}
+
+function roundKindLabel(round) {
+  return roundLabel(state.payload?.meeting || {}, round, round);
+}
+
+function confidenceLabel(confidence) {
+  return {
+    low: "낮음",
+    medium: "보통",
+    high: "높음",
+    unknown: "미정",
+  }[confidence || "unknown"] || confidence || "미정";
+}
+
+function userVisibleSummary(text) {
+  const value = String(text || "");
+  if (hasInternalDiagnostics(value)) {
+    return "구조화 응답이 완성되지 않아 보수적인 대체 결론을 사용했습니다. 진단 정보는 공식 발언이 아닌 내부 기록으로 분리됩니다.";
+  }
+  return value;
+}
+
+function hasInternalDiagnostics(text) {
+  return [
+    "parseable JSON",
+    "local fallback",
+    "Evidence Gate status",
+    "turn/start failed",
+    "Input exceeds",
+  ].some((marker) => text.includes(marker));
+}
+
+function renderTextBlocks(text, options = {}) {
+  return paragraphize(text)
+    .map((line) => `<p>${highlightImportant(escapeHtml(line), options.highlight)}</p>`)
+    .join("");
+}
+
+function paragraphize(text) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return [""];
+  const sentences = normalized.match(/[^.!?。！？]+[.!?。！？]?/g) || [normalized];
+  const lines = [];
+  let current = "";
+  for (const sentence of sentences) {
+    const trimmed = sentence.trim();
+    if (!trimmed) continue;
+    if ((current + " " + trimmed).trim().length > 160 && current) {
+      lines.push(current);
+      current = trimmed;
+    } else {
+      current = (current + " " + trimmed).trim();
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function highlightImportant(html, needle) {
+  const candidates = [needle, "입장 유지", "입장 변화", "반복된 입장", "근거 품질"].filter(Boolean);
+  let highlighted = html;
+  for (const candidate of candidates) {
+    const escapedNeedle = escapeHtml(candidate);
+    if (!escapedNeedle || !highlighted.includes(escapedNeedle)) continue;
+    highlighted = highlighted.replaceAll(escapedNeedle, `<mark>${escapedNeedle}</mark>`);
+  }
+  return highlighted;
+}
+
+function isMeetingComplete(meeting) {
+  return meeting?.live_status === "complete" || Boolean(meeting?.moderator_synthesis?.winner);
 }
 
 function stanceLabel(status) {

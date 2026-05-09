@@ -65,10 +65,27 @@ async function refreshCurrentMeeting() {
   render({ liveRefresh: true });
 }
 
+async function refreshCurrentMeetingSafely() {
+  try {
+    await refreshCurrentMeeting();
+    showAppStatus("", "info");
+  } catch {
+    showAppStatus("실시간 갱신 대기 중", "info");
+  }
+}
+
 async function loadLobby() {
   const payload = await fetchJson("/api/lobby");
   state.lobbyEvents = payload.events || [];
   renderLobby();
+}
+
+async function loadLobbySafely() {
+  try {
+    await loadLobby();
+  } catch {
+    showAppStatus("로비 갱신 대기 중", "info");
+  }
 }
 
 function setActiveTab(tabId) {
@@ -99,7 +116,7 @@ function render(options = {}) {
 
   setActiveTab(state.currentTab);
   subtitle.textContent = `${displayTopic(payload.meeting)} · ${payload.meeting.meeting_id}`;
-  renderLive(payload, { followLatest: options.liveRefresh && state.currentTab === "live" });
+  renderLive(payload, { followLatest: options.followLatest && state.currentTab === "live" });
   renderBoard(payload);
   renderArchive(payload);
 }
@@ -173,6 +190,6 @@ meetingSelect.addEventListener("change", () => {
   await loadLobby();
   const latest = await loadMeetings();
   await loadMeeting(latest);
-  setInterval(loadLobby, 4000);
-  setInterval(refreshCurrentMeeting, 2000);
+  setInterval(loadLobbySafely, 4000);
+  setInterval(refreshCurrentMeetingSafely, 2000);
 })();

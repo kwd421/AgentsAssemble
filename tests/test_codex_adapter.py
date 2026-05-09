@@ -198,8 +198,10 @@ class CodexAdapterTests(unittest.TestCase):
 
             self.assertEqual(synthesis["winner"], "Undetermined")
             self.assertEqual(synthesis["fallback"], "local_synthesis")
-            self.assertIn("Evidence Gate status is warn", synthesis["summary"])
-            self.assertIn("lore_lawyer", synthesis["summary"])
+            self.assertEqual(synthesis["status"], "degraded")
+            self.assertNotIn("Evidence Gate status is warn", synthesis["summary"])
+            self.assertEqual(synthesis["diagnostics"]["evidence_gate"]["status"], "warn")
+            self.assertEqual(synthesis["diagnostics"]["evidence_gate"]["supported"], 2)
 
     def test_codex_synthesis_fallback_uses_repeated_round_positions(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -232,7 +234,8 @@ class CodexAdapterTests(unittest.TestCase):
             self.assertEqual(synthesis["winner"], "Sakazuki / Akainu")
             self.assertEqual(synthesis["ranking"], ["Sakazuki / Akainu"])
             self.assertEqual(synthesis["confidence"], "medium")
-            self.assertIn("repeated round positions", synthesis["caveats"][1])
+            self.assertIn("보수적으로 판정", synthesis["caveats"][0])
+            self.assertEqual(synthesis["status"], "degraded")
 
 
 if __name__ == "__main__":

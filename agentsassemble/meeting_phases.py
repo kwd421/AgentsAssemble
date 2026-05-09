@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from agentsassemble.artifacts import write_research, write_role_files
 from agentsassemble.evidence import apply_evidence_gate, summarize_evidence_gates
+from agentsassemble.meeting_context import build_decision_context
 from agentsassemble.models import CouncilConfig, ResearchDepth, ResearchSteering
 from agentsassemble.templates import DEMO_MEETING_TEMPLATE
 
@@ -156,28 +157,7 @@ def synthesize_meeting(
     synthesis = moderator_adapter.synthesize(
         moderator_session,
         question,
-        {
-            "research_summaries": [
-                {
-                    "role_id": research["role_id"],
-                    "summary": research["summary"],
-                    "confidence": research["confidence"],
-                    "claim_evidence": research["claim_evidence"],
-                    "unsupported_claims": research.get("unsupported_claims", []),
-                    "weak_claims": research.get("weak_claims", []),
-                    "verifier_rejected_claims": research.get("verifier_rejected_claims", []),
-                    "claim_verification": research.get("claim_verification", []),
-                    "evidence_gate": research.get("evidence_gate", {}),
-                    "counterclaims": research.get("counterclaims", []),
-                    "coverage_gaps": research.get("coverage_gaps", []),
-                }
-                for research in research_records
-            ],
-            "rounds": {round_record["id"]: round_record["messages"] for round_record in debate_rounds},
-            "evidence_gate": evidence_gate,
-            "moderator_rule": "Base the decision on supported claim_evidence. Unsupported, weak, verifier-rejected, irrelevant, or contradictory claims may be listed as caveats but must not determine the winner.",
-            "stance_rule": "Treat held, revised, and conceded stances as debate state. Do not collapse disagreement into fake consensus.",
-        },
+        build_decision_context(research_records, debate_rounds, evidence_gate),
     )
     if live_event is not None:
         live_event(
@@ -188,6 +168,7 @@ def synthesize_meeting(
                 "content": synthesis.get("summary", "종합 완료"),
                 "position": synthesis.get("winner", ""),
                 "confidence": synthesis.get("confidence"),
+                "status": synthesis.get("status"),
             }
         )
     return synthesis

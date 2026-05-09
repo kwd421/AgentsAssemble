@@ -344,44 +344,42 @@ Return only this JSON shape:
     @staticmethod
     def _fallback_synthesis(public_context: dict[str, Any], text: str) -> dict[str, Any]:
         gate = public_context.get("evidence_gate", {})
-        role_summaries = public_context.get("research_summaries", [])
         fallback_decision = CodexAdapter._fallback_decision_from_rounds(public_context)
         evidence_status = gate.get("status", "unknown")
         supported = gate.get("total_supported_claims", 0)
         unsupported = gate.get("total_unsupported_claims", 0)
         weak = gate.get("total_weak_claims", 0)
         rejected = gate.get("total_verifier_rejected_claims", 0)
-        role_lines = []
-        for research in role_summaries:
-            role_lines.append(
-                f"{research.get('role_id', 'unknown')}: "
-                f"{research.get('confidence', 'low')} confidence, "
-                f"{research.get('summary', '').strip()[:220]}"
-            )
-        summary_parts = [
-            "Codex moderator synthesis did not return parseable JSON, so AgentsAssemble produced a conservative local fallback.",
-            f"Evidence Gate status is {evidence_status}: {supported} supported, {unsupported} unsupported, {weak} weak, {rejected} verifier-rejected claims.",
-        ]
-        if role_lines:
-            summary_parts.append("Role research summaries: " + " | ".join(role_lines))
         original = text.strip()
-        if original:
-            summary_parts.append("Unparsed moderator output: " + original[:500])
+        summary = (
+            "반복된 입장과 근거 품질을 기준으로 보수적인 대체 결론을 생성했습니다. "
+            "최종 판정은 지원된 근거와 각 라운드에서 반복된 입장을 우선해 해석한 결과입니다."
+        )
         if fallback_decision["winner"] != "Undetermined":
-            summary_parts.append(
-                "Local fallback decision used repeated round positions because moderator JSON was unavailable."
+            summary = (
+                f"반복된 입장과 근거 품질을 기준으로 {fallback_decision['winner']}가 가장 방어 가능한 결론입니다. "
+                "다만 모더레이터의 구조화 응답이 완성되지 않아 보수적으로 판정했습니다."
             )
         return {
             "winner": fallback_decision["winner"],
             "ranking": fallback_decision["ranking"],
             "confidence": fallback_decision["confidence"],
-            "caveats": [
-                "Codex synthesis did not return parseable JSON.",
-                fallback_decision["caveat"],
-            ],
-            "summary": "\n".join(summary_parts),
+            "caveats": ["구조화된 모더레이터 응답이 완성되지 않아 반복된 입장과 근거 품질을 기준으로 보수적으로 판정했습니다."],
+            "summary": summary,
             "tasks": fallback_decision["tasks"],
             "fallback": "local_synthesis",
+            "status": "degraded",
+            "diagnostics": {
+                "reason": "moderator_synthesis_unavailable",
+                "evidence_gate": {
+                    "status": evidence_status,
+                    "supported": supported,
+                    "unsupported": unsupported,
+                    "weak": weak,
+                    "verifier_rejected": rejected,
+                },
+                "had_original_output": bool(original),
+            },
         }
 
     @staticmethod

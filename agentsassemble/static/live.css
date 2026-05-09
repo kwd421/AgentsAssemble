@@ -60,6 +60,27 @@
   max-height: clamp(620px, calc(100vh - 250px), 900px);
   min-height: clamp(620px, calc(100vh - 230px), 860px);
   overflow: auto;
+  position: relative;
+}
+
+.latest-jump {
+  background: rgba(242, 184, 75, 0.94);
+  border: 0;
+  border-radius: 999px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
+  color: #111018;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  justify-self: center;
+  padding: 8px 12px;
+  position: sticky;
+  top: 8px;
+  z-index: 8;
+}
+
+.latest-jump[hidden] {
+  display: none;
 }
 
 .live-chat-side {
@@ -190,6 +211,88 @@
   overflow: auto;
 }
 
+.system-line {
+  align-items: center;
+  background: rgba(212, 225, 255, 0.055);
+  border: 1px solid rgba(212, 225, 255, 0.09);
+  border-radius: 999px;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  justify-self: center;
+  max-width: min(92%, 760px);
+  padding: 6px 10px;
+}
+
+.system-line span {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.system-line p {
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.research-card {
+  background: rgba(10, 13, 20, 0.7);
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-left: 4px solid rgba(91, 215, 255, 0.68);
+  border-radius: 14px;
+  color: var(--muted);
+  overflow: hidden;
+}
+
+.research-card summary {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  list-style: none;
+  padding: 10px 12px;
+}
+
+.research-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.research-card strong,
+.research-card em {
+  display: block;
+}
+
+.research-card strong {
+  color: var(--text);
+}
+
+.research-card em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  margin-top: 2px;
+}
+
+.research-card div {
+  border-top: 1px solid rgba(212, 225, 255, 0.09);
+  padding: 10px 12px 12px 50px;
+}
+
+.research-card p {
+  line-height: 1.62;
+  margin: 0;
+  max-width: 72ch;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.research-card p + p {
+  margin-top: 8px;
+}
+
 .live-chat-feed.live-transcript {
   max-height: clamp(620px, calc(100vh - 230px), 900px);
 }
@@ -235,6 +338,25 @@
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 5;
+}
+
+.message-body p {
+  line-height: 1.62;
+  max-width: 78ch;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.message-body p + p {
+  margin-top: 8px;
+}
+
+.message-body mark {
+  background: linear-gradient(180deg, transparent 45%, rgba(242, 184, 75, 0.42) 45%);
+  border-radius: 3px;
+  color: inherit;
+  padding: 0 2px;
 }
 
 .official-roster {

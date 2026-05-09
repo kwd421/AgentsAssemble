@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from agentsassemble.meeting_context import public_caveats, public_synthesis
+
 
 def render_agenda(meeting: dict[str, Any]) -> str:
     agenda = [
@@ -29,6 +31,7 @@ def render_agenda(meeting: dict[str, Any]) -> str:
 
 
 def render_transcript(meeting: dict[str, Any]) -> str:
+    synthesis = public_synthesis(meeting["moderator_synthesis"])
     transcript_lines = ["# Transcript", ""]
     for round_record in meeting["debate_rounds"]:
         transcript_lines.extend([f"## {round_record['title']}", ""])
@@ -46,12 +49,12 @@ def render_transcript(meeting: dict[str, Any]) -> str:
                     ]
                 )
             transcript_lines.extend(["", message["content"], ""])
-    transcript_lines.extend(["## Moderator Synthesis", "", meeting["moderator_synthesis"]["summary"], ""])
+    transcript_lines.extend(["## Moderator Synthesis", "", synthesis["summary"], ""])
     return "\n".join(transcript_lines)
 
 
 def render_decision(meeting: dict[str, Any]) -> str:
-    synthesis = meeting["moderator_synthesis"]
+    synthesis = public_synthesis(meeting["moderator_synthesis"])
     decision = [
         "# Decision",
         "",
@@ -64,7 +67,7 @@ def render_decision(meeting: dict[str, Any]) -> str:
         synthesis["confidence"],
         "",
         "## Caveats",
-        *[f"- {caveat}" for caveat in synthesis["caveats"]],
+        *[f"- {caveat}" for caveat in public_caveats(synthesis)],
         "",
         "## Evidence Gate",
         f"Status: {meeting.get('evidence_gate', {}).get('status', 'unknown')}",
