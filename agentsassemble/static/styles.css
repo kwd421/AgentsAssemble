@@ -1067,8 +1067,16 @@ input:focus-visible {
 }
 
 .live-room {
+  background:
+    radial-gradient(circle at 50% -8%, rgba(91, 215, 255, 0.1), transparent 28rem),
+    linear-gradient(145deg, rgba(24, 28, 39, 0.82), rgba(8, 10, 16, 0.94));
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-radius: 22px;
+  box-shadow: 0 32px 110px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.045);
   display: grid;
   gap: 14px;
+  overflow: hidden;
+  padding: clamp(10px, calc(16px * var(--ui-scale)), 18px);
 }
 
 .live-hero,
@@ -1085,11 +1093,11 @@ input:focus-visible {
 
 .live-hero {
   background:
-    linear-gradient(180deg, rgba(8, 10, 16, 0.02), rgba(8, 10, 16, 0.5) 78%),
-    radial-gradient(circle at 50% 58%, rgba(91, 215, 255, 0.14), transparent 42%),
-    url("/static/council-hero.jpg") center 60% / min(1220px, 100vw) auto no-repeat,
+    linear-gradient(180deg, rgba(8, 10, 16, 0.02), rgba(8, 10, 16, 0.62) 82%),
+    radial-gradient(circle at 52% 58%, rgba(91, 215, 255, 0.17), transparent 42%),
+    url("/static/council-hero.jpg") center 56% / min(1280px, 108vw) auto no-repeat,
     rgba(8, 10, 16, 0.92);
-  min-height: clamp(480px, calc(100vh - 210px), 720px);
+  min-height: clamp(520px, calc(100vh - 200px), 760px);
   overflow: hidden;
   padding: clamp(16px, 2vw, 28px);
   position: relative;
@@ -1097,11 +1105,29 @@ input:focus-visible {
 
 .live-hero::before {
   background:
-    linear-gradient(90deg, rgba(8, 10, 16, 0.68), transparent 32%, rgba(8, 10, 16, 0.18)),
-    radial-gradient(circle at 52% 61%, transparent 0 48%, rgba(8, 10, 16, 0.42) 82%);
+    linear-gradient(90deg, rgba(8, 10, 16, 0.72), transparent 30%, rgba(8, 10, 16, 0.22)),
+    radial-gradient(circle at 52% 61%, transparent 0 46%, rgba(8, 10, 16, 0.52) 82%);
   content: "";
   inset: 0;
   position: absolute;
+}
+
+.live-hero::after {
+  background:
+    linear-gradient(90deg, transparent, rgba(242, 184, 75, 0.12), rgba(91, 215, 255, 0.08), transparent),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 92px);
+  bottom: 0;
+  content: "";
+  height: 1px;
+  left: 24px;
+  position: absolute;
+  right: 24px;
+  z-index: 2;
+}
+
+.live-hero-copy {
+  position: relative;
+  z-index: 5;
 }
 
 .live-statusbar {
@@ -1114,13 +1140,15 @@ input:focus-visible {
 }
 
 .live-pill {
-  background: rgba(255, 112, 104, 0.14);
-  border: 1px solid rgba(255, 112, 104, 0.38);
+  background: rgba(255, 112, 104, 0.16);
+  border: 1px solid rgba(255, 112, 104, 0.42);
   border-radius: 999px;
   color: #ffc6c0;
   font-size: 11px;
   font-weight: 900;
+  letter-spacing: 0.08em;
   padding: 5px 8px;
+  text-transform: uppercase;
 }
 
 .live-statusbar strong {
@@ -1153,7 +1181,7 @@ input:focus-visible {
 .live-bottom {
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(170px, 220px) minmax(0, 1fr) minmax(240px, 320px);
+  grid-template-columns: minmax(170px, 220px) minmax(0, 1fr) minmax(250px, 330px);
   align-items: start;
 }
 
@@ -1217,7 +1245,7 @@ input:focus-visible {
 }
 
 .live-transcript {
-  max-height: clamp(340px, 38vh, 500px);
+  max-height: clamp(380px, 42vh, 540px);
   overflow: auto;
 }
 

@@ -52,7 +52,7 @@ class StaticUiAssetTests(unittest.TestCase):
         script = (STATIC_DIR / "app.js").read_text()
         css = (STATIC_DIR / "styles.css").read_text()
 
-        self.assertIn("min-height: clamp(480px, calc(100vh - 210px), 720px);", css)
+        self.assertIn("min-height: clamp(520px, calc(100vh - 200px), 760px);", css)
         self.assertIn("height: clamp(280px, 38vh, 470px);", css)
         self.assertIn("font-size: clamp(30px, 4.25vw, 58px);", css)
         self.assertIn("min-height: 430px;", css)

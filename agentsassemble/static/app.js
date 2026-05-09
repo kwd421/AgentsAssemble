@@ -464,17 +464,19 @@ function renderLive(payload) {
   live.innerHTML = `
     <div class="live-room">
       <section class="live-hero">
-        <div class="live-statusbar">
-          <span class="live-pill">LIVE</span>
-          <strong>Round ${escapeHtml(rounds.length || 0)}</strong>
-          <span>합의도 ${escapeHtml(synthesis.confidence || "unknown")}</span>
-        </div>
-        <div class="live-hero-title">
-          <h2>${escapeHtml(displayQuestion(payload.meeting.question))}</h2>
-          <div class="channel-tabs" aria-label="발언 대상">
-            <span class="is-active">전체</span>
-            <span>팀</span>
-            <span>귓속말</span>
+        <div class="live-hero-copy">
+          <div class="live-statusbar">
+            <span class="live-pill">공식 실황</span>
+            <strong>Round ${escapeHtml(rounds.length || 0)}</strong>
+            <span>합의도 ${escapeHtml(synthesis.confidence || "unknown")}</span>
+          </div>
+          <div class="live-hero-title">
+            <h2>${escapeHtml(displayQuestion(payload.meeting.question))}</h2>
+            <div class="channel-tabs" aria-label="발언 대상">
+              <span class="is-active">전체</span>
+              <span>팀</span>
+              <span>귓속말</span>
+            </div>
           </div>
         </div>
         ${renderLiveCouncilRing(roles)}
