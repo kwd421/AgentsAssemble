@@ -44,7 +44,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Repository operating rules are recorded in `AGENTS.md`.
 - Long-term memory/context engineering research notes now compare MemGPT-style memory tiers, Reflexion-style verbal reflection, LongMemEval-style evaluation questions, and LangGraph Store-style namespaced memory.
 - Provider binding groundwork records provider configs, agent bindings, capabilities, and meeting-only permissions in `meeting.json`.
-- The provider registry now includes planned capability entries for Claude/Anthropic, Gemini, Grok, Cursor, Claude Code, local OpenAI-compatible providers, and Hermes/OpenClaw-style memory packs, with unsupported adapters that fail explicitly until real integrations are implemented.
+- The provider registry now includes planned capability entries for Claude/Anthropic, Gemini, Grok, Cursor, Claude Code, local OpenAI-compatible providers, and Hermes/OpenClaw-style memory packs, with unsupported adapters that fail explicitly until real integrations are implemented. Cursor and Claude Code are allowed as read-only meeting participants while implementation permissions remain gated until after `decision.md`.
 
 ## V0 Remaining
 

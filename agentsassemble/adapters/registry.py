@@ -168,7 +168,7 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
         ),
         "cursor": (
             ProviderCapabilities(
-                supports_research=False,
+                supports_research=True,
                 supports_web_search=False,
                 supports_tools=True,
                 supports_filesystem=True,
@@ -176,11 +176,11 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
                 supports_structured_output=False,
                 cost_class="subscription",
             ),
-            "Cursor is reserved for implementation-phase work after a decision artifact exists.",
+            "Cursor meeting-mode integration is planned; implementation permissions stay gated until after a decision artifact exists.",
         ),
         "claude_code": (
             ProviderCapabilities(
-                supports_research=False,
+                supports_research=True,
                 supports_web_search=False,
                 supports_tools=True,
                 supports_filesystem=True,
@@ -188,7 +188,7 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
                 supports_structured_output=False,
                 cost_class="subscription",
             ),
-            "Claude Code is reserved for implementation-phase work after a decision artifact exists.",
+            "Claude Code meeting-mode integration is planned; implementation permissions stay gated until after a decision artifact exists.",
         ),
         "hermes_memory": (
             ProviderCapabilities(

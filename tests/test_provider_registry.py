@@ -128,10 +128,10 @@ class ProviderRegistryTests(unittest.TestCase):
                 None,
             )
 
-    def test_default_registry_rejects_implementation_agent_in_meeting_turns(self):
+    def test_default_registry_allows_coding_agents_as_read_only_meeting_participants(self):
         registry = default_provider_registry()
         provider = ProviderConfig(id="cursor", kind="cursor", display_name="Cursor Agent")
-        permission = PermissionProfile(id="meeting_turn")
+        permission = PermissionProfile(id="meeting_turn", tool_use=True, filesystem_read=True)
         binding = AgentBinding(
             agent_id="cursor-agent",
             role_id="implementer",
@@ -141,8 +141,29 @@ class ProviderRegistryTests(unittest.TestCase):
             permission_profile_id="meeting_turn",
         )
 
-        with self.assertRaisesRegex(ValueError, "cannot run research"):
-            registry.resolve(binding, {"cursor": provider}, {"meeting_turn": permission})
+        resolved = registry.resolve(binding, {"cursor": provider}, {"meeting_turn": permission})
+
+        self.assertEqual(resolved.provider.kind, "cursor")
+        self.assertTrue(resolved.permissions.official_turn)
+        self.assertFalse(resolved.permissions.filesystem_write)
+        self.assertFalse(resolved.permissions.implementation)
+        self.assertTrue(resolved.capabilities.supports_research)
+
+    def test_default_registry_rejects_coding_agents_when_implementation_permissions_are_enabled(self):
+        registry = default_provider_registry()
+        provider = ProviderConfig(id="claude-code", kind="claude_code", display_name="Claude Code")
+        permission = PermissionProfile(id="implementation", implementation=True, filesystem_write=True)
+        binding = AgentBinding(
+            agent_id="claude-code-agent",
+            role_id="implementer",
+            owner_id="local-user",
+            provider_id="claude-code",
+            model_id=None,
+            permission_profile_id="implementation",
+        )
+
+        with self.assertRaisesRegex(ValueError, "implementation-side permissions"):
+            registry.resolve(binding, {"claude-code": provider}, {"implementation": permission})
 
 
 if __name__ == "__main__":

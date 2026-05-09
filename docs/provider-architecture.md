@@ -44,7 +44,7 @@ The default registry also exposes planned provider kinds with explicit capabilit
 - `openclaw_memory`
 - `memory_pack`
 
-These entries make provider intent visible without pretending live integrations exist. Meeting-time validation rejects implementation-only providers such as Cursor and Claude Code from official meeting turns.
+These entries make provider intent visible without pretending live integrations exist. Cursor and Claude Code can be represented as read-only meeting participants, but meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
 ## Provider Families
 
@@ -86,10 +86,10 @@ Imported packs should pass a memory gate before they influence a meeting.
 
 ## External Provider Notes
 
-- Claude: good candidate for API meeting review; Claude Code is better reserved for implementation-phase shell work.
+- Claude: good candidate for API meeting review; Claude Code may join meetings in read-only opinion mode and later return to implementation work after `decision.md`.
 - Gemini: good candidate for broad research and Google Search grounding where available.
 - Grok: optional API provider; useful for skeptical critique, but evidence provenance must be strict.
-- Cursor: best treated as implementation-phase coding agent through CLI, not as a meeting evidence engine.
+- Cursor: may join meetings in read-only opinion mode and later return to implementation work after `decision.md`.
 - Local/Ollama: useful for offline/private fallback and cheap drafts; web research requires a separate search capability.
 - Hermes/OpenClaw: memory/profile inspiration, not raw hidden session import.
 
