@@ -31,9 +31,12 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertEqual(html.count('role="tab"'), 4)
         self.assertEqual(html.count('role="tabpanel"'), 4)
         self.assertIn('aria-selected="true"', html)
+        self.assertEqual(html.count('tabindex="-1"'), 3)
+        self.assertIn('tabindex="0"', html)
         self.assertIn('aria-controls="lobby"', html)
         self.assertIn('aria-labelledby="tab-lobby"', html)
         self.assertIn('tab.setAttribute("aria-selected"', script)
+        self.assertIn("tab.tabIndex = isActive ? 0 : -1", script)
         self.assertIn("panel.hidden = !isActive", script)
 
 

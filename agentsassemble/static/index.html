@@ -31,10 +31,10 @@
       </header>
 
       <nav class="tabs" aria-label="회의 보기" role="tablist">
-        <button class="tab is-active" data-tab="lobby" id="tab-lobby" role="tab" aria-controls="lobby" aria-selected="true" type="button">로비</button>
-        <button class="tab" data-tab="live" id="tab-live" role="tab" aria-controls="live" aria-selected="false" type="button">실황</button>
-        <button class="tab" data-tab="board" id="tab-board" role="tab" aria-controls="board" aria-selected="false" type="button">작전판</button>
-        <button class="tab" data-tab="archive" id="tab-archive" role="tab" aria-controls="archive" aria-selected="false" type="button">아카이브</button>
+        <button class="tab is-active" data-tab="lobby" id="tab-lobby" role="tab" aria-controls="lobby" aria-selected="true" tabindex="0" type="button">로비</button>
+        <button class="tab" data-tab="live" id="tab-live" role="tab" aria-controls="live" aria-selected="false" tabindex="-1" type="button">실황</button>
+        <button class="tab" data-tab="board" id="tab-board" role="tab" aria-controls="board" aria-selected="false" tabindex="-1" type="button">작전판</button>
+        <button class="tab" data-tab="archive" id="tab-archive" role="tab" aria-controls="archive" aria-selected="false" tabindex="-1" type="button">아카이브</button>
       </nav>
 
       <section id="empty-state" class="empty">
