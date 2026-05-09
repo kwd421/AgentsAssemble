@@ -394,7 +394,25 @@ button {
   display: flex;
   flex-direction: column;
   min-height: clamp(540px, 62vh, 720px);
+  overflow: hidden;
   padding: 10px;
+  position: relative;
+}
+
+.lobby-panel::before {
+  background:
+    linear-gradient(180deg, rgba(6, 8, 13, 0.08), rgba(6, 8, 13, 0.72) 72%),
+    url("/static/council-hero.jpg") center 18% / min(920px, 92vw) auto no-repeat;
+  content: "";
+  inset: 0;
+  opacity: 0.42;
+  pointer-events: none;
+  position: absolute;
+}
+
+.lobby-panel > * {
+  position: relative;
+  z-index: 1;
 }
 
 .assemble-ring {
@@ -402,7 +420,8 @@ button {
   align-self: center;
   background:
     radial-gradient(circle at center, rgba(242, 184, 75, 0.12), transparent 36%),
-    radial-gradient(circle at center, rgba(91, 215, 255, 0.08), transparent 62%);
+    radial-gradient(circle at center, rgba(91, 215, 255, 0.08), transparent 62%),
+    rgba(4, 7, 12, 0.52);
   border: 1px solid rgba(212, 225, 255, 0.11);
   border-radius: 14px;
   display: flex;
