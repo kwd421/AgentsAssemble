@@ -1076,7 +1076,25 @@ tabs.forEach((tab) => {
     setActiveTab(tab.dataset.tab);
     render();
   });
+  tab.addEventListener("keydown", (event) => {
+    const nextTab = tabForKeyboardEvent(event, tab);
+    if (!nextTab) return;
+    event.preventDefault();
+    nextTab.focus();
+    setActiveTab(nextTab.dataset.tab);
+    render();
+  });
 });
+
+function tabForKeyboardEvent(event, currentTab) {
+  const tabList = Array.from(tabs);
+  const currentIndex = tabList.indexOf(currentTab);
+  if (event.key === "Home") return tabList[0];
+  if (event.key === "End") return tabList[tabList.length - 1];
+  if (event.key === "ArrowRight") return tabList[(currentIndex + 1) % tabList.length];
+  if (event.key === "ArrowLeft") return tabList[(currentIndex - 1 + tabList.length) % tabList.length];
+  return null;
+}
 
 uiScale?.addEventListener("input", () => {
   localStorage.setItem("agentsassemble.uiScale", uiScale.value);
