@@ -68,6 +68,21 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(bindings[0].owner_id, "friend")
             self.assertEqual(bindings[0].join_mode, "current_session")
 
+    def test_example_agent_configs_are_parseable(self):
+        for path in (Path("configs/agents.example.json"), Path("configs/codex-sessions.example.json")):
+            with self.subTest(path=path):
+                data = load_agent_runtime_config(path)
+                providers = providers_from_config(data)
+                permissions = permissions_from_config(data)
+                bindings = agent_bindings_from_config(data)
+
+                self.assertTrue(providers)
+                self.assertTrue(permissions)
+                self.assertEqual(
+                    [binding.role_id for binding in bindings],
+                    ["lore_lawyer", "show_me_the_feats", "fanboard_skeptic"],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

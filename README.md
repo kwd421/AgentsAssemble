@@ -12,6 +12,12 @@ Run the mock council:
 python3 -m agentsassemble.cli demo --adapter mock
 ```
 
+Run with a host-approved agent config:
+
+```bash
+python3 -m agentsassemble.cli demo --adapter mock --agent-config configs/agents.example.json
+```
+
 This creates:
 
 ```text
@@ -90,6 +96,30 @@ The current implementation:
 - keeps role files, history files, and research artifacts isolated by role
 
 The full Codex council demo may make several model calls, so use mock mode first when checking artifact flow.
+
+To try separate Codex-backed role sessions, start from:
+
+```bash
+python3 -m agentsassemble.cli demo --adapter codex --agent-config configs/codex-sessions.example.json
+```
+
+This still runs in meeting mode. It should not grant filesystem write, git write, push, secrets, or implementation permission.
+
+## Agent Runtime Config
+
+Agent runtime config is host-approved. External or remote agents may submit `incoming_agents`, but those records are only requests and audit material. Only `agent_bindings` participate in the meeting.
+
+Supported top-level fields:
+
+- `providers`: provider records such as `mock`, `codex`, `cursor`, `claude_code`, `gemini`, `grok`, or local providers.
+- `permission_profiles`: named permission sets. Meeting mode should stay read-only by default.
+- `incoming_agents`: external/self-declared agent profiles waiting for host review.
+- `agent_bindings`: final role-to-agent/provider assignments approved by the host.
+
+Examples:
+
+- `configs/agents.example.json`: safe mock config with incoming Cursor/Claude Code requests.
+- `configs/codex-sessions.example.json`: Codex read-only meeting config for real experiments.
 
 ## Provider Architecture
 

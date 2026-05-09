@@ -1,0 +1,58 @@
+{
+  "providers": [
+    {
+      "id": "codex-readonly",
+      "kind": "codex",
+      "display_name": "Codex CLI Read-only Meeting",
+      "default_model": "local-codex-session",
+      "timeout_seconds": 240,
+      "search_enabled": true
+    }
+  ],
+  "permission_profiles": [
+    {
+      "id": "codex_meeting_readonly_search",
+      "meeting_read": true,
+      "lobby_chat": true,
+      "official_turn": true,
+      "web_search": true,
+      "tool_use": false,
+      "filesystem_read": false,
+      "filesystem_write": false,
+      "git_write": false,
+      "push": false,
+      "secrets": false,
+      "implementation": false
+    }
+  ],
+  "incoming_agents": [],
+  "agent_bindings": [
+    {
+      "agent_id": "codex-lore",
+      "role_id": "lore_lawyer",
+      "owner_id": "host",
+      "provider_id": "codex-readonly",
+      "model_id": "local-codex-session",
+      "permission_profile_id": "codex_meeting_readonly_search",
+      "join_mode": "fresh"
+    },
+    {
+      "agent_id": "codex-feats",
+      "role_id": "show_me_the_feats",
+      "owner_id": "host",
+      "provider_id": "codex-readonly",
+      "model_id": "local-codex-session",
+      "permission_profile_id": "codex_meeting_readonly_search",
+      "join_mode": "fresh"
+    },
+    {
+      "agent_id": "codex-skeptic",
+      "role_id": "fanboard_skeptic",
+      "owner_id": "host",
+      "provider_id": "codex-readonly",
+      "model_id": "local-codex-session",
+      "permission_profile_id": "codex_meeting_readonly_search",
+      "join_mode": "fresh"
+    }
+  ]
+}
