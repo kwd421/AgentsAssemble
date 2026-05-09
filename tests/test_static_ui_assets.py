@@ -57,7 +57,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function renderOfficialRoster", script)
         self.assertIn(".live-chat-room", css)
         self.assertIn("grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);", css)
-        self.assertIn("min-height: clamp(520px, calc(100vh - 300px), 760px);", css)
+        self.assertIn("min-height: clamp(620px, calc(100vh - 230px), 860px);", css)
         self.assertIn("이 영역의 발언은 transcript.md와 decision.md의 근거가 됩니다.", script)
         self.assertIn("isLiveTranscriptNearBottom(live)", script)
         self.assertIn("scrollLiveTranscriptToLatest(live)", script)

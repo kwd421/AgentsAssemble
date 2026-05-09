@@ -470,7 +470,7 @@ function renderLive(payload) {
             <strong>Round ${escapeHtml(rounds.length || 0)}</strong>
             <span>합의도 ${escapeHtml(synthesis.confidence || "unknown")}</span>
           </div>
-          <div class="live-hero-title">
+          <div class="live-chat-title">
             <h2>${escapeHtml(displayQuestion(payload.meeting.question))}</h2>
             <div class="channel-tabs" aria-label="발언 대상">
               <span class="is-active">전체</span>
@@ -589,123 +589,12 @@ function renderOfficialRoster(roles) {
   `;
 }
 
-function renderLiveStatusRail(payload, messages) {
-  const synthesis = payload.meeting.moderator_synthesis || {};
-  const roundCount = payload.meeting.debate_rounds?.length || 0;
-  return `
-    <aside class="command-rail">
-      <section class="rail-card rail-live">
-        <div class="rail-card-head">
-          <strong>토론 진행 중</strong>
-          <span>LIVE</span>
-        </div>
-        <small>Round ${escapeHtml(roundCount)} · ${escapeHtml(synthesis.confidence || "unknown")}</small>
-        <p>${escapeHtml(displayQuestion(payload.meeting.question))}</p>
-        <button type="button">토론 정보</button>
-      </section>
-      <section class="rail-card rail-compact">
-        <strong>진행 상황</strong>
-        ${renderRailMetric("라운드", `${roundCount} / 3`)}
-        ${renderRailMetric("발언 수", messages.length)}
-        ${renderRailMetric("합의도", synthesis.confidence || "unknown")}
-      </section>
-      <section class="rail-card rail-compact">
-        <strong>최근 산출물</strong>
-        ${renderArtifactRow("결정안", "decision.md")}
-        ${renderArtifactRow("근거 요약", "evidence.md")}
-        ${renderArtifactRow("발언 로그", "transcript.md")}
-        ${renderArtifactRow("의제", "agenda.md")}
-      </section>
-    </aside>
-  `;
-}
-
 function renderRailMetric(label, value) {
   return `<div class="rail-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
 }
 
 function renderArtifactRow(label, filename) {
   return `<div class="artifact-row"><span>${escapeHtml(label)}</span><em>${escapeHtml(filename)}</em></div>`;
-}
-
-function renderLiveCouncilRing(roles) {
-  const members = [
-    { label: "나", title: "Owner", color: "mine", avatar: "" },
-    ...roles.map((role) => {
-      const meta = roleMeta[role.id] || { color: "purple", title: role.lens, avatar: "/static/avatar-moderator.svg" };
-      return { label: role.display_name, title: meta.badge || meta.title, color: meta.color, avatar: meta.avatar };
-    }),
-    { label: "친구봇", title: "deploy", color: "purple", avatar: "/static/avatar-moderator.svg" },
-  ];
-  const visibleLimit = 8;
-  const visibleMembers = members.slice(0, visibleLimit);
-  const overflowCount = Math.max(0, members.length - visibleMembers.length);
-  return `
-    <div class="live-council" aria-label="회의 원탁">
-      <div class="council-table">
-        <span>ASSEMBLE</span>
-        <strong>${members.length}</strong>
-      </div>
-      ${visibleMembers.map((member, index) => renderLiveSeat(member, index, visibleMembers.length)).join("")}
-      ${overflowCount ? renderLiveOverflowSeat(overflowCount) : ""}
-    </div>
-  `;
-}
-
-function renderLiveSeat(member, index, total) {
-  const angle = -90 + (360 / total) * index;
-  const avatar = member.avatar
-    ? `<img src="${escapeHtml(member.avatar)}" alt="" />`
-    : `<span>${escapeHtml(initials(member.label))}</span>`;
-  return `
-    <div class="live-seat seat-${escapeHtml(member.color)}" style="--angle:${angle}deg">
-      <div class="seat-avatar">${avatar}</div>
-      <strong>${escapeHtml(member.label)}</strong>
-      <small>${escapeHtml(member.title)}</small>
-    </div>
-  `;
-}
-
-function renderLiveOverflowSeat(count) {
-  return `
-    <div class="live-seat live-seat-overflow">
-      <div class="seat-avatar"><span>+${escapeHtml(count)}</span></div>
-      <strong>대기열</strong>
-      <small>참여자 목록</small>
-    </div>
-  `;
-}
-
-function renderLiveRoster(payload) {
-  const roles = payload.meeting.roles || [];
-  const synthesis = payload.meeting.moderator_synthesis || {};
-  return `
-    <aside class="council-roster">
-      <div class="roster-head">
-        <strong>참여자</strong>
-        <span>${roles.length + 2}명 · 에이전트 ${roles.length}</span>
-      </div>
-      <section class="council-owner">
-        <strong>나 <span>Owner</span></strong>
-        ${roles.map((role) => {
-          const meta = roleMeta[role.id] || { color: "purple", title: role.lens, avatar: "/static/avatar-moderator.svg" };
-          return `
-            <div class="council-agent">
-              <img class="profile profile-tiny" src="${escapeHtml(meta.avatar)}" alt="" />
-              <div><strong>${escapeHtml(role.display_name)}</strong><span>${escapeHtml(meta.badge)}</span></div>
-              <em></em>
-            </div>
-          `;
-        }).join("")}
-      </section>
-      <section class="consensus-card">
-        <strong>합의도 추이</strong>
-        <div class="consensus-score">${escapeHtml(synthesis.confidence || "unknown")}</div>
-        <div class="consensus-track"><span></span></div>
-        <p>${escapeHtml(synthesis.winner || "판정 대기")}</p>
-      </section>
-    </aside>
-  `;
 }
 
 function renderAgent(role) {
