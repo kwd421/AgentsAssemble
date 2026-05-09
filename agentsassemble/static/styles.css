@@ -244,16 +244,24 @@ button {
 .tabs {
   display: flex;
   gap: calc(7px * var(--ui-scale));
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
   padding: clamp(8px, calc(12px * var(--ui-scale)), 12px) 0;
   position: sticky;
+  scrollbar-width: none;
   top: 0;
   z-index: 9;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
   backdrop-filter: blur(14px);
   background: rgba(15, 18, 27, 0.62);
   color: var(--muted);
+  flex: 0 0 auto;
   min-width: clamp(68px, calc(88px * var(--ui-scale)), 88px);
   transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
 }
@@ -2430,11 +2438,24 @@ button {
     flex-direction: column;
   }
 
+  .topbar {
+    overflow: visible;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
   #meeting-subtitle,
   #meeting-select {
     max-width: none;
     min-width: 0;
     width: 100%;
+  }
+
+  #meeting-select {
+    grid-column: 1 / -1;
   }
 
   .live-layout,
@@ -2452,6 +2473,7 @@ button {
   .archive-list {
     border-right: none;
     border-bottom: 1px solid var(--line);
+    max-height: 280px;
   }
 
   .lobby-event {
@@ -2512,9 +2534,46 @@ button {
     min-height: auto;
     overflow: visible;
   }
+
+  .archive-document {
+    max-height: none;
+  }
 }
 
 @media (max-width: 560px) {
+  .shell {
+    padding: 8px;
+  }
+
+  .brand-mark {
+    height: 36px;
+    width: 36px;
+  }
+
+  .actions {
+    grid-template-columns: 1fr;
+  }
+
+  .scale-control {
+    justify-content: space-between;
+  }
+
+  .scale-control input {
+    width: min(54vw, 180px);
+  }
+
+  .room-strip,
+  .archive-document-head,
+  .lobby-feed-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .archive-actions,
+  .room-actions {
+    justify-content: flex-start;
+  }
+
   .live-hero {
     min-height: 560px;
     padding: 14px;
