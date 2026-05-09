@@ -11,9 +11,13 @@ def static_js() -> str:
     return "\n".join(path.read_text() for path in sorted(STATIC_DIR.glob("*.js")))
 
 
+def static_css() -> str:
+    return "\n".join(path.read_text() for path in sorted(STATIC_DIR.glob("*.css")))
+
+
 class StaticUiAssetTests(unittest.TestCase):
     def test_responsive_layout_hooks_are_present(self):
-        css = (STATIC_DIR / "styles.css").read_text()
+        css = static_css()
 
         self.assertIn("@media (max-width: 860px)", css)
         self.assertIn("@media (max-width: 560px)", css)
@@ -26,11 +30,13 @@ class StaticUiAssetTests(unittest.TestCase):
     def test_app_status_region_reports_demo_state(self):
         html = (STATIC_DIR / "index.html").read_text()
         script = static_js()
-        css = (STATIC_DIR / "styles.css").read_text()
+        css = static_css()
 
         self.assertIn('id="app-status"', html)
         self.assertIn('role="status"', html)
         self.assertIn('type="module"', html)
+        self.assertIn('/static/base.css', html)
+        self.assertIn('/static/responsive.css', html)
         self.assertIn("function showAppStatus", script)
         self.assertIn('showAppStatus("Mock Demo 실행 중"', script)
         self.assertIn('showAppStatus("Mock Demo 생성 완료"', script)
@@ -38,7 +44,7 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_lobby_separates_stage_from_activity_feed(self):
         script = static_js()
-        css = (STATIC_DIR / "styles.css").read_text()
+        css = static_css()
 
         self.assertIn('class="lobby-summary"', script)
         self.assertIn('class="lobby-activity"', script)
@@ -48,7 +54,7 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_live_view_prioritizes_official_chat(self):
         script = static_js()
-        css = (STATIC_DIR / "styles.css").read_text()
+        css = static_css()
 
         self.assertIn('class="live-chat-header"', script)
         self.assertIn('class="message-list live-transcript live-chat-feed"', script)
@@ -68,7 +74,7 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_board_cards_are_dynamic_and_scrollable(self):
         script = static_js()
-        css = (STATIC_DIR / "styles.css").read_text()
+        css = static_css()
 
         self.assertIn("(meeting.roles || []).map", script)
         self.assertIn('에이전트 ${(meeting.roles || []).length}', script)
@@ -77,7 +83,7 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_archive_surfaces_owner_and_document_type(self):
         script = static_js()
-        css = (STATIC_DIR / "styles.css").read_text()
+        css = static_css()
 
         self.assertIn("archiveOwnerLabel(state.archiveKey, payload)", script)
         self.assertIn("function archiveOwnerLabel", script)

@@ -1,0 +1,206 @@
+@media (max-width: 1180px) {
+  .live-outcome {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.6fr) minmax(220px, 0.7fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lobby-event,
+  .message,
+  .panel.is-active {
+    animation: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .actions,
+  .lobby-title {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .topbar {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+    padding: 10px;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  #meeting-subtitle,
+  #meeting-select {
+    max-width: none;
+    min-width: 0;
+    width: 100%;
+  }
+
+  #meeting-select {
+    grid-column: 1 / -1;
+  }
+
+  .live-chat-room,
+  .archive-layout,
+  .archive-vault,
+  .evidence-overview,
+  .lobby-main,
+  .lobby-form,
+  .board-grid,
+  .board-command,
+  .board-dashboard,
+  .board-legend {
+    grid-template-columns: 1fr;
+  }
+
+  .archive-list {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    max-height: 280px;
+  }
+
+  .lobby-event {
+    max-width: 82%;
+  }
+
+  .live-chat-title {
+    flex-direction: column;
+  }
+
+  .live-chat-title h2 {
+    font-size: clamp(28px, 9vw, 46px);
+  }
+
+  .live-transcript {
+    max-height: none;
+  }
+
+  .live-chat-feed {
+    min-height: 520px;
+  }
+
+  .live-outcome {
+    grid-template-columns: 1fr;
+  }
+
+  .live-chat-side {
+    grid-template-columns: 1fr;
+  }
+
+  .message-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .message-route {
+    text-align: left;
+  }
+
+  .stance-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .board-command-copy strong {
+    font-size: clamp(24px, 8vw, 34px);
+  }
+
+  .archive-layout {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .archive-document {
+    max-height: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell {
+    padding: 8px;
+  }
+
+  .lobby-panel {
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .brand-lockup {
+    gap: 9px;
+  }
+
+  .brand-mark {
+    box-shadow: 0 0 0 3px rgba(242, 184, 75, 0.07), 0 10px 24px rgba(91, 215, 255, 0.1);
+    height: 34px;
+    width: 34px;
+  }
+
+  h1 {
+    font-size: 18px;
+  }
+
+  #meeting-subtitle {
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  .actions {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .scale-control {
+    justify-content: space-between;
+    min-height: 30px;
+    padding: 0 7px;
+  }
+
+  .scale-control input {
+    width: min(28vw, 130px);
+  }
+
+  #run-demo {
+    grid-column: 1 / -1;
+  }
+
+  .app-status {
+    grid-column: 1 / -1;
+  }
+
+  .room-strip,
+  .archive-document-head,
+  .lobby-feed-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .archive-actions,
+  .room-actions {
+    justify-content: flex-start;
+  }
+
+  .archive-vault-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .live-chat-title {
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .live-chat-title h2 {
+    font-size: clamp(26px, 8vw, 36px);
+  }
+
+  .live-statusbar,
+  .channel-tabs {
+    gap: 6px;
+  }
+
+  .channel-tabs span {
+    padding: 5px 7px;
+  }
+
+}
