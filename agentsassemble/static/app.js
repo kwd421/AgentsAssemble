@@ -145,6 +145,7 @@ function renderLobby() {
   const lobby = document.querySelector("#lobby");
   if (!lobby) return;
   const roster = buildLobbyRoster(state.lobbyEvents);
+  const shouldFollowLatest = isLobbyFeedNearBottom(lobby);
   lobby.innerHTML = `
     <section class="lobby-layout">
       <div class="room-strip">
@@ -191,7 +192,14 @@ function renderLobby() {
   lobby.querySelectorAll("[data-lobby-action]").forEach((button) => {
     button.addEventListener("click", () => sendLobbyAction(button));
   });
-  scrollLobbyFeedToLatest(lobby);
+  if (shouldFollowLatest) scrollLobbyFeedToLatest(lobby);
+}
+
+function isLobbyFeedNearBottom(lobby) {
+  const feed = lobby.querySelector(".lobby-feed");
+  if (!feed) return true;
+  const distanceFromBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
+  return distanceFromBottom < 48;
 }
 
 function scrollLobbyFeedToLatest(lobby) {
