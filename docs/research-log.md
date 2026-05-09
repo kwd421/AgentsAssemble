@@ -150,6 +150,62 @@ This file records external papers, frameworks, and product references used while
   - Memory privacy boundaries per project, role, and provider.
   - Evaluation metrics for whether memory actually improves future meetings.
 
+### Webdesign Inspiration Visit-Site References
+
+- Link: https://www.webdesign-inspiration.com/web-designs/style/dark
+- Type: design reference directory
+- Important note:
+  - The directory itself is not the design target. The useful references are the external `Visit Site` targets curated there.
+- External sites inspected:
+  - UI Magic: https://uimagic.co/
+  - Postiz: https://postiz.com/
+  - Topview AI: https://www.topview.ai/
+  - Q Industrial: https://www.q-industrial.com/
+  - Igloo: https://www.igloo.inc/
+- Observed design patterns:
+  - Strong first-viewport focal object: a product surface, generated scene, oversized tool input, or physical object gives the page a visual anchor.
+  - Mobile views are recomposed, not merely scaled down. The hero object, headline, primary action, and navigation are reprioritized.
+  - Navigation collapses early on narrow screens; secondary controls are hidden or deferred.
+  - High-quality dark designs use fewer stronger surfaces, not many similar cards.
+  - Typography carries much of the polish: large confident headings, disciplined body widths, and compact utility labels.
+  - Visual depth comes from one large scene or object plus restrained overlays, not from repeating glows and borders everywhere.
+  - Tool/product pages often put the main interactive surface in the first viewport, while brand/editorial pages use a full-scene object.
+- Implementation mechanics observed:
+  - UI Magic uses Framer-hosted assets and script output rather than a small hand-authored static page; the polished feel comes from large typography, cropped mockup imagery, and responsive composition.
+  - Postiz uses a Next.js static bundle with many SVG/icon assets; the desktop nav collapses to a compact mobile menu and the hero preserves headline/CTA/social icon priority.
+  - Topview uses a Next.js/Vercel bundle and CDN-hosted media, including video assets; the first viewport is a product-like prompt surface plus category launcher.
+  - Q Industrial uses Webflow CSS/JS, external animation libraries, and video/image assets; the desktop hero relies on a large product object, while mobile re-centers that object and defers secondary navigation.
+  - Igloo uses a minimal HTML shell with a bundled JS app and a heavy full-viewport 3D/scene treatment; it is useful as atmosphere reference, but risky as a direct implementation target for a lightweight local app.
+- Implementation constraints for AgentsAssemble:
+  - Do not copy external CSS/JS. Translate patterns into local, dependency-light HTML/CSS/JS.
+  - Prefer a small number of optimized local bitmap assets over CDN-heavy or framework-generated asset piles.
+  - Use CSS grid/flex, responsive containment, and `clamp()` before adding frontend dependencies.
+  - Keep motion subtle and transform/opacity-based; avoid expensive WebGL-style scene work until the product deserves that cost.
+  - Maintain existing asset budget tests and add tests when new visual hooks become part of the product contract.
+- What this explains about the earlier AgentsAssemble GUI:
+  - It looked prototype-like because `topbar + tabs + bordered panels + repeated cards` dominated the screen.
+  - The lobby, live, board, and archive tabs had different purposes but too similar a container model.
+  - The UI had role colors and panels, but lacked a single strong stage/focal object per tab.
+  - Mobile behavior stacked sections, but did not sufficiently recompose each tab around its primary job.
+  - The chat and roster surfaces looked functional, but not yet like a commercial messaging or operations UI.
+- Translation for AgentsAssemble:
+  - Treat each tab as a scene with one primary visual job:
+    - Lobby: staging room and deploy readiness.
+    - Live: official council stage and transcript.
+    - Board: stance/evidence map.
+    - Archive: owner-separated document vault.
+  - Reduce repeated card clutter; reserve bordered panels for actual tools, rosters, records, and documents.
+  - Keep shell controls quieter than the active tab's primary scene.
+  - Recompose mobile views around the active tab's most important surface.
+  - Test visual work with desktop and mobile screenshots, not only unit tests.
+- Implementation status:
+  - First applied to the lobby staging room and common shell.
+- Current files:
+  - `agentsassemble/static/app.js`
+  - `agentsassemble/static/styles.css`
+  - `tests/test_static_ui_assets.py`
+- Commit: `27e4001 Refine lobby staging room layout`
+
 ## Implemented Research-Informed Decisions
 
 ### Structured Council Rounds
