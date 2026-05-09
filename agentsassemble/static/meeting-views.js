@@ -12,7 +12,7 @@ export function renderLive(payload, options = {}) {
   const liveMessages = liveEvents.length ? liveEvents : messages;
   const synthesis = payload.meeting.moderator_synthesis || {};
   const isComplete = payload.meeting.live_status === "complete" || Boolean(synthesis.winner);
-  const roundStatus = isComplete ? "회의 완료" : `Round ${escapeHtml(rounds.length || 0)}`;
+  const roundStatus = liveStatusLabel(payload.meeting, rounds, isComplete);
   live.innerHTML = `
     <div class="live-room">
       <section class="live-chat-header">
@@ -148,6 +148,7 @@ function updateLatestJump(live) {
 
 function renderLiveTimeline(payload, messages) {
   const rounds = payload.meeting.debate_rounds || [];
+  const counts = liveEventCounts(messages);
   return `
     <aside class="live-timeline">
       <strong>진행</strong>
@@ -157,7 +158,8 @@ function renderLiveTimeline(payload, messages) {
         <li class="${isMeetingComplete(payload.meeting) ? "is-done" : "is-current"}"><span></span>${escapeHtml(rounds.length ? `${rounds.length}라운드` : "라운드 대기")}</li>
         <li class="${isMeetingComplete(payload.meeting) ? "is-done" : ""}"><span></span>결정 생성</li>
       </ol>
-      ${renderRailMetric("발언 수", messages.length)}
+      ${renderRailMetric("공식 발언", counts.messages)}
+      ${renderRailMetric("리서치", counts.research)}
       ${renderRailMetric("라운드", `${rounds.length || 0} / ${(payload.meeting.meeting_template?.rounds || []).length}`)}
     </aside>
   `;
@@ -165,6 +167,7 @@ function renderLiveTimeline(payload, messages) {
 
 function renderLiveOutcome(payload, messages) {
   const synthesis = payload.meeting.moderator_synthesis || {};
+  const counts = liveEventCounts(messages);
   return `
     <aside class="live-outcome">
       <div class="outcome-card">
@@ -176,7 +179,7 @@ function renderLiveOutcome(payload, messages) {
         <strong>합의도 추이</strong>
         <div class="consensus-score">${escapeHtml(confidenceLabel(synthesis.confidence))}</div>
         <div class="consensus-track"><span></span></div>
-        <p>${escapeHtml(messages.length)}개 발언 기반</p>
+        <p>공식 발언 ${escapeHtml(counts.messages)}개 기반</p>
       </div>
       <section class="rail-card rail-compact">
         <strong>최근 산출물</strong>
@@ -186,6 +189,26 @@ function renderLiveOutcome(payload, messages) {
       </section>
     </aside>
   `;
+}
+
+function liveStatusLabel(meeting, rounds, isComplete) {
+  if (meeting.live_status === "stalled") return "중단됨";
+  if (isComplete) return "회의 완료";
+  return `Round ${escapeHtml(rounds.length || 0)}`;
+}
+
+function liveEventCounts(items) {
+  return items.reduce(
+    (counts, item) => {
+      const kind = item.kind || "message";
+      if (kind === "message") counts.messages += 1;
+      else if (kind === "research") counts.research += 1;
+      else if (kind === "status") counts.status += 1;
+      else if (kind === "synthesis") counts.synthesis += 1;
+      return counts;
+    },
+    { messages: 0, research: 0, status: 0, synthesis: 0 }
+  );
 }
 
 function renderOfficialRoster(roles) {

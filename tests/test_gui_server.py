@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+import os
+import time
 from pathlib import Path
 
 from agentsassemble.gui import _safe_static_path, append_lobby_event, build_meeting_payload, list_meetings, read_lobby
@@ -88,6 +90,35 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(meetings[0]["meeting_id"], "live-1")
             self.assertEqual(payload["meeting"]["live_status"], "running")
             self.assertEqual(payload["live_events"][0]["content"], "회의 시작")
+
+    def test_stale_live_meeting_is_marked_stalled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "stale-live"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "stale-live",
+                    "topic": "Stalled topic",
+                    "question": "Did the meeting stop?",
+                    "roles": [],
+                    "debate_rounds": [],
+                    "moderator_synthesis": {},
+                    "live_status": "running",
+                },
+            )
+            append_live_event(meeting_dir, {"kind": "status", "content": "독립 리서치 시작"})
+            stale_mtime = time.time() - 3600
+            os.utime(meeting_dir / "live_state.json", (stale_mtime, stale_mtime))
+            os.utime(meeting_dir / "live_events.jsonl", (stale_mtime, stale_mtime))
+
+            meetings = list_meetings(root, now=time.time())
+            payload = build_meeting_payload(meeting_dir, now=time.time())
+
+            self.assertEqual(meetings[0]["live_status"], "stalled")
+            self.assertEqual(payload["meeting"]["live_status"], "stalled")
+            self.assertIn("stalled_reason", payload["meeting"])
 
     def test_static_paths_cannot_escape_static_root(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -12,9 +13,10 @@ from agentsassemble.meeting_events import append_lobby_event_to_file, read_live_
 
 TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
 TABS = ["lobby", "live", "board", "archive"]
+STALE_RUNNING_SECONDS = 300
 
 
-def list_meetings(output_root: Path) -> list[dict[str, object]]:
+def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str, object]]:
     meetings_dir = output_root / "meetings"
     if not meetings_dir.exists():
         return []
@@ -30,6 +32,12 @@ def list_meetings(output_root: Path) -> list[dict[str, object]]:
             meeting = json.loads(source_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
+        meeting = _with_inferred_live_status(
+            meeting,
+            meeting_dir,
+            has_final_record=record_path.exists(),
+            now=now,
+        )
         stat = source_path.stat()
         meetings.append(
             {
@@ -37,6 +45,7 @@ def list_meetings(output_root: Path) -> list[dict[str, object]]:
                 "topic": meeting.get("topic", ""),
                 "question": meeting.get("question", ""),
                 "created_at": meeting.get("audit_metadata", {}).get("created_at", ""),
+                "live_status": meeting.get("live_status", "complete" if record_path.exists() else "unknown"),
                 "path": str(meeting_dir),
                 "mtime": stat.st_mtime,
             }
@@ -44,10 +53,16 @@ def list_meetings(output_root: Path) -> list[dict[str, object]]:
     return sorted(meetings, key=lambda item: item["mtime"], reverse=True)
 
 
-def build_meeting_payload(meeting_dir: Path) -> dict[str, object]:
+def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[str, object]:
     meeting_path = meeting_dir / "meeting.json"
     live_path = meeting_dir / "live_state.json"
     meeting = json.loads((meeting_path if meeting_path.exists() else live_path).read_text(encoding="utf-8"))
+    meeting = _with_inferred_live_status(
+        meeting,
+        meeting_dir,
+        has_final_record=meeting_path.exists(),
+        now=now,
+    )
     artifacts = {
         name: _read_optional(meeting_dir / name)
         for name in ("agenda.md", "transcript.md", "decision.md", "meeting.json")
@@ -82,6 +97,35 @@ def build_meeting_payload(meeting_dir: Path) -> dict[str, object]:
         "research_json": research_json,
         "live_events": read_live_events(meeting_dir),
     }
+
+
+def _with_inferred_live_status(
+    meeting: dict[str, object],
+    meeting_dir: Path,
+    has_final_record: bool,
+    now: float | None = None,
+) -> dict[str, object]:
+    if has_final_record or meeting.get("live_status") != "running":
+        return meeting
+    latest_mtime = _latest_live_mtime(meeting_dir)
+    if latest_mtime is None:
+        return meeting
+    if (now if now is not None else time.time()) - latest_mtime < STALE_RUNNING_SECONDS:
+        return meeting
+    inferred = dict(meeting)
+    inferred["live_status"] = "stalled"
+    inferred["stalled_reason"] = "No live meeting update has been observed recently."
+    inferred["last_live_update_mtime"] = latest_mtime
+    return inferred
+
+
+def _latest_live_mtime(meeting_dir: Path) -> float | None:
+    mtimes = [
+        path.stat().st_mtime
+        for path in (meeting_dir / "live_state.json", meeting_dir / "live_events.jsonl")
+        if path.exists()
+    ]
+    return max(mtimes) if mtimes else None
 
 
 def serve_gui(host: str = "127.0.0.1", port: int = 8765, output_root: Path | None = None) -> None:

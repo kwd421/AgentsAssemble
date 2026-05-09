@@ -47,6 +47,15 @@ export function displayQuestion(question) {
   return question || "";
 }
 
+export function meetingStatusLabel(status) {
+  return {
+    running: "진행 중",
+    stalled: "중단됨",
+    complete: "완료",
+    failed: "실패",
+    unknown: "상태 미정",
+  }[status || "unknown"] || status;
+}
 
 export function escapeHtml(value) {
   return String(value)

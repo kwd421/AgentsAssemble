@@ -1,7 +1,7 @@
 import { renderArchive } from "./archive.js";
 import { renderLobby } from "./lobby.js";
 import { renderBoard, renderLive } from "./meeting-views.js";
-import { displayTopic, fetchJson, state } from "./shared.js";
+import { displayTopic, fetchJson, meetingStatusLabel, state } from "./shared.js";
 
 const tabs = document.querySelectorAll(".tab");
 const panels = document.querySelectorAll(".panel");
@@ -40,7 +40,7 @@ async function loadMeetings() {
   for (const meeting of state.meetings) {
     const option = document.createElement("option");
     option.value = meeting.meeting_id;
-    option.textContent = `${meeting.meeting_id} · ${displayTopic(meeting)}`;
+    option.textContent = `${meeting.meeting_id} · ${displayTopic(meeting)} · ${meetingStatusLabel(meeting.live_status)}`;
     meetingSelect.append(option);
   }
   return state.meetings[0].meeting_id;

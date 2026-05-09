@@ -96,6 +96,11 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function providerLabel", script)
         self.assertIn("function agentLabel", script)
         self.assertIn("meeting read-only", script)
+        self.assertIn("function liveStatusLabel", script)
+        self.assertIn("function liveEventCounts", script)
+        self.assertIn("공식 발언", script)
+        self.assertIn("중단됨", script)
+        self.assertIn("meetingStatusLabel", script)
 
     def test_board_cards_are_dynamic_and_scrollable(self):
         script = static_js()
