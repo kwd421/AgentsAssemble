@@ -681,20 +681,32 @@ function renderBoard(payload) {
   const synthesis = meeting.moderator_synthesis || {};
   const stanceSummary = buildStanceSummary(meeting);
   board.innerHTML = `
-    <section class="board-legend">
-      <div><strong>작전판</strong><span>입장, 근거, 반박 이후의 변화, 아직 갈린 부분을 정리합니다.</span></div>
-      <div><strong>판정</strong><span>${escapeHtml(synthesis.winner || "미정")} · ${escapeHtml(synthesis.confidence || "unknown")}</span></div>
-    </section>
-    ${renderStanceOverview(stanceSummary, synthesis)}
-    ${renderEvidenceOverview(meeting)}
-    <section class="board-grid">
-      ${(meeting.roles || []).map((role) => renderBoardCard(role, payload, researchByRole[role.id])).join("")}
-    </section>
-    <section class="synthesis">
-      <h3>최종 판정</h3>
-      <p><strong>${escapeHtml(synthesis.winner || "Undetermined")}</strong> · confidence ${escapeHtml(synthesis.confidence || "")}</p>
-      <p>${escapeHtml(synthesis.summary || "")}</p>
-      <p>${escapeHtml((synthesis.caveats || []).join(" / "))}</p>
+    <section class="board-view">
+      <div class="room-strip">
+        <div>
+          <strong>작전판</strong>
+          <small>입장, 근거, 반박 이후의 변화, 아직 갈린 부분을 정리합니다.</small>
+        </div>
+        <div class="room-actions">
+          <span class="room-status room-status-hot">${escapeHtml(synthesis.winner || "판정 대기")}</span>
+          <span class="room-status">합의도 ${escapeHtml(synthesis.confidence || "unknown")}</span>
+        </div>
+      </div>
+      <section class="board-legend">
+        <div><strong>흐름</strong><span>어떤 입장이 얼마나 반복됐고 누가 유지/수정했는지 봅니다.</span></div>
+        <div><strong>검증</strong><span>근거 품질과 탈락한 주장을 같이 봅니다.</span></div>
+      </section>
+      ${renderStanceOverview(stanceSummary, synthesis)}
+      ${renderEvidenceOverview(meeting)}
+      <section class="board-grid">
+        ${(meeting.roles || []).map((role) => renderBoardCard(role, payload, researchByRole[role.id])).join("")}
+      </section>
+      <section class="synthesis">
+        <h3>최종 판정</h3>
+        <p><strong>${escapeHtml(synthesis.winner || "Undetermined")}</strong> · confidence ${escapeHtml(synthesis.confidence || "")}</p>
+        <p>${escapeHtml(synthesis.summary || "")}</p>
+        <p>${escapeHtml((synthesis.caveats || []).join(" / "))}</p>
+      </section>
     </section>
   `;
 }
@@ -894,10 +906,21 @@ function renderArchive(payload) {
   if (!entries[state.archiveKey]) state.archiveKey = Object.keys(entries)[0];
   const currentDocument = entries[state.archiveKey] || "";
   archive.innerHTML = `
+    <section class="archive-view">
+    <div class="room-strip">
+      <div>
+        <strong>아카이브</strong>
+        <small>회의 산출물, 인수인계 기록, 에이전트별 자료를 검토합니다.</small>
+      </div>
+      <div class="room-actions">
+        <span class="room-status">${escapeHtml(Object.keys(entries).length)}개 문서</span>
+        <span class="room-status room-status-hot">${escapeHtml(archiveKindLabel(state.archiveKey))}</span>
+      </div>
+    </div>
     <div class="archive-layout">
       <aside class="archive-list">
         <div class="archive-head">
-          <strong>아카이브</strong>
+          <strong>문서 목록</strong>
           <span>회의 산출물과 인수인계 기록</span>
         </div>
         ${renderArchiveGroups(payload, entries)}
@@ -917,6 +940,7 @@ function renderArchive(payload) {
         <pre class="archive-preview">${escapeHtml(currentDocument)}</pre>
       </section>
     </div>
+    </section>
   `;
   archive.querySelectorAll("[data-archive]").forEach((button) => {
     button.addEventListener("click", () => {

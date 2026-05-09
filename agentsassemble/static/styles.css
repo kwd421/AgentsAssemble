@@ -312,6 +312,18 @@ button {
   padding: clamp(8px, calc(12px * var(--ui-scale)), 12px);
 }
 
+.board-view,
+.archive-view {
+  background:
+    radial-gradient(circle at 76% -10%, rgba(91, 215, 255, 0.08), transparent 20rem),
+    radial-gradient(circle at 10% 110%, rgba(242, 184, 75, 0.07), transparent 18rem),
+    linear-gradient(145deg, rgba(24, 28, 39, 0.88), rgba(11, 13, 20, 0.94));
+  border: 1px solid rgba(212, 225, 255, 0.13);
+  border-radius: 14px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  padding: clamp(8px, calc(12px * var(--ui-scale)), 12px);
+}
+
 .room-strip {
   align-items: center;
   border-bottom: 1px solid rgba(255, 223, 174, 0.11);
@@ -1814,7 +1826,7 @@ button {
   border: 1px solid var(--line);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 46%),
-    var(--panel);
+    rgba(7, 10, 16, 0.44);
   border-radius: 12px;
   padding: clamp(9px, calc(14px * var(--ui-scale)), 14px);
 }
@@ -1833,7 +1845,7 @@ button {
 .stance-overview {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 40%),
-    var(--panel);
+    rgba(7, 10, 16, 0.44);
   border: 1px solid var(--line);
   border-radius: 12px;
   display: grid;
@@ -1897,7 +1909,7 @@ button {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: calc(10px * var(--ui-scale));
-  padding: clamp(8px, calc(12px * var(--ui-scale)), 12px);
+  padding: 0;
 }
 
 .board-card,
@@ -2022,7 +2034,7 @@ button {
 .evidence-overview {
   background:
     linear-gradient(135deg, rgba(91, 215, 255, 0.04), transparent 44%),
-    var(--panel);
+    rgba(7, 10, 16, 0.44);
   border: 1px solid var(--line);
   border-radius: 12px;
   display: grid;
@@ -2188,6 +2200,9 @@ button {
 }
 
 .archive-layout {
+  background: rgba(7, 10, 16, 0.44);
+  border: 1px solid rgba(212, 225, 255, 0.11);
+  border-radius: 12px;
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   min-height: 620px;
