@@ -1,6 +1,8 @@
 :root {
   --ui-scale: 0.9;
   --text-scale: 0.9;
+  --page-max: 1440px;
+  --page-pad: clamp(10px, calc(18px * var(--ui-scale)), 24px);
   --bg: #090b11;
   --panel: rgba(17, 20, 29, 0.82);
   --panel-2: rgba(24, 28, 39, 0.86);
@@ -74,6 +76,23 @@ body {
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: clamp(12px, calc(14px * var(--text-scale)), 16px);
+  overflow-x: hidden;
+}
+
+body::before {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(91, 215, 255, 0.13), transparent 32rem),
+    linear-gradient(90deg, transparent, rgba(242, 184, 75, 0.08), transparent);
+  content: "";
+  height: 260px;
+  left: 50%;
+  max-width: var(--page-max);
+  pointer-events: none;
+  position: fixed;
+  top: 0;
+  transform: translateX(-50%);
+  width: calc(100% - 2 * var(--page-pad));
+  z-index: -1;
 }
 
 button,
@@ -82,9 +101,9 @@ select {
 }
 
 .shell {
-  max-width: min(100%, 1440px);
+  max-width: min(100%, var(--page-max));
   margin: 0 auto;
-  padding: clamp(10px, calc(16px * var(--ui-scale)), 18px);
+  padding: var(--page-pad);
   width: 100%;
 }
 
@@ -103,6 +122,7 @@ select {
   position: relative;
   box-shadow: 0 18px 54px rgba(0, 0, 0, 0.23);
   overflow: hidden;
+  z-index: 10;
 }
 
 .topbar::after {
@@ -225,12 +245,23 @@ button {
   display: flex;
   gap: calc(7px * var(--ui-scale));
   padding: clamp(8px, calc(12px * var(--ui-scale)), 12px) 0;
+  position: sticky;
+  top: 0;
+  z-index: 9;
 }
 
 .tab {
-  background: rgba(15, 18, 27, 0.5);
+  backdrop-filter: blur(14px);
+  background: rgba(15, 18, 27, 0.62);
   color: var(--muted);
   min-width: clamp(68px, calc(88px * var(--ui-scale)), 88px);
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.tab:hover {
+  border-color: rgba(212, 225, 255, 0.24);
+  color: var(--text);
+  transform: translateY(-1px);
 }
 
 .tab.is-active {
@@ -246,6 +277,7 @@ button {
 
 .panel.is-active {
   display: block;
+  animation: panelEnter 220ms ease both;
 }
 
 .empty {
@@ -2322,6 +2354,18 @@ button {
   }
 }
 
+@keyframes panelEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 1180px) {
   .live-hero {
     background-size: min(900px, 110vw) auto;
@@ -2344,7 +2388,8 @@ button {
 
 @media (prefers-reduced-motion: reduce) {
   .lobby-event,
-  .message {
+  .message,
+  .panel.is-active {
     animation: none;
   }
 }
@@ -2457,7 +2502,7 @@ button {
   }
 
   .live-council {
-    --seat-radius: clamp(88px, 34vw, 130px);
+    --seat-radius: clamp(72px, 24vw, 96px);
   }
 
   .seat-avatar {
