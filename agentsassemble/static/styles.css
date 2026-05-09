@@ -1010,7 +1010,7 @@ input:focus-visible {
     radial-gradient(circle at 50% 58%, rgba(91, 215, 255, 0.14), transparent 42%),
     url("/static/council-hero.jpg") center 60% / min(1220px, 100vw) auto no-repeat,
     rgba(8, 10, 16, 0.92);
-  min-height: clamp(580px, 68vh, 820px);
+  min-height: clamp(480px, calc(100vh - 210px), 720px);
   overflow: hidden;
   padding: clamp(16px, 2vw, 28px);
   position: relative;
@@ -1063,11 +1063,11 @@ input:focus-visible {
 }
 
 .live-hero-title h2 {
-  font-size: clamp(34px, 5vw, 68px);
+  font-size: clamp(30px, 4.25vw, 58px);
   letter-spacing: 0;
   line-height: 1.08;
   margin: 0;
-  max-width: 760px;
+  max-width: 720px;
   text-shadow: 0 20px 60px rgba(0, 0, 0, 0.58);
 }
 
@@ -1335,12 +1335,12 @@ input:focus-visible {
 }
 
 .live-council {
-  height: clamp(390px, 48vh, 590px);
+  height: clamp(280px, 38vh, 470px);
   margin: clamp(8px, 1.4vw, 20px) auto 0;
   max-width: min(100%, 980px);
-  min-height: 360px;
+  min-height: 280px;
   position: relative;
-  --seat-radius: clamp(98px, 11vw, 138px);
+  --seat-radius: clamp(86px, 10vw, 128px);
   z-index: 2;
 }
 
@@ -2515,7 +2515,7 @@ input:focus-visible {
 @media (max-width: 1180px) {
   .live-hero {
     background-size: min(900px, 110vw) auto;
-    min-height: 620px;
+    min-height: clamp(500px, calc(100vh - 190px), 640px);
   }
 
   .live-bottom {
@@ -2599,15 +2599,15 @@ input:focus-visible {
   }
 
   .live-council {
-    height: clamp(300px, 48vh, 420px);
-    min-height: 300px;
+    height: clamp(260px, 42vh, 380px);
+    min-height: 260px;
     --seat-radius: clamp(86px, 27vw, 118px);
   }
 
   .live-hero {
     background-position: center 54%;
     background-size: min(720px, 150vw) auto;
-    min-height: 620px;
+    min-height: 520px;
   }
 
   .live-hero-title {
@@ -2615,7 +2615,7 @@ input:focus-visible {
   }
 
   .live-hero-title h2 {
-    font-size: clamp(30px, 11vw, 54px);
+    font-size: clamp(28px, 9vw, 46px);
   }
 
   .live-transcript {
@@ -2685,7 +2685,7 @@ input:focus-visible {
   }
 
   .live-hero {
-    min-height: 560px;
+    min-height: 500px;
     padding: 14px;
   }
 

@@ -34,6 +34,13 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn(".lobby-activity", css)
         self.assertIn("grid-template-rows: auto minmax(0, 1fr) auto;", css)
 
+    def test_live_stage_leaves_room_for_transcript(self):
+        css = (STATIC_DIR / "styles.css").read_text()
+
+        self.assertIn("min-height: clamp(480px, calc(100vh - 210px), 720px);", css)
+        self.assertIn("height: clamp(280px, 38vh, 470px);", css)
+        self.assertIn("font-size: clamp(30px, 4.25vw, 58px);", css)
+
     def test_tabs_expose_semantic_state(self):
         html = (STATIC_DIR / "index.html").read_text()
         script = (STATIC_DIR / "app.js").read_text()
