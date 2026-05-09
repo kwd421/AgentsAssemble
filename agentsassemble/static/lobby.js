@@ -22,9 +22,7 @@ export function renderLobby() {
       </div>
       <div class="lobby-main">
         <div class="lobby-panel">
-          <div class="lobby-stage">
-            ${renderAssembleRing(roster)}
-          </div>
+          ${renderLobbySummary(roster)}
           <div class="lobby-activity">
             <div class="lobby-feed-head">
               <div>
@@ -76,47 +74,25 @@ function scrollLobbyFeedToLatest(lobby) {
   });
 }
 
-function renderAssembleRing(roster) {
-  const allMembers = buildAssembleMembers(roster);
-  const members = allMembers.slice(0, 12);
-  const hiddenCount = Math.max(0, allMembers.length - members.length);
-  const countLabel = hiddenCount ? `${members.length}+${hiddenCount}` : String(members.length);
+function renderLobbySummary(roster) {
+  const memberCount = roster.length;
+  const agentCount = roster.reduce((count, user) => count + user.agents.length, 0);
+  const deployedCount = roster.reduce(
+    (count, user) => count + user.agents.filter((agent) => agent.deploy).length,
+    0
+  );
   return `
-    <section class="assemble-ring" aria-label="집결 현황">
-      <div class="assemble-core">
-        <span>ASSEMBLE</span>
-        <strong>${escapeHtml(countLabel)}</strong>
-        <small>집결 중</small>
-      </div>
-      ${members.map((member, index) => renderAssembleMember(member, index, members.length)).join("")}
+    <section class="lobby-summary" aria-label="로비 요약">
+      ${renderSummaryMetric("참여자", memberCount)}
+      ${renderSummaryMetric("에이전트", agentCount)}
+      ${renderSummaryMetric("투입 대기", deployedCount)}
+      ${renderSummaryMetric("이벤트", state.lobbyEvents.length)}
     </section>
   `;
 }
 
-function buildAssembleMembers(roster) {
-  return roster.flatMap((user) => {
-    const owner = {
-      kind: user.key === "mine" ? "mine" : "other",
-      label: user.name,
-      title: user.key === "mine" ? "나" : "상대",
-    };
-    const agents = user.agents.map((agent) => ({
-      kind: user.key === "mine" ? "my-agent" : "other-agent",
-      label: agent.name,
-      title: agent.deploy ? "투입" : agent.ready ? "준비" : "대기",
-    }));
-    return [owner, ...agents];
-  });
-}
-
-function renderAssembleMember(member, index, total) {
-  const angle = total <= 1 ? -90 : -90 + (360 / total) * index;
-  return `
-    <div class="assemble-member assemble-${escapeHtml(member.kind)}" style="--angle:${angle}deg">
-      <span>${escapeHtml(initials(member.label))}</span>
-      <small>${escapeHtml(member.title)}</small>
-    </div>
-  `;
+function renderSummaryMetric(label, value) {
+  return `<div class="summary-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
 }
 
 function renderLobbyEvent(event) {

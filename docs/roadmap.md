@@ -27,7 +27,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Codex adapter has basic structured-output hardening: exact evidence URL instructions, wrapped JSON extraction, synthesis repair, and conservative local fallback.
 - Per-role research is isolated before Round 1.
 - Meeting artifacts are written as Markdown and JSON.
-- GUI prototype has `로비`, `실황`, `작전판`, and `아카이브` tabs.
+- GUI prototype has lightweight verification-console tabs: `로비`, `실황`, `작전판`, and `아카이브`.
 - GUI board shows Evidence Gate totals and per-role evidence tables from structured research JSON.
 - GUI lobby v0 stores unofficial owner/agent chatter, ready events, and deploy intent in `lobby.jsonl` separately from meeting artifacts.
 - GUI size controls let users tune interface and text density for denser meeting review.
@@ -147,6 +147,7 @@ These are intentional future ideas, not near-term commitments.
 - Philosophy debate mode using mature agent personas.
 - Game-like social deduction or trial themes.
 - Rich TUI or polished web UI.
+- React/Three.js product UI as a separate future track, rather than making the dependency-light GUI v0 carry cinematic staging.
 - Cost and usage dashboards.
 - Provider capability dashboard.
 

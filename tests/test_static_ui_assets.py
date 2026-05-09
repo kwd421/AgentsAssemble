@@ -12,13 +12,6 @@ def static_js() -> str:
 
 
 class StaticUiAssetTests(unittest.TestCase):
-    def test_hero_asset_is_packaged_and_within_budget(self):
-        hero = STATIC_DIR / "council-hero.jpg"
-
-        self.assertTrue(hero.exists())
-        self.assertLessEqual(hero.stat().st_size, 350_000)
-        self.assertIn('"static/*.jpg"', PYPROJECT.read_text())
-
     def test_responsive_layout_hooks_are_present(self):
         css = (STATIC_DIR / "styles.css").read_text()
 
@@ -47,11 +40,11 @@ class StaticUiAssetTests(unittest.TestCase):
         script = static_js()
         css = (STATIC_DIR / "styles.css").read_text()
 
-        self.assertIn('class="lobby-stage"', script)
+        self.assertIn('class="lobby-summary"', script)
         self.assertIn('class="lobby-activity"', script)
-        self.assertIn(".lobby-stage", css)
+        self.assertIn(".lobby-summary", css)
         self.assertIn(".lobby-activity", css)
-        self.assertIn("grid-template-rows: minmax(210px, 0.8fr) minmax(220px, 1fr) auto;", css)
+        self.assertIn("grid-template-rows: auto minmax(0, 1fr) auto;", css)
 
     def test_live_view_prioritizes_official_chat(self):
         script = static_js()

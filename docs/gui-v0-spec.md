@@ -2,9 +2,9 @@
 
 ## Purpose
 
-The GUI should make an AgentsAssemble council feel like an actual meeting room, not just a folder of generated Markdown files.
+The GUI should make an AgentsAssemble council easy to inspect without opening a folder of generated Markdown files.
 
-The first GUI is local-first and browser-based. It reads meeting artifacts produced by the existing Python meeting runner and presents them through four stable tabs:
+The first GUI is a local-first verification console, not the polished product interface. It reads meeting artifacts produced by the existing Python meeting runner and presents them through four stable tabs:
 
 - `lobby` / 로비
 - `live` / 실황
@@ -18,8 +18,8 @@ In scope for GUI v0:
 - Run a local browser UI from `assemble gui`.
 - Show the latest or selected local meeting.
 - Let the user start the mock demo from the UI.
-- Display a lobby/staging area for owner chat, agent readiness, and deploy intent before formal meeting turns.
-- Display council messages in a chat-like live view.
+- Display a lightweight lobby/staging log for owner chat, agent readiness, and deploy intent before formal meeting turns.
+- Display council messages in a compact live review view.
 - Display structured debate flow in a board view.
 - Display generated meeting artifacts in an archive view.
 - Use the existing file-based artifact model.
@@ -33,16 +33,17 @@ Out of scope for GUI v0:
 - Running implementation agents after the meeting.
 - Commits, pushes, PRs, or Git worktree orchestration.
 - Authentication, accounts, cloud sync, or hosted deployment.
+- Polished React/Three.js product UI, cinematic staging, or high-motion presentation.
 
 ## Navigation
 
 ### `lobby` / 로비
 
-Primary purpose: show the informal staging area before or around the formal meeting.
+Primary purpose: show the informal staging area before or around the formal meeting, without treating it as the final multiplayer lobby.
 
 Content:
 
-- Owner and agent presence.
+- Owner and agent presence summary.
 - Ready and deploy-intent events.
 - Unofficial lobby chatter that stays separate from the official transcript.
 - Clear distinction between the local user, the local user's agents, another participant, and another participant's agents.
@@ -52,7 +53,7 @@ Lobby events are not official meeting evidence unless a later workflow explicitl
 
 ### `live` / 실황
 
-Primary purpose: show the meeting as a live-feeling conversation.
+Primary purpose: show the meeting as a readable chronological review.
 
 Content:
 
@@ -212,7 +213,7 @@ GUI v0 can block until the mock demo finishes. Live event streaming can be added
 
 ## Visual Direction
 
-The UI should feel like a compact local operations room for AI agents:
+The UI should feel like a compact local verification console for AI agents:
 
 - Dense enough for repeated developer use.
 - Clear role colors and labels.
@@ -221,13 +222,13 @@ The UI should feel like a compact local operations room for AI agents:
 - No decorative gradient/orb background.
 - Tabs should be prominent and easy to rename.
 - The first viewport should immediately show the council UI, not an explanation page.
-- The visual system should feel like one continuous council facility across lobby, live, board, and archive, not four unrelated admin screens.
 - Each tab should have one primary visual job:
-  - Lobby: staging room and readiness.
-  - Live: official council stage and transcript.
+  - Lobby: readiness and unofficial activity.
+  - Live: official transcript review.
   - Board: decision map and evidence compression.
-  - Archive: owner-separated document vault.
-- High-impact bitmap assets are allowed when they materially improve the product feel, but they must be optimized, packaged, and covered by an asset budget test.
+  - Archive: owner-separated artifacts.
+- Avoid cinematic hero images, large decorative stages, and heavy presentation layers in GUI v0.
+- Future product UI may use React, Three.js, richer motion, and a more theatrical AgentsAssemble staging metaphor, but that should live as a separate product UI track rather than making the v0 verification console heavy.
 - Reuse existing visual assets before adding new ones. Avoid large uncompressed PNGs in the shipped app.
 - Prefer responsive surfaces, scroll containment, and compact controls over oversized static panels.
 

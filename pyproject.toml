@@ -12,4 +12,4 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-data]
-agentsassemble = ["static/*.html", "static/*.css", "static/*.js", "static/*.svg", "static/*.jpg"]
+agentsassemble = ["static/*.html", "static/*.css", "static/*.js", "static/*.svg"]

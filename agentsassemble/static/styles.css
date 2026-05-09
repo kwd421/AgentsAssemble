@@ -65,45 +65,11 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 15% 8%, rgba(242, 184, 75, 0.13), transparent 24rem),
-    radial-gradient(circle at 84% 0%, rgba(91, 215, 255, 0.15), transparent 30rem),
-    radial-gradient(circle at 60% 110%, rgba(255, 112, 104, 0.12), transparent 34rem),
-    linear-gradient(145deg, #070910 0%, #0e121c 46%, #120d0b 100%);
+  background: #090b12;
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: clamp(12px, calc(14px * var(--text-scale)), 16px);
   overflow-x: hidden;
-}
-
-body::before {
-  background:
-    linear-gradient(90deg, transparent 0 12%, rgba(242, 184, 75, 0.14), rgba(91, 215, 255, 0.1), transparent 88%),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.055) 0 1px, transparent 1px 76px);
-  content: "";
-  height: 1px;
-  left: 50%;
-  max-width: var(--page-max);
-  pointer-events: none;
-  position: fixed;
-  top: 76px;
-  transform: translateX(-50%);
-  width: calc(100% - 2 * var(--page-pad));
-  z-index: -1;
-}
-
-body::after {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 16rem),
-    repeating-linear-gradient(0deg, rgba(212, 225, 255, 0.028) 0 1px, transparent 1px 96px),
-    repeating-linear-gradient(90deg, rgba(212, 225, 255, 0.024) 0 1px, transparent 1px 96px);
-  content: "";
-  inset: 0;
-  mask-image: linear-gradient(180deg, black, transparent 72%);
-  opacity: 0.42;
-  pointer-events: none;
-  position: fixed;
-  z-index: -2;
 }
 
 button,
@@ -121,10 +87,7 @@ select {
 }
 
 .topbar {
-  backdrop-filter: blur(18px);
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.018)),
-    rgba(8, 10, 16, 0.62);
+  background: var(--panel);
   border: 1px solid rgba(212, 225, 255, 0.12);
   border-radius: 18px;
   display: flex;
@@ -133,19 +96,8 @@ select {
   gap: clamp(10px, calc(16px * var(--ui-scale)), 18px);
   padding: clamp(10px, calc(14px * var(--ui-scale)), 16px);
   position: relative;
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   z-index: 10;
-}
-
-.topbar::after {
-  background: linear-gradient(90deg, transparent, rgba(242, 184, 75, 0.72), rgba(91, 215, 255, 0.48), transparent);
-  bottom: 0;
-  content: "";
-  height: 1px;
-  left: 16%;
-  position: absolute;
-  right: 16%;
 }
 
 .brand-lockup {
@@ -161,12 +113,9 @@ select {
 
 .brand-mark {
   align-items: center;
-  background:
-    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.9), transparent 10%),
-    conic-gradient(from 210deg, #5bd7ff, #f2b84b, #ff7068, #5bd7ff);
-  border: 1px solid rgba(255, 244, 214, 0.42);
+  background: var(--accent);
+  border: 1px solid rgba(255, 244, 214, 0.32);
   border-radius: 999px;
-  box-shadow: 0 0 0 5px rgba(242, 184, 75, 0.07), 0 14px 36px rgba(91, 215, 255, 0.12);
   color: #080a10;
   display: flex;
   flex: none;
@@ -379,39 +328,18 @@ input:focus-visible {
 /* Lobby */
 .lobby-layout {
   border: 1px solid rgba(212, 225, 255, 0.13);
-  background:
-    radial-gradient(circle at 22% -8%, rgba(242, 184, 75, 0.12), transparent 24rem),
-    radial-gradient(circle at 86% 0%, rgba(91, 215, 255, 0.11), transparent 24rem),
-    linear-gradient(145deg, rgba(24, 28, 39, 0.9), rgba(9, 11, 18, 0.94));
-  border-radius: 20px;
-  box-shadow: 0 32px 110px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  background: var(--panel);
+  border-radius: 12px;
   overflow: hidden;
   padding: clamp(10px, calc(16px * var(--ui-scale)), 18px);
   position: relative;
 }
 
-.lobby-layout::before {
-  background:
-    linear-gradient(90deg, transparent, rgba(242, 184, 75, 0.16), rgba(91, 215, 255, 0.1), transparent),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 88px);
-  content: "";
-  height: 1px;
-  left: 18px;
-  pointer-events: none;
-  position: absolute;
-  right: 18px;
-  top: 64px;
-}
-
 .board-view,
 .archive-view {
-  background:
-    radial-gradient(circle at 76% -10%, rgba(91, 215, 255, 0.08), transparent 20rem),
-    radial-gradient(circle at 10% 110%, rgba(242, 184, 75, 0.07), transparent 18rem),
-    linear-gradient(145deg, rgba(24, 28, 39, 0.88), rgba(11, 13, 20, 0.94));
+  background: var(--panel);
   border: 1px solid rgba(212, 225, 255, 0.13);
-  border-radius: 14px;
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  border-radius: 12px;
   padding: clamp(8px, calc(12px * var(--ui-scale)), 12px);
 }
 
@@ -484,32 +412,17 @@ input:focus-visible {
 }
 
 .lobby-panel {
-  background:
-    radial-gradient(circle at 50% 36%, rgba(91, 215, 255, 0.1), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.034), transparent 34%),
-    rgba(6, 8, 13, 0.58);
+  background: rgba(6, 8, 13, 0.58);
   border: 1px solid rgba(212, 225, 255, 0.13);
-  border-radius: 18px;
+  border-radius: 12px;
   display: grid;
   gap: 12px;
-  grid-template-rows: minmax(210px, 0.8fr) minmax(220px, 1fr) auto;
-  height: clamp(610px, calc(100vh - 210px), 780px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: clamp(520px, calc(100vh - 210px), 720px);
   min-height: 0;
   overflow: hidden;
   padding: 12px;
   position: relative;
-}
-
-.lobby-panel::before {
-  background:
-    linear-gradient(180deg, rgba(6, 8, 13, 0.02), rgba(6, 8, 13, 0.74) 76%),
-    radial-gradient(circle at 50% 33%, transparent 0 26%, rgba(6, 8, 13, 0.38) 58%),
-    url("/static/council-hero.jpg") center 14% / min(1040px, 105vw) auto no-repeat;
-  content: "";
-  inset: 0;
-  opacity: 0.5;
-  pointer-events: none;
-  position: absolute;
 }
 
 .lobby-panel > * {
@@ -517,158 +430,32 @@ input:focus-visible {
   z-index: 1;
 }
 
-.lobby-stage {
-  align-items: center;
-  background:
-    radial-gradient(circle at 50% 42%, rgba(91, 215, 255, 0.12), transparent 24%),
-    linear-gradient(180deg, rgba(2, 4, 8, 0.16), rgba(2, 4, 8, 0.58));
-  border: 1px solid rgba(212, 225, 255, 0.08);
-  border-radius: 16px;
-  display: flex;
-  justify-content: center;
-  min-height: clamp(220px, 34vh, 360px);
-  overflow: hidden;
-  position: relative;
+.lobby-summary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.lobby-stage::after {
-  background:
-    linear-gradient(90deg, transparent, rgba(255, 223, 174, 0.1), transparent),
-    linear-gradient(0deg, transparent 0 48%, rgba(212, 225, 255, 0.06) 49% 51%, transparent 52%);
-  bottom: 0;
-  content: "";
-  height: 42%;
-  left: 8%;
-  opacity: 0.56;
-  pointer-events: none;
-  position: absolute;
-  right: 8%;
-  transform: perspective(320px) rotateX(58deg);
-  transform-origin: bottom center;
+.summary-metric {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
 }
 
-.assemble-ring {
-  align-items: center;
-  align-self: center;
-  background:
-    radial-gradient(circle at center, rgba(242, 184, 75, 0.12), transparent 36%),
-    radial-gradient(circle at center, rgba(91, 215, 255, 0.08), transparent 62%),
-    rgba(4, 7, 12, 0.52);
-  border: 1px solid rgba(212, 225, 255, 0.11);
-  border-radius: 999px;
-  display: flex;
-  height: clamp(206px, calc(260px * var(--ui-scale)), 280px);
-  justify-content: center;
-  position: relative;
-  width: min(100%, 620px);
-  z-index: 1;
+.summary-metric span,
+.summary-metric strong {
+  display: block;
 }
 
-.assemble-ring::before,
-.assemble-ring::after {
-  border: 1px solid rgba(255, 223, 174, 0.12);
-  border-radius: 999px;
-  content: "";
-  inset: 22px 50%;
-  position: absolute;
-  transform: translateX(-50%);
-  width: clamp(126px, calc(164px * var(--ui-scale)), 172px);
-}
-
-.assemble-ring::after {
-  border-color: rgba(69, 217, 245, 0.12);
-  inset: 42px 50%;
-  width: clamp(86px, calc(112px * var(--ui-scale)), 120px);
-}
-
-.assemble-core {
-  align-items: center;
-  background: rgba(8, 11, 17, 0.84);
-  border: 1px solid rgba(242, 184, 75, 0.32);
-  border-radius: 999px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  height: clamp(78px, calc(98px * var(--ui-scale)), 104px);
-  justify-content: center;
-  position: relative;
-  width: clamp(78px, calc(98px * var(--ui-scale)), 104px);
-  z-index: 2;
-}
-
-.assemble-core span,
-.assemble-core small {
+.summary-metric span {
   color: var(--muted);
-  font-size: 10px;
-}
-
-.assemble-core strong {
-  color: var(--text);
-  font-size: clamp(20px, calc(26px * var(--text-scale)), 28px);
-  line-height: 1;
-}
-
-.assemble-member {
-  align-items: center;
-  color: var(--text);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  left: 50%;
-  position: absolute;
-  top: 50%;
-  transform:
-    rotate(var(--angle))
-    translateY(calc(-1 * clamp(68px, calc(96px * var(--ui-scale)), 106px)))
-    rotate(calc(-1 * var(--angle)))
-    translate(-50%, -50%);
-  transform-origin: 0 0;
-  z-index: 3;
-}
-
-.assemble-member span {
-  align-items: center;
-  background: rgba(255, 246, 231, 0.08);
-  border: 1px solid rgba(255, 223, 174, 0.18);
-  border-radius: 999px;
-  display: flex;
   font-size: 11px;
-  font-weight: 800;
-  height: 38px;
-  justify-content: center;
-  width: 38px;
 }
 
-.assemble-member small {
-  color: var(--muted);
-  font-size: 10px;
-  max-width: 48px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.assemble-mine span {
-  background: rgba(240, 168, 60, 0.18);
-  border-color: rgba(240, 168, 60, 0.45);
-  color: #fff4d8;
-}
-
-.assemble-my-agent span {
-  background: rgba(69, 217, 245, 0.13);
-  border-color: rgba(69, 217, 245, 0.4);
-  color: #d9f9ff;
-}
-
-.assemble-other span {
-  background: rgba(255, 246, 231, 0.08);
-  border-color: rgba(255, 246, 231, 0.18);
-}
-
-.assemble-other-agent span {
-  background: rgba(122, 160, 255, 0.14);
-  border-color: rgba(122, 160, 255, 0.4);
-  color: #edf2ff;
+.summary-metric strong {
+  font-size: 20px;
+  margin-top: 5px;
 }
 
 .lobby-title {
@@ -2734,15 +2521,7 @@ input:focus-visible {
   }
 
   .lobby-panel {
-    grid-template-rows: minmax(250px, 0.8fr) minmax(220px, 1fr) auto;
-  }
-
-  .assemble-member {
-    transform:
-      rotate(var(--angle))
-      translateY(calc(-1 * clamp(58px, calc(82px * var(--ui-scale)), 88px)))
-      rotate(calc(-1 * var(--angle)))
-      translate(-50%, -50%);
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
   .brand-lockup {
