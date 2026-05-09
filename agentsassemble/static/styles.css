@@ -1,7 +1,7 @@
 :root {
   --ui-scale: 0.9;
   --text-scale: 0.9;
-  --page-max: 1440px;
+  --page-max: 1480px;
   --page-pad: clamp(10px, calc(18px * var(--ui-scale)), 24px);
   --bg: #090b11;
   --panel: rgba(17, 20, 29, 0.82);
@@ -69,10 +69,10 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    linear-gradient(120deg, rgba(242, 184, 75, 0.12), transparent 26rem),
-    radial-gradient(circle at 76% 2%, rgba(91, 215, 255, 0.13), transparent 28rem),
-    radial-gradient(circle at 26% 98%, rgba(255, 112, 104, 0.1), transparent 31rem),
-    linear-gradient(145deg, #070910 0%, #101420 48%, #100b0a 100%);
+    radial-gradient(circle at 15% 8%, rgba(242, 184, 75, 0.13), transparent 24rem),
+    radial-gradient(circle at 84% 0%, rgba(91, 215, 255, 0.15), transparent 30rem),
+    radial-gradient(circle at 60% 110%, rgba(255, 112, 104, 0.12), transparent 34rem),
+    linear-gradient(145deg, #070910 0%, #0e121c 46%, #120d0b 100%);
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: clamp(12px, calc(14px * var(--text-scale)), 16px);
@@ -81,18 +81,32 @@ body {
 
 body::before {
   background:
-    radial-gradient(circle at 50% 0%, rgba(91, 215, 255, 0.13), transparent 32rem),
-    linear-gradient(90deg, transparent, rgba(242, 184, 75, 0.08), transparent);
+    linear-gradient(90deg, transparent 0 12%, rgba(242, 184, 75, 0.14), rgba(91, 215, 255, 0.1), transparent 88%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.055) 0 1px, transparent 1px 76px);
   content: "";
-  height: 260px;
+  height: 1px;
   left: 50%;
   max-width: var(--page-max);
   pointer-events: none;
   position: fixed;
-  top: 0;
+  top: 76px;
   transform: translateX(-50%);
   width: calc(100% - 2 * var(--page-pad));
   z-index: -1;
+}
+
+body::after {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 16rem),
+    repeating-linear-gradient(0deg, rgba(212, 225, 255, 0.028) 0 1px, transparent 1px 96px),
+    repeating-linear-gradient(90deg, rgba(212, 225, 255, 0.024) 0 1px, transparent 1px 96px);
+  content: "";
+  inset: 0;
+  mask-image: linear-gradient(180deg, black, transparent 72%);
+  opacity: 0.42;
+  pointer-events: none;
+  position: fixed;
+  z-index: -2;
 }
 
 button,
@@ -104,23 +118,24 @@ select {
   max-width: min(100%, var(--page-max));
   margin: 0 auto;
   padding: var(--page-pad);
+  position: relative;
   width: 100%;
 }
 
 .topbar {
   backdrop-filter: blur(18px);
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.018)),
-    rgba(8, 10, 16, 0.54);
-  border: 1px solid rgba(212, 225, 255, 0.09);
-  border-radius: 14px;
+    linear-gradient(135deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.018)),
+    rgba(8, 10, 16, 0.62);
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: clamp(10px, calc(16px * var(--ui-scale)), 18px);
   padding: clamp(10px, calc(14px * var(--ui-scale)), 16px);
   position: relative;
-  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.23);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   z-index: 10;
 }
@@ -289,7 +304,7 @@ input:focus-visible {
   gap: calc(7px * var(--ui-scale));
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  padding: clamp(8px, calc(12px * var(--ui-scale)), 12px) 0;
+  padding: clamp(9px, calc(13px * var(--ui-scale)), 14px) 0;
   position: sticky;
   scrollbar-width: none;
   top: 0;
@@ -302,10 +317,13 @@ input:focus-visible {
 
 .tab {
   backdrop-filter: blur(14px);
-  background: rgba(15, 18, 27, 0.62);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012)),
+    rgba(15, 18, 27, 0.68);
   color: var(--muted);
   flex: 0 0 auto;
-  min-width: clamp(68px, calc(88px * var(--ui-scale)), 88px);
+  min-width: clamp(74px, calc(96px * var(--ui-scale)), 100px);
+  min-height: 40px;
   transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
@@ -318,7 +336,9 @@ input:focus-visible {
 .tab.is-active {
   color: var(--text);
   border-color: var(--accent);
-  background: linear-gradient(180deg, rgba(242, 184, 75, 0.18), rgba(91, 215, 255, 0.055));
+  background:
+    radial-gradient(circle at 50% -40%, rgba(242, 184, 75, 0.38), transparent 58%),
+    linear-gradient(180deg, rgba(242, 184, 75, 0.18), rgba(91, 215, 255, 0.055));
   box-shadow: inset 0 1px 0 rgba(255, 246, 224, 0.16), 0 10px 22px rgba(0, 0, 0, 0.16);
 }
 
@@ -361,11 +381,27 @@ input:focus-visible {
 .lobby-layout {
   border: 1px solid rgba(212, 225, 255, 0.13);
   background:
-    radial-gradient(circle at 50% -12%, rgba(91, 215, 255, 0.08), transparent 20rem),
-    linear-gradient(145deg, rgba(24, 28, 39, 0.9), rgba(11, 13, 20, 0.92));
-  border-radius: 14px;
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.045);
-  padding: clamp(8px, calc(12px * var(--ui-scale)), 12px);
+    radial-gradient(circle at 22% -8%, rgba(242, 184, 75, 0.12), transparent 24rem),
+    radial-gradient(circle at 86% 0%, rgba(91, 215, 255, 0.11), transparent 24rem),
+    linear-gradient(145deg, rgba(24, 28, 39, 0.9), rgba(9, 11, 18, 0.94));
+  border-radius: 20px;
+  box-shadow: 0 32px 110px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  overflow: hidden;
+  padding: clamp(10px, calc(16px * var(--ui-scale)), 18px);
+  position: relative;
+}
+
+.lobby-layout::before {
+  background:
+    linear-gradient(90deg, transparent, rgba(242, 184, 75, 0.16), rgba(91, 215, 255, 0.1), transparent),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 88px);
+  content: "";
+  height: 1px;
+  left: 18px;
+  pointer-events: none;
+  position: absolute;
+  right: 18px;
+  top: 64px;
 }
 
 .board-view,
@@ -382,11 +418,12 @@ input:focus-visible {
 
 .room-strip {
   align-items: center;
-  border-bottom: 1px solid rgba(255, 223, 174, 0.11);
   display: flex;
   justify-content: space-between;
-  margin: 0 2px 12px;
-  padding: 4px 2px 12px;
+  margin: 0 2px 16px;
+  padding: 2px 2px 14px;
+  position: relative;
+  z-index: 1;
 }
 
 .room-actions {
@@ -403,12 +440,23 @@ input:focus-visible {
 }
 
 .room-strip strong {
-  font-size: clamp(16px, calc(19px * var(--text-scale)), 20px);
+  font-size: clamp(20px, calc(26px * var(--text-scale)), 28px);
+  letter-spacing: 0;
 }
 
 .room-strip small {
   color: var(--muted);
   margin-top: 4px;
+}
+
+.room-kicker {
+  color: var(--accent);
+  display: block;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  margin-bottom: 5px;
+  text-transform: uppercase;
 }
 
 .room-status {
@@ -429,34 +477,38 @@ input:focus-visible {
 .lobby-main {
   align-items: stretch;
   display: grid;
-  gap: 14px;
-  grid-template-columns: minmax(0, 1fr) clamp(260px, 28vw, 340px);
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 28vw, 360px);
   justify-content: center;
+  position: relative;
+  z-index: 1;
 }
 
 .lobby-panel {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 32%),
-    rgba(6, 8, 13, 0.52);
-  border: 1px solid rgba(212, 225, 255, 0.11);
-  border-radius: 12px;
+    radial-gradient(circle at 50% 36%, rgba(91, 215, 255, 0.1), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.034), transparent 34%),
+    rgba(6, 8, 13, 0.58);
+  border: 1px solid rgba(212, 225, 255, 0.13);
+  border-radius: 18px;
   display: grid;
-  gap: 10px;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  height: clamp(500px, calc(100vh - 220px), 680px);
+  gap: 12px;
+  grid-template-rows: minmax(210px, 0.8fr) minmax(220px, 1fr) auto;
+  height: clamp(610px, calc(100vh - 210px), 780px);
   min-height: 0;
   overflow: hidden;
-  padding: 10px;
+  padding: 12px;
   position: relative;
 }
 
 .lobby-panel::before {
   background:
-    linear-gradient(180deg, rgba(6, 8, 13, 0.08), rgba(6, 8, 13, 0.72) 72%),
-    url("/static/council-hero.jpg") center 18% / min(920px, 92vw) auto no-repeat;
+    linear-gradient(180deg, rgba(6, 8, 13, 0.02), rgba(6, 8, 13, 0.74) 76%),
+    radial-gradient(circle at 50% 33%, transparent 0 26%, rgba(6, 8, 13, 0.38) 58%),
+    url("/static/council-hero.jpg") center 14% / min(1040px, 105vw) auto no-repeat;
   content: "";
   inset: 0;
-  opacity: 0.42;
+  opacity: 0.5;
   pointer-events: none;
   position: absolute;
 }
@@ -472,10 +524,10 @@ input:focus-visible {
     radial-gradient(circle at 50% 42%, rgba(91, 215, 255, 0.12), transparent 24%),
     linear-gradient(180deg, rgba(2, 4, 8, 0.16), rgba(2, 4, 8, 0.58));
   border: 1px solid rgba(212, 225, 255, 0.08);
-  border-radius: 12px;
+  border-radius: 16px;
   display: flex;
   justify-content: center;
-  min-height: clamp(172px, 28vh, 300px);
+  min-height: clamp(220px, 34vh, 360px);
   overflow: hidden;
   position: relative;
 }
@@ -486,7 +538,7 @@ input:focus-visible {
     linear-gradient(0deg, transparent 0 48%, rgba(212, 225, 255, 0.06) 49% 51%, transparent 52%);
   bottom: 0;
   content: "";
-  height: 38%;
+  height: 42%;
   left: 8%;
   opacity: 0.56;
   pointer-events: none;
@@ -504,12 +556,12 @@ input:focus-visible {
     radial-gradient(circle at center, rgba(91, 215, 255, 0.08), transparent 62%),
     rgba(4, 7, 12, 0.52);
   border: 1px solid rgba(212, 225, 255, 0.11);
-  border-radius: 14px;
+  border-radius: 999px;
   display: flex;
-  height: clamp(176px, calc(220px * var(--ui-scale)), 230px);
+  height: clamp(206px, calc(260px * var(--ui-scale)), 280px);
   justify-content: center;
   position: relative;
-  width: min(100%, 520px);
+  width: min(100%, 620px);
   z-index: 1;
 }
 
@@ -538,10 +590,10 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  height: clamp(72px, calc(88px * var(--ui-scale)), 92px);
+  height: clamp(78px, calc(98px * var(--ui-scale)), 104px);
   justify-content: center;
   position: relative;
-  width: clamp(72px, calc(88px * var(--ui-scale)), 92px);
+  width: clamp(78px, calc(98px * var(--ui-scale)), 104px);
   z-index: 2;
 }
 
@@ -568,7 +620,7 @@ input:focus-visible {
   top: 50%;
   transform:
     rotate(var(--angle))
-    translateY(calc(-1 * clamp(66px, calc(88px * var(--ui-scale)), 94px)))
+    translateY(calc(-1 * clamp(68px, calc(96px * var(--ui-scale)), 106px)))
     rotate(calc(-1 * var(--angle)))
     translate(-50%, -50%);
   transform-origin: 0 0;
@@ -583,9 +635,9 @@ input:focus-visible {
   display: flex;
   font-size: 11px;
   font-weight: 800;
-  height: 34px;
+  height: 38px;
   justify-content: center;
-  width: 34px;
+  width: 38px;
 }
 
 .assemble-member small {
@@ -638,26 +690,27 @@ input:focus-visible {
 
 .lobby-form {
   align-items: center;
-  background: rgba(9, 11, 17, 0.92);
-  border: 1px solid rgba(212, 225, 255, 0.14);
-  border-radius: 12px;
+  backdrop-filter: blur(16px);
+  background: rgba(9, 11, 17, 0.9);
+  border: 1px solid rgba(212, 225, 255, 0.16);
+  border-radius: 16px;
   display: grid;
   gap: clamp(6px, calc(8px * var(--ui-scale)), 8px);
   grid-template-columns: minmax(0, 1fr) auto;
-  padding: 8px;
+  padding: 9px;
 }
 
 .lobby-activity {
   backdrop-filter: blur(10px);
   background:
-    linear-gradient(180deg, rgba(17, 22, 32, 0.72), rgba(9, 11, 17, 0.86));
+    linear-gradient(180deg, rgba(17, 22, 32, 0.78), rgba(9, 11, 17, 0.9));
   border: 1px solid rgba(212, 225, 255, 0.12);
-  border-radius: 12px;
+  border-radius: 16px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
-  padding: 8px;
+  padding: 10px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
@@ -719,7 +772,7 @@ input:focus-visible {
 
 .lobby-feed {
   display: grid;
-  gap: clamp(5px, calc(7px * var(--ui-scale)), 8px);
+  gap: clamp(6px, calc(8px * var(--ui-scale)), 9px);
   align-content: start;
   overflow: auto;
   padding: 10px 4px 2px;
@@ -888,13 +941,14 @@ input:focus-visible {
 
 .lobby-roster {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 34%),
-    rgba(17, 20, 29, 0.82);
+    radial-gradient(circle at 0% 0%, rgba(242, 184, 75, 0.08), transparent 16rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.052), transparent 34%),
+    rgba(17, 20, 29, 0.84);
   border: 1px solid rgba(212, 225, 255, 0.14);
-  border-radius: 12px;
-  max-height: clamp(500px, calc(100vh - 220px), 680px);
+  border-radius: 18px;
+  max-height: clamp(610px, calc(100vh - 210px), 780px);
   overflow: auto;
-  padding: 10px;
+  padding: 12px;
 }
 
 .roster-head {
@@ -2608,7 +2662,6 @@ input:focus-visible {
 }
 
 @media (max-width: 860px) {
-  .topbar,
   .actions,
   .lobby-title {
     align-items: stretch;
@@ -2616,7 +2669,11 @@ input:focus-visible {
   }
 
   .topbar {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr);
     overflow: visible;
+    padding: 10px;
   }
 
   .actions {
@@ -2722,17 +2779,46 @@ input:focus-visible {
     padding: 8px;
   }
 
+  .lobby-panel {
+    grid-template-rows: minmax(250px, 0.8fr) minmax(220px, 1fr) auto;
+  }
+
+  .assemble-member {
+    transform:
+      rotate(var(--angle))
+      translateY(calc(-1 * clamp(58px, calc(82px * var(--ui-scale)), 88px)))
+      rotate(calc(-1 * var(--angle)))
+      translate(-50%, -50%);
+  }
+
+  .brand-lockup {
+    gap: 9px;
+  }
+
   .brand-mark {
-    height: 36px;
-    width: 36px;
+    box-shadow: 0 0 0 3px rgba(242, 184, 75, 0.07), 0 10px 24px rgba(91, 215, 255, 0.1);
+    height: 34px;
+    width: 34px;
+  }
+
+  h1 {
+    font-size: 18px;
+  }
+
+  #meeting-subtitle {
+    font-size: 11px;
+    margin-top: 2px;
   }
 
   .actions {
     grid-template-columns: 1fr 1fr;
+    gap: 6px;
   }
 
   .scale-control {
     justify-content: space-between;
+    min-height: 30px;
+    padding: 0 7px;
   }
 
   .scale-control input {

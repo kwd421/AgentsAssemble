@@ -167,6 +167,7 @@ function renderLobby() {
     <section class="lobby-layout">
       <div class="room-strip">
         <div>
+          <span class="room-kicker">staging room</span>
           <strong>집결 로비</strong>
           <small>${escapeHtml(state.payload?.meeting ? displayTopic(state.payload.meeting) : "회의 준비")} · ${roster.length}명 · 에이전트 ${roster.reduce((count, user) => count + user.agents.length, 0)}</small>
         </div>
@@ -184,7 +185,7 @@ function renderLobby() {
             <div class="lobby-feed-head">
               <div>
                 <strong>최근 활동</strong>
-                <span>참여자와 에이전트가 입장, 준비, 투입되는 기록입니다.</span>
+                <span>공식 회의 전, 누가 준비됐고 누가 투입 대기인지 보는 비공식 기록입니다.</span>
               </div>
               <em>${state.lobbyEvents.length} events</em>
             </div>

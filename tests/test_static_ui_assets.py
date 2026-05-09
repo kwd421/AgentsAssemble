@@ -46,7 +46,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('class="lobby-activity"', script)
         self.assertIn(".lobby-stage", css)
         self.assertIn(".lobby-activity", css)
-        self.assertIn("grid-template-rows: auto minmax(0, 1fr) auto;", css)
+        self.assertIn("grid-template-rows: minmax(210px, 0.8fr) minmax(220px, 1fr) auto;", css)
 
     def test_live_stage_leaves_room_for_transcript(self):
         script = (STATIC_DIR / "app.js").read_text()
