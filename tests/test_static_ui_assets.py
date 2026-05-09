@@ -67,6 +67,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("archiveOwnerLabel(state.archiveKey, payload)", script)
         self.assertIn("function archiveOwnerLabel", script)
         self.assertIn("archiveKindLabel(key)", script)
+        self.assertIn("function copyTextWithTextarea", script)
+        self.assertIn("return copyTextWithTextarea(content)", script)
         self.assertIn(".archive-list button strong", css)
         self.assertIn(".archive-list button span", css)
 

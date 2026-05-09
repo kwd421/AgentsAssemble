@@ -1033,9 +1033,17 @@ async function handleArchiveCommand(command, key, content, button) {
 
 async function copyText(content) {
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(content);
-    return true;
+    try {
+      await navigator.clipboard.writeText(content);
+      return true;
+    } catch {
+      return copyTextWithTextarea(content);
+    }
   }
+  return copyTextWithTextarea(content);
+}
+
+function copyTextWithTextarea(content) {
   const textarea = document.createElement("textarea");
   textarea.value = content;
   textarea.setAttribute("readonly", "");
