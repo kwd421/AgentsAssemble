@@ -128,6 +128,32 @@ class ProviderRegistryTests(unittest.TestCase):
                 None,
             )
 
+    def test_default_codex_registry_preserves_unlimited_timeout(self):
+        registry = default_provider_registry(codex_timeout_seconds=None)
+        adapter = registry.create(
+            ProviderConfig(
+                id="codex",
+                kind="codex",
+                display_name="Codex CLI",
+                timeout_seconds=None,
+            )
+        )
+
+        self.assertIsNone(adapter.timeout_seconds)
+
+    def test_provider_specific_timeout_overrides_default(self):
+        registry = default_provider_registry(codex_timeout_seconds=None)
+        adapter = registry.create(
+            ProviderConfig(
+                id="codex",
+                kind="codex",
+                display_name="Codex CLI",
+                timeout_seconds=900,
+            )
+        )
+
+        self.assertEqual(adapter.timeout_seconds, 900)
+
     def test_default_registry_allows_coding_agents_as_read_only_meeting_participants(self):
         registry = default_provider_registry()
         provider = ProviderConfig(id="cursor", kind="cursor", display_name="Cursor Agent")

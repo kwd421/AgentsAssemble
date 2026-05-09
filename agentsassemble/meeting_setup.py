@@ -30,7 +30,7 @@ class MeetingSetup:
 
 def get_adapter(
     adapter_name: str,
-    codex_timeout_seconds: int = 240,
+    codex_timeout_seconds: int | None = None,
     codex_search_enabled: bool = True,
 ) -> ProviderAdapter:
     provider = provider_config_for_adapter(adapter_name, codex_timeout_seconds, codex_search_enabled)
@@ -42,7 +42,7 @@ def get_adapter(
 
 def provider_config_for_adapter(
     adapter_name: str,
-    codex_timeout_seconds: int,
+    codex_timeout_seconds: int | None,
     codex_search_enabled: bool,
 ) -> ProviderConfig:
     if adapter_name == "mock":
@@ -91,7 +91,7 @@ def default_agent_bindings(config_roles: list[Any], provider_id: str) -> list[Ag
 def prepare_meeting_setup(
     config_roles: list[Any],
     adapter_name: str,
-    codex_timeout_seconds: int,
+    codex_timeout_seconds: int | None,
     codex_search_enabled: bool,
     agent_config_path: Path | str | None = None,
 ) -> MeetingSetup:

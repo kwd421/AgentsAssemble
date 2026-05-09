@@ -77,7 +77,7 @@ class ProviderRegistry:
 
 
 def default_provider_registry(
-    codex_timeout_seconds: int = 240,
+    codex_timeout_seconds: int | None = None,
     codex_search_enabled: bool = True,
 ) -> ProviderRegistry:
     registry = ProviderRegistry()
@@ -97,7 +97,7 @@ def default_provider_registry(
     registry.register(
         "codex",
         lambda provider: CodexAdapter(
-            timeout_seconds=provider.timeout_seconds or codex_timeout_seconds,
+            timeout_seconds=provider.timeout_seconds if provider.timeout_seconds is not None else codex_timeout_seconds,
             search_enabled=provider.search_enabled and codex_search_enabled,
         ),
         ProviderCapabilities(
