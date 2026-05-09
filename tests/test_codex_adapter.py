@@ -201,6 +201,39 @@ class CodexAdapterTests(unittest.TestCase):
             self.assertIn("Evidence Gate status is warn", synthesis["summary"])
             self.assertIn("lore_lawyer", synthesis["summary"])
 
+    def test_codex_synthesis_fallback_uses_repeated_round_positions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            (meeting_dir / "roles" / "moderator").mkdir(parents=True)
+
+            def fake_runner(command, input, text, capture_output, timeout, check):
+                output_path = Path(command[command.index("--output-last-message") + 1])
+                output_path.write_text("", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 1, stdout="", stderr="failed")
+
+            adapter = CodexAdapter(command_runner=fake_runner)
+            session = {"meeting_dir": str(meeting_dir), "role_id": "moderator"}
+
+            synthesis = adapter.synthesize(
+                session,
+                "Question?",
+                {
+                    "evidence_gate": {"status": "warn", "total_supported_claims": 6},
+                    "rounds": {
+                        "round_1": [
+                            {"role_id": "lore_lawyer", "position": "사카즈키/아카이누가 최강 후보 1위"},
+                            {"role_id": "show_me_the_feats", "position": "전투 결과상 Akainu 우세"},
+                            {"role_id": "fanboard_skeptic", "position": "아카이누 1순위지만 압살은 보류"},
+                        ]
+                    },
+                },
+            )
+
+            self.assertEqual(synthesis["winner"], "Sakazuki / Akainu")
+            self.assertEqual(synthesis["ranking"], ["Sakazuki / Akainu"])
+            self.assertEqual(synthesis["confidence"], "medium")
+            self.assertIn("repeated round positions", synthesis["caveats"][1])
+
 
 if __name__ == "__main__":
     unittest.main()

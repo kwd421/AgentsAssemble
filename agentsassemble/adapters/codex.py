@@ -345,6 +345,7 @@ Return only this JSON shape:
     def _fallback_synthesis(public_context: dict[str, Any], text: str) -> dict[str, Any]:
         gate = public_context.get("evidence_gate", {})
         role_summaries = public_context.get("research_summaries", [])
+        fallback_decision = CodexAdapter._fallback_decision_from_rounds(public_context)
         evidence_status = gate.get("status", "unknown")
         supported = gate.get("total_supported_claims", 0)
         unsupported = gate.get("total_unsupported_claims", 0)
@@ -366,15 +367,70 @@ Return only this JSON shape:
         original = text.strip()
         if original:
             summary_parts.append("Unparsed moderator output: " + original[:500])
+        if fallback_decision["winner"] != "Undetermined":
+            summary_parts.append(
+                "Local fallback decision used repeated round positions because moderator JSON was unavailable."
+            )
         return {
-            "winner": "Undetermined",
-            "ranking": [],
-            "confidence": "low",
+            "winner": fallback_decision["winner"],
+            "ranking": fallback_decision["ranking"],
+            "confidence": fallback_decision["confidence"],
             "caveats": [
                 "Codex synthesis did not return parseable JSON.",
-                "Fallback synthesis avoids choosing a winner without a parseable moderator decision.",
+                fallback_decision["caveat"],
             ],
             "summary": "\n".join(summary_parts),
-            "tasks": {},
+            "tasks": fallback_decision["tasks"],
             "fallback": "local_synthesis",
         }
+
+    @staticmethod
+    def _fallback_decision_from_rounds(public_context: dict[str, Any]) -> dict[str, Any]:
+        rounds = public_context.get("rounds", {})
+        positions = []
+        if isinstance(rounds, dict):
+            for messages in rounds.values():
+                if not isinstance(messages, list):
+                    continue
+                for message in messages:
+                    if isinstance(message, dict):
+                        positions.append(str(message.get("position") or message.get("content") or ""))
+        candidate_counts: dict[str, int] = {}
+        for position in positions:
+            candidate = CodexAdapter._candidate_from_position(position)
+            if candidate is not None:
+                candidate_counts[candidate] = candidate_counts.get(candidate, 0) + 1
+        if not candidate_counts:
+            return {
+                "winner": "Undetermined",
+                "ranking": [],
+                "confidence": "low",
+                "caveat": "Fallback synthesis avoids choosing a winner without repeated round positions.",
+                "tasks": {},
+            }
+        ranking = [
+            candidate
+            for candidate, _count in sorted(candidate_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+        winner = ranking[0]
+        total_positions = sum(candidate_counts.values())
+        top_count = candidate_counts[winner]
+        confidence = "medium" if top_count >= 2 and top_count >= (total_positions / 2) else "low"
+        return {
+            "winner": winner,
+            "ranking": ranking,
+            "confidence": confidence,
+            "caveat": "Fallback winner is inferred from repeated round positions, not from a successful moderator decision.",
+            "tasks": {},
+        }
+
+    @staticmethod
+    def _candidate_from_position(position: str) -> str | None:
+        normalized = position.lower()
+        if "사카즈키" in position or "아카이누" in position or "sakazuki" in normalized or "akainu" in normalized:
+            return "Sakazuki / Akainu"
+        if "쿠잔" in position or "아오키지" in position or "kuzan" in normalized or "aokiji" in normalized:
+            return "Kuzan / Aokiji"
+        if "보르살리노" in position or "키자루" in position or "borsalino" in normalized or "kizaru" in normalized:
+            return "Borsalino / Kizaru"
+        return None
