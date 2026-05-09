@@ -1,10 +1,10 @@
 import { bindingSummary, displayQuestion, escapeHtml, focusLabels, lensLabels, roleMeta, roundLabel, state } from "./shared.js";
 
-export function renderLive(payload) {
+export function renderLive(payload, options = {}) {
   const roles = payload.meeting.roles || [];
   const rounds = payload.meeting.debate_rounds || [];
   const live = document.querySelector("#live");
-  const shouldFollowLatest = isLiveTranscriptNearBottom(live);
+  const shouldFollowLatest = options.followLatest || isLiveTranscriptNearBottom(live);
   const messages = rounds.flatMap((round) =>
     (round.messages || []).map((message) => ({ ...message, roundTitle: roundLabel(payload.meeting, round.id, round.title) }))
   );

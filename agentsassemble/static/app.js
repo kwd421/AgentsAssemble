@@ -50,13 +50,19 @@ async function loadMeeting(meetingId) {
   const url = meetingId ? `/api/meetings/${encodeURIComponent(meetingId)}` : "/api/meetings/latest";
   const payload = await fetchJson(url);
   state.payload = payload.meeting === null ? null : payload;
+  state.payloadSignature = payloadSignature(state.payload);
   render();
 }
 
 async function refreshCurrentMeeting() {
   if (!state.payload?.meeting) return;
   const meetingId = state.payload.meeting.meeting_id;
-  await loadMeeting(meetingId);
+  const payload = await fetchJson(`/api/meetings/${encodeURIComponent(meetingId)}`);
+  const signature = payloadSignature(payload.meeting === null ? null : payload);
+  if (signature === state.payloadSignature) return;
+  state.payload = payload.meeting === null ? null : payload;
+  state.payloadSignature = signature;
+  render({ liveRefresh: true });
 }
 
 async function loadLobby() {
@@ -80,7 +86,7 @@ function setActiveTab(tabId) {
   });
 }
 
-function render() {
+function render(options = {}) {
   const payload = state.payload;
   const hasMeeting = payload && payload.meeting;
   renderLobby();
@@ -93,9 +99,14 @@ function render() {
 
   setActiveTab(state.currentTab);
   subtitle.textContent = `${displayTopic(payload.meeting)} · ${payload.meeting.meeting_id}`;
-  renderLive(payload);
+  renderLive(payload, { followLatest: options.liveRefresh && state.currentTab === "live" });
   renderBoard(payload);
   renderArchive(payload);
+}
+
+function payloadSignature(payload) {
+  if (!payload?.meeting) return "empty";
+  return JSON.stringify(payload);
 }
 
 tabs.forEach((tab) => {
