@@ -22,6 +22,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("@media (max-width: 560px)", css)
         self.assertIn("overflow-x: auto;", css)
         self.assertIn("contain: layout paint;", css)
+        self.assertIn(":focus-visible", css)
 
     def test_tabs_expose_semantic_state(self):
         html = (STATIC_DIR / "index.html").read_text()
