@@ -2715,8 +2715,17 @@ input:focus-visible {
   }
 
   .live-hero {
-    min-height: 500px;
+    min-height: 430px;
     padding: 14px;
+  }
+
+  .live-hero-title {
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .live-hero-title h2 {
+    font-size: clamp(26px, 8vw, 36px);
   }
 
   .live-statusbar,
@@ -2729,7 +2738,9 @@ input:focus-visible {
   }
 
   .live-council {
-    --seat-radius: clamp(72px, 24vw, 96px);
+    height: clamp(220px, 34vh, 300px);
+    min-height: 220px;
+    --seat-radius: clamp(62px, 21vw, 88px);
   }
 
   .seat-avatar {
