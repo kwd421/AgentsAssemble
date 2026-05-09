@@ -46,6 +46,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Provider binding groundwork records provider configs, agent bindings, capabilities, and meeting-only permissions in `meeting.json`.
 - The provider registry now includes planned capability entries for Claude/Anthropic, Gemini, Grok, Cursor, Claude Code, local OpenAI-compatible providers, and Hermes/OpenClaw-style memory packs, with unsupported adapters that fail explicitly until real integrations are implemented. Cursor and Claude Code are allowed as read-only meeting participants while implementation permissions remain gated until after `decision.md`.
 - Runtime agent config can be loaded from JSON with host-approved providers, permission profiles, agent bindings, and incoming external agent requests. Incoming agents are recorded for audit but only approved bindings execute.
+- Codex multi-role smoke has been exercised through `configs/codex-sessions.example.json`; distinct role sessions were recorded, but synthesis reliability still needs hardening for real provider output.
 
 ## V0 Remaining
 
@@ -56,6 +57,7 @@ Remaining v0 work:
 - Show Evidence Gate results clearly in the GUI archive view.
 - Exercise Claim Verifier v0 with real Codex deep research runs and tune prompt/output reliability.
 - Improve Codex deep research timeout and chunking strategy with real runs.
+- Improve Codex synthesis reliability after multi-role smoke produced a conservative `Undetermined / low confidence` fallback.
 - Add failure handling policy for role timeout, parse failure, and incomplete research.
 - Expand round templates toward user-defined meeting templates.
 - Add CLI help/docs for research depth, steering, memory files, and adapter modes.

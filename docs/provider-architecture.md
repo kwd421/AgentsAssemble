@@ -119,6 +119,12 @@ Remote or imported agents should join through explicit context and memory packet
 
 The orchestrator executes only `agent_bindings`. An `incoming_agents` entry can request a role, persona, memory pack, or permissions, but it does not participate until the host maps it into an approved binding.
 
+## Codex Multi-Session Smoke
+
+`configs/codex-sessions.example.json` has been exercised with `--adapter codex` in smoke mode. The run produced distinct Codex session ids for the three demo roles and wrote per-role Codex last-message files.
+
+Observed limitation: the final moderator synthesis can still fall back to `Undetermined / low confidence` when real Codex output is incomplete or hard to parse. Treat this as adapter reliability work, not a provider-binding failure.
+
 ## Next Implementation Slices
 
 1. Load provider configs and agent bindings from project config files.
