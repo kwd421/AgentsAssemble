@@ -472,10 +472,13 @@ function renderLive(payload) {
       </section>
       <section class="live-bottom">
         ${renderLiveTimeline(payload, messages)}
-        <main class="message-list live-transcript">
+        <main class="message-list live-transcript" aria-label="공식 토론 기록" aria-live="polite">
           <div class="feed-head">
-            <strong>토론 feed</strong>
-            <span>독립 리서치 완료 · Round 1/2 진행 기록</span>
+            <div>
+              <strong>토론 feed</strong>
+              <span>독립 리서치 완료 · Round 1/2 진행 기록</span>
+            </div>
+            <em class="record-badge">공식 기록</em>
           </div>
           ${messages.map(renderMessage).join("")}
           <article class="message message-purple message-moderator">

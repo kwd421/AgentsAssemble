@@ -47,6 +47,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("height: clamp(220px, 34vh, 300px);", css)
         self.assertIn("isLiveTranscriptNearBottom(live)", script)
         self.assertIn("scrollLiveTranscriptToLatest(live)", script)
+        self.assertIn('aria-label="공식 토론 기록"', script)
+        self.assertIn('aria-live="polite"', script)
+        self.assertIn(".record-badge", css)
 
     def test_board_cards_are_dynamic_and_scrollable(self):
         script = (STATIC_DIR / "app.js").read_text()
