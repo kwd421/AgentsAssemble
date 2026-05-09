@@ -125,6 +125,13 @@ These are intentional future ideas, not near-term commitments.
   - Use least-privilege tool grants, explicit permission gates, context firewalls, and audit logs for any remote or multi-user mode.
   - Security-specialized models or trusted cyber access may be used later for defensive review, but they do not remove the need for local permission boundaries and audit artifacts.
 - AI roster with durable personalities, memories, styles, and specialties.
+- Shareable agent memory/profile packs:
+  - A well-trained specialist agent, such as a benchmark expert, can later be exported as a reusable persona plus memory/experience package.
+  - Other users should be able to import that package and summon the agent's accumulated specialty, sources, habits, and judgment style without retraining from zero.
+  - Packs must be explicit artifacts, not raw hidden session dumps: include persona, specialty, memory summaries, source/evidence index, experience log, version, author, trust level, and permission boundaries.
+  - Imported packs should be treated as untrusted input until reviewed by a memory gate, especially for prompt injection, stale claims, private data leakage, and unsupported expertise claims.
+  - Reference candidates to study later: Hermes-style persistent memory, user modeling, and experience-to-skill accumulation; OpenClaw-style memory/profile sharing if verified from primary sources.
+  - Agents may evolve toward a user's workflow over time, but evolution should preserve the agent's recognizable role identity and remain inspectable, editable, resettable, and exportable.
 - Architecture transfer council between projects.
 - Bug war room.
 - Refactor debate.

@@ -551,13 +551,17 @@ function renderLiveCouncilRing(roles) {
     }),
     { label: "친구봇", title: "deploy", color: "purple", avatar: "/static/avatar-moderator.svg" },
   ];
+  const visibleLimit = 8;
+  const visibleMembers = members.slice(0, visibleLimit);
+  const overflowCount = Math.max(0, members.length - visibleMembers.length);
   return `
     <div class="live-council" aria-label="회의 원탁">
       <div class="council-table">
         <span>ASSEMBLE</span>
         <strong>${members.length}</strong>
       </div>
-      ${members.map((member, index) => renderLiveSeat(member, index, members.length)).join("")}
+      ${visibleMembers.map((member, index) => renderLiveSeat(member, index, visibleMembers.length)).join("")}
+      ${overflowCount ? renderLiveOverflowSeat(overflowCount) : ""}
     </div>
   `;
 }
@@ -572,6 +576,16 @@ function renderLiveSeat(member, index, total) {
       <div class="seat-avatar">${avatar}</div>
       <strong>${escapeHtml(member.label)}</strong>
       <small>${escapeHtml(member.title)}</small>
+    </div>
+  `;
+}
+
+function renderLiveOverflowSeat(count) {
+  return `
+    <div class="live-seat live-seat-overflow">
+      <div class="seat-avatar"><span>+${escapeHtml(count)}</span></div>
+      <strong>대기열</strong>
+      <small>참여자 목록</small>
     </div>
   `;
 }
