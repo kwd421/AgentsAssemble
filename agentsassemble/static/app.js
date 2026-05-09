@@ -987,8 +987,8 @@ function documentStat(value) {
 
 async function handleArchiveCommand(command, key, content, button) {
   if (command === "copy") {
-    await navigator.clipboard?.writeText(content);
-    showArchiveCommandFeedback(button, "복사됨");
+    const copied = await copyText(content);
+    showArchiveCommandFeedback(button, copied ? "복사됨" : "복사 실패", copied ? "success" : "error");
     return;
   }
   if (command === "download") {
@@ -1001,18 +1001,35 @@ async function handleArchiveCommand(command, key, content, button) {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    showArchiveCommandFeedback(button, "내보냄");
+    showArchiveCommandFeedback(button, "내보냄", "success");
   }
 }
 
-function showArchiveCommandFeedback(button, label) {
+async function copyText(content) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(content);
+    return true;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = content;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+  textarea.select();
+  const copied = document.execCommand?.("copy") || false;
+  textarea.remove();
+  return copied;
+}
+
+function showArchiveCommandFeedback(button, label, tone = "success") {
   if (!button) return;
   const original = button.textContent;
   button.textContent = label;
-  button.classList.add("is-confirmed");
+  button.classList.add(tone === "error" ? "is-error" : "is-confirmed");
   setTimeout(() => {
     button.textContent = original;
-    button.classList.remove("is-confirmed");
+    button.classList.remove("is-confirmed", "is-error");
   }, 1400);
 }
 

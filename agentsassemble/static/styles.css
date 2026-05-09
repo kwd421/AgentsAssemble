@@ -2420,6 +2420,12 @@ input:focus-visible {
   color: var(--green);
 }
 
+.archive-actions button.is-error {
+  background: rgba(255, 112, 104, 0.13);
+  border-color: var(--red-line);
+  color: var(--red);
+}
+
 .archive-preview {
   flex: 1;
   margin: 0;
