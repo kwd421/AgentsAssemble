@@ -209,12 +209,12 @@ function renderArchiveGroup(title, subtitle, keys, entries, meta) {
           <span>${escapeHtml(subtitle)} · ${keys.length}개</span>
         </div>
       </div>
-      ${keys.map((key) => renderArchiveButton(key, entries)).join("")}
+      ${keys.map(renderArchiveButton).join("")}
     </section>
   `;
 }
 
-function renderArchiveButton(key, entries) {
+function renderArchiveButton(key) {
   const label = key
     .replace("research/", "")
     .replace("tasks/", "task · ")
@@ -226,4 +226,3 @@ function renderArchiveButton(key, entries) {
     </button>
   `;
 }
-

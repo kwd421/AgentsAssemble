@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.command == "demo":
-        result = run_demo_meeting(
+        run_demo_meeting(
             adapter_name=args.adapter,
             output_root=Path(args.output_root),
             reporter=lambda message: print(message, flush=True),

@@ -145,26 +145,6 @@ function renderArtifactRow(label, filename) {
   return `<div class="artifact-row"><span>${escapeHtml(label)}</span><em>${escapeHtml(filename)}</em></div>`;
 }
 
-function renderAgent(role) {
-  const personality = role.personality || {};
-  const tone = personality.tone || role.lens || "";
-  const meta = roleMeta[role.id] || { color: "purple", title: role.lens, badge: role.lens };
-  return `
-    <article class="agent agent-${meta.color}">
-      <div class="agent-head">
-        <img class="profile profile-small" src="${escapeHtml(meta.avatar)}" alt="" />
-        <div class="agent-name">
-          <strong>${escapeHtml(role.display_name)}</strong>
-          <span>${escapeHtml(meta.title)}</span>
-        </div>
-        <em>${escapeHtml(meta.badge)}</em>
-      </div>
-      <span>${escapeHtml(role.id)}</span>
-      <small>${escapeHtml(tone)}</small>
-    </article>
-  `;
-}
-
 function renderMessage(message) {
   const meta = roleMeta[message.role_id] || { color: "purple", title: "Moderator", badge: "진행", avatar: "/static/avatar-moderator.svg" };
   const label = message.roundTitle || message.round;
@@ -437,4 +417,3 @@ function renderClaim(claim) {
     </div>
   `;
 }
-

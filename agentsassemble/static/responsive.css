@@ -14,8 +14,7 @@
 }
 
 @media (max-width: 860px) {
-  .actions,
-  .lobby-title {
+  .actions {
     align-items: stretch;
     flex-direction: column;
   }
@@ -52,8 +51,7 @@
   .lobby-form,
   .board-grid,
   .board-command,
-  .board-dashboard,
-  .board-legend {
+  .board-dashboard {
     grid-template-columns: 1fr;
   }
 

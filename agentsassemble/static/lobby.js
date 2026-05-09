@@ -199,18 +199,6 @@ function renderRosterAgent(agent, ownerKey) {
   `;
 }
 
-function renderLobbySideOptions() {
-  const current = localStorage.getItem("agentsassemble.lobbySide") || "mine";
-  return [
-    ["mine", "나"],
-    ["my-agent", "내 에이전트"],
-    ["other", "상대"],
-    ["other-agent", "상대 에이전트"],
-  ]
-    .map(([value, label]) => `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`)
-    .join("");
-}
-
 function initials(name) {
   return String(name || "?").trim().slice(0, 2).toUpperCase();
 }

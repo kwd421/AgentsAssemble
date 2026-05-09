@@ -6,12 +6,6 @@ export const state = {
   lobbyEvents: [],
 };
 
-export const roleClass = {
-  lore_lawyer: "red",
-  show_me_the_feats: "cyan",
-  fanboard_skeptic: "green",
-};
-
 export const roleMeta = {
   lore_lawyer: { color: "red", title: "공식 설정 담당", badge: "설정/정합성", avatar: "/static/avatar-lore.svg" },
   show_me_the_feats: { color: "cyan", title: "전투 묘사 담당", badge: "전적/퍼포먼스", avatar: "/static/avatar-feats.svg" },
@@ -68,4 +62,3 @@ export async function fetchJson(url, options) {
   if (!response.ok) throw new Error(`Request failed: ${response.status}`);
   return response.json();
 }
-

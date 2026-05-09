@@ -14,39 +14,14 @@ from agentsassemble.meeting_phases import (
     synthesize_meeting,
 )
 from agentsassemble.meeting_record import assemble_meeting_record
-from agentsassemble.meeting_setup import (
-    default_agent_bindings,
-    default_permissions,
-    get_adapter,
-    prepare_meeting_setup,
-    provider_config_for_adapter,
-)
+from agentsassemble.meeting_setup import prepare_meeting_setup
 from agentsassemble.memory import load_memory_context, write_memory_artifacts
 from agentsassemble.models import (
-    AgentBinding,
     MeetingResult,
-    PermissionProfile,
-    ProviderConfig,
     ResearchDepthName,
     ResearchSteering,
     get_research_depth,
 )
-
-
-def _provider_config_for_adapter(
-    adapter_name: str,
-    codex_timeout_seconds: int,
-    codex_search_enabled: bool,
-) -> ProviderConfig:
-    return provider_config_for_adapter(adapter_name, codex_timeout_seconds, codex_search_enabled)
-
-
-def _default_permissions(adapter_name: str, codex_search_enabled: bool) -> dict[str, PermissionProfile]:
-    return default_permissions(adapter_name, codex_search_enabled)
-
-
-def _default_agent_bindings(config_roles: list[object], provider_id: str) -> list[AgentBinding]:
-    return default_agent_bindings(config_roles, provider_id)
 
 
 def run_demo_meeting(

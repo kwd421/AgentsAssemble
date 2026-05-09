@@ -131,22 +131,6 @@
   margin-top: 5px;
 }
 
-.lobby-title {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: clamp(9px, calc(14px * var(--ui-scale)), 14px);
-}
-
-.lobby-title strong,
-.lobby-title span {
-  display: block;
-}
-
-.lobby-title span {
-  color: var(--muted);
-}
-
 .lobby-form {
   align-items: center;
   backdrop-filter: blur(16px);
