@@ -2410,6 +2410,14 @@ input:focus-visible {
 
 .archive-actions button {
   min-height: 28px;
+  min-width: 58px;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.archive-actions button.is-confirmed {
+  background: rgba(130, 209, 115, 0.13);
+  border-color: var(--green-line);
+  color: var(--green);
 }
 
 .archive-preview {

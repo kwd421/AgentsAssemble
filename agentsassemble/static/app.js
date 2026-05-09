@@ -975,7 +975,7 @@ function renderArchive(payload) {
     });
   });
   archive.querySelectorAll("[data-archive-command]").forEach((button) => {
-    button.addEventListener("click", () => handleArchiveCommand(button.dataset.archiveCommand, state.archiveKey, currentDocument));
+    button.addEventListener("click", () => handleArchiveCommand(button.dataset.archiveCommand, state.archiveKey, currentDocument, button));
   });
 }
 
@@ -985,9 +985,10 @@ function documentStat(value) {
   return `${lines} lines · ${text.length} chars`;
 }
 
-async function handleArchiveCommand(command, key, content) {
+async function handleArchiveCommand(command, key, content, button) {
   if (command === "copy") {
     await navigator.clipboard?.writeText(content);
+    showArchiveCommandFeedback(button, "복사됨");
     return;
   }
   if (command === "download") {
@@ -1000,7 +1001,19 @@ async function handleArchiveCommand(command, key, content) {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+    showArchiveCommandFeedback(button, "내보냄");
   }
+}
+
+function showArchiveCommandFeedback(button, label) {
+  if (!button) return;
+  const original = button.textContent;
+  button.textContent = label;
+  button.classList.add("is-confirmed");
+  setTimeout(() => {
+    button.textContent = original;
+    button.classList.remove("is-confirmed");
+  }, 1400);
 }
 
 function archiveDownloadName(key) {
