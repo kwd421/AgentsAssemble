@@ -214,7 +214,7 @@ Suggested layout:
 
 ```text
 AgentsAssemble
-[실황] [작전판] [아카이브]        [Run Mock Demo]
+[로비] [실황] [작전판] [아카이브]        [Run Mock Demo]
 
 <selected tab content>
 ```
@@ -238,7 +238,8 @@ Current performance guardrails:
 - `assemble gui` starts a local server.
 - The browser UI opens or prints the local URL.
 - The UI can start a mock demo.
-- After demo completion, all three tabs show useful content from the generated meeting artifacts.
+- After demo completion, all four tabs show useful content from the generated meeting artifacts and lobby state.
+- `로비` shows informal owner/agent staging activity without presenting it as the official meeting transcript.
 - `실황` shows chronological council messages/events.
 - `작전판` shows structured research, claims, rebuttals, and synthesis.
 - `아카이브` shows readable artifact previews.

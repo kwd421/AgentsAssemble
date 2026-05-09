@@ -73,10 +73,13 @@ class StaticUiAssetTests(unittest.TestCase):
     def test_tabs_expose_semantic_state(self):
         html = (STATIC_DIR / "index.html").read_text()
         script = (STATIC_DIR / "app.js").read_text()
+        spec = (ROOT / "docs" / "gui-v0-spec.md").read_text()
 
         self.assertIn('role="tablist"', html)
         self.assertEqual(html.count('role="tab"'), 4)
         self.assertEqual(html.count('role="tabpanel"'), 4)
+        self.assertIn("all four tabs", spec)
+        self.assertIn("[로비] [실황] [작전판] [아카이브]", spec)
         self.assertIn('aria-selected="true"', html)
         self.assertEqual(html.count('tabindex="-1"'), 3)
         self.assertIn('tabindex="0"', html)
