@@ -617,6 +617,7 @@ button {
 .lobby-event {
   align-items: start;
   color: #f0ede5;
+  contain: layout paint;
   display: grid;
   gap: 8px;
   grid-template-columns: clamp(26px, calc(32px * var(--ui-scale)), 34px) minmax(0, 1fr);
@@ -1727,6 +1728,7 @@ button {
   border: 1px solid var(--line);
   background: rgba(24, 28, 39, 0.78);
   border-radius: 12px;
+  contain: layout paint;
   display: grid;
   gap: clamp(7px, calc(9px * var(--ui-scale)), 9px);
   grid-template-columns: clamp(32px, calc(38px * var(--ui-scale)), 38px) minmax(0, 1fr);
@@ -1931,6 +1933,7 @@ button {
 }
 
 .board-card {
+  contain: layout paint;
   min-width: 0;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
@@ -2258,6 +2261,10 @@ button {
   border-top: 1px solid var(--line);
   margin-top: 12px;
   padding-top: 12px;
+}
+
+.archive-group {
+  contain: layout paint;
 }
 
 .archive-group-title {
