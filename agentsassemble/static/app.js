@@ -119,8 +119,16 @@ async function loadLobby() {
 
 function setActiveTab(tabId) {
   state.currentTab = tabId;
-  tabs.forEach((tab) => tab.classList.toggle("is-active", tab.dataset.tab === tabId));
-  panels.forEach((panel) => panel.classList.toggle("is-active", panel.id === tabId));
+  tabs.forEach((tab) => {
+    const isActive = tab.dataset.tab === tabId;
+    tab.classList.toggle("is-active", isActive);
+    tab.setAttribute("aria-selected", String(isActive));
+  });
+  panels.forEach((panel) => {
+    const isActive = panel.id === tabId;
+    panel.classList.toggle("is-active", isActive);
+    panel.hidden = !isActive;
+  });
 }
 
 function render() {

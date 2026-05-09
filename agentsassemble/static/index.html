@@ -30,11 +30,11 @@
         </div>
       </header>
 
-      <nav class="tabs" aria-label="회의 보기">
-        <button class="tab is-active" data-tab="lobby" type="button">로비</button>
-        <button class="tab" data-tab="live" type="button">실황</button>
-        <button class="tab" data-tab="board" type="button">작전판</button>
-        <button class="tab" data-tab="archive" type="button">아카이브</button>
+      <nav class="tabs" aria-label="회의 보기" role="tablist">
+        <button class="tab is-active" data-tab="lobby" id="tab-lobby" role="tab" aria-controls="lobby" aria-selected="true" type="button">로비</button>
+        <button class="tab" data-tab="live" id="tab-live" role="tab" aria-controls="live" aria-selected="false" type="button">실황</button>
+        <button class="tab" data-tab="board" id="tab-board" role="tab" aria-controls="board" aria-selected="false" type="button">작전판</button>
+        <button class="tab" data-tab="archive" id="tab-archive" role="tab" aria-controls="archive" aria-selected="false" type="button">아카이브</button>
       </nav>
 
       <section id="empty-state" class="empty">
@@ -42,10 +42,10 @@
         <p>Mock Demo를 실행하면 설정충, 공식이뭘알아, 만갤러가 회의를 시작합니다.</p>
       </section>
 
-      <section id="lobby" class="panel is-active"></section>
-      <section id="live" class="panel"></section>
-      <section id="board" class="panel"></section>
-      <section id="archive" class="panel"></section>
+      <section id="lobby" class="panel is-active" role="tabpanel" aria-labelledby="tab-lobby"></section>
+      <section id="live" class="panel" role="tabpanel" aria-labelledby="tab-live" hidden></section>
+      <section id="board" class="panel" role="tabpanel" aria-labelledby="tab-board" hidden></section>
+      <section id="archive" class="panel" role="tabpanel" aria-labelledby="tab-archive" hidden></section>
     </main>
     <script src="/static/app.js"></script>
   </body>
