@@ -15,7 +15,7 @@ class CodexAdapter(ProviderAdapter):
 
     def __init__(
         self,
-        timeout_seconds: int = 240,
+        timeout_seconds: int | None = None,
         command_runner: Any | None = None,
         search_enabled: bool = True,
     ) -> None:

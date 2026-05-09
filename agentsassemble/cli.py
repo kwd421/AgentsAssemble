@@ -7,6 +7,15 @@ from agentsassemble.gui import serve_gui
 from agentsassemble.meeting import run_demo_meeting
 
 
+def parse_codex_timeout(value: str) -> int | None:
+    if value.casefold() in {"none", "off", "unlimited", "0"}:
+        return None
+    timeout = int(value)
+    if timeout < 0:
+        raise argparse.ArgumentTypeError("timeout must be positive, 0, or none")
+    return timeout
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="assemble")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -14,7 +23,12 @@ def build_parser() -> argparse.ArgumentParser:
     demo = subparsers.add_parser("demo", help="Run the canned v0 council demo.")
     demo.add_argument("--adapter", choices=["mock", "codex"], default="mock")
     demo.add_argument("--output-root", default=".agentsassemble")
-    demo.add_argument("--codex-timeout", type=int, default=240)
+    demo.add_argument(
+        "--codex-timeout",
+        type=parse_codex_timeout,
+        default=None,
+        help="Seconds per Codex call. Use 'none' or omit for no forced timeout.",
+    )
     demo.add_argument("--no-codex-search", action="store_true")
     demo.add_argument("--research-depth", choices=["smoke", "standard", "deep"], default="smoke")
     demo.add_argument("--agent-config", default=None, help="Optional JSON file with host-approved providers, permissions, and agent bindings.")

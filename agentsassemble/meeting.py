@@ -29,7 +29,7 @@ def run_demo_meeting(
     adapter_name: str = "mock",
     output_root: Path | None = None,
     reporter: Callable[[str], None] | None = None,
-    codex_timeout_seconds: int = 240,
+    codex_timeout_seconds: int | None = None,
     codex_search_enabled: bool = True,
     research_depth: ResearchDepthName = "smoke",
     research_steering: str | None = None,

@@ -293,8 +293,10 @@ function userVisibleSummary(text) {
 
 function hasInternalDiagnostics(text) {
   return [
+    "Codex moderator synthesis did not return parseable JSON",
     "parseable JSON",
     "local fallback",
+    "Local fallback decision",
     "Evidence Gate status",
     "turn/start failed",
     "Input exceeds",

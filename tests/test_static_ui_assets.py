@@ -80,6 +80,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function confidenceLabel", script)
         self.assertIn("function userVisibleSummary", script)
         self.assertIn("function highlightImportant", script)
+        self.assertIn("Codex moderator synthesis did not return parseable JSON", script)
         self.assertIn(".latest-jump", css)
         self.assertIn(".system-line", css)
         self.assertIn(".research-card", css)
