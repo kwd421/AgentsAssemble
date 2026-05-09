@@ -15,6 +15,7 @@ from agentsassemble.meeting_phases import (
 )
 from agentsassemble.meeting_record import assemble_meeting_record
 from agentsassemble.meeting_setup import prepare_meeting_setup
+from agentsassemble.meeting_events import MeetingEventLog
 from agentsassemble.memory import load_memory_context, write_memory_artifacts
 from agentsassemble.models import (
     MeetingResult,
@@ -49,6 +50,7 @@ def run_demo_meeting(
         codex_timeout_seconds,
         codex_search_enabled,
     )
+    event_log = MeetingEventLog()
     root = output_root or Path(".agentsassemble")
     memory_context = load_memory_context(root, config.roles)
     meeting_id = f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}"
@@ -63,6 +65,14 @@ def run_demo_meeting(
     )
     if not steering.is_open:
         report(f"Research steering: {steering.prompt}")
+    event_log.add(
+        "meeting_started",
+        "Meeting created.",
+        meeting_id=meeting_id,
+        adapter=adapter_name,
+        research_depth=depth.name,
+        research_steering=steering.to_dict(),
+    )
 
     context = {
         "meeting_id": meeting_id,
@@ -84,6 +94,7 @@ def run_demo_meeting(
         setup.resolved_agents,
         report,
     )
+    event_log.add("role_sessions_started", "Role sessions prepared.", role_count=len(sessions))
     research_records, evidence_gate = run_research_phase(
         config,
         meeting_dir,
@@ -93,6 +104,12 @@ def run_demo_meeting(
         steering,
         report,
     )
+    event_log.add(
+        "research_completed",
+        "Independent research completed.",
+        role_count=len(research_records),
+        evidence_gate_status=evidence_gate.get("status"),
+    )
     debate_rounds = run_debate_phase(
         config,
         sessions,
@@ -101,6 +118,7 @@ def run_demo_meeting(
         evidence_gate,
         report,
     )
+    event_log.add("debate_completed", "Debate rounds completed.", round_count=len(debate_rounds))
     synthesis = synthesize_meeting(
         setup.moderator_adapter,
         meeting_id,
@@ -110,6 +128,12 @@ def run_demo_meeting(
         debate_rounds,
         evidence_gate,
         report,
+    )
+    event_log.add(
+        "synthesis_completed",
+        "Moderator synthesis completed.",
+        winner=synthesis.get("winner"),
+        confidence=synthesis.get("confidence"),
     )
 
     meeting = assemble_meeting_record(
@@ -126,9 +150,12 @@ def run_demo_meeting(
         evidence_gate=evidence_gate,
         depth=depth,
         steering=steering,
+        event_log=event_log.to_list(),
     )
     meeting["memory_artifacts"] = write_memory_artifacts(root, meeting)
     meeting["artifacts"]["memory"] = "memory/"
+    event_log.add("artifacts_written", "Public artifacts written.", meeting_dir=str(meeting_dir))
+    meeting["event_log"] = event_log.to_list()
     write_public_artifacts(meeting_dir, meeting)
     report(f"Decision: {synthesis['winner']} ({synthesis['confidence']} confidence)")
     report(f"Artifacts: {meeting_dir}")

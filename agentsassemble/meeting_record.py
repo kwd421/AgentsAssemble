@@ -22,6 +22,7 @@ def assemble_meeting_record(
     evidence_gate: dict[str, Any],
     depth: ResearchDepth,
     steering: ResearchSteering,
+    event_log: list[dict[str, object]] | None = None,
 ) -> dict[str, Any]:
     memory_input = {
         "research_summaries": [
@@ -109,6 +110,7 @@ def assemble_meeting_record(
             for research in research_records
         ],
         "debate_rounds": debate_rounds,
+        "event_log": event_log or [],
         "moderator_synthesis": synthesis,
         "evidence_gate": evidence_gate,
         "artifacts": {

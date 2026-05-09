@@ -8,10 +8,10 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.meeting_events import append_lobby_event_to_file, read_lobby_events
 
 TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
 TABS = ["lobby", "live", "board", "archive"]
-LOBBY_SIDES = {"mine", "my-agent", "other", "other-agent"}
 
 
 def list_meetings(output_root: Path) -> list[dict[str, object]]:
@@ -98,46 +98,11 @@ def _read_optional(path: Path) -> str:
 
 
 def read_lobby(output_root: Path, limit: int = 80) -> list[dict[str, object]]:
-    path = output_root / "lobby.jsonl"
-    if not path.exists():
-        return []
-    entries = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(entry, dict):
-            entries.append(entry)
-    return entries[-limit:]
+    return read_lobby_events(output_root / "lobby.jsonl", limit=limit)
 
 
 def append_lobby_event(output_root: Path, event: dict[str, object]) -> dict[str, object]:
-    from datetime import UTC, datetime
-    from uuid import uuid4
-
-    output_root.mkdir(parents=True, exist_ok=True)
-    entry = {
-        "id": uuid4().hex[:12],
-        "created_at": datetime.now(UTC).isoformat(),
-        "name": _clean_lobby_text(event.get("name", "guest"), limit=32) or "guest",
-        "side": event.get("side") if event.get("side") in LOBBY_SIDES else "other",
-        "kind": event.get("kind") if event.get("kind") in {"message", "ready", "deploy"} else "message",
-        "message": _clean_lobby_text(event.get("message", ""), limit=240),
-    }
-    if entry["kind"] == "ready" and not entry["message"]:
-        entry["message"] = "준비됐습니다."
-    if entry["kind"] == "deploy" and not entry["message"]:
-        entry["message"] = "deploy 대기 상태로 전환했습니다."
-    with (output_root / "lobby.jsonl").open("a", encoding="utf-8") as file:
-        file.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
-    return entry
-
-
-def _clean_lobby_text(value: object, limit: int) -> str:
-    return str(value or "").replace("\n", " ").replace("\r", " ").strip()[:limit]
+    return append_lobby_event_to_file(output_root / "lobby.jsonl", event)
 
 
 def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:

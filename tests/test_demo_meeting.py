@@ -39,6 +39,18 @@ class DemoMeetingTests(unittest.TestCase):
                 ["round_1", "round_2"],
             )
             self.assertEqual(meeting["evidence_gate"]["status"], "pass")
+            self.assertEqual(
+                [event["kind"] for event in meeting["event_log"]],
+                [
+                    "meeting_started",
+                    "role_sessions_started",
+                    "research_completed",
+                    "debate_completed",
+                    "synthesis_completed",
+                    "artifacts_written",
+                ],
+            )
+            self.assertEqual(meeting["event_log"][2]["payload"]["evidence_gate_status"], "pass")
             self.assertEqual(meeting["question"], "Who is the strongest One Piece admiral?")
             self.assertEqual(
                 [role["id"] for role in meeting["roles"]],
