@@ -1,4 +1,4 @@
-import { bindingSummary, displayTopic, escapeHtml, fetchJson, roleMeta, state } from "./shared.js";
+import { bindingSummary, displayTopic, escapeHtml, fetchJson, roleMeta, setLobbyEvents, state } from "./shared.js";
 
 const lobbySides = new Set(["mine", "my-agent", "other", "other-agent"]);
 
@@ -261,7 +261,7 @@ async function sendLobbyEvent(kind) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, side, kind, message }),
   });
-  state.lobbyEvents = payload.events || [];
+  setLobbyEvents(payload.events || []);
   if (messageInput) messageInput.value = "";
   renderLobby();
 }
@@ -277,7 +277,7 @@ async function sendLobbyAction(button) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, side, kind, message: "" }),
   });
-  state.lobbyEvents = payload.events || [];
+  setLobbyEvents(payload.events || []);
   renderLobby();
 }
 

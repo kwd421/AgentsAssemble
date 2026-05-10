@@ -54,6 +54,12 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function renderApprovedBindings", script)
         self.assertIn('aria-label="승인된 본회의 에이전트"', script)
         self.assertIn(".approved-bindings", css)
+        self.assertIn("function lobbyEventsSignature", script)
+        self.assertIn("state.lobbySignature", script)
+        self.assertIn("onlyIfChanged", script)
+        self.assertIn("setLobbyEvents(payload.events || [])", script)
+        self.assertIn("padding: 10px clamp(12px", css)
+        self.assertIn("max-width: calc(67.5% - 8px);", css)
 
     def test_live_view_prioritizes_official_chat(self):
         script = static_js()

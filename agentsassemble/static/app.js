@@ -1,7 +1,14 @@
 import { renderArchive } from "./archive.js";
 import { renderLobby } from "./lobby.js";
 import { renderBoard, renderLive } from "./meeting-views.js";
-import { displayTopic, fetchJson, meetingStatusLabel, state } from "./shared.js";
+import {
+  displayTopic,
+  fetchJson,
+  lobbyEventsSignature,
+  meetingStatusLabel,
+  setLobbyEvents,
+  state,
+} from "./shared.js";
 
 const tabs = document.querySelectorAll(".tab");
 const panels = document.querySelectorAll(".panel");
@@ -74,15 +81,18 @@ async function refreshCurrentMeetingSafely() {
   }
 }
 
-async function loadLobby() {
+async function loadLobby(options = {}) {
   const payload = await fetchJson("/api/lobby");
-  state.lobbyEvents = payload.events || [];
+  const events = payload.events || [];
+  const signature = lobbyEventsSignature(events);
+  if (options.onlyIfChanged && signature === state.lobbySignature) return;
+  setLobbyEvents(events);
   renderLobby();
 }
 
 async function loadLobbySafely() {
   try {
-    await loadLobby();
+    await loadLobby({ onlyIfChanged: true });
   } catch {
     showAppStatus("로비 갱신 대기 중", "info");
   }

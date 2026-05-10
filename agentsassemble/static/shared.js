@@ -4,6 +4,7 @@ export const state = {
   payload: null,
   archiveKey: "decision.md",
   lobbyEvents: [],
+  lobbySignature: "[]",
 };
 
 export const roleMeta = {
@@ -70,6 +71,15 @@ export async function fetchJson(url, options) {
   const response = await fetch(url, options);
   if (!response.ok) throw new Error(`Request failed: ${response.status}`);
   return response.json();
+}
+
+export function lobbyEventsSignature(events) {
+  return JSON.stringify(events || []);
+}
+
+export function setLobbyEvents(events) {
+  state.lobbyEvents = events || [];
+  state.lobbySignature = lobbyEventsSignature(state.lobbyEvents);
 }
 
 export function bindingForRole(meeting, roleId) {
