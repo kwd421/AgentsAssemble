@@ -1,0 +1,147 @@
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from agentsassemble.adapters.base import ProviderAdapter
+from agentsassemble.adapters.registry import ProviderCapabilities, default_provider_registry
+from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.meeting_phases import run_research_phase
+from agentsassemble.models import CouncilConfig, ResearchDepth, ResearchSteering, Role
+
+
+class MaybeFailingResearchAdapter:
+    def __init__(self, should_fail=False):
+        self.should_fail = should_fail
+
+    def run_research(self, role, session, question, depth, steering):
+        if self.should_fail:
+            raise RuntimeError("provider unavailable")
+        return {
+            "role_id": role.id,
+            "display_name": role.display_name,
+            "queries": ["q"],
+            "sources": [],
+            "summary": f"{role.display_name} completed research.",
+            "confidence": "medium",
+            "uncertainty": "",
+            "claim_evidence": [],
+            "counterclaims": [],
+        }
+
+
+class PartialFailureTests(unittest.TestCase):
+    def test_research_phase_records_failed_role_and_continues(self):
+        roles = [
+            Role("role_a", "A", "Lens", "focus"),
+            Role("role_b", "B", "Lens", "focus"),
+            Role("role_c", "C", "Lens", "focus"),
+        ]
+        config = CouncilConfig("topic", "topic", "question", "question", roles)
+        depth = ResearchDepth("smoke", "Smoke", 0, 0, 0, 0, 0, 0, "", "")
+        resolved_agents = {
+            "role_a": SimpleNamespace(adapter=MaybeFailingResearchAdapter()),
+            "role_b": SimpleNamespace(adapter=MaybeFailingResearchAdapter(should_fail=True)),
+            "role_c": SimpleNamespace(adapter=MaybeFailingResearchAdapter()),
+        }
+        sessions = {role.id: {"session_id": role.id} for role in roles}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            research_records, evidence_gate = run_research_phase(
+                config,
+                Path(temp_dir),
+                sessions,
+                resolved_agents,
+                depth,
+                ResearchSteering(),
+                lambda _message: None,
+            )
+
+        self.assertEqual([record["role_id"] for record in research_records], ["role_a", "role_b", "role_c"])
+        failed = research_records[1]
+        self.assertEqual(failed["status"], "failed")
+        self.assertIn("provider unavailable", failed["summary"])
+        self.assertEqual(evidence_gate["status"], "warn")
+        self.assertIn("role_b:research_failed", evidence_gate["failures"])
+
+    def test_full_meeting_continues_when_one_research_adapter_fails(self):
+        class OneRoleFailingAdapter(ProviderAdapter):
+            name = "one_role_failing"
+
+            def start_session(self, role, meeting_context):
+                return {"role_id": role.id, "session_id": role.id}
+
+            def run_research(self, role, session, question, depth, steering):
+                if role.id == "show_me_the_feats":
+                    raise RuntimeError("provider unavailable")
+                return MaybeFailingResearchAdapter().run_research(role, session, question, depth, steering)
+
+            def run_round(self, role, session, round_name, prompt, public_context):
+                return {
+                    "role_id": role.id,
+                    "display_name": role.display_name,
+                    "round": round_name,
+                    "content": f"{role.display_name}: {round_name} 발언",
+                    "position": "조건부",
+                    "stance_status": "held",
+                    "change_conditions": [],
+                    "confidence": "medium",
+                }
+
+            def synthesize(self, session, question, public_context):
+                return {
+                    "winner": "Undetermined",
+                    "ranking": [],
+                    "confidence": "low",
+                    "caveats": ["one role failed research"],
+                    "summary": "일부 역할 실패로 결론을 보류합니다.",
+                    "tasks": {},
+                }
+
+        def registry_with_failing_adapter(*args, **kwargs):
+            registry = default_provider_registry(*args, **kwargs)
+            registry.register(
+                "one_role_failing",
+                lambda _provider: OneRoleFailingAdapter(),
+                ProviderCapabilities(
+                    supports_research=True,
+                    supports_web_search=False,
+                    supports_tools=False,
+                    supports_filesystem=False,
+                    supports_session_resume=False,
+                    supports_structured_output=True,
+                ),
+            )
+            return registry
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            agent_config = root / "agents.json"
+            agent_config.write_text(
+                """
+{
+  "providers": [{"id": "failing", "kind": "one_role_failing", "display_name": "Failing"}],
+  "permission_profiles": [{"id": "read_only"}],
+  "agent_bindings": [
+    {"agent_id": "a", "role_id": "lore_lawyer", "provider_id": "failing", "permission_profile_id": "read_only"},
+    {"agent_id": "b", "role_id": "show_me_the_feats", "provider_id": "failing", "permission_profile_id": "read_only"},
+    {"agent_id": "c", "role_id": "fanboard_skeptic", "provider_id": "failing", "permission_profile_id": "read_only"}
+  ]
+}
+""",
+                encoding="utf-8",
+            )
+            with patch("agentsassemble.meeting_setup.default_provider_registry", registry_with_failing_adapter):
+                result = run_demo_meeting(adapter_name="mock", output_root=root, agent_config_path=agent_config)
+            meeting = __import__("json").loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+
+        failed_summary = meeting["memory_input"]["research_summaries"][1]
+        self.assertEqual(failed_summary["role_id"], "show_me_the_feats")
+        self.assertEqual(failed_summary["evidence_gate"]["failures"], ["research_failed"])
+        self.assertEqual(meeting["evidence_gate"]["status"], "warn")
+        self.assertEqual(meeting["decision_status"]["status"], "partial")
+
+
+if __name__ == "__main__":
+    unittest.main()

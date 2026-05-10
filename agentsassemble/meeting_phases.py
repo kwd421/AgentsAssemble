@@ -73,7 +73,10 @@ def run_research_phase(
     with executor:
         for future in as_completed(futures):
             role = futures[future]
-            research = future.result()
+            try:
+                research = future.result()
+            except Exception as error:
+                research = failed_research_record(role, error, depth, steering)
             research_by_role[role.id] = research
             if live_event is not None:
                 live_event(
@@ -87,6 +90,51 @@ def run_research_phase(
                 )
     research_records = [research_by_role[role.id] for role in config.roles]
     return research_records, summarize_evidence_gates(research_records)
+
+
+def failed_research_record(
+    role: Any,
+    error: Exception,
+    depth: ResearchDepth,
+    steering: ResearchSteering,
+) -> dict[str, Any]:
+    message = f"Research failed for {role.display_name}: {error}"
+    return {
+        "role_id": role.id,
+        "display_name": role.display_name,
+        "status": "failed",
+        "research_steering": steering.to_dict(),
+        "research_depth": {
+            "name": depth.name,
+            "label": depth.label,
+            "min_sources": depth.min_sources,
+            "target_sources": depth.target_sources,
+            "min_queries": depth.min_queries,
+            "min_claims": depth.min_claims,
+            "min_counterclaims": depth.min_counterclaims,
+            "notes_per_source": depth.notes_per_source,
+        },
+        "queries": [],
+        "sources": [],
+        "summary": message,
+        "confidence": "low",
+        "uncertainty": "Provider or adapter failed before producing research.",
+        "claim_evidence": [],
+        "counterclaims": [],
+        "rejected_claims": [],
+        "evidence_gate": {
+            "status": "warn",
+            "supported_claim_count": 0,
+            "unsupported_claim_count": 0,
+            "weak_claim_count": 0,
+            "verifier_rejected_claim_count": 0,
+            "claim_verification_count": 0,
+            "source_count": 0,
+            "failures": ["research_failed"],
+            "confidence_before": "low",
+            "confidence_after": "low",
+        },
+    }
 
 
 def run_debate_phase(
