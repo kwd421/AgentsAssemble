@@ -152,6 +152,10 @@ class DecisionContextTests(unittest.TestCase):
                 "fallback": "local_synthesis",
                 "status": "degraded",
             },
+            "decision_status": {
+                "status": "partial",
+                "next_actions": ["Run another round or request a user decision."],
+            },
             "evidence_gate": {"status": "warn"},
         }
 
@@ -159,6 +163,8 @@ class DecisionContextTests(unittest.TestCase):
         transcript = render_transcript(meeting)
 
         self.assertIn("아카이누", decision)
+        self.assertIn("Decision Status", decision)
+        self.assertIn("partial", decision)
         self.assertNotIn("parseable JSON", decision)
         self.assertNotIn("Input exceeds", decision)
         self.assertNotIn("parseable JSON", transcript)

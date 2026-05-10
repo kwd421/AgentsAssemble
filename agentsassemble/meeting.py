@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from agentsassemble.artifacts import write_agenda, write_public_artifacts
 from agentsassemble.config import load_council_config
+from agentsassemble.decision_status import derive_decision_status
 from agentsassemble.meeting_phases import (
     run_debate_phase,
     run_research_phase,
@@ -208,6 +209,7 @@ def run_demo_meeting(
         steering=steering,
         event_log=event_log.to_list(),
     )
+    meeting["decision_status"] = derive_decision_status(synthesis, evidence_gate)
     meeting["memory_artifacts"] = write_memory_artifacts(root, meeting)
     meeting["artifacts"]["memory"] = "memory/"
     event_log.add("artifacts_written", "Public artifacts written.", meeting_dir=str(meeting_dir))

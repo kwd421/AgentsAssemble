@@ -49,6 +49,8 @@ class DemoMeetingTests(unittest.TestCase):
                 ["round_1", "round_2"],
             )
             self.assertEqual(meeting["evidence_gate"]["status"], "pass")
+            self.assertEqual(meeting["decision_status"]["status"], "partial")
+            self.assertIn("next_actions", meeting["decision_status"])
             self.assertEqual(
                 [event["kind"] for event in meeting["event_log"]],
                 [
