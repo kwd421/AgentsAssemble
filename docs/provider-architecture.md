@@ -42,13 +42,14 @@ The default registry exposes provider kinds with explicit capability snapshots:
 - `grok`
 - `local_openai_compatible`
 - `remote_http_bridge`
+- `local_cli`
 - `cursor`
 - `claude_code`
 - `hermes_memory`
 - `openclaw_memory`
 - `memory_pack`
 
-`anthropic`, `gemini`, `grok`, `local_openai_compatible`, and `remote_http_bridge` have meeting adapters. `cursor` and `claude_code` remain implementation-phase planned providers; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
+`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, and `local_cli` have meeting adapters. `cursor` and `claude_code` remain implementation-phase planned providers; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
 ## Provider Families
 
@@ -117,6 +118,24 @@ Bridge readiness has two verification levels:
 - Real friend readiness: only a real remote machine can verify the friend's Claude Code login state, reachable Tailscale/LAN/port-forward address, firewall rules, token sharing, latency, and whether the friend's live model follows the read-only meeting contract.
 
 Do not report a friend bridge as fully verified unless both levels have been checked.
+
+### Local CLI Meeting Providers
+
+Use `local_cli` when a local command can accept a prompt on stdin and return a JSON response on stdout. This is the local "delegate session" foundation for Codex-like, Claude Code-like, Gemini CLI-like, or other shell-driven participants when they are used as read-only council speakers.
+
+Example provider config:
+
+```json
+{
+  "id": "gemini-cli",
+  "kind": "local_cli",
+  "display_name": "Gemini CLI",
+  "command": ["gemini", "--prompt"],
+  "timeout_seconds": 300
+}
+```
+
+Local readiness can be verified with a fake command runner or a local smoke script. Real provider readiness still requires the user's actual CLI installation, login state, model availability, and billing/subscription state.
 
 ### Memory/Profile Pack Providers
 
