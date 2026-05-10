@@ -118,7 +118,6 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("공식 발언", script)
         self.assertIn("중단됨", script)
         self.assertIn("meetingStatusLabel", script)
-        self.assertIn("reaction: \"짧은 반응\"", script)
         self.assertIn(".live-event-bubble", css)
         self.assertIn('class="side-chat-panel"', script)
         self.assertIn("/api/side-chat", script)

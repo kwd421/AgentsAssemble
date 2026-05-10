@@ -344,7 +344,6 @@ function eventKindLabel(kind) {
     synthesis: "종합",
     artifact: "산출물",
     message: "발언",
-    reaction: "짧은 반응",
   }[kind] || "상태";
 }
 

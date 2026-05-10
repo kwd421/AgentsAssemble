@@ -29,7 +29,7 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertEqual(meeting["adapter_config"]["name"], "mock")
             self.assertEqual(meeting["live_status"], "complete")
             self.assertTrue(any(event["kind"] == "message" for event in live_events))
-            self.assertTrue(any(event["kind"] == "reaction" for event in live_events))
+            self.assertFalse(any(event["kind"] == "reaction" for event in live_events))
             self.assertTrue(any(event["kind"] == "synthesis" for event in live_events))
             self.assertEqual(meeting["provider_configs"]["mock"]["kind"], "mock")
             self.assertEqual(meeting["provider_configs"]["mock"]["display_name"], "Mock Demo")
