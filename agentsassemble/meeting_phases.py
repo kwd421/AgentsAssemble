@@ -77,6 +77,7 @@ def run_research_phase(
                 research = future.result()
             except Exception as error:
                 research = failed_research_record(role, error, depth, steering)
+                write_research(meeting_dir, research)
             research_by_role[role.id] = research
             if live_event is not None:
                 live_event(
