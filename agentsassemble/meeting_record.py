@@ -29,6 +29,7 @@ def assemble_meeting_record(
             {
                 "role_id": research["role_id"],
                 "display_name": research["display_name"],
+                "status": research.get("status", "complete"),
                 "summary": research["summary"],
                 "confidence": research["confidence"],
                 "evidence_gate": research.get("evidence_gate", {}),

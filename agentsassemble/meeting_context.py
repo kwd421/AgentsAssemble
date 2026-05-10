@@ -111,6 +111,7 @@ def _decision_research_summary(research: dict[str, Any]) -> dict[str, Any]:
     return {
         "role_id": research.get("role_id"),
         "display_name": research.get("display_name"),
+        "status": research.get("status", "complete"),
         "summary": research.get("summary", ""),
         "confidence": research.get("confidence", "low"),
         "supported_claims": _limit_items(research.get("claim_evidence", []), 5),

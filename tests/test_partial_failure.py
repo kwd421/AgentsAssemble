@@ -136,12 +136,17 @@ class PartialFailureTests(unittest.TestCase):
                 result = run_demo_meeting(adapter_name="mock", output_root=root, agent_config_path=agent_config)
             meeting = __import__("json").loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
             failed_research_path = result.meeting_dir / "private_research" / "show_me_the_feats" / "research.json"
+            failed_packet_path = result.meeting_dir / "return_packets" / "show_me_the_feats.json"
             self.assertTrue(failed_research_path.exists())
+            self.assertTrue(failed_packet_path.exists())
             failed_research = __import__("json").loads(failed_research_path.read_text(encoding="utf-8"))
+            failed_packet = __import__("json").loads(failed_packet_path.read_text(encoding="utf-8"))
 
         failed_summary = meeting["memory_input"]["research_summaries"][1]
         self.assertEqual(failed_summary["role_id"], "show_me_the_feats")
         self.assertEqual(failed_research["status"], "failed")
+        self.assertEqual(failed_packet["research_status"], "failed")
+        self.assertIn("Redo failed research before making implementation decisions.", failed_packet["handoff_checklist"])
         self.assertEqual(failed_summary["evidence_gate"]["failures"], ["research_failed"])
         self.assertEqual(meeting["evidence_gate"]["status"], "warn")
         self.assertEqual(meeting["decision_status"]["status"], "partial")

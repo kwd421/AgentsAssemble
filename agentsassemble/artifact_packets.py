@@ -26,6 +26,8 @@ def build_return_packet(meeting: dict[str, Any], role: dict[str, Any]) -> dict[s
             "rationale": synthesis.get("summary", ""),
             "caveats": synthesis.get("caveats", []),
         },
+        "decision_status": meeting.get("decision_status", {"status": "unknown", "next_actions": []}),
+        "follow_up": meeting.get("follow_up", {"parent_meeting_id": None, "note": None}),
         "stance": {
             "final_position": final_position,
             "status": stance_status,
@@ -41,6 +43,7 @@ def build_return_packet(meeting: dict[str, Any], role: dict[str, Any]) -> dict[s
                 for message in role_messages
             ],
         },
+        "research_status": research.get("status", "complete"),
         "evidence": {
             "gate": research.get("evidence_gate", {}),
             "supported_claims": research.get("claim_evidence", []),
@@ -49,6 +52,7 @@ def build_return_packet(meeting: dict[str, Any], role: dict[str, Any]) -> dict[s
             "verifier_rejected_claims": research.get("verifier_rejected_claims", []),
         },
         "next_task": task,
+        "handoff_checklist": _handoff_checklist(meeting, research, task),
         "answer_prompts": {
             "what_happened": "Summarize the meeting from this agent's perspective.",
             "why_win_or_lose": "Explain whether this agent's stance won, lost, partially held, or remained unresolved.",
@@ -60,6 +64,8 @@ def build_return_packet(meeting: dict[str, Any], role: dict[str, Any]) -> dict[s
 
 def render_return_packet_markdown(packet: dict[str, Any]) -> str:
     decision = packet["decision"]
+    decision_status = packet.get("decision_status", {})
+    follow_up = packet.get("follow_up", {})
     stance = packet["stance"]
     evidence = packet["evidence"]
     lines = [
@@ -68,10 +74,24 @@ def render_return_packet_markdown(packet: dict[str, Any]) -> str:
         f"- Meeting: {packet['meeting_id']}",
         f"- Question: {packet['question']}",
         f"- Final decision: {decision['winner']} ({decision['confidence']})",
+        f"- Decision status: {decision_status.get('status', 'unknown')}",
         f"- Outcome for this role: {decision['outcome_for_role']}",
+        f"- Research status: {packet.get('research_status', 'complete')}",
         f"- Final position: {stance['final_position'] or 'Not recorded'}",
         f"- Stance status: {stance['status']}",
         f"- Next task: {packet['next_task']}",
+        f"- Follow-up of: {follow_up.get('parent_meeting_id') or 'none'}",
+        "",
+        "## Decision Status",
+        "",
+        f"- Status: {decision_status.get('status', 'unknown')}",
+        f"- Evidence gate: {decision_status.get('evidence_gate_status', 'unknown')}",
+        "- Next actions:",
+        *_markdown_items(decision_status.get("next_actions", []), indent="  "),
+        "",
+        "## Handoff Checklist",
+        "",
+        *[f"- {item}" for item in packet.get("handoff_checklist", [])],
         "",
         "## Why",
         "",
@@ -150,3 +170,24 @@ def _winner_aliases(winner: str) -> set[str]:
         if key in winner:
             result.update(value.casefold() for value in values)
     return result
+
+
+def _handoff_checklist(meeting: dict[str, Any], research: dict[str, Any], task: str) -> list[str]:
+    checklist = [
+        "Review decision status before continuing work.",
+        "Read decision.md, transcript.md, and this return packet.",
+        "Check evidence gate warnings before trusting claims.",
+    ]
+    if meeting.get("follow_up", {}).get("parent_meeting_id"):
+        checklist.append("Compare this follow-up with its parent meeting before acting.")
+    if research.get("status") == "failed":
+        checklist.append("Redo failed research before making implementation decisions.")
+    if task and task != "No task assigned.":
+        checklist.append("Confirm assigned task scope before editing files.")
+    return checklist
+
+
+def _markdown_items(items: list[str], indent: str = "") -> list[str]:
+    if not items:
+        return [f"{indent}- None recorded."]
+    return [f"{indent}- {item}" for item in items]
