@@ -18,6 +18,7 @@ def build_return_packet(meeting: dict[str, Any], role: dict[str, Any]) -> dict[s
         "role_id": role_id,
         "display_name": role.get("display_name", role_id),
         "lens": role.get("lens", ""),
+        "delegate_packet": f"delegate_packets/{role_id}.json",
         "question": meeting.get("display_question") or meeting.get("question", ""),
         "decision": {
             "winner": winner,
@@ -174,6 +175,7 @@ def _winner_aliases(winner: str) -> set[str]:
 
 def _handoff_checklist(meeting: dict[str, Any], research: dict[str, Any], task: str) -> list[str]:
     checklist = [
+        "Review delegate packet before claiming continuity.",
         "Review decision status before continuing work.",
         "Read decision.md, transcript.md, and this return packet.",
         "Check evidence gate warnings before trusting claims.",

@@ -6,6 +6,7 @@ from typing import Any
 
 from agentsassemble.artifact_packets import build_return_packet, render_return_packet_markdown
 from agentsassemble.artifact_public import render_agenda, render_decision, render_transcript
+from agentsassemble.delegate_packets import build_delegate_packet, render_delegate_packet_markdown
 from agentsassemble.models import Role
 
 
@@ -184,6 +185,20 @@ def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
     synthesis = meeting["moderator_synthesis"]
     for role_id, task in synthesis["tasks"].items():
         (tasks_dir / f"{role_id}.md").write_text(f"# Task\n\n{task}\n", encoding="utf-8")
+
+    delegate_packet_dir = meeting_dir / "delegate_packets"
+    delegate_packet_dir.mkdir(exist_ok=True)
+    meeting["artifacts"]["delegate_packets"] = "delegate_packets/"
+    meeting["delegate_packets"] = {}
+    for role in meeting.get("roles", []):
+        packet = build_delegate_packet(meeting, role)
+        role_id = role["id"]
+        meeting["delegate_packets"][role_id] = {
+            "json": f"delegate_packets/{role_id}.json",
+            "markdown": f"delegate_packets/{role_id}.md",
+        }
+        write_json(delegate_packet_dir / f"{role_id}.json", packet)
+        (delegate_packet_dir / f"{role_id}.md").write_text(render_delegate_packet_markdown(packet), encoding="utf-8")
 
     return_packet_dir = meeting_dir / "return_packets"
     return_packet_dir.mkdir(exist_ok=True)
