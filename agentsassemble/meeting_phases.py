@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable
 
@@ -46,11 +47,9 @@ def run_research_phase(
     report: Callable[[str], None],
     live_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    research_records = []
-    for role in config.roles:
-        report(f"Research: {role.display_name}")
-        if live_event is not None:
-            live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": "독립 리서치 시작"})
+    research_by_role = {}
+
+    def run_role_research(role: Any) -> dict[str, Any]:
         research = resolved_agents[role.id].adapter.run_research(
             role,
             sessions[role.id],
@@ -59,18 +58,34 @@ def run_research_phase(
             steering,
         )
         research = apply_evidence_gate(research, depth)
-        research_records.append(research)
         write_research(meeting_dir, research)
+        return research
+
+    futures = {}
+    max_workers = max(1, len(config.roles))
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    for role in config.roles:
+        report(f"Research: {role.display_name}")
         if live_event is not None:
-            live_event(
-                {
-                    "kind": "research",
-                    "role_id": role.id,
-                    "display_name": role.display_name,
-                    "content": research.get("summary", "리서치 완료"),
-                    "confidence": research.get("confidence"),
-                }
-            )
+            live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": "독립 리서치 시작"})
+        futures[executor.submit(run_role_research, role)] = role
+
+    with executor:
+        for future in as_completed(futures):
+            role = futures[future]
+            research = future.result()
+            research_by_role[role.id] = research
+            if live_event is not None:
+                live_event(
+                    {
+                        "kind": "research",
+                        "role_id": role.id,
+                        "display_name": role.display_name,
+                        "content": research.get("summary", "리서치 완료"),
+                        "confidence": research.get("confidence"),
+                    }
+                )
+    research_records = [research_by_role[role.id] for role in config.roles]
     return research_records, summarize_evidence_gates(research_records)
 
 
@@ -150,10 +165,11 @@ def build_short_reaction(round_id: str, messages: list[dict[str, Any]]) -> dict[
     speaker = messages[-1].get("display_name") or messages[-1].get("role_id") or "마지막 발언자"
     target = messages[-2].get("display_name") or messages[-2].get("role_id") or "이전 발언자"
     status = messages[-1].get("stance_status", "held")
+    speaker_subject = korean_subject(speaker)
     if status in {"qualified", "reframed", "revised", "conceded"}:
-        content = f"{speaker}이/가 {target}의 근거를 일부 받아들이며 입장을 조정했습니다."
+        content = f"{speaker_subject} {target}의 근거를 일부 받아들이며 입장을 조정했습니다."
     else:
-        content = f"{speaker}이/가 {target}의 주장에 짧게 반응했지만 핵심 입장은 유지했습니다."
+        content = f"{speaker_subject} {target}의 주장에 짧게 반응했지만 핵심 입장은 유지했습니다."
     return {
         "kind": "reaction",
         "role_id": messages[-1].get("role_id"),
@@ -164,6 +180,17 @@ def build_short_reaction(round_id: str, messages: list[dict[str, Any]]) -> dict[
         "stance_status": status,
         "confidence": messages[-1].get("confidence"),
     }
+
+
+def korean_subject(name: str) -> str:
+    if not name:
+        return "발언자가"
+    last = name[-1]
+    code = ord(last)
+    if 0xAC00 <= code <= 0xD7A3:
+        has_final_consonant = (code - 0xAC00) % 28 != 0
+        return f"{name}{'이' if has_final_consonant else '가'}"
+    return f"{name}가"
 
 
 def synthesize_meeting(

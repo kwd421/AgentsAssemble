@@ -125,6 +125,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function renderSideChat", script)
         self.assertIn(".side-chat-panel", css)
         self.assertIn('aria-label="비공식 채팅"', script)
+        self.assertIn('root.querySelector("#side-chat-message")?.focus()', script)
 
     def test_board_cards_are_dynamic_and_scrollable(self):
         script = static_js()

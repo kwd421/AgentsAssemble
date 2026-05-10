@@ -114,6 +114,7 @@ function bindSideChat(root) {
     });
     setSideChatEvents(payload.events || []);
     renderLive(state.payload, { followLatest: false });
+    root.querySelector("#side-chat-message")?.focus();
   });
 }
 
