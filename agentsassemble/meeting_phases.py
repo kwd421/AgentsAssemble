@@ -48,18 +48,43 @@ def run_research_phase(
     live_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     research_by_role = {}
+    max_attempts = 2
 
     def run_role_research(role: Any) -> dict[str, Any]:
-        research = resolved_agents[role.id].adapter.run_research(
-            role,
-            sessions[role.id],
-            config.question,
-            depth,
-            steering,
-        )
-        research = apply_evidence_gate(research, depth)
-        write_research(meeting_dir, research)
-        return research
+        errors = []
+        for attempt in range(1, max_attempts + 1):
+            try:
+                research = resolved_agents[role.id].adapter.run_research(
+                    role,
+                    sessions[role.id],
+                    config.question,
+                    depth,
+                    steering,
+                )
+                research.setdefault(
+                    "retry",
+                    {
+                        "attempts": attempt,
+                        "max_attempts": max_attempts,
+                        "status": "recovered" if errors else "not_needed",
+                        "errors": errors,
+                    },
+                )
+                research = apply_evidence_gate(research, depth)
+                write_research(meeting_dir, research)
+                return research
+            except Exception as error:
+                errors.append(str(error))
+                if attempt < max_attempts and live_event is not None:
+                    live_event(
+                        {
+                            "kind": "status",
+                            "role_id": role.id,
+                            "display_name": role.display_name,
+                            "content": "리서치 실패, 재조사 시도",
+                        }
+                    )
+        raise ResearchPhaseError(errors)
 
     futures = {}
     max_workers = max(1, len(config.roles))
@@ -93,6 +118,12 @@ def run_research_phase(
     return research_records, summarize_evidence_gates(research_records)
 
 
+class ResearchPhaseError(RuntimeError):
+    def __init__(self, errors: list[str]):
+        super().__init__(errors[-1] if errors else "research failed")
+        self.errors = errors
+
+
 def failed_research_record(
     role: Any,
     error: Exception,
@@ -100,6 +131,7 @@ def failed_research_record(
     steering: ResearchSteering,
 ) -> dict[str, Any]:
     message = f"Research failed for {role.display_name}: {error}"
+    errors = error.errors if isinstance(error, ResearchPhaseError) else [str(error)]
     return {
         "role_id": role.id,
         "display_name": role.display_name,
@@ -118,6 +150,12 @@ def failed_research_record(
         "queries": [],
         "sources": [],
         "summary": message,
+        "retry": {
+            "attempts": len(errors),
+            "max_attempts": 2,
+            "status": "failed",
+            "errors": errors,
+        },
         "confidence": "low",
         "uncertainty": "Provider or adapter failed before producing research.",
         "claim_evidence": [],

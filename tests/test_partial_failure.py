@@ -12,11 +12,14 @@ from agentsassemble.models import CouncilConfig, ResearchDepth, ResearchSteering
 
 
 class MaybeFailingResearchAdapter:
-    def __init__(self, should_fail=False):
+    def __init__(self, should_fail=False, fail_times=0):
         self.should_fail = should_fail
+        self.fail_times = fail_times
+        self.calls = 0
 
     def run_research(self, role, session, question, depth, steering):
-        if self.should_fail:
+        self.calls += 1
+        if self.should_fail or self.calls <= self.fail_times:
             raise RuntimeError("provider unavailable")
         return {
             "role_id": role.id,
@@ -64,6 +67,32 @@ class PartialFailureTests(unittest.TestCase):
         self.assertIn("provider unavailable", failed["summary"])
         self.assertEqual(evidence_gate["status"], "warn")
         self.assertIn("role_b:research_failed", evidence_gate["failures"])
+        self.assertEqual(failed["retry"]["attempts"], 2)
+
+    def test_research_phase_retries_transient_failure_before_recording_success(self):
+        role = Role("role_a", "A", "Lens", "focus")
+        adapter = MaybeFailingResearchAdapter(fail_times=1)
+        config = CouncilConfig("topic", "topic", "question", "question", [role])
+        depth = ResearchDepth("smoke", "Smoke", 0, 0, 0, 0, 0, 0, "", "")
+        resolved_agents = {"role_a": SimpleNamespace(adapter=adapter)}
+        sessions = {"role_a": {"session_id": "role_a"}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            research_records, evidence_gate = run_research_phase(
+                config,
+                Path(temp_dir),
+                sessions,
+                resolved_agents,
+                depth,
+                ResearchSteering(),
+                lambda _message: None,
+            )
+
+        self.assertEqual(adapter.calls, 2)
+        self.assertNotEqual(research_records[0].get("status"), "failed")
+        self.assertEqual(research_records[0]["retry"]["attempts"], 2)
+        self.assertEqual(research_records[0]["retry"]["status"], "recovered")
+        self.assertEqual(evidence_gate["status"], "pass")
 
     def test_full_meeting_continues_when_one_research_adapter_fails(self):
         class OneRoleFailingAdapter(ProviderAdapter):
