@@ -112,6 +112,8 @@ def run_research_phase(
                         "display_name": role.display_name,
                         "content": compact_live_research_summary(research),
                         "confidence": research.get("confidence"),
+                        "retry_status": research.get("retry", {}).get("status"),
+                        "retry_attempts": research.get("retry", {}).get("attempts"),
                     }
                 )
     research_records = [research_by_role[role.id] for role in config.roles]

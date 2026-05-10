@@ -32,6 +32,7 @@ def assemble_meeting_record(
                 "status": research.get("status", "complete"),
                 "summary": research["summary"],
                 "confidence": research["confidence"],
+                "retry": research.get("retry", {"status": "not_needed", "attempts": 1}),
                 "evidence_gate": research.get("evidence_gate", {}),
                 "claim_evidence": research.get("claim_evidence", []),
                 "weak_claims": research.get("weak_claims", []),

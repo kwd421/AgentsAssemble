@@ -154,6 +154,8 @@ def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str
         "remaining_resistance": clean_lobby_text(payload.get("remaining_resistance", ""), limit=1000),
         "emotion": payload.get("emotion") if isinstance(payload.get("emotion"), dict) else {},
         "confidence": payload.get("confidence"),
+        "retry_status": payload.get("retry_status"),
+        "retry_attempts": payload.get("retry_attempts"),
     }
     path = meeting_dir / "live_events.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -76,6 +76,7 @@ class PartialFailureTests(unittest.TestCase):
         depth = ResearchDepth("smoke", "Smoke", 0, 0, 0, 0, 0, 0, "", "")
         resolved_agents = {"role_a": SimpleNamespace(adapter=adapter)}
         sessions = {"role_a": {"session_id": "role_a"}}
+        live_events = []
 
         with tempfile.TemporaryDirectory() as temp_dir:
             research_records, evidence_gate = run_research_phase(
@@ -86,6 +87,7 @@ class PartialFailureTests(unittest.TestCase):
                 depth,
                 ResearchSteering(),
                 lambda _message: None,
+                live_events.append,
             )
 
         self.assertEqual(adapter.calls, 2)
@@ -93,6 +95,9 @@ class PartialFailureTests(unittest.TestCase):
         self.assertEqual(research_records[0]["retry"]["attempts"], 2)
         self.assertEqual(research_records[0]["retry"]["status"], "recovered")
         self.assertEqual(evidence_gate["status"], "pass")
+        research_event = [event for event in live_events if event.get("kind") == "research"][0]
+        self.assertEqual(research_event["retry_status"], "recovered")
+        self.assertEqual(research_event["retry_attempts"], 2)
 
     def test_full_meeting_continues_when_one_research_adapter_fails(self):
         class OneRoleFailingAdapter(ProviderAdapter):
@@ -173,6 +178,8 @@ class PartialFailureTests(unittest.TestCase):
 
         failed_summary = meeting["memory_input"]["research_summaries"][1]
         self.assertEqual(failed_summary["role_id"], "show_me_the_feats")
+        self.assertEqual(failed_summary["retry"]["status"], "failed")
+        self.assertEqual(failed_summary["retry"]["attempts"], 2)
         self.assertEqual(failed_research["status"], "failed")
         self.assertEqual(failed_packet["research_status"], "failed")
         self.assertIn("Redo failed research before making implementation decisions.", failed_packet["handoff_checklist"])
