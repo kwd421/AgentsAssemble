@@ -8,7 +8,7 @@ from typing import Any
 
 from agentsassemble.adapters.base import ProviderAdapter
 from agentsassemble.models import ResearchDepth, ResearchSteering, Role
-from agentsassemble.speech_policy import ROUND_SPEECH_POLICY
+from agentsassemble.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
 
 
 class CodexAdapter(ProviderAdapter):
@@ -130,14 +130,18 @@ Maintain your role's distinct stance. Do not converge just to sound cooperative.
 Return stance_status as "held", "revised", or "conceded".
 Use "revised" or "conceded" only when specific evidence in the public context changes your position.
 State change_conditions: what evidence would make you change your mind further.
-Return only JSON:
-{{"content": "...", "position": "...", "stance_status": "held|revised|conceded", "change_conditions": ["..."], "confidence": "low|medium|high"}}
+{ROUND_RESPONSE_SCHEMA}
 """
         result = self._invoke_codex(session, round_name, council_prompt, use_search=False)
         parsed = self._parse_json_object(result["text"]) or {
             "content": result["text"].strip(),
             "position": "",
             "stance_status": "held",
+            "stance_delta": "none",
+            "changed_by": [],
+            "change_reason": "",
+            "remaining_resistance": "",
+            "emotion": {},
             "change_conditions": [],
             "confidence": "medium",
         }
@@ -149,6 +153,11 @@ Return only JSON:
             "content": parsed.get("content", result["text"].strip()),
             "position": parsed.get("position", ""),
             "stance_status": parsed.get("stance_status", "held"),
+            "stance_delta": parsed.get("stance_delta", "none"),
+            "changed_by": parsed.get("changed_by", []),
+            "change_reason": parsed.get("change_reason", ""),
+            "remaining_resistance": parsed.get("remaining_resistance", ""),
+            "emotion": parsed.get("emotion", {}),
             "change_conditions": parsed.get("change_conditions", []),
             "confidence": parsed.get("confidence", "medium"),
             "codex": result["metadata"],

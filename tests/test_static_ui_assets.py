@@ -118,6 +118,13 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("공식 발언", script)
         self.assertIn("중단됨", script)
         self.assertIn("meetingStatusLabel", script)
+        self.assertIn("reaction: \"짧은 반응\"", script)
+        self.assertIn(".live-event-bubble", css)
+        self.assertIn('class="side-chat-panel"', script)
+        self.assertIn("/api/side-chat", script)
+        self.assertIn("function renderSideChat", script)
+        self.assertIn(".side-chat-panel", css)
+        self.assertIn('aria-label="비공식 채팅"', script)
 
     def test_board_cards_are_dynamic_and_scrollable(self):
         script = static_js()

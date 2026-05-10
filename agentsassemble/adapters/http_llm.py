@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from agentsassemble.adapters.base import ProviderAdapter
 from agentsassemble.models import ProviderConfig, ResearchDepth, ResearchSteering, Role
-from agentsassemble.speech_policy import ROUND_SPEECH_POLICY
+from agentsassemble.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
 
 
 JsonRequester = Callable[[str, dict[str, str], dict[str, Any], int | None], dict[str, Any]]
@@ -84,6 +84,11 @@ class HttpLlmAdapter(ProviderAdapter):
             "content": text.strip(),
             "position": "",
             "stance_status": "held",
+            "stance_delta": "none",
+            "changed_by": [],
+            "change_reason": "",
+            "remaining_resistance": "",
+            "emotion": {},
             "change_conditions": [],
             "confidence": "medium",
         }
@@ -94,6 +99,11 @@ class HttpLlmAdapter(ProviderAdapter):
             "content": parsed.get("content", text.strip()),
             "position": parsed.get("position", ""),
             "stance_status": parsed.get("stance_status", "held"),
+            "stance_delta": parsed.get("stance_delta", "none"),
+            "changed_by": parsed.get("changed_by", []),
+            "change_reason": parsed.get("change_reason", ""),
+            "remaining_resistance": parsed.get("remaining_resistance", ""),
+            "emotion": parsed.get("emotion", {}),
             "change_conditions": parsed.get("change_conditions", []),
             "confidence": parsed.get("confidence", "medium"),
             "provider": self._provider_metadata(),
@@ -310,8 +320,8 @@ Public context:
 {json.dumps(public_context, ensure_ascii=False, indent=2)}
 
 {ROUND_SPEECH_POLICY}
-Keep your role's distinct stance. Return only JSON:
-{{"content":"...","position":"...","stance_status":"held|revised|conceded","change_conditions":["..."],"confidence":"low|medium|high"}}
+Keep your role's distinct stance.
+{ROUND_RESPONSE_SCHEMA}
 """
 
 

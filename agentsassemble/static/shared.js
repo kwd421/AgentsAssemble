@@ -5,6 +5,8 @@ export const state = {
   archiveKey: "decision.md",
   lobbyEvents: [],
   lobbySignature: "[]",
+  sideChatEvents: [],
+  sideChatSignature: "[]",
 };
 
 export const roleMeta = {
@@ -80,6 +82,11 @@ export function lobbyEventsSignature(events) {
 export function setLobbyEvents(events) {
   state.lobbyEvents = events || [];
   state.lobbySignature = lobbyEventsSignature(state.lobbyEvents);
+}
+
+export function setSideChatEvents(events) {
+  state.sideChatEvents = events || [];
+  state.sideChatSignature = lobbyEventsSignature(state.sideChatEvents);
 }
 
 export function bindingForRole(meeting, roleId) {

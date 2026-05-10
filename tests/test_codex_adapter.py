@@ -126,6 +126,40 @@ class CodexAdapterTests(unittest.TestCase):
             self.assertIn("4-8 Korean sentences", seen_inputs[0])
             self.assertIn("at most 2 short paragraphs", seen_inputs[0])
             self.assertIn("reference at least one previous speaker by name", seen_inputs[0])
+            self.assertIn("held|qualified|reframed|revised|conceded", seen_inputs[0])
+            self.assertIn("stance_delta", seen_inputs[0])
+            self.assertIn("changed_by", seen_inputs[0])
+
+    def test_codex_round_returns_stance_and_persona_dynamics(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            (meeting_dir / "roles" / "fanboard_skeptic").mkdir(parents=True)
+
+            def fake_runner(command, input, text, capture_output, timeout, check):
+                output_path = Path(command[command.index("--output-last-message") + 1])
+                output_path.write_text(
+                    '{"content":"그 근거는 인정인데 확정은 오바임.","position":"아카이누 우세 단 키자루 보류","stance_status":"qualified","stance_delta":"minor","changed_by":["show_me_the_feats"],"change_reason":"직접 전적 근거는 받아들였지만 미공개 전력 변수는 남음","remaining_resistance":"압도적 최강 확정은 거부","emotion":{"tone":"reluctant","friction":0.62,"stubbornness":0.81,"respect":0.55,"engagement":0.8},"change_conditions":["키자루 전력 공개"],"confidence":"medium"}',
+                    encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+            adapter = CodexAdapter(command_runner=fake_runner)
+            role = Role(
+                "fanboard_skeptic",
+                "만갤러",
+                "Skeptical Critic",
+                "반례",
+                personality={"stubbornness": 0.85, "conflict_style": "teasing_skeptic"},
+            )
+            session = adapter.start_session(role, {"meeting_dir": str(meeting_dir)})
+
+            message = adapter.run_round(role, session, "round_2", "반박", {})
+
+            self.assertEqual(message["stance_status"], "qualified")
+            self.assertEqual(message["stance_delta"], "minor")
+            self.assertEqual(message["changed_by"], ["show_me_the_feats"])
+            self.assertEqual(message["emotion"]["tone"], "reluctant")
+            self.assertGreater(message["emotion"]["stubbornness"], 0.8)
 
     def test_codex_timeout_becomes_low_confidence_research(self):
         with tempfile.TemporaryDirectory() as temp_dir:

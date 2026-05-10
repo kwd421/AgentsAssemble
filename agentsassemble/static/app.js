@@ -7,6 +7,7 @@ import {
   lobbyEventsSignature,
   meetingStatusLabel,
   setLobbyEvents,
+  setSideChatEvents,
   state,
 } from "./shared.js";
 
@@ -95,6 +96,23 @@ async function loadLobbySafely() {
     await loadLobby({ onlyIfChanged: true });
   } catch {
     showAppStatus("로비 갱신 대기 중", "info");
+  }
+}
+
+async function loadSideChat(options = {}) {
+  const payload = await fetchJson("/api/side-chat");
+  const events = payload.events || [];
+  const signature = lobbyEventsSignature(events);
+  if (options.onlyIfChanged && signature === state.sideChatSignature) return;
+  setSideChatEvents(events);
+  if (state.payload?.meeting) renderLive(state.payload, { followLatest: state.currentTab === "live" });
+}
+
+async function loadSideChatSafely() {
+  try {
+    await loadSideChat({ onlyIfChanged: true });
+  } catch {
+    showAppStatus("비공식 채팅 갱신 대기 중", "info");
   }
 }
 
@@ -198,8 +216,10 @@ meetingSelect.addEventListener("change", () => {
 (async function init() {
   applyScaleSettings();
   await loadLobby();
+  await loadSideChat();
   const latest = await loadMeetings();
   await loadMeeting(latest);
   setInterval(loadLobbySafely, 4000);
+  setInterval(loadSideChatSafely, 4000);
   setInterval(refreshCurrentMeetingSafely, 2000);
 })();

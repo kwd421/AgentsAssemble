@@ -12,7 +12,9 @@ from agentsassemble.gui import (
     list_meetings,
     provider_catalog_payload,
     read_lobby,
+    read_side_chat,
     send_lobby_message_to_remote_bridge,
+    append_side_chat_event,
 )
 from agentsassemble.meeting_events import append_live_event, write_live_state
 from agentsassemble.meeting import run_demo_meeting
@@ -62,6 +64,21 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(events[1]["side"], "other")
             self.assertEqual(events[2]["side"], "other-agent")
             self.assertEqual(events[2]["message"], "만갤러 준비됐냐?")
+
+    def test_side_chat_is_stored_separately_from_lobby_and_live_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            append_side_chat_event(root, {"name": "seinel", "side": "mine", "message": "실황 보면서 한마디"})
+            append_lobby_event(root, {"name": "lobby", "side": "other", "message": "로비 메시지"})
+
+            side_events = read_side_chat(root)
+
+            self.assertEqual(len(side_events), 1)
+            self.assertEqual(side_events[0]["message"], "실황 보면서 한마디")
+            self.assertEqual(read_lobby(root)[0]["message"], "로비 메시지")
+            self.assertTrue((root / "side_chat.jsonl").exists())
+            self.assertFalse((root / "meetings" / "side_chat.jsonl").exists())
 
     def test_lobby_remote_bridge_reply_is_recorded_as_other_agent(self):
         import agentsassemble.gui as gui

@@ -121,12 +121,20 @@ def read_lobby_events(path: Path, limit: int = 80) -> list[dict[str, object]]:
     return entries[-limit:]
 
 
+def read_side_chat_events(path: Path, limit: int = 120) -> list[dict[str, object]]:
+    return read_lobby_events(path, limit=limit)
+
+
 def append_lobby_event_to_file(path: Path, payload: dict[str, object]) -> dict[str, object]:
     path.parent.mkdir(parents=True, exist_ok=True)
     event = LobbyEvent.from_payload(payload)
     with path.open("a", encoding="utf-8") as file:
         file.write(json.dumps(event.to_dict(), ensure_ascii=False, sort_keys=True) + "\n")
     return event.to_dict()
+
+
+def append_side_chat_event_to_file(path: Path, payload: dict[str, object]) -> dict[str, object]:
+    return append_lobby_event_to_file(path, payload)
 
 
 def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str, object]:
@@ -140,6 +148,11 @@ def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str
         "content": clean_lobby_text(payload.get("content", ""), limit=4000),
         "position": clean_lobby_text(payload.get("position", ""), limit=1000),
         "stance_status": payload.get("stance_status"),
+        "stance_delta": payload.get("stance_delta"),
+        "changed_by": payload.get("changed_by") if isinstance(payload.get("changed_by"), list) else [],
+        "change_reason": clean_lobby_text(payload.get("change_reason", ""), limit=1000),
+        "remaining_resistance": clean_lobby_text(payload.get("remaining_resistance", ""), limit=1000),
+        "emotion": payload.get("emotion") if isinstance(payload.get("emotion"), dict) else {},
         "confidence": payload.get("confidence"),
     }
     path = meeting_dir / "live_events.jsonl"

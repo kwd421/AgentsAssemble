@@ -1,4 +1,4 @@
-import { bindingSummary, displayQuestion, escapeHtml, focusLabels, lensLabels, roleMeta, roundLabel, state } from "./shared.js";
+import { bindingSummary, displayQuestion, escapeHtml, fetchJson, focusLabels, lensLabels, roleMeta, roundLabel, setSideChatEvents, state } from "./shared.js";
 
 export function renderLive(payload, options = {}) {
   const roles = payload.meeting.roles || [];
@@ -52,6 +52,7 @@ export function renderLive(payload, options = {}) {
           </article>` : ""}
         </main>
         <aside class="live-chat-side">
+          ${renderSideChat()}
           ${renderLiveTimeline(payload, liveMessages)}
           ${renderLiveOutcome(payload, liveMessages)}
           ${renderOfficialRoster(roles)}
@@ -60,8 +61,60 @@ export function renderLive(payload, options = {}) {
     </div>
   `;
   bindLatestJump(live);
+  bindSideChat(live);
   if (shouldFollowLatest) scrollLiveTranscriptToLatest(live);
   updateLatestJump(live);
+}
+
+function renderSideChat() {
+  const events = state.sideChatEvents || [];
+  return `
+    <aside class="side-chat-panel" aria-label="비공식 채팅">
+      <div class="side-chat-head">
+        <strong>비공식 채팅</strong>
+        <span>공식 회의록에 들어가지 않습니다.</span>
+      </div>
+      <div class="side-chat-feed">
+        ${events.length ? events.map(renderSideChatEvent).join("") : '<p class="side-chat-empty">아직 비공식 채팅이 없습니다.</p>'}
+      </div>
+      <form id="side-chat-form" class="side-chat-form">
+        <input id="side-chat-message" maxlength="240" placeholder="실황 보면서 한마디" />
+        <button type="submit">전송</button>
+      </form>
+    </aside>
+  `;
+}
+
+function renderSideChatEvent(event) {
+  return `
+    <article class="side-chat-event side-${escapeHtml(event.side || "other")}">
+      <strong>${escapeHtml(event.name || "guest")}</strong>
+      <p>${escapeHtml(event.message || "")}</p>
+    </article>
+  `;
+}
+
+function bindSideChat(root) {
+  const form = root?.querySelector("#side-chat-form");
+  if (!form) return;
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const input = root.querySelector("#side-chat-message");
+    const message = input?.value.trim() || "";
+    if (!message) return;
+    const payload = await fetchJson("/api/side-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: localStorage.getItem("agentsassemble.name") || "나",
+        side: "mine",
+        kind: "message",
+        message,
+      }),
+    });
+    setSideChatEvents(payload.events || []);
+    renderLive(state.payload, { followLatest: false });
+  });
 }
 
 function renderLiveItem(item) {
@@ -290,6 +343,7 @@ function eventKindLabel(kind) {
     synthesis: "종합",
     artifact: "산출물",
     message: "발언",
+    reaction: "짧은 반응",
   }[kind] || "상태";
 }
 
@@ -381,6 +435,10 @@ function isMeetingComplete(meeting) {
 }
 
 function stanceLabel(status) {
+  if (status === "qualified") return "조건부 유지";
+  if (status === "reframed") return "기준 재정의";
+  if (status === "revised") return "일부 수정";
+  if (status === "conceded") return "핵심 양보";
   if (status === "changed") return "입장 변화";
   if (status === "softened") return "입장 약화";
   if (status === "strengthened") return "입장 강화";

@@ -128,6 +128,10 @@ def run_debate_phase(
                 if live_event is not None:
                     live_event({"kind": "message", **message})
         rounds_by_id[round_definition.id] = messages
+        if live_event is not None:
+            reaction = build_short_reaction(round_definition.id, messages)
+            if reaction:
+                live_event(reaction)
         debate_rounds.append(
             {
                 "id": round_definition.id,
@@ -138,6 +142,28 @@ def run_debate_phase(
             }
         )
     return debate_rounds
+
+
+def build_short_reaction(round_id: str, messages: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if len(messages) < 2:
+        return None
+    speaker = messages[-1].get("display_name") or messages[-1].get("role_id") or "마지막 발언자"
+    target = messages[-2].get("display_name") or messages[-2].get("role_id") or "이전 발언자"
+    status = messages[-1].get("stance_status", "held")
+    if status in {"qualified", "reframed", "revised", "conceded"}:
+        content = f"{speaker}이/가 {target}의 근거를 일부 받아들이며 입장을 조정했습니다."
+    else:
+        content = f"{speaker}이/가 {target}의 주장에 짧게 반응했지만 핵심 입장은 유지했습니다."
+    return {
+        "kind": "reaction",
+        "role_id": messages[-1].get("role_id"),
+        "display_name": speaker,
+        "round": round_id,
+        "content": content,
+        "position": messages[-1].get("position", ""),
+        "stance_status": status,
+        "confidence": messages[-1].get("confidence"),
+    }
 
 
 def synthesize_meeting(

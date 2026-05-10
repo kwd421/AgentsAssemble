@@ -10,7 +10,13 @@ from urllib.parse import unquote, urlparse
 
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.meeting import run_demo_meeting
-from agentsassemble.meeting_events import append_lobby_event_to_file, read_live_events, read_lobby_events
+from agentsassemble.meeting_events import (
+    append_lobby_event_to_file,
+    append_side_chat_event_to_file,
+    read_live_events,
+    read_lobby_events,
+    read_side_chat_events,
+)
 from agentsassemble.adapters import default_provider_registry
 from agentsassemble.models import ProviderConfig, Role
 
@@ -157,6 +163,14 @@ def append_lobby_event(output_root: Path, event: dict[str, object]) -> dict[str,
     return append_lobby_event_to_file(output_root / "lobby.jsonl", event)
 
 
+def read_side_chat(output_root: Path, limit: int = 120) -> list[dict[str, object]]:
+    return read_side_chat_events(output_root / "side_chat.jsonl", limit=limit)
+
+
+def append_side_chat_event(output_root: Path, event: dict[str, object]) -> dict[str, object]:
+    return append_side_chat_event_to_file(output_root / "side_chat.jsonl", event)
+
+
 def send_lobby_message_to_remote_bridge(
     output_root: Path,
     message: str,
@@ -297,6 +311,9 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
             if path == "/api/lobby":
                 self._send_json({"events": read_lobby(output_root)})
                 return
+            if path == "/api/side-chat":
+                self._send_json({"events": read_side_chat(output_root)})
+                return
             if path == "/api/providers":
                 self._send_json(provider_catalog_payload())
                 return
@@ -332,6 +349,16 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                     return
                 event = append_lobby_event(output_root, payload if isinstance(payload, dict) else {})
                 self._send_json({"event": event, "events": read_lobby(output_root)})
+                return
+            if parsed.path == "/api/side-chat":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                event = append_side_chat_event(output_root, payload if isinstance(payload, dict) else {})
+                self._send_json({"event": event, "events": read_side_chat(output_root)})
                 return
             if parsed.path == "/api/lobby/remote":
                 length = int(self.headers.get("Content-Length", "0") or "0")

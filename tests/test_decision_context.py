@@ -41,6 +41,11 @@ class DecisionContextTests(unittest.TestCase):
                         "content": "아카이누 우세입니다.",
                         "position": "Sakazuki / Akainu",
                         "stance_status": "held",
+                        "stance_delta": "none",
+                        "changed_by": [],
+                        "change_reason": "",
+                        "remaining_resistance": "",
+                        "emotion": {"tone": "calm", "friction": 0.2},
                         "change_conditions": ["공식 반례"],
                         "confidence": "medium",
                         "codex": {
@@ -63,6 +68,9 @@ class DecisionContextTests(unittest.TestCase):
         self.assertNotIn("huge stderr", encoded)
         self.assertNotIn('"command"', encoded)
         self.assertNotIn("session_id", encoded)
+        message = context["rounds"]["round_1"][0]
+        self.assertEqual(message["emotion"]["tone"], "calm")
+        self.assertEqual(message["stance_delta"], "none")
         self.assertLess(len(encoded), 10000)
 
     def test_public_debate_rounds_strip_metadata_but_diagnostics_keep_it(self):
