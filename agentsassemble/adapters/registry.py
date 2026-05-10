@@ -11,6 +11,7 @@ from agentsassemble.adapters.http_llm import (
     GrokChatAdapter,
     LocalOpenAICompatibleAdapter,
 )
+from agentsassemble.adapters.local_cli import LocalCliAdapter
 from agentsassemble.adapters.mock import MockAdapter
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.adapters.unsupported import UnsupportedProviderAdapter
@@ -203,6 +204,19 @@ def register_http_provider_kinds(registry: ProviderRegistry) -> None:
             supports_session_resume=False,
             supports_structured_output=True,
             cost_class="remote_user_session",
+        ),
+    )
+    registry.register(
+        "local_cli",
+        lambda provider: LocalCliAdapter(provider),
+        ProviderCapabilities(
+            supports_research=True,
+            supports_web_search=False,
+            supports_tools=False,
+            supports_filesystem=False,
+            supports_session_resume=False,
+            supports_structured_output=True,
+            cost_class="local_cli",
         ),
     )
 

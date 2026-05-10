@@ -13,6 +13,7 @@ ProviderKind = Literal[
     "gemini",
     "grok",
     "remote_http_bridge",
+    "local_cli",
     "cursor",
     "claude_code",
     "local_openai_compatible",
@@ -99,6 +100,7 @@ class ProviderConfig:
     timeout_seconds: int | None = None
     search_enabled: bool = False
     notes: str | None = None
+    command: list[str] | None = None
 
     def public_dict(self) -> dict[str, object]:
         return {
@@ -111,6 +113,7 @@ class ProviderConfig:
             "timeout_seconds": self.timeout_seconds,
             "search_enabled": self.search_enabled,
             "notes": self.notes,
+            "command": self.command,
         }
 
 

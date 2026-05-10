@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -88,9 +89,20 @@ def providers_from_config(data: dict[str, Any]) -> dict[str, ProviderConfig]:
             timeout_seconds=provider_data.get("timeout_seconds"),
             search_enabled=bool(provider_data.get("search_enabled", False)),
             notes=provider_data.get("notes"),
+            command=_command_from_config(provider_data.get("command")),
         )
         providers[provider.id] = provider
     return providers
+
+
+def _command_from_config(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return shlex.split(value)
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return list(value)
+    raise ValueError("Provider command must be a string or a list of strings.")
 
 
 def permissions_from_config(data: dict[str, Any]) -> dict[str, PermissionProfile]:

@@ -8,6 +8,7 @@ from agentsassemble.adapters.http_llm import (
     GrokChatAdapter,
     LocalOpenAICompatibleAdapter,
 )
+from agentsassemble.adapters.local_cli import LocalCliAdapter
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.adapters.unsupported import UnsupportedProviderAdapter
 from agentsassemble.models import AgentBinding, PermissionProfile, ProviderCapabilities, ProviderConfig, Role
@@ -200,6 +201,7 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertEqual(catalog["gemini"]["status"], "available")
         self.assertEqual(catalog["grok"]["status"], "available")
         self.assertEqual(catalog["remote_http_bridge"]["status"], "available")
+        self.assertEqual(catalog["local_cli"]["status"], "available")
         self.assertEqual(catalog["cursor"]["status"], "planned")
         self.assertEqual(catalog["claude_code"]["status"], "planned")
         self.assertEqual(catalog["anthropic"]["status"], "available")
@@ -239,6 +241,17 @@ class ProviderRegistryTests(unittest.TestCase):
                 )
             ),
             RemoteBridgeAdapter,
+        )
+        self.assertIsInstance(
+            registry.create(
+                ProviderConfig(
+                    id="gemini-cli",
+                    kind="local_cli",
+                    display_name="Gemini CLI",
+                    command=["gemini", "--prompt"],
+                )
+            ),
+            LocalCliAdapter,
         )
 
 
