@@ -403,6 +403,7 @@ This file records external papers, frameworks, and product references used while
   - Added provider config, agent binding, capability, and permission models.
   - Added provider registry and validation for meeting-only permissions.
   - Meeting artifacts now record provider configs, agent bindings, provider capabilities, and permission profiles while preserving existing mock/codex behavior.
+  - Added admission decisions for incoming external agents so host approval, effective bindings, rejected requests, and non-executed requests are auditable.
 
 ## Candidate Memory Layer Translation
 

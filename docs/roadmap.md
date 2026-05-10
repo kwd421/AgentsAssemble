@@ -46,6 +46,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Provider binding groundwork records provider configs, agent bindings, capabilities, and meeting-only permissions in `meeting.json`.
 - The provider registry now includes planned capability entries for Claude/Anthropic, Gemini, Grok, Cursor, Claude Code, local OpenAI-compatible providers, and Hermes/OpenClaw-style memory packs, with unsupported adapters that fail explicitly until real integrations are implemented. Cursor and Claude Code are allowed as read-only meeting participants while implementation permissions remain gated until after `decision.md`.
 - Runtime agent config can be loaded from JSON with host-approved providers, permission profiles, agent bindings, and incoming external agent requests. Incoming agents are recorded for audit but only approved bindings execute.
+- Incoming external agents now produce explicit admission decisions in `meeting.json`, separating requested role/provider/permissions from the host-approved binding that actually executes.
 - Codex multi-role smoke has been exercised through `configs/codex-sessions.example.json`; distinct role sessions were recorded, but synthesis reliability still needs hardening for real provider output.
 
 ## V0 Remaining
@@ -166,6 +167,7 @@ Current direction:
 - Shell-driven coding agents such as Codex CLI, Claude Code, and Cursor should be implementation-phase providers after `decision.md`.
 - Hermes/OpenClaw-style systems are memory/profile pack inspirations first, not raw session import mechanisms.
 - External or remote agents must join with explicit provider, permission, context, and memory packet metadata.
+- A host admission decision must separate an incoming agent's requested identity from the effective role, provider, and permission profile that are allowed to execute.
 
 ## Non-Goals For Now
 

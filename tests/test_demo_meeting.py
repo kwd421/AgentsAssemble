@@ -219,6 +219,97 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertEqual(meeting["incoming_agents"][0]["name"], "친구봇")
             self.assertEqual(meeting["isolation"]["lore_lawyer"]["agent_binding"]["owner_id"], "host")
 
+    def test_incoming_agents_require_host_admission_before_execution(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            agent_config = root / "agents.json"
+            agent_config.write_text(
+                json.dumps(
+                    {
+                        "providers": [
+                            {
+                                "id": "approved-mock",
+                                "kind": "mock",
+                                "display_name": "Approved Mock Provider",
+                            }
+                        ],
+                        "permission_profiles": [
+                            {
+                                "id": "meeting_guest_readonly",
+                                "meeting_read": True,
+                                "official_turn": True,
+                                "filesystem_write": False,
+                                "implementation": False,
+                            }
+                        ],
+                        "incoming_agents": [
+                            {
+                                "name": "친구봇",
+                                "requested_role": "show_me_the_feats",
+                                "provider": "cursor",
+                                "approved_binding_agent_id": "approved-feats",
+                                "requested_permissions": {
+                                    "meeting_read": True,
+                                    "official_turn": True,
+                                    "filesystem_write": False,
+                                    "implementation": False,
+                                },
+                            },
+                            {
+                                "name": "위험한봇",
+                                "requested_role": "unknown_role",
+                                "provider": "grok",
+                                "requested_permissions": {
+                                    "meeting_read": True,
+                                    "official_turn": True,
+                                    "filesystem_write": True,
+                                    "implementation": True,
+                                },
+                            },
+                        ],
+                        "agent_bindings": [
+                            {
+                                "agent_id": "approved-lore",
+                                "role_id": "lore_lawyer",
+                                "owner_id": "host",
+                                "provider_id": "approved-mock",
+                                "permission_profile_id": "meeting_guest_readonly",
+                            },
+                            {
+                                "agent_id": "approved-feats",
+                                "role_id": "show_me_the_feats",
+                                "owner_id": "friend",
+                                "provider_id": "approved-mock",
+                                "permission_profile_id": "meeting_guest_readonly",
+                                "join_mode": "current_session",
+                            },
+                            {
+                                "agent_id": "approved-skeptic",
+                                "role_id": "fanboard_skeptic",
+                                "owner_id": "host",
+                                "provider_id": "approved-mock",
+                                "permission_profile_id": "meeting_guest_readonly",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_demo_meeting(adapter_name="mock", output_root=root, agent_config_path=agent_config)
+            meeting = json.loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+
+            decisions = {decision["name"]: decision for decision in meeting["admission_decisions"]}
+            self.assertEqual(decisions["친구봇"]["status"], "approved")
+            self.assertEqual(decisions["친구봇"]["execution"], "bound_to_meeting_role")
+            self.assertEqual(decisions["친구봇"]["effective_role_id"], "show_me_the_feats")
+            self.assertEqual(decisions["친구봇"]["effective_provider_id"], "approved-mock")
+            self.assertEqual(decisions["친구봇"]["permission_profile_id"], "meeting_guest_readonly")
+            self.assertEqual(decisions["위험한봇"]["status"], "rejected")
+            self.assertEqual(decisions["위험한봇"]["execution"], "not_executed")
+            self.assertIn("unknown_requested_role", decisions["위험한봇"]["reasons"])
+            self.assertIn("requested_permissions_exceed_meeting_mode", decisions["위험한봇"]["reasons"])
+
     def test_round_one_does_not_include_other_private_research(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = run_demo_meeting(adapter_name="mock", output_root=Path(temp_dir))

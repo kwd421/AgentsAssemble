@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agentsassemble.admission import build_admission_decisions
 from agentsassemble.adapters import default_provider_registry
 from agentsassemble.adapters.registry import ProviderRegistry, ResolvedAgentAdapter
 from agentsassemble.config import (
@@ -26,6 +27,7 @@ class MeetingSetup:
     moderator_adapter: ProviderAdapter
     config_source: str
     incoming_agents: list[dict[str, Any]]
+    admission_decisions: list[dict[str, Any]]
 
 
 def provider_config_for_adapter(
@@ -110,6 +112,13 @@ def prepare_meeting_setup(
         binding.role_id: registry.resolve(binding, providers, permissions)
         for binding in agent_bindings
     }
+    admission_decisions = build_admission_decisions(
+        incoming_agents,
+        agent_bindings,
+        config_roles,
+        providers,
+        permissions,
+    )
     return MeetingSetup(
         provider=provider,
         providers=providers,
@@ -120,6 +129,7 @@ def prepare_meeting_setup(
         moderator_adapter=registry.create(provider),
         config_source=config_source,
         incoming_agents=incoming_agents,
+        admission_decisions=admission_decisions,
     )
 
 
