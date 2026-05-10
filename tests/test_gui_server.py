@@ -4,7 +4,14 @@ import os
 import time
 from pathlib import Path
 
-from agentsassemble.gui import _safe_static_path, append_lobby_event, build_meeting_payload, list_meetings, read_lobby
+from agentsassemble.gui import (
+    _safe_static_path,
+    append_lobby_event,
+    build_meeting_payload,
+    list_meetings,
+    provider_catalog_payload,
+    read_lobby,
+)
 from agentsassemble.meeting_events import append_live_event, write_live_state
 from agentsassemble.meeting import run_demo_meeting
 
@@ -129,6 +136,18 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(_safe_static_path(static_root, "app.js"), (static_root / "app.js").resolve())
             self.assertIsNone(_safe_static_path(static_root, "../secret.txt"))
+
+    def test_provider_catalog_payload_lists_planned_integrations(self):
+        payload = provider_catalog_payload()
+        providers = {provider["kind"]: provider for provider in payload["providers"]}
+
+        self.assertEqual(providers["codex"]["status"], "available")
+        self.assertEqual(providers["anthropic"]["status"], "planned")
+        self.assertEqual(providers["gemini"]["status"], "planned")
+        self.assertEqual(providers["grok"]["status"], "planned")
+        self.assertEqual(providers["local_openai_compatible"]["status"], "planned")
+        self.assertIn("capabilities", providers["claude_code"])
+        self.assertTrue(providers["cursor"]["capabilities"]["supports_filesystem"])
 
 
 if __name__ == "__main__":

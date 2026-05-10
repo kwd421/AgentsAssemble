@@ -26,15 +26,24 @@ class ProviderRegistry:
     def __init__(self) -> None:
         self._factories: dict[str, AdapterFactory] = {}
         self._capabilities: dict[str, ProviderCapabilities] = {}
+        self._catalog: dict[str, dict[str, object]] = {}
 
     def register(
         self,
         kind: str,
         factory: AdapterFactory,
         capabilities: ProviderCapabilities,
+        status: str = "available",
+        reason: str | None = None,
     ) -> None:
         self._factories[kind] = factory
         self._capabilities[kind] = capabilities
+        self._catalog[kind] = {
+            "kind": kind,
+            "status": status,
+            "reason": reason,
+            "capabilities": capabilities.to_dict(),
+        }
 
     def create(self, provider: ProviderConfig) -> ProviderAdapter:
         try:
@@ -48,6 +57,9 @@ class ProviderRegistry:
             return self._capabilities[provider.kind]
         except KeyError as error:
             raise ValueError(f"Provider kind has no registered capabilities: {provider.kind}") from error
+
+    def catalog(self) -> list[dict[str, object]]:
+        return [self._catalog[kind] for kind in sorted(self._catalog)]
 
     def resolve(
         self,
@@ -228,7 +240,13 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
         ),
     }
     for kind, (capabilities, reason) in planned.items():
-        registry.register(kind, lambda provider, reason=reason: UnsupportedProviderAdapter(provider.kind, reason), capabilities)
+        registry.register(
+            kind,
+            lambda provider, reason=reason: UnsupportedProviderAdapter(provider.kind, reason),
+            capabilities,
+            status="planned",
+            reason=reason,
+        )
 
 
 def validate_binding(

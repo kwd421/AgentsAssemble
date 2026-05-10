@@ -10,6 +10,7 @@ from urllib.parse import unquote, urlparse
 
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_events import append_lobby_event_to_file, read_live_events, read_lobby_events
+from agentsassemble.adapters import default_provider_registry
 
 TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
 TABS = ["lobby", "live", "board", "archive"]
@@ -153,6 +154,10 @@ def append_lobby_event(output_root: Path, event: dict[str, object]) -> dict[str,
     return append_lobby_event_to_file(output_root / "lobby.jsonl", event)
 
 
+def provider_catalog_payload() -> dict[str, object]:
+    return {"providers": default_provider_registry().catalog()}
+
+
 def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
     static_root = Path(__file__).parent / "static"
 
@@ -176,6 +181,9 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                 return
             if path == "/api/lobby":
                 self._send_json({"events": read_lobby(output_root)})
+                return
+            if path == "/api/providers":
+                self._send_json(provider_catalog_payload())
                 return
             if path == "/api/meetings/latest":
                 meetings = list_meetings(output_root)

@@ -191,6 +191,21 @@ class ProviderRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "implementation-side permissions"):
             registry.resolve(binding, {"claude-code": provider}, {"implementation": permission})
 
+    def test_default_registry_catalog_exposes_available_and_planned_providers(self):
+        registry = default_provider_registry(codex_search_enabled=True)
+
+        catalog = {entry["kind"]: entry for entry in registry.catalog()}
+
+        self.assertEqual(catalog["mock"]["status"], "available")
+        self.assertEqual(catalog["codex"]["status"], "available")
+        self.assertEqual(catalog["gemini"]["status"], "planned")
+        self.assertEqual(catalog["grok"]["status"], "planned")
+        self.assertEqual(catalog["cursor"]["status"], "planned")
+        self.assertEqual(catalog["claude_code"]["status"], "planned")
+        self.assertTrue(catalog["gemini"]["capabilities"]["supports_web_search"])
+        self.assertTrue(catalog["cursor"]["capabilities"]["supports_filesystem"])
+        self.assertIn("planned", catalog["grok"]["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()
