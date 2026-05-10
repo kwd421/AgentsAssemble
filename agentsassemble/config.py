@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.models import AgentBinding, CouncilConfig, PermissionProfile, ProviderConfig, Role
+from agentsassemble.models import AgentBinding, CouncilConfig, MeetingRound, PermissionProfile, ProviderConfig, Role
+from agentsassemble.templates import DEMO_MEETING_TEMPLATE
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "configs" / "demo-council.json"
@@ -20,6 +21,9 @@ def load_council_config(path: Path | str | None = None) -> CouncilConfig:
         question=data["question"],
         display_question=data.get("display_question", data["question"]),
         roles=roles,
+        meeting_template_id=_meeting_template_id(data),
+        meeting_template_name=_meeting_template_name(data),
+        rounds=_rounds_from_dict(data),
     )
 
 
@@ -32,6 +36,33 @@ def _role_from_dict(data: dict[str, Any]) -> Role:
         personality=data.get("personality"),
         source_preferences=data.get("source_preferences"),
     )
+
+
+def _meeting_template_id(data: dict[str, Any]) -> str:
+    template = data.get("meeting_template") or {}
+    return template.get("id", DEMO_MEETING_TEMPLATE["id"])
+
+
+def _meeting_template_name(data: dict[str, Any]) -> str:
+    template = data.get("meeting_template") or {}
+    return template.get("display_name", DEMO_MEETING_TEMPLATE["display_name"])
+
+
+def _rounds_from_dict(data: dict[str, Any]) -> list[MeetingRound]:
+    template = data.get("meeting_template") or {}
+    round_data = template.get("rounds")
+    if not round_data:
+        return list(DEMO_MEETING_TEMPLATE["rounds"])
+    return [
+        MeetingRound(
+            id=round_definition["id"],
+            title=round_definition.get("title", round_definition["id"]),
+            report_label=round_definition.get("report_label", round_definition.get("title", round_definition["id"])),
+            context_scope=round_definition.get("context_scope", "public_debate"),
+            instruction=round_definition["instruction"],
+        )
+        for round_definition in round_data
+    ]
 
 
 def load_agent_runtime_config(path: Path | str | None) -> dict[str, Any] | None:

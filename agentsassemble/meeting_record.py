@@ -5,7 +5,6 @@ from typing import Any
 
 from agentsassemble.meeting_context import build_diagnostics, public_debate_rounds, public_synthesis
 from agentsassemble.models import CouncilConfig, ResearchDepth, ResearchSteering
-from agentsassemble.templates import DEMO_MEETING_TEMPLATE
 
 
 def assemble_meeting_record(
@@ -51,8 +50,8 @@ def assemble_meeting_record(
         "display_topic": config.display_topic,
         "roles": roles,
         "meeting_template": {
-            "id": DEMO_MEETING_TEMPLATE["id"],
-            "display_name": DEMO_MEETING_TEMPLATE["display_name"],
+            "id": config.meeting_template_id,
+            "display_name": config.meeting_template_name,
             "rounds": [
                 {
                     "id": round_definition.id,
@@ -60,7 +59,7 @@ def assemble_meeting_record(
                     "context_scope": round_definition.context_scope,
                     "instruction": round_definition.instruction,
                 }
-                for round_definition in DEMO_MEETING_TEMPLATE["rounds"]
+                for round_definition in config.rounds
             ],
         },
         "adapter_config": {"name": setup.moderator_adapter.name},

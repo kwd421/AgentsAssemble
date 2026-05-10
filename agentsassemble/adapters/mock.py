@@ -47,14 +47,21 @@ class MockAdapter(ProviderAdapter):
             "show_me_the_feats": "직접 보여준 결과만 놓고 보면 사카즈키가 쿠잔과의 장기 결투에서 이겼으니 우세로 보는 게 맞습니다.",
             "fanboard_skeptic": "사카즈키 1위가 제일 무난하지만, 보르살리노는 전력을 다한 장면이 적어서 확신도는 너무 높이면 안 됩니다.",
         }
+        default_sources = [
+            f"https://example.com/agentsassemble/mock/{role.id}/overview",
+            f"https://example.com/agentsassemble/mock/{role.id}/counterpoint",
+            f"https://example.com/agentsassemble/mock/{role.id}/constraints",
+        ]
+        default_claim = f"{role.display_name} 관점에서는 {role.research_focus} 기준으로 조건부 결론을 방어할 수 있습니다."
         queries = [
             f"{question} {role.display_name}",
-            f"One Piece admirals strength {role.lens}",
+            f"{question} {role.lens}",
         ]
-        urls = self._expand_sources(source_map[role.id], depth.target_sources, role.id)
+        urls = self._expand_sources(source_map.get(role.id, default_sources), depth.target_sources, role.id)
+        role_claim = claims.get(role.id, default_claim)
         claim_evidence = [
             {
-                "claim": f"{claims[role.id]} (근거 항목 {index + 1})",
+                "claim": f"{role_claim} (근거 항목 {index + 1})",
                 "evidence": urls[index : index + max(1, min(3, len(urls)))],
                 "interpretation": role.research_focus,
                 "confidence": "medium",
@@ -100,7 +107,7 @@ class MockAdapter(ProviderAdapter):
                 }
                 for url in urls
             ],
-            "summary": claims[role.id],
+            "summary": role_claim,
             "confidence": "medium",
             "uncertainty": "전투력 비교는 공식 언급, 전투 맥락, 아직 덜 공개된 전력이 완전히 맞물리지 않아서 해석 여지가 있습니다.",
             "claim_evidence": claim_evidence,
@@ -148,16 +155,18 @@ class MockAdapter(ProviderAdapter):
                 "show_me_the_feats": "직접 승부가 난 기록을 우선하면 사카즈키가 쿠잔보다 앞섭니다.",
                 "fanboard_skeptic": "아카이누 1위는 무난하지만, 키자루 전력 표본이 적다는 점은 계속 걸립니다.",
             }
+            opener = openers.get(role.id, f"{role.research_focus}부터 따져보겠습니다.")
+            spoken_reason = spoken_reasons.get(role.id, research.get("summary", f"{role.lens} 관점의 근거가 있습니다."))
             content = (
-                f"{role.display_name}: {openers[role.id]} "
-                f"내 판단은 아카이누 우세입니다. {spoken_reasons[role.id]} "
-                f"다만 아직 안 나온 전력과 전투 맥락 때문에 확정 서열처럼 말하긴 불확실합니다."
+                f"{role.display_name}: {opener} "
+                f"내 판단은 조건부 우세입니다. {spoken_reason} "
+                f"다만 룰과 전제에 따라 결론이 흔들릴 수 있어서 불확실합니다."
             )
-            position = "아카이누 우세"
+            position = "조건부 우세"
             stance_status = "held"
             change_conditions = [
-                "아카이누보다 높은 공식 직접 비교 근거",
-                "키자루나 쿠잔의 명확한 상위 전투 결과",
+                "현재 결론보다 강한 직접 근거",
+                "룰 전제를 바꾸는 공개 반례",
             ]
         else:
             rebuttals = {
@@ -165,8 +174,9 @@ class MockAdapter(ProviderAdapter):
                 "show_me_the_feats": "설정은 말이고 전투는 결과입니다. 실제로 승부가 난 쪽을 무시하면 안 됩니다.",
                 "fanboard_skeptic": "작중에 안 나온 걸 왜 확정 박노? 키자루는 표본 부족이라 보류가 맞다.",
             }
-            content = f"{role.display_name}: {rebuttals[role.id]} 그래서 아카이누 1위는 유지하되, 근거별 확신도는 분리해서 적어야 합니다."
-            position = "아카이누 우세, 확신도는 근거별 분리"
+            rebuttal = rebuttals.get(role.id, "상대 주장은 전제와 근거 품질을 분리해서 봐야 합니다.")
+            content = f"{role.display_name}: {rebuttal} 그래서 내 결론은 유지하되, 확신도는 근거별로 분리해서 적어야 합니다."
+            position = "조건부 우세, 확신도는 근거별 분리"
             stance_status = "held"
             change_conditions = [
                 "반대편이 supported claim으로 직접 승패나 공식 비교를 제시할 때",
@@ -188,6 +198,25 @@ class MockAdapter(ProviderAdapter):
         question: str,
         public_context: dict[str, Any],
     ) -> dict[str, Any]:
+        if "고릴라" in question or "gorilla" in question.casefold():
+            return {
+                "winner": "100명의 조율된 보디빌더",
+                "ranking": ["100명의 조율된 보디빌더", "성체 수컷 실버백 고릴라"],
+                "confidence": "low",
+                "caveats": [
+                    "100명이 실제로 도망치지 않고 조율된다는 전제가 강합니다.",
+                    "고릴라의 초반 돌진과 부상 위험은 매우 크게 봐야 합니다.",
+                ],
+                "summary": (
+                    "목 데모 판정은 조율된 100명의 숫자 우위를 더 높게 보되, "
+                    "심리 붕괴와 부상 리스크 때문에 confidence를 낮게 둔다."
+                ),
+                "tasks": {
+                    "animal_spec_nerd": "고릴라 신체 스펙과 행동 리스크를 더 검토한다.",
+                    "gym_tactics_bro": "100명 협동 전술의 현실성을 더 검토한다.",
+                    "playground_skeptic": "룰 허점과 공포로 인한 붕괴 가능성을 더 검토한다.",
+                },
+            }
         return {
             "winner": "Sakazuki / Akainu",
             "ranking": ["Sakazuki / Akainu", "Kuzan / Aokiji", "Borsalino / Kizaru"],

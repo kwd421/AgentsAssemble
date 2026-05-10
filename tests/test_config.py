@@ -22,6 +22,62 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual([role.id for role in config.roles], ["lore_lawyer", "show_me_the_feats", "fanboard_skeptic"])
         self.assertEqual(config.roles[0].personality["preset"], "pedantic_lore_nerd")
         self.assertIn("dcinside", config.roles[2].source_preferences[0])
+        self.assertEqual([round_definition.id for round_definition in config.rounds], ["round_1", "round_2"])
+
+    def test_load_council_config_with_custom_rounds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "council.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "topic": "topic",
+                        "question": "question",
+                        "roles": [
+                            {
+                                "id": "role_a",
+                                "display_name": "A",
+                                "lens": "Lens",
+                                "research_focus": "focus",
+                            }
+                        ],
+                        "meeting_template": {
+                            "id": "custom_template",
+                            "display_name": "Custom Template",
+                            "rounds": [
+                                {
+                                    "id": "round_1",
+                                    "title": "Opening",
+                                    "report_label": "Opening reports",
+                                    "context_scope": "own_research",
+                                    "instruction": "Open from private research.",
+                                },
+                                {
+                                    "id": "round_2",
+                                    "title": "Crossfire",
+                                    "report_label": "Crossfire",
+                                    "context_scope": "public_debate",
+                                    "instruction": "Challenge public claims.",
+                                },
+                                {
+                                    "id": "round_3",
+                                    "title": "Final",
+                                    "report_label": "Final statements",
+                                    "context_scope": "public_debate",
+                                    "instruction": "Give a final position.",
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = load_council_config(path)
+
+        self.assertEqual(config.meeting_template_id, "custom_template")
+        self.assertEqual(config.meeting_template_name, "Custom Template")
+        self.assertEqual([round_definition.id for round_definition in config.rounds], ["round_1", "round_2", "round_3"])
+        self.assertEqual(config.rounds[2].context_scope, "public_debate")
 
     def test_load_agent_runtime_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:

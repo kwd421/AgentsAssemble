@@ -468,6 +468,89 @@ class DemoMeetingTests(unittest.TestCase):
                     if other_role != own_role:
                         self.assertNotIn(f"private_research/{other_role}", message["content"])
 
+    def test_custom_council_config_controls_debate_rounds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "council.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "topic": "topic",
+                        "question": "question",
+                        "roles": [
+                            {
+                                "id": "lore_lawyer",
+                                "display_name": "설정충",
+                                "lens": "Canon Analyst",
+                                "research_focus": "canon",
+                            },
+                            {
+                                "id": "show_me_the_feats",
+                                "display_name": "공식이뭘알아",
+                                "lens": "Feats Analyst",
+                                "research_focus": "feats",
+                            },
+                            {
+                                "id": "fanboard_skeptic",
+                                "display_name": "만갤러",
+                                "lens": "Skeptical Critic",
+                                "research_focus": "skeptic",
+                            },
+                        ],
+                        "meeting_template": {
+                            "id": "custom_three_rounds",
+                            "display_name": "Custom Three Rounds",
+                            "rounds": [
+                                {
+                                    "id": "round_1",
+                                    "title": "Opening",
+                                    "report_label": "Opening",
+                                    "context_scope": "own_research",
+                                    "instruction": "Open.",
+                                },
+                                {
+                                    "id": "round_2",
+                                    "title": "Rebuttal",
+                                    "report_label": "Rebuttal",
+                                    "context_scope": "public_debate",
+                                    "instruction": "Rebut.",
+                                },
+                                {
+                                    "id": "round_3",
+                                    "title": "Final",
+                                    "report_label": "Final",
+                                    "context_scope": "public_debate",
+                                    "instruction": "Final.",
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_demo_meeting(adapter_name="mock", output_root=root, council_config_path=config_path)
+            meeting = json.loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(meeting["meeting_template"]["id"], "custom_three_rounds")
+        self.assertEqual([round_record["id"] for round_record in meeting["debate_rounds"]], ["round_1", "round_2", "round_3"])
+
+    def test_mock_demo_supports_custom_role_ids(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            result = run_demo_meeting(
+                adapter_name="mock",
+                output_root=root,
+                council_config_path=Path("configs/gorilla-vs-bodybuilders.json"),
+            )
+            meeting = json.loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            [role["id"] for role in meeting["roles"]],
+            ["animal_spec_nerd", "gym_tactics_bro", "playground_skeptic"],
+        )
+        self.assertEqual([round_record["id"] for round_record in meeting["debate_rounds"]], ["round_1", "round_2", "round_3"])
+
     def test_second_meeting_loads_previous_memory(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

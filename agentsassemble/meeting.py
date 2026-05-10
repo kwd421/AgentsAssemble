@@ -70,6 +70,7 @@ def run_demo_meeting(
             "topic": config.topic,
             "display_topic": config.display_topic,
             "roles": roles,
+            "meeting_template": _meeting_template_snapshot(config),
             "debate_rounds": [],
             "moderator_synthesis": {},
             "agent_bindings": [binding.to_dict() for binding in setup.agent_bindings],
@@ -92,7 +93,7 @@ def run_demo_meeting(
             "topic": config.topic,
             "display_topic": config.display_topic,
             "roles": roles,
-            "meeting_template": _meeting_template_snapshot(),
+            "meeting_template": _meeting_template_snapshot(config),
             "memory_context": memory_context,
             "research_steering": steering.to_dict(),
             "research_depth": {
@@ -220,10 +221,11 @@ def run_demo_meeting(
     return MeetingResult(meeting_id=meeting_id, meeting_dir=meeting_dir)
 
 
-def _meeting_template_snapshot() -> dict[str, object]:
+def _meeting_template_snapshot(config) -> dict[str, object]:
+    rounds = config.rounds or DEMO_MEETING_TEMPLATE["rounds"]
     return {
-        "id": DEMO_MEETING_TEMPLATE["id"],
-        "display_name": DEMO_MEETING_TEMPLATE["display_name"],
+        "id": config.meeting_template_id,
+        "display_name": config.meeting_template_name,
         "rounds": [
             {
                 "id": round_definition.id,
@@ -231,6 +233,6 @@ def _meeting_template_snapshot() -> dict[str, object]:
                 "context_scope": round_definition.context_scope,
                 "instruction": round_definition.instruction,
             }
-            for round_definition in DEMO_MEETING_TEMPLATE["rounds"]
+            for round_definition in rounds
         ],
     }

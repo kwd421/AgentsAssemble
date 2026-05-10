@@ -81,7 +81,7 @@ def run_research_phase(
                         "kind": "research",
                         "role_id": role.id,
                         "display_name": role.display_name,
-                        "content": research.get("summary", "리서치 완료"),
+                        "content": compact_live_research_summary(research),
                         "confidence": research.get("confidence"),
                     }
                 )
@@ -100,7 +100,7 @@ def run_debate_phase(
 ) -> list[dict[str, Any]]:
     debate_rounds = []
     rounds_by_id: dict[str, list[dict[str, Any]]] = {}
-    for round_definition in DEMO_MEETING_TEMPLATE["rounds"]:
+    for round_definition in config.rounds or DEMO_MEETING_TEMPLATE["rounds"]:
         report(round_definition.report_label)
         if live_event is not None:
             live_event({"kind": "status", "round": round_definition.id, "content": round_definition.report_label})
@@ -153,6 +153,19 @@ def run_debate_phase(
             }
         )
     return debate_rounds
+
+
+def compact_live_research_summary(research: dict[str, Any]) -> str:
+    summary = str(research.get("summary") or "리서치 완료").strip()
+    sentences = [part.strip() for part in summary.replace("?", "?.").replace("!", "!.").split(".") if part.strip()]
+    if len(sentences) <= 2 and len(summary) <= 160:
+        return summary
+    compact = ". ".join(sentences[:2]).strip()
+    if compact and not compact.endswith((".", "?", "!")):
+        compact += "."
+    if compact and len(compact) <= 160:
+        return compact
+    return summary[:157].rstrip() + "..."
 
 
 def synthesize_meeting(

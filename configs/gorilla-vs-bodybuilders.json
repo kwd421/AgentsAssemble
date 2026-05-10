@@ -3,6 +3,33 @@
   "display_topic": "고릴라 1마리 vs 헬창 100명",
   "question": "Who wins in a bare-arena fight: one adult male silverback gorilla or one hundred coordinated bodybuilders?",
   "display_question": "빈 경기장에서 성체 수컷 실버백 고릴라 1마리와 헬창 100명이 붙으면 누가 이길까?",
+  "meeting_template": {
+    "id": "silly_power_debate_v1",
+    "display_name": "초딩 파워 토론",
+    "rounds": [
+      {
+        "id": "round_1",
+        "title": "Round 1",
+        "report_label": "Round 1: opening positions",
+        "context_scope": "own_research",
+        "instruction": "Present your opening position from your private research. Do not dump research notes. State the side you defend, the strongest reason, and one uncertainty."
+      },
+      {
+        "id": "round_2",
+        "title": "Round 2",
+        "report_label": "Round 2: rebuttal and evidence comparison",
+        "context_scope": "public_debate",
+        "instruction": "Respond to at least one previous speaker by name. Attack weak assumptions, missing constraints, and unrealistic tactics. Hold your position unless public evidence changes it."
+      },
+      {
+        "id": "round_3",
+        "title": "Round 3",
+        "report_label": "Round 3: final stance",
+        "context_scope": "public_debate",
+        "instruction": "Give a concise final stance after hearing the room. Say what you still reject, what you partially accept, and what the moderator must not overclaim."
+      }
+    ]
+  },
   "roles": [
     {
       "id": "animal_spec_nerd",

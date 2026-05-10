@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -151,6 +151,9 @@ class CouncilConfig:
     question: str
     display_question: str
     roles: list[Role]
+    meeting_template_id: str = "default"
+    meeting_template_name: str = "Default"
+    rounds: list["MeetingRound"] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
