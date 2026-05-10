@@ -37,6 +37,7 @@ export function renderLobby() {
           </div>
           <form id="lobby-form" class="lobby-form">
             <input id="lobby-message" maxlength="240" placeholder="메시지를 입력하세요" />
+            ${hasRemoteLobbyBridge() ? '<button type="button" id="lobby-ask-remote">원격 호출</button>' : ""}
             <button type="submit">보내기</button>
           </form>
         </div>
@@ -48,6 +49,10 @@ export function renderLobby() {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     await sendLobbyEvent("message");
+  });
+  const askRemoteButton = lobby.querySelector("#lobby-ask-remote");
+  askRemoteButton?.addEventListener("click", async () => {
+    await sendLobbyEvent("message", { askRemote: true });
   });
   const myNameInput = lobby.querySelector("#lobby-my-name");
   myNameInput?.addEventListener("input", () => {
@@ -89,6 +94,21 @@ function renderLobbySummary(roster) {
       ${renderSummaryMetric("이벤트", state.lobbyEvents.length)}
     </section>
   `;
+}
+
+function hasRemoteLobbyBridge() {
+  const meeting = state.payload?.meeting;
+  const providers = providerList(meeting?.provider_configs);
+  const remoteProviderIds = new Set(
+    providers.filter((provider) => provider.kind === "remote_http_bridge").map((provider) => provider.id)
+  );
+  return (meeting?.agent_bindings || []).some((binding) => remoteProviderIds.has(binding.provider_id));
+}
+
+function providerList(providerConfigs) {
+  if (Array.isArray(providerConfigs)) return providerConfigs;
+  if (providerConfigs && typeof providerConfigs === "object") return Object.values(providerConfigs);
+  return [];
 }
 
 function renderSummaryMetric(label, value) {
@@ -250,7 +270,7 @@ function defaultLobbyMessage(kind, side) {
   return "";
 }
 
-async function sendLobbyEvent(kind) {
+async function sendLobbyEvent(kind, options = {}) {
   const messageInput = document.querySelector("#lobby-message");
   const side = "mine";
   const name = localStorage.getItem("agentsassemble.name") || defaultLobbyName(side);
@@ -263,6 +283,21 @@ async function sendLobbyEvent(kind) {
   });
   setLobbyEvents(payload.events || []);
   if (messageInput) messageInput.value = "";
+  renderLobby();
+  if (options.askRemote && message) await sendLobbyRemote(message, name);
+}
+
+async function sendLobbyRemote(message, speakerName) {
+  const payload = await fetchJson("/api/lobby/remote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      meeting_id: state.payload?.meeting?.meeting_id,
+      speaker_name: speakerName,
+      message,
+    }),
+  });
+  setLobbyEvents(payload.events || []);
   renderLobby();
 }
 

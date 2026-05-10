@@ -60,6 +60,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("setLobbyEvents(payload.events || [])", script)
         self.assertIn("padding: 10px clamp(12px", css)
         self.assertIn("max-width: calc(67.5% - 8px);", css)
+        self.assertIn('id="lobby-ask-remote"', script)
+        self.assertIn("/api/lobby/remote", script)
+        self.assertIn("function hasRemoteLobbyBridge", script)
+        self.assertIn("async function sendLobbyRemote", script)
 
     def test_live_view_prioritizes_official_chat(self):
         script = static_js()

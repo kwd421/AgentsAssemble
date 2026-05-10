@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 import os
 import time
 from pathlib import Path
@@ -11,6 +12,7 @@ from agentsassemble.gui import (
     list_meetings,
     provider_catalog_payload,
     read_lobby,
+    send_lobby_message_to_remote_bridge,
 )
 from agentsassemble.meeting_events import append_live_event, write_live_state
 from agentsassemble.meeting import run_demo_meeting
@@ -60,6 +62,79 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(events[1]["side"], "other")
             self.assertEqual(events[2]["side"], "other-agent")
             self.assertEqual(events[2]["message"], "만갤러 준비됐냐?")
+
+    def test_lobby_remote_bridge_reply_is_recorded_as_other_agent(self):
+        import agentsassemble.gui as gui
+
+        class FakeRequester:
+            def __init__(self):
+                self.calls = []
+
+            def __call__(self, url, headers, payload, timeout_seconds):
+                self.calls.append({"url": url, "headers": headers, "payload": payload})
+                return {
+                    "text": '{"message":"친구 Claude Code 준비됐습니다.","kind":"message"}',
+                    "metadata": {"bridge": "friend-mac"},
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "테스트",
+                        "question": "준비됐나?",
+                        "roles": [
+                            {
+                                "id": "show_me_the_feats",
+                                "display_name": "공식이뭘알아",
+                                "lens": "전적/퍼포먼스",
+                                "research_focus": "전투 결과",
+                            }
+                        ],
+                        "provider_configs": {
+                            "friend-claude-code": {
+                                "id": "friend-claude-code",
+                                "kind": "remote_http_bridge",
+                                "display_name": "Friend Claude Code",
+                                "endpoint": "http://friend.local:8777",
+                                "auth_ref": "literal:bridge-token",
+                            }
+                        },
+                        "agent_bindings": [
+                            {
+                                "agent_id": "friend-agent",
+                                "role_id": "show_me_the_feats",
+                                "owner_id": "friend",
+                                "provider_id": "friend-claude-code",
+                                "model_id": None,
+                                "permission_profile_id": "meeting_read_only",
+                                "join_mode": "current_session",
+                            }
+                        ],
+                        "debate_rounds": [],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            requester = FakeRequester()
+            previous_requester = gui.REMOTE_LOBBY_REQUESTER
+            gui.REMOTE_LOBBY_REQUESTER = requester
+            try:
+                event = send_lobby_message_to_remote_bridge(root, "친구야 준비됐어?", meeting_id="m1", speaker_name="나")
+            finally:
+                gui.REMOTE_LOBBY_REQUESTER = previous_requester
+
+            self.assertEqual(event["side"], "other-agent")
+            self.assertEqual(event["name"], "공식이뭘알아")
+            self.assertEqual(event["message"], "친구 Claude Code 준비됐습니다.")
+            self.assertEqual(read_lobby(root)[0]["message"], "친구 Claude Code 준비됐습니다.")
+            self.assertEqual(requester.calls[0]["headers"]["Authorization"], "Bearer bridge-token")
+            self.assertEqual(requester.calls[0]["payload"]["step"], "lobby")
 
     def test_list_meetings_orders_latest_first(self):
         with tempfile.TemporaryDirectory() as temp_dir:

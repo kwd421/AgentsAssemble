@@ -8,13 +8,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_events import append_lobby_event_to_file, read_live_events, read_lobby_events
 from agentsassemble.adapters import default_provider_registry
+from agentsassemble.models import ProviderConfig, Role
 
 TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
 TABS = ["lobby", "live", "board", "archive"]
 STALE_RUNNING_SECONDS = 300
+REMOTE_LOBBY_REQUESTER = None
 
 
 def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str, object]]:
@@ -154,8 +157,120 @@ def append_lobby_event(output_root: Path, event: dict[str, object]) -> dict[str,
     return append_lobby_event_to_file(output_root / "lobby.jsonl", event)
 
 
+def send_lobby_message_to_remote_bridge(
+    output_root: Path,
+    message: str,
+    meeting_id: str | None = None,
+    target_agent_id: str | None = None,
+    speaker_name: str = "나",
+) -> dict[str, object]:
+    if not message.strip():
+        raise ValueError("Message is required.")
+    meeting_dir = _resolve_lobby_meeting_dir(output_root, meeting_id)
+    meeting = _read_meeting_record(meeting_dir)
+    role_data, binding, provider_data = _select_remote_bridge_binding(meeting, target_agent_id)
+    role = _role_from_payload(role_data)
+    provider = _provider_from_payload(provider_data)
+    session = {
+        "meeting_id": meeting.get("meeting_id", meeting_dir.name),
+        "agent_id": binding.get("agent_id"),
+        "owner_id": binding.get("owner_id"),
+        "join_mode": binding.get("join_mode"),
+        "session_id": binding.get("session_id"),
+    }
+    adapter = RemoteBridgeAdapter(provider, requester=REMOTE_LOBBY_REQUESTER)
+    remote_event = adapter.run_lobby_message(role, session, speaker_name=speaker_name, message=message.strip())
+    event = {
+        "name": remote_event.get("name") or role.display_name,
+        "side": "other-agent",
+        "kind": remote_event.get("kind") or "message",
+        "message": remote_event.get("message") or "",
+    }
+    return append_lobby_event(output_root, event)
+
+
 def provider_catalog_payload() -> dict[str, object]:
     return {"providers": default_provider_registry().catalog()}
+
+
+def _resolve_lobby_meeting_dir(output_root: Path, meeting_id: str | None) -> Path:
+    if meeting_id:
+        meeting_dir = output_root / "meetings" / meeting_id
+        if meeting_dir.exists():
+            return meeting_dir
+        raise ValueError(f"Meeting {meeting_id} was not found.")
+    meetings = list_meetings(output_root)
+    if not meetings:
+        raise ValueError("No meeting is available for remote lobby chat.")
+    return Path(str(meetings[0]["path"]))
+
+
+def _read_meeting_record(meeting_dir: Path) -> dict[str, object]:
+    meeting_path = meeting_dir / "meeting.json"
+    live_path = meeting_dir / "live_state.json"
+    source_path = meeting_path if meeting_path.exists() else live_path
+    if not source_path.exists():
+        raise ValueError("Meeting record is missing.")
+    return json.loads(source_path.read_text(encoding="utf-8"))
+
+
+def _select_remote_bridge_binding(
+    meeting: dict[str, object],
+    target_agent_id: str | None,
+) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    roles = _index_by_id(meeting.get("roles", []))
+    providers = _index_by_id(meeting.get("provider_configs", []))
+    for binding in _as_dict_list(meeting.get("agent_bindings", [])):
+        if target_agent_id and binding.get("agent_id") != target_agent_id:
+            continue
+        provider = providers.get(str(binding.get("provider_id")))
+        if not provider or provider.get("kind") != "remote_http_bridge":
+            continue
+        role = roles.get(str(binding.get("role_id")))
+        if role:
+            return role, binding, provider
+    raise ValueError("No remote bridge lobby participant is available.")
+
+
+def _index_by_id(items: object) -> dict[str, dict[str, object]]:
+    return {str(item["id"]): item for item in _as_dict_list(items) if item.get("id")}
+
+
+def _as_dict_list(value: object) -> list[dict[str, object]]:
+    if isinstance(value, dict):
+        return [item for item in value.values() if isinstance(item, dict)]
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _role_from_payload(payload: dict[str, object]) -> Role:
+    return Role(
+        id=str(payload.get("id") or "remote"),
+        display_name=str(payload.get("display_name") or payload.get("id") or "원격 에이전트"),
+        lens=str(payload.get("lens") or "Remote participant"),
+        research_focus=str(payload.get("research_focus") or "Lobby participation"),
+        personality=payload.get("personality") if isinstance(payload.get("personality"), dict) else None,
+        source_preferences=payload.get("source_preferences") if isinstance(payload.get("source_preferences"), list) else None,
+    )
+
+
+def _provider_from_payload(payload: dict[str, object]) -> ProviderConfig:
+    return ProviderConfig(
+        id=str(payload.get("id") or "remote"),
+        kind="remote_http_bridge",
+        display_name=str(payload.get("display_name") or payload.get("id") or "Remote bridge"),
+        default_model=_optional_str(payload.get("default_model")),
+        endpoint=_optional_str(payload.get("endpoint")),
+        auth_ref=_optional_str(payload.get("auth_ref")),
+        timeout_seconds=payload.get("timeout_seconds") if isinstance(payload.get("timeout_seconds"), int) else None,
+        search_enabled=bool(payload.get("search_enabled")),
+        notes=_optional_str(payload.get("notes")),
+    )
+
+
+def _optional_str(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
@@ -216,6 +331,29 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                     self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
                     return
                 event = append_lobby_event(output_root, payload if isinstance(payload, dict) else {})
+                self._send_json({"event": event, "events": read_lobby(output_root)})
+                return
+            if parsed.path == "/api/lobby/remote":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    event = send_lobby_message_to_remote_bridge(
+                        output_root,
+                        str(payload.get("message") or ""),
+                        meeting_id=_optional_str(payload.get("meeting_id")),
+                        target_agent_id=_optional_str(payload.get("target_agent_id")),
+                        speaker_name=str(payload.get("speaker_name") or "나"),
+                    )
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")

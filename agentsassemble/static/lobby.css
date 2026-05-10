@@ -139,7 +139,7 @@
   border-radius: 16px;
   display: grid;
   gap: clamp(6px, calc(8px * var(--ui-scale)), 8px);
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   padding: 9px;
 }
 
