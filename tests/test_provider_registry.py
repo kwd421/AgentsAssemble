@@ -2,6 +2,12 @@ import unittest
 
 from agentsassemble.adapters.base import ProviderAdapter
 from agentsassemble.adapters.registry import ProviderRegistry, default_provider_registry
+from agentsassemble.adapters.http_llm import (
+    AnthropicMessagesAdapter,
+    GeminiGenerateContentAdapter,
+    GrokChatAdapter,
+    LocalOpenAICompatibleAdapter,
+)
 from agentsassemble.adapters.unsupported import UnsupportedProviderAdapter
 from agentsassemble.models import AgentBinding, PermissionProfile, ProviderCapabilities, ProviderConfig, Role
 
@@ -102,7 +108,7 @@ class ProviderRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "implementation-side permissions"):
             registry.resolve(binding, {"local-hermes": provider}, {"unsafe": unsafe_permission})
 
-    def test_default_registry_exposes_planned_provider_capabilities(self):
+    def test_default_registry_creates_gemini_provider_adapter(self):
         registry = default_provider_registry()
         provider = ProviderConfig(
             id="gemini-research",
@@ -118,15 +124,7 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertTrue(capabilities.supports_research)
         self.assertTrue(capabilities.supports_web_search)
         self.assertTrue(capabilities.supports_structured_output)
-        self.assertIsInstance(adapter, UnsupportedProviderAdapter)
-        with self.assertRaisesRegex(NotImplementedError, "Gemini API integration is planned"):
-            adapter.run_research(
-                Role("researcher", "리서처", "Research", "broad research"),
-                {"role_id": "researcher"},
-                "Question?",
-                None,
-                None,
-            )
+        self.assertIsInstance(adapter, GeminiGenerateContentAdapter)
 
     def test_default_codex_registry_preserves_unlimited_timeout(self):
         registry = default_provider_registry(codex_timeout_seconds=None)
@@ -198,13 +196,37 @@ class ProviderRegistryTests(unittest.TestCase):
 
         self.assertEqual(catalog["mock"]["status"], "available")
         self.assertEqual(catalog["codex"]["status"], "available")
-        self.assertEqual(catalog["gemini"]["status"], "planned")
-        self.assertEqual(catalog["grok"]["status"], "planned")
+        self.assertEqual(catalog["gemini"]["status"], "available")
+        self.assertEqual(catalog["grok"]["status"], "available")
         self.assertEqual(catalog["cursor"]["status"], "planned")
         self.assertEqual(catalog["claude_code"]["status"], "planned")
+        self.assertEqual(catalog["anthropic"]["status"], "available")
+        self.assertEqual(catalog["local_openai_compatible"]["status"], "available")
         self.assertTrue(catalog["gemini"]["capabilities"]["supports_web_search"])
         self.assertTrue(catalog["cursor"]["capabilities"]["supports_filesystem"])
-        self.assertIn("planned", catalog["grok"]["reason"])
+
+    def test_default_registry_creates_http_provider_adapters(self):
+        registry = default_provider_registry()
+
+        self.assertIsInstance(
+            registry.create(ProviderConfig(id="claude", kind="anthropic", display_name="Claude")),
+            AnthropicMessagesAdapter,
+        )
+        self.assertIsInstance(
+            registry.create(ProviderConfig(id="grok", kind="grok", display_name="Grok")),
+            GrokChatAdapter,
+        )
+        self.assertIsInstance(
+            registry.create(
+                ProviderConfig(
+                    id="lmstudio",
+                    kind="local_openai_compatible",
+                    display_name="LM Studio",
+                    endpoint="http://127.0.0.1:1234/v1",
+                )
+            ),
+            LocalOpenAICompatibleAdapter,
+        )
 
 
 if __name__ == "__main__":

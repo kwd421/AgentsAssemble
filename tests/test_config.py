@@ -69,7 +69,11 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(bindings[0].join_mode, "current_session")
 
     def test_example_agent_configs_are_parseable(self):
-        for path in (Path("configs/agents.example.json"), Path("configs/codex-sessions.example.json")):
+        for path in (
+            Path("configs/agents.example.json"),
+            Path("configs/codex-sessions.example.json"),
+            Path("configs/http-providers.example.json"),
+        ):
             with self.subTest(path=path):
                 data = load_agent_runtime_config(path)
                 providers = providers_from_config(data)

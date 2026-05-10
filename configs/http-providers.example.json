@@ -1,0 +1,96 @@
+{
+  "providers": [
+    {
+      "id": "lmstudio-gemma",
+      "kind": "local_openai_compatible",
+      "display_name": "LM Studio Gemma",
+      "default_model": "gemma-3-4b-it",
+      "endpoint": "http://127.0.0.1:1234/v1",
+      "search_enabled": false
+    },
+    {
+      "id": "claude-reviewer",
+      "kind": "anthropic",
+      "display_name": "Claude API Reviewer",
+      "default_model": "claude-3-5-sonnet-latest",
+      "auth_ref": "env:ANTHROPIC_API_KEY",
+      "search_enabled": false
+    },
+    {
+      "id": "gemini-researcher",
+      "kind": "gemini",
+      "display_name": "Gemini Researcher",
+      "default_model": "gemini-2.5-pro",
+      "auth_ref": "env:GEMINI_API_KEY",
+      "search_enabled": true
+    },
+    {
+      "id": "grok-skeptic",
+      "kind": "grok",
+      "display_name": "Grok Skeptic",
+      "default_model": "grok-4",
+      "auth_ref": "env:XAI_API_KEY",
+      "search_enabled": true
+    }
+  ],
+  "permission_profiles": [
+    {
+      "id": "api_meeting_readonly",
+      "meeting_read": true,
+      "lobby_chat": true,
+      "official_turn": true,
+      "web_search": false,
+      "tool_use": false,
+      "filesystem_read": false,
+      "filesystem_write": false,
+      "git_write": false,
+      "push": false,
+      "secrets": false,
+      "implementation": false
+    },
+    {
+      "id": "api_meeting_search",
+      "meeting_read": true,
+      "lobby_chat": true,
+      "official_turn": true,
+      "web_search": true,
+      "tool_use": false,
+      "filesystem_read": false,
+      "filesystem_write": false,
+      "git_write": false,
+      "push": false,
+      "secrets": false,
+      "implementation": false
+    }
+  ],
+  "incoming_agents": [],
+  "agent_bindings": [
+    {
+      "agent_id": "gemma-lore",
+      "role_id": "lore_lawyer",
+      "owner_id": "host",
+      "provider_id": "lmstudio-gemma",
+      "model_id": "gemma-3-4b-it",
+      "permission_profile_id": "api_meeting_readonly",
+      "join_mode": "fresh"
+    },
+    {
+      "agent_id": "gemini-feats",
+      "role_id": "show_me_the_feats",
+      "owner_id": "host",
+      "provider_id": "gemini-researcher",
+      "model_id": "gemini-2.5-pro",
+      "permission_profile_id": "api_meeting_search",
+      "join_mode": "fresh"
+    },
+    {
+      "agent_id": "grok-skeptic",
+      "role_id": "fanboard_skeptic",
+      "owner_id": "host",
+      "provider_id": "grok-skeptic",
+      "model_id": "grok-4",
+      "permission_profile_id": "api_meeting_search",
+      "join_mode": "fresh"
+    }
+  ]
+}

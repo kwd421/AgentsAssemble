@@ -5,6 +5,12 @@ from typing import Callable
 
 from agentsassemble.adapters.base import ProviderAdapter
 from agentsassemble.adapters.codex import CodexAdapter
+from agentsassemble.adapters.http_llm import (
+    AnthropicMessagesAdapter,
+    GeminiGenerateContentAdapter,
+    GrokChatAdapter,
+    LocalOpenAICompatibleAdapter,
+)
 from agentsassemble.adapters.mock import MockAdapter
 from agentsassemble.adapters.unsupported import UnsupportedProviderAdapter
 from agentsassemble.models import AgentBinding, PermissionProfile, ProviderCapabilities, ProviderConfig
@@ -35,6 +41,7 @@ class ProviderRegistry:
         capabilities: ProviderCapabilities,
         status: str = "available",
         reason: str | None = None,
+        preferred_phase: str = "meeting",
     ) -> None:
         self._factories[kind] = factory
         self._capabilities[kind] = capabilities
@@ -42,6 +49,7 @@ class ProviderRegistry:
             "kind": kind,
             "status": status,
             "reason": reason,
+            "preferred_phase": preferred_phase,
             "capabilities": capabilities.to_dict(),
         }
 
@@ -122,62 +130,70 @@ def default_provider_registry(
             cost_class="subscription",
         ),
     )
+    register_http_provider_kinds(registry)
     register_planned_provider_kinds(registry)
     return registry
 
 
+def register_http_provider_kinds(registry: ProviderRegistry) -> None:
+    registry.register(
+        "anthropic",
+        lambda provider: AnthropicMessagesAdapter(provider),
+        ProviderCapabilities(
+            supports_research=True,
+            supports_web_search=False,
+            supports_tools=True,
+            supports_filesystem=False,
+            supports_session_resume=False,
+            supports_structured_output=True,
+            context_window=200_000,
+            cost_class="paid_api",
+        ),
+    )
+    registry.register(
+        "gemini",
+        lambda provider: GeminiGenerateContentAdapter(provider),
+        ProviderCapabilities(
+            supports_research=True,
+            supports_web_search=True,
+            supports_tools=True,
+            supports_filesystem=False,
+            supports_session_resume=False,
+            supports_structured_output=True,
+            context_window=1_000_000,
+            cost_class="paid_api",
+        ),
+    )
+    registry.register(
+        "grok",
+        lambda provider: GrokChatAdapter(provider),
+        ProviderCapabilities(
+            supports_research=True,
+            supports_web_search=True,
+            supports_tools=True,
+            supports_filesystem=False,
+            supports_session_resume=False,
+            supports_structured_output=True,
+            cost_class="paid_api",
+        ),
+    )
+    registry.register(
+        "local_openai_compatible",
+        lambda provider: LocalOpenAICompatibleAdapter(provider),
+        ProviderCapabilities(
+            supports_research=True,
+            supports_web_search=False,
+            supports_tools=False,
+            supports_filesystem=False,
+            supports_session_resume=False,
+            supports_structured_output=True,
+            cost_class="local",
+        ),
+    )
+
+
 def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
     planned: dict[str, tuple[ProviderCapabilities, str]] = {
-        "anthropic": (
-            ProviderCapabilities(
-                supports_research=True,
-                supports_web_search=False,
-                supports_tools=True,
-                supports_filesystem=False,
-                supports_session_resume=True,
-                supports_structured_output=True,
-                context_window=200_000,
-                cost_class="paid_api",
-            ),
-            "Claude API integration is planned; configure as an external meeting provider before enabling calls.",
-        ),
-        "gemini": (
-            ProviderCapabilities(
-                supports_research=True,
-                supports_web_search=True,
-                supports_tools=True,
-                supports_filesystem=False,
-                supports_session_resume=True,
-                supports_structured_output=True,
-                context_window=1_000_000,
-                cost_class="paid_api",
-            ),
-            "Gemini API integration is planned; grounding/search behavior must be wired explicitly.",
-        ),
-        "grok": (
-            ProviderCapabilities(
-                supports_research=True,
-                supports_web_search=True,
-                supports_tools=True,
-                supports_filesystem=False,
-                supports_session_resume=True,
-                supports_structured_output=True,
-                cost_class="paid_api",
-            ),
-            "Grok API integration is planned; evidence provenance must be strict before live use.",
-        ),
-        "local_openai_compatible": (
-            ProviderCapabilities(
-                supports_research=True,
-                supports_web_search=False,
-                supports_tools=False,
-                supports_filesystem=False,
-                supports_session_resume=False,
-                supports_structured_output=True,
-                cost_class="local",
-            ),
-            "Local OpenAI-compatible provider integration is planned; endpoint calls are not wired yet.",
-        ),
         "cursor": (
             ProviderCapabilities(
                 supports_research=True,
@@ -246,6 +262,7 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
             capabilities,
             status="planned",
             reason=reason,
+            preferred_phase="implementation" if kind in {"cursor", "claude_code"} else "memory",
         )
 
 

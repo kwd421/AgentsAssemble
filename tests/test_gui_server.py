@@ -142,10 +142,10 @@ class GuiServerTests(unittest.TestCase):
         providers = {provider["kind"]: provider for provider in payload["providers"]}
 
         self.assertEqual(providers["codex"]["status"], "available")
-        self.assertEqual(providers["anthropic"]["status"], "planned")
-        self.assertEqual(providers["gemini"]["status"], "planned")
-        self.assertEqual(providers["grok"]["status"], "planned")
-        self.assertEqual(providers["local_openai_compatible"]["status"], "planned")
+        self.assertEqual(providers["anthropic"]["status"], "available")
+        self.assertEqual(providers["gemini"]["status"], "available")
+        self.assertEqual(providers["grok"]["status"], "available")
+        self.assertEqual(providers["local_openai_compatible"]["status"], "available")
         self.assertIn("capabilities", providers["claude_code"])
         self.assertTrue(providers["cursor"]["capabilities"]["supports_filesystem"])
 

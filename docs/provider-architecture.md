@@ -20,7 +20,7 @@ Role profile -> Agent binding -> Provider config -> Adapter session -> Permissio
 
 ## Current Implemented Slice
 
-The current code still runs the same `mock` and `codex` demo paths, but meeting execution now records provider structure:
+Meeting execution records provider structure:
 
 - `provider_configs`
 - `permission_profiles`
@@ -31,10 +31,12 @@ The current code still runs the same `mock` and `codex` demo paths, but meeting 
 - per-role `isolation.*.permissions`
 - per-role `isolation.*.capabilities`
 
-The default demo still assigns all roles to one provider. The point of this slice is to make the future role-by-role routing auditable without changing the user-facing demo behavior.
+The default demo still assigns all roles to one provider unless an agent runtime config is supplied. The point of this slice is to make role-by-role routing auditable.
 
-The default registry also exposes planned provider kinds with explicit capability snapshots and unsupported adapters:
+The default registry exposes provider kinds with explicit capability snapshots:
 
+- `mock`
+- `codex`
 - `anthropic`
 - `gemini`
 - `grok`
@@ -45,7 +47,7 @@ The default registry also exposes planned provider kinds with explicit capabilit
 - `openclaw_memory`
 - `memory_pack`
 
-These entries make provider intent visible without pretending live integrations exist. Cursor and Claude Code can be represented as read-only meeting participants, but meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
+`anthropic`, `gemini`, `grok`, and `local_openai_compatible` have HTTP meeting adapters. `cursor` and `claude_code` remain implementation-phase planned providers; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
 ## Provider Families
 
@@ -89,9 +91,9 @@ Imported packs should pass a memory gate before they influence a meeting.
 
 - Claude: good candidate for API meeting review; Claude Code may join meetings in read-only opinion mode and later return to implementation work after `decision.md`.
 - Gemini: good candidate for broad research and Google Search grounding where available.
-- Grok: optional API provider; useful for skeptical critique, but evidence provenance must be strict.
+- Grok: OpenAI-compatible xAI API provider; useful for skeptical critique, but evidence provenance must be strict.
 - Cursor: may join meetings in read-only opinion mode and later return to implementation work after `decision.md`.
-- Local/Ollama: useful for offline/private fallback and cheap drafts; web research requires a separate search capability.
+- Local/Ollama/LM Studio: useful for offline/private fallback and cheap drafts through OpenAI-compatible `/chat/completions`; web research requires a separate search capability.
 - Hermes/OpenClaw: memory/profile inspiration, not raw hidden session import.
 
 ## Safety Boundaries
@@ -127,8 +129,8 @@ Observed limitation: the final moderator synthesis can still fall back to `Undet
 
 ## Next Implementation Slices
 
-1. Load provider configs and agent bindings from project config files.
-2. Allow role-by-role provider routing in `run_demo_meeting`.
-3. Add manual external review packets for Claude/Gemini/Grok before full API integrations.
+1. Add provider health checks that can test LM Studio or API credentials without starting a full meeting.
+2. Add provider-specific evidence provenance for Gemini/Grok web-grounded outputs.
+3. Split meeting adapters from implementation/coding-agent adapters.
 4. Add an importable memory/profile packet schema and memory gate report.
-5. Split meeting adapters from implementation/coding-agent adapters.
+5. Add implementation-phase adapters for Cursor and Claude Code after `decision.md`.

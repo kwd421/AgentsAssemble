@@ -44,7 +44,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Repository operating rules are recorded in `AGENTS.md`.
 - Long-term memory/context engineering research notes now compare MemGPT-style memory tiers, Reflexion-style verbal reflection, LongMemEval-style evaluation questions, and LangGraph Store-style namespaced memory.
 - Provider binding groundwork records provider configs, agent bindings, capabilities, and meeting-only permissions in `meeting.json`.
-- The provider registry now includes planned capability entries for Claude/Anthropic, Gemini, Grok, Cursor, Claude Code, local OpenAI-compatible providers, and Hermes/OpenClaw-style memory packs, with unsupported adapters that fail explicitly until real integrations are implemented. Cursor and Claude Code are allowed as read-only meeting participants while implementation permissions remain gated until after `decision.md`.
+- The provider registry now includes live HTTP meeting adapters for Claude/Anthropic, Gemini, Grok, and local OpenAI-compatible providers such as LM Studio. Cursor, Claude Code, and Hermes/OpenClaw-style memory packs remain planned or memory-pack providers with explicit capability records.
 - Provider catalog data is available from the registry and GUI API so future UI surfaces can show which providers are available, planned, searchable, filesystem-capable, or memory-pack-only.
 - Runtime agent config can be loaded from JSON with host-approved providers, permission profiles, agent bindings, and incoming external agent requests. Incoming agents are recorded for audit but only approved bindings execute.
 - Incoming external agents now produce explicit admission decisions in `meeting.json`, separating requested role/provider/permissions from the host-approved binding that actually executes.
@@ -165,7 +165,7 @@ Detailed provider architecture lives in `docs/provider-architecture.md`.
 Current direction:
 
 - API providers such as Claude, Gemini, Grok, and OpenAI-compatible local models are meeting/research providers.
-- Shell-driven coding agents such as Codex CLI, Claude Code, and Cursor should be implementation-phase providers after `decision.md`.
+- Shell-driven coding agents such as Claude Code and Cursor should be implementation-phase providers after `decision.md`; Codex is currently usable as a meeting adapter and later implementation provider.
 - Hermes/OpenClaw-style systems are memory/profile pack inspirations first, not raw session import mechanisms.
 - External or remote agents must join with explicit provider, permission, context, and memory packet metadata.
 - A host admission decision must separate an incoming agent's requested identity from the effective role, provider, and permission profile that are allowed to execute.
