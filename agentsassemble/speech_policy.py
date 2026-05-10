@@ -11,6 +11,8 @@ ROUND_SPEECH_POLICY = """Speech policy:
 - Use stance_status values: held|qualified|reframed|revised|conceded.
 - Use qualified when you keep the conclusion but add limits; reframed when you keep the conclusion but change the decision criterion.
 - If your stance changes, include stance_delta, changed_by, change_reason, and remaining_resistance.
+- Do not narrate system status inside content, such as "I maintained my stance" or "agent X held position"; write what the role says to the room.
+- Keep status fields in JSON fields. Put stance_status, stance_delta, changed_by, change_reason, remaining_resistance, and emotion outside content.
 - Apply persona dynamics from personality/style such as stubbornness, respect_for_evidence, conflict_style, and concession_style.
 - Include emotion as tone plus numeric friction, stubbornness, respect, and engagement from 0.0 to 1.0.
 """
