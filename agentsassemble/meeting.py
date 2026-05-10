@@ -34,13 +34,14 @@ def run_demo_meeting(
     codex_search_enabled: bool = True,
     research_depth: ResearchDepthName = "smoke",
     research_steering: str | None = None,
+    council_config_path: Path | str | None = None,
     agent_config_path: Path | str | None = None,
 ) -> MeetingResult:
     def report(message: str) -> None:
         if reporter is not None:
             reporter(message)
 
-    config = load_council_config()
+    config = load_council_config(council_config_path)
     depth = get_research_depth(research_depth)
     steering = ResearchSteering(
         stance="user_leaning" if research_steering else "open",

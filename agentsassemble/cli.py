@@ -32,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     demo.add_argument("--no-codex-search", action="store_true")
     demo.add_argument("--research-depth", choices=["smoke", "standard", "deep"], default="smoke")
+    demo.add_argument("--council-config", default=None, help="Optional JSON file describing the meeting topic and roles.")
     demo.add_argument("--agent-config", default=None, help="Optional JSON file with host-approved providers, permissions, and agent bindings.")
     demo.add_argument(
         "--research-steering",
@@ -65,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
             codex_search_enabled=not args.no_codex_search,
             research_depth=args.research_depth,
             research_steering=args.research_steering,
+            council_config_path=args.council_config,
             agent_config_path=args.agent_config,
         )
         return 0

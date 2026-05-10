@@ -9,6 +9,11 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertIsNone(args.codex_timeout)
 
+    def test_demo_accepts_council_config_path(self):
+        args = build_parser().parse_args(["demo", "--council-config", "configs/silly-fake-expert.json"])
+
+        self.assertEqual(args.council_config, "configs/silly-fake-expert.json")
+
     def test_deep_codex_defaults_to_no_timeout(self):
         args = build_parser().parse_args(["demo", "--adapter", "codex", "--research-depth", "deep"])
 
