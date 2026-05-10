@@ -37,6 +37,8 @@ def run_demo_meeting(
     research_steering: str | None = None,
     council_config_path: Path | str | None = None,
     agent_config_path: Path | str | None = None,
+    follow_up_of: str | None = None,
+    follow_up_note: str | None = None,
 ) -> MeetingResult:
     def report(message: str) -> None:
         if reporter is not None:
@@ -62,6 +64,7 @@ def run_demo_meeting(
     meeting_dir = root / "meetings" / meeting_id
     meeting_dir.mkdir(parents=True, exist_ok=False)
     roles = [role.__dict__ for role in config.roles]
+    follow_up = _follow_up_metadata(follow_up_of, follow_up_note)
     write_live_state(
         meeting_dir,
         {
@@ -70,6 +73,7 @@ def run_demo_meeting(
             "display_question": config.display_question,
             "topic": config.topic,
             "display_topic": config.display_topic,
+            "follow_up": follow_up,
             "roles": roles,
             "meeting_template": _meeting_template_snapshot(config),
             "debate_rounds": [],
@@ -93,6 +97,7 @@ def run_demo_meeting(
             "display_question": config.display_question,
             "topic": config.topic,
             "display_topic": config.display_topic,
+            "follow_up": follow_up,
             "roles": roles,
             "meeting_template": _meeting_template_snapshot(config),
             "memory_context": memory_context,
@@ -125,6 +130,7 @@ def run_demo_meeting(
         adapter=adapter_name,
         research_depth=depth.name,
         research_steering=steering.to_dict(),
+        follow_up=follow_up,
     )
 
     context = {
@@ -136,6 +142,7 @@ def run_demo_meeting(
         "meeting_dir": str(meeting_dir),
         "research_depth": depth.name,
         "research_steering": steering.to_dict(),
+        "follow_up": follow_up,
         "agent_config_source": setup.config_source,
         "memory_context": memory_context,
     }
@@ -209,6 +216,7 @@ def run_demo_meeting(
         steering=steering,
         event_log=event_log.to_list(),
     )
+    meeting["follow_up"] = follow_up
     meeting["decision_status"] = derive_decision_status(synthesis, evidence_gate)
     meeting["memory_artifacts"] = write_memory_artifacts(root, meeting)
     meeting["artifacts"]["memory"] = "memory/"
@@ -237,4 +245,11 @@ def _meeting_template_snapshot(config) -> dict[str, object]:
             }
             for round_definition in rounds
         ],
+    }
+
+
+def _follow_up_metadata(parent_meeting_id: str | None, note: str | None) -> dict[str, str | None]:
+    return {
+        "parent_meeting_id": parent_meeting_id,
+        "note": note,
     }

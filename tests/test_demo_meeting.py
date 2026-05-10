@@ -567,6 +567,27 @@ class DemoMeetingTests(unittest.TestCase):
             )
             self.assertIn(first.meeting_id, role_memory)
 
+    def test_follow_up_metadata_is_recorded_in_meeting_and_agenda(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = run_demo_meeting(adapter_name="mock", output_root=root)
+            second = run_demo_meeting(
+                adapter_name="mock",
+                output_root=root,
+                follow_up_of=first.meeting_id,
+                follow_up_note="Reopen unresolved caveats.",
+            )
+
+            meeting = json.loads((second.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+            agenda = (second.meeting_dir / "agenda.md").read_text(encoding="utf-8")
+            live_state = json.loads((second.meeting_dir / "live_state.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(meeting["follow_up"]["parent_meeting_id"], first.meeting_id)
+        self.assertEqual(meeting["follow_up"]["note"], "Reopen unresolved caveats.")
+        self.assertEqual(live_state["follow_up"]["parent_meeting_id"], first.meeting_id)
+        self.assertIn(f"Follow-up of: {first.meeting_id}", agenda)
+        self.assertIn("Follow-up note: Reopen unresolved caveats.", agenda)
+
     def test_agenda_is_written_before_research_can_fail(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -14,6 +14,14 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(args.council_config, "configs/silly-fake-expert.json")
 
+    def test_demo_accepts_follow_up_metadata(self):
+        args = build_parser().parse_args(
+            ["demo", "--follow-up-of", "meeting-1", "--follow-up-note", "reopen unresolved caveat"]
+        )
+
+        self.assertEqual(args.follow_up_of, "meeting-1")
+        self.assertEqual(args.follow_up_note, "reopen unresolved caveat")
+
     def test_deep_codex_defaults_to_no_timeout(self):
         args = build_parser().parse_args(["demo", "--adapter", "codex", "--research-depth", "deep"])
 

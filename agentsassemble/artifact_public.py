@@ -14,9 +14,16 @@ def render_agenda(meeting: dict[str, Any]) -> str:
         f"Research steering: {meeting.get('research_steering', {}).get('prompt') or 'open'}",
         f"Meeting template: {meeting.get('meeting_template', {}).get('display_name', 'default')}",
         f"Recent episodes loaded: {len(meeting.get('memory_context', {}).get('recent_episodes', []))}",
-        "",
-        "1. Independent research",
     ]
+    follow_up = meeting.get("follow_up", {})
+    if follow_up.get("parent_meeting_id"):
+        agenda.extend(
+            [
+                f"Follow-up of: {follow_up.get('parent_meeting_id')}",
+                f"Follow-up note: {follow_up.get('note') or 'none'}",
+            ]
+        )
+    agenda.extend(["", "1. Independent research"])
     next_step = 2
     for index, round_definition in enumerate(meeting.get("meeting_template", {}).get("rounds", []), start=next_step):
         agenda.append(f"{index}. {round_definition.get('title', round_definition.get('id', 'Round'))}")
