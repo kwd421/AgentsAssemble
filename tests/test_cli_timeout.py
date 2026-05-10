@@ -16,10 +16,19 @@ class CliTimeoutTests(unittest.TestCase):
 
     def test_demo_accepts_follow_up_metadata(self):
         args = build_parser().parse_args(
-            ["demo", "--follow-up-of", "meeting-1", "--follow-up-note", "reopen unresolved caveat"]
+            [
+                "demo",
+                "--follow-up-of",
+                "meeting-1",
+                "--follow-up-from",
+                ".agentsassemble/meetings/meeting-1",
+                "--follow-up-note",
+                "reopen unresolved caveat",
+            ]
         )
 
         self.assertEqual(args.follow_up_of, "meeting-1")
+        self.assertEqual(args.follow_up_from, ".agentsassemble/meetings/meeting-1")
         self.assertEqual(args.follow_up_note, "reopen unresolved caveat")
 
     def test_deep_codex_defaults_to_no_timeout(self):

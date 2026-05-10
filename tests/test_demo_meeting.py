@@ -595,6 +595,26 @@ class DemoMeetingTests(unittest.TestCase):
         self.assertIn(f"Follow-up of: {first.meeting_id}", agenda)
         self.assertIn("Follow-up note: Reopen unresolved caveats.", agenda)
 
+    def test_follow_up_can_be_generated_from_existing_meeting_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = run_demo_meeting(adapter_name="mock", output_root=root)
+            second = run_demo_meeting(
+                adapter_name="mock",
+                output_root=root,
+                follow_up_from=first.meeting_dir,
+                follow_up_note="Continue after implementation issue.",
+            )
+
+            meeting = json.loads((second.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+            agenda = (second.meeting_dir / "agenda.md").read_text(encoding="utf-8")
+
+        self.assertEqual(meeting["follow_up"]["parent_meeting_id"], first.meeting_id)
+        self.assertEqual(meeting["follow_up"]["parent_meeting_dir"], str(first.meeting_dir))
+        self.assertEqual(meeting["follow_up"]["artifact_refs"]["decision"], str(first.meeting_dir / "decision.md"))
+        self.assertEqual(meeting["follow_up"]["artifact_refs"]["transcript"], str(first.meeting_dir / "transcript.md"))
+        self.assertIn(f"Follow-up of: {first.meeting_id}", agenda)
+
     def test_agenda_is_written_before_research_can_fail(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

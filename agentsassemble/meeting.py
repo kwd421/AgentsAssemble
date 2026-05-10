@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
@@ -39,6 +40,7 @@ def run_demo_meeting(
     agent_config_path: Path | str | None = None,
     follow_up_of: str | None = None,
     follow_up_note: str | None = None,
+    follow_up_from: Path | str | None = None,
 ) -> MeetingResult:
     def report(message: str) -> None:
         if reporter is not None:
@@ -64,7 +66,7 @@ def run_demo_meeting(
     meeting_dir = root / "meetings" / meeting_id
     meeting_dir.mkdir(parents=True, exist_ok=False)
     roles = [role.__dict__ for role in config.roles]
-    follow_up = _follow_up_metadata(follow_up_of, follow_up_note)
+    follow_up = _follow_up_metadata(follow_up_of, follow_up_note, follow_up_from)
     write_live_state(
         meeting_dir,
         {
@@ -248,8 +250,28 @@ def _meeting_template_snapshot(config) -> dict[str, object]:
     }
 
 
-def _follow_up_metadata(parent_meeting_id: str | None, note: str | None) -> dict[str, str | None]:
-    return {
+def _follow_up_metadata(
+    parent_meeting_id: str | None,
+    note: str | None,
+    parent_meeting_dir: Path | str | None = None,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {
         "parent_meeting_id": parent_meeting_id,
         "note": note,
+        "parent_meeting_dir": str(parent_meeting_dir) if parent_meeting_dir else None,
+        "artifact_refs": {},
     }
+    if parent_meeting_dir is None:
+        return metadata
+    parent_dir = Path(parent_meeting_dir)
+    meeting_path = parent_dir / "meeting.json"
+    if meeting_path.exists():
+        parent_meeting = json.loads(meeting_path.read_text(encoding="utf-8"))
+        metadata["parent_meeting_id"] = parent_meeting.get("meeting_id") or parent_meeting_id
+    metadata["artifact_refs"] = {
+        "agenda": str(parent_dir / "agenda.md"),
+        "transcript": str(parent_dir / "transcript.md"),
+        "decision": str(parent_dir / "decision.md"),
+        "meeting": str(parent_dir / "meeting.json"),
+    }
+    return metadata

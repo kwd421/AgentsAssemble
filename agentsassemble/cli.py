@@ -35,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--council-config", default=None, help="Optional JSON file describing the meeting topic and roles.")
     demo.add_argument("--agent-config", default=None, help="Optional JSON file with host-approved providers, permissions, and agent bindings.")
     demo.add_argument("--follow-up-of", default=None, help="Optional parent meeting id for a follow-up council.")
+    demo.add_argument("--follow-up-from", default=None, help="Optional parent meeting directory to reopen as a follow-up council.")
     demo.add_argument("--follow-up-note", default=None, help="Optional note explaining what the follow-up should reopen or continue.")
     demo.add_argument(
         "--research-steering",
@@ -71,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             council_config_path=args.council_config,
             agent_config_path=args.agent_config,
             follow_up_of=args.follow_up_of,
+            follow_up_from=args.follow_up_from,
             follow_up_note=args.follow_up_note,
         )
         return 0
