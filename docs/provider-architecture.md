@@ -111,6 +111,13 @@ Bridge responses return:
 
 The bridge is a meeting adapter, not an implementation adapter. It instructs the remote Claude Code session to avoid shell commands, file reads, edits, credentials, commits, pushes, deploys, and implementation work during meeting turns.
 
+Bridge readiness has two verification levels:
+
+- Local readiness: unit tests and a local smoke server can verify token auth, `POST /agentsassemble/run`, prompt delivery, command execution, response parsing, lobby messages, research, rounds, and synthesis envelopes.
+- Real friend readiness: only a real remote machine can verify the friend's Claude Code login state, reachable Tailscale/LAN/port-forward address, firewall rules, token sharing, latency, and whether the friend's live model follows the read-only meeting contract.
+
+Do not report a friend bridge as fully verified unless both levels have been checked.
+
 ### Memory/Profile Pack Providers
 
 Hermes/OpenClaw-style systems should not be treated as magic live providers until verified. Start with explicit artifacts:
