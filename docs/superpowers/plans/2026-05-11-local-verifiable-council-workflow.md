@@ -19,12 +19,12 @@
 - Test: `tests/test_local_cli_adapter.py`
 - Test: `tests/test_provider_registry.py`
 
-- [ ] Write failing tests for a `local_cli` provider that invokes a configured command with a prompt on stdin, parses JSON research/round/synthesis responses, records read-only metadata, and rejects missing commands.
-- [ ] Verify the new tests fail before implementation with `python3 -m unittest tests.test_local_cli_adapter`.
-- [ ] Implement `LocalCliAdapter` with minimal prompt construction and shared JSON fallback behavior.
-- [ ] Register `local_cli` as an available read-only meeting provider.
-- [ ] Verify with targeted tests and `python3 -m unittest discover -s tests`.
-- [ ] Commit as `Add local CLI meeting adapter`.
+- [x] Write failing tests for a `local_cli` provider that invokes a configured command with a prompt on stdin, parses JSON research/round/synthesis responses, records read-only metadata, and rejects missing commands.
+- [x] Verify the new tests fail before implementation with `python3 -m unittest tests.test_local_cli_adapter`.
+- [x] Implement `LocalCliAdapter` with minimal prompt construction and shared JSON fallback behavior.
+- [x] Register `local_cli` as an available read-only meeting provider.
+- [x] Verify with targeted tests and `python3 -m unittest discover -s tests`.
+- [x] Commit as `Add local CLI meeting adapter`.
 
 ### Task 2: Delegate Session Packet v0
 
@@ -34,11 +34,11 @@
 - Modify: `agentsassemble/artifact_packets.py`
 - Test: `tests/test_delegate_packets.py`
 
-- [ ] Write failing tests proving each meeting writes delegate input packets and return packets with persona, memory summary, stance fields, permissions, and provenance.
-- [ ] Verify the tests fail.
-- [ ] Implement packet generation using existing role, binding, memory, and decision artifacts.
-- [ ] Verify targeted and full tests.
-- [ ] Commit as `Add delegate session packets`.
+- [x] Write failing tests proving each meeting writes delegate input packets and return packets with persona, memory summary, stance fields, permissions, and provenance.
+- [x] Verify the tests fail.
+- [x] Implement packet generation using existing role, binding, memory, and decision artifacts.
+- [x] Verify targeted and full tests.
+- [x] Commit as `Add delegate session packets`.
 
 ### Task 3: Research Recovery Round Metadata
 
@@ -48,10 +48,10 @@
 - Modify: static live rendering only if data already exists.
 - Test: `tests/test_partial_failure.py`
 
-- [ ] Write failing tests for recovered retry metadata surfacing in meeting records and live events.
-- [ ] Implement minimal recovery metadata without changing debate semantics.
-- [ ] Verify targeted and full tests.
-- [ ] Commit as `Surface research retry recovery`.
+- [x] Write failing tests for recovered retry metadata surfacing in meeting records and live events.
+- [x] Implement minimal recovery metadata without changing debate semantics.
+- [x] Verify targeted and full tests.
+- [x] Commit as `Surface research retry recovery`.
 
 ### Task 4: Follow-up Meeting Generator v0
 
@@ -60,10 +60,10 @@
 - Modify: `agentsassemble/meeting.py`
 - Test: `tests/test_demo_meeting.py`
 
-- [ ] Write failing tests for creating a follow-up meeting from an existing meeting directory, carrying parent id, reason, and artifact references.
-- [ ] Implement CLI option and meeting metadata only; do not auto-run external providers.
-- [ ] Verify targeted and full tests.
-- [ ] Commit as `Add follow-up meeting generator`.
+- [x] Write failing tests for creating a follow-up meeting from an existing meeting directory, carrying parent id, reason, and artifact references.
+- [x] Implement CLI option and meeting metadata only; do not auto-run external providers.
+- [x] Verify targeted and full tests.
+- [x] Commit as `Add follow-up meeting generator`.
 
 ### Task 5: Message Model and Speech Quality Tightening
 
@@ -72,10 +72,10 @@
 - Modify: `agentsassemble/static/live.js` or `agentsassemble/static/meeting-views.js` if rendering needs data hooks.
 - Test: existing adapter tests plus static UI tests.
 
-- [ ] Write failing tests that prompts require speaking from research rather than dumping research, reacting to named prior speakers, and keeping system status separate from visible speech.
-- [ ] Implement prompt and renderer refinements.
-- [ ] Verify targeted and full tests.
-- [ ] Commit as `Tighten council speech quality`.
+- [x] Write failing tests that prompts require speaking from research rather than dumping research, reacting to named prior speakers, and keeping system status separate from visible speech.
+- [x] Implement prompt and renderer refinements.
+- [x] Verify targeted and full tests.
+- [x] Commit as `Tighten council speech quality`.
 
 ### Explicitly Excluded From This Goal
 
