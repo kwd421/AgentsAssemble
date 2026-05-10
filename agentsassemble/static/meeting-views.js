@@ -163,11 +163,18 @@ function renderResearchEvent(event) {
     <details class="research-card research-${escapeHtml(meta.color)}">
       <summary>
         <img class="profile profile-tiny" src="${escapeHtml(meta.avatar)}" alt="" />
-        <span><strong>${escapeHtml(displayName)}</strong><em>리서치 요약 · ${escapeHtml(confidenceLabel(event.confidence))}</em></span>
+        <span><strong>${escapeHtml(displayName)}</strong><em>리서치 요약 · ${escapeHtml(confidenceLabel(event.confidence))}${renderRetryBadge(event)}</em></span>
       </summary>
       <div>${renderTextBlocks(event.content || "")}</div>
     </details>
   `;
+}
+
+function renderRetryBadge(event) {
+  if (!event.retry_status || event.retry_status === "not_needed") return "";
+  const label = event.retry_status === "recovered" ? "재시도 회복" : "재시도 실패";
+  const attempts = event.retry_attempts ? ` ${event.retry_attempts}회` : "";
+  return ` · ${label}${attempts}`;
 }
 
 function isLiveTranscriptNearBottom(live) {
