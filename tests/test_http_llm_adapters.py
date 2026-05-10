@@ -59,6 +59,10 @@ class HttpLlmAdapterTests(unittest.TestCase):
         self.assertEqual(message["content"], "로컬 의견")
         self.assertEqual(message["position"], "찬성")
         self.assertEqual(message["provider"]["kind"], "local_openai_compatible")
+        prompt = requester.calls[0]["payload"]["messages"][1]["content"]
+        self.assertIn("Research is raw material, not your spoken message", prompt)
+        self.assertIn("4-8 Korean sentences", prompt)
+        self.assertIn("at most 2 short paragraphs", prompt)
 
     def test_anthropic_research_uses_messages_api(self):
         requester = FakeRequester(

@@ -143,7 +143,16 @@ class MockAdapter(ProviderAdapter):
                 "show_me_the_feats": "보여준 걸 가져와야죠. 말보다 전투 결과가 우선입니다.",
                 "fanboard_skeptic": "게이야 그건 근거가 아니라 팬심인지부터 봐야 한다 ㅋㅋ",
             }
-            content = f"{role.display_name}: {openers[role.id]} 내 결론은 아카이누 우세입니다. 근거는 {research['summary']} 다만 {research['uncertainty']}"
+            spoken_reasons = {
+                "lore_lawyer": "공식 지위, 서사 배치, 펑크 하자드 결과를 같이 보면 사카즈키 쪽이 가장 안정적입니다.",
+                "show_me_the_feats": "직접 승부가 난 기록을 우선하면 사카즈키가 쿠잔보다 앞섭니다.",
+                "fanboard_skeptic": "아카이누 1위는 무난하지만, 키자루 전력 표본이 적다는 점은 계속 걸립니다.",
+            }
+            content = (
+                f"{role.display_name}: {openers[role.id]} "
+                f"내 판단은 아카이누 우세입니다. {spoken_reasons[role.id]} "
+                f"다만 아직 안 나온 전력과 전투 맥락 때문에 확정 서열처럼 말하긴 불확실합니다."
+            )
             position = "아카이누 우세"
             stance_status = "held"
             change_conditions = [

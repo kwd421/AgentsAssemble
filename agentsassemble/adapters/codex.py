@@ -8,6 +8,7 @@ from typing import Any
 
 from agentsassemble.adapters.base import ProviderAdapter
 from agentsassemble.models import ResearchDepth, ResearchSteering, Role
+from agentsassemble.speech_policy import ROUND_SPEECH_POLICY
 
 
 class CodexAdapter(ProviderAdapter):
@@ -123,6 +124,7 @@ Personality/style: {json.dumps(role.personality or {}, ensure_ascii=False)}
 Public context:
 {json.dumps(public_context, ensure_ascii=False, indent=2)}
 
+{ROUND_SPEECH_POLICY}
 Write the visible message in Korean and follow the configured personality/style.
 Maintain your role's distinct stance. Do not converge just to sound cooperative.
 Return stance_status as "held", "revised", or "conceded".

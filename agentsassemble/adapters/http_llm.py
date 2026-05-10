@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from agentsassemble.adapters.base import ProviderAdapter
 from agentsassemble.models import ProviderConfig, ResearchDepth, ResearchSteering, Role
+from agentsassemble.speech_policy import ROUND_SPEECH_POLICY
 
 
 JsonRequester = Callable[[str, dict[str, str], dict[str, Any], int | None], dict[str, Any]]
@@ -308,6 +309,7 @@ Personality/style: {json.dumps(role.personality or {}, ensure_ascii=False)}
 Public context:
 {json.dumps(public_context, ensure_ascii=False, indent=2)}
 
+{ROUND_SPEECH_POLICY}
 Keep your role's distinct stance. Return only JSON:
 {{"content":"...","position":"...","stance_status":"held|revised|conceded","change_conditions":["..."],"confidence":"low|medium|high"}}
 """
