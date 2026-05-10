@@ -73,6 +73,7 @@ class ConfigTests(unittest.TestCase):
             Path("configs/agents.example.json"),
             Path("configs/codex-sessions.example.json"),
             Path("configs/http-providers.example.json"),
+            Path("configs/remote-bridge.example.json"),
         ):
             with self.subTest(path=path):
                 data = load_agent_runtime_config(path)

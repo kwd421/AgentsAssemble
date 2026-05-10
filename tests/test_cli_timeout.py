@@ -14,6 +14,12 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertIsNone(args.codex_timeout)
 
+    def test_claude_bridge_parses_bridge_command_without_overwriting_subcommand(self):
+        args = build_parser().parse_args(["claude-bridge", "--command", "claude"])
+
+        self.assertEqual(args.command, "claude-bridge")
+        self.assertEqual(args.bridge_command, "claude")
+
 
 if __name__ == "__main__":
     unittest.main()

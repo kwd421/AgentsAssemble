@@ -41,13 +41,14 @@ The default registry exposes provider kinds with explicit capability snapshots:
 - `gemini`
 - `grok`
 - `local_openai_compatible`
+- `remote_http_bridge`
 - `cursor`
 - `claude_code`
 - `hermes_memory`
 - `openclaw_memory`
 - `memory_pack`
 
-`anthropic`, `gemini`, `grok`, and `local_openai_compatible` have HTTP meeting adapters. `cursor` and `claude_code` remain implementation-phase planned providers; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
+`anthropic`, `gemini`, `grok`, `local_openai_compatible`, and `remote_http_bridge` have meeting adapters. `cursor` and `claude_code` remain implementation-phase planned providers; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
 ## Provider Families
 
@@ -74,6 +75,42 @@ Use these after `decision.md` exists and implementation is explicitly approved.
 
 These should eventually be separated into a `CodingAgentAdapter` or implementation-phase adapter rather than being treated as ordinary meeting chat providers.
 
+### Remote HTTP Bridge Providers
+
+Use `remote_http_bridge` when another person owns the AI session and wants that session to join a meeting without giving the host raw local access.
+
+The remote owner runs a bridge on their machine:
+
+```bash
+python -m agentsassemble.bridges.claude_code_bridge --host 0.0.0.0 --port 8777 --token "$AGENTSASSEMBLE_BRIDGE_TOKEN"
+```
+
+The host config points a provider at that bridge:
+
+```json
+{
+  "id": "friend-claude-code",
+  "kind": "remote_http_bridge",
+  "display_name": "Friend Claude Code Bridge",
+  "endpoint": "http://100.64.0.10:8777",
+  "auth_ref": "env:AGENTSASSEMBLE_BRIDGE_TOKEN"
+}
+```
+
+Bridge requests go to `POST /agentsassemble/run` and include:
+
+- provider identity.
+- meeting id, agent id, owner id, join mode, and session id when available.
+- role, step, prompt, research depth, and public context.
+- an explicit meeting-read-only permission envelope.
+
+Bridge responses return:
+
+- `text`: JSON text requested by the meeting adapter.
+- `metadata`: bridge command, return code, role id, step, and diagnostic fields.
+
+The bridge is a meeting adapter, not an implementation adapter. It instructs the remote Claude Code session to avoid shell commands, file reads, edits, credentials, commits, pushes, deploys, and implementation work during meeting turns.
+
 ### Memory/Profile Pack Providers
 
 Hermes/OpenClaw-style systems should not be treated as magic live providers until verified. Start with explicit artifacts:
@@ -94,6 +131,7 @@ Imported packs should pass a memory gate before they influence a meeting.
 - Grok: OpenAI-compatible xAI API provider; useful for skeptical critique, but evidence provenance must be strict.
 - Cursor: may join meetings in read-only opinion mode and later return to implementation work after `decision.md`.
 - Local/Ollama/LM Studio: useful for offline/private fallback and cheap drafts through OpenAI-compatible `/chat/completions`; web research requires a separate search capability.
+- Remote bridge: useful when a friend owns a Claude Code session and wants it to participate in a live meeting through an explicit, audited, read-only bridge.
 - Hermes/OpenClaw: memory/profile inspiration, not raw hidden session import.
 
 ## Safety Boundaries

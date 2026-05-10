@@ -24,7 +24,13 @@ def start_role_sessions(
         if live_event is not None:
             live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": "세션 준비 중"})
         write_role_files(meeting_dir, role)
-        sessions[role.id] = resolved_agents[role.id].adapter.start_session(role, context)
+        session = resolved_agents[role.id].adapter.start_session(role, context)
+        binding = resolved_agents[role.id].binding
+        session.setdefault("meeting_id", context.get("meeting_id"))
+        session.setdefault("agent_id", binding.agent_id)
+        session.setdefault("owner_id", binding.owner_id)
+        session.setdefault("join_mode", binding.join_mode)
+        sessions[role.id] = session
         if live_event is not None:
             live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": "세션 준비 완료"})
     return sessions

@@ -12,6 +12,7 @@ ProviderKind = Literal[
     "anthropic",
     "gemini",
     "grok",
+    "remote_http_bridge",
     "cursor",
     "claude_code",
     "local_openai_compatible",

@@ -405,6 +405,7 @@ This file records external papers, frameworks, and product references used while
   - Meeting artifacts now record provider configs, agent bindings, provider capabilities, and permission profiles while preserving existing mock/codex behavior.
   - Added admission decisions for incoming external agents so host approval, effective bindings, rejected requests, and non-executed requests are auditable.
   - Added HTTP meeting adapters for Anthropic Messages API, Gemini `generateContent`, xAI/OpenAI-compatible chat completions, and local OpenAI-compatible servers such as LM Studio.
+  - Added a remote HTTP bridge path so a friend-owned Claude Code session can participate in meeting rounds without raw session import.
 
 ## Candidate Memory Layer Translation
 

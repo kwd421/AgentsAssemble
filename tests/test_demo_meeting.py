@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import agentsassemble.adapters.registry as registry_module
 from agentsassemble.meeting import run_demo_meeting
 
 
@@ -309,6 +310,147 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertEqual(decisions["위험한봇"]["execution"], "not_executed")
             self.assertIn("unknown_requested_role", decisions["위험한봇"]["reasons"])
             self.assertIn("requested_permissions_exceed_meeting_mode", decisions["위험한봇"]["reasons"])
+
+    def test_remote_bridge_agent_participates_in_real_meeting_path(self):
+        bridge_calls = []
+
+        def fake_bridge(url, headers, payload, timeout_seconds):
+            bridge_calls.append({"url": url, "headers": headers, "payload": payload, "timeout_seconds": timeout_seconds})
+            step = payload["step"]
+            if step == "research":
+                return {
+                    "text": json.dumps(
+                        {
+                            "queries": ["friend claude query"],
+                            "sources": [
+                                {
+                                    "url": "https://example.com/friend-claude",
+                                    "title": "Friend Claude source",
+                                    "source_type": "analysis",
+                                    "quality": "medium",
+                                    "note": "친구 Claude Code가 낸 근거",
+                                    "snippet": "요약",
+                                    "extracted_notes": ["note"],
+                                }
+                            ],
+                            "summary": "친구 Claude Code 리서치",
+                            "confidence": "medium",
+                            "uncertainty": "",
+                            "coverage_gaps": [],
+                            "claim_evidence": [
+                                {
+                                    "claim": "친구 Claude Code 주장",
+                                    "evidence": ["https://example.com/friend-claude"],
+                                    "evidence_relation": "supports",
+                                    "interpretation": "bridge test",
+                                    "confidence": "medium",
+                                    "source_quality": "medium",
+                                }
+                            ],
+                            "counterclaims": [],
+                            "rejected_claims": [],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "metadata": {"bridge": "friend-mac", "step": step},
+                }
+            return {
+                "text": json.dumps(
+                    {
+                        "content": "친구 Claude Code가 실제 회의 라운드에 참가함",
+                        "position": "아카이누 우세",
+                        "stance_status": "held",
+                        "change_conditions": ["더 강한 반례"],
+                        "confidence": "medium",
+                    },
+                    ensure_ascii=False,
+                ),
+                "metadata": {"bridge": "friend-mac", "step": step},
+            }
+
+        original_requester = registry_module.REMOTE_BRIDGE_REQUESTER
+        registry_module.REMOTE_BRIDGE_REQUESTER = fake_bridge
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                agent_config = root / "agents.json"
+                agent_config.write_text(
+                    json.dumps(
+                        {
+                            "providers": [
+                                {
+                                    "id": "host-mock",
+                                    "kind": "mock",
+                                    "display_name": "Host Mock",
+                                },
+                                {
+                                    "id": "friend-claude-code",
+                                    "kind": "remote_http_bridge",
+                                    "display_name": "Friend Claude Code",
+                                    "endpoint": "http://100.64.0.10:8777",
+                                    "auth_ref": "literal:bridge-token",
+                                    "timeout_seconds": 120,
+                                },
+                            ],
+                            "permission_profiles": [
+                                {
+                                    "id": "meeting_readonly",
+                                    "meeting_read": True,
+                                    "official_turn": True,
+                                    "filesystem_write": False,
+                                    "implementation": False,
+                                }
+                            ],
+                            "agent_bindings": [
+                                {
+                                    "agent_id": "host-lore",
+                                    "role_id": "lore_lawyer",
+                                    "owner_id": "host",
+                                    "provider_id": "host-mock",
+                                    "permission_profile_id": "meeting_readonly",
+                                },
+                                {
+                                    "agent_id": "friend-claude",
+                                    "role_id": "show_me_the_feats",
+                                    "owner_id": "friend",
+                                    "provider_id": "friend-claude-code",
+                                    "permission_profile_id": "meeting_readonly",
+                                    "join_mode": "current_session",
+                                },
+                                {
+                                    "agent_id": "host-skeptic",
+                                    "role_id": "fanboard_skeptic",
+                                    "owner_id": "host",
+                                    "provider_id": "host-mock",
+                                    "permission_profile_id": "meeting_readonly",
+                                },
+                            ],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+                result = run_demo_meeting(adapter_name="mock", output_root=root, agent_config_path=agent_config)
+                meeting = json.loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+
+            self.assertTrue(bridge_calls)
+            self.assertEqual(bridge_calls[0]["headers"]["Authorization"], "Bearer bridge-token")
+            self.assertEqual(bridge_calls[0]["payload"]["owner_id"], "friend")
+            self.assertEqual(bridge_calls[0]["payload"]["join_mode"], "current_session")
+            self.assertEqual(
+                meeting["isolation"]["show_me_the_feats"]["provider"]["kind"],
+                "remote_http_bridge",
+            )
+            remote_messages = [
+                message
+                for round_record in meeting["debate_rounds"]
+                for message in round_record["messages"]
+                if message["role_id"] == "show_me_the_feats"
+            ]
+            self.assertTrue(any(message.get("bridge", {}).get("bridge") == "friend-mac" for message in remote_messages))
+            self.assertTrue(any("친구 Claude Code" in message["content"] for message in remote_messages))
+        finally:
+            registry_module.REMOTE_BRIDGE_REQUESTER = original_requester
 
     def test_round_one_does_not_include_other_private_research(self):
         with tempfile.TemporaryDirectory() as temp_dir:

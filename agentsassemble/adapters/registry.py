@@ -12,11 +12,13 @@ from agentsassemble.adapters.http_llm import (
     LocalOpenAICompatibleAdapter,
 )
 from agentsassemble.adapters.mock import MockAdapter
+from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.adapters.unsupported import UnsupportedProviderAdapter
 from agentsassemble.models import AgentBinding, PermissionProfile, ProviderCapabilities, ProviderConfig
 
 
 AdapterFactory = Callable[[ProviderConfig], ProviderAdapter]
+REMOTE_BRIDGE_REQUESTER = None
 
 
 @dataclass(frozen=True)
@@ -188,6 +190,19 @@ def register_http_provider_kinds(registry: ProviderRegistry) -> None:
             supports_session_resume=False,
             supports_structured_output=True,
             cost_class="local",
+        ),
+    )
+    registry.register(
+        "remote_http_bridge",
+        lambda provider: RemoteBridgeAdapter(provider, requester=REMOTE_BRIDGE_REQUESTER),
+        ProviderCapabilities(
+            supports_research=True,
+            supports_web_search=False,
+            supports_tools=False,
+            supports_filesystem=False,
+            supports_session_resume=False,
+            supports_structured_output=True,
+            cost_class="remote_user_session",
         ),
     )
 

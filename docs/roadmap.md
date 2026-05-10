@@ -48,6 +48,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Provider catalog data is available from the registry and GUI API so future UI surfaces can show which providers are available, planned, searchable, filesystem-capable, or memory-pack-only.
 - Runtime agent config can be loaded from JSON with host-approved providers, permission profiles, agent bindings, and incoming external agent requests. Incoming agents are recorded for audit but only approved bindings execute.
 - Incoming external agents now produce explicit admission decisions in `meeting.json`, separating requested role/provider/permissions from the host-approved binding that actually executes.
+- Remote HTTP bridge providers allow a friend-owned Claude Code session to join a meeting as a read-only participant through an audited `/agentsassemble/run` bridge.
 - Codex multi-role smoke has been exercised through `configs/codex-sessions.example.json`; distinct role sessions were recorded, but synthesis reliability still needs hardening for real provider output.
 
 ## V0 Remaining

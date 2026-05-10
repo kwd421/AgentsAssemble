@@ -12,6 +12,7 @@ PUBLIC_MESSAGE_KEYS = (
     "stance_status",
     "change_conditions",
     "confidence",
+    "bridge",
 )
 
 

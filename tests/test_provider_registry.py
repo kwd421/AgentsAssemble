@@ -8,6 +8,7 @@ from agentsassemble.adapters.http_llm import (
     GrokChatAdapter,
     LocalOpenAICompatibleAdapter,
 )
+from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.adapters.unsupported import UnsupportedProviderAdapter
 from agentsassemble.models import AgentBinding, PermissionProfile, ProviderCapabilities, ProviderConfig, Role
 
@@ -198,6 +199,7 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertEqual(catalog["codex"]["status"], "available")
         self.assertEqual(catalog["gemini"]["status"], "available")
         self.assertEqual(catalog["grok"]["status"], "available")
+        self.assertEqual(catalog["remote_http_bridge"]["status"], "available")
         self.assertEqual(catalog["cursor"]["status"], "planned")
         self.assertEqual(catalog["claude_code"]["status"], "planned")
         self.assertEqual(catalog["anthropic"]["status"], "available")
@@ -226,6 +228,17 @@ class ProviderRegistryTests(unittest.TestCase):
                 )
             ),
             LocalOpenAICompatibleAdapter,
+        )
+        self.assertIsInstance(
+            registry.create(
+                ProviderConfig(
+                    id="friend-claude-code",
+                    kind="remote_http_bridge",
+                    display_name="Friend Claude Code",
+                    endpoint="http://100.64.0.10:8777",
+                )
+            ),
+            RemoteBridgeAdapter,
         )
 
 

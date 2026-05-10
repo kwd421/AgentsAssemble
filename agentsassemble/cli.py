@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from agentsassemble.bridges.claude_code_bridge import serve_bridge
 from agentsassemble.gui import serve_gui
 from agentsassemble.meeting import run_demo_meeting
 
@@ -43,6 +44,12 @@ def build_parser() -> argparse.ArgumentParser:
     gui.add_argument("--port", type=int, default=8765)
     gui.add_argument("--output-root", default=".agentsassemble")
 
+    bridge = subparsers.add_parser("claude-bridge", help="Run a friend-owned Claude Code bridge.")
+    bridge.add_argument("--host", default="127.0.0.1")
+    bridge.add_argument("--port", type=int, default=8777)
+    bridge.add_argument("--token", default=None)
+    bridge.add_argument("--command", dest="bridge_command", default="claude")
+
     return parser
 
 
@@ -63,6 +70,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "gui":
         serve_gui(host=args.host, port=args.port, output_root=Path(args.output_root))
+        return 0
+    if args.command == "claude-bridge":
+        serve_bridge(host=args.host, port=args.port, token=args.token, command=args.bridge_command)
         return 0
 
     return 1
