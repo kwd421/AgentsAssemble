@@ -5,6 +5,8 @@ const lobbySides = new Set(["mine", "my-agent", "other", "other-agent"]);
 export function renderLobby() {
   const lobby = document.querySelector("#lobby");
   if (!lobby) return;
+  const focusedId = document.activeElement?.id;
+  const draftMessage = lobby.querySelector("#lobby-message")?.value || "";
   const roster = buildLobbyRoster(state.lobbyEvents);
   const shouldFollowLatest = isLobbyFeedNearBottom(lobby);
   lobby.innerHTML = `
@@ -50,6 +52,11 @@ export function renderLobby() {
     event.preventDefault();
     await sendLobbyEvent("message");
   });
+  const messageInput = lobby.querySelector("#lobby-message");
+  if (messageInput && focusedId === "lobby-message" && draftMessage) {
+    messageInput.value = draftMessage;
+    messageInput.focus();
+  }
   const askRemoteButton = lobby.querySelector("#lobby-ask-remote");
   askRemoteButton?.addEventListener("click", async () => {
     await sendLobbyEvent("message", { askRemote: true });

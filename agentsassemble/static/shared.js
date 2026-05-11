@@ -88,6 +88,19 @@ export function lobbyEventsSignature(events) {
   return JSON.stringify(events || []);
 }
 
+export function mergeEventById(events, event) {
+  if (!event?.id) return events || [];
+  const merged = [...(events || [])];
+  const index = merged.findIndex((candidate) => candidate.id === event.id);
+  if (index >= 0) merged[index] = { ...merged[index], ...event };
+  else merged.push(event);
+  return merged;
+}
+
+export function mergeEventsById(events, incoming) {
+  return (incoming || []).reduce((merged, event) => mergeEventById(merged, event), events || []);
+}
+
 export function setLobbyEvents(events) {
   state.lobbyEvents = events || [];
   state.lobbySignature = lobbyEventsSignature(state.lobbyEvents);

@@ -67,6 +67,21 @@ export function renderLive(payload, options = {}) {
   updateLatestJump(live);
 }
 
+export function refreshSideChatFeed() {
+  const live = document.querySelector("#live");
+  const panel = live?.querySelector(".side-chat-panel");
+  if (!panel) return;
+  const focused = document.activeElement?.id === "side-chat-message";
+  const draft = live.querySelector("#side-chat-message")?.value || "";
+  panel.outerHTML = renderSideChat();
+  bindSideChat(live);
+  const input = live.querySelector("#side-chat-message");
+  if (input && focused) {
+    input.value = draft;
+    input.focus();
+  }
+}
+
 function renderSideChat() {
   const events = state.sideChatEvents || [];
   return `

@@ -1,11 +1,12 @@
 import { renderArchive } from "./archive.js";
 import { renderLobby } from "./lobby.js";
-import { renderBoard, renderLive } from "./meeting-views.js";
+import { refreshSideChatFeed, renderBoard, renderLive } from "./meeting-views.js";
 import {
   displayTopic,
   fetchJson,
   lobbyEventsSignature,
   meetingStatusLabel,
+  mergeEventsById,
   setLobbyEvents,
   setSideChatEvents,
   state,
@@ -20,6 +21,12 @@ const subtitle = document.querySelector("#meeting-subtitle");
 const uiScale = document.querySelector("#ui-scale");
 const textScale = document.querySelector("#text-scale");
 const appStatus = document.querySelector("#app-status");
+const roomStreams = {
+  lobby: null,
+  sideChat: null,
+  meeting: null,
+  fallbackStarted: false,
+};
 
 function applyScaleSettings() {
   const ui = localStorage.getItem("agentsassemble.uiScale") || "90";
@@ -60,6 +67,7 @@ async function loadMeeting(meetingId) {
   state.payload = payload.meeting === null ? null : payload;
   state.payloadSignature = payloadSignature(state.payload);
   render();
+  connectMeetingEventStream(state.payload?.meeting?.meeting_id);
 }
 
 async function refreshCurrentMeeting() {
@@ -154,6 +162,77 @@ function payloadSignature(payload) {
   return JSON.stringify(payload);
 }
 
+function connectRoomStreams() {
+  if (!window.EventSource) {
+    startPollingFallback();
+    return;
+  }
+  connectLobbyEventStream();
+  connectSideChatEventStream();
+  connectMeetingEventStream(state.payload?.meeting?.meeting_id);
+}
+
+function connectLobbyEventStream() {
+  roomStreams.lobby?.close();
+  roomStreams.lobby = new EventSource("/api/events/lobby");
+  roomStreams.lobby.addEventListener("lobby", (event) => applyLobbyStreamPayload(parseStreamPayload(event)));
+  roomStreams.lobby.onerror = () => showAppStatus("로비 스트림 재연결 중", "info");
+}
+
+function connectSideChatEventStream() {
+  roomStreams.sideChat?.close();
+  roomStreams.sideChat = new EventSource("/api/events/side-chat");
+  roomStreams.sideChat.addEventListener("side_chat", (event) => applySideChatStreamPayload(parseStreamPayload(event)));
+  roomStreams.sideChat.onerror = () => showAppStatus("비공식 채팅 스트림 재연결 중", "info");
+}
+
+function connectMeetingEventStream(meetingId) {
+  roomStreams.meeting?.close();
+  roomStreams.meeting = null;
+  if (!window.EventSource || !meetingId) return;
+  roomStreams.meeting = new EventSource(`/api/meetings/${encodeURIComponent(meetingId)}/events`);
+  roomStreams.meeting.addEventListener("meeting", (event) => applyMeetingStreamPayload(parseStreamPayload(event)));
+  roomStreams.meeting.onerror = () => showAppStatus("회의 스트림 재연결 중", "info");
+}
+
+function parseStreamPayload(event) {
+  try {
+    return JSON.parse(event.data || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function applyLobbyStreamPayload(payload) {
+  const events = payload?.events || [];
+  if (!events.length) return;
+  setLobbyEvents(mergeEventsById(state.lobbyEvents, events));
+  renderLobby();
+}
+
+function applySideChatStreamPayload(payload) {
+  const events = payload?.events || [];
+  if (!events.length) return;
+  setSideChatEvents(mergeEventsById(state.sideChatEvents, events));
+  if (state.payload?.meeting) refreshSideChatFeed();
+}
+
+function applyMeetingStreamPayload(payload) {
+  if (!payload?.events?.length || !state.payload?.meeting) return;
+  if (payload.meeting_id !== state.payload.meeting.meeting_id) return;
+  state.payload.live_events = mergeEventsById(state.payload.live_events || [], payload.events);
+  state.payloadSignature = payloadSignature(state.payload);
+  renderLive(state.payload, { followLatest: state.currentTab === "live" });
+}
+
+function startPollingFallback() {
+  if (roomStreams.fallbackStarted) return;
+  roomStreams.fallbackStarted = true;
+  setInterval(loadLobbySafely, 4000);
+  setInterval(loadSideChatSafely, 4000);
+  setInterval(refreshCurrentMeetingSafely, 2000);
+}
+
 tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     setActiveTab(tab.dataset.tab);
@@ -219,7 +298,5 @@ meetingSelect.addEventListener("change", () => {
   await loadSideChat();
   const latest = await loadMeetings();
   await loadMeeting(latest);
-  setInterval(loadLobbySafely, 4000);
-  setInterval(loadSideChatSafely, 4000);
-  setInterval(refreshCurrentMeetingSafely, 2000);
+  connectRoomStreams();
 })();
