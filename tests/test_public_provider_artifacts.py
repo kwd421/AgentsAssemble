@@ -36,6 +36,23 @@ class PublicProviderArtifactTests(unittest.TestCase):
 
         self.assertEqual(public["auth_ref"], "<redacted>")
 
+    def test_provider_public_dict_scrubs_endpoint_and_notes(self):
+        provider = ProviderConfig(
+            id="bridge",
+            kind="remote_http_bridge",
+            display_name="Bridge",
+            endpoint="https://user:secret-pass@example.com:8777/run?token=secret-token&room=public",
+            notes="Bearer secret-token for testing",
+        )
+
+        public = provider.public_dict()
+        payload = json.dumps(public, ensure_ascii=False)
+
+        self.assertNotIn("secret-pass", payload)
+        self.assertNotIn("secret-token", payload)
+        self.assertEqual(public["notes"], "<redacted>")
+        self.assertEqual(public["endpoint"], "<redacted>")
+
     def test_meeting_artifacts_do_not_expose_provider_secrets(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

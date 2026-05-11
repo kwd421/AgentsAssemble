@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentsassemble.stance_match import position_matches_winner
+from agentsassemble.stance_match import position_matches_winner, position_opposes_winner
 
 
 FINAL_STATUSES = {"decided", "split_decision"}
@@ -18,37 +18,41 @@ def derive_decision_gate(
     winner = str(synthesis.get("winner") or "").strip()
     confidence = str(synthesis.get("confidence") or "low").strip().lower()
     caveats = [str(caveat) for caveat in synthesis.get("caveats", []) if str(caveat).strip()]
-    minority_positions = _minority_positions(winner, _latest_positions(debate_rounds))
+    positions = _latest_positions(debate_rounds)
+    minority_positions = _minority_positions(winner, positions)
+    ambiguous_positions = _ambiguous_positions(winner, positions)
 
     if synthesis.get("fallback") or synthesis.get("status") == "degraded":
         reasons.append("moderator_fallback")
-        return _gate("invalid", False, "rerun_moderator_or_user_review", reasons, minority_positions)
+        return _gate("invalid", False, "rerun_moderator_or_user_review", reasons, minority_positions, ambiguous_positions)
 
     reasons.extend(_research_reasons(research_records))
     reasons.extend(_evidence_reasons(evidence_gate))
     reasons.extend(_debate_reasons(debate_rounds))
     if not winner or winner.casefold() == "undetermined":
         reasons.append("winner_undetermined")
-    if any(reason.startswith(("research_failed", "retry_failed", "evidence_gate", "unsupported", "weak", "verifier_rejected")) for reason in reasons):
-        return _gate("needs_more_research", False, "run_research_or_verifier_round", reasons, minority_positions)
     if any(reason.startswith("debate_failed") for reason in reasons):
-        return _gate("blocked", False, "rerun_failed_debate_round", reasons, minority_positions)
+        return _gate("blocked", False, "rerun_failed_debate_round", reasons, minority_positions, ambiguous_positions)
+    if any(reason.startswith(("research_failed", "retry_failed", "evidence_gate", "unsupported", "weak", "verifier_rejected")) for reason in reasons):
+        return _gate("needs_more_research", False, "run_research_or_verifier_round", reasons, minority_positions, ambiguous_positions)
 
     if not winner or winner.casefold() == "undetermined":
-        return _gate("no_consensus", False, "add_round_or_user_decision", reasons, minority_positions)
+        return _gate("no_consensus", False, "add_round_or_user_decision", reasons, minority_positions, ambiguous_positions)
 
     if confidence == "low":
         reasons.append("low_confidence")
-        return _gate("blocked", False, "user_decision_or_add_round", reasons, minority_positions)
+        return _gate("blocked", False, "user_decision_or_add_round", reasons, minority_positions, ambiguous_positions)
 
-    if caveats or minority_positions:
+    if caveats or minority_positions or ambiguous_positions:
         if caveats:
             reasons.append("open_caveats")
         if minority_positions:
             reasons.append("minority_positions_present")
-        return _gate("split_decision", True, "record_split_decision", reasons, minority_positions)
+        if ambiguous_positions:
+            reasons.append("ambiguous_positions_present")
+        return _gate("split_decision", True, "record_split_decision", reasons, minority_positions, ambiguous_positions)
 
-    return _gate("decided", True, "write_decision", reasons, minority_positions)
+    return _gate("decided", True, "write_decision", reasons, minority_positions, ambiguous_positions)
 
 
 def _gate(
@@ -57,6 +61,7 @@ def _gate(
     required_action: str,
     reasons: list[str],
     minority_positions: list[dict[str, str]],
+    ambiguous_positions: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     return {
         "status": status,
@@ -64,6 +69,7 @@ def _gate(
         "required_action": required_action,
         "reasons": _dedupe(reasons),
         "minority_positions": minority_positions,
+        "ambiguous_positions": ambiguous_positions or [],
         "final_state": status in FINAL_STATUSES,
     }
 
@@ -125,7 +131,17 @@ def _minority_positions(winner: str, positions: dict[str, str]) -> list[dict[str
     return [
         {"role_id": role_id, "position": position}
         for role_id, position in positions.items()
-        if not position_matches_winner(position, winner)
+        if position_opposes_winner(position, winner)
+    ]
+
+
+def _ambiguous_positions(winner: str, positions: dict[str, str]) -> list[dict[str, str]]:
+    if not winner:
+        return []
+    return [
+        {"role_id": role_id, "position": position}
+        for role_id, position in positions.items()
+        if not position_matches_winner(position, winner) and not position_opposes_winner(position, winner)
     ]
 
 

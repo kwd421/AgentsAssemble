@@ -123,6 +123,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function liveEventCounts", script)
         self.assertIn("function renderDecisionGateBoard", script)
         self.assertIn("게이트", script)
+        self.assertIn("rerun_failed_debate_round", script)
+        self.assertIn('message.status === "failed"', script)
         self.assertIn("공식 발언", script)
         self.assertIn("중단됨", script)
         self.assertIn("meetingStatusLabel", script)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 ResearchDepthName = Literal["smoke", "standard", "deep"]
 ResearchStance = Literal["open", "user_leaning"]
@@ -108,11 +109,11 @@ class ProviderConfig:
             "kind": self.kind,
             "display_name": self.display_name,
             "default_model": self.default_model,
-            "endpoint": self.endpoint,
+            "endpoint": _public_endpoint(self.endpoint),
             "auth_ref": _public_auth_ref(self.auth_ref),
             "timeout_seconds": self.timeout_seconds,
             "search_enabled": self.search_enabled,
-            "notes": self.notes,
+            "notes": _public_notes(self.notes),
             "command": ["<redacted>"] if self.command else None,
             "command_configured": bool(self.command),
         }
@@ -269,3 +270,37 @@ def _public_auth_ref(auth_ref: str | None) -> str | None:
     if auth_ref.startswith("literal:"):
         return "literal:<redacted>"
     return "<redacted>"
+
+
+def _public_endpoint(endpoint: str | None) -> str | None:
+    if endpoint is None:
+        return None
+    try:
+        parsed = urlsplit(endpoint)
+    except ValueError:
+        return "<redacted>" if _looks_sensitive(endpoint) else endpoint
+    if not parsed.scheme or not parsed.netloc:
+        return "<redacted>" if _looks_sensitive(endpoint) else endpoint
+    netloc = parsed.hostname or ""
+    if parsed.port is not None:
+        netloc = f"{netloc}:{parsed.port}"
+    query = urlencode(
+        [
+            (key, "<redacted>" if _looks_sensitive(key) or _looks_sensitive(value) else value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        ]
+    )
+    sanitized = urlunsplit((parsed.scheme, netloc, parsed.path, query, ""))
+    return "<redacted>" if _looks_sensitive(sanitized.replace("<redacted>", "")) else sanitized
+
+
+def _public_notes(notes: str | None) -> str | None:
+    if notes is None:
+        return None
+    return "<redacted>" if _looks_sensitive(notes) else notes
+
+
+def _looks_sensitive(value: str) -> bool:
+    normalized = value.casefold()
+    markers = ("authorization", "bearer ", "secret", "token", "api-key", "apikey", "x-api-key", "password")
+    return any(marker in normalized for marker in markers)

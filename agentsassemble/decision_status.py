@@ -62,7 +62,7 @@ def _status_from_gate(
         "split_decision": ["Record split decision with minority positions before acting."],
         "no_consensus": ["Ask the user to choose, add another round, or assign follow-up research."],
         "needs_more_research": ["Run research or verifier round before deciding."],
-        "blocked": ["Request a user decision or add another round."],
+        "blocked": [_blocked_next_action(decision_gate)],
         "invalid": ["Rerun moderator synthesis or request user review before acting."],
     }.get(gate_status, ["Review decision gate before acting."])
     return {
@@ -82,3 +82,9 @@ def _dedupe(items: list[str]) -> list[str]:
         if item not in deduped:
             deduped.append(item)
     return deduped
+
+
+def _blocked_next_action(decision_gate: dict[str, Any]) -> str:
+    if decision_gate.get("required_action") == "rerun_failed_debate_round":
+        return "Rerun failed debate turn before deciding."
+    return "Request a user decision or add another round."

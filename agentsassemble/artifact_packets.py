@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentsassemble.stance_match import position_matches_winner
+from agentsassemble.stance_match import position_matches_winner, position_opposes_winner
 
 
 def build_return_packet(meeting: dict[str, Any], role: dict[str, Any]) -> dict[str, Any]:
@@ -14,7 +14,8 @@ def build_return_packet(meeting: dict[str, Any], role: dict[str, Any]) -> dict[s
     final_position = role_messages[-1].get("position", "") if role_messages else ""
     stance_status = role_messages[-1].get("stance_status", "unknown") if role_messages else "unknown"
     winner = synthesis.get("winner", "Undetermined")
-    outcome = _role_outcome(final_position, winner)
+    decision_gate = meeting.get("decision_gate", {"status": "unknown", "reasons": []})
+    outcome = _role_outcome(final_position, winner, decision_gate)
     return {
         "meeting_id": meeting["meeting_id"],
         "role_id": role_id,
@@ -30,7 +31,7 @@ def build_return_packet(meeting: dict[str, Any], role: dict[str, Any]) -> dict[s
             "caveats": synthesis.get("caveats", []),
         },
         "decision_status": meeting.get("decision_status", {"status": "unknown", "next_actions": []}),
-        "decision_gate": meeting.get("decision_gate", {"status": "unknown", "reasons": []}),
+        "decision_gate": decision_gate,
         "follow_up": meeting.get("follow_up", {"parent_meeting_id": None, "note": None}),
         "stance": {
             "final_position": final_position,
@@ -155,12 +156,16 @@ def _research_for_role(meeting: dict[str, Any], role_id: str) -> dict[str, Any]:
     return {}
 
 
-def _role_outcome(position: str, winner: str) -> str:
+def _role_outcome(position: str, winner: str, decision_gate: dict[str, Any]) -> str:
+    if decision_gate.get("can_finalize") is False:
+        return "unresolved"
     if not position or winner == "Undetermined":
         return "unresolved"
     if position_matches_winner(position, winner):
         return "won_or_partially_supported"
-    return "lost_or_not_selected"
+    if position_opposes_winner(position, winner):
+        return "lost_or_not_selected"
+    return "unresolved"
 
 
 def _handoff_checklist(meeting: dict[str, Any], research: dict[str, Any], task: str) -> list[str]:

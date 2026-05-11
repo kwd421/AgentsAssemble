@@ -15,9 +15,21 @@ def position_matches_winner(position: str, winner: str) -> bool:
     return False
 
 
+def position_opposes_winner(position: str, winner: str) -> bool:
+    if not position or not winner:
+        return False
+    normalized_position = position.casefold()
+    return any(_contains_opposition_marker(normalized_position, term) for term in winner_terms(winner))
+
+
 def winner_terms(winner: str) -> set[str]:
     normalized_winner = winner.casefold().strip()
-    terms = {term for term in normalized_winner.replace("/", " ").split() if term}
+    split_terms = {
+        term
+        for term in normalized_winner.replace("/", " ").split()
+        if term and _is_specific_term(term)
+    }
+    terms = set(split_terms)
     if normalized_winner:
         terms.add(normalized_winner)
     terms.update(_winner_aliases(normalized_winner))
@@ -59,6 +71,13 @@ def _contains_phrase(position: str, phrase: str) -> bool:
     if phrase.isascii():
         return re.search(rf"(?<![a-z0-9_]){re.escape(phrase)}(?![a-z0-9_])", position) is not None
     return phrase in position
+
+
+def _is_specific_term(term: str) -> bool:
+    if len(term) <= 1:
+        return False
+    generic_terms = {"option", "team", "side", "candidate", "choice", "answer", "입장", "선택지"}
+    return term not in generic_terms
 
 
 def _contains_opposition_marker(position: str, winner_term: str) -> bool:

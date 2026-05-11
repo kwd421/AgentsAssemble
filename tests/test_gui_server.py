@@ -96,6 +96,24 @@ class GuiServerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            agent_config = root / "agents.json"
+            agent_config.write_text(
+                json.dumps(
+                    {
+                        "providers": [
+                            {
+                                "id": "friend-claude-code",
+                                "kind": "remote_http_bridge",
+                                "display_name": "Friend Claude Code",
+                                "endpoint": "http://friend.local:8777",
+                                "auth_ref": "literal:bridge-token",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
             meeting_dir = root / "meetings" / "m1"
             meeting_dir.mkdir(parents=True)
             (meeting_dir / "meeting.json").write_text(
@@ -118,9 +136,10 @@ class GuiServerTests(unittest.TestCase):
                                 "kind": "remote_http_bridge",
                                 "display_name": "Friend Claude Code",
                                 "endpoint": "http://friend.local:8777",
-                                "auth_ref": "literal:bridge-token",
+                                "auth_ref": "literal:<redacted>",
                             }
                         },
+                        "agent_config_source": str(agent_config),
                         "agent_bindings": [
                             {
                                 "agent_id": "friend-agent",
@@ -152,6 +171,51 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(read_lobby(root)[0]["message"], "친구 Claude Code 준비됐습니다.")
             self.assertEqual(requester.calls[0]["headers"]["Authorization"], "Bearer bridge-token")
             self.assertEqual(requester.calls[0]["payload"]["step"], "lobby")
+
+    def test_lobby_remote_bridge_rejects_redacted_public_literal_without_runtime_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "roles": [
+                            {
+                                "id": "show_me_the_feats",
+                                "display_name": "공식이뭘알아",
+                                "lens": "전적/퍼포먼스",
+                                "research_focus": "전투 결과",
+                            }
+                        ],
+                        "provider_configs": {
+                            "friend-claude-code": {
+                                "id": "friend-claude-code",
+                                "kind": "remote_http_bridge",
+                                "display_name": "Friend Claude Code",
+                                "endpoint": "http://friend.local:8777",
+                                "auth_ref": "literal:<redacted>",
+                            }
+                        },
+                        "agent_config_source": "default",
+                        "agent_bindings": [
+                            {
+                                "agent_id": "friend-agent",
+                                "role_id": "show_me_the_feats",
+                                "owner_id": "friend",
+                                "provider_id": "friend-claude-code",
+                                "permission_profile_id": "meeting_read_only",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "credential is not available"):
+                send_lobby_message_to_remote_bridge(root, "친구야 준비됐어?", meeting_id="m1", speaker_name="나")
 
     def test_list_meetings_orders_latest_first(self):
         with tempfile.TemporaryDirectory() as temp_dir:

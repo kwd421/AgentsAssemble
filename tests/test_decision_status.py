@@ -41,7 +41,7 @@ class DecisionStatusTests(unittest.TestCase):
 
         self.assertEqual(status["status"], "partial")
         self.assertEqual(status["decision_gate_status"], "blocked")
-        self.assertIn("Request a user decision or add another round.", status["next_actions"])
+        self.assertIn("Rerun failed debate turn before deciding.", status["next_actions"])
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
+from agentsassemble.config import load_agent_runtime_config, providers_from_config
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_events import (
     append_lobby_event_to_file,
@@ -184,7 +185,7 @@ def send_lobby_message_to_remote_bridge(
     meeting = _read_meeting_record(meeting_dir)
     role_data, binding, provider_data = _select_remote_bridge_binding(meeting, target_agent_id)
     role = _role_from_payload(role_data)
-    provider = _provider_from_payload(provider_data)
+    provider = _runtime_provider_for_binding(meeting, binding, provider_data)
     session = {
         "meeting_id": meeting.get("meeting_id", meeting_dir.name),
         "agent_id": binding.get("agent_id"),
@@ -281,6 +282,36 @@ def _provider_from_payload(payload: dict[str, object]) -> ProviderConfig:
         search_enabled=bool(payload.get("search_enabled")),
         notes=_optional_str(payload.get("notes")),
     )
+
+
+def _runtime_provider_for_binding(
+    meeting: dict[str, object],
+    binding: dict[str, object],
+    public_provider: dict[str, object],
+) -> ProviderConfig:
+    provider_id = str(binding.get("provider_id") or public_provider.get("id") or "remote")
+    runtime_provider = _provider_from_agent_config(meeting.get("agent_config_source"), provider_id)
+    if runtime_provider is not None:
+        return runtime_provider
+    auth_ref = _optional_str(public_provider.get("auth_ref"))
+    if auth_ref == "literal:<redacted>" or auth_ref == "<redacted>":
+        raise ValueError(
+            "Remote bridge credential is not available from the public meeting artifact. "
+            "Use an env: auth_ref or rerun with the original agent config available."
+        )
+    return _provider_from_payload(public_provider)
+
+
+def _provider_from_agent_config(source: object, provider_id: str) -> ProviderConfig | None:
+    if not isinstance(source, str) or not source or source == "default":
+        return None
+    config_path = Path(source)
+    if not config_path.exists():
+        return None
+    runtime_config = load_agent_runtime_config(config_path)
+    if runtime_config is None:
+        return None
+    return providers_from_config(runtime_config).get(provider_id)
 
 
 def _optional_str(value: object) -> str | None:

@@ -556,6 +556,7 @@ function decisionActionLabel(action) {
     run_research_or_verifier_round: "재조사/검증",
     user_decision_or_add_round: "사용자 판단/라운드 추가",
     rerun_moderator_or_user_review: "모더레이터 재실행",
+    rerun_failed_debate_round: "실패 발언 재실행",
   }[action || "unknown"] || action || "미정";
 }
 
@@ -565,6 +566,7 @@ function buildStanceSummary(meeting) {
   for (const round of meeting.debate_rounds || []) {
     for (const message of round.messages || []) {
       const stance = messagePosition(message, meeting, fallbackPosition);
+      if (!stance) continue;
       const item = items.get(stance) || { stance, count: 0, roles: new Set(), statuses: new Map() };
       item.count += 1;
       item.roles.add(message.display_name || message.role_id || "agent");
@@ -584,6 +586,9 @@ function buildStanceSummary(meeting) {
 }
 
 function messagePosition(message, meeting, fallbackPosition) {
+  if (!message || message.status === "failed" || message.stance_status === "blocked") {
+    return "";
+  }
   if (message.position) return message.position;
   const synthesisWinner = fallbackPosition || meeting?.moderator_synthesis?.winner;
   if (synthesisWinner) return synthesisWinner;
@@ -646,7 +651,7 @@ function renderBoardCard(role, payload, researchPath) {
       <p>${escapeHtml(lensLabels[role.lens] || role.lens)} · ${escapeHtml(focusLabels[role.id] || role.research_focus)}</p>
       <div class="board-position">
         <span>현재 입장</span>
-        <strong>${escapeHtml(messagePosition(latestMessage, payload.meeting))}</strong>
+        <strong>${escapeHtml(messagePosition(latestMessage, payload.meeting) || "입장 미정")}</strong>
       </div>
       <div class="board-insight-grid">
         <section>

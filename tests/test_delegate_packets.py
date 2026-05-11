@@ -57,7 +57,7 @@ class DelegatePacketTests(unittest.TestCase):
                 "tasks": {},
             },
             "decision_status": {"status": "partial", "next_actions": []},
-            "decision_gate": {"status": "split_decision", "reasons": ["minority_positions_present"]},
+            "decision_gate": {"status": "split_decision", "can_finalize": True, "reasons": ["minority_positions_present"]},
             "debate_rounds": [
                 {
                     "title": "Round 1",
@@ -79,6 +79,41 @@ class DelegatePacketTests(unittest.TestCase):
         packet = build_return_packet(meeting, {"id": "a", "display_name": "A"})
 
         self.assertEqual(packet["decision"]["outcome_for_role"], "lost_or_not_selected")
+
+    def test_return_packet_marks_role_outcome_unresolved_when_gate_cannot_finalize(self):
+        meeting = {
+            "meeting_id": "m1",
+            "question": "question",
+            "moderator_synthesis": {
+                "winner": "Akainu",
+                "confidence": "high",
+                "summary": "Akainu wins.",
+                "caveats": [],
+                "tasks": {},
+            },
+            "decision_status": {"status": "partial", "next_actions": []},
+            "decision_gate": {"status": "needs_more_research", "can_finalize": False, "reasons": ["evidence_gate:warn"]},
+            "debate_rounds": [
+                {
+                    "title": "Round 1",
+                    "messages": [
+                        {
+                            "role_id": "a",
+                            "round": "round_1",
+                            "position": "Akainu wins",
+                            "stance_status": "held",
+                            "confidence": "medium",
+                            "content": "Akainu wins.",
+                        }
+                    ],
+                }
+            ],
+            "memory_input": {"research_summaries": [{"role_id": "a", "status": "complete"}]},
+        }
+
+        packet = build_return_packet(meeting, {"id": "a", "display_name": "A"})
+
+        self.assertEqual(packet["decision"]["outcome_for_role"], "unresolved")
 
 
 if __name__ == "__main__":

@@ -208,13 +208,28 @@ def sanitize_bridge_metadata(metadata: Any) -> dict[str, Any]:
         return {}
     allowed = {}
     for key in ("bridge", "role_id", "step", "returncode", "timed_out"):
-        if key in metadata and _safe_metadata_value(metadata[key]):
-            allowed[key] = metadata[key]
+        if key in metadata:
+            safe_value = _safe_metadata_value(metadata[key])
+            if safe_value is not None:
+                allowed[key] = safe_value
     return allowed
 
 
-def _safe_metadata_value(value: Any) -> bool:
-    return value is None or isinstance(value, (str, int, float, bool))
+def _safe_metadata_value(value: Any) -> str | int | float | bool | None:
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text or _looks_sensitive(text):
+        return None
+    return text[:120]
+
+
+def _looks_sensitive(value: str) -> bool:
+    normalized = value.casefold()
+    markers = ("authorization", "bearer ", "secret", "token", "api-key", "apikey", "x-api-key", "password")
+    return any(marker in normalized for marker in markers)
 
 
 def _role_payload(role: Role) -> dict[str, Any]:
