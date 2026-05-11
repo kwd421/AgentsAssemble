@@ -6,7 +6,8 @@ Use this checklist for the human review gate before marking the live-room/counci
 
 - Branch: `codex/live-room-council-foundation`
 - Local GUI: `http://127.0.0.1:8765/`
-- Latest reviewed commit: `28bd2e3 Harden live meeting stream recovery`
+- Latest implementation commit: `28bd2e3 Harden live meeting stream recovery`
+- Review checklist commit: `86fb49f Add live room review checklist`
 
 ## What To Inspect
 
