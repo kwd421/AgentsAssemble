@@ -193,7 +193,7 @@ Remote or imported agents should join through explicit context and memory packet
 - `providers`: configured provider records.
 - `permission_profiles`: named permission sets.
 - `agent_bindings`: final role-to-agent/provider assignments approved by the host.
-- `incoming_agents`: external/self-declared agent profiles retained for audit, not automatically trusted.
+- `incoming_agents`: external/self-declared agent profiles retained for audit, not automatically trusted. Public meeting artifacts scrub credential-like fields, endpoints, notes, headers, and token-like strings before storing them.
 
 The orchestrator executes only `agent_bindings`. An `incoming_agents` entry can request a role, persona, memory pack, or permissions, but it does not participate until the host maps it into an approved binding.
 

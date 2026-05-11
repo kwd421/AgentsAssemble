@@ -125,6 +125,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("<strong>결정 상태</strong>", script)
         self.assertIn("결정 ${escapeHtml(decisionGateLabel(gate.status))}", script)
         self.assertIn('if (status === "blocked") return "발언 실패";', script)
+        self.assertNotIn("합의도", script)
         self.assertIn("게이트", script)
         self.assertIn("rerun_failed_debate_round", script)
         self.assertIn('message.status === "failed"', script)

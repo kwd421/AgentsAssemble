@@ -11,6 +11,7 @@ export function renderLive(payload, options = {}) {
   const liveEvents = payload.live_events || [];
   const liveMessages = liveEvents.length ? liveEvents : messages;
   const synthesis = payload.meeting.moderator_synthesis || {};
+  const gate = payload.meeting.decision_gate || {};
   const isComplete = payload.meeting.live_status === "complete" || Boolean(synthesis.winner);
   const roundStatus = liveStatusLabel(payload.meeting, rounds, isComplete);
   live.innerHTML = `
@@ -20,7 +21,7 @@ export function renderLive(payload, options = {}) {
           <div class="live-statusbar">
             <span class="live-pill">공식 실황</span>
             <strong>${roundStatus}</strong>
-            <span>합의도 ${escapeHtml(confidenceLabel(synthesis.confidence))}</span>
+            <span>결정 ${escapeHtml(decisionGateLabel(gate.status))}</span>
           </div>
           <div class="live-chat-title">
             <h2>${escapeHtml(displayQuestion(payload.meeting.question))}</h2>

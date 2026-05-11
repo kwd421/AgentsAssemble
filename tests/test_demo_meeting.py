@@ -194,6 +194,9 @@ class DemoMeetingTests(unittest.TestCase):
                                 "name": "친구봇",
                                 "requested_role": "lore_lawyer",
                                 "provider": "cursor",
+                                "auth_ref": "literal:incoming-secret",
+                                "endpoint": "https://friend.example/run?api_key=incoming-secret",
+                                "notes": "Bearer incoming-secret",
                                 "requested_permissions": {"filesystem_write": True},
                             }
                         ],
@@ -226,7 +229,8 @@ class DemoMeetingTests(unittest.TestCase):
             )
 
             result = run_demo_meeting(adapter_name="mock", output_root=root, agent_config_path=agent_config)
-            meeting = json.loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+            meeting_text = (result.meeting_dir / "meeting.json").read_text(encoding="utf-8")
+            meeting = json.loads(meeting_text)
 
             self.assertEqual(meeting["agent_config_source"], str(agent_config))
             self.assertEqual(meeting["provider_configs"]["approved-mock"]["display_name"], "Approved Mock Provider")
@@ -235,6 +239,10 @@ class DemoMeetingTests(unittest.TestCase):
                 ["approved-lore", "approved-feats", "approved-skeptic"],
             )
             self.assertEqual(meeting["incoming_agents"][0]["name"], "친구봇")
+            self.assertNotIn("incoming-secret", meeting_text)
+            self.assertEqual(meeting["incoming_agents"][0]["auth_ref"], "<redacted>")
+            self.assertEqual(meeting["incoming_agents"][0]["endpoint"], "<redacted>")
+            self.assertEqual(meeting["incoming_agents"][0]["notes"], "<redacted>")
             self.assertEqual(meeting["isolation"]["lore_lawyer"]["agent_binding"]["owner_id"], "host")
 
     def test_incoming_agents_require_host_admission_before_execution(self):

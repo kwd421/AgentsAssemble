@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from agentsassemble.meeting_context import build_diagnostics, public_debate_rounds, public_synthesis
-from agentsassemble.models import CouncilConfig, ResearchDepth, ResearchSteering
+from agentsassemble.models import CouncilConfig, ResearchDepth, ResearchSteering, _public_endpoint
 
 
 def assemble_meeting_record(
@@ -74,7 +74,7 @@ def assemble_meeting_record(
         },
         "agent_bindings": [binding.to_dict() for binding in setup.agent_bindings],
         "agent_config_source": setup.config_source,
-        "incoming_agents": setup.incoming_agents,
+        "incoming_agents": [_public_incoming_agent(agent) for agent in setup.incoming_agents],
         "admission_decisions": setup.admission_decisions,
         "provider_capabilities": {
             provider_id: setup.registry.capabilities_for(provider_config).to_dict()
@@ -137,6 +137,48 @@ def assemble_meeting_record(
         },
         "failure_state": _failure_state(synthesis),
     }
+
+
+def _public_incoming_agent(agent: dict[str, Any]) -> dict[str, Any]:
+    return {str(key): _public_incoming_value(str(key), value) for key, value in agent.items()}
+
+
+def _public_incoming_value(key: str, value: Any) -> Any:
+    normalized_key = key.casefold().replace("-", "_")
+    if isinstance(value, dict):
+        return {str(child_key): _public_incoming_value(str(child_key), child_value) for child_key, child_value in value.items()}
+    if isinstance(value, list):
+        return [_public_incoming_value(key, item) for item in value]
+    if isinstance(value, str):
+        if normalized_key in {"endpoint", "url", "uri"}:
+            return _public_endpoint(value)
+        if _incoming_key_is_sensitive(normalized_key) or _incoming_text_is_sensitive(value):
+            return "<redacted>"
+    return value
+
+
+def _incoming_key_is_sensitive(key: str) -> bool:
+    sensitive_keys = {
+        "auth_ref",
+        "authorization",
+        "token",
+        "api_key",
+        "apikey",
+        "key",
+        "access_key",
+        "secret",
+        "client_secret",
+        "password",
+        "headers",
+        "notes",
+    }
+    return key in sensitive_keys or key.endswith("_token") or key.endswith("_secret")
+
+
+def _incoming_text_is_sensitive(value: str) -> bool:
+    normalized = value.casefold()
+    markers = ("authorization", "bearer ", "secret", "token", "api-key", "api_key", "apikey", "x-api-key", "password")
+    return any(marker in normalized for marker in markers)
 
 
 def _failure_state(synthesis: dict[str, Any]) -> dict[str, Any]:
