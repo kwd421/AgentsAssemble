@@ -164,6 +164,7 @@ def append_side_chat_event_to_file(path: Path, payload: dict[str, object]) -> di
 
 def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str, object]:
     kind = str(payload.get("kind", "status"))
+    turn_index = payload.get("turn_index")
     event = {
         "id": uuid4().hex[:12],
         "created_at": datetime.now(UTC).isoformat(),
@@ -174,6 +175,9 @@ def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str
         "role_id": payload.get("role_id"),
         "display_name": payload.get("display_name"),
         "round": payload.get("round"),
+        "turn_id": clean_lobby_text(payload.get("turn_id", ""), limit=128),
+        "turn_index": turn_index if isinstance(turn_index, int) and not isinstance(turn_index, bool) else None,
+        "engagement_mode": clean_lobby_text(payload.get("engagement_mode", ""), limit=64),
         "content": clean_lobby_text(payload.get("content", ""), limit=4000),
         "position": clean_lobby_text(payload.get("position", ""), limit=1000),
         "stance_status": payload.get("stance_status"),

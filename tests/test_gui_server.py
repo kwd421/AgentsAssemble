@@ -6,7 +6,7 @@ import threading
 import time
 from pathlib import Path
 from http.server import ThreadingHTTPServer
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from agentsassemble.gui import (
     _make_handler,
@@ -98,7 +98,14 @@ class GuiServerTests(unittest.TestCase):
             status_event = append_live_event(meeting_dir, {"kind": "status", "content": "회의 시작"})
             message_event = append_live_event(
                 meeting_dir,
-                {"kind": "message", "display_name": "설정충", "content": "공식 발언"},
+                {
+                    "kind": "message",
+                    "display_name": "설정충",
+                    "content": "공식 발언",
+                    "turn_id": "round_1:0:lore_lawyer",
+                    "turn_index": 0,
+                    "engagement_mode": "official_turn",
+                },
             )
             synthesis_event = append_live_event(
                 meeting_dir,
@@ -114,6 +121,9 @@ class GuiServerTests(unittest.TestCase):
             self.assertFalse(status_event["official_record"])
             self.assertEqual(message_event["channel"], "official")
             self.assertTrue(message_event["official_record"])
+            self.assertEqual(message_event["turn_id"], "round_1:0:lore_lawyer")
+            self.assertEqual(message_event["turn_index"], 0)
+            self.assertEqual(message_event["engagement_mode"], "official_turn")
             self.assertTrue(synthesis_event["official_record"])
 
     def test_room_event_readers_can_resume_after_event_id(self):
@@ -171,6 +181,48 @@ class GuiServerTests(unittest.TestCase):
             self.assertIn('"stream": "lobby"', body)
             self.assertIn(": keep-alive", body)
 
+    def test_meeting_sse_sends_final_payload_after_event_cursor_is_current(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            event = append_live_event(meeting_dir, {"kind": "message", "content": "공식"})
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "테스트",
+                        "question": "완료됐나?",
+                        "roles": [],
+                        "debate_rounds": [],
+                        "live_status": "complete",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/events",
+                    headers={"Last-Event-ID": event["id"]},
+                )
+                with urlopen(request, timeout=4) as response:
+                    lines = []
+                    deadline = time.time() + 3
+                    while time.time() < deadline and "meeting_payload" not in "\n".join(lines):
+                        lines.append(response.readline().decode("utf-8").strip())
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            body = "\n".join(lines)
+            self.assertIn("event: meeting", body)
+            self.assertIn('"meeting_payload"', body)
+            self.assertIn('"live_status": "complete"', body)
+
     def test_stream_snapshot_payload_keeps_lobby_side_chat_and_meeting_distinct(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -204,6 +256,40 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["meeting_payload"]["meeting"]["live_status"], "complete")
             self.assertIn("decision_gate", payload["meeting_payload"]["meeting"])
             self.assertIn("decision.md", payload["meeting_payload"]["artifacts"])
+
+    def test_meeting_stream_survives_partial_final_record(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            event = append_live_event(meeting_dir, {"kind": "message", "content": "공식"})
+            (meeting_dir / "meeting.json").write_text("{", encoding="utf-8")
+
+            payload = _stream_snapshot_payload(root, "meeting", meeting_id="m1")
+
+            self.assertEqual(payload["stream"], "meeting")
+            self.assertTrue(payload["meeting_payload_pending"])
+            self.assertNotIn("meeting_payload", payload)
+
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "테스트",
+                        "question": "완료됐나?",
+                        "roles": [],
+                        "debate_rounds": [],
+                        "live_status": "complete",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            recovered = _stream_snapshot_payload(root, "meeting", meeting_id="m1", last_event_id=event["id"])
+
+            self.assertEqual(recovered["events"], [])
+            self.assertEqual(recovered["meeting_payload"]["meeting"]["live_status"], "complete")
 
     def test_lobby_remote_bridge_reply_is_recorded_as_other_agent(self):
         import agentsassemble.gui as gui

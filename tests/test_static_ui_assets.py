@@ -99,6 +99,13 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function applySideChatStreamPayload", script)
         self.assertIn("function applyMeetingStreamPayload", script)
         self.assertIn("payload.meeting_payload", script)
+        meeting_stream_handler = script[
+            script.index("function applyMeetingStreamPayload") : script.index("function applyFullMeetingPayloadFromStream")
+        ]
+        self.assertLess(
+            meeting_stream_handler.index("payload.meeting_payload?.meeting"),
+            meeting_stream_handler.index("const events = payload?.events || []"),
+        )
         self.assertIn("function applyFullMeetingPayloadFromStream", script)
         self.assertIn("function startPollingFallback", script)
         self.assertIn("function mergeEventById", script)
@@ -158,6 +165,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("async function sendSideChatMessage", script)
         self.assertIn("function isSideChatFeedNearBottom", script)
         self.assertIn("function scrollSideChatToLatest", script)
+        self.assertIn("renderSystemEventStack(systemLiveEvents)", script)
+        self.assertIn("공식 기록 제외", script)
+        self.assertIn("sideChatDraft", script)
+        self.assertLess(script.index("renderSystemEventStack(systemLiveEvents)"), script.index('<main class="message-list live-transcript live-chat-feed"'))
         self.assertIn("max-height: clamp(240px, 30vh, 360px);", css)
 
     def test_board_cards_are_dynamic_and_scrollable(self):

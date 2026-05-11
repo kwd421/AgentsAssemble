@@ -413,6 +413,40 @@
   margin-top: 8px;
 }
 
+.system-event-stack {
+  background: rgba(7, 10, 16, 0.42);
+  border: 1px solid rgba(212, 225, 255, 0.1);
+  border-radius: 16px;
+  display: grid;
+  gap: 9px;
+  grid-column: 1 / -1;
+  margin-bottom: 12px;
+  padding: 10px;
+}
+
+.system-event-stack header {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.system-event-stack header strong,
+.system-event-stack header span {
+  display: block;
+}
+
+.system-event-stack header span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.system-event-list {
+  display: grid;
+  gap: 8px;
+}
+
 .live-chat-feed.live-transcript {
   max-height: clamp(520px, calc(100vh - 218px), 780px);
 }

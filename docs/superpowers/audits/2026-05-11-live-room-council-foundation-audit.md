@@ -21,10 +21,10 @@ Implement an AgentsAssemble live-room/council-workflow foundation:
 | --- | --- |
 | Stoops and Claude Code Channels lessons documented | `docs/live-session-room-model.md`, `docs/provider-architecture.md`, `docs/roadmap.md`, `docs/research-log.md` mention Stoops, Claude Code Channels, live room infrastructure, sender-gated custom channels, and council workflow boundaries. |
 | Council workflow remains distinct from chatroom transport | `docs/live-session-room-model.md` and `docs/provider-architecture.md` describe live room infrastructure as transport while official turns, transcript, Decision Gate, tasks, return packets, and memory remain council workflow concerns. |
-| Lobby, side chat, and official events are distinguishable | `agentsassemble/meeting_events.py` stamps events with `channel`, `audience`, and `official_record`; tests in `tests/test_gui_server.py` verify lobby/side chat are not official record and official `message`/`synthesis` events are official. |
+| Lobby, side chat, and official events are distinguishable | `agentsassemble/meeting_events.py` stamps events with `channel`, `audience`, and `official_record`; tests in `tests/test_gui_server.py` verify lobby/side chat are not official record, official `message`/`synthesis` events are official, and official live events retain turn metadata. |
 | SSE endpoints exist and keep connections open | `agentsassemble/gui.py` exposes lobby, side-chat, and meeting event streams using `_sse_event`, `_stream_snapshot_payload`, and `_send_sse_stream`; tests verify SSE formatting, stream separation, and lobby stream heartbeat behavior. |
 | Browser subscribes to event streams | `agentsassemble/static/app.js` creates `EventSource` subscriptions for `/api/events/lobby`, `/api/events/side-chat`, and `/api/meetings/<id>/events`; `tests/test_static_ui_assets.py` checks these hooks. |
-| Final meeting state reaches GUI after completion | `agentsassemble/gui.py` includes `meeting_payload` after final `meeting.json` exists; `agentsassemble/static/app.js` applies it with `applyFullMeetingPayloadFromStream`; `tests/test_gui_server.py` verifies `live_status`, `decision_gate`, and `decision.md` are present. |
+| Final meeting state reaches GUI after completion | `agentsassemble/gui.py` includes `meeting_payload` after final `meeting.json` exists and keeps the SSE stream alive if the final JSON is temporarily partial; `agentsassemble/static/app.js` applies full payloads with `applyFullMeetingPayloadFromStream`; `tests/test_gui_server.py` verifies `live_status`, `decision_gate`, `decision.md`, and partial-final-record resilience. |
 | Engagement modes exist and are configurable | `agentsassemble/models.py` defines `EngagementMode` and `normalize_engagement_mode`; `agentsassemble/config.py` parses `engagement_mode`; `tests/test_config.py` verifies defaults and explicit values. |
 | Moderator turn control exists | `agentsassemble/models.py` defines `RoundTurnControl`; `agentsassemble/config.py` parses and validates turn control; `agentsassemble/meeting_phases.py` stamps messages with `turn_id`, `turn_index`, and `engagement_mode`. |
 | Selected-role turn order is deterministic | `tests/test_debate_turn_control.py` verifies selected speakers run in declared order and skipped roles are recorded. |
@@ -37,7 +37,7 @@ Latest full verification:
 
 ```text
 python3 -m unittest discover -s tests
-Ran 141 tests
+Ran 144 tests
 OK
 ```
 
@@ -51,7 +51,7 @@ node --check agentsassemble/static/meeting-views.js
 git diff --check
 ```
 
-Browser/runtime checks were also performed against local mock meetings. The GUI showed final state in Live, Board, and Archive; lobby and side-chat inputs retained focus; side-chat followed new messages; reconnect banners stayed hidden after stable streams; and the meeting SSE endpoint returned `meeting_payload` with `decision_gate`, `live_status`, `channel`, and `official_record` fields.
+Browser/runtime checks were also performed against local mock meetings. The GUI showed final state in Live, Board, and Archive; lobby and side-chat inputs retained focus across Enter submissions; side-chat accepted consecutive messages without refocusing; reconnect banners stayed hidden after stable streams; Live renders non-official progress/research logs outside the official transcript panel; and the meeting SSE endpoint returned `meeting_payload` with `decision_gate`, `live_status`, `channel`, `official_record`, and turn metadata fields.
 
 ## Known Limits
 

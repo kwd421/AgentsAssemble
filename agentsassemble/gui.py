@@ -209,10 +209,15 @@ def _stream_snapshot_payload(
             "events": events,
             "payload_signature": json.dumps(events, ensure_ascii=False, sort_keys=True),
         }
-        if events and (meeting_dir / "meeting.json").exists():
-            meeting_payload = build_meeting_payload(meeting_dir)
-            payload["meeting_payload"] = meeting_payload
-            payload["payload_signature"] = json.dumps(meeting_payload, ensure_ascii=False, sort_keys=True)
+        if (meeting_dir / "meeting.json").exists():
+            try:
+                meeting_payload = build_meeting_payload(meeting_dir)
+            except json.JSONDecodeError:
+                payload["meeting_payload_pending"] = True
+                payload["payload_signature"] = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            else:
+                payload["meeting_payload"] = meeting_payload
+                payload["payload_signature"] = json.dumps(meeting_payload, ensure_ascii=False, sort_keys=True)
         return payload
     raise ValueError(f"Unknown event stream: {stream}")
 
@@ -522,6 +527,7 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
             self.send_header("Connection", "keep-alive")
             self.end_headers()
             current_last_event_id = last_event_id
+            current_payload_signature: str | None = None
             while True:
                 try:
                     payload = _stream_snapshot_payload(
@@ -534,6 +540,10 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                     if latest_event_id:
                         self.wfile.write(_sse_event(event_name, payload, event_id=latest_event_id))
                         current_last_event_id = latest_event_id
+                        current_payload_signature = _payload_signature(payload)
+                    elif _payload_signature(payload) and _payload_signature(payload) != current_payload_signature:
+                        self.wfile.write(_sse_event(event_name, payload))
+                        current_payload_signature = _payload_signature(payload)
                     else:
                         self.wfile.write(b": keep-alive\n\n")
                     self.wfile.flush()
@@ -574,6 +584,11 @@ def _last_payload_event_id(payload: dict[str, object]) -> str | None:
         return None
     event_id = latest.get("id")
     return event_id if isinstance(event_id, str) and event_id else None
+
+
+def _payload_signature(payload: dict[str, object]) -> str | None:
+    signature = payload.get("payload_signature")
+    return signature if isinstance(signature, str) and signature else None
 
 
 def _safe_static_path(static_root: Path, relative_path: str) -> Path | None:

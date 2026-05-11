@@ -235,16 +235,18 @@ function applySideChatStreamPayload(payload) {
 }
 
 function applyMeetingStreamPayload(payload) {
-  if (!payload?.events?.length || !state.payload?.meeting) return;
-  if (payload.meeting_id !== state.payload.meeting.meeting_id) return;
+  if (!state.payload?.meeting) return;
+  if (payload.meeting_id && payload.meeting_id !== state.payload.meeting.meeting_id) return;
   showAppStatus("", "info");
   if (payload.meeting_payload?.meeting) {
     applyFullMeetingPayloadFromStream(payload.meeting_payload);
     return;
   }
-  state.payload.live_events = mergeEventsById(state.payload.live_events || [], payload.events);
+  const events = payload?.events || [];
+  if (!events.length) return;
+  state.payload.live_events = mergeEventsById(state.payload.live_events || [], events);
   state.payloadSignature = payloadSignature(state.payload);
-  renderLive(state.payload, { followLatest: state.currentTab === "live" });
+  renderLive(state.payload, { followLatest: false });
 }
 
 function applyFullMeetingPayloadFromStream(payload) {

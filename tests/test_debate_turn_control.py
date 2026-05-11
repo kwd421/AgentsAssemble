@@ -1,6 +1,9 @@
 import unittest
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 
+from agentsassemble.meeting_events import append_live_event, read_live_events
 from agentsassemble.meeting_phases import compact_spoken_message, run_debate_phase
 from agentsassemble.models import CouncilConfig, MeetingRound, Role, RoundTurnControl
 
@@ -50,6 +53,40 @@ class DebateTurnControlTests(unittest.TestCase):
         self.assertEqual(adapters["role_c"].calls, [("role_c", 0)])
         self.assertEqual(adapters["role_a"].calls, [("role_a", 1)])
         self.assertEqual(adapters["role_b"].calls, [])
+
+    def test_live_events_preserve_debate_turn_metadata(self):
+        roles = [Role("role_a", "A", "a lens", "a focus")]
+        round_definition = MeetingRound(
+            "round_1",
+            "Round 1",
+            "Round 1",
+            "Speak once.",
+            "own_research",
+            turn_control=RoundTurnControl(selection="all_roles"),
+        )
+        config = CouncilConfig("topic", "topic", "question", "question", roles, rounds=[round_definition])
+        adapter = RecordingRoundAdapter()
+        resolved_agents = {"role_a": SimpleNamespace(adapter=adapter)}
+        sessions = {"role_a": {"role_id": "role_a"}}
+        research_records = [{"role_id": "role_a", "summary": "role_a"}]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            run_debate_phase(
+                config,
+                sessions,
+                resolved_agents,
+                research_records,
+                {},
+                lambda _: None,
+                lambda payload: append_live_event(meeting_dir, payload),
+            )
+
+            message_event = [event for event in read_live_events(meeting_dir) if event["kind"] == "message"][0]
+
+        self.assertEqual(message_event["turn_id"], "round_1:0:role_a")
+        self.assertEqual(message_event["turn_index"], 0)
+        self.assertEqual(message_event["engagement_mode"], "moderator_called")
 
     def test_compact_spoken_message_caps_research_dumps(self):
         content = " ".join([f"{index}번째 근거입니다." for index in range(1, 12)])

@@ -4,12 +4,17 @@ export function renderLive(payload, options = {}) {
   const roles = payload.meeting.roles || [];
   const rounds = payload.meeting.debate_rounds || [];
   const live = document.querySelector("#live");
+  const sideChatFocused = document.activeElement?.id === "side-chat-message";
+  const sideChatDraft = live?.querySelector("#side-chat-message")?.value || "";
   const shouldFollowLatest = options.followLatest || isLiveTranscriptNearBottom(live);
   const messages = rounds.flatMap((round) =>
     (round.messages || []).map((message) => ({ ...message, roundTitle: roundLabel(payload.meeting, round.id, round.title) }))
   );
   const liveEvents = payload.live_events || [];
-  const liveMessages = liveEvents.length ? liveEvents : messages;
+  const officialLiveEvents = liveEvents.filter(isOfficialLiveItem);
+  const systemLiveEvents = liveEvents.filter((event) => !isOfficialLiveItem(event));
+  const liveMessages = liveEvents.length ? officialLiveEvents : messages;
+  const liveOverviewItems = liveEvents.length ? liveEvents : messages;
   const synthesis = payload.meeting.moderator_synthesis || {};
   const gate = payload.meeting.decision_gate || {};
   const isComplete = payload.meeting.live_status === "complete" || Boolean(synthesis.winner);
@@ -33,8 +38,9 @@ export function renderLive(payload, options = {}) {
           </div>
         </div>
       </section>
-      ${renderLiveOverview(payload, liveMessages)}
+      ${renderLiveOverview(payload, liveOverviewItems)}
       <section class="live-chat-room">
+        ${renderSystemEventStack(systemLiveEvents)}
         <main class="message-list live-transcript live-chat-feed" aria-label="공식 토론 기록" aria-live="polite">
           <button type="button" class="latest-jump" hidden>최신으로 가기</button>
           <div class="feed-head">
@@ -55,16 +61,23 @@ export function renderLive(payload, options = {}) {
         </main>
         <aside class="live-chat-side">
           ${renderSideChat()}
-          ${renderLiveOutcome(payload, liveMessages)}
+          ${renderLiveOutcome(payload, liveOverviewItems)}
           ${renderOfficialRoster(roles)}
-          ${renderLiveTimeline(payload, liveMessages)}
+          ${renderLiveTimeline(payload, liveOverviewItems)}
         </aside>
       </section>
     </div>
   `;
   bindLatestJump(live);
   bindSideChat(live);
-  scrollSideChatToLatest(live);
+  const input = live.querySelector("#side-chat-message");
+  if (input && sideChatFocused) {
+    input.value = sideChatDraft;
+    input.focus();
+  } else if (input && sideChatDraft) {
+    input.value = sideChatDraft;
+  }
+  if (!sideChatFocused) scrollSideChatToLatest(live);
   if (shouldFollowLatest) scrollLiveTranscriptToLatest(live);
   updateLatestJump(live);
 }
@@ -168,6 +181,25 @@ function renderLiveItem(item) {
   if (item.kind === "research") return renderResearchEvent(item);
   if (item.kind && item.kind !== "message") return renderLiveEvent(item);
   return renderMessage(item);
+}
+
+function isOfficialLiveItem(item) {
+  return Boolean(item.official_record) || item.kind === "message" || item.kind === "synthesis";
+}
+
+function renderSystemEventStack(events) {
+  if (!events.length) return "";
+  return `
+    <section class="system-event-stack" aria-label="진행 로그">
+      <header>
+        <strong>진행 로그</strong>
+        <span>공식 기록 제외 · 상태/리서치/산출물</span>
+      </header>
+      <div class="system-event-list">
+        ${events.map(renderLiveItem).join("")}
+      </div>
+    </section>
+  `;
 }
 
 function renderLiveEvent(event) {
