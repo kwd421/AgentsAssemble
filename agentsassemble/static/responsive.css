@@ -65,6 +65,11 @@
     max-width: 82%;
   }
 
+  .lobby-mine,
+  .lobby-my-agent {
+    max-width: 82%;
+  }
+
   .live-chat-title {
     flex-direction: column;
   }
@@ -87,6 +92,8 @@
 
   .live-chat-side {
     grid-template-columns: 1fr;
+    max-height: none;
+    position: static;
   }
 
   .message-header {

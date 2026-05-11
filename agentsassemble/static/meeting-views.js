@@ -54,9 +54,9 @@ export function renderLive(payload, options = {}) {
         </main>
         <aside class="live-chat-side">
           ${renderSideChat()}
-          ${renderLiveTimeline(payload, liveMessages)}
           ${renderLiveOutcome(payload, liveMessages)}
           ${renderOfficialRoster(roles)}
+          ${renderLiveTimeline(payload, liveMessages)}
         </aside>
       </section>
     </div>
@@ -164,10 +164,14 @@ function renderLiveEvent(event) {
 }
 
 function renderSystemLine(event) {
+  const name = displayNameLabel(event);
+  const content = userVisibleSummary(event.content || "");
+  const showName = name !== "시스템" && !content.includes(name);
   return `
     <div class="system-line" role="status">
       <span>${escapeHtml(eventKindLabel(event.kind))}</span>
-      <p>${escapeHtml(userVisibleSummary(event.content || ""))}</p>
+      ${showName ? `<strong>${escapeHtml(name)}</strong>` : ""}
+      <p>${escapeHtml(content)}</p>
     </div>
   `;
 }

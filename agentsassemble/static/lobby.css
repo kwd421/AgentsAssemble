@@ -218,7 +218,7 @@
   gap: clamp(6px, calc(8px * var(--ui-scale)), 9px);
   align-content: start;
   overflow: auto;
-  padding: 10px clamp(12px, calc(14px * var(--ui-scale)), 16px) 2px;
+  padding: 10px clamp(16px, 2.2vw, 34px) 2px;
   scroll-behavior: smooth;
 }
 
@@ -230,9 +230,9 @@
   gap: 8px;
   grid-template-columns: clamp(26px, calc(32px * var(--ui-scale)), 34px) minmax(0, 1fr);
   justify-self: start;
-  max-width: 67.5%;
+  max-width: min(620px, 72%);
   min-width: 0;
-  width: fit-content;
+  width: max-content;
   animation: messageEnter 220ms ease both;
 }
 
@@ -240,7 +240,7 @@
 .lobby-my-agent {
   grid-template-columns: minmax(0, 1fr) clamp(26px, calc(32px * var(--ui-scale)), 34px);
   justify-self: end;
-  max-width: calc(67.5% - 8px);
+  max-width: min(620px, 72%);
 }
 
 .lobby-mine .lobby-avatar,
@@ -274,10 +274,11 @@
   background: rgba(34, 38, 49, 0.92);
   border: 1px solid rgba(212, 225, 255, 0.14);
   border-radius: 15px 15px 15px 5px;
+  box-sizing: border-box;
   max-width: 100%;
   min-width: min(100%, 96px);
   padding: calc(7px * var(--ui-scale)) calc(10px * var(--ui-scale));
-  width: fit-content;
+  width: max-content;
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
 }
 

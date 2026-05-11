@@ -23,7 +23,7 @@ def start_role_sessions(
     for role in config.roles:
         report(f"Preparing role: {role.display_name} ({role.id})")
         if live_event is not None:
-            live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": "세션 준비 중"})
+            live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": f"{role.display_name} 세션 준비 중"})
         write_role_files(meeting_dir, role)
         session = resolved_agents[role.id].adapter.start_session(role, context)
         binding = resolved_agents[role.id].binding
@@ -33,7 +33,7 @@ def start_role_sessions(
         session.setdefault("join_mode", binding.join_mode)
         sessions[role.id] = session
         if live_event is not None:
-            live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": "세션 준비 완료"})
+            live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": f"{role.display_name} 세션 준비 완료"})
     return sessions
 
 
@@ -81,10 +81,12 @@ def run_research_phase(
     futures = {}
     max_workers = max(1, len(config.roles))
     executor = ThreadPoolExecutor(max_workers=max_workers)
+    if live_event is not None:
+        live_event({"kind": "status", "content": f"{len(config.roles)}명 병렬 독립 리서치 시작"})
     for role in config.roles:
         report(f"Research: {role.display_name}")
         if live_event is not None:
-            live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": "독립 리서치 시작"})
+            live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": f"{role.display_name} 독립 리서치 시작"})
         futures[executor.submit(run_role_research, role)] = role
 
     with executor:

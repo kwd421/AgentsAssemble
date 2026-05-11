@@ -45,7 +45,7 @@
 .live-chat-room {
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
   align-items: start;
 }
 
@@ -57,8 +57,8 @@
   align-content: start;
   display: grid;
   gap: clamp(8px, calc(10px * var(--ui-scale)), 12px);
-  max-height: clamp(620px, calc(100vh - 250px), 900px);
-  min-height: clamp(620px, calc(100vh - 230px), 860px);
+  max-height: clamp(520px, calc(100vh - 218px), 780px);
+  min-height: clamp(520px, calc(100vh - 236px), 760px);
   overflow: auto;
   position: relative;
 }
@@ -85,7 +85,11 @@
 
 .live-chat-side {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  max-height: clamp(520px, calc(100vh - 218px), 780px);
+  overflow: auto;
+  position: sticky;
+  top: 10px;
 }
 
 .side-chat-panel {
@@ -164,7 +168,7 @@
   border: 1px solid rgba(212, 225, 255, 0.13);
   border-radius: 18px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.045);
-  padding: 14px;
+  padding: 12px;
 }
 
 .live-statusbar {
@@ -282,13 +286,18 @@
   align-items: center;
   background: rgba(212, 225, 255, 0.055);
   border: 1px solid rgba(212, 225, 255, 0.09);
-  border-radius: 999px;
+  border-radius: 14px;
   color: var(--muted);
   display: flex;
   gap: 8px;
   justify-self: center;
   max-width: min(92%, 760px);
   padding: 6px 10px;
+}
+
+.system-line strong {
+  color: var(--text);
+  font-size: 12px;
 }
 
 .system-line span {
@@ -361,7 +370,7 @@
 }
 
 .live-chat-feed.live-transcript {
-  max-height: clamp(620px, calc(100vh - 230px), 900px);
+  max-height: clamp(520px, calc(100vh - 218px), 780px);
 }
 
 .live-outcome {
@@ -375,7 +384,7 @@
     rgba(7, 10, 16, 0.44);
   border: 1px solid rgba(242, 184, 75, 0.18);
   border-radius: 14px;
-  padding: 12px;
+  padding: 10px;
 }
 
 .outcome-card span,
@@ -392,19 +401,19 @@
 
 .outcome-card strong {
   color: var(--text);
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1.2;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .outcome-card p {
   color: var(--muted);
   display: -webkit-box;
   line-height: 1.45;
-  margin-top: 10px;
+  margin-top: 8px;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 5;
+  -webkit-line-clamp: 4;
 }
 
 .message-body p {
@@ -433,7 +442,7 @@
   border: 1px solid rgba(212, 225, 255, 0.13);
   border-radius: 18px;
   box-shadow: 0 18px 54px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  padding: 14px;
+  padding: 12px;
 }
 
 .official-speaker {
@@ -446,7 +455,7 @@
   gap: 9px;
   grid-template-columns: 28px minmax(0, 1fr);
   margin-top: 9px;
-  padding: 9px;
+  padding: 8px;
 }
 
 .official-speaker div {
@@ -500,7 +509,7 @@
 }
 
 .rail-card {
-  padding: 12px;
+  padding: 10px;
 }
 
 .feed-head {
@@ -597,9 +606,9 @@
 
 .consensus-score {
   color: var(--accent);
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 900;
-  margin: 12px 0 8px;
+  margin: 8px 0 7px;
 }
 
 .consensus-track {

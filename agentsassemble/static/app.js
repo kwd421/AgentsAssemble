@@ -205,6 +205,7 @@ function parseStreamPayload(event) {
 
 function applyLobbyStreamPayload(payload) {
   const events = payload?.events || [];
+  showAppStatus("", "info");
   if (!events.length) return;
   setLobbyEvents(mergeEventsById(state.lobbyEvents, events));
   renderLobby();
@@ -212,6 +213,7 @@ function applyLobbyStreamPayload(payload) {
 
 function applySideChatStreamPayload(payload) {
   const events = payload?.events || [];
+  showAppStatus("", "info");
   if (!events.length) return;
   setSideChatEvents(mergeEventsById(state.sideChatEvents, events));
   if (state.payload?.meeting) refreshSideChatFeed();
@@ -220,6 +222,7 @@ function applySideChatStreamPayload(payload) {
 function applyMeetingStreamPayload(payload) {
   if (!payload?.events?.length || !state.payload?.meeting) return;
   if (payload.meeting_id !== state.payload.meeting.meeting_id) return;
+  showAppStatus("", "info");
   if (payload.meeting_payload?.meeting) {
     applyFullMeetingPayloadFromStream(payload.meeting_payload);
     return;
