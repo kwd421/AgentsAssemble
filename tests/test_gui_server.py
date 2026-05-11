@@ -167,6 +167,18 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(meeting_payload["meeting_id"], "m1")
             self.assertEqual(meeting_payload["events"][0]["content"], "공식")
 
+    def test_meeting_stream_includes_full_payload_after_final_record(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            result = run_demo_meeting(adapter_name="mock", output_root=root)
+
+            payload = _stream_snapshot_payload(root, "meeting", meeting_id=result.meeting_id)
+
+            self.assertEqual(payload["stream"], "meeting")
+            self.assertEqual(payload["meeting_payload"]["meeting"]["live_status"], "complete")
+            self.assertIn("decision_gate", payload["meeting_payload"]["meeting"])
+            self.assertIn("decision.md", payload["meeting_payload"]["artifacts"])
+
     def test_lobby_remote_bridge_reply_is_recorded_as_other_agent(self):
         import agentsassemble.gui as gui
 

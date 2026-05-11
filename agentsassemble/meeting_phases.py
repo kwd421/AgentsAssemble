@@ -273,8 +273,8 @@ def _speaker_roles_for_round(roles: list[Any], round_definition: Any) -> list[An
     control = round_definition.turn_control
     if control.selection != "selected_roles":
         return roles
-    selected = set(control.speaker_role_ids)
-    return [role for role in roles if role.id in selected]
+    roles_by_id = {role.id: role for role in roles}
+    return [roles_by_id[role_id] for role_id in control.speaker_role_ids if role_id in roles_by_id]
 
 
 def _current_turn(round_id: str, turn_index: int, role_id: str) -> dict[str, object]:

@@ -220,9 +220,20 @@ function applySideChatStreamPayload(payload) {
 function applyMeetingStreamPayload(payload) {
   if (!payload?.events?.length || !state.payload?.meeting) return;
   if (payload.meeting_id !== state.payload.meeting.meeting_id) return;
+  if (payload.meeting_payload?.meeting) {
+    applyFullMeetingPayloadFromStream(payload.meeting_payload);
+    return;
+  }
   state.payload.live_events = mergeEventsById(state.payload.live_events || [], payload.events);
   state.payloadSignature = payloadSignature(state.payload);
   renderLive(state.payload, { followLatest: state.currentTab === "live" });
+}
+
+function applyFullMeetingPayloadFromStream(payload) {
+  if (!payload?.meeting || payload.meeting.meeting_id !== state.payload?.meeting?.meeting_id) return;
+  state.payload = payload;
+  state.payloadSignature = payloadSignature(state.payload);
+  render({ liveRefresh: true });
 }
 
 function startPollingFallback() {

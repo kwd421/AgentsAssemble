@@ -203,12 +203,17 @@ def _stream_snapshot_payload(
         if not meeting_dir.exists():
             raise ValueError(f"Meeting {meeting_id} was not found.")
         events = read_live_events_after(meeting_dir, last_event_id)
-        return {
+        payload: dict[str, object] = {
             "stream": "meeting",
             "meeting_id": meeting_id,
             "events": events,
             "payload_signature": json.dumps(events, ensure_ascii=False, sort_keys=True),
         }
+        if events and (meeting_dir / "meeting.json").exists():
+            meeting_payload = build_meeting_payload(meeting_dir)
+            payload["meeting_payload"] = meeting_payload
+            payload["payload_signature"] = json.dumps(meeting_payload, ensure_ascii=False, sort_keys=True)
+        return payload
     raise ValueError(f"Unknown event stream: {stream}")
 
 

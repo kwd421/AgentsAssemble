@@ -93,6 +93,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function applyLobbyStreamPayload", script)
         self.assertIn("function applySideChatStreamPayload", script)
         self.assertIn("function applyMeetingStreamPayload", script)
+        self.assertIn("payload.meeting_payload", script)
+        self.assertIn("function applyFullMeetingPayloadFromStream", script)
         self.assertIn("function startPollingFallback", script)
         self.assertIn("function mergeEventById", script)
         self.assertIn("function mergeEventsById", script)
