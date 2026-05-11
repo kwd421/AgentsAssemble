@@ -2,10 +2,14 @@ import tempfile
 import unittest
 import json
 import os
+import threading
 import time
 from pathlib import Path
+from http.server import ThreadingHTTPServer
+from urllib.request import urlopen
 
 from agentsassemble.gui import (
+    _make_handler,
     _safe_static_path,
     _sse_event,
     _stream_snapshot_payload,
@@ -144,6 +148,28 @@ class GuiServerTests(unittest.TestCase):
         self.assertIn("id: abc\n", body)
         self.assertIn("event: lobby\n", body)
         self.assertIn('data: {"id": "abc", "message": "안녕"}\n\n', body)
+
+    def test_lobby_sse_keeps_connection_open_with_heartbeat(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            append_lobby_event(root, {"name": "나", "side": "mine", "message": "첫 로비"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/events/lobby", timeout=4) as response:
+                    lines = []
+                    deadline = time.time() + 3
+                    while time.time() < deadline and ": keep-alive" not in "\n".join(lines):
+                        lines.append(response.readline().decode("utf-8").strip())
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            body = "\n".join(lines)
+            self.assertIn("event: lobby", body)
+            self.assertIn('"stream": "lobby"', body)
+            self.assertIn(": keep-alive", body)
 
     def test_stream_snapshot_payload_keeps_lobby_side_chat_and_meeting_distinct(self):
         with tempfile.TemporaryDirectory() as temp_dir:
