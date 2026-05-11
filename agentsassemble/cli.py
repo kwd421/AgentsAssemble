@@ -51,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     bridge = subparsers.add_parser("claude-bridge", help="Run a friend-owned Claude Code bridge.")
     bridge.add_argument("--host", default="127.0.0.1")
     bridge.add_argument("--port", type=int, default=8777)
-    bridge.add_argument("--token", default=None)
+    bridge.add_argument("--token", required=True)
     bridge.add_argument("--command", dest="bridge_command", default="claude")
 
     return parser

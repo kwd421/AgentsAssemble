@@ -284,14 +284,15 @@ def _public_endpoint(endpoint: str | None) -> str | None:
     netloc = parsed.hostname or ""
     if parsed.port is not None:
         netloc = f"{netloc}:{parsed.port}"
-    query = urlencode(
-        [
-            (key, "<redacted>" if _looks_sensitive(key) or _looks_sensitive(value) else value)
-            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        ]
-    )
+    query_pairs = []
+    has_sensitive_component = bool(parsed.username or parsed.password)
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        public_key, public_value, was_sensitive = _public_query_pair(key, value)
+        query_pairs.append((public_key, public_value))
+        has_sensitive_component = has_sensitive_component or was_sensitive
+    query = urlencode(query_pairs)
     sanitized = urlunsplit((parsed.scheme, netloc, parsed.path, query, ""))
-    return "<redacted>" if _looks_sensitive(sanitized.replace("<redacted>", "")) else sanitized
+    return "<redacted>" if has_sensitive_component or _looks_sensitive(sanitized) else sanitized
 
 
 def _public_notes(notes: str | None) -> str | None:
@@ -300,7 +301,30 @@ def _public_notes(notes: str | None) -> str | None:
     return "<redacted>" if _looks_sensitive(notes) else notes
 
 
+def _public_query_pair(key: str, value: str) -> tuple[str, str, bool]:
+    if _is_sensitive_query_key(key) or _looks_sensitive(value):
+        return key, "<redacted>", True
+    return key, value, False
+
+
+def _is_sensitive_query_key(key: str) -> bool:
+    normalized = key.casefold().replace("-", "_")
+    sensitive_keys = {
+        "key",
+        "api_key",
+        "apikey",
+        "access_key",
+        "secret",
+        "client_secret",
+        "token",
+        "auth",
+        "authorization",
+        "password",
+    }
+    return normalized in sensitive_keys or normalized.endswith("_token") or normalized.endswith("_secret")
+
+
 def _looks_sensitive(value: str) -> bool:
     normalized = value.casefold()
-    markers = ("authorization", "bearer ", "secret", "token", "api-key", "apikey", "x-api-key", "password")
+    markers = ("authorization", "bearer ", "secret", "token", "api-key", "api_key", "apikey", "x-api-key", "password")
     return any(marker in normalized for marker in markers)

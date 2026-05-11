@@ -228,6 +228,7 @@ function renderLiveTimeline(payload, messages) {
 
 function renderLiveOutcome(payload, messages) {
   const synthesis = payload.meeting.moderator_synthesis || {};
+  const gate = payload.meeting.decision_gate || {};
   const counts = liveEventCounts(messages);
   return `
     <aside class="live-outcome">
@@ -237,10 +238,10 @@ function renderLiveOutcome(payload, messages) {
         ${renderTextBlocks(userVisibleSummary(synthesis.summary || "아직 종합 의견이 없습니다."), { highlight: synthesis.winner })}
       </div>
       <div class="consensus-card">
-        <strong>합의도 추이</strong>
-        <div class="consensus-score">${escapeHtml(confidenceLabel(synthesis.confidence))}</div>
+        <strong>결정 상태</strong>
+        <div class="consensus-score">${escapeHtml(decisionGateLabel(gate.status))}</div>
         <div class="consensus-track"><span></span></div>
-        <p>공식 발언 ${escapeHtml(counts.messages)}개 기반</p>
+        <p>${escapeHtml(gate.can_finalize ? "확정 가능" : "보류")} · 공식 발언 ${escapeHtml(counts.messages)}개 기반</p>
       </div>
       ${renderDecisionGateCard(payload.meeting)}
       <section class="rail-card rail-compact">
@@ -462,12 +463,14 @@ function stanceLabel(status) {
   if (status === "changed") return "입장 변화";
   if (status === "softened") return "입장 약화";
   if (status === "strengthened") return "입장 강화";
+  if (status === "blocked") return "발언 실패";
   return "입장 유지";
 }
 
 export function renderBoard(payload) {
   const board = document.querySelector("#board");
   const meeting = payload.meeting;
+  const gate = meeting.decision_gate || {};
   const researchByRole = Object.fromEntries(
     (meeting.research_artifacts || []).map((artifact) => [artifact.role_id, artifact.path])
   );
@@ -483,7 +486,7 @@ export function renderBoard(payload) {
         <div class="room-actions">
           <span class="room-status">에이전트 ${(meeting.roles || []).length}</span>
           <span class="room-status room-status-hot">${escapeHtml(synthesis.winner || "판정 대기")}</span>
-          <span class="room-status">합의도 ${escapeHtml(synthesis.confidence || "unknown")}</span>
+          <span class="room-status">결정 ${escapeHtml(decisionGateLabel(gate.status))}</span>
         </div>
       </div>
       <section class="board-command">

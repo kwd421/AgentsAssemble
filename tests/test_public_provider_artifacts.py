@@ -53,6 +53,22 @@ class PublicProviderArtifactTests(unittest.TestCase):
         self.assertEqual(public["notes"], "<redacted>")
         self.assertEqual(public["endpoint"], "<redacted>")
 
+    def test_provider_public_dict_scrubs_common_endpoint_key_params(self):
+        for query in ("api_key=sk_live_abc123", "key=AIzaSyABC123", "access_key=abc123"):
+            with self.subTest(query=query):
+                provider = ProviderConfig(
+                    id="bridge",
+                    kind="remote_http_bridge",
+                    display_name="Bridge",
+                    endpoint=f"https://example.com/run?{query}&room=public",
+                )
+
+                public = provider.public_dict()
+                payload = json.dumps(public, ensure_ascii=False)
+
+                self.assertNotIn(query.split("=", 1)[1], payload)
+                self.assertEqual(public["endpoint"], "<redacted>")
+
     def test_meeting_artifacts_do_not_expose_provider_secrets(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

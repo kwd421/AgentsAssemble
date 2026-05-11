@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import Mock
 
-from agentsassemble.bridges.claude_code_bridge import run_bridge_request
+from agentsassemble.bridges.claude_code_bridge import require_bridge_token, run_bridge_request
 
 
 class ClaudeCodeBridgeTests(unittest.TestCase):
@@ -37,6 +37,10 @@ class ClaudeCodeBridgeTests(unittest.TestCase):
         self.assertIn("Claude Code bridge failed", response["text"])
         self.assertEqual(response["metadata"]["returncode"], 1)
         self.assertIn("not logged in", response["metadata"]["stderr"])
+
+    def test_bridge_requires_token_before_serving(self):
+        with self.assertRaisesRegex(ValueError, "requires --token"):
+            require_bridge_token(None)
 
 
 if __name__ == "__main__":

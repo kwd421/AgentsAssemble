@@ -43,6 +43,7 @@ def run_bridge_request(
 
 
 def serve_bridge(host: str, port: int, token: str | None, command: str) -> None:
+    require_bridge_token(token)
     server = ThreadingHTTPServer((host, port), _handler(token=token, command=command))
     print(f"AgentsAssemble Claude Code bridge: http://{host}:{port}")
     try:
@@ -96,11 +97,16 @@ def _handler(token: str | None, command: str) -> type[BaseHTTPRequestHandler]:
     return ClaudeCodeBridgeHandler
 
 
+def require_bridge_token(token: str | None) -> None:
+    if not token:
+        raise ValueError("Claude Code bridge requires --token. Do not expose a bridge without authentication.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agentsassemble-claude-bridge")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8777)
-    parser.add_argument("--token", default=None)
+    parser.add_argument("--token", required=True)
     parser.add_argument("--command", default="claude")
     return parser
 
