@@ -11,6 +11,17 @@ from agentsassemble.models import ProviderConfig, ResearchDepth, ResearchSteerin
 from agentsassemble.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
 
 
+class LocalCliError(RuntimeError):
+    def __init__(self, step: str, returncode: int, stderr: str, timed_out: bool = False) -> None:
+        self.step = step
+        self.returncode = returncode
+        self.stderr = stderr
+        self.timed_out = timed_out
+        status = "timed out" if timed_out else f"exited with {returncode}"
+        detail = f": {stderr}" if stderr else ""
+        super().__init__(f"Local CLI call during {step} {status}{detail}")
+
+
 class LocalCliAdapter(ProviderAdapter):
     name = "local_cli"
 
@@ -133,14 +144,9 @@ class LocalCliAdapter(ProviderAdapter):
                 check=False,
             )
         except TimeoutExpired as error:
-            return {
-                "text": f"Local CLI call timed out during {step}.",
-                "returncode": 124,
-                "stderr": _text(error.stderr),
-                "stdout": _text(error.stdout),
-                "timed_out": True,
-                "step": step,
-            }
+            raise LocalCliError(step, 124, _text(error.stderr), timed_out=True) from error
+        if completed.returncode != 0:
+            raise LocalCliError(step, completed.returncode, completed.stderr or "")
         return {
             "text": completed.stdout or "",
             "returncode": completed.returncode,

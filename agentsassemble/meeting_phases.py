@@ -61,15 +61,7 @@ def run_research_phase(
                     depth,
                     steering,
                 )
-                research.setdefault(
-                    "retry",
-                    {
-                        "attempts": attempt,
-                        "max_attempts": max_attempts,
-                        "status": "recovered" if errors else "not_needed",
-                        "errors": errors,
-                    },
-                )
+                research["retry"] = retry_metadata(attempt, max_attempts, errors)
                 research = apply_evidence_gate(research, depth)
                 write_research(meeting_dir, research)
                 return research
@@ -112,8 +104,8 @@ def run_research_phase(
                         "display_name": role.display_name,
                         "content": compact_live_research_summary(research),
                         "confidence": research.get("confidence"),
-                        "retry_status": research.get("retry", {}).get("status"),
-                        "retry_attempts": research.get("retry", {}).get("attempts"),
+                        "retry_status": retry_metadata_from_record(research).get("status"),
+                        "retry_attempts": retry_metadata_from_record(research).get("attempts"),
                     }
                 )
     research_records = [research_by_role[role.id] for role in config.roles]
@@ -124,6 +116,22 @@ class ResearchPhaseError(RuntimeError):
     def __init__(self, errors: list[str]):
         super().__init__(errors[-1] if errors else "research failed")
         self.errors = errors
+
+
+def retry_metadata(attempts: int, max_attempts: int, errors: list[str]) -> dict[str, Any]:
+    return {
+        "attempts": attempts,
+        "max_attempts": max_attempts,
+        "status": "recovered" if errors else "not_needed",
+        "errors": list(errors),
+    }
+
+
+def retry_metadata_from_record(research: dict[str, Any]) -> dict[str, Any]:
+    retry = research.get("retry")
+    if isinstance(retry, dict):
+        return retry
+    return {"attempts": 1, "max_attempts": 1, "status": "unknown", "errors": []}
 
 
 def failed_research_record(

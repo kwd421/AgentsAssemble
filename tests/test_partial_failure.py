@@ -99,6 +99,37 @@ class PartialFailureTests(unittest.TestCase):
         self.assertEqual(research_event["retry_status"], "recovered")
         self.assertEqual(research_event["retry_attempts"], 2)
 
+    def test_research_phase_overwrites_provider_retry_metadata(self):
+        class BadRetryMetadataAdapter(MaybeFailingResearchAdapter):
+            def run_research(self, role, session, question, depth, steering):
+                research = super().run_research(role, session, question, depth, steering)
+                research["retry"] = "provider-owned string should not control orchestrator metadata"
+                return research
+
+        role = Role("role_a", "A", "Lens", "focus")
+        config = CouncilConfig("topic", "topic", "question", "question", [role])
+        depth = ResearchDepth("smoke", "Smoke", 0, 0, 0, 0, 0, 0, "", "")
+        resolved_agents = {"role_a": SimpleNamespace(adapter=BadRetryMetadataAdapter())}
+        sessions = {"role_a": {"session_id": "role_a"}}
+        live_events = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            research_records, _evidence_gate = run_research_phase(
+                config,
+                Path(temp_dir),
+                sessions,
+                resolved_agents,
+                depth,
+                ResearchSteering(),
+                lambda _message: None,
+                live_events.append,
+            )
+
+        self.assertIsInstance(research_records[0]["retry"], dict)
+        self.assertEqual(research_records[0]["retry"]["status"], "not_needed")
+        research_event = [event for event in live_events if event.get("kind") == "research"][0]
+        self.assertEqual(research_event["retry_status"], "not_needed")
+
     def test_full_meeting_continues_when_one_research_adapter_fails(self):
         class OneRoleFailingAdapter(ProviderAdapter):
             name = "one_role_failing"

@@ -109,11 +109,12 @@ class ProviderConfig:
             "display_name": self.display_name,
             "default_model": self.default_model,
             "endpoint": self.endpoint,
-            "auth_ref": self.auth_ref,
+            "auth_ref": _public_auth_ref(self.auth_ref),
             "timeout_seconds": self.timeout_seconds,
             "search_enabled": self.search_enabled,
             "notes": self.notes,
-            "command": self.command,
+            "command": ["<redacted>"] if self.command else None,
+            "command_configured": bool(self.command),
         }
 
 
@@ -258,3 +259,11 @@ def get_research_depth(name: str) -> ResearchDepth:
     except KeyError as error:
         allowed = ", ".join(RESEARCH_DEPTHS)
         raise ValueError(f"Unknown research depth: {name}. Expected one of: {allowed}") from error
+
+
+def _public_auth_ref(auth_ref: str | None) -> str | None:
+    if auth_ref is None:
+        return None
+    if auth_ref.startswith("literal:"):
+        return "literal:<redacted>"
+    return auth_ref

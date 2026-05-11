@@ -1,7 +1,7 @@
 import subprocess
 import unittest
 
-from agentsassemble.adapters.local_cli import LocalCliAdapter
+from agentsassemble.adapters.local_cli import LocalCliAdapter, LocalCliError
 from agentsassemble.models import ProviderConfig, ResearchSteering, Role, get_research_depth
 
 
@@ -80,6 +80,22 @@ class LocalCliAdapterTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "requires command"):
             adapter.run_round(role, adapter.start_session(role, {"meeting_id": "m3"}), "round_1", "발언", {})
+
+    def test_local_cli_non_zero_exit_raises_for_retry_gate(self):
+        def runner(command, input, text, capture_output, timeout, check):
+            return subprocess.CompletedProcess(command, 7, stdout="", stderr="boom")
+
+        adapter = LocalCliAdapter(
+            ProviderConfig(id="bad-cli", kind="local_cli", display_name="Bad CLI", command=["bad-cli"]),
+            command_runner=runner,
+        )
+        role = Role("role", "역할", "Lens", "focus")
+
+        with self.assertRaises(LocalCliError) as caught:
+            adapter.run_research(role, adapter.start_session(role, {"meeting_id": "m4"}), "question", get_research_depth("smoke"), ResearchSteering())
+
+        self.assertEqual(caught.exception.returncode, 7)
+        self.assertIn("boom", str(caught.exception))
 
 
 if __name__ == "__main__":

@@ -260,6 +260,7 @@ def _follow_up_metadata(
         "note": note,
         "parent_meeting_dir": str(parent_meeting_dir) if parent_meeting_dir else None,
         "artifact_refs": {},
+        "missing_refs": [],
     }
     if parent_meeting_dir is None:
         return metadata
@@ -274,4 +275,7 @@ def _follow_up_metadata(
         "decision": str(parent_dir / "decision.md"),
         "meeting": str(parent_dir / "meeting.json"),
     }
+    metadata["missing_refs"] = [
+        name for name, artifact_path in metadata["artifact_refs"].items() if not Path(str(artifact_path)).exists()
+    ]
     return metadata

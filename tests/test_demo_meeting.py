@@ -615,6 +615,26 @@ class DemoMeetingTests(unittest.TestCase):
         self.assertEqual(meeting["follow_up"]["artifact_refs"]["transcript"], str(first.meeting_dir / "transcript.md"))
         self.assertIn(f"Follow-up of: {first.meeting_id}", agenda)
 
+    def test_follow_up_from_records_missing_artifact_refs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            parent_dir = root / "missing-parent"
+            parent_dir.mkdir()
+
+            result = run_demo_meeting(
+                adapter_name="mock",
+                output_root=root,
+                follow_up_from=parent_dir,
+                follow_up_note="Investigate missing parent artifacts.",
+            )
+            meeting = json.loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(meeting["follow_up"]["parent_meeting_dir"], str(parent_dir))
+        self.assertEqual(
+            set(meeting["follow_up"]["missing_refs"]),
+            {"agenda", "transcript", "decision", "meeting"},
+        )
+
     def test_agenda_is_written_before_research_can_fail(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
