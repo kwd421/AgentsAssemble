@@ -6,7 +6,7 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.config import load_agent_runtime_config, providers_from_config
@@ -15,8 +15,11 @@ from agentsassemble.meeting_events import (
     append_lobby_event_to_file,
     append_side_chat_event_to_file,
     read_live_events,
+    read_live_events_after,
     read_lobby_events,
+    read_lobby_events_after,
     read_side_chat_events,
+    read_side_chat_events_after,
 )
 from agentsassemble.adapters import default_provider_registry
 from agentsassemble.models import ProviderConfig, Role
@@ -172,6 +175,43 @@ def append_side_chat_event(output_root: Path, event: dict[str, object]) -> dict[
     return append_side_chat_event_to_file(output_root / "side_chat.jsonl", event)
 
 
+def _sse_event(event_name: str, payload: dict[str, object], event_id: str | None = None) -> bytes:
+    lines = []
+    if event_id:
+        lines.append(f"id: {event_id}")
+    lines.append(f"event: {event_name}")
+    lines.append(f"data: {json.dumps(payload, ensure_ascii=False)}")
+    return ("\n".join(lines) + "\n\n").encode("utf-8")
+
+
+def _stream_snapshot_payload(
+    output_root: Path,
+    stream: str,
+    meeting_id: str | None = None,
+    last_event_id: str | None = None,
+) -> dict[str, object]:
+    if stream == "lobby":
+        events = read_lobby_events_after(output_root / "lobby.jsonl", last_event_id)
+        return {"stream": "lobby", "events": events}
+    if stream == "side_chat":
+        events = read_side_chat_events_after(output_root / "side_chat.jsonl", last_event_id)
+        return {"stream": "side_chat", "events": events}
+    if stream == "meeting":
+        if not meeting_id:
+            raise ValueError("Meeting id is required for meeting event stream.")
+        meeting_dir = output_root / "meetings" / meeting_id
+        if not meeting_dir.exists():
+            raise ValueError(f"Meeting {meeting_id} was not found.")
+        events = read_live_events_after(meeting_dir, last_event_id)
+        return {
+            "stream": "meeting",
+            "meeting_id": meeting_id,
+            "events": events,
+            "payload_signature": json.dumps(events, ensure_ascii=False, sort_keys=True),
+        }
+    raise ValueError(f"Unknown event stream: {stream}")
+
+
 def send_lobby_message_to_remote_bridge(
     output_root: Path,
     message: str,
@@ -325,6 +365,7 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
+            query = parse_qs(parsed.query)
             if path == "/":
                 self._send_file(static_root / "index.html", "text/html; charset=utf-8")
                 return
@@ -342,8 +383,20 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
             if path == "/api/lobby":
                 self._send_json({"events": read_lobby(output_root)})
                 return
+            if path == "/api/events/lobby":
+                self._send_sse_snapshot(
+                    "lobby",
+                    _stream_snapshot_payload(output_root, "lobby", last_event_id=self._last_event_id(query)),
+                )
+                return
             if path == "/api/side-chat":
                 self._send_json({"events": read_side_chat(output_root)})
+                return
+            if path == "/api/events/side-chat":
+                self._send_sse_snapshot(
+                    "side_chat",
+                    _stream_snapshot_payload(output_root, "side_chat", last_event_id=self._last_event_id(query)),
+                )
                 return
             if path == "/api/providers":
                 self._send_json(provider_catalog_payload())
@@ -354,6 +407,22 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                     self._send_json({"meeting": None})
                     return
                 self._send_json(build_meeting_payload(Path(str(meetings[0]["path"]))))
+                return
+            meeting_events_id = self._meeting_events_id(path)
+            if meeting_events_id:
+                meeting_dir = output_root / "meetings" / meeting_events_id
+                if not meeting_dir.exists():
+                    self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
+                    return
+                self._send_sse_snapshot(
+                    "meeting",
+                    _stream_snapshot_payload(
+                        output_root,
+                        "meeting",
+                        meeting_id=meeting_events_id,
+                        last_event_id=self._last_event_id(query),
+                    ),
+                )
                 return
             if path.startswith("/api/meetings/"):
                 meeting_id = unquote(path.removeprefix("/api/meetings/"))
@@ -440,6 +509,15 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(data)
 
+        def _send_sse_snapshot(self, event_name: str, payload: dict[str, object]) -> None:
+            data = _sse_event(event_name, payload, event_id=_last_payload_event_id(payload))
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(data)
+
         def _send_error(self, status: HTTPStatus, message: str) -> None:
             data = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
@@ -448,7 +526,31 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(data)
 
+        def _last_event_id(self, query: dict[str, list[str]]) -> str | None:
+            query_value = query.get("last_event_id", [None])[0]
+            header_value = self.headers.get("Last-Event-ID")
+            return _optional_str(header_value) or _optional_str(query_value)
+
+        def _meeting_events_id(self, path: str) -> str | None:
+            prefix = "/api/meetings/"
+            suffix = "/events"
+            if not path.startswith(prefix) or not path.endswith(suffix):
+                return None
+            meeting_id = path[len(prefix) : -len(suffix)]
+            return unquote(meeting_id) if meeting_id else None
+
     return AgentsAssembleHandler
+
+
+def _last_payload_event_id(payload: dict[str, object]) -> str | None:
+    events = payload.get("events")
+    if not isinstance(events, list) or not events:
+        return None
+    latest = events[-1]
+    if not isinstance(latest, dict):
+        return None
+    event_id = latest.get("id")
+    return event_id if isinstance(event_id, str) and event_id else None
 
 
 def _safe_static_path(static_root: Path, relative_path: str) -> Path | None:

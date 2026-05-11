@@ -7,6 +7,8 @@ from pathlib import Path
 
 from agentsassemble.gui import (
     _safe_static_path,
+    _sse_event,
+    _stream_snapshot_payload,
     append_lobby_event,
     build_meeting_payload,
     list_meetings,
@@ -135,6 +137,35 @@ class GuiServerTests(unittest.TestCase):
                 [event["id"] for event in read_live_events_after(meeting_dir, first_live["id"])],
                 [second_live["id"]],
             )
+
+    def test_sse_event_formats_id_event_name_and_json_data(self):
+        body = _sse_event("lobby", {"id": "abc", "message": "안녕"}, event_id="abc").decode("utf-8")
+
+        self.assertIn("id: abc\n", body)
+        self.assertIn("event: lobby\n", body)
+        self.assertIn('data: {"id": "abc", "message": "안녕"}\n\n', body)
+
+    def test_stream_snapshot_payload_keeps_lobby_side_chat_and_meeting_distinct(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            first_lobby = append_lobby_event(root, {"name": "나", "side": "mine", "message": "로비"})
+            append_lobby_event(root, {"name": "상대", "side": "other", "message": "로비 둘"})
+            append_side_chat_event(root, {"name": "나", "side": "mine", "message": "비공식"})
+            append_live_event(meeting_dir, {"kind": "message", "content": "공식"})
+
+            lobby_payload = _stream_snapshot_payload(root, "lobby", last_event_id=first_lobby["id"])
+            side_payload = _stream_snapshot_payload(root, "side_chat")
+            meeting_payload = _stream_snapshot_payload(root, "meeting", meeting_id="m1")
+
+            self.assertEqual(lobby_payload["stream"], "lobby")
+            self.assertEqual([event["message"] for event in lobby_payload["events"]], ["로비 둘"])
+            self.assertEqual(side_payload["stream"], "side_chat")
+            self.assertEqual(side_payload["events"][0]["message"], "비공식")
+            self.assertEqual(meeting_payload["stream"], "meeting")
+            self.assertEqual(meeting_payload["meeting_id"], "m1")
+            self.assertEqual(meeting_payload["events"][0]["content"], "공식")
 
     def test_lobby_remote_bridge_reply_is_recorded_as_other_agent(self):
         import agentsassemble.gui as gui
