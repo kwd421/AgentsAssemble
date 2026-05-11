@@ -34,6 +34,20 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("live_session adapter", doc)
         self.assertIn("Decision Gate", doc)
 
+    def test_live_room_references_preserve_council_boundary(self):
+        live_model = (ROOT / "docs" / "live-session-room-model.md").read_text(encoding="utf-8")
+        provider_arch = (ROOT / "docs" / "provider-architecture.md").read_text(encoding="utf-8")
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text(encoding="utf-8")
+        research_log = (ROOT / "docs" / "research-log.md").read_text(encoding="utf-8")
+        combined = "\n".join([live_model, provider_arch, roadmap, research_log])
+
+        self.assertIn("Stoops", combined)
+        self.assertIn("Claude Code Channels", combined)
+        self.assertIn("live room infrastructure", combined)
+        self.assertIn("council workflow", combined)
+        self.assertIn("free chat", combined)
+        self.assertIn("official", combined)
+
 
 if __name__ == "__main__":
     unittest.main()

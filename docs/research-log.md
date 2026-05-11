@@ -308,6 +308,44 @@ This file records external papers, frameworks, and product references used while
 - Human-computer interaction papers on meeting support, decision logs, and collaborative sensemaking.
 - Game UI and social deduction design references for playful council themes.
 
+## Live Room And Channel References
+
+### Stoops
+
+- Date checked: 2026-05-11
+- Link: https://github.com/stoops-io/stoops-cli
+- Type: open-source live room reference
+- Useful for:
+  - Live room infrastructure: room server, HTTP API, SSE event stream, share links, tmux-backed CLI session attachment, and MCP room tools.
+  - Engagement modes that prevent agent-to-agent infinite loops.
+  - Treating the server as a simple relay while smart agents remain local to each user's machine.
+- Not used for:
+  - Council workflow semantics.
+  - Evidence Gate, Decision Gate, `decision.md`, return packets, or memory capsule design.
+- Translation for AgentsAssemble:
+  - Adopt the idea that a room event stream is the shared source of truth.
+  - Keep free chat available but separate from official meeting turns.
+  - Preserve moderator-controlled rounds and artifact generation as the product boundary.
+
+### Claude Code Channels
+
+- Date checked: 2026-05-11
+- Link: https://code.claude.com/docs/en/channels
+- Reference link: https://code.claude.com/docs/en/channels-reference
+- Type: official Claude Code external-event channel reference
+- Useful for:
+  - Pushing Discord, Telegram, iMessage, fakechat, or custom webhook events into an already-running Claude Code session.
+  - Two-way channel design where Claude can reply through a tool.
+  - Sender allowlists and permission relay concepts.
+- Not used for:
+  - Current AgentsAssemble bridge implementation.
+  - Automatic implementation permissions.
+  - Claiming app sessions are directly controllable.
+- Translation for AgentsAssemble:
+  - A future custom channel can deliver council room events into live Claude Code sessions.
+  - Sender gating must happen before any external message becomes session input.
+  - Permission relay is powerful and should remain off until approval semantics are designed and tested.
+
 ## Long-Term Memory And Context Engineering Research
 
 ### Initial Source Sweep

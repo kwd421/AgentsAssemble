@@ -26,6 +26,10 @@ Provider adapters should eventually attach participants to a shared room event s
 
 The full room and `live_session` direction is documented in `docs/live-session-room-model.md`.
 
+Stoops is a reference for live room infrastructure: a small room server, SSE event stream, MCP tools, and tmux-backed CLI session injection. Claude Code Channels is the official Claude Code reference for pushing Discord, Telegram, iMessage, or custom webhook events into an already-running Claude Code session.
+
+AgentsAssemble should use these patterns carefully. A provider can attach to the room transport, but the council workflow still decides what becomes an official turn, what reaches transcript and Decision Gate, and what remains free chat.
+
 ## Current Implemented Slice
 
 Meeting execution records provider structure:
@@ -148,6 +152,12 @@ Local readiness can be verified with a fake command runner or a local smoke scri
 `local_cli` is one-shot/delegate style. It can test provider connectivity and opinion mode, but it should not be presented as the final live teammate experience. A future `live_session` adapter should keep a CLI, SDK, PTY, or socket-backed session attached to the room while preserving its own process state.
 
 The `meeting_read_only` permissions sent to `local_cli` and `remote_http_bridge` are currently advisory unless the caller also provides a real sandbox or constrained execution environment. Public artifacts should record this honestly as `enforcement: advisory`. Do not claim filesystem, credential, git, or implementation isolation is enforced for arbitrary CLI or bridge processes until a sandboxed launch path exists and is verified.
+
+### Claude Code Channels And Custom Channels
+
+Claude Code Channels are relevant when AgentsAssemble wants to push room events into an already-running Claude Code session. The channel model is not the same as one-shot bridge execution: an event enters the live session, and a two-way channel can expose a reply tool so Claude can answer through the same channel.
+
+If AgentsAssemble builds a custom channel later, it should start read-only, sender-gated, and scoped to council room events. Permission relay should be disabled until the host explicitly designs and verifies approval semantics.
 
 ### Memory/Profile Pack Providers
 

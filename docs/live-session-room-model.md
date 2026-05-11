@@ -26,6 +26,16 @@ Events should be append-only records such as:
 
 This keeps a meeting auditable. A later agent should be able to read the room log and understand what happened without trusting hidden orchestration state.
 
+## Live Room Infrastructure vs Council Workflow
+
+AgentsAssemble should learn from Stoops-style live room infrastructure without becoming only a chatroom.
+
+Live room infrastructure handles presence, share links, real-time delivery, CLI session attachment, and room history. Stoops is a useful reference here because it treats the server as a small room/event relay while Claude Code or Codex sessions stay alive on each user's machine.
+
+Council workflow handles agenda, moderator-controlled official turns, evidence, Decision Gate status, `decision.md`, assigned tasks, return packets, and memory. This is the product boundary that should keep AgentsAssemble distinct.
+
+Free chat is part of the room, but it is informal by default. Official meeting turns must be typed separately so a side comment cannot silently become evidence or a decision.
+
 ## Participant Classes
 
 The room should support these participant classes:
@@ -77,6 +87,19 @@ Official turns and informal chat must stay separate.
 - Side chat is visible in the room but does not become evidence by default.
 - Lobby banter can help social presence, but deploy/promote actions must decide what enters the formal meeting.
 - A participant may read the public event stream but should not receive private memory, raw files, or secrets unless explicitly allowed.
+
+## Engagement Modes
+
+Engagement mode means when a participant should react to room messages.
+
+- `manual`: does not auto-react.
+- `mentioned`: can answer when called by name in free chat.
+- `moderator_called`: can make an official turn only when the moderator grants it.
+- `human_only`: reacts to human messages but ignores agent chatter by default.
+- `always`: reacts to all visible room messages and must be treated as loop-prone.
+- `watch`: observes without speaking.
+
+Default council policy should be `mentioned` for free chat and `moderator_called` for official turns.
 
 ## Return Semantics
 

@@ -46,6 +46,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Long-term memory/context engineering research notes now compare MemGPT-style memory tiers, Reflexion-style verbal reflection, LongMemEval-style evaluation questions, and LangGraph Store-style namespaced memory.
 - Provider binding groundwork records provider configs, agent bindings, capabilities, and meeting-only permissions in `meeting.json`.
 - Room Event Log direction is documented: agents should join one shared room event stream rather than receive isolated interview prompts.
+- Live room infrastructure and council workflow are now explicitly separated: free chat and live presence are supported, but official turns, evidence, decisions, tasks, return packets, and memory remain the product core.
 - The provider registry now includes live HTTP meeting adapters for Claude/Anthropic, Gemini, Grok, and local OpenAI-compatible providers such as LM Studio. Cursor, Claude Code, and Hermes/OpenClaw-style memory packs remain planned or memory-pack providers with explicit capability records.
 - Provider catalog data is available from the registry and GUI API so future UI surfaces can show which providers are available, planned, searchable, filesystem-capable, or memory-pack-only.
 - Runtime agent config can be loaded from JSON with host-approved providers, permission profiles, agent bindings, and incoming external agent requests. Incoming agents are recorded for audit but only approved bindings execute.
@@ -133,6 +134,8 @@ These are intentional future ideas, not near-term commitments.
   - Agent-to-agent lobby banter can exist for flavor and social presence, but should remain clearly outside the official transcript unless promoted into the meeting record.
   - The UI should distinguish owner chat, lobby banter, deployed meeting turns, and official decisions so playful interaction does not pollute evidence or decisions.
   - A future `live_session adapter` should keep a CLI, SDK, PTY, or socket-backed agent process attached to the room event stream so a prepared session can participate as itself rather than only through a copied packet.
+  - Stoops is a useful reference for live room infrastructure, but AgentsAssemble should preserve council workflow: moderator control, official rounds, evidence gates, decision artifacts, task assignment, and handoff packets.
+  - Claude Code Channels is a useful reference for pushing external events into a running Claude Code session, but custom channel use should be sender-gated and read-only until permission relay semantics are explicitly designed.
 - Security / abuse resistance:
   - Treat remote users, external agents, tool outputs, retrieved documents, and incoming memory packets as untrusted input.
   - Keep the project defensive-only: security review, permission analysis, prompt-injection checks, context-leak checks, dependency risk review, and patch validation are allowed goals.
