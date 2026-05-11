@@ -26,6 +26,7 @@ const roomStreams = {
   sideChat: null,
   meeting: null,
   fallbackStarted: false,
+  reconnectNotice: null,
 };
 
 function applyScaleSettings() {
@@ -175,15 +176,17 @@ function connectRoomStreams() {
 function connectLobbyEventStream() {
   roomStreams.lobby?.close();
   roomStreams.lobby = new EventSource("/api/events/lobby");
+  roomStreams.lobby.onopen = clearReconnectNotice;
   roomStreams.lobby.addEventListener("lobby", (event) => applyLobbyStreamPayload(parseStreamPayload(event)));
-  roomStreams.lobby.onerror = () => showAppStatus("로비 스트림 재연결 중", "info");
+  roomStreams.lobby.onerror = () => scheduleReconnectNotice("로비 스트림 재연결 중");
 }
 
 function connectSideChatEventStream() {
   roomStreams.sideChat?.close();
   roomStreams.sideChat = new EventSource("/api/events/side-chat");
+  roomStreams.sideChat.onopen = clearReconnectNotice;
   roomStreams.sideChat.addEventListener("side_chat", (event) => applySideChatStreamPayload(parseStreamPayload(event)));
-  roomStreams.sideChat.onerror = () => showAppStatus("비공식 채팅 스트림 재연결 중", "info");
+  roomStreams.sideChat.onerror = () => scheduleReconnectNotice("비공식 채팅 스트림 재연결 중");
 }
 
 function connectMeetingEventStream(meetingId) {
@@ -191,8 +194,20 @@ function connectMeetingEventStream(meetingId) {
   roomStreams.meeting = null;
   if (!window.EventSource || !meetingId) return;
   roomStreams.meeting = new EventSource(`/api/meetings/${encodeURIComponent(meetingId)}/events`);
+  roomStreams.meeting.onopen = clearReconnectNotice;
   roomStreams.meeting.addEventListener("meeting", (event) => applyMeetingStreamPayload(parseStreamPayload(event)));
-  roomStreams.meeting.onerror = () => showAppStatus("회의 스트림 재연결 중", "info");
+  roomStreams.meeting.onerror = () => scheduleReconnectNotice("회의 스트림 재연결 중");
+}
+
+function scheduleReconnectNotice(message) {
+  clearTimeout(roomStreams.reconnectNotice);
+  roomStreams.reconnectNotice = setTimeout(() => showAppStatus(message, "info"), 1800);
+}
+
+function clearReconnectNotice() {
+  clearTimeout(roomStreams.reconnectNotice);
+  roomStreams.reconnectNotice = null;
+  showAppStatus("", "info");
 }
 
 function parseStreamPayload(event) {

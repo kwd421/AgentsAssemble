@@ -154,6 +154,9 @@ class MockAdapter(ProviderAdapter):
                 "lore_lawyer": "공식 지위, 서사 배치, 펑크 하자드 결과를 같이 보면 사카즈키 쪽이 가장 안정적입니다.",
                 "show_me_the_feats": "직접 승부가 난 기록을 우선하면 사카즈키가 쿠잔보다 앞섭니다.",
                 "fanboard_skeptic": "아카이누 1위는 무난하지만, 키자루 전력 표본이 적다는 점은 계속 걸립니다.",
+                "animal_spec_nerd": "고릴라의 체중, 악력, 순간 폭발력은 개인 단위 인간을 압도합니다.",
+                "gym_tactics_bro": "100명이 진짜 조율되고 도망을 금지당하면 숫자와 압박이 전투력을 만듭니다.",
+                "playground_skeptic": "100명이 동시에 덮친다는 말은 쉽지만 앞줄 공포와 부상 연쇄를 빼면 반쪽짜리 룰입니다.",
             }
             opener = openers.get(role.id, f"{role.research_focus}부터 따져보겠습니다.")
             spoken_reason = spoken_reasons.get(role.id, research.get("summary", f"{role.lens} 관점의 근거가 있습니다."))
@@ -173,6 +176,9 @@ class MockAdapter(ProviderAdapter):
                 "lore_lawyer": "전적만 보면 맥락을 놓칩니다. 공식 지위와 서사 배치도 같이 봐야 합니다.",
                 "show_me_the_feats": "설정은 말이고 전투는 결과입니다. 실제로 승부가 난 쪽을 무시하면 안 됩니다.",
                 "fanboard_skeptic": "작중에 안 나온 걸 왜 확정 박노? 키자루는 표본 부족이라 보류가 맞다.",
+                "animal_spec_nerd": "숫자가 많아도 첫 접촉에서 몇 명이 바로 무너지면 대형동물 쪽 공포 효과가 커집니다.",
+                "gym_tactics_bro": "겁먹는다는 반박은 맞지만, 룰이 넓은 경기장과 조율을 보장하면 사람 쪽 플랜이 생깁니다.",
+                "playground_skeptic": "둘 다 조건빨입니다. 경기장 크기, 도망 금지, 사전 합의 없으면 결론 확정은 오바죠.",
             }
             rebuttal = rebuttals.get(role.id, "상대 주장은 전제와 근거 품질을 분리해서 봐야 합니다.")
             content = f"{role.display_name}: {rebuttal} 그래서 내 결론은 유지하되, 확신도는 근거별로 분리해서 적어야 합니다."

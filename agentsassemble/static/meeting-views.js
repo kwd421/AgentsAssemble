@@ -33,6 +33,7 @@ export function renderLive(payload, options = {}) {
           </div>
         </div>
       </section>
+      ${renderLiveOverview(payload, liveMessages)}
       <section class="live-chat-room">
         <main class="message-list live-transcript live-chat-feed" aria-label="공식 토론 기록" aria-live="polite">
           <button type="button" class="latest-jump" hidden>최신으로 가기</button>
@@ -63,6 +64,7 @@ export function renderLive(payload, options = {}) {
   `;
   bindLatestJump(live);
   bindSideChat(live);
+  scrollSideChatToLatest(live);
   if (shouldFollowLatest) scrollLiveTranscriptToLatest(live);
   updateLatestJump(live);
 }
@@ -73,6 +75,7 @@ export function refreshSideChatFeed() {
   if (!panel) return;
   const focused = document.activeElement?.id === "side-chat-message";
   const draft = live.querySelector("#side-chat-message")?.value || "";
+  const shouldFollowLatest = isSideChatFeedNearBottom(live);
   panel.outerHTML = renderSideChat();
   bindSideChat(live);
   const input = live.querySelector("#side-chat-message");
@@ -80,6 +83,7 @@ export function refreshSideChatFeed() {
     input.value = draft;
     input.focus();
   }
+  if (shouldFollowLatest) scrollSideChatToLatest(live);
 }
 
 function renderSideChat() {
@@ -115,22 +119,47 @@ function bindSideChat(root) {
   if (!form) return;
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const input = root.querySelector("#side-chat-message");
-    const message = input?.value.trim() || "";
-    if (!message) return;
-    const payload = await fetchJson("/api/side-chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: localStorage.getItem("agentsassemble.name") || "나",
-        side: "mine",
-        kind: "message",
-        message,
-      }),
-    });
-    setSideChatEvents(payload.events || []);
-    renderLive(state.payload, { followLatest: false });
-    root.querySelector("#side-chat-message")?.focus();
+    await sendSideChatMessage(root);
+  });
+  root.querySelector("#side-chat-message")?.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    await sendSideChatMessage(root);
+  });
+}
+
+async function sendSideChatMessage(root) {
+  const input = root.querySelector("#side-chat-message");
+  const message = input?.value.trim() || "";
+  if (!message) return;
+  const payload = await fetchJson("/api/side-chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: localStorage.getItem("agentsassemble.name") || "나",
+      side: "mine",
+      kind: "message",
+      message,
+    }),
+  });
+  setSideChatEvents(payload.events || []);
+  if (input) input.value = "";
+  renderLive(state.payload, { followLatest: false });
+  root.querySelector("#side-chat-message")?.focus();
+}
+
+function isSideChatFeedNearBottom(root) {
+  const feed = root?.querySelector(".side-chat-feed");
+  if (!feed) return true;
+  const distanceFromBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
+  return distanceFromBottom < 48;
+}
+
+function scrollSideChatToLatest(root) {
+  const feed = root?.querySelector(".side-chat-feed");
+  if (!feed) return;
+  requestAnimationFrame(() => {
+    feed.scrollTop = feed.scrollHeight;
   });
 }
 
@@ -243,6 +272,32 @@ function renderLiveTimeline(payload, messages) {
       ${renderRailMetric("리서치", counts.research)}
       ${renderRailMetric("라운드", `${rounds.length || 0} / ${(payload.meeting.meeting_template?.rounds || []).length}`)}
     </aside>
+  `;
+}
+
+function renderLiveOverview(payload, messages) {
+  const roles = payload.meeting.roles || [];
+  const rounds = payload.meeting.debate_rounds || [];
+  const synthesis = payload.meeting.moderator_synthesis || {};
+  const gate = payload.meeting.decision_gate || {};
+  const counts = liveEventCounts(messages);
+  return `
+    <section class="live-overview-strip" aria-label="실황 요약">
+      ${renderOverviewCard("판정", synthesis.winner || "판정 대기", decisionGateLabel(gate.status))}
+      ${renderOverviewCard("참여자", `${roles.length}명`, roles.map((role) => role.display_name).join(" · ") || "대기")}
+      ${renderOverviewCard("진행", rounds.length ? `${rounds.length}라운드` : "라운드 대기", `공식 발언 ${counts.messages}개 · 리서치 ${counts.research}개`)}
+      ${renderOverviewCard("비공식", `${(state.sideChatEvents || []).length}개`, "회의록 제외")}
+    </section>
+  `;
+}
+
+function renderOverviewCard(label, value, detail) {
+  return `
+    <div class="overview-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(detail || "")}</small>
+    </div>
   `;
 }
 

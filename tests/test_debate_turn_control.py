@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from agentsassemble.meeting_phases import run_debate_phase
+from agentsassemble.meeting_phases import compact_spoken_message, run_debate_phase
 from agentsassemble.models import CouncilConfig, MeetingRound, Role, RoundTurnControl
 
 
@@ -50,6 +50,14 @@ class DebateTurnControlTests(unittest.TestCase):
         self.assertEqual(adapters["role_c"].calls, [("role_c", 0)])
         self.assertEqual(adapters["role_a"].calls, [("role_a", 1)])
         self.assertEqual(adapters["role_b"].calls, [])
+
+    def test_compact_spoken_message_caps_research_dumps(self):
+        content = " ".join([f"{index}번째 근거입니다." for index in range(1, 12)])
+
+        compact = compact_spoken_message(content)
+
+        self.assertLessEqual(len([part for part in compact.split(".") if part.strip()]), 6)
+        self.assertLessEqual(len(compact), 560)
 
 
 if __name__ == "__main__":

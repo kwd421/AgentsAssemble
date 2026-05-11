@@ -53,10 +53,15 @@ export function renderLobby() {
     await sendLobbyEvent("message");
   });
   const messageInput = lobby.querySelector("#lobby-message");
-  if (messageInput && focusedId === "lobby-message" && draftMessage) {
+  if (messageInput && focusedId === "lobby-message") {
     messageInput.value = draftMessage;
     messageInput.focus();
   }
+  messageInput?.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    await sendLobbyEvent("message");
+  });
   const askRemoteButton = lobby.querySelector("#lobby-ask-remote");
   askRemoteButton?.addEventListener("click", async () => {
     await sendLobbyEvent("message", { askRemote: true });
@@ -291,6 +296,8 @@ async function sendLobbyEvent(kind, options = {}) {
   setLobbyEvents(payload.events || []);
   if (messageInput) messageInput.value = "";
   renderLobby();
+  scrollLobbyFeedToLatest(document.querySelector("#lobby"));
+  document.querySelector("#lobby-message")?.focus();
   if (options.askRemote && message) await sendLobbyRemote(message, name);
 }
 
@@ -306,6 +313,8 @@ async function sendLobbyRemote(message, speakerName) {
   });
   setLobbyEvents(payload.events || []);
   renderLobby();
+  scrollLobbyFeedToLatest(document.querySelector("#lobby"));
+  document.querySelector("#lobby-message")?.focus();
 }
 
 async function sendLobbyAction(button) {

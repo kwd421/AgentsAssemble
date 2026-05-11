@@ -389,19 +389,13 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                 self._send_json({"events": read_lobby(output_root)})
                 return
             if path == "/api/events/lobby":
-                self._send_sse_snapshot(
-                    "lobby",
-                    _stream_snapshot_payload(output_root, "lobby", last_event_id=self._last_event_id(query)),
-                )
+                self._send_sse_stream("lobby", "lobby", last_event_id=self._last_event_id(query))
                 return
             if path == "/api/side-chat":
                 self._send_json({"events": read_side_chat(output_root)})
                 return
             if path == "/api/events/side-chat":
-                self._send_sse_snapshot(
-                    "side_chat",
-                    _stream_snapshot_payload(output_root, "side_chat", last_event_id=self._last_event_id(query)),
-                )
+                self._send_sse_stream("side_chat", "side_chat", last_event_id=self._last_event_id(query))
                 return
             if path == "/api/providers":
                 self._send_json(provider_catalog_payload())
@@ -419,15 +413,7 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                 if not meeting_dir.exists():
                     self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
                     return
-                self._send_sse_snapshot(
-                    "meeting",
-                    _stream_snapshot_payload(
-                        output_root,
-                        "meeting",
-                        meeting_id=meeting_events_id,
-                        last_event_id=self._last_event_id(query),
-                    ),
-                )
+                self._send_sse_stream("meeting", "meeting", meeting_id=meeting_events_id, last_event_id=self._last_event_id(query))
                 return
             if path.startswith("/api/meetings/"):
                 meeting_id = unquote(path.removeprefix("/api/meetings/"))
@@ -522,6 +508,38 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
             self.send_header("Connection", "close")
             self.end_headers()
             self.wfile.write(data)
+
+        def _send_sse_stream(
+            self,
+            event_name: str,
+            stream: str,
+            meeting_id: str | None = None,
+            last_event_id: str | None = None,
+        ) -> None:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            current_last_event_id = last_event_id
+            while True:
+                try:
+                    payload = _stream_snapshot_payload(
+                        output_root,
+                        stream,
+                        meeting_id=meeting_id,
+                        last_event_id=current_last_event_id,
+                    )
+                    latest_event_id = _last_payload_event_id(payload)
+                    if latest_event_id:
+                        self.wfile.write(_sse_event(event_name, payload, event_id=latest_event_id))
+                        current_last_event_id = latest_event_id
+                    else:
+                        self.wfile.write(b": keep-alive\n\n")
+                    self.wfile.flush()
+                    time.sleep(1)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
 
         def _send_error(self, status: HTTPStatus, message: str) -> None:
             data = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")

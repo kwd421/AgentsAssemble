@@ -49,6 +49,50 @@
   align-items: start;
 }
 
+.live-overview-strip {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.overview-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 42%),
+    rgba(9, 12, 18, 0.72);
+  border: 1px solid rgba(212, 225, 255, 0.13);
+  border-radius: 14px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.overview-card span,
+.overview-card strong,
+.overview-card small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-card span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.overview-card strong {
+  color: var(--text);
+  font-size: clamp(15px, calc(18px * var(--text-scale)), 18px);
+  margin-top: 5px;
+}
+
+.overview-card small {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 3px;
+}
+
 .live-chat-feed {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.028), transparent 28%),
@@ -118,7 +162,7 @@
 .side-chat-feed {
   display: grid;
   gap: 8px;
-  max-height: 190px;
+  max-height: clamp(240px, 30vh, 360px);
   overflow: auto;
 }
 

@@ -292,6 +292,7 @@ def _with_turn_metadata(message: dict[str, Any], round_id: str, turn_index: int)
     role_id = str(message.get("role_id") or "unknown")
     return {
         **message,
+        "content": compact_spoken_message(str(message.get("content") or "")),
         "turn_id": f"{round_id}:{turn_index}:{role_id}",
         "turn_index": turn_index,
         "engagement_mode": "moderator_called",
@@ -328,6 +329,62 @@ def compact_live_research_summary(research: dict[str, Any]) -> str:
     if compact and len(compact) <= 160:
         return compact
     return summary[:157].rstrip() + "..."
+
+
+def compact_spoken_message(content: str, max_sentences: int = 6, max_chars: int = 560) -> str:
+    normalized = " ".join(str(content or "").split()).strip()
+    if not normalized:
+        return ""
+    sentences = _split_spoken_sentences(normalized)
+    if len(sentences) > max_sentences:
+        normalized = " ".join(sentences[:max_sentences]).strip()
+    if len(normalized) <= max_chars:
+        return normalized
+    compact = ""
+    for sentence in _split_spoken_sentences(normalized):
+        candidate = f"{compact} {sentence}".strip()
+        if len(candidate) > max_chars:
+            break
+        compact = candidate
+    if compact:
+        return compact
+    return normalized[: max_chars - 1].rstrip() + "…"
+
+
+def _split_spoken_sentences(content: str) -> list[str]:
+    sentences: list[str] = []
+    current = ""
+    endings = {".", "?", "!", "。", "？", "！"}
+    for char in content:
+        current += char
+        if char in endings:
+            sentence = current.strip()
+            if sentence:
+                sentences.append(sentence)
+            current = ""
+    remainder = current.strip()
+    if remainder:
+        sentences.extend(_split_long_spoken_remainder(remainder))
+    return [sentence for sentence in sentences if sentence]
+
+
+def _split_long_spoken_remainder(content: str, chunk_size: int = 130) -> list[str]:
+    if len(content) <= chunk_size:
+        return [content]
+    chunks = []
+    current = ""
+    for part in content.split(","):
+        candidate = f"{current}, {part}".strip(", ").strip()
+        if len(candidate) > chunk_size and current:
+            chunks.append(current)
+            current = part.strip()
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    if len(chunks) == 1 and len(chunks[0]) > chunk_size:
+        return [content[index : index + chunk_size].strip() for index in range(0, len(content), chunk_size)]
+    return chunks
 
 
 def synthesize_meeting(

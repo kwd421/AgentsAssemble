@@ -44,6 +44,7 @@
   }
 
   .live-chat-room,
+  .live-overview-strip,
   .archive-layout,
   .archive-vault,
   .evidence-overview,
@@ -62,12 +63,12 @@
   }
 
   .lobby-event {
-    max-width: 82%;
+    width: min(100%, 640px);
   }
 
   .lobby-mine,
   .lobby-my-agent {
-    max-width: 82%;
+    width: min(100%, 640px);
   }
 
   .live-chat-title {
