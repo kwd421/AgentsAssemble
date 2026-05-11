@@ -9,6 +9,7 @@ from uuid import uuid4
 
 LobbySide = Literal["mine", "my-agent", "other", "other-agent"]
 LobbyKind = Literal["message", "ready", "deploy"]
+RoomChannel = Literal["lobby", "side_chat", "official", "system"]
 MeetingEventKind = Literal[
     "meeting_started",
     "role_sessions_started",
@@ -21,6 +22,8 @@ LiveEventKind = Literal["status", "research", "message", "synthesis", "artifact"
 
 LOBBY_SIDES: set[str] = {"mine", "my-agent", "other", "other-agent"}
 LOBBY_KINDS: set[str] = {"message", "ready", "deploy"}
+LOBBY_CHANNELS: set[str] = {"lobby", "side_chat"}
+OFFICIAL_LIVE_KINDS: set[str] = {"message", "synthesis"}
 
 
 @dataclass(frozen=True)
@@ -31,9 +34,12 @@ class LobbyEvent:
     side: LobbySide
     kind: LobbyKind
     message: str
+    channel: Literal["lobby", "side_chat"] = "lobby"
+    audience: str = "room"
+    official_record: bool = False
 
     @classmethod
-    def from_payload(cls, payload: dict[str, object]) -> LobbyEvent:
+    def from_payload(cls, payload: dict[str, object], channel: Literal["lobby", "side_chat"] = "lobby") -> LobbyEvent:
         kind = payload.get("kind") if payload.get("kind") in LOBBY_KINDS else "message"
         message = clean_lobby_text(payload.get("message", ""), limit=240)
         if kind == "ready" and not message:
@@ -47,6 +53,7 @@ class LobbyEvent:
             side=normalize_lobby_side(payload.get("side")),
             kind=kind,  # type: ignore[arg-type]
             message=message,
+            channel=channel,
         )
 
     @classmethod
@@ -64,6 +71,9 @@ class LobbyEvent:
             side=normalize_lobby_side(payload.get("side")),
             kind=normalize_lobby_kind(payload.get("kind")),
             message=clean_lobby_text(payload.get("message", ""), limit=240),
+            channel=normalize_lobby_channel(payload.get("channel")),
+            audience=clean_lobby_text(payload.get("audience", "room"), limit=32) or "room",
+            official_record=False,
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -74,6 +84,9 @@ class LobbyEvent:
             "side": self.side,
             "kind": self.kind,
             "message": self.message,
+            "channel": self.channel,
+            "audience": self.audience,
+            "official_record": self.official_record,
         }
 
 
@@ -125,6 +138,14 @@ def read_side_chat_events(path: Path, limit: int = 120) -> list[dict[str, object
     return read_lobby_events(path, limit=limit)
 
 
+def read_lobby_events_after(path: Path, last_event_id: str | None, limit: int = 80) -> list[dict[str, object]]:
+    return _events_after_id(read_lobby_events(path, limit=limit), last_event_id)
+
+
+def read_side_chat_events_after(path: Path, last_event_id: str | None, limit: int = 120) -> list[dict[str, object]]:
+    return _events_after_id(read_side_chat_events(path, limit=limit), last_event_id)
+
+
 def append_lobby_event_to_file(path: Path, payload: dict[str, object]) -> dict[str, object]:
     path.parent.mkdir(parents=True, exist_ok=True)
     event = LobbyEvent.from_payload(payload)
@@ -134,14 +155,22 @@ def append_lobby_event_to_file(path: Path, payload: dict[str, object]) -> dict[s
 
 
 def append_side_chat_event_to_file(path: Path, payload: dict[str, object]) -> dict[str, object]:
-    return append_lobby_event_to_file(path, payload)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    event = LobbyEvent.from_payload(payload, channel="side_chat")
+    with path.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(event.to_dict(), ensure_ascii=False, sort_keys=True) + "\n")
+    return event.to_dict()
 
 
 def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str, object]:
+    kind = str(payload.get("kind", "status"))
     event = {
         "id": uuid4().hex[:12],
         "created_at": datetime.now(UTC).isoformat(),
-        "kind": payload.get("kind", "status"),
+        "kind": kind,
+        "channel": _live_channel(kind),
+        "audience": clean_lobby_text(payload.get("audience", "room"), limit=32) or "room",
+        "official_record": kind in OFFICIAL_LIVE_KINDS,
         "role_id": payload.get("role_id"),
         "display_name": payload.get("display_name"),
         "round": payload.get("round"),
@@ -181,6 +210,10 @@ def read_live_events(meeting_dir: Path, limit: int = 200) -> list[dict[str, obje
     return events[-limit:]
 
 
+def read_live_events_after(meeting_dir: Path, last_event_id: str | None, limit: int = 200) -> list[dict[str, object]]:
+    return _events_after_id(read_live_events(meeting_dir, limit=limit), last_event_id)
+
+
 def write_live_state(meeting_dir: Path, payload: dict[str, object]) -> None:
     (meeting_dir / "live_state.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
@@ -198,3 +231,22 @@ def normalize_lobby_side(value: object) -> LobbySide:
 
 def normalize_lobby_kind(value: object) -> LobbyKind:
     return value if value in LOBBY_KINDS else "message"  # type: ignore[return-value]
+
+
+def normalize_lobby_channel(value: object) -> Literal["lobby", "side_chat"]:
+    return value if value in LOBBY_CHANNELS else "lobby"  # type: ignore[return-value]
+
+
+def _live_channel(kind: str) -> RoomChannel:
+    if kind in OFFICIAL_LIVE_KINDS:
+        return "official"
+    return "system"
+
+
+def _events_after_id(events: list[dict[str, object]], last_event_id: str | None) -> list[dict[str, object]]:
+    if not last_event_id:
+        return events
+    for index, event in enumerate(events):
+        if event.get("id") == last_event_id:
+            return events[index + 1 :]
+    return events

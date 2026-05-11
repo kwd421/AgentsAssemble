@@ -17,6 +17,7 @@ from agentsassemble.gui import (
     append_side_chat_event,
 )
 from agentsassemble.meeting_events import append_live_event, write_live_state
+from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
 from agentsassemble.meeting import run_demo_meeting
 
 
@@ -79,6 +80,61 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(read_lobby(root)[0]["message"], "로비 메시지")
             self.assertTrue((root / "side_chat.jsonl").exists())
             self.assertFalse((root / "meetings" / "side_chat.jsonl").exists())
+
+    def test_room_events_record_channel_audience_and_official_record_boundary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+
+            lobby_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "로비 잡담"})
+            side_event = append_side_chat_event(root, {"name": "나", "side": "mine", "message": "실황 옆 잡담"})
+            status_event = append_live_event(meeting_dir, {"kind": "status", "content": "회의 시작"})
+            message_event = append_live_event(
+                meeting_dir,
+                {"kind": "message", "display_name": "설정충", "content": "공식 발언"},
+            )
+            synthesis_event = append_live_event(
+                meeting_dir,
+                {"kind": "synthesis", "display_name": "Moderator", "content": "종합"},
+            )
+
+            self.assertEqual(lobby_event["channel"], "lobby")
+            self.assertEqual(side_event["channel"], "side_chat")
+            self.assertEqual(lobby_event["audience"], "room")
+            self.assertFalse(lobby_event["official_record"])
+            self.assertFalse(side_event["official_record"])
+            self.assertEqual(status_event["channel"], "system")
+            self.assertFalse(status_event["official_record"])
+            self.assertEqual(message_event["channel"], "official")
+            self.assertTrue(message_event["official_record"])
+            self.assertTrue(synthesis_event["official_record"])
+
+    def test_room_event_readers_can_resume_after_event_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+
+            first_lobby = append_lobby_event(root, {"name": "나", "side": "mine", "message": "첫 로비"})
+            second_lobby = append_lobby_event(root, {"name": "친구", "side": "other", "message": "둘째 로비"})
+            first_side = append_side_chat_event(root, {"name": "나", "side": "mine", "message": "첫 비공식"})
+            second_side = append_side_chat_event(root, {"name": "친구", "side": "other", "message": "둘째 비공식"})
+            first_live = append_live_event(meeting_dir, {"kind": "message", "content": "첫 공식"})
+            second_live = append_live_event(meeting_dir, {"kind": "message", "content": "둘째 공식"})
+
+            self.assertEqual(
+                [event["id"] for event in read_lobby_events_after(root / "lobby.jsonl", first_lobby["id"])],
+                [second_lobby["id"]],
+            )
+            self.assertEqual(
+                [event["id"] for event in read_side_chat_events_after(root / "side_chat.jsonl", first_side["id"])],
+                [second_side["id"]],
+            )
+            self.assertEqual(
+                [event["id"] for event in read_live_events_after(meeting_dir, first_live["id"])],
+                [second_live["id"]],
+            )
 
     def test_lobby_remote_bridge_reply_is_recorded_as_other_agent(self):
         import agentsassemble.gui as gui

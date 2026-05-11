@@ -7,6 +7,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 ResearchDepthName = Literal["smoke", "standard", "deep"]
 ResearchStance = Literal["open", "user_leaning"]
+EngagementMode = Literal["manual", "mentioned", "moderator_called", "human_only", "always", "watch"]
 ProviderKind = Literal[
     "mock",
     "codex",
@@ -129,6 +130,7 @@ class AgentBinding:
     permission_profile_id: str
     memory_profile_id: str | None = None
     join_mode: Literal["fresh", "current_session", "imported_pack"] = "fresh"
+    engagement_mode: EngagementMode = "moderator_called"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -140,6 +142,7 @@ class AgentBinding:
             "permission_profile_id": self.permission_profile_id,
             "memory_profile_id": self.memory_profile_id,
             "join_mode": self.join_mode,
+            "engagement_mode": self.engagement_mode,
         }
 
 
@@ -260,6 +263,15 @@ def get_research_depth(name: str) -> ResearchDepth:
     except KeyError as error:
         allowed = ", ".join(RESEARCH_DEPTHS)
         raise ValueError(f"Unknown research depth: {name}. Expected one of: {allowed}") from error
+
+
+ENGAGEMENT_MODES: set[str] = {"manual", "mentioned", "moderator_called", "human_only", "always", "watch"}
+
+
+def normalize_engagement_mode(value: object, default: EngagementMode = "manual") -> EngagementMode:
+    if value in ENGAGEMENT_MODES:
+        return value  # type: ignore[return-value]
+    return default
 
 
 def _public_auth_ref(auth_ref: str | None) -> str | None:

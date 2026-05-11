@@ -10,6 +10,7 @@ from agentsassemble.config import (
     permissions_from_config,
     providers_from_config,
 )
+from agentsassemble.models import normalize_engagement_mode
 
 
 class ConfigTests(unittest.TestCase):
@@ -123,6 +124,35 @@ class ConfigTests(unittest.TestCase):
             self.assertFalse(permissions["meeting_readonly_tools"].filesystem_write)
             self.assertEqual(bindings[0].owner_id, "friend")
             self.assertEqual(bindings[0].join_mode, "current_session")
+            self.assertEqual(bindings[0].engagement_mode, "moderator_called")
+
+    def test_agent_binding_engagement_mode_can_be_configured(self):
+        bindings = agent_bindings_from_config(
+            {
+                "agent_bindings": [
+                    {
+                        "agent_id": "guest-architect",
+                        "role_id": "lore_lawyer",
+                        "provider_id": "guest-cursor",
+                        "permission_profile_id": "meeting_readonly_tools",
+                        "engagement_mode": "mentioned",
+                    },
+                    {
+                        "agent_id": "bad-mode",
+                        "role_id": "fanboard_skeptic",
+                        "provider_id": "guest-cursor",
+                        "permission_profile_id": "meeting_readonly_tools",
+                        "engagement_mode": "shout_forever",
+                    },
+                ]
+            }
+        )
+
+        self.assertEqual(bindings[0].engagement_mode, "mentioned")
+        self.assertEqual(bindings[0].to_dict()["engagement_mode"], "mentioned")
+        self.assertEqual(bindings[1].engagement_mode, "manual")
+        self.assertEqual(normalize_engagement_mode("watch"), "watch")
+        self.assertEqual(normalize_engagement_mode("unknown"), "manual")
 
     def test_example_agent_configs_are_parseable(self):
         for path in (

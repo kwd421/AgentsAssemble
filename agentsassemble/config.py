@@ -5,7 +5,15 @@ import shlex
 from pathlib import Path
 from typing import Any
 
-from agentsassemble.models import AgentBinding, CouncilConfig, MeetingRound, PermissionProfile, ProviderConfig, Role
+from agentsassemble.models import (
+    AgentBinding,
+    CouncilConfig,
+    MeetingRound,
+    PermissionProfile,
+    ProviderConfig,
+    Role,
+    normalize_engagement_mode,
+)
 from agentsassemble.templates import DEMO_MEETING_TEMPLATE
 
 
@@ -127,8 +135,16 @@ def permissions_from_config(data: dict[str, Any]) -> dict[str, PermissionProfile
 
 
 def agent_bindings_from_config(data: dict[str, Any]) -> list[AgentBinding]:
-    return [
-        AgentBinding(
+    bindings = []
+    for binding_data in data.get("agent_bindings", []):
+        raw_mode = binding_data.get("engagement_mode")
+        engagement_mode = (
+            normalize_engagement_mode(raw_mode, default="manual")
+            if raw_mode is not None
+            else "moderator_called"
+        )
+        bindings.append(
+            AgentBinding(
             agent_id=binding_data["agent_id"],
             role_id=binding_data["role_id"],
             owner_id=binding_data.get("owner_id", "local-user"),
@@ -137,6 +153,7 @@ def agent_bindings_from_config(data: dict[str, Any]) -> list[AgentBinding]:
             permission_profile_id=binding_data["permission_profile_id"],
             memory_profile_id=binding_data.get("memory_profile_id"),
             join_mode=binding_data.get("join_mode", "fresh"),
+            engagement_mode=engagement_mode,
         )
-        for binding_data in data.get("agent_bindings", [])
-    ]
+        )
+    return bindings
