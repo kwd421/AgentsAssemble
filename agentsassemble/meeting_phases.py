@@ -66,7 +66,7 @@ def run_research_phase(
                 write_research(meeting_dir, research)
                 return research
             except Exception as error:
-                errors.append(str(error))
+                errors.append(public_adapter_error(error))
                 if attempt < max_attempts and live_event is not None:
                     live_event(
                         {
@@ -140,8 +140,8 @@ def failed_research_record(
     depth: ResearchDepth,
     steering: ResearchSteering,
 ) -> dict[str, Any]:
-    message = f"Research failed for {role.display_name}: {error}"
-    errors = error.errors if isinstance(error, ResearchPhaseError) else [str(error)]
+    errors = error.errors if isinstance(error, ResearchPhaseError) else [public_adapter_error(error)]
+    message = f"Research failed for {role.display_name}: {errors[-1] if errors else 'adapter failed'}"
     return {
         "role_id": role.id,
         "display_name": role.display_name,
@@ -204,7 +204,8 @@ def run_debate_phase(
         messages = []
         if round_definition.context_scope == "own_research":
             for role, research in zip(config.roles, research_records, strict=True):
-                message = resolved_agents[role.id].adapter.run_round(
+                try:
+                    message = resolved_agents[role.id].adapter.run_round(
                         role,
                         sessions[role.id],
                         round_definition.id,
@@ -215,6 +216,8 @@ def run_debate_phase(
                             "stance_rule": "Keep your role's own position distinct. Do not soften your stance just to agree with the room.",
                         },
                     )
+                except Exception as error:
+                    message = failed_round_message(role, round_definition.id, error)
                 messages.append(message)
                 if live_event is not None:
                     live_event({"kind": "message", **message})
@@ -229,13 +232,16 @@ def run_debate_phase(
                 ),
             }
             for role in config.roles:
-                message = resolved_agents[role.id].adapter.run_round(
+                try:
+                    message = resolved_agents[role.id].adapter.run_round(
                         role,
                         sessions[role.id],
                         round_definition.id,
                         round_definition.instruction,
                         public_context,
                     )
+                except Exception as error:
+                    message = failed_round_message(role, round_definition.id, error)
                 messages.append(message)
                 if live_event is not None:
                     live_event({"kind": "message", **message})
@@ -250,6 +256,25 @@ def run_debate_phase(
             }
         )
     return debate_rounds
+
+
+def failed_round_message(role: Any, round_name: str, error: Exception) -> dict[str, Any]:
+    return {
+        "role_id": role.id,
+        "display_name": role.display_name,
+        "round": round_name,
+        "status": "failed",
+        "content": f"Adapter failed during {round_name}: {public_adapter_error(error)}",
+        "position": "",
+        "stance_status": "blocked",
+        "stance_delta": "none",
+        "changed_by": [],
+        "change_reason": "",
+        "remaining_resistance": "Adapter failure prevented this turn.",
+        "emotion": {},
+        "change_conditions": [],
+        "confidence": "low",
+    }
 
 
 def compact_live_research_summary(research: dict[str, Any]) -> str:
@@ -285,11 +310,14 @@ def synthesize_meeting(
     report("Moderator synthesis")
     if live_event is not None:
         live_event({"kind": "status", "role_id": "moderator", "display_name": "Moderator", "content": "종합 시작"})
-    synthesis = moderator_adapter.synthesize(
-        moderator_session,
-        question,
-        build_decision_context(research_records, debate_rounds, evidence_gate),
-    )
+    try:
+        synthesis = moderator_adapter.synthesize(
+            moderator_session,
+            question,
+            build_decision_context(research_records, debate_rounds, evidence_gate),
+        )
+    except Exception as error:
+        synthesis = failed_synthesis_record(error)
     if live_event is not None:
         live_event(
             {
@@ -303,3 +331,28 @@ def synthesize_meeting(
             }
         )
     return synthesis
+
+
+def failed_synthesis_record(error: Exception) -> dict[str, Any]:
+    return {
+        "winner": "Undetermined",
+        "ranking": [],
+        "confidence": "low",
+        "caveats": ["Moderator adapter failed; decision requires rerun or user review."],
+        "summary": f"Moderator adapter failed: {public_adapter_error(error)}",
+        "tasks": {},
+        "status": "degraded",
+        "fallback": "moderator_adapter_error",
+    }
+
+
+def public_adapter_error(error: Exception) -> str:
+    returncode = getattr(error, "returncode", None)
+    timed_out = bool(getattr(error, "timed_out", False))
+    if returncode is not None:
+        status = "timed out" if timed_out else f"returned {returncode}"
+        return f"{error.__class__.__name__} {status}"
+    text = str(error).replace("\n", " ").replace("\r", " ").strip()
+    if not text:
+        return error.__class__.__name__
+    return f"{error.__class__.__name__}: {text[:240]}"

@@ -28,6 +28,7 @@ def build_return_packet(meeting: dict[str, Any], role: dict[str, Any]) -> dict[s
             "caveats": synthesis.get("caveats", []),
         },
         "decision_status": meeting.get("decision_status", {"status": "unknown", "next_actions": []}),
+        "decision_gate": meeting.get("decision_gate", {"status": "unknown", "reasons": []}),
         "follow_up": meeting.get("follow_up", {"parent_meeting_id": None, "note": None}),
         "stance": {
             "final_position": final_position,
@@ -89,6 +90,13 @@ def render_return_packet_markdown(packet: dict[str, Any]) -> str:
         f"- Evidence gate: {decision_status.get('evidence_gate_status', 'unknown')}",
         "- Next actions:",
         *_markdown_items(decision_status.get("next_actions", []), indent="  "),
+        "",
+        "## Decision Gate",
+        "",
+        f"- Status: {packet.get('decision_gate', {}).get('status', 'unknown')}",
+        f"- Required action: {packet.get('decision_gate', {}).get('required_action', 'unknown')}",
+        "- Reasons:",
+        *_markdown_items(packet.get("decision_gate", {}).get("reasons", []), indent="  "),
         "",
         "## Handoff Checklist",
         "",
@@ -176,6 +184,7 @@ def _winner_aliases(winner: str) -> set[str]:
 def _handoff_checklist(meeting: dict[str, Any], research: dict[str, Any], task: str) -> list[str]:
     checklist = [
         "Review delegate packet before claiming continuity.",
+        "Review decision gate before acting.",
         "Review decision status before continuing work.",
         "Read decision.md, transcript.md, and this return packet.",
         "Check evidence gate warnings before trusting claims.",

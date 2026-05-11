@@ -147,6 +147,8 @@ Local readiness can be verified with a fake command runner or a local smoke scri
 
 `local_cli` is one-shot/delegate style. It can test provider connectivity and opinion mode, but it should not be presented as the final live teammate experience. A future `live_session` adapter should keep a CLI, SDK, PTY, or socket-backed session attached to the room while preserving its own process state.
 
+The `meeting_read_only` permissions sent to `local_cli` and `remote_http_bridge` are currently advisory unless the caller also provides a real sandbox or constrained execution environment. Public artifacts should record this honestly as `enforcement: advisory`. Do not claim filesystem, credential, git, or implementation isolation is enforced for arbitrary CLI or bridge processes until a sandboxed launch path exists and is verified.
+
 ### Memory/Profile Pack Providers
 
 Hermes/OpenClaw-style systems should not be treated as magic live providers until verified. Start with explicit artifacts:

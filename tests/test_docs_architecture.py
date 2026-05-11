@@ -17,6 +17,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Codex app", doc)
         self.assertIn("CLI", doc)
         self.assertIn("memory capsule", doc)
+        self.assertIn("advisory policy envelope", doc)
 
     def test_provider_architecture_points_to_live_session_model(self):
         doc = (ROOT / "docs" / "provider-architecture.md").read_text(encoding="utf-8")
@@ -24,6 +25,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Shared Room Event Stream", doc)
         self.assertIn("docs/live-session-room-model.md", doc)
         self.assertIn("live_session", doc)
+        self.assertIn("advisory", doc)
 
     def test_roadmap_mentions_room_event_log_and_live_session_adapter(self):
         doc = (ROOT / "docs" / "roadmap.md").read_text(encoding="utf-8")

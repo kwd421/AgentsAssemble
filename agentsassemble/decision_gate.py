@@ -22,14 +22,15 @@ def derive_decision_gate(
         reasons.append("moderator_fallback")
         return _gate("invalid", False, "rerun_moderator_or_user_review", reasons, minority_positions)
 
-    if not winner or winner.casefold() == "undetermined":
-        reasons.append("winner_undetermined")
-        return _gate("no_consensus", False, "add_round_or_user_decision", reasons, minority_positions)
-
     reasons.extend(_research_reasons(research_records))
     reasons.extend(_evidence_reasons(evidence_gate))
+    if not winner or winner.casefold() == "undetermined":
+        reasons.append("winner_undetermined")
     if any(reason.startswith(("research_failed", "retry_failed", "evidence_gate", "unsupported", "weak", "verifier_rejected")) for reason in reasons):
         return _gate("needs_more_research", False, "run_research_or_verifier_round", reasons, minority_positions)
+
+    if not winner or winner.casefold() == "undetermined":
+        return _gate("no_consensus", False, "add_round_or_user_decision", reasons, minority_positions)
 
     if confidence == "low":
         reasons.append("low_confidence")
@@ -77,7 +78,7 @@ def _research_reasons(research_records: list[dict[str, Any]]) -> list[str]:
 def _evidence_reasons(evidence_gate: dict[str, Any]) -> list[str]:
     reasons = []
     status = str(evidence_gate.get("status") or "unknown").lower()
-    if status not in {"pass", "unknown"}:
+    if status != "pass":
         reasons.append(f"evidence_gate:{status}")
     if int(evidence_gate.get("total_unsupported_claims") or 0) > 0:
         reasons.append("unsupported_claims_present")
@@ -112,10 +113,31 @@ def _minority_positions(winner: str, positions: dict[str, str]) -> list[dict[str
 def _position_matches_winner(position: str, winner: str) -> bool:
     normalized_position = position.casefold()
     normalized_winner = winner.casefold()
-    if normalized_winner in normalized_position:
-        return True
     winner_terms = {term for term in normalized_winner.replace("/", " ").split() if term}
-    return any(term in normalized_position for term in winner_terms)
+    winner_terms.add(normalized_winner)
+    for term in winner_terms:
+        if not term:
+            continue
+        if normalized_position == term:
+            return True
+        if normalized_position.startswith(f"{term} "):
+            return not _contains_opposition_marker(normalized_position, term)
+    return False
+
+
+def _contains_opposition_marker(position: str, winner_term: str) -> bool:
+    markers = (
+        f"not {winner_term}",
+        f"against {winner_term}",
+        f"beats {winner_term}",
+        f"beat {winner_term}",
+        f"defeats {winner_term}",
+        f"defeat {winner_term}",
+        f"{winner_term} loses",
+        f"{winner_term} lose",
+        f"{winner_term} is not",
+    )
+    return any(marker in position for marker in markers)
 
 
 def _dedupe(items: list[str]) -> list[str]:

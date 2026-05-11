@@ -35,6 +35,7 @@ def build_delegate_packet(meeting: dict[str, Any], role: dict[str, Any]) -> dict
             "must_explain": ["what you argued", "what changed your mind", "what remains unresolved"],
         },
         "meeting_template": meeting.get("meeting_template", {}),
+        "decision_gate": meeting.get("decision_gate", {"status": "unknown", "reasons": []}),
         "provider": provider,
         "agent_binding": binding,
         "permissions": _meeting_permissions(permissions),

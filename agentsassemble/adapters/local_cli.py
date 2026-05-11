@@ -174,6 +174,7 @@ class LocalCliAdapter(ProviderAdapter):
 def _meeting_read_only_permissions() -> dict[str, bool | str]:
     return {
         "mode": "meeting_read_only",
+        "enforcement": "advisory",
         "meeting_read": True,
         "official_turn": True,
         "filesystem_read": False,

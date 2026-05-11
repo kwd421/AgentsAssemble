@@ -41,6 +41,29 @@ class DecisionGateTests(unittest.TestCase):
         self.assertIn("research_failed:a", gate["reasons"])
         self.assertIn("evidence_gate:warn", gate["reasons"])
 
+    def test_unknown_evidence_gate_blocks_final_decision(self):
+        gate = derive_decision_gate(
+            {"winner": "A", "confidence": "high", "caveats": [], "summary": "A wins."},
+            {},
+            [research("a")],
+            [{"messages": [round_message("a", "A")]}],
+        )
+
+        self.assertEqual(gate["status"], "needs_more_research")
+        self.assertIn("evidence_gate:unknown", gate["reasons"])
+
+    def test_research_failure_takes_precedence_over_no_consensus(self):
+        gate = derive_decision_gate(
+            {"winner": "Undetermined", "confidence": "low", "caveats": [], "summary": "No result."},
+            {"status": "warn", "total_unsupported_claims": 1},
+            [research("a", status="failed", retry_status="failed")],
+            [{"messages": [round_message("a", "A")]}],
+        )
+
+        self.assertEqual(gate["status"], "needs_more_research")
+        self.assertIn("winner_undetermined", gate["reasons"])
+        self.assertIn("research_failed:a", gate["reasons"])
+
     def test_no_consensus_when_winner_is_missing(self):
         gate = derive_decision_gate(
             {"winner": "Undetermined", "confidence": "low", "caveats": [], "summary": "No result."},
@@ -86,6 +109,17 @@ class DecisionGateTests(unittest.TestCase):
         self.assertEqual(gate["status"], "split_decision")
         self.assertTrue(gate["can_finalize"])
         self.assertIn("minority_positions", gate)
+
+    def test_dissent_that_mentions_winner_is_not_treated_as_alignment(self):
+        gate = derive_decision_gate(
+            {"winner": "Akainu", "confidence": "high", "caveats": [], "summary": "Akainu wins."},
+            {"status": "pass"},
+            [research("a"), research("b")],
+            [{"messages": [round_message("a", "Akainu wins"), round_message("b", "Aokiji beats Akainu head-to-head")]}],
+        )
+
+        self.assertEqual(gate["status"], "split_decision")
+        self.assertEqual(gate["minority_positions"], [{"role_id": "b", "position": "Aokiji beats Akainu head-to-head"}])
 
 
 if __name__ == "__main__":

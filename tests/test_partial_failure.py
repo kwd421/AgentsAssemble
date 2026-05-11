@@ -5,10 +5,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from agentsassemble.adapters.base import ProviderAdapter
+from agentsassemble.adapters.local_cli import LocalCliError
 from agentsassemble.adapters.registry import ProviderCapabilities, default_provider_registry
 from agentsassemble.meeting import run_demo_meeting
-from agentsassemble.meeting_phases import run_research_phase
-from agentsassemble.models import CouncilConfig, ResearchDepth, ResearchSteering, Role
+from agentsassemble.meeting_phases import run_debate_phase, run_research_phase, synthesize_meeting
+from agentsassemble.models import CouncilConfig, MeetingRound, ResearchDepth, ResearchSteering, Role
 
 
 class MaybeFailingResearchAdapter:
@@ -217,6 +218,89 @@ class PartialFailureTests(unittest.TestCase):
         self.assertEqual(failed_summary["evidence_gate"]["failures"], ["research_failed"])
         self.assertEqual(meeting["evidence_gate"]["status"], "warn")
         self.assertEqual(meeting["decision_status"]["status"], "partial")
+
+    def test_debate_phase_records_adapter_failure_instead_of_aborting(self):
+        class FailingRoundAdapter:
+            def run_round(self, role, session, round_name, prompt, public_context):
+                raise LocalCliError(round_name, 7, "round failed")
+
+        role = Role("role_a", "A", "Lens", "focus")
+        config = CouncilConfig(
+            "topic",
+            "topic",
+            "question",
+            "question",
+            [role],
+            rounds=[MeetingRound("round_1", "Round 1", "Round 1", "Open", "own_research")],
+        )
+        resolved_agents = {"role_a": SimpleNamespace(adapter=FailingRoundAdapter())}
+        sessions = {"role_a": {"session_id": "role_a"}}
+
+        debate_rounds = run_debate_phase(
+            config,
+            sessions,
+            resolved_agents,
+            [{"role_id": "role_a", "display_name": "A", "summary": "research", "confidence": "medium"}],
+            {"status": "pass"},
+            lambda _message: None,
+        )
+
+        message = debate_rounds[0]["messages"][0]
+        self.assertEqual(message["status"], "failed")
+        self.assertEqual(message["stance_status"], "blocked")
+        self.assertIn("Adapter failed during round_1", message["content"])
+
+    def test_research_failure_does_not_publish_local_cli_stderr(self):
+        class SecretFailingResearchAdapter:
+            def run_research(self, role, session, question, depth, steering):
+                raise LocalCliError("research", 7, "secret-token")
+
+        role = Role("role_a", "A", "Lens", "focus")
+        config = CouncilConfig("topic", "topic", "question", "question", [role])
+        depth = ResearchDepth("smoke", "Smoke", 0, 0, 0, 0, 0, 0, "", "")
+        resolved_agents = {"role_a": SimpleNamespace(adapter=SecretFailingResearchAdapter())}
+        sessions = {"role_a": {"session_id": "role_a"}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            records, _gate = run_research_phase(
+                config,
+                Path(temp_dir),
+                sessions,
+                resolved_agents,
+                depth,
+                ResearchSteering(),
+                lambda _message: None,
+            )
+            research_text = (Path(temp_dir) / "private_research" / "role_a" / "research.json").read_text(
+                encoding="utf-8"
+            )
+
+        self.assertNotIn("secret-token", research_text)
+        self.assertNotIn("secret-token", str(records[0]))
+        self.assertIn("LocalCliError returned 7", records[0]["summary"])
+
+    def test_synthesis_failure_returns_degraded_record_instead_of_aborting(self):
+        class FailingModerator:
+            name = "failing_moderator"
+
+            def synthesize(self, session, question, public_context):
+                raise LocalCliError("synthesis", 7, "synthesis failed")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            synthesis = synthesize_meeting(
+                FailingModerator(),
+                "meeting-1",
+                Path(temp_dir),
+                "question",
+                [],
+                [],
+                {"status": "pass"},
+                lambda _message: None,
+            )
+
+        self.assertEqual(synthesis["status"], "degraded")
+        self.assertEqual(synthesis["fallback"], "moderator_adapter_error")
+        self.assertEqual(synthesis["winner"], "Undetermined")
 
 
 if __name__ == "__main__":

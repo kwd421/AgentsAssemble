@@ -27,6 +27,7 @@ class DelegatePacketTests(unittest.TestCase):
         self.assertIn("current_stance", packet["stance"])
         self.assertEqual(packet["permissions"]["mode"], "meeting_read_only")
         self.assertFalse(packet["permissions"]["filesystem_write"])
+        self.assertEqual(packet["decision_gate"]["status"], meeting["decision_gate"]["status"])
         self.assertEqual(packet["return_schema"]["artifact"], "return_packets/lore_lawyer.json")
         self.assertEqual(packet["provenance"]["source"], "AgentsAssemble delegate packet v0")
 
@@ -39,6 +40,8 @@ class DelegatePacketTests(unittest.TestCase):
             )
 
         self.assertEqual(packet["delegate_packet"], "delegate_packets/show_me_the_feats.json")
+        self.assertIn("decision_gate", packet)
+        self.assertIn("Review decision gate before acting.", packet["handoff_checklist"])
         self.assertIn("Review delegate packet before claiming continuity.", packet["handoff_checklist"])
 
 

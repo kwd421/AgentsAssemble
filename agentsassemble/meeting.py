@@ -221,8 +221,8 @@ def run_demo_meeting(
         event_log=event_log.to_list(),
     )
     meeting["follow_up"] = follow_up
-    meeting["decision_status"] = derive_decision_status(synthesis, evidence_gate)
     meeting["decision_gate"] = derive_decision_gate(synthesis, evidence_gate, research_records, debate_rounds)
+    meeting["decision_status"] = derive_decision_status(synthesis, evidence_gate, meeting["decision_gate"])
     meeting["memory_artifacts"] = write_memory_artifacts(root, meeting)
     meeting["artifacts"]["memory"] = "memory/"
     event_log.add("artifacts_written", "Public artifacts written.", meeting_dir=str(meeting_dir))

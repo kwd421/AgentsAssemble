@@ -69,7 +69,7 @@ class RemoteBridgeAdapter(ProviderAdapter):
         parsed.setdefault("coverage_gaps", [])
         parsed.setdefault("counterclaims", [])
         parsed.setdefault("rejected_claims", [])
-        parsed["bridge"] = response.get("metadata", {})
+        parsed["bridge"] = sanitize_bridge_metadata(response.get("metadata", {}))
         return parsed
 
     def run_round(
@@ -117,7 +117,7 @@ class RemoteBridgeAdapter(ProviderAdapter):
             "emotion": parsed.get("emotion", {}),
             "change_conditions": parsed.get("change_conditions", []),
             "confidence": parsed.get("confidence", "medium"),
-            "bridge": response.get("metadata", {}),
+            "bridge": sanitize_bridge_metadata(response.get("metadata", {})),
         }
 
     def synthesize(
@@ -145,7 +145,7 @@ class RemoteBridgeAdapter(ProviderAdapter):
             "summary": text.strip(),
             "tasks": {},
         }
-        parsed["bridge"] = response.get("metadata", {})
+        parsed["bridge"] = sanitize_bridge_metadata(response.get("metadata", {}))
         return parsed
 
     def run_lobby_message(
@@ -173,7 +173,7 @@ class RemoteBridgeAdapter(ProviderAdapter):
             "kind": parsed.get("kind") or "message",
             "message": parsed.get("message") or parsed.get("content") or text.strip(),
             "readiness": parsed.get("readiness"),
-            "bridge": response.get("metadata", {}),
+            "bridge": sanitize_bridge_metadata(response.get("metadata", {})),
         }
 
     def _call_bridge(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -203,6 +203,16 @@ def _response_text(response: dict[str, Any]) -> str:
     return str(response.get("text", ""))
 
 
+def sanitize_bridge_metadata(metadata: Any) -> dict[str, Any]:
+    if not isinstance(metadata, dict):
+        return {}
+    allowed = {}
+    for key in ("bridge", "role_id", "step", "returncode", "timed_out"):
+        if key in metadata:
+            allowed[key] = metadata[key]
+    return allowed
+
+
 def _role_payload(role: Role) -> dict[str, Any]:
     return {
         "id": role.id,
@@ -223,6 +233,7 @@ def _session_payload(session: dict[str, Any]) -> dict[str, Any]:
         "session_id": session.get("session_id"),
         "permissions": {
             "mode": "meeting_read_only",
+            "enforcement": "advisory",
             "meeting_read": True,
             "official_turn": True,
             "filesystem_read": False,

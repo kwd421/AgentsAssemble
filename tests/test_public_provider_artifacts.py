@@ -24,6 +24,18 @@ class PublicProviderArtifactTests(unittest.TestCase):
         self.assertEqual(public["auth_ref"], "literal:<redacted>")
         self.assertEqual(public["command"], ["<redacted>"])
 
+    def test_provider_public_dict_redacts_unprefixed_raw_auth(self):
+        provider = ProviderConfig(
+            id="raw-token",
+            kind="anthropic",
+            display_name="Raw Token",
+            auth_ref="sk-raw-secret",
+        )
+
+        public = provider.public_dict()
+
+        self.assertEqual(public["auth_ref"], "<redacted>")
+
     def test_meeting_artifacts_do_not_expose_provider_secrets(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

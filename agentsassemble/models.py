@@ -264,6 +264,8 @@ def get_research_depth(name: str) -> ResearchDepth:
 def _public_auth_ref(auth_ref: str | None) -> str | None:
     if auth_ref is None:
         return None
+    if auth_ref.startswith("env:"):
+        return auth_ref
     if auth_ref.startswith("literal:"):
         return "literal:<redacted>"
-    return auth_ref
+    return "<redacted>"

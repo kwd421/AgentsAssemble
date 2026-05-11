@@ -53,6 +53,8 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertEqual(meeting["decision_gate"]["required_action"], "record_split_decision")
             self.assertEqual(meeting["decision_status"]["status"], "partial")
             self.assertIn("next_actions", meeting["decision_status"])
+            self.assertIn("Record split decision", meeting["decision_status"]["next_actions"][0])
+            self.assertNotIn("Run another round or request a user decision.", meeting["decision_status"]["next_actions"])
             self.assertEqual(
                 [event["kind"] for event in meeting["event_log"]],
                 [
