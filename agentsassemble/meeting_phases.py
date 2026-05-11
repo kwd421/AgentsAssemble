@@ -202,8 +202,13 @@ def run_debate_phase(
         if live_event is not None:
             live_event({"kind": "status", "round": round_definition.id, "content": round_definition.report_label})
         messages = []
+        speaker_roles = _speaker_roles_for_round(config.roles, round_definition)
+        skipped_role_ids = [role.id for role in config.roles if role.id not in {speaker.id for speaker in speaker_roles}]
+        turn_control = round_definition.turn_control.to_dict(skipped_role_ids=skipped_role_ids)
         if round_definition.context_scope == "own_research":
-            for role, research in zip(config.roles, research_records, strict=True):
+            research_by_role = {research["role_id"]: research for research in research_records}
+            for turn_index, role in enumerate(speaker_roles):
+                research = research_by_role[role.id]
                 try:
                     message = resolved_agents[role.id].adapter.run_round(
                         role,
@@ -212,12 +217,15 @@ def run_debate_phase(
                         round_definition.instruction,
                         {
                             "own_research": research,
+                            "turn_control": turn_control,
+                            "current_turn": _current_turn(round_definition.id, turn_index, role.id),
                             "evidence_gate_rule": "Use supported claim_evidence as grounds. Mention unsupported_claims only as discarded or uncertain material.",
                             "stance_rule": "Keep your role's own position distinct. Do not soften your stance just to agree with the room.",
                         },
                     )
                 except Exception as error:
                     message = failed_round_message(role, round_definition.id, error)
+                message = _with_turn_metadata(message, round_definition.id, turn_index)
                 messages.append(message)
                 if live_event is not None:
                     live_event({"kind": "message", **message})
@@ -225,23 +233,25 @@ def run_debate_phase(
             public_context = {
                 **rounds_by_id,
                 "evidence_gate": evidence_gate,
+                "turn_control": turn_control,
                 "evidence_gate_rule": "Do not treat unsupported claims as accepted facts.",
                 "stance_rule": (
                     "You may revise your position only when another role gives supported evidence that changes your reasoning. "
                     "Otherwise, hold your position and attack the weakest premise."
                 ),
             }
-            for role in config.roles:
+            for turn_index, role in enumerate(speaker_roles):
                 try:
                     message = resolved_agents[role.id].adapter.run_round(
                         role,
                         sessions[role.id],
                         round_definition.id,
                         round_definition.instruction,
-                        public_context,
+                        {**public_context, "current_turn": _current_turn(round_definition.id, turn_index, role.id)},
                     )
                 except Exception as error:
                     message = failed_round_message(role, round_definition.id, error)
+                message = _with_turn_metadata(message, round_definition.id, turn_index)
                 messages.append(message)
                 if live_event is not None:
                     live_event({"kind": "message", **message})
@@ -252,10 +262,38 @@ def run_debate_phase(
                 "title": round_definition.title,
                 "context_scope": round_definition.context_scope,
                 "instruction": round_definition.instruction,
+                "turn_control": turn_control,
                 "messages": messages,
             }
         )
     return debate_rounds
+
+
+def _speaker_roles_for_round(roles: list[Any], round_definition: Any) -> list[Any]:
+    control = round_definition.turn_control
+    if control.selection != "selected_roles":
+        return roles
+    selected = set(control.speaker_role_ids)
+    return [role for role in roles if role.id in selected]
+
+
+def _current_turn(round_id: str, turn_index: int, role_id: str) -> dict[str, object]:
+    return {
+        "turn_id": f"{round_id}:{turn_index}:{role_id}",
+        "turn_index": turn_index,
+        "role_id": role_id,
+        "engagement_mode": "moderator_called",
+    }
+
+
+def _with_turn_metadata(message: dict[str, Any], round_id: str, turn_index: int) -> dict[str, Any]:
+    role_id = str(message.get("role_id") or "unknown")
+    return {
+        **message,
+        "turn_id": f"{round_id}:{turn_index}:{role_id}",
+        "turn_index": turn_index,
+        "engagement_mode": "moderator_called",
+    }
 
 
 def failed_round_message(role: Any, round_name: str, error: Exception) -> dict[str, Any]:

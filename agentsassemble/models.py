@@ -8,6 +8,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 ResearchDepthName = Literal["smoke", "standard", "deep"]
 ResearchStance = Literal["open", "user_leaning"]
 EngagementMode = Literal["manual", "mentioned", "moderator_called", "human_only", "always", "watch"]
+TurnSelection = Literal["all_roles", "selected_roles"]
 ProviderKind = Literal[
     "mock",
     "codex",
@@ -192,12 +193,30 @@ class ResearchSteering:
 
 
 @dataclass(frozen=True)
+class RoundTurnControl:
+    selection: TurnSelection = "all_roles"
+    speaker_role_ids: list[str] = field(default_factory=list)
+    non_speaker_mode: EngagementMode = "watch"
+    moderator_instruction: str | None = None
+
+    def to_dict(self, skipped_role_ids: list[str] | None = None) -> dict[str, object]:
+        return {
+            "selection": self.selection,
+            "speaker_role_ids": self.speaker_role_ids,
+            "non_speaker_mode": self.non_speaker_mode,
+            "moderator_instruction": self.moderator_instruction,
+            "skipped_role_ids": skipped_role_ids or [],
+        }
+
+
+@dataclass(frozen=True)
 class MeetingRound:
     id: str
     title: str
     report_label: str
     instruction: str
     context_scope: Literal["own_research", "public_debate"]
+    turn_control: RoundTurnControl = field(default_factory=RoundTurnControl)
 
 
 RESEARCH_DEPTHS: dict[ResearchDepthName, ResearchDepth] = {

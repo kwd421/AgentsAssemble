@@ -79,6 +79,7 @@ def run_demo_meeting(
             "follow_up": follow_up,
             "roles": roles,
             "meeting_template": _meeting_template_snapshot(config),
+            "moderator_control": _moderator_control_snapshot(),
             "debate_rounds": [],
             "moderator_synthesis": {},
             "decision_gate": {},
@@ -104,6 +105,7 @@ def run_demo_meeting(
             "follow_up": follow_up,
             "roles": roles,
             "meeting_template": _meeting_template_snapshot(config),
+            "moderator_control": _moderator_control_snapshot(),
             "memory_context": memory_context,
             "research_steering": steering.to_dict(),
             "research_depth": {
@@ -221,6 +223,7 @@ def run_demo_meeting(
         event_log=event_log.to_list(),
     )
     meeting["follow_up"] = follow_up
+    meeting["moderator_control"] = _moderator_control_snapshot()
     meeting["decision_gate"] = derive_decision_gate(synthesis, evidence_gate, research_records, debate_rounds)
     meeting["decision_status"] = derive_decision_status(synthesis, evidence_gate, meeting["decision_gate"])
     meeting["memory_artifacts"] = write_memory_artifacts(root, meeting)
@@ -247,9 +250,22 @@ def _meeting_template_snapshot(config) -> dict[str, object]:
                 "title": round_definition.title,
                 "context_scope": round_definition.context_scope,
                 "instruction": round_definition.instruction,
+                "turn_control": round_definition.turn_control.to_dict(),
             }
             for round_definition in rounds
         ],
+    }
+
+
+def _moderator_control_snapshot() -> dict[str, object]:
+    return {
+        "moderator_id": "moderator",
+        "official_channel": "official",
+        "informal_channels": ["lobby", "side_chat"],
+        "default_official_engagement": "moderator_called",
+        "informal_default_engagement": "mentioned",
+        "official_record_channels": ["official"],
+        "host_approval_required_for": ["implementation", "commit", "push", "pr", "deploy", "release"],
     }
 
 

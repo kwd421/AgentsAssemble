@@ -12,6 +12,7 @@ from agentsassemble.models import (
     PermissionProfile,
     ProviderConfig,
     Role,
+    RoundTurnControl,
     normalize_engagement_mode,
 )
 from agentsassemble.templates import DEMO_MEETING_TEMPLATE
@@ -32,7 +33,7 @@ def load_council_config(path: Path | str | None = None) -> CouncilConfig:
         roles=roles,
         meeting_template_id=_meeting_template_id(data),
         meeting_template_name=_meeting_template_name(data),
-        rounds=_rounds_from_dict(data),
+        rounds=_rounds_from_dict(data, {role.id for role in roles}),
     )
 
 
@@ -57,7 +58,7 @@ def _meeting_template_name(data: dict[str, Any]) -> str:
     return template.get("display_name", DEMO_MEETING_TEMPLATE["display_name"])
 
 
-def _rounds_from_dict(data: dict[str, Any]) -> list[MeetingRound]:
+def _rounds_from_dict(data: dict[str, Any], valid_role_ids: set[str]) -> list[MeetingRound]:
     template = data.get("meeting_template") or {}
     round_data = template.get("rounds")
     if not round_data:
@@ -69,9 +70,26 @@ def _rounds_from_dict(data: dict[str, Any]) -> list[MeetingRound]:
             report_label=round_definition.get("report_label", round_definition.get("title", round_definition["id"])),
             context_scope=round_definition.get("context_scope", "public_debate"),
             instruction=round_definition["instruction"],
+            turn_control=_turn_control_from_dict(round_definition.get("turn_control") or {}, valid_role_ids),
         )
         for round_definition in round_data
     ]
+
+
+def _turn_control_from_dict(data: dict[str, Any], valid_role_ids: set[str]) -> RoundTurnControl:
+    selection = data.get("selection", "all_roles")
+    if selection not in {"all_roles", "selected_roles"}:
+        selection = "all_roles"
+    speaker_role_ids = [role_id for role_id in data.get("speaker_role_ids", []) if isinstance(role_id, str)]
+    unknown = [role_id for role_id in speaker_role_ids if role_id not in valid_role_ids]
+    if unknown:
+        raise ValueError(f"Unknown turn_control speaker role: {', '.join(unknown)}")
+    return RoundTurnControl(
+        selection=selection,
+        speaker_role_ids=speaker_role_ids,
+        non_speaker_mode=normalize_engagement_mode(data.get("non_speaker_mode"), default="watch"),
+        moderator_instruction=data.get("moderator_instruction") if isinstance(data.get("moderator_instruction"), str) else None,
+    )
 
 
 def load_agent_runtime_config(path: Path | str | None) -> dict[str, Any] | None:

@@ -60,6 +60,7 @@ def assemble_meeting_record(
                     "title": round_definition.title,
                     "context_scope": round_definition.context_scope,
                     "instruction": round_definition.instruction,
+                    "turn_control": round_definition.turn_control.to_dict(),
                 }
                 for round_definition in config.rounds
             ],

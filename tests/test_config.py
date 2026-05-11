@@ -80,6 +80,95 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual([round_definition.id for round_definition in config.rounds], ["round_1", "round_2", "round_3"])
         self.assertEqual(config.rounds[2].context_scope, "public_debate")
 
+    def test_load_council_config_with_turn_control(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "council.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "topic": "topic",
+                        "question": "question",
+                        "roles": [
+                            {
+                                "id": "role_a",
+                                "display_name": "A",
+                                "lens": "Lens",
+                                "research_focus": "focus",
+                            },
+                            {
+                                "id": "role_b",
+                                "display_name": "B",
+                                "lens": "Lens",
+                                "research_focus": "focus",
+                            },
+                        ],
+                        "meeting_template": {
+                            "rounds": [
+                                {
+                                    "id": "round_1",
+                                    "title": "Selected",
+                                    "context_scope": "public_debate",
+                                    "instruction": "Only role A speaks.",
+                                    "turn_control": {
+                                        "selection": "selected_roles",
+                                        "speaker_role_ids": ["role_a"],
+                                        "non_speaker_mode": "watch",
+                                        "moderator_instruction": "Call role A first.",
+                                    },
+                                }
+                            ]
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = load_council_config(path)
+
+        control = config.rounds[0].turn_control
+        self.assertEqual(control.selection, "selected_roles")
+        self.assertEqual(control.speaker_role_ids, ["role_a"])
+        self.assertEqual(control.non_speaker_mode, "watch")
+        self.assertEqual(control.moderator_instruction, "Call role A first.")
+
+    def test_turn_control_rejects_unknown_speaker_role(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "council.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "topic": "topic",
+                        "question": "question",
+                        "roles": [
+                            {
+                                "id": "role_a",
+                                "display_name": "A",
+                                "lens": "Lens",
+                                "research_focus": "focus",
+                            }
+                        ],
+                        "meeting_template": {
+                            "rounds": [
+                                {
+                                    "id": "round_1",
+                                    "title": "Selected",
+                                    "context_scope": "public_debate",
+                                    "instruction": "Unknown role speaks.",
+                                    "turn_control": {
+                                        "selection": "selected_roles",
+                                        "speaker_role_ids": ["missing_role"],
+                                    },
+                                }
+                            ]
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "Unknown turn_control speaker role"):
+                load_council_config(path)
+
     def test_load_agent_runtime_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "agents.json"

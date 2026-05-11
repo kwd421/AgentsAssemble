@@ -39,7 +39,12 @@ def render_agenda(meeting: dict[str, Any]) -> str:
 
 def render_transcript(meeting: dict[str, Any]) -> str:
     synthesis = public_synthesis(meeting["moderator_synthesis"])
-    transcript_lines = ["# Transcript", ""]
+    transcript_lines = [
+        "# Transcript",
+        "",
+        "Informal lobby and side chat are excluded from this official transcript unless explicitly promoted.",
+        "",
+    ]
     for round_record in meeting["debate_rounds"]:
         transcript_lines.extend([f"## {round_record['title']}", ""])
         for message in round_record["messages"]:

@@ -7,6 +7,9 @@ PUBLIC_MESSAGE_KEYS = (
     "role_id",
     "display_name",
     "round",
+    "turn_id",
+    "turn_index",
+    "engagement_mode",
     "content",
     "position",
     "stance_status",
@@ -61,6 +64,7 @@ def public_debate_rounds(debate_rounds: list[dict[str, Any]]) -> list[dict[str, 
                 "title": round_record.get("title"),
                 "context_scope": round_record.get("context_scope"),
                 "instruction": round_record.get("instruction"),
+                "turn_control": round_record.get("turn_control", {}),
                 "messages": [_public_message(message) for message in round_record.get("messages", [])],
             }
         )

@@ -44,10 +44,19 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertEqual(meeting["research_depth"]["name"], "smoke")
             self.assertEqual(meeting["research_steering"]["stance"], "open")
             self.assertEqual(meeting["meeting_template"]["id"], "one_piece_admiral_debate_v0")
+            self.assertEqual(meeting["moderator_control"]["default_official_engagement"], "moderator_called")
+            self.assertEqual(meeting["moderator_control"]["informal_default_engagement"], "mentioned")
+            self.assertIn("official", meeting["moderator_control"]["official_record_channels"])
+            self.assertIn("commit", meeting["moderator_control"]["host_approval_required_for"])
             self.assertEqual(
                 [round_definition["id"] for round_definition in meeting["meeting_template"]["rounds"]],
                 ["round_1", "round_2"],
             )
+            self.assertEqual(
+                [round_definition["turn_control"]["selection"] for round_definition in meeting["meeting_template"]["rounds"]],
+                ["all_roles", "all_roles"],
+            )
+            self.assertTrue(all("engagement_mode" in binding for binding in meeting["agent_bindings"]))
             self.assertEqual(meeting["evidence_gate"]["status"], "pass")
             self.assertEqual(meeting["decision_gate"]["status"], "split_decision")
             self.assertEqual(meeting["decision_gate"]["required_action"], "record_split_decision")
@@ -76,6 +85,14 @@ class DemoMeetingTests(unittest.TestCase):
                 [role["display_name"] for role in meeting["roles"]],
                 ["설정충", "공식이뭘알아", "만갤러"],
             )
+            for round_record in meeting["debate_rounds"]:
+                self.assertEqual(round_record["turn_control"]["selection"], "all_roles")
+                self.assertEqual(round_record["turn_control"]["non_speaker_mode"], "watch")
+                self.assertIn("skipped_role_ids", round_record["turn_control"])
+                for index, message in enumerate(round_record["messages"]):
+                    self.assertEqual(message["turn_index"], index)
+                    self.assertEqual(message["engagement_mode"], "moderator_called")
+                    self.assertTrue(message["turn_id"].startswith(f"{round_record['id']}:"))
 
             transcript = (meeting_dir / "transcript.md").read_text(encoding="utf-8")
             self.assertIn("## Round 1", transcript)
@@ -83,6 +100,7 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertIn("Position:", transcript)
             self.assertIn("Change conditions:", transcript)
             self.assertIn("## Moderator Synthesis", transcript)
+            self.assertIn("Informal lobby and side chat are excluded from this official transcript", transcript)
             agenda = (meeting_dir / "agenda.md").read_text(encoding="utf-8")
             self.assertIn("Meeting template: 원피스 3대장 최강자 토론", agenda)
             decision = (meeting_dir / "decision.md").read_text(encoding="utf-8")
