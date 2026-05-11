@@ -49,6 +49,8 @@ class DemoMeetingTests(unittest.TestCase):
                 ["round_1", "round_2"],
             )
             self.assertEqual(meeting["evidence_gate"]["status"], "pass")
+            self.assertEqual(meeting["decision_gate"]["status"], "split_decision")
+            self.assertEqual(meeting["decision_gate"]["required_action"], "record_split_decision")
             self.assertEqual(meeting["decision_status"]["status"], "partial")
             self.assertIn("next_actions", meeting["decision_status"])
             self.assertEqual(
@@ -81,6 +83,9 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertIn("## Moderator Synthesis", transcript)
             agenda = (meeting_dir / "agenda.md").read_text(encoding="utf-8")
             self.assertIn("Meeting template: 원피스 3대장 최강자 토론", agenda)
+            decision = (meeting_dir / "decision.md").read_text(encoding="utf-8")
+            self.assertIn("## Decision Gate", decision)
+            self.assertIn("Status: split_decision", decision)
 
             for role_id in ("lore_lawyer", "show_me_the_feats", "fanboard_skeptic"):
                 self.assertTrue((meeting_dir / "private_research" / role_id / "research.md").exists())

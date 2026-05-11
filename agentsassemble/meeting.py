@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from agentsassemble.artifacts import write_agenda, write_public_artifacts
 from agentsassemble.config import load_council_config
+from agentsassemble.decision_gate import derive_decision_gate
 from agentsassemble.decision_status import derive_decision_status
 from agentsassemble.meeting_phases import (
     run_debate_phase,
@@ -80,6 +81,7 @@ def run_demo_meeting(
             "meeting_template": _meeting_template_snapshot(config),
             "debate_rounds": [],
             "moderator_synthesis": {},
+            "decision_gate": {},
             "agent_bindings": [binding.to_dict() for binding in setup.agent_bindings],
             "provider_configs": {
                 provider_id: provider_config.public_dict()
@@ -220,6 +222,7 @@ def run_demo_meeting(
     )
     meeting["follow_up"] = follow_up
     meeting["decision_status"] = derive_decision_status(synthesis, evidence_gate)
+    meeting["decision_gate"] = derive_decision_gate(synthesis, evidence_gate, research_records, debate_rounds)
     meeting["memory_artifacts"] = write_memory_artifacts(root, meeting)
     meeting["artifacts"]["memory"] = "memory/"
     event_log.add("artifacts_written", "Public artifacts written.", meeting_dir=str(meeting_dir))

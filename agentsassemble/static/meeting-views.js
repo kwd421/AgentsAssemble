@@ -242,6 +242,7 @@ function renderLiveOutcome(payload, messages) {
         <div class="consensus-track"><span></span></div>
         <p>공식 발언 ${escapeHtml(counts.messages)}개 기반</p>
       </div>
+      ${renderDecisionGateCard(payload.meeting)}
       <section class="rail-card rail-compact">
         <strong>최근 산출물</strong>
         ${renderArtifactRow("결정안", "decision.md")}
@@ -249,6 +250,18 @@ function renderLiveOutcome(payload, messages) {
         ${renderArtifactRow("의제", "agenda.md")}
       </section>
     </aside>
+  `;
+}
+
+function renderDecisionGateCard(meeting) {
+  const gate = meeting.decision_gate || {};
+  return `
+    <section class="rail-card rail-compact decision-gate-card">
+      <strong>Decision Gate</strong>
+      <div class="artifact-row"><span>상태</span><em>${escapeHtml(decisionGateLabel(gate.status))}</em></div>
+      <div class="artifact-row"><span>다음</span><em>${escapeHtml(decisionActionLabel(gate.required_action))}</em></div>
+      ${(gate.reasons || []).slice(0, 3).map((reason) => `<p>${escapeHtml(reason)}</p>`).join("")}
+    </section>
   `;
 }
 
@@ -491,6 +504,7 @@ export function renderBoard(payload) {
       </section>
       <section class="board-dashboard">
         ${renderStanceOverview(stanceSummary, synthesis)}
+        ${renderDecisionGateBoard(meeting)}
         ${renderEvidenceOverview(meeting)}
       </section>
       <section class="board-grid">
@@ -504,6 +518,45 @@ export function renderBoard(payload) {
       </section>
     </section>
   `;
+}
+
+function renderDecisionGateBoard(meeting) {
+  const gate = meeting.decision_gate || {};
+  return `
+    <section class="evidence-overview decision-gate-board">
+      <div>
+        <strong>결정 게이트</strong>
+        <span class="status-pill status-${escapeHtml(gate.status || "unknown")}">${escapeHtml(decisionGateLabel(gate.status))}</span>
+      </div>
+      ${renderMetric("확정", gate.can_finalize ? "가능" : "보류")}
+      ${renderMetric("조치", decisionActionLabel(gate.required_action))}
+      ${renderMetric("사유", (gate.reasons || []).length)}
+      ${renderMetric("소수", (gate.minority_positions || []).length)}
+    </section>
+  `;
+}
+
+function decisionGateLabel(status) {
+  return {
+    decided: "결정 가능",
+    split_decision: "분리 결정",
+    no_consensus: "합의 실패",
+    needs_more_research: "추가 조사",
+    blocked: "사람 판단",
+    invalid: "무효",
+    unknown: "미정",
+  }[status || "unknown"] || status || "미정";
+}
+
+function decisionActionLabel(action) {
+  return {
+    write_decision: "결정 기록",
+    record_split_decision: "반대 의견 포함",
+    add_round_or_user_decision: "라운드 추가/사용자 판단",
+    run_research_or_verifier_round: "재조사/검증",
+    user_decision_or_add_round: "사용자 판단/라운드 추가",
+    rerun_moderator_or_user_review: "모더레이터 재실행",
+  }[action || "unknown"] || action || "미정";
 }
 
 function buildStanceSummary(meeting) {
