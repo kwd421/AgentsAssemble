@@ -18,6 +18,14 @@ Role profile -> Agent binding -> Provider config -> Adapter session -> Permissio
 - External sessions, memory packs, remote users, and imported context are untrusted until reviewed.
 - Meeting artifacts must record provider, permission, capability, and session snapshots for audit and handoff.
 
+## Shared Room Event Stream
+
+Provider adapters should eventually attach participants to a shared room event stream instead of simulating isolated interview prompts. The working product rule is:
+
+> Agents do not receive isolated interview prompts; they join a shared room and respond to the same ordered event stream.
+
+The full room and `live_session` direction is documented in `docs/live-session-room-model.md`.
+
 ## Current Implemented Slice
 
 Meeting execution records provider structure:
@@ -136,6 +144,8 @@ Example provider config:
 ```
 
 Local readiness can be verified with a fake command runner or a local smoke script. Real provider readiness still requires the user's actual CLI installation, login state, model availability, and billing/subscription state.
+
+`local_cli` is one-shot/delegate style. It can test provider connectivity and opinion mode, but it should not be presented as the final live teammate experience. A future `live_session` adapter should keep a CLI, SDK, PTY, or socket-backed session attached to the room while preserving its own process state.
 
 ### Memory/Profile Pack Providers
 
