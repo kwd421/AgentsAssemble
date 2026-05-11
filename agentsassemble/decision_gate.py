@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from agentsassemble.stance_match import position_matches_winner
+
 
 FINAL_STATUSES = {"decided", "split_decision"}
 
@@ -24,10 +26,13 @@ def derive_decision_gate(
 
     reasons.extend(_research_reasons(research_records))
     reasons.extend(_evidence_reasons(evidence_gate))
+    reasons.extend(_debate_reasons(debate_rounds))
     if not winner or winner.casefold() == "undetermined":
         reasons.append("winner_undetermined")
     if any(reason.startswith(("research_failed", "retry_failed", "evidence_gate", "unsupported", "weak", "verifier_rejected")) for reason in reasons):
         return _gate("needs_more_research", False, "run_research_or_verifier_round", reasons, minority_positions)
+    if any(reason.startswith("debate_failed") for reason in reasons):
+        return _gate("blocked", False, "rerun_failed_debate_round", reasons, minority_positions)
 
     if not winner or winner.casefold() == "undetermined":
         return _gate("no_consensus", False, "add_round_or_user_decision", reasons, minority_positions)
@@ -89,6 +94,20 @@ def _evidence_reasons(evidence_gate: dict[str, Any]) -> list[str]:
     return reasons
 
 
+def _debate_reasons(debate_rounds: list[dict[str, Any]]) -> list[str]:
+    reasons = []
+    for round_record in debate_rounds:
+        round_id = str(round_record.get("id") or round_record.get("round") or "unknown")
+        for message in round_record.get("messages", []):
+            if not isinstance(message, dict):
+                continue
+            if message.get("status") == "failed" or message.get("stance_status") == "blocked":
+                role_id = str(message.get("role_id") or "unknown")
+                message_round = str(message.get("round") or round_id)
+                reasons.append(f"debate_failed:{role_id}:{message_round}")
+    return reasons
+
+
 def _latest_positions(debate_rounds: list[dict[str, Any]]) -> dict[str, str]:
     positions: dict[str, str] = {}
     for round_record in debate_rounds:
@@ -106,38 +125,8 @@ def _minority_positions(winner: str, positions: dict[str, str]) -> list[dict[str
     return [
         {"role_id": role_id, "position": position}
         for role_id, position in positions.items()
-        if not _position_matches_winner(position, winner)
+        if not position_matches_winner(position, winner)
     ]
-
-
-def _position_matches_winner(position: str, winner: str) -> bool:
-    normalized_position = position.casefold()
-    normalized_winner = winner.casefold()
-    winner_terms = {term for term in normalized_winner.replace("/", " ").split() if term}
-    winner_terms.add(normalized_winner)
-    for term in winner_terms:
-        if not term:
-            continue
-        if normalized_position == term:
-            return True
-        if normalized_position.startswith(f"{term} "):
-            return not _contains_opposition_marker(normalized_position, term)
-    return False
-
-
-def _contains_opposition_marker(position: str, winner_term: str) -> bool:
-    markers = (
-        f"not {winner_term}",
-        f"against {winner_term}",
-        f"beats {winner_term}",
-        f"beat {winner_term}",
-        f"defeats {winner_term}",
-        f"defeat {winner_term}",
-        f"{winner_term} loses",
-        f"{winner_term} lose",
-        f"{winner_term} is not",
-    )
-    return any(marker in position for marker in markers)
 
 
 def _dedupe(items: list[str]) -> list[str]:

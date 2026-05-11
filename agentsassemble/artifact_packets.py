@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from agentsassemble.stance_match import position_matches_winner
+
 
 def build_return_packet(meeting: dict[str, Any], role: dict[str, Any]) -> dict[str, Any]:
     role_id = role["id"]
@@ -156,29 +158,9 @@ def _research_for_role(meeting: dict[str, Any], role_id: str) -> dict[str, Any]:
 def _role_outcome(position: str, winner: str) -> str:
     if not position or winner == "Undetermined":
         return "unresolved"
-    normalized_position = position.casefold()
-    normalized_winner = winner.casefold()
-    winner_terms = set(normalized_winner.replace("/", " ").split())
-    winner_terms.update(_winner_aliases(normalized_winner))
-    if normalized_winner in normalized_position or any(term and term in normalized_position for term in winner_terms):
+    if position_matches_winner(position, winner):
         return "won_or_partially_supported"
     return "lost_or_not_selected"
-
-
-def _winner_aliases(winner: str) -> set[str]:
-    aliases = {
-        "akainu": {"아카이누", "사카즈키", "sakazuki"},
-        "sakazuki": {"아카이누", "akainu"},
-        "aokiji": {"아오키지", "쿠잔", "kuzan"},
-        "kuzan": {"아오키지", "aokiji"},
-        "kizaru": {"키자루", "보르살리노", "borsalino"},
-        "borsalino": {"키자루", "kizaru"},
-    }
-    result = set()
-    for key, values in aliases.items():
-        if key in winner:
-            result.update(value.casefold() for value in values)
-    return result
 
 
 def _handoff_checklist(meeting: dict[str, Any], research: dict[str, Any], task: str) -> list[str]:

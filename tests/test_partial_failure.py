@@ -65,7 +65,7 @@ class PartialFailureTests(unittest.TestCase):
         self.assertEqual([record["role_id"] for record in research_records], ["role_a", "role_b", "role_c"])
         failed = research_records[1]
         self.assertEqual(failed["status"], "failed")
-        self.assertIn("provider unavailable", failed["summary"])
+        self.assertIn("RuntimeError", failed["summary"])
         self.assertEqual(evidence_gate["status"], "warn")
         self.assertIn("role_b:research_failed", evidence_gate["failures"])
         self.assertEqual(failed["retry"]["attempts"], 2)
@@ -278,6 +278,35 @@ class PartialFailureTests(unittest.TestCase):
         self.assertNotIn("secret-token", research_text)
         self.assertNotIn("secret-token", str(records[0]))
         self.assertIn("LocalCliError returned 7", records[0]["summary"])
+
+    def test_research_failure_does_not_publish_generic_exception_text(self):
+        class SecretFailingResearchAdapter:
+            def run_research(self, role, session, question, depth, steering):
+                raise RuntimeError("Authorization: Bearer secret-token")
+
+        role = Role("role_a", "A", "Lens", "focus")
+        config = CouncilConfig("topic", "topic", "question", "question", [role])
+        depth = ResearchDepth("smoke", "Smoke", 0, 0, 0, 0, 0, 0, "", "")
+        resolved_agents = {"role_a": SimpleNamespace(adapter=SecretFailingResearchAdapter())}
+        sessions = {"role_a": {"session_id": "role_a"}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            records, _gate = run_research_phase(
+                config,
+                Path(temp_dir),
+                sessions,
+                resolved_agents,
+                depth,
+                ResearchSteering(),
+                lambda _message: None,
+            )
+            research_text = (Path(temp_dir) / "private_research" / "role_a" / "research.json").read_text(
+                encoding="utf-8"
+            )
+
+        self.assertNotIn("secret-token", research_text)
+        self.assertNotIn("Authorization", research_text)
+        self.assertEqual(records[0]["summary"], "Research failed for A: RuntimeError")
 
     def test_synthesis_failure_returns_degraded_record_instead_of_aborting(self):
         class FailingModerator:

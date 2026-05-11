@@ -79,6 +79,35 @@ class LocalCliAdapterTests(unittest.TestCase):
         self.assertNotIn("secret-token", metadata)
         self.assertEqual(research["provider"]["command"], ["<redacted>"])
 
+    def test_local_cli_provider_metadata_does_not_publish_success_stderr(self):
+        def runner(command, input, text, capture_output, timeout, check):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout='{"queries":[],"sources":[],"summary":"ok","confidence":"medium","uncertainty":"","claim_evidence":[],"counterclaims":[],"rejected_claims":[]}',
+                stderr="secret-token",
+            )
+
+        adapter = LocalCliAdapter(
+            ProviderConfig(id="stderr-cli", kind="local_cli", display_name="Stderr CLI", command=["agent"]),
+            command_runner=runner,
+        )
+        role = Role("role", "역할", "Lens", "focus")
+
+        research = adapter.run_research(
+            role,
+            adapter.start_session(role, {"meeting_id": "m5"}),
+            "question",
+            get_research_depth("smoke"),
+            ResearchSteering(),
+        )
+        metadata = json.dumps(research["provider"], ensure_ascii=False)
+
+        self.assertNotIn("secret-token", metadata)
+        self.assertNotIn("stderr", research["provider"])
+        self.assertTrue(research["provider"]["stderr_present"])
+        self.assertEqual(research["provider"]["stderr_length"], len("secret-token"))
+
     def test_local_cli_round_parses_json_and_keeps_role_metadata(self):
         def runner(command, input, text, capture_output, timeout, check):
             return subprocess.CompletedProcess(

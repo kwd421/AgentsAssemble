@@ -116,7 +116,7 @@ Bridge requests go to `POST /agentsassemble/run` and include:
 Bridge responses return:
 
 - `text`: JSON text requested by the meeting adapter.
-- `metadata`: bridge command, return code, role id, step, and diagnostic fields.
+- `metadata`: optional bridge diagnostics. Public artifacts only retain safe scalar fields such as bridge label, role id, step, return code, and timeout state. Commands, headers, stderr, nested objects, and raw diagnostic payloads must stay out of public meeting artifacts.
 
 The bridge is a meeting adapter, not an implementation adapter. It instructs the remote Claude Code session to avoid shell commands, file reads, edits, credentials, commits, pushes, deploys, and implementation work during meeting turns.
 

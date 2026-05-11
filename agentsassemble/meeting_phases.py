@@ -352,7 +352,4 @@ def public_adapter_error(error: Exception) -> str:
     if returncode is not None:
         status = "timed out" if timed_out else f"returned {returncode}"
         return f"{error.__class__.__name__} {status}"
-    text = str(error).replace("\n", " ").replace("\r", " ").strip()
-    if not text:
-        return error.__class__.__name__
-    return f"{error.__class__.__name__}: {text[:240]}"
+    return error.__class__.__name__

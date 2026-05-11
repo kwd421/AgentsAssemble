@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agentsassemble.artifact_packets import build_return_packet
 from agentsassemble.meeting import run_demo_meeting
 
 
@@ -43,6 +44,41 @@ class DelegatePacketTests(unittest.TestCase):
         self.assertIn("decision_gate", packet)
         self.assertIn("Review decision gate before acting.", packet["handoff_checklist"])
         self.assertIn("Review delegate packet before claiming continuity.", packet["handoff_checklist"])
+
+    def test_return_packet_does_not_treat_opposing_winner_mention_as_support(self):
+        meeting = {
+            "meeting_id": "m1",
+            "question": "question",
+            "moderator_synthesis": {
+                "winner": "Akainu",
+                "confidence": "high",
+                "summary": "Akainu wins.",
+                "caveats": [],
+                "tasks": {},
+            },
+            "decision_status": {"status": "partial", "next_actions": []},
+            "decision_gate": {"status": "split_decision", "reasons": ["minority_positions_present"]},
+            "debate_rounds": [
+                {
+                    "title": "Round 1",
+                    "messages": [
+                        {
+                            "role_id": "a",
+                            "round": "round_1",
+                            "position": "Aokiji beats Akainu head-to-head",
+                            "stance_status": "held",
+                            "confidence": "medium",
+                            "content": "Aokiji wins this matchup.",
+                        }
+                    ],
+                }
+            ],
+            "memory_input": {"research_summaries": [{"role_id": "a", "status": "complete"}]},
+        }
+
+        packet = build_return_packet(meeting, {"id": "a", "display_name": "A"})
+
+        self.assertEqual(packet["decision"]["outcome_for_role"], "lost_or_not_selected")
 
 
 if __name__ == "__main__":

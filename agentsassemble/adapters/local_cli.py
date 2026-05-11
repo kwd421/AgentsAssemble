@@ -165,7 +165,8 @@ class LocalCliAdapter(ProviderAdapter):
             "command": ["<redacted>"] if self.provider.command else None,
             "command_configured": bool(self.provider.command),
             "returncode": result.get("returncode"),
-            "stderr": result.get("stderr", ""),
+            "stderr_present": bool(result.get("stderr")),
+            "stderr_length": len(str(result.get("stderr") or "")),
             "timed_out": result.get("timed_out", False),
             "step": result.get("step"),
         }

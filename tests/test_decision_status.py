@@ -32,6 +32,17 @@ class DecisionStatusTests(unittest.TestCase):
         self.assertEqual(status["status"], "no_consensus")
         self.assertIn("Ask the user to choose, add another round, or assign follow-up research.", status["next_actions"])
 
+    def test_gate_status_drives_legacy_status_when_available(self):
+        status = derive_decision_status(
+            {"winner": "A", "confidence": "high", "caveats": [], "summary": "A wins."},
+            {"status": "pass"},
+            {"status": "blocked", "required_action": "rerun_failed_debate_round", "reasons": ["debate_failed:b:round_1"]},
+        )
+
+        self.assertEqual(status["status"], "partial")
+        self.assertEqual(status["decision_gate_status"], "blocked")
+        self.assertIn("Request a user decision or add another round.", status["next_actions"])
+
 
 if __name__ == "__main__":
     unittest.main()

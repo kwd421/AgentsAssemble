@@ -208,9 +208,13 @@ def sanitize_bridge_metadata(metadata: Any) -> dict[str, Any]:
         return {}
     allowed = {}
     for key in ("bridge", "role_id", "step", "returncode", "timed_out"):
-        if key in metadata:
+        if key in metadata and _safe_metadata_value(metadata[key]):
             allowed[key] = metadata[key]
     return allowed
+
+
+def _safe_metadata_value(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
 
 
 def _role_payload(role: Role) -> dict[str, Any]:

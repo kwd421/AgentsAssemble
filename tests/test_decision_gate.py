@@ -121,6 +121,44 @@ class DecisionGateTests(unittest.TestCase):
         self.assertEqual(gate["status"], "split_decision")
         self.assertEqual(gate["minority_positions"], [{"role_id": "b", "position": "Aokiji beats Akainu head-to-head"}])
 
+    def test_aligned_position_can_mention_winner_after_introductory_words(self):
+        gate = derive_decision_gate(
+            {"winner": "A", "confidence": "high", "caveats": [], "summary": "A wins."},
+            {"status": "pass"},
+            [research("a"), research("b")],
+            [{"messages": [round_message("a", "I choose A"), round_message("b", "A wins")]}],
+        )
+
+        self.assertEqual(gate["status"], "decided")
+        self.assertEqual(gate["minority_positions"], [])
+
+    def test_failed_debate_turn_blocks_finalization(self):
+        gate = derive_decision_gate(
+            {"winner": "Akainu", "confidence": "high", "caveats": [], "summary": "Akainu wins."},
+            {"status": "pass"},
+            [research("a"), research("b")],
+            [
+                {
+                    "id": "round_1",
+                    "messages": [
+                        round_message("a", "Akainu wins"),
+                        {
+                            "role_id": "b",
+                            "round": "round_1",
+                            "status": "failed",
+                            "position": "",
+                            "stance_status": "blocked",
+                        },
+                    ],
+                }
+            ],
+        )
+
+        self.assertEqual(gate["status"], "blocked")
+        self.assertFalse(gate["can_finalize"])
+        self.assertIn("debate_failed:b:round_1", gate["reasons"])
+        self.assertEqual(gate["required_action"], "rerun_failed_debate_round")
+
 
 if __name__ == "__main__":
     unittest.main()

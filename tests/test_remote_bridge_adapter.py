@@ -122,6 +122,35 @@ class RemoteBridgeAdapterTests(unittest.TestCase):
         )
         self.assertNotIn("secret-token", str(message["bridge"]))
 
+    def test_remote_bridge_metadata_drops_nested_values_even_under_allowed_keys(self):
+        requester = FakeRequester(
+            {
+                "text": '{"content":"의견","position":"아카이누 우세","stance_status":"held","confidence":"medium"}',
+                "metadata": {
+                    "bridge": {"headers": {"Authorization": "Bearer secret-token"}},
+                    "role_id": "fanboard_skeptic",
+                    "step": ["round", "secret-token"],
+                    "returncode": 0,
+                    "timed_out": False,
+                },
+            }
+        )
+        adapter = RemoteBridgeAdapter(
+            ProviderConfig(
+                id="friend-claude-code",
+                kind="remote_http_bridge",
+                display_name="Friend Claude Code",
+                endpoint="http://friend.local:8777",
+            ),
+            requester=requester,
+        )
+        role = Role("fanboard_skeptic", "만갤러", "Skeptic", "반례 검증")
+
+        message = adapter.run_round(role, {"role_id": role.id}, "round_1", "첫 주장", {})
+
+        self.assertEqual(message["bridge"], {"role_id": "fanboard_skeptic", "returncode": 0, "timed_out": False})
+        self.assertNotIn("secret-token", str(message["bridge"]))
+
     def test_remote_bridge_research_payload_preserves_role_and_depth(self):
         requester = FakeRequester(
             {

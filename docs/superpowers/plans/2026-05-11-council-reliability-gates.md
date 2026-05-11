@@ -4,6 +4,8 @@
 
 **Goal:** Harden meeting reliability so provider failures, fake consensus, unsafe public artifacts, and future live-room architecture are explicit and testable.
 
+**Status:** Implemented in the reliability-gates slice. Keep this file as historical execution context; use `docs/roadmap.md` for current product direction.
+
 **Architecture:** Keep the current file-based meeting runner. Add small policy/data modules rather than folding more logic into `meeting.py`. Treat provider output as untrusted, derive a separate Decision Gate report after synthesis, and document the room-event/live-session direction without implementing a heavy live runtime yet.
 
 **Tech Stack:** Python standard library, `unittest`, existing JSON/Markdown artifact pipeline.
@@ -22,11 +24,11 @@
 - Test: `tests/test_demo_meeting.py`
 - Test: `tests/test_public_provider_artifacts.py`
 
-- [ ] Write failing tests for reserved retry metadata, local CLI non-zero failure, provider redaction, and follow-up missing refs.
-- [ ] Run targeted tests and confirm they fail for the expected reason.
-- [ ] Implement minimal fixes: overwrite orchestrator-owned retry metadata, raise `LocalCliError` on failed local commands, redact public provider config fields, and report missing follow-up refs.
-- [ ] Run targeted tests and full `python3 -m unittest discover -s tests`.
-- [ ] Commit as a coherent reliability fix.
+- [x] Write failing tests for reserved retry metadata, local CLI non-zero failure, provider redaction, and follow-up missing refs.
+- [x] Run targeted tests and confirm they fail for the expected reason.
+- [x] Implement minimal fixes: overwrite orchestrator-owned retry metadata, raise `LocalCliError` on failed local commands, redact public provider config fields, and report missing follow-up refs.
+- [x] Run targeted tests and full `python3 -m unittest discover -s tests`.
+- [x] Commit as a coherent reliability fix.
 
 ### Task 2: Decision Gate v0
 
@@ -39,12 +41,12 @@
 - Test: `tests/test_demo_meeting.py`
 - Test: `tests/test_static_ui_assets.py`
 
-- [ ] Write failing tests for `decided`, `needs_more_research`, `no_consensus`, `blocked`, and `invalid` gate states.
-- [ ] Run targeted tests and confirm they fail.
-- [ ] Implement the gate from synthesis, evidence gate, debate stance, and research retry/failure state.
-- [ ] Surface the gate in `meeting.json`, `decision.md`, and live-state/UI data.
-- [ ] Run targeted tests and full suite.
-- [ ] Commit as the Decision Gate v0 slice.
+- [x] Write failing tests for `decided`, `needs_more_research`, `no_consensus`, `blocked`, and `invalid` gate states.
+- [x] Run targeted tests and confirm they fail.
+- [x] Implement the gate from synthesis, evidence gate, debate stance, and research retry/failure state.
+- [x] Surface the gate in `meeting.json`, `decision.md`, and live-state/UI data.
+- [x] Run targeted tests and full suite.
+- [x] Commit as the Decision Gate v0 slice.
 
 ### Task 3: Room Event Log And Live Session Direction
 
@@ -54,12 +56,12 @@
 - Modify: `docs/roadmap.md`
 - Test: docs reviewed by grep checks.
 
-- [ ] Document shared-room semantics: agents join one room event stream, not isolated interview prompts.
-- [ ] Document participant classes: human, one-shot adapter, remote bridge, local CLI delegate, future live session.
-- [ ] Document live-session limits: app sessions are not directly controllable; CLI/SDK/PTYS are the viable path.
-- [ ] Document safety, memory capsule, and remote/multiplayer implications.
-- [ ] Run docs grep checks and full tests.
-- [ ] Commit as architecture documentation.
+- [x] Document shared-room semantics: agents join one room event stream, not isolated interview prompts.
+- [x] Document participant classes: human, one-shot adapter, remote bridge, local CLI delegate, future live session.
+- [x] Document live-session limits: app sessions are not directly controllable; CLI/SDK/PTYS are the viable path.
+- [x] Document safety, memory capsule, and remote/multiplayer implications.
+- [x] Run docs grep checks and full tests.
+- [x] Commit as architecture documentation.
 
 ### Task 4: Whole Project Review And Verification
 
