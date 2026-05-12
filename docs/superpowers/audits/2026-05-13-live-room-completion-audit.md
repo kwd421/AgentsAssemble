@@ -36,7 +36,7 @@ Implement an AgentsAssemble live-room/council-workflow foundation with these suc
 | Browser updates avoid full refresh churn | `agentsassemble/static/app.js` uses EventSource streams and payload signatures; side-chat polling refresh updates only side chat | Covered by `tests/test_static_ui_assets.py` static hooks and GUI server stream tests. |
 | Lobby review regression fixed | `agentsassemble/static/lobby.css` reserves a stable scrollbar gutter and owner-bubble right margin | Covered by `tests/test_static_ui_assets.py` CSS hook assertions; needs human visual review. |
 | Side-chat Enter regression fixed | `agentsassemble/static/meeting-views.js` clears the input before awaiting `/api/side-chat` and restores only on send failure | Covered by `tests/test_static_ui_assets.py` ordering assertions; needs human visual review. |
-| Coherent commits exist | Recent commits include `7279698 Fix lobby bubble and side chat input regressions` and `4920a44 Update live room review audit after fixes`, after earlier focused foundation commits | Covered by `git log --oneline -12` audit output. |
+| Coherent commits exist | Recent commits include `7279698 Fix lobby bubble and side chat input regressions`, `1ab2503 Preserve side chat channel for legacy events`, and later audit updates, after earlier focused foundation commits | Covered by `git log --oneline -12` audit output. |
 
 ## Latest Verification Commands
 
@@ -67,12 +67,13 @@ Latest local server smoke against `http://127.0.0.1:8765/` verified:
 - `GET /api/events/lobby` returns an SSE `event: lobby` payload followed by `: keep-alive`.
 - `GET /api/events/side-chat` returns an SSE `event: side_chat` payload followed by `: keep-alive`.
 - `GET /api/meetings/<meeting_id>/events` returns an SSE `event: meeting` payload followed by `: keep-alive`.
+- After the legacy side-chat fix, `GET /api/side-chat` returns only `channel: "side_chat"` events for the current local data set.
 
 ## Completion Gate
 
 Do not mark the active goal complete yet.
 
-The implementation has evidence for the requested foundation, but the user has not yet passed final GUI review after commit `7279698`. Required human checks are listed in `docs/live-room-review-checklist.md`, especially:
+The implementation has evidence for the requested foundation, but the user has not yet passed final GUI review after commit `1ab2503`. Required human checks are listed in `docs/live-room-review-checklist.md`, especially:
 
 - Lobby owner bubbles no longer clip at the right edge.
 - Live side-chat Enter submissions clear the visible input.

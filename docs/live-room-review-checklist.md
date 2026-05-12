@@ -6,7 +6,7 @@ Use this checklist for the human review gate before marking the live-room/counci
 
 - Branch: `codex/live-room-council-foundation`
 - Local GUI: `http://127.0.0.1:8765/`
-- Latest implementation commit: `7279698 Fix lobby bubble and side chat input regressions`
+- Latest implementation commit: `1ab2503 Preserve side chat channel for legacy events`
 - Review checklist file: `docs/live-room-review-checklist.md`
 
 ## What To Inspect
