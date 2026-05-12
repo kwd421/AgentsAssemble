@@ -6,7 +6,7 @@ Use this checklist for the human review gate before marking the live-room/counci
 
 - Branch: `codex/live-room-council-foundation`
 - Local GUI: `http://127.0.0.1:8765/`
-- Latest implementation commit: `28bd2e3 Harden live meeting stream recovery`
+- Latest implementation commit: `da39a98 Harden live room recovery refresh paths`
 - Review checklist file: `docs/live-room-review-checklist.md`
 
 ## What To Inspect
@@ -22,11 +22,13 @@ Use this checklist for the human review gate before marking the live-room/counci
    - Side chat is visibly separate from official record and says it is excluded from meeting minutes.
    - Sending side-chat messages with Enter keeps the input usable for the next message.
    - If the transcript is scrolled away from the bottom, new official events do not force-jump it unless the latest button is used.
+   - Side-chat updates do not re-render the official transcript or discard an unsent side-chat draft.
 
 3. Council Semantics
    - Official turns have deterministic turn metadata: `turn_id`, `turn_index`, and `engagement_mode`.
    - Free chat remains unofficial; it should not feed `transcript.md` or `decision.md`.
    - Final meeting payload still appears after completion even if the final record is temporarily unavailable while being written.
+   - If `meeting.json` is temporarily partial, normal meeting list/payload APIs still use `live_state.json` until the final record becomes readable.
 
 4. Artifacts
    - `agenda.md`, `transcript.md`, `decision.md`, per-agent tasks, and return packets still render in Archive.
@@ -38,7 +40,7 @@ The last implementation verification used:
 
 ```text
 python3 -m unittest discover -s tests
-Ran 144 tests
+Ran 145 tests
 OK
 ```
 
@@ -52,7 +54,7 @@ node --check agentsassemble/static/meeting-views.js
 git diff --check
 ```
 
-The latest xhigh review found no blocking issues after the final SSE recovery fix.
+The latest xhigh-style review found a partial-final-record API gap and a side-chat polling scroll gap. Commit `da39a98 Harden live room recovery refresh paths` fixed both and added regression coverage.
 
 ## Known Limits
 

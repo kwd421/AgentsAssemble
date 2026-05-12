@@ -10,6 +10,31 @@
 
 ---
 
+## Current Status
+
+The implementation slice has been executed through commit `da39a98 Harden live room recovery refresh paths`.
+
+The active completion gate is still human review. Do not mark the thread goal complete until the user has inspected the GUI and accepted the foundation.
+
+Latest verification evidence:
+
+```bash
+python3 -m unittest discover -s tests
+# Ran 145 tests - OK
+
+python3 -m compileall -q agentsassemble
+node --check agentsassemble/static/app.js
+node --check agentsassemble/static/lobby.js
+node --check agentsassemble/static/meeting-views.js
+git diff --check
+```
+
+Latest review fixes:
+
+- Partial `meeting.json` now falls back to `live_state.json` for normal meeting list/payload APIs.
+- Polling fallback side-chat updates now refresh only the side-chat feed instead of forcing the official transcript to jump.
+- Side-chat drafts are preserved across side-chat feed refresh even when the input is not focused.
+
 ## File Structure
 
 - Modify `agentsassemble/meeting_events.py`: extend event typing with room channel, audience, official-record eligibility, sequence helpers, and engagement-mode normalization.
