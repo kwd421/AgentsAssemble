@@ -145,22 +145,32 @@ function bindSideChat(root) {
 
 async function sendSideChatMessage(root) {
   const input = root.querySelector("#side-chat-message");
-  const message = input?.value.trim() || "";
+  const previousValue = input?.value || "";
+  const message = previousValue.trim();
   if (!message) return;
-  const payload = await fetchJson("/api/side-chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: localStorage.getItem("agentsassemble.name") || "나",
-      side: "mine",
-      kind: "message",
-      message,
-    }),
-  });
-  setSideChatEvents(payload.events || []);
   if (input) input.value = "";
-  renderLive(state.payload, { followLatest: false });
-  root.querySelector("#side-chat-message")?.focus();
+  try {
+    const payload = await fetchJson("/api/side-chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: localStorage.getItem("agentsassemble.name") || "나",
+        side: "mine",
+        kind: "message",
+        message,
+      }),
+    });
+    setSideChatEvents(payload.events || []);
+    renderLive(state.payload, { followLatest: false });
+    root.querySelector("#side-chat-message")?.focus();
+  } catch (error) {
+    const activeInput = root.querySelector("#side-chat-message");
+    if (activeInput) {
+      activeInput.value = previousValue;
+      activeInput.focus();
+    }
+    throw error;
+  }
 }
 
 function isSideChatFeedNearBottom(root) {

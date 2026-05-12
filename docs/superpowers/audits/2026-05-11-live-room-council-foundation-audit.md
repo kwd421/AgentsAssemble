@@ -30,6 +30,8 @@ Implement an AgentsAssemble live-room/council-workflow foundation:
 | Selected-role turn order is deterministic | `tests/test_debate_turn_control.py` verifies selected speakers run in declared order and skipped roles are recorded. |
 | Meeting mode stays read-only by default | `agentsassemble/adapters/registry.py` rejects implementation-side permissions during meeting-only runs; `tests/test_provider_registry.py`, `tests/test_local_cli_adapter.py`, and `tests/test_remote_bridge_adapter.py` verify read-only permission envelopes. |
 | Side-chat refresh does not disturb official transcript state | `agentsassemble/static/app.js` uses `refreshSideChatFeed()` for polling fallback side-chat updates; `agentsassemble/static/meeting-views.js` preserves side-chat drafts even when focus is outside the input; `tests/test_static_ui_assets.py` checks these hooks. |
+| Lobby owner bubbles avoid the scroll edge | `agentsassemble/static/lobby.css` reserves a stable scrollbar gutter and right-side owner bubble margin; `tests/test_static_ui_assets.py` checks the layout hooks. |
+| Side-chat Enter submissions clear reliably | `agentsassemble/static/meeting-views.js` clears the draft before awaiting `/api/side-chat` and restores it only on send failure; `tests/test_static_ui_assets.py` checks the ordering. |
 | Coherent commits exist | Branch contains focused commits for docs, event metadata, SSE streaming, GUI subscriptions, moderator turn control, streamed completion refresh, live-room UI feedback, SSE heartbeat coverage, and live-room recovery refresh paths. |
 
 ## Verification Run
@@ -57,6 +59,8 @@ Browser/runtime checks were also performed against local mock meetings. The GUI 
 Latest local browser check opened `http://127.0.0.1:8765/` and confirmed the current GUI loads with Lobby, Live, and Archive surfaces available.
 
 The latest xhigh-style review found two actionable issues: partial `meeting.json` could still break normal meeting APIs, and polling fallback side-chat refresh could force official transcript scroll. Commit `da39a98 Harden live room recovery refresh paths` fixed both and added regression coverage.
+
+Human GUI review then found two more issues: right-aligned lobby bubbles could still clip near the scroll edge, and side-chat Enter submissions could leave the sent text visible after a refresh race. The pending follow-up fix adds stable lobby gutter/margin coverage and optimistic side-chat draft clearing with failure restore.
 
 ## Known Limits
 

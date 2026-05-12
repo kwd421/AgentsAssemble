@@ -59,6 +59,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("onlyIfChanged", script)
         self.assertIn("setLobbyEvents(payload.events || [])", script)
         self.assertIn("padding: 10px clamp(12px", css)
+        self.assertIn("scrollbar-gutter: stable;", css)
+        self.assertIn("margin-right: clamp(12px", css)
         self.assertIn("width: min(100%, 720px);", css)
         self.assertIn('document.querySelector("#lobby-message")?.focus()', script)
         self.assertIn('event.key !== "Enter" || event.isComposing', script)
@@ -163,6 +165,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('aria-label="비공식 채팅"', script)
         self.assertIn('root.querySelector("#side-chat-message")?.focus()', script)
         self.assertIn("async function sendSideChatMessage", script)
+        send_side_chat = script[script.index("async function sendSideChatMessage") : script.index("function isSideChatFeedNearBottom")]
+        self.assertLess(send_side_chat.index('input.value = "";'), send_side_chat.index('await fetchJson("/api/side-chat"'))
+        self.assertIn("activeInput.value = previousValue", send_side_chat)
         self.assertIn("function isSideChatFeedNearBottom", script)
         self.assertIn("function scrollSideChatToLatest", script)
         self.assertIn("renderSystemEventStack(systemLiveEvents)", script)
