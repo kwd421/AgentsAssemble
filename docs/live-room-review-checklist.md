@@ -6,7 +6,7 @@ Use this checklist for the human review gate before marking the live-room/counci
 
 - Branch: `codex/live-room-council-foundation`
 - Local GUI: `http://127.0.0.1:8765/`
-- Latest implementation commit: pending, includes lobby clipping and side-chat Enter draft fixes after `da39a98`
+- Latest implementation commit: `7279698 Fix lobby bubble and side chat input regressions`
 - Review checklist file: `docs/live-room-review-checklist.md`
 
 ## What To Inspect
@@ -56,7 +56,7 @@ git diff --check
 
 The latest xhigh-style review found a partial-final-record API gap and a side-chat polling scroll gap. Commit `da39a98 Harden live room recovery refresh paths` fixed both and added regression coverage.
 
-Human GUI review then found two additional issues: right-aligned lobby bubbles could still clip near the scroll edge, and Live side-chat Enter submissions could leave the submitted draft visible after an SSE refresh race. The pending follow-up fix adds a stable lobby scrollbar gutter, a right-side safe margin for owner bubbles, and clears side-chat input optimistically while restoring it only if the send fails.
+Human GUI review then found two additional issues: right-aligned lobby bubbles could still clip near the scroll edge, and Live side-chat Enter submissions could leave the submitted draft visible after an SSE refresh race. Commit `7279698 Fix lobby bubble and side chat input regressions` adds a stable lobby scrollbar gutter, a right-side safe margin for owner bubbles, and clears side-chat input optimistically while restoring it only if the send fails.
 
 ## Known Limits
 
