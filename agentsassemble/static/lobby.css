@@ -214,11 +214,12 @@
 }
 
 .lobby-feed {
+  --lobby-avatar-size: clamp(28px, calc(34px * var(--ui-scale)), 36px);
   display: grid;
   gap: clamp(6px, calc(8px * var(--ui-scale)), 9px);
   align-content: start;
   overflow: auto;
-  padding: 10px clamp(12px, calc(14px * var(--ui-scale)), 16px) 2px;
+  padding: 10px clamp(56px, calc(64px * var(--ui-scale)), 72px) 2px clamp(12px, calc(14px * var(--ui-scale)), 16px);
   scrollbar-gutter: stable;
   scroll-behavior: smooth;
 }
@@ -226,10 +227,10 @@
 .lobby-event {
   align-items: start;
   color: #f0ede5;
-  contain: layout paint;
+  contain: layout;
   display: grid;
   gap: 8px;
-  grid-template-columns: clamp(26px, calc(32px * var(--ui-scale)), 34px) minmax(0, 1fr);
+  grid-template-columns: var(--lobby-avatar-size) minmax(0, 1fr);
   justify-self: start;
   max-width: 100%;
   min-width: 0;
@@ -239,7 +240,7 @@
 
 .lobby-mine,
 .lobby-my-agent {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) var(--lobby-avatar-size);
   justify-self: end;
   margin-right: 0;
   max-width: 100%;
@@ -247,7 +248,8 @@
 
 .lobby-mine .lobby-avatar,
 .lobby-my-agent .lobby-avatar {
-  display: none;
+  grid-column: 2;
+  grid-row: 1;
 }
 
 .lobby-mine .lobby-bubble,
@@ -265,40 +267,12 @@
   display: flex;
   font-size: clamp(10px, calc(12px * var(--text-scale)), 12px);
   font-weight: 800;
-  height: clamp(28px, calc(34px * var(--ui-scale)), 36px);
+  height: var(--lobby-avatar-size);
   justify-content: center;
   margin-top: 2px;
-  width: clamp(28px, calc(34px * var(--ui-scale)), 36px);
-}
-
-.lobby-inline-avatar {
-  align-items: center;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  box-sizing: border-box;
-  display: none;
-  flex: 0 0 clamp(20px, calc(24px * var(--ui-scale)), 26px);
-  font-style: normal;
-  height: clamp(20px, calc(24px * var(--ui-scale)), 26px);
-  justify-content: center;
-  line-height: 1;
-  opacity: 0.95;
-  width: clamp(20px, calc(24px * var(--ui-scale)), 26px);
-}
-
-.lobby-mine .lobby-inline-avatar,
-.lobby-my-agent .lobby-inline-avatar {
-  display: inline-flex;
-}
-
-.lobby-mine .lobby-inline-avatar {
-  background: var(--mine-avatar);
-  color: #fff8de;
-}
-
-.lobby-my-agent .lobby-inline-avatar {
-  background: #24563d;
-  color: #efffed;
+  overflow: visible;
+  white-space: nowrap;
+  width: var(--lobby-avatar-size);
 }
 
 .lobby-bubble {
