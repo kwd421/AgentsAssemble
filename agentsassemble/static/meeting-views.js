@@ -92,8 +92,10 @@ export function refreshSideChatFeed() {
   panel.outerHTML = renderSideChat();
   bindSideChat(live);
   const input = live.querySelector("#side-chat-message");
-  if (input && focused) {
+  if (input && draft) {
     input.value = draft;
+  }
+  if (input && focused) {
     input.focus();
   }
   if (shouldFollowLatest) scrollSideChatToLatest(live);

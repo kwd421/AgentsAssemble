@@ -114,7 +114,7 @@ async function loadSideChat(options = {}) {
   const signature = lobbyEventsSignature(events);
   if (options.onlyIfChanged && signature === state.sideChatSignature) return;
   setSideChatEvents(events);
-  if (state.payload?.meeting) renderLive(state.payload, { followLatest: state.currentTab === "live" });
+  if (state.payload?.meeting) refreshSideChatFeed();
 }
 
 async function loadSideChatSafely() {

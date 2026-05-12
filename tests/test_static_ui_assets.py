@@ -168,6 +168,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("renderSystemEventStack(systemLiveEvents)", script)
         self.assertIn("공식 기록 제외", script)
         self.assertIn("sideChatDraft", script)
+        self.assertIn("if (input && draft)", script)
+        side_chat_loader = script[script.index("async function loadSideChat") : script.index("async function loadSideChatSafely")]
+        self.assertIn("refreshSideChatFeed()", side_chat_loader)
+        self.assertNotIn("renderLive", side_chat_loader)
         self.assertLess(script.index("renderSystemEventStack(systemLiveEvents)"), script.index('<main class="message-list live-transcript live-chat-feed"'))
         self.assertIn("max-height: clamp(240px, 30vh, 360px);", css)
 

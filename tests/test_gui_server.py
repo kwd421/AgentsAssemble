@@ -465,6 +465,33 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["meeting"]["live_status"], "running")
             self.assertEqual(payload["live_events"][0]["content"], "회의 시작")
 
+    def test_live_meeting_payload_uses_live_state_while_final_record_is_partial(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "live-partial"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "live-partial",
+                    "topic": "Partial topic",
+                    "question": "Can the room recover?",
+                    "roles": [],
+                    "debate_rounds": [],
+                    "moderator_synthesis": {},
+                    "live_status": "running",
+                },
+            )
+            append_live_event(meeting_dir, {"kind": "status", "content": "회의 진행 중"})
+            (meeting_dir / "meeting.json").write_text("{", encoding="utf-8")
+
+            meetings = list_meetings(root)
+            payload = build_meeting_payload(meeting_dir)
+
+            self.assertEqual(meetings[0]["meeting_id"], "live-partial")
+            self.assertEqual(payload["meeting"]["live_status"], "running")
+            self.assertEqual(payload["live_events"][0]["content"], "회의 진행 중")
+
     def test_stale_live_meeting_is_marked_stalled(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

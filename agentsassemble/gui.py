@@ -42,14 +42,13 @@ def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str,
         if not record_path.exists() and not live_path.exists():
             continue
         try:
-            source_path = record_path if record_path.exists() else live_path
-            meeting = json.loads(source_path.read_text(encoding="utf-8"))
+            meeting, source_path, has_final_record = _load_meeting_record(meeting_dir)
         except json.JSONDecodeError:
             continue
         meeting = _with_inferred_live_status(
             meeting,
             meeting_dir,
-            has_final_record=record_path.exists(),
+            has_final_record=has_final_record,
             now=now,
         )
         stat = source_path.stat()
@@ -68,13 +67,11 @@ def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str,
 
 
 def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[str, object]:
-    meeting_path = meeting_dir / "meeting.json"
-    live_path = meeting_dir / "live_state.json"
-    meeting = json.loads((meeting_path if meeting_path.exists() else live_path).read_text(encoding="utf-8"))
+    meeting, _, has_final_record = _load_meeting_record(meeting_dir)
     meeting = _with_inferred_live_status(
         meeting,
         meeting_dir,
-        has_final_record=meeting_path.exists(),
+        has_final_record=has_final_record,
         now=now,
     )
     artifacts = {
@@ -111,6 +108,18 @@ def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[s
         "research_json": research_json,
         "live_events": read_live_events(meeting_dir),
     }
+
+
+def _load_meeting_record(meeting_dir: Path) -> tuple[dict[str, object], Path, bool]:
+    meeting_path = meeting_dir / "meeting.json"
+    live_path = meeting_dir / "live_state.json"
+    if meeting_path.exists():
+        try:
+            return json.loads(meeting_path.read_text(encoding="utf-8")), meeting_path, True
+        except json.JSONDecodeError:
+            if not live_path.exists():
+                raise
+    return json.loads(live_path.read_text(encoding="utf-8")), live_path, False
 
 
 def _with_inferred_live_status(
