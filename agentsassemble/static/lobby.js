@@ -140,6 +140,7 @@ function renderLobbyEvent(event) {
       <div class="lobby-avatar">${escapeHtml(initials(name))}</div>
       <div class="lobby-bubble">
         <div class="lobby-meta">
+          <i class="lobby-inline-avatar" aria-hidden="true">${escapeHtml(initials(name))}</i>
           <strong>${escapeHtml(name)}</strong>
           ${showSideLabel ? `<span>${escapeHtml(sideLabel)}</span>` : ""}
           <span>${escapeHtml(lobbyKindLabel(event.kind))}</span>
