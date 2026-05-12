@@ -55,6 +55,18 @@ node --check agentsassemble/static/meeting-views.js
 git diff --check
 ```
 
+## Local Runtime Smoke
+
+Latest local server smoke against `http://127.0.0.1:8765/` verified:
+
+- `GET /api/meetings` returns meeting records.
+- `GET /api/lobby` returns lobby events with `channel: "lobby"` and `official_record: false`.
+- `GET /static/lobby.css` serves the latest owner-bubble gutter/margin fix.
+- `GET /static/meeting-views.js` serves the latest side-chat optimistic-clear logic.
+- `GET /api/events/lobby` returns an SSE `event: lobby` payload followed by `: keep-alive`.
+- `GET /api/events/side-chat` returns an SSE `event: side_chat` payload followed by `: keep-alive`.
+- `GET /api/meetings/<meeting_id>/events` returns an SSE `event: meeting` payload followed by `: keep-alive`.
+
 ## Completion Gate
 
 Do not mark the active goal complete yet.
