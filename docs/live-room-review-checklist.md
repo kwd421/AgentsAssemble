@@ -6,7 +6,7 @@ Use this checklist for the human review gate before marking the live-room/counci
 
 - Branch: `codex/live-room-council-foundation`
 - Local GUI: `http://127.0.0.1:8765/`
-- Latest implementation commit: `1ab2503 Preserve side chat channel for legacy events`
+- Latest implementation commit: `bb64275 Remove owner lobby avatar obstruction`
 - Review checklist file: `docs/live-room-review-checklist.md`
 
 ## What To Inspect
@@ -59,6 +59,8 @@ The latest xhigh-style review found a partial-final-record API gap and a side-ch
 Human GUI review then found two additional issues: right-aligned lobby bubbles could still clip near the scroll edge, and Live side-chat Enter submissions could leave the submitted draft visible after an SSE refresh race. Commit `7279698 Fix lobby bubble and side chat input regressions` adds a stable lobby scrollbar gutter, a right-side safe margin for owner bubbles, and clears side-chat input optimistically while restoring it only if the send fails.
 
 Runtime smoke also found legacy `side_chat.jsonl` rows without a `channel` field could be read back as `lobby` channel events. The follow-up fix treats legacy rows from the side-chat file as `side_chat` during readback and adds regression coverage.
+
+Follow-up GUI review showed the remaining lobby clipping came from the right-side owner avatar itself, not from insufficient bubble margin. Commit `bb64275 Remove owner lobby avatar obstruction` hides owner-side avatars for local user and local-agent messages so the right edge is not obstructed.
 
 ## Known Limits
 
