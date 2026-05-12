@@ -239,16 +239,15 @@
 
 .lobby-mine,
 .lobby-my-agent {
-  grid-template-columns: minmax(0, 1fr) clamp(26px, calc(32px * var(--ui-scale)), 34px);
+  grid-template-columns: minmax(0, 1fr);
   justify-self: end;
-  margin-right: clamp(12px, calc(14px * var(--ui-scale)), 18px);
-  max-width: calc(100% - clamp(12px, calc(14px * var(--ui-scale)), 18px));
+  margin-right: 0;
+  max-width: 100%;
 }
 
 .lobby-mine .lobby-avatar,
 .lobby-my-agent .lobby-avatar {
-  grid-column: 2;
-  grid-row: 1;
+  display: none;
 }
 
 .lobby-mine .lobby-bubble,
