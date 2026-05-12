@@ -34,9 +34,9 @@ Implement an AgentsAssemble live-room/council-workflow foundation with these suc
 | Engagement modes are configurable | `agentsassemble/models.py` defines `EngagementMode`; `agentsassemble/config.py` normalizes and parses `engagement_mode` | Covered by `tests/test_config.py::test_agent_binding_engagement_mode_can_be_configured`. |
 | Meeting stays read-only by default | Provider registry rejects implementation-side permissions during meeting-only runs | Covered by provider registry, local CLI, and remote bridge adapter tests listed in the foundation audit. |
 | Browser updates avoid full refresh churn | `agentsassemble/static/app.js` uses EventSource streams and payload signatures; side-chat polling refresh updates only side chat | Covered by `tests/test_static_ui_assets.py` static hooks and GUI server stream tests. |
-| Lobby review regression fixed | `agentsassemble/static/lobby.css` reserves a stable scrollbar gutter and removes owner-side avatars for local user/local-agent messages so they cannot obstruct the right edge | Covered by `tests/test_static_ui_assets.py` CSS hook assertions; needs human visual review. |
+| Lobby review regression fixed | `agentsassemble/static/lobby.css` reserves a stable scrollbar gutter, preserves owner-side avatars, and adds enough right-side feed padding so avatars stay inside the panel | Covered by `tests/test_static_ui_assets.py` CSS hook assertions; needs human visual review. |
 | Side-chat Enter regression fixed | `agentsassemble/static/meeting-views.js` clears the input before awaiting `/api/side-chat` and restores only on send failure | Covered by `tests/test_static_ui_assets.py` ordering assertions; needs human visual review. |
-| Coherent commits exist | Recent commits include `7279698 Fix lobby bubble and side chat input regressions`, `1ab2503 Preserve side chat channel for legacy events`, and `bb64275 Remove owner lobby avatar obstruction`, after earlier focused foundation commits | Covered by `git log --oneline -12` audit output. |
+| Coherent commits exist | Recent commits include `7279698 Fix lobby bubble and side chat input regressions`, `1ab2503 Preserve side chat channel for legacy events`, and `11fd072 Keep owner avatars inside lobby feed`, after earlier focused foundation commits | Covered by `git log --oneline -12` audit output. |
 
 ## Latest Verification Commands
 
@@ -62,7 +62,7 @@ Latest local server smoke against `http://127.0.0.1:8765/` verified:
 
 - `GET /api/meetings` returns meeting records.
 - `GET /api/lobby` returns lobby events with `channel: "lobby"` and `official_record: false`.
-- `GET /static/lobby.css` serves the latest owner-bubble gutter fix and owner-avatar obstruction removal.
+- `GET /static/lobby.css` serves the latest owner-bubble gutter fix and owner-avatar safe-padding fix.
 - `GET /static/meeting-views.js` serves the latest side-chat optimistic-clear logic.
 - `GET /api/events/lobby` returns an SSE `event: lobby` payload followed by `: keep-alive`.
 - `GET /api/events/side-chat` returns an SSE `event: side_chat` payload followed by `: keep-alive`.
@@ -73,7 +73,7 @@ Latest local server smoke against `http://127.0.0.1:8765/` verified:
 
 Do not mark the active goal complete yet.
 
-The implementation has evidence for the requested foundation, but the user has not yet passed final GUI review after commit `bb64275`. Required human checks are listed in `docs/live-room-review-checklist.md`, especially:
+The implementation has evidence for the requested foundation, but the user has not yet passed final GUI review after commit `11fd072`. Required human checks are listed in `docs/live-room-review-checklist.md`, especially:
 
 - Lobby owner bubbles no longer clip at the right edge.
 - Live side-chat Enter submissions clear the visible input.
