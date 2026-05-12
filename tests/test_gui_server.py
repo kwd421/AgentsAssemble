@@ -87,6 +87,20 @@ class GuiServerTests(unittest.TestCase):
             self.assertTrue((root / "side_chat.jsonl").exists())
             self.assertFalse((root / "meetings" / "side_chat.jsonl").exists())
 
+    def test_legacy_side_chat_lines_are_read_as_side_chat_channel(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "side_chat.jsonl"
+            path.write_text(
+                '{"id":"legacy","created_at":"2026-05-12T00:00:00+00:00","name":"나","side":"mine","kind":"message","message":"old"}\n',
+                encoding="utf-8",
+            )
+
+            side_events = read_side_chat(root)
+
+            self.assertEqual(side_events[0]["channel"], "side_chat")
+            self.assertFalse(side_events[0]["official_record"])
+
     def test_room_events_record_channel_audience_and_official_record_boundary(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

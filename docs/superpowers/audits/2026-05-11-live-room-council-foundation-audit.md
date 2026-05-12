@@ -30,6 +30,7 @@ Implement an AgentsAssemble live-room/council-workflow foundation:
 | Selected-role turn order is deterministic | `tests/test_debate_turn_control.py` verifies selected speakers run in declared order and skipped roles are recorded. |
 | Meeting mode stays read-only by default | `agentsassemble/adapters/registry.py` rejects implementation-side permissions during meeting-only runs; `tests/test_provider_registry.py`, `tests/test_local_cli_adapter.py`, and `tests/test_remote_bridge_adapter.py` verify read-only permission envelopes. |
 | Side-chat refresh does not disturb official transcript state | `agentsassemble/static/app.js` uses `refreshSideChatFeed()` for polling fallback side-chat updates; `agentsassemble/static/meeting-views.js` preserves side-chat drafts even when focus is outside the input; `tests/test_static_ui_assets.py` checks these hooks. |
+| Legacy side-chat rows keep side-chat channel semantics | `agentsassemble/meeting_events.py` reads legacy `side_chat.jsonl` rows without a `channel` field using `side_chat` as the default channel; `tests/test_gui_server.py` covers the readback behavior. |
 | Lobby owner bubbles avoid the scroll edge | `agentsassemble/static/lobby.css` reserves a stable scrollbar gutter and right-side owner bubble margin; `tests/test_static_ui_assets.py` checks the layout hooks. |
 | Side-chat Enter submissions clear reliably | `agentsassemble/static/meeting-views.js` clears the draft before awaiting `/api/side-chat` and restores it only on send failure; `tests/test_static_ui_assets.py` checks the ordering. |
 | Coherent commits exist | Branch contains focused commits for docs, event metadata, SSE streaming, GUI subscriptions, moderator turn control, streamed completion refresh, live-room UI feedback, SSE heartbeat coverage, live-room recovery refresh paths, and post-review lobby/side-chat regressions. |
@@ -40,7 +41,7 @@ Latest full verification:
 
 ```text
 python3 -m unittest discover -s tests
-Ran 145 tests
+Ran 146 tests
 OK
 ```
 
@@ -61,6 +62,8 @@ Latest local browser check opened `http://127.0.0.1:8765/` and confirmed the cur
 The latest xhigh-style review found two actionable issues: partial `meeting.json` could still break normal meeting APIs, and polling fallback side-chat refresh could force official transcript scroll. Commit `da39a98 Harden live room recovery refresh paths` fixed both and added regression coverage.
 
 Human GUI review then found two more issues: right-aligned lobby bubbles could still clip near the scroll edge, and side-chat Enter submissions could leave the sent text visible after a refresh race. Commit `7279698 Fix lobby bubble and side chat input regressions` adds stable lobby gutter/margin coverage and optimistic side-chat draft clearing with failure restore.
+
+Runtime smoke later found legacy `side_chat.jsonl` rows missing `channel` were read with the lobby default. The follow-up fix makes side-chat file readback default to `side_chat`, preserving the informal channel boundary for older local data.
 
 ## Known Limits
 

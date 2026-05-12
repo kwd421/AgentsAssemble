@@ -40,7 +40,7 @@ The last implementation verification used:
 
 ```text
 python3 -m unittest discover -s tests
-Ran 145 tests
+Ran 146 tests
 OK
 ```
 
@@ -57,6 +57,8 @@ git diff --check
 The latest xhigh-style review found a partial-final-record API gap and a side-chat polling scroll gap. Commit `da39a98 Harden live room recovery refresh paths` fixed both and added regression coverage.
 
 Human GUI review then found two additional issues: right-aligned lobby bubbles could still clip near the scroll edge, and Live side-chat Enter submissions could leave the submitted draft visible after an SSE refresh race. Commit `7279698 Fix lobby bubble and side chat input regressions` adds a stable lobby scrollbar gutter, a right-side safe margin for owner bubbles, and clears side-chat input optimistically while restoring it only if the send fails.
+
+Runtime smoke also found legacy `side_chat.jsonl` rows without a `channel` field could be read back as `lobby` channel events. The follow-up fix treats legacy rows from the side-chat file as `side_chat` during readback and adds regression coverage.
 
 ## Known Limits
 

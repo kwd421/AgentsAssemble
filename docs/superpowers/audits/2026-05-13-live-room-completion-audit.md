@@ -28,6 +28,7 @@ Implement an AgentsAssemble live-room/council-workflow foundation with these suc
 | Official meeting event stream exists | `agentsassemble/gui.py` exposes `/api/meetings/<meeting_id>/events`; browser subscribes through `EventSource` | Covered by `tests/test_gui_server.py` meeting stream tests and static asset tests. |
 | Lobby, side chat, and official events are separable | `agentsassemble/meeting_events.py` records `channel`, `audience`, and `official_record`; lobby and side chat are unofficial | Covered by `tests/test_gui_server.py::test_room_events_record_channel_audience_and_official_record_boundary`. |
 | Free chat does not enter official record by default | `agentsassemble/artifact_public.py` states informal lobby and side chat are excluded; event metadata marks them non-official | Covered by event boundary tests and artifact wording checks. |
+| Legacy side-chat rows preserve side-chat channel | `agentsassemble/meeting_events.py` reads `side_chat.jsonl` with `side_chat` as the fallback channel for older rows that do not include `channel` | Covered by `tests/test_gui_server.py::test_legacy_side_chat_lines_are_read_as_side_chat_channel`. |
 | Moderator turn-control model exists | `agentsassemble/models.py` defines `RoundTurnControl`; `agentsassemble/config.py` parses it | Covered by `tests/test_debate_turn_control.py` and `tests/test_config.py`. |
 | Official turns carry turn metadata | `agentsassemble/meeting_phases.py` stamps `turn_id`, `turn_index`, and `engagement_mode` | Covered by `tests/test_debate_turn_control.py` and `tests/test_demo_meeting.py`. |
 | Engagement modes are configurable | `agentsassemble/models.py` defines `EngagementMode`; `agentsassemble/config.py` normalizes and parses `engagement_mode` | Covered by `tests/test_config.py::test_agent_binding_engagement_mode_can_be_configured`. |
@@ -41,7 +42,7 @@ Implement an AgentsAssemble live-room/council-workflow foundation with these suc
 
 ```text
 python3 -m unittest discover -s tests
-Ran 145 tests
+Ran 146 tests
 OK
 ```
 

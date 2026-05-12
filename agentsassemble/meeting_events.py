@@ -57,7 +57,7 @@ class LobbyEvent:
         )
 
     @classmethod
-    def from_json_line(cls, line: str) -> LobbyEvent | None:
+    def from_json_line(cls, line: str, default_channel: Literal["lobby", "side_chat"] = "lobby") -> LobbyEvent | None:
         try:
             payload = json.loads(line)
         except json.JSONDecodeError:
@@ -71,7 +71,7 @@ class LobbyEvent:
             side=normalize_lobby_side(payload.get("side")),
             kind=normalize_lobby_kind(payload.get("kind")),
             message=clean_lobby_text(payload.get("message", ""), limit=240),
-            channel=normalize_lobby_channel(payload.get("channel")),
+            channel=normalize_lobby_channel(payload.get("channel"), default=default_channel),
             audience=clean_lobby_text(payload.get("audience", "room"), limit=32) or "room",
             official_record=False,
         )
@@ -135,7 +135,16 @@ def read_lobby_events(path: Path, limit: int = 80) -> list[dict[str, object]]:
 
 
 def read_side_chat_events(path: Path, limit: int = 120) -> list[dict[str, object]]:
-    return read_lobby_events(path, limit=limit)
+    if not path.exists():
+        return []
+    entries = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        event = LobbyEvent.from_json_line(line, default_channel="side_chat")
+        if event is not None:
+            entries.append(event.to_dict())
+    return entries[-limit:]
 
 
 def read_lobby_events_after(path: Path, last_event_id: str | None, limit: int = 80) -> list[dict[str, object]]:
@@ -237,8 +246,8 @@ def normalize_lobby_kind(value: object) -> LobbyKind:
     return value if value in LOBBY_KINDS else "message"  # type: ignore[return-value]
 
 
-def normalize_lobby_channel(value: object) -> Literal["lobby", "side_chat"]:
-    return value if value in LOBBY_CHANNELS else "lobby"  # type: ignore[return-value]
+def normalize_lobby_channel(value: object, default: Literal["lobby", "side_chat"] = "lobby") -> Literal["lobby", "side_chat"]:
+    return value if value in LOBBY_CHANNELS else default  # type: ignore[return-value]
 
 
 def _live_channel(kind: str) -> RoomChannel:
