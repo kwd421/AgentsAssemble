@@ -60,7 +60,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("setLobbyEvents(payload.events || [])", script)
         self.assertNotIn('class="lobby-inline-avatar"', script)
         self.assertIn("--lobby-avatar-size: clamp(28px", css)
-        self.assertIn("padding: 10px clamp(56px", css)
+        self.assertIn("padding: 10px clamp(22px", css)
         self.assertIn("scrollbar-gutter: stable;", css)
         self.assertIn("margin-right: 0;", css)
         self.assertIn(".lobby-event {\n  align-items: start;\n  color: #f0ede5;\n  contain: layout;", css)
