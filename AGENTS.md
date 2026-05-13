@@ -11,6 +11,8 @@ Optimize for the next human maintainer, not for line count, file count, or archi
 Keep same-reason-to-change code together; split only when responsibility, failure mode, validation path, ownership, lifetime, or side effect differs.
 During refactors, preserve behavior and verify in small steps.
 Keep changes scoped; do not touch unrelated code or user-owned dirty work.
+Do not hide uncertainty: if the request, current behavior, or success criteria are unclear, surface the ambiguity before coding.
+Prefer the smallest verifiable change that satisfies the request; avoid speculative features, flexibility, or abstractions.
 
 ## Core Standard
 
@@ -34,6 +36,18 @@ Do not optimize primarily for:
 - Architecture that looks clean but hides coupling.
 
 Line count is a signal, not a goal. Reducing lines is good when it removes duplication, clarifies responsibility, improves locality, or deletes dead code. Reducing lines is bad when it scatters context, hides control flow, creates shapeless helpers, or makes readers jump across files without a clear reason.
+
+## Intent And Scope Discipline
+
+Before implementing, identify the user's requested outcome and the evidence that will show it worked.
+
+If multiple interpretations are plausible, do not silently choose the most convenient one. State the ambiguity and either ask or choose the smallest reversible path that preserves the user's intent.
+
+Prefer simple solutions over impressive ones. Do not add features, configurability, generalized frameworks, or defensive handling for scenarios the product does not actually need yet.
+
+Every changed line should trace back to the user's request, a required verification path, or cleanup made necessary by your own change. If unrelated dead code, formatting problems, or cleanup opportunities appear, mention them separately instead of folding them into the current change.
+
+For multi-step work, keep the working goal narrow enough to verify. A good goal names the behavior being changed, the non-goals, the allowed side effects, and the checks that must pass.
 
 ## Organization Principles
 
