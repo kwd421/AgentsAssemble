@@ -160,17 +160,93 @@
 }
 
 .side-chat-feed {
+  --side-chat-avatar-size: clamp(24px, calc(30px * var(--ui-scale)), 32px);
   display: grid;
   gap: 8px;
-  max-height: clamp(240px, 30vh, 360px);
+  max-height: clamp(300px, 34vh, 430px);
+  min-height: clamp(220px, 28vh, 340px);
   overflow: auto;
+  padding: 2px clamp(10px, calc(12px * var(--ui-scale)), 14px) 2px 2px;
+  scroll-behavior: smooth;
 }
 
 .side-chat-event {
+  align-items: start;
+  contain: layout;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: var(--side-chat-avatar-size) minmax(0, 1fr);
+  justify-self: start;
+  max-width: 100%;
+  min-width: 0;
+  width: min(100%, 280px);
+}
+
+.side-mine,
+.side-my-agent {
+  grid-template-columns: minmax(0, 1fr) var(--side-chat-avatar-size);
+  justify-self: end;
+}
+
+.side-mine .side-chat-avatar,
+.side-my-agent .side-chat-avatar {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.side-mine .side-chat-bubble,
+.side-my-agent .side-chat-bubble {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+}
+
+.side-chat-avatar {
+  align-items: center;
+  background: linear-gradient(145deg, rgba(255, 245, 226, 0.1), rgba(255, 245, 226, 0.035));
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  display: flex;
+  font-size: 11px;
+  font-weight: 800;
+  height: var(--side-chat-avatar-size);
+  justify-content: center;
+  overflow: visible;
+  white-space: nowrap;
+  width: var(--side-chat-avatar-size);
+}
+
+.side-chat-bubble {
   background: rgba(255, 255, 255, 0.055);
   border: 1px solid rgba(212, 225, 255, 0.1);
-  border-radius: 12px;
+  border-radius: 12px 12px 12px 5px;
+  min-width: min(100%, 88px);
   padding: 8px 9px;
+  width: fit-content;
+}
+
+.side-mine .side-chat-bubble,
+.side-my-agent .side-chat-bubble {
+  border-radius: 12px 12px 5px 12px;
+}
+
+.side-mine .side-chat-avatar {
+  background: var(--mine-avatar);
+  border-color: var(--mine-line);
+  color: #fff8de;
+}
+
+.side-my-agent .side-chat-avatar {
+  background: #24563d;
+  border-color: rgba(130, 209, 115, 0.72);
+  color: #efffed;
+}
+
+.side-other-agent .side-chat-avatar {
+  background: #203c49;
+  border-color: rgba(99, 212, 255, 0.58);
+  color: #effaff;
 }
 
 .side-chat-event strong {
@@ -803,7 +879,7 @@
 
 .message {
   align-items: flex-start;
-  contain: layout paint;
+  contain: layout;
   display: grid;
   gap: clamp(7px, calc(9px * var(--ui-scale)), 9px);
   grid-template-columns: clamp(32px, calc(38px * var(--ui-scale)), 38px) minmax(0, 1fr);

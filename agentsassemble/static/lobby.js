@@ -2,13 +2,15 @@ import { bindingSummary, displayTopic, escapeHtml, fetchJson, roleMeta, setLobby
 
 const lobbySides = new Set(["mine", "my-agent", "other", "other-agent"]);
 
-export function renderLobby() {
+export function renderLobby(options = {}) {
   const lobby = document.querySelector("#lobby");
   if (!lobby) return;
   const focusedId = document.activeElement?.id;
   const draftMessage = lobby.querySelector("#lobby-message")?.value || "";
+  const previousFeed = lobby.querySelector(".lobby-feed");
+  const previousScrollTop = previousFeed?.scrollTop || 0;
   const roster = buildLobbyRoster(state.lobbyEvents);
-  const shouldFollowLatest = isLobbyFeedNearBottom(lobby);
+  const shouldFollowLatest = options.followLatest ?? isLobbyFeedNearBottom(lobby);
   lobby.innerHTML = `
     <section class="lobby-layout">
       <div class="room-strip">
@@ -74,6 +76,7 @@ export function renderLobby() {
     button.addEventListener("click", () => sendLobbyAction(button));
   });
   if (shouldFollowLatest) scrollLobbyFeedToLatest(lobby);
+  else restoreLobbyFeedScroll(lobby, previousScrollTop);
 }
 
 function isLobbyFeedNearBottom(lobby) {
@@ -88,6 +91,14 @@ function scrollLobbyFeedToLatest(lobby) {
   if (!feed) return;
   requestAnimationFrame(() => {
     feed.scrollTop = feed.scrollHeight;
+  });
+}
+
+function restoreLobbyFeedScroll(lobby, scrollTop) {
+  const feed = lobby.querySelector(".lobby-feed");
+  if (!feed) return;
+  requestAnimationFrame(() => {
+    feed.scrollTop = scrollTop;
   });
 }
 
@@ -283,25 +294,39 @@ function defaultLobbyMessage(kind, side) {
 }
 
 async function sendLobbyEvent(kind, options = {}) {
+  const lobby = document.querySelector("#lobby");
   const messageInput = document.querySelector("#lobby-message");
   const side = "mine";
   const name = localStorage.getItem("agentsassemble.name") || defaultLobbyName(side);
-  const message = messageInput?.value.trim() || "";
+  const previousValue = messageInput?.value || "";
+  const message = previousValue.trim();
   if (kind === "message" && !message) return;
-  const payload = await fetchJson("/api/lobby", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, side, kind, message }),
-  });
+  const shouldFollowLatest = isLobbyFeedNearBottom(lobby);
+  if (messageInput && kind === "message") messageInput.value = "";
+  let payload;
+  try {
+    payload = await fetchJson("/api/lobby", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, side, kind, message }),
+    });
+  } catch (error) {
+    const activeInput = document.querySelector("#lobby-message");
+    if (activeInput && kind === "message" && activeInput.value === "") {
+      activeInput.value = previousValue;
+      activeInput.focus();
+    }
+    throw error;
+  }
   setLobbyEvents(payload.events || []);
-  if (messageInput) messageInput.value = "";
-  renderLobby();
-  scrollLobbyFeedToLatest(document.querySelector("#lobby"));
+  renderLobby({ followLatest: shouldFollowLatest });
   document.querySelector("#lobby-message")?.focus();
-  if (options.askRemote && message) await sendLobbyRemote(message, name);
+  if (options.askRemote && message) {
+    await sendLobbyRemote(message, name, { followLatest: shouldFollowLatest });
+  }
 }
 
-async function sendLobbyRemote(message, speakerName) {
+async function sendLobbyRemote(message, speakerName, options = {}) {
   const payload = await fetchJson("/api/lobby/remote", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -312,8 +337,7 @@ async function sendLobbyRemote(message, speakerName) {
     }),
   });
   setLobbyEvents(payload.events || []);
-  renderLobby();
-  scrollLobbyFeedToLatest(document.querySelector("#lobby"));
+  renderLobby({ followLatest: options.followLatest ?? isLobbyFeedNearBottom(document.querySelector("#lobby")) });
   document.querySelector("#lobby-message")?.focus();
 }
 

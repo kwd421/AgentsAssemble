@@ -83,12 +83,18 @@ export function renderLive(payload, options = {}) {
 }
 
 export function refreshSideChatFeed() {
+  return refreshSideChatPanel();
+}
+
+function refreshSideChatPanel(options = {}) {
   const live = document.querySelector("#live");
   const panel = live?.querySelector(".side-chat-panel");
   if (!panel) return;
   const focused = document.activeElement?.id === "side-chat-message";
   const draft = live.querySelector("#side-chat-message")?.value || "";
-  const shouldFollowLatest = isSideChatFeedNearBottom(live);
+  const previousFeed = live.querySelector(".side-chat-feed");
+  const previousScrollTop = previousFeed?.scrollTop || 0;
+  const shouldFollowLatest = options.followLatest ?? isSideChatFeedNearBottom(live);
   panel.outerHTML = renderSideChat();
   bindSideChat(live);
   const input = live.querySelector("#side-chat-message");
@@ -98,7 +104,9 @@ export function refreshSideChatFeed() {
   if (input && focused) {
     input.focus();
   }
+  updateSideChatOverview(live);
   if (shouldFollowLatest) scrollSideChatToLatest(live);
+  else restoreSideChatScroll(live, previousScrollTop);
 }
 
 function renderSideChat() {
@@ -121,10 +129,15 @@ function renderSideChat() {
 }
 
 function renderSideChatEvent(event) {
+  const side = sideChatSide(event.side);
+  const name = event.name || "guest";
   return `
-    <article class="side-chat-event side-${escapeHtml(event.side || "other")}">
-      <strong>${escapeHtml(event.name || "guest")}</strong>
-      <p>${escapeHtml(event.message || "")}</p>
+    <article class="side-chat-event side-${escapeHtml(side)}">
+      <div class="side-chat-avatar">${escapeHtml(initials(name))}</div>
+      <div class="side-chat-bubble">
+        <strong>${escapeHtml(name)}</strong>
+        <p>${escapeHtml(event.message || "")}</p>
+      </div>
     </article>
   `;
 }
@@ -148,6 +161,7 @@ async function sendSideChatMessage(root) {
   const previousValue = input?.value || "";
   const message = previousValue.trim();
   if (!message) return;
+  const shouldFollowLatest = isSideChatFeedNearBottom(root);
   if (input) input.value = "";
   try {
     const payload = await fetchJson("/api/side-chat", {
@@ -161,11 +175,11 @@ async function sendSideChatMessage(root) {
       }),
     });
     setSideChatEvents(payload.events || []);
-    renderLive(state.payload, { followLatest: false });
+    refreshSideChatPanel({ followLatest: shouldFollowLatest });
     root.querySelector("#side-chat-message")?.focus();
   } catch (error) {
     const activeInput = root.querySelector("#side-chat-message");
-    if (activeInput) {
+    if (activeInput && activeInput.value === "") {
       activeInput.value = previousValue;
       activeInput.focus();
     }
@@ -186,6 +200,29 @@ function scrollSideChatToLatest(root) {
   requestAnimationFrame(() => {
     feed.scrollTop = feed.scrollHeight;
   });
+}
+
+function restoreSideChatScroll(root, scrollTop) {
+  const feed = root?.querySelector(".side-chat-feed");
+  if (!feed) return;
+  requestAnimationFrame(() => {
+    feed.scrollTop = scrollTop;
+  });
+}
+
+function updateSideChatOverview(root) {
+  const count = root?.querySelector('[data-overview="side-chat"] strong');
+  if (!count) return;
+  count.textContent = `${(state.sideChatEvents || []).length}개`;
+}
+
+function sideChatSide(side) {
+  if (side === "mine" || side === "my-agent" || side === "other-agent") return side;
+  return "other";
+}
+
+function initials(name) {
+  return String(name || "?").trim().slice(0, 2).toUpperCase();
 }
 
 function renderLiveItem(item) {
@@ -330,14 +367,15 @@ function renderLiveOverview(payload, messages) {
       ${renderOverviewCard("판정", synthesis.winner || "판정 대기", decisionGateLabel(gate.status))}
       ${renderOverviewCard("참여자", `${roles.length}명`, roles.map((role) => role.display_name).join(" · ") || "대기")}
       ${renderOverviewCard("진행", rounds.length ? `${rounds.length}라운드` : "라운드 대기", `공식 발언 ${counts.messages}개 · 리서치 ${counts.research}개`)}
-      ${renderOverviewCard("비공식", `${(state.sideChatEvents || []).length}개`, "회의록 제외")}
+      ${renderOverviewCard("비공식", `${(state.sideChatEvents || []).length}개`, "회의록 제외", "side-chat")}
     </section>
   `;
 }
 
-function renderOverviewCard(label, value, detail) {
+function renderOverviewCard(label, value, detail, key = "") {
+  const dataAttr = key ? ` data-overview="${escapeHtml(key)}"` : "";
   return `
-    <div class="overview-card">
+    <div class="overview-card"${dataAttr}>
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
       <small>${escapeHtml(detail || "")}</small>
