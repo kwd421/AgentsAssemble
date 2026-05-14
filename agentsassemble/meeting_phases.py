@@ -271,6 +271,47 @@ def run_debate_phase(
     return debate_rounds
 
 
+def run_free_chat_phase(
+    config: CouncilConfig,
+    sessions: dict[str, dict[str, Any]],
+    resolved_agents: dict[str, Any],
+    report: Callable[[str], None],
+    live_event: Callable[[dict[str, Any]], None] | None = None,
+) -> list[dict[str, Any]]:
+    report("Free chat")
+    room_messages = []
+    instruction = (
+        "Join this room as yourself. This is informal free chat, not an official transcript, "
+        "not a research report, and not a decision. Keep it short, conversational, and role-colored."
+    )
+    for turn_index, role in enumerate(config.roles):
+        try:
+            message = resolved_agents[role.id].adapter.run_round(
+                role,
+                sessions[role.id],
+                "free_chat",
+                instruction,
+                {
+                    "meeting_mode": "free_chat",
+                    "official_record": False,
+                    "room_rule": "Do not present this as an official decision or task assignment.",
+                    "current_turn": {
+                        "turn_id": f"free_chat:{turn_index}:{role.id}",
+                        "turn_index": turn_index,
+                        "role_id": role.id,
+                        "engagement_mode": "mentioned",
+                    },
+                },
+            )
+        except Exception as error:
+            message = failed_room_chat_message(role, error)
+        message = _with_room_chat_metadata(message, turn_index)
+        room_messages.append(message)
+        if live_event is not None:
+            live_event({"kind": "room_chat", **message})
+    return room_messages
+
+
 def _speaker_roles_for_round(roles: list[Any], round_definition: Any) -> list[Any]:
     control = round_definition.turn_control
     if control.selection != "selected_roles":
@@ -299,6 +340,19 @@ def _with_turn_metadata(message: dict[str, Any], round_id: str, turn_index: int)
     }
 
 
+def _with_room_chat_metadata(message: dict[str, Any], turn_index: int) -> dict[str, Any]:
+    role_id = str(message.get("role_id") or "unknown")
+    return {
+        **message,
+        "round": "free_chat",
+        "content": compact_spoken_message(str(message.get("content") or ""), max_sentences=3, max_chars=320),
+        "turn_id": f"free_chat:{turn_index}:{role_id}",
+        "turn_index": turn_index,
+        "engagement_mode": "mentioned",
+        "official_record": False,
+    }
+
+
 def failed_round_message(role: Any, round_name: str, error: Exception) -> dict[str, Any]:
     return {
         "role_id": role.id,
@@ -314,6 +368,19 @@ def failed_round_message(role: Any, round_name: str, error: Exception) -> dict[s
         "remaining_resistance": "Adapter failure prevented this turn.",
         "emotion": {},
         "change_conditions": [],
+        "confidence": "low",
+    }
+
+
+def failed_room_chat_message(role: Any, error: Exception) -> dict[str, Any]:
+    return {
+        "role_id": role.id,
+        "display_name": role.display_name,
+        "round": "free_chat",
+        "status": "failed",
+        "content": f"Room chat adapter failed: {public_adapter_error(error)}",
+        "position": "",
+        "stance_status": "blocked",
         "confidence": "low",
     }
 
@@ -440,6 +507,30 @@ def failed_synthesis_record(error: Exception) -> dict[str, Any]:
         "tasks": {},
         "status": "degraded",
         "fallback": "moderator_adapter_error",
+    }
+
+
+def moderator_disabled_synthesis_record() -> dict[str, Any]:
+    return {
+        "winner": "User decision required",
+        "ranking": [],
+        "confidence": "low",
+        "caveats": ["Moderator is disabled; no automatic synthesis was produced."],
+        "summary": "Moderator is disabled. Debate rounds were recorded, but the user must make or request the final decision.",
+        "tasks": {},
+        "status": "moderator_disabled",
+    }
+
+
+def free_chat_synthesis_record() -> dict[str, Any]:
+    return {
+        "winner": "No official decision",
+        "ranking": [],
+        "confidence": "none",
+        "caveats": ["Free chat mode does not produce an official decision."],
+        "summary": "Free chat mode only records room conversation. No official research, transcript, decision, or task assignment was produced.",
+        "tasks": {},
+        "status": "not_applicable",
     }
 
 

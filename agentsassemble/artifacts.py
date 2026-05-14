@@ -175,6 +175,31 @@ def write_agenda(meeting_dir: Path, meeting: dict[str, Any]) -> None:
     (meeting_dir / "agenda.md").write_text(render_agenda(meeting), encoding="utf-8")
 
 
+def write_room_log(meeting_dir: Path, meeting: dict[str, Any]) -> None:
+    lines = [
+        "# Room Log",
+        "",
+        "This is an informal free-chat record. It is not an official transcript, decision, evidence record, or task assignment.",
+        "",
+    ]
+    for message in meeting.get("room_chat", []):
+        lines.extend(
+            [
+                f"## {message.get('display_name', message.get('role_id', 'Unknown'))}",
+                "",
+                str(message.get("content", "")).strip(),
+                "",
+            ]
+        )
+    (meeting_dir / "room-log.md").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def write_room_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
+    write_agenda(meeting_dir, meeting)
+    write_room_log(meeting_dir, meeting)
+    write_json(meeting_dir / "meeting.json", meeting)
+
+
 def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
     write_agenda(meeting_dir, meeting)
     (meeting_dir / "transcript.md").write_text(render_transcript(meeting), encoding="utf-8")

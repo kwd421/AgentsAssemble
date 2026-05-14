@@ -4,15 +4,18 @@ import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 from uuid import uuid4
 
-from agentsassemble.artifacts import write_agenda, write_public_artifacts
+from agentsassemble.artifacts import write_agenda, write_public_artifacts, write_room_artifacts
 from agentsassemble.config import load_council_config
 from agentsassemble.decision_gate import derive_decision_gate
 from agentsassemble.decision_status import derive_decision_status
 from agentsassemble.meeting_phases import (
+    free_chat_synthesis_record,
+    moderator_disabled_synthesis_record,
     run_debate_phase,
+    run_free_chat_phase,
     run_research_phase,
     start_role_sessions,
     synthesize_meeting,
@@ -88,8 +91,11 @@ def run_demo_meeting(
             "follow_up": follow_up,
             "roles": roles,
             "meeting_template": _meeting_template_snapshot(config),
-            "moderator_control": _moderator_control_snapshot(),
+            "meeting_mode": config.meeting_mode,
+            "moderator": config.moderator.to_dict(),
+            "moderator_control": _moderator_control_snapshot(config),
             "debate_rounds": [],
+            "room_chat": [],
             "moderator_synthesis": {},
             "decision_gate": {},
             "agent_bindings": [binding.to_dict() for binding in setup.agent_bindings],
@@ -114,7 +120,9 @@ def run_demo_meeting(
             "follow_up": follow_up,
             "roles": roles,
             "meeting_template": _meeting_template_snapshot(config),
-            "moderator_control": _moderator_control_snapshot(),
+            "meeting_mode": config.meeting_mode,
+            "moderator": config.moderator.to_dict(),
+            "moderator_control": _moderator_control_snapshot(config),
             "memory_context": memory_context,
             "research_steering": steering.to_dict(),
             "research_depth": {
@@ -157,6 +165,8 @@ def run_demo_meeting(
         "meeting_dir": str(meeting_dir),
         "research_depth": depth.name,
         "research_steering": steering.to_dict(),
+        "meeting_mode": config.meeting_mode,
+        "moderator": config.moderator.to_dict(),
         "follow_up": follow_up,
         "agent_config_source": setup.config_source,
         "memory_context": memory_context,
@@ -171,6 +181,54 @@ def run_demo_meeting(
         live_event,
     )
     event_log.add("role_sessions_started", "Role sessions prepared.", role_count=len(sessions))
+    if config.meeting_mode == "free_chat":
+        room_chat = run_free_chat_phase(
+            config,
+            sessions,
+            setup.resolved_agents,
+            report,
+            live_event,
+        )
+        event_log.add("free_chat_recorded", "Informal room chat recorded.", message_count=len(room_chat))
+        synthesis = free_chat_synthesis_record()
+        evidence_gate = _empty_evidence_gate()
+        meeting = assemble_meeting_record(
+            meeting_id=meeting_id,
+            adapter_name=adapter_name,
+            config=config,
+            roles=roles,
+            setup=setup,
+            sessions=sessions,
+            memory_context=memory_context,
+            research_records=[],
+            debate_rounds=[],
+            synthesis=synthesis,
+            evidence_gate=evidence_gate,
+            depth=depth,
+            steering=steering,
+            event_log=event_log.to_list(),
+        )
+        meeting["follow_up"] = follow_up
+        meeting["moderator_control"] = _moderator_control_snapshot(config)
+        meeting["room_chat"] = room_chat
+        meeting["decision_gate"] = _free_chat_decision_gate()
+        meeting["decision_status"] = derive_decision_status(synthesis, evidence_gate, meeting["decision_gate"])
+        meeting["memory_artifacts"] = {}
+        meeting["artifacts"] = {
+            "agenda": "agenda.md",
+            "room_log": "room-log.md",
+            "meeting": "meeting.json",
+        }
+        event_log.add("artifacts_written", "Room log artifact written.", meeting_dir=str(meeting_dir))
+        meeting["event_log"] = event_log.to_list()
+        meeting["live_status"] = "complete"
+        write_room_artifacts(meeting_dir, meeting)
+        write_live_state(meeting_dir, meeting)
+        live_event({"kind": "artifact", "content": "자유채팅 기록이 저장되었습니다."})
+        report("Decision: no official decision (free chat mode)")
+        report(f"Artifacts: {meeting_dir}")
+        return MeetingResult(meeting_id=meeting_id, meeting_dir=meeting_dir)
+
     research_records, evidence_gate = run_research_phase(
         config,
         meeting_dir,
@@ -197,23 +255,34 @@ def run_demo_meeting(
         live_event,
     )
     event_log.add("debate_completed", "Debate rounds completed.", round_count=len(debate_rounds))
-    synthesis = synthesize_meeting(
-        setup.moderator_adapter,
-        meeting_id,
-        meeting_dir,
-        config.question,
-        research_records,
-        debate_rounds,
-        evidence_gate,
-        report,
-        live_event,
-    )
-    event_log.add(
-        "synthesis_completed",
-        "Moderator synthesis completed.",
-        winner=synthesis.get("winner"),
-        confidence=synthesis.get("confidence"),
-    )
+    if config.moderator.enabled:
+        synthesis = synthesize_meeting(
+            setup.moderator_adapter,
+            meeting_id,
+            meeting_dir,
+            config.question,
+            research_records,
+            debate_rounds,
+            evidence_gate,
+            report,
+            live_event,
+        )
+        event_log.add(
+            "synthesis_completed",
+            "Moderator synthesis completed.",
+            winner=synthesis.get("winner"),
+            confidence=synthesis.get("confidence"),
+        )
+        decision_gate = derive_decision_gate(synthesis, evidence_gate, research_records, debate_rounds)
+    else:
+        report("Moderator synthesis skipped")
+        synthesis = moderator_disabled_synthesis_record()
+        decision_gate = _moderator_disabled_decision_gate()
+        event_log.add(
+            "synthesis_skipped",
+            "Moderator synthesis skipped because moderator is disabled.",
+            required_action=decision_gate["required_action"],
+        )
 
     meeting = assemble_meeting_record(
         meeting_id=meeting_id,
@@ -232,8 +301,8 @@ def run_demo_meeting(
         event_log=event_log.to_list(),
     )
     meeting["follow_up"] = follow_up
-    meeting["moderator_control"] = _moderator_control_snapshot()
-    meeting["decision_gate"] = derive_decision_gate(synthesis, evidence_gate, research_records, debate_rounds)
+    meeting["moderator_control"] = _moderator_control_snapshot(config)
+    meeting["decision_gate"] = decision_gate
     meeting["decision_status"] = derive_decision_status(synthesis, evidence_gate, meeting["decision_gate"])
     meeting["memory_artifacts"] = write_memory_artifacts(root, meeting)
     meeting["artifacts"]["memory"] = "memory/"
@@ -266,8 +335,9 @@ def _meeting_template_snapshot(config) -> dict[str, object]:
     }
 
 
-def _moderator_control_snapshot() -> dict[str, object]:
+def _moderator_control_snapshot(config) -> dict[str, object]:
     return {
+        "enabled": config.moderator.enabled,
         "moderator_id": "moderator",
         "official_channel": "official",
         "informal_channels": ["lobby", "side_chat"],
@@ -275,6 +345,40 @@ def _moderator_control_snapshot() -> dict[str, object]:
         "informal_default_engagement": "mentioned",
         "official_record_channels": ["official"],
         "host_approval_required_for": ["implementation", "commit", "push", "pr", "deploy", "release"],
+    }
+
+
+def _free_chat_decision_gate() -> dict[str, Any]:
+    return {
+        "status": "no_official_decision",
+        "can_finalize": False,
+        "required_action": "start_debate_mode",
+        "reasons": ["free_chat_mode_excludes_official_record"],
+        "minority_positions": [],
+        "ambiguous_positions": [],
+        "final_state": False,
+    }
+
+
+def _moderator_disabled_decision_gate() -> dict[str, Any]:
+    return {
+        "status": "needs_user_decision",
+        "can_finalize": False,
+        "required_action": "user_decision",
+        "reasons": ["moderator_disabled"],
+        "minority_positions": [],
+        "ambiguous_positions": [],
+        "final_state": False,
+    }
+
+
+def _empty_evidence_gate() -> dict[str, Any]:
+    return {
+        "status": "not_applicable",
+        "total_supported_claims": 0,
+        "total_unsupported_claims": 0,
+        "total_weak_claims": 0,
+        "total_verifier_rejected_claims": 0,
     }
 
 

@@ -14,11 +14,13 @@ MeetingEventKind = Literal[
     "meeting_started",
     "role_sessions_started",
     "research_completed",
+    "free_chat_recorded",
     "debate_completed",
+    "synthesis_skipped",
     "synthesis_completed",
     "artifacts_written",
 ]
-LiveEventKind = Literal["status", "research", "message", "synthesis", "artifact"]
+LiveEventKind = Literal["status", "research", "message", "room_chat", "synthesis", "artifact"]
 
 LOBBY_SIDES: set[str] = {"mine", "my-agent", "other", "other-agent"}
 LOBBY_KINDS: set[str] = {"message", "ready", "deploy"}
@@ -253,6 +255,8 @@ def normalize_lobby_channel(value: object, default: Literal["lobby", "side_chat"
 def _live_channel(kind: str) -> RoomChannel:
     if kind in OFFICIAL_LIVE_KINDS:
         return "official"
+    if kind == "room_chat":
+        return "side_chat"
     return "system"
 
 

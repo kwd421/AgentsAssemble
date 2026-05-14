@@ -166,6 +166,69 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertEqual(len(smoke_research["counterclaims"]), 1)
             self.assertEqual(len(deep_research["counterclaims"]), 6)
 
+    def test_free_chat_writes_room_log_without_official_decision(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_demo_meeting(adapter_name="mock", output_root=Path(temp_dir), meeting_mode="free_chat")
+            meeting_dir = result.meeting_dir
+            meeting = json.loads((meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+            live_events = [
+                json.loads(line)
+                for line in (meeting_dir / "live_events.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            room_log_exists = (meeting_dir / "room-log.md").exists()
+            decision_exists = (meeting_dir / "decision.md").exists()
+            transcript_exists = (meeting_dir / "transcript.md").exists()
+            private_research_exists = (meeting_dir / "private_research").exists()
+            agenda = (meeting_dir / "agenda.md").read_text(encoding="utf-8")
+
+        self.assertEqual(meeting["meeting_mode"], "free_chat")
+        self.assertEqual(meeting["moderator"]["enabled"], True)
+        self.assertEqual(meeting["debate_rounds"], [])
+        self.assertEqual(meeting["decision_gate"]["status"], "no_official_decision")
+        self.assertFalse(meeting["decision_gate"]["can_finalize"])
+        self.assertEqual(meeting["decision_status"]["status"], "not_applicable")
+        self.assertIn("room_log", meeting["artifacts"])
+        self.assertTrue(room_log_exists)
+        self.assertFalse(decision_exists)
+        self.assertFalse(transcript_exists)
+        self.assertFalse(private_research_exists)
+        self.assertIn("Meeting mode: free_chat", agenda)
+        self.assertIn("Informal room chat", agenda)
+        self.assertNotIn("Independent research", agenda)
+        self.assertNotIn("Moderator synthesis", agenda)
+        self.assertTrue(any(event["kind"] == "room_chat" for event in live_events))
+        self.assertFalse(any(event["kind"] == "message" for event in live_events))
+        self.assertFalse(any(event["kind"] == "synthesis" for event in live_events))
+        room_chat_events = [event for event in live_events if event["kind"] == "room_chat"]
+        self.assertTrue(room_chat_events)
+        self.assertTrue(all(event["channel"] == "side_chat" for event in room_chat_events))
+        self.assertTrue(all(event["official_record"] is False for event in room_chat_events))
+        self.assertIn("free_chat_recorded", [event["kind"] for event in meeting["event_log"]])
+
+    def test_moderator_off_skips_synthesis_and_requires_user_decision(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_demo_meeting(adapter_name="mock", output_root=Path(temp_dir), moderator_enabled=False)
+            meeting_dir = result.meeting_dir
+            meeting = json.loads((meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+            live_events = [
+                json.loads(line)
+                for line in (meeting_dir / "live_events.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            decision = (meeting_dir / "decision.md").read_text(encoding="utf-8")
+
+        self.assertEqual(meeting["meeting_mode"], "debate")
+        self.assertEqual(meeting["moderator"]["enabled"], False)
+        self.assertEqual(meeting["moderator_synthesis"]["status"], "moderator_disabled")
+        self.assertEqual(meeting["decision_gate"]["status"], "needs_user_decision")
+        self.assertFalse(meeting["decision_gate"]["can_finalize"])
+        self.assertEqual(meeting["decision_gate"]["required_action"], "user_decision")
+        self.assertEqual(meeting["decision_status"]["status"], "pending_user")
+        self.assertTrue(meeting["debate_rounds"])
+        self.assertFalse(any(event["kind"] == "synthesis" for event in live_events))
+        self.assertIn("synthesis_skipped", [event["kind"] for event in meeting["event_log"]])
+        self.assertIn("Status: needs_user_decision", decision)
+        self.assertIn("Moderator is disabled", decision)
+
     def test_research_steering_is_recorded(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = run_demo_meeting(

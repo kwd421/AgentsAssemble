@@ -56,6 +56,8 @@ def _status_from_gate(
         "needs_more_research": "partial",
         "blocked": "partial",
         "invalid": "partial",
+        "needs_user_decision": "pending_user",
+        "no_official_decision": "not_applicable",
     }.get(gate_status, "partial")
     next_actions = {
         "decided": [],
@@ -64,6 +66,8 @@ def _status_from_gate(
         "needs_more_research": ["Run research or verifier round before deciding."],
         "blocked": [_blocked_next_action(decision_gate)],
         "invalid": ["Rerun moderator synthesis or request user review before acting."],
+        "needs_user_decision": ["Moderator is off; ask the user to decide or enable moderator synthesis."],
+        "no_official_decision": ["Free chat mode has no official decision. Start debate mode to create one."],
     }.get(gate_status, ["Review decision gate before acting."])
     return {
         "status": status,

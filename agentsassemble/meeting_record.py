@@ -50,6 +50,8 @@ def assemble_meeting_record(
         "display_question": config.display_question,
         "topic": config.topic,
         "display_topic": config.display_topic,
+        "meeting_mode": config.meeting_mode,
+        "moderator": config.moderator.to_dict(),
         "roles": roles,
         "meeting_template": {
             "id": config.meeting_template_id,

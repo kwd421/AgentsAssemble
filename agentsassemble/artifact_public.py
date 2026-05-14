@@ -10,6 +10,8 @@ def render_agenda(meeting: dict[str, Any]) -> str:
         "# Agenda",
         "",
         f"Question: {meeting.get('display_question', meeting['question'])}",
+        f"Meeting mode: {meeting.get('meeting_mode', 'debate')}",
+        f"Moderator: {'on' if meeting.get('moderator', {}).get('enabled', True) else 'off'}",
         f"Research depth: {meeting.get('research_depth', {}).get('name', 'unknown')}",
         f"Research steering: {meeting.get('research_steering', {}).get('prompt') or 'open'}",
         f"Meeting template: {meeting.get('meeting_template', {}).get('display_name', 'default')}",
@@ -23,6 +25,17 @@ def render_agenda(meeting: dict[str, Any]) -> str:
                 f"Follow-up note: {follow_up.get('note') or 'none'}",
             ]
         )
+    if meeting.get("meeting_mode") == "free_chat":
+        agenda.extend(
+            [
+                "",
+                "1. Informal room chat",
+                "2. Save room-log.md",
+                "",
+                "No official research, transcript, decision, Decision Gate finalization, or task assignment is generated in free_chat mode.",
+            ]
+        )
+        return "\n".join(agenda) + "\n"
     agenda.extend(["", "1. Independent research"])
     next_step = 2
     for index, round_definition in enumerate(meeting.get("meeting_template", {}).get("rounds", []), start=next_step):
