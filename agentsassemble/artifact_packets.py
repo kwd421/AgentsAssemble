@@ -169,6 +169,7 @@ def _role_outcome(position: str, winner: str, decision_gate: dict[str, Any]) -> 
 
 
 def _handoff_checklist(meeting: dict[str, Any], research: dict[str, Any], task: str) -> list[str]:
+    decision_gate = meeting.get("decision_gate", {})
     checklist = [
         "Review delegate packet before claiming continuity.",
         "Review decision gate before acting.",
@@ -176,6 +177,20 @@ def _handoff_checklist(meeting: dict[str, Any], research: dict[str, Any], task: 
         "Read decision.md, transcript.md, and this return packet.",
         "Check evidence gate warnings before trusting claims.",
     ]
+    if decision_gate.get("can_finalize") is False:
+        checklist.append("Do not start implementation until the decision gate is resolved.")
+    if decision_gate.get("status") == "needs_user_decision":
+        checklist.append("Wait for a user decision or enable moderator synthesis before acting.")
+    if decision_gate.get("status") == "needs_more_research":
+        checklist.append("Run the requested research or verifier round before acting.")
+    if decision_gate.get("status") == "blocked":
+        checklist.append("Rerun failed debate turns or ask the user before deciding.")
+    if decision_gate.get("status") == "invalid":
+        checklist.append("Rerun moderator synthesis or request user review before acting.")
+    if decision_gate.get("status") == "no_consensus":
+        checklist.append("Add another round or ask the user to decide before assigning implementation.")
+    if decision_gate.get("status") == "no_official_decision":
+        checklist.append("Do not treat room-log.md as an official decision.")
     if meeting.get("follow_up", {}).get("parent_meeting_id"):
         checklist.append("Compare this follow-up with its parent meeting before acting.")
     if research.get("status") == "failed":

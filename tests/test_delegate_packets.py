@@ -115,6 +115,75 @@ class DelegatePacketTests(unittest.TestCase):
 
         self.assertEqual(packet["decision"]["outcome_for_role"], "unresolved")
 
+    def test_return_packet_blocks_handoff_when_user_decision_is_required(self):
+        meeting = {
+            "meeting_id": "m1",
+            "question": "question",
+            "moderator_synthesis": {
+                "winner": "User decision required",
+                "confidence": "none",
+                "summary": "Moderator is disabled.",
+                "caveats": [],
+                "tasks": {},
+            },
+            "decision_status": {"status": "pending_user", "next_actions": []},
+            "decision_gate": {
+                "status": "needs_user_decision",
+                "can_finalize": False,
+                "required_action": "user_decision",
+                "reasons": ["moderator_disabled"],
+            },
+            "debate_rounds": [
+                {
+                    "title": "Round 1",
+                    "messages": [
+                        {
+                            "role_id": "a",
+                            "round": "round_1",
+                            "position": "A",
+                            "stance_status": "held",
+                            "confidence": "medium",
+                            "content": "A.",
+                        }
+                    ],
+                }
+            ],
+            "memory_input": {"research_summaries": [{"role_id": "a", "status": "complete"}]},
+        }
+
+        packet = build_return_packet(meeting, {"id": "a", "display_name": "A"})
+
+        self.assertEqual(packet["decision"]["outcome_for_role"], "unresolved")
+        self.assertIn("Do not start implementation until the decision gate is resolved.", packet["handoff_checklist"])
+        self.assertIn("Wait for a user decision or enable moderator synthesis before acting.", packet["handoff_checklist"])
+
+    def test_return_packet_names_invalid_gate_recovery_action(self):
+        meeting = {
+            "meeting_id": "m1",
+            "question": "question",
+            "moderator_synthesis": {
+                "winner": "Undetermined",
+                "confidence": "low",
+                "summary": "Fallback synthesis.",
+                "caveats": [],
+                "tasks": {},
+            },
+            "decision_status": {"status": "partial", "next_actions": []},
+            "decision_gate": {
+                "status": "invalid",
+                "can_finalize": False,
+                "required_action": "rerun_moderator_or_user_review",
+                "reasons": ["moderator_fallback"],
+            },
+            "debate_rounds": [],
+            "memory_input": {"research_summaries": [{"role_id": "a", "status": "complete"}]},
+        }
+
+        packet = build_return_packet(meeting, {"id": "a", "display_name": "A"})
+
+        self.assertIn("Do not start implementation until the decision gate is resolved.", packet["handoff_checklist"])
+        self.assertIn("Rerun moderator synthesis or request user review before acting.", packet["handoff_checklist"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import agentsassemble.adapters.registry as registry_module
+from agentsassemble.adapters.base import ProviderAdapter
+from agentsassemble.adapters.registry import ProviderCapabilities, default_provider_registry
 from agentsassemble.meeting import run_demo_meeting
 
 
@@ -187,6 +189,8 @@ class DemoMeetingTests(unittest.TestCase):
         self.assertEqual(meeting["decision_gate"]["status"], "no_official_decision")
         self.assertFalse(meeting["decision_gate"]["can_finalize"])
         self.assertEqual(meeting["decision_status"]["status"], "not_applicable")
+        self.assertEqual(meeting["failure_state"]["status"], "not_applicable")
+        self.assertEqual(meeting["failure_state"]["decision_gate_status"], "no_official_decision")
         self.assertIn("room_log", meeting["artifacts"])
         self.assertTrue(room_log_exists)
         self.assertFalse(decision_exists)
@@ -204,6 +208,69 @@ class DemoMeetingTests(unittest.TestCase):
         self.assertTrue(all(event["channel"] == "side_chat" for event in room_chat_events))
         self.assertTrue(all(event["official_record"] is False for event in room_chat_events))
         self.assertIn("free_chat_recorded", [event["kind"] for event in meeting["event_log"]])
+
+    def test_free_chat_failure_is_recorded_in_failure_state(self):
+        class FailingFreeChatAdapter(ProviderAdapter):
+            name = "failing_free_chat"
+
+            def start_session(self, role, meeting_context):
+                return {"role_id": role.id, "session_id": role.id}
+
+            def run_research(self, role, session, question, depth, steering):
+                raise AssertionError("free_chat should not run research")
+
+            def run_round(self, role, session, round_name, prompt, public_context):
+                raise RuntimeError("room unavailable")
+
+            def synthesize(self, session, question, public_context):
+                raise AssertionError("free_chat should not synthesize")
+
+        def registry_with_failing_free_chat(*args, **kwargs):
+            registry = default_provider_registry(*args, **kwargs)
+            registry.register(
+                "failing_free_chat",
+                lambda _provider: FailingFreeChatAdapter(),
+                ProviderCapabilities(
+                    supports_research=True,
+                    supports_web_search=False,
+                    supports_tools=False,
+                    supports_filesystem=False,
+                    supports_session_resume=False,
+                    supports_structured_output=False,
+                ),
+            )
+            return registry
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            agent_config = root / "agents.json"
+            agent_config.write_text(
+                """
+{
+  "providers": [{"id": "failing", "kind": "failing_free_chat", "display_name": "Failing Free Chat"}],
+  "permission_profiles": [{"id": "read_only"}],
+  "agent_bindings": [
+    {"agent_id": "a", "role_id": "lore_lawyer", "provider_id": "failing", "permission_profile_id": "read_only"},
+    {"agent_id": "b", "role_id": "show_me_the_feats", "provider_id": "failing", "permission_profile_id": "read_only"},
+    {"agent_id": "c", "role_id": "fanboard_skeptic", "provider_id": "failing", "permission_profile_id": "read_only"}
+  ]
+}
+""",
+                encoding="utf-8",
+            )
+            with patch("agentsassemble.meeting_setup.default_provider_registry", registry_with_failing_free_chat):
+                result = run_demo_meeting(
+                    adapter_name="mock",
+                    output_root=root,
+                    agent_config_path=agent_config,
+                    meeting_mode="free_chat",
+                )
+            meeting = json.loads((result.meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(meeting["decision_gate"]["status"], "no_official_decision")
+        self.assertEqual(meeting["failure_state"]["status"], "degraded")
+        self.assertIn("room_chat_failed:lore_lawyer", meeting["failure_state"]["failures"])
+        self.assertTrue(all(message["status"] == "failed" for message in meeting["room_chat"]))
 
     def test_moderator_off_skips_synthesis_and_requires_user_decision(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -223,6 +290,9 @@ class DemoMeetingTests(unittest.TestCase):
         self.assertFalse(meeting["decision_gate"]["can_finalize"])
         self.assertEqual(meeting["decision_gate"]["required_action"], "user_decision")
         self.assertEqual(meeting["decision_status"]["status"], "pending_user")
+        self.assertEqual(meeting["failure_state"]["status"], "action_required")
+        self.assertEqual(meeting["failure_state"]["decision_gate_status"], "needs_user_decision")
+        self.assertEqual(meeting["failure_state"]["required_action"], "user_decision")
         self.assertTrue(meeting["debate_rounds"])
         self.assertFalse(any(event["kind"] == "synthesis" for event in live_events))
         self.assertIn("synthesis_skipped", [event["kind"] for event in meeting["event_log"]])

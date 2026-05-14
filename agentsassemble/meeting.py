@@ -20,7 +20,7 @@ from agentsassemble.meeting_phases import (
     start_role_sessions,
     synthesize_meeting,
 )
-from agentsassemble.meeting_record import assemble_meeting_record
+from agentsassemble.meeting_record import assemble_meeting_record, derive_failure_state
 from agentsassemble.meeting_setup import prepare_meeting_setup
 from agentsassemble.meeting_events import MeetingEventLog, append_live_event, write_live_state
 from agentsassemble.memory import load_memory_context, write_memory_artifacts
@@ -213,6 +213,14 @@ def run_demo_meeting(
         meeting["room_chat"] = room_chat
         meeting["decision_gate"] = _free_chat_decision_gate()
         meeting["decision_status"] = derive_decision_status(synthesis, evidence_gate, meeting["decision_gate"])
+        meeting["failure_state"] = derive_failure_state(
+            synthesis=synthesis,
+            evidence_gate=evidence_gate,
+            decision_gate=meeting["decision_gate"],
+            research_records=[],
+            debate_rounds=[],
+            room_chat=room_chat,
+        )
         meeting["memory_artifacts"] = {}
         meeting["artifacts"] = {
             "agenda": "agenda.md",
@@ -304,6 +312,13 @@ def run_demo_meeting(
     meeting["moderator_control"] = _moderator_control_snapshot(config)
     meeting["decision_gate"] = decision_gate
     meeting["decision_status"] = derive_decision_status(synthesis, evidence_gate, meeting["decision_gate"])
+    meeting["failure_state"] = derive_failure_state(
+        synthesis=synthesis,
+        evidence_gate=evidence_gate,
+        decision_gate=meeting["decision_gate"],
+        research_records=research_records,
+        debate_rounds=debate_rounds,
+    )
     meeting["memory_artifacts"] = write_memory_artifacts(root, meeting)
     meeting["artifacts"]["memory"] = "memory/"
     event_log.add("artifacts_written", "Public artifacts written.", meeting_dir=str(meeting_dir))

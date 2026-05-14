@@ -218,6 +218,9 @@ class PartialFailureTests(unittest.TestCase):
         self.assertEqual(failed_summary["evidence_gate"]["failures"], ["research_failed"])
         self.assertEqual(meeting["evidence_gate"]["status"], "warn")
         self.assertEqual(meeting["decision_status"]["status"], "partial")
+        self.assertEqual(meeting["failure_state"]["status"], "degraded")
+        self.assertEqual(meeting["failure_state"]["decision_gate_status"], "needs_more_research")
+        self.assertIn("research_failed:show_me_the_feats", meeting["failure_state"]["failures"])
 
     def test_debate_phase_records_adapter_failure_instead_of_aborting(self):
         class FailingRoundAdapter:

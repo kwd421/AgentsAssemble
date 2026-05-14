@@ -138,7 +138,12 @@ def assemble_meeting_record(
             "research_steering": steering.to_dict(),
             "reproducibility": "auditable and resumable, not deterministic replay",
         },
-        "failure_state": _failure_state(synthesis),
+        "failure_state": derive_failure_state(
+            synthesis=synthesis,
+            evidence_gate=evidence_gate,
+            research_records=research_records,
+            debate_rounds=debate_rounds,
+        ),
     }
 
 
@@ -184,10 +189,87 @@ def _incoming_text_is_sensitive(value: str) -> bool:
     return any(marker in normalized for marker in markers)
 
 
-def _failure_state(synthesis: dict[str, Any]) -> dict[str, Any]:
+def derive_failure_state(
+    *,
+    synthesis: dict[str, Any],
+    evidence_gate: dict[str, Any] | None = None,
+    decision_gate: dict[str, Any] | None = None,
+    research_records: list[dict[str, Any]] | None = None,
+    debate_rounds: list[dict[str, Any]] | None = None,
+    room_chat: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    failures = []
     if synthesis.get("fallback") or synthesis.get("status") == "degraded":
-        return {
-            "status": "degraded",
-            "failures": ["moderator_synthesis_fallback"],
-        }
-    return {"status": "none", "failures": []}
+        failures.append("moderator_synthesis_fallback")
+    failures.extend(_research_failures(research_records or []))
+    failures.extend(_debate_failures(debate_rounds or []))
+    failures.extend(_room_chat_failures(room_chat or []))
+    evidence_status = str((evidence_gate or {}).get("status") or "unknown")
+    gate_status = str((decision_gate or {}).get("status") or "unknown")
+    required_action = (decision_gate or {}).get("required_action")
+    can_finalize = (decision_gate or {}).get("can_finalize")
+    degraded_gate_statuses = {"invalid", "blocked", "needs_more_research"}
+    action_gate_statuses = {"needs_user_decision", "no_consensus"}
+
+    if failures or gate_status in degraded_gate_statuses:
+        status = "degraded"
+    elif gate_status in action_gate_statuses:
+        status = "action_required"
+    elif gate_status == "no_official_decision":
+        status = "not_applicable"
+    else:
+        status = "none"
+
+    return {
+        "status": status,
+        "failures": _dedupe(failures),
+        "decision_gate_status": gate_status,
+        "required_action": required_action,
+        "can_finalize": can_finalize,
+        "evidence_gate_status": evidence_status,
+    }
+
+
+def _research_failures(research_records: list[dict[str, Any]]) -> list[str]:
+    failures = []
+    for record in research_records:
+        role_id = str(record.get("role_id") or "unknown")
+        retry = record.get("retry") if isinstance(record.get("retry"), dict) else {}
+        if record.get("status") == "failed":
+            failures.append(f"research_failed:{role_id}")
+        if retry.get("status") == "failed":
+            failures.append(f"retry_failed:{role_id}")
+    return failures
+
+
+def _debate_failures(debate_rounds: list[dict[str, Any]]) -> list[str]:
+    failures = []
+    for round_record in debate_rounds:
+        round_id = str(round_record.get("id") or round_record.get("round") or "unknown")
+        for message in round_record.get("messages", []):
+            if not isinstance(message, dict):
+                continue
+            if message.get("status") == "failed" or message.get("stance_status") == "blocked":
+                role_id = str(message.get("role_id") or "unknown")
+                message_round = str(message.get("round") or round_id)
+                failures.append(f"debate_failed:{role_id}:{message_round}")
+    return failures
+
+
+def _room_chat_failures(room_chat: list[dict[str, Any]]) -> list[str]:
+    failures = []
+    for message in room_chat:
+        if not isinstance(message, dict):
+            continue
+        if message.get("status") == "failed" or message.get("stance_status") == "blocked":
+            role_id = str(message.get("role_id") or "unknown")
+            failures.append(f"room_chat_failed:{role_id}")
+    return failures
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    result = []
+    for item in items:
+        if item not in result:
+            result.append(item)
+    return result
