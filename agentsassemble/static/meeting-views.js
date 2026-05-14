@@ -3,6 +3,7 @@ import { bindingSummary, displayQuestion, escapeHtml, fetchJson, focusLabels, le
 export function renderLive(payload, options = {}) {
   const roles = payload.meeting.roles || [];
   const rounds = payload.meeting.debate_rounds || [];
+  const isFreeChat = payload.meeting.meeting_mode === "free_chat";
   const live = document.querySelector("#live");
   const sideChatFocused = document.activeElement?.id === "side-chat-message";
   const sideChatDraft = live?.querySelector("#side-chat-message")?.value || "";
@@ -12,8 +13,9 @@ export function renderLive(payload, options = {}) {
   );
   const liveEvents = payload.live_events || [];
   const officialLiveEvents = liveEvents.filter(isOfficialLiveItem);
-  const systemLiveEvents = liveEvents.filter((event) => !isOfficialLiveItem(event));
-  const liveMessages = liveEvents.length ? officialLiveEvents : messages;
+  const roomChatEvents = liveEvents.filter((event) => event.kind === "room_chat");
+  const systemLiveEvents = liveEvents.filter((event) => !isOfficialLiveItem(event) && event.kind !== "room_chat");
+  const liveMessages = isFreeChat ? roomChatEvents : liveEvents.length ? officialLiveEvents : messages;
   const liveOverviewItems = liveEvents.length ? liveEvents : messages;
   const synthesis = payload.meeting.moderator_synthesis || {};
   const gate = payload.meeting.decision_gate || {};
@@ -24,7 +26,8 @@ export function renderLive(payload, options = {}) {
       <section class="live-chat-header">
         <div>
           <div class="live-statusbar">
-            <span class="live-pill">공식 실황</span>
+            <span class="live-pill">${escapeHtml(meetingModeLabel(payload.meeting))}</span>
+            <span class="live-pill ${payload.meeting.moderator?.enabled === false ? "is-off" : "is-on"}">${escapeHtml(moderatorStateLabel(payload.meeting))}</span>
             <strong>${roundStatus}</strong>
             <span>결정 ${escapeHtml(decisionGateLabel(gate.status))}</span>
           </div>
@@ -45,13 +48,13 @@ export function renderLive(payload, options = {}) {
           <button type="button" class="latest-jump" hidden>최신으로 가기</button>
           <div class="feed-head">
             <div>
-              <strong>공식 토론</strong>
-              <span>이 영역의 발언은 transcript.md와 decision.md의 근거가 됩니다.</span>
+              <strong>${escapeHtml(isFreeChat ? "자유채팅" : "공식 토론")}</strong>
+              <span>${escapeHtml(isFreeChat ? "room-log.md에만 남고 공식 결정 근거에는 들어가지 않습니다." : "이 영역의 발언은 transcript.md와 decision.md의 근거가 됩니다.")}</span>
             </div>
-            <em class="record-badge">공식 기록</em>
+            <em class="record-badge">${escapeHtml(isFreeChat ? "공식 기록 제외" : "공식 기록")}</em>
           </div>
           ${liveMessages.map(renderLiveItem).join("")}
-          ${synthesis.summary ? `<article class="message message-purple message-moderator">
+          ${shouldRenderModeratorMessage(payload.meeting, synthesis) ? `<article class="message message-purple message-moderator">
             <img class="profile" src="/static/avatar-moderator.svg" alt="" />
             <div class="message-body">
             <div class="message-header"><span class="speaker"><strong>진행자</strong><em>종합</em></span><span class="message-route">전체 · <span class="confidence">${escapeHtml(confidenceLabel(synthesis.confidence))}</span></span></div>
@@ -226,10 +229,31 @@ function initials(name) {
 }
 
 function renderLiveItem(item) {
+  if (item.kind === "room_chat") return renderRoomChatEvent(item);
   if (item.kind === "status" || item.kind === "artifact") return renderSystemLine(item);
   if (item.kind === "research") return renderResearchEvent(item);
   if (item.kind && item.kind !== "message") return renderLiveEvent(item);
   return renderMessage(item);
+}
+
+function renderRoomChatEvent(event) {
+  const meta = roleMeta[event.role_id] || { color: "purple", badge: "자유채팅", avatar: "/static/avatar-moderator.svg" };
+  const displayName = displayNameLabel(event);
+  return `
+    <article class="message message-${escapeHtml(meta.color)} message-room-chat">
+      <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
+      <div class="message-body">
+        <div class="message-header">
+          <span class="speaker">
+            <strong>${escapeHtml(displayName)}</strong>
+            <em>공식 기록 제외</em>
+          </span>
+          <span class="message-route">room-log.md · <span class="confidence">${escapeHtml(confidenceLabel(event.confidence))}</span></span>
+        </div>
+        ${renderTextBlocks(userVisibleSummary(event.content || ""), { highlight: event.position })}
+      </div>
+    </article>
+  `;
 }
 
 function isOfficialLiveItem(item) {
@@ -340,16 +364,17 @@ function updateLatestJump(live) {
 function renderLiveTimeline(payload, messages) {
   const rounds = payload.meeting.debate_rounds || [];
   const counts = liveEventCounts(messages);
+  const isFreeChat = payload.meeting.meeting_mode === "free_chat";
   return `
     <aside class="live-timeline">
       <strong>진행</strong>
       <ol>
         <li class="is-done"><span></span>회의 시작</li>
-        <li class="is-done"><span></span>독립 리서치</li>
-        <li class="${isMeetingComplete(payload.meeting) ? "is-done" : "is-current"}"><span></span>${escapeHtml(rounds.length ? `${rounds.length}라운드` : "라운드 대기")}</li>
-        <li class="${isMeetingComplete(payload.meeting) ? "is-done" : ""}"><span></span>결정 생성</li>
+        <li class="${isFreeChat ? "" : "is-done"}"><span></span>${escapeHtml(isFreeChat ? "리서치 없음" : "독립 리서치")}</li>
+        <li class="${isMeetingComplete(payload.meeting) ? "is-done" : "is-current"}"><span></span>${escapeHtml(isFreeChat ? "자유채팅" : rounds.length ? `${rounds.length}라운드` : "라운드 대기")}</li>
+        <li class="${isMeetingComplete(payload.meeting) ? "is-done" : ""}"><span></span>${escapeHtml(isFreeChat ? "room-log 저장" : "결정 생성")}</li>
       </ol>
-      ${renderRailMetric("공식 발언", counts.messages)}
+      ${renderRailMetric(isFreeChat ? "자유채팅" : "공식 발언", isFreeChat ? counts.roomChat : counts.messages)}
       ${renderRailMetric("리서치", counts.research)}
       ${renderRailMetric("라운드", `${rounds.length || 0} / ${(payload.meeting.meeting_template?.rounds || []).length}`)}
     </aside>
@@ -364,6 +389,7 @@ function renderLiveOverview(payload, messages) {
   const counts = liveEventCounts(messages);
   return `
     <section class="live-overview-strip" aria-label="실황 요약">
+      ${renderOverviewCard("모드", meetingModeLabel(payload.meeting), moderatorStateLabel(payload.meeting))}
       ${renderOverviewCard("판정", synthesis.winner || "판정 대기", decisionGateLabel(gate.status))}
       ${renderOverviewCard("참여자", `${roles.length}명`, roles.map((role) => role.display_name).join(" · ") || "대기")}
       ${renderOverviewCard("진행", rounds.length ? `${rounds.length}라운드` : "라운드 대기", `공식 발언 ${counts.messages}개 · 리서치 ${counts.research}개`)}
@@ -387,24 +413,25 @@ function renderLiveOutcome(payload, messages) {
   const synthesis = payload.meeting.moderator_synthesis || {};
   const gate = payload.meeting.decision_gate || {};
   const counts = liveEventCounts(messages);
+  const isFreeChat = payload.meeting.meeting_mode === "free_chat";
   return `
     <aside class="live-outcome">
       <div class="outcome-card">
         <span>현재 판정</span>
         <strong>${escapeHtml(synthesis.winner || "판정 대기")}</strong>
-        ${renderTextBlocks(userVisibleSummary(synthesis.summary || "아직 종합 의견이 없습니다."), { highlight: synthesis.winner })}
+        ${renderTextBlocks(userVisibleSummary(synthesis.summary || outcomeEmptyText(payload.meeting)), { highlight: synthesis.winner })}
       </div>
       <div class="consensus-card">
         <strong>결정 상태</strong>
         <div class="consensus-score">${escapeHtml(decisionGateLabel(gate.status))}</div>
         <div class="consensus-track"><span></span></div>
-        <p>${escapeHtml(gate.can_finalize ? "확정 가능" : "보류")} · 공식 발언 ${escapeHtml(counts.messages)}개 기반</p>
+        <p>${escapeHtml(gate.can_finalize ? "확정 가능" : "보류")} · ${escapeHtml(isFreeChat ? `자유채팅 ${counts.roomChat}개` : `공식 발언 ${counts.messages}개 기반`)}</p>
       </div>
       ${renderDecisionGateCard(payload.meeting)}
       <section class="rail-card rail-compact">
         <strong>최근 산출물</strong>
-        ${renderArtifactRow("결정안", "decision.md")}
-        ${renderArtifactRow("발언 로그", "transcript.md")}
+        ${isFreeChat ? renderArtifactRow("자유채팅", "room-log.md") : renderArtifactRow("결정안", "decision.md")}
+        ${isFreeChat ? "" : renderArtifactRow("발언 로그", "transcript.md")}
         ${renderArtifactRow("의제", "agenda.md")}
       </section>
     </aside>
@@ -418,7 +445,7 @@ function renderDecisionGateCard(meeting) {
       <strong>Decision Gate</strong>
       <div class="artifact-row"><span>상태</span><em>${escapeHtml(decisionGateLabel(gate.status))}</em></div>
       <div class="artifact-row"><span>다음</span><em>${escapeHtml(decisionActionLabel(gate.required_action))}</em></div>
-      ${(gate.reasons || []).slice(0, 3).map((reason) => `<p>${escapeHtml(reason)}</p>`).join("")}
+      ${(gate.reasons || []).slice(0, 3).map((reason) => `<p>${escapeHtml(decisionReasonLabel(reason))}</p>`).join("")}
     </section>
   `;
 }
@@ -434,12 +461,13 @@ function liveEventCounts(items) {
     (counts, item) => {
       const kind = item.kind || "message";
       if (kind === "message") counts.messages += 1;
+      else if (kind === "room_chat") counts.roomChat += 1;
       else if (kind === "research") counts.research += 1;
       else if (kind === "status") counts.status += 1;
       else if (kind === "synthesis") counts.synthesis += 1;
       return counts;
     },
-    { messages: 0, research: 0, status: 0, synthesis: 0 }
+    { messages: 0, roomChat: 0, research: 0, status: 0, synthesis: 0 }
   );
 }
 
@@ -519,6 +547,7 @@ function eventKindLabel(kind) {
   return {
     status: "상태",
     research: "리서치",
+    room_chat: "자유채팅",
     synthesis: "종합",
     artifact: "산출물",
     message: "발언",
@@ -534,8 +563,29 @@ function confidenceLabel(confidence) {
     low: "낮음",
     medium: "보통",
     high: "높음",
+    none: "없음",
     unknown: "미정",
   }[confidence || "unknown"] || confidence || "미정";
+}
+
+function meetingModeLabel(meeting) {
+  return meeting?.meeting_mode === "free_chat" ? "자유채팅" : "토론모드";
+}
+
+function moderatorStateLabel(meeting) {
+  return meeting?.moderator?.enabled === false ? "모더레이터 OFF" : "모더레이터 ON";
+}
+
+function shouldRenderModeratorMessage(meeting, synthesis) {
+  if (meeting?.meeting_mode === "free_chat") return false;
+  if (synthesis?.status === "moderator_disabled" || synthesis?.status === "not_applicable") return false;
+  return Boolean(synthesis?.summary);
+}
+
+function outcomeEmptyText(meeting) {
+  if (meeting?.meeting_mode === "free_chat") return "자유채팅 모드는 공식 판정을 만들지 않습니다.";
+  if (meeting?.moderator?.enabled === false) return "모더레이터가 꺼져 있어 사용자 판정이 필요합니다.";
+  return "아직 종합 의견이 없습니다.";
 }
 
 function userVisibleSummary(text) {
@@ -641,6 +691,8 @@ export function renderBoard(payload) {
           <small>공식 기록을 압축해서 입장, 근거 품질, 충돌 지점을 한눈에 봅니다.</small>
         </div>
         <div class="room-actions">
+          <span class="room-status">${escapeHtml(meetingModeLabel(meeting))}</span>
+          <span class="room-status ${meeting.moderator?.enabled === false ? "" : "room-status-cool"}">${escapeHtml(moderatorStateLabel(meeting))}</span>
           <span class="room-status">에이전트 ${(meeting.roles || []).length}</span>
           <span class="room-status room-status-hot">${escapeHtml(synthesis.winner || "판정 대기")}</span>
           <span class="room-status">결정 ${escapeHtml(decisionGateLabel(gate.status))}</span>
@@ -704,6 +756,8 @@ function decisionGateLabel(status) {
     needs_more_research: "추가 조사",
     blocked: "사람 판단",
     invalid: "무효",
+    needs_user_decision: "사용자 판정 필요",
+    no_official_decision: "공식 결정 없음",
     unknown: "미정",
   }[status || "unknown"] || status || "미정";
 }
@@ -717,7 +771,20 @@ function decisionActionLabel(action) {
     user_decision_or_add_round: "사용자 판단/라운드 추가",
     rerun_moderator_or_user_review: "모더레이터 재실행",
     rerun_failed_debate_round: "실패 발언 재실행",
+    user_decision: "사용자 판정",
+    start_debate_mode: "토론모드 시작",
   }[action || "unknown"] || action || "미정";
+}
+
+function decisionReasonLabel(reason) {
+  return {
+    moderator_disabled: "모더레이터가 꺼져 있어 사용자가 최종 판정을 내려야 합니다.",
+    free_chat_mode: "자유채팅 모드라 공식 결정을 만들지 않았습니다.",
+    evidence_gate: "근거 검증 확인이 필요합니다.",
+    moderator_fallback: "모더레이터 결과를 다시 확인해야 합니다.",
+    minority_positions_present: "반대 입장을 함께 기록해야 합니다.",
+    ambiguous_positions_present: "입장이 충분히 분명하지 않습니다.",
+  }[reason] || reason || "사유 없음";
 }
 
 function buildStanceSummary(meeting) {

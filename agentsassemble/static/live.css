@@ -312,6 +312,18 @@
   text-transform: uppercase;
 }
 
+.live-pill.is-on {
+  background: rgba(81, 218, 134, 0.12);
+  border-color: rgba(81, 218, 134, 0.34);
+  color: #baf8cf;
+}
+
+.live-pill.is-off {
+  background: rgba(240, 168, 60, 0.14);
+  border-color: rgba(240, 168, 60, 0.42);
+  color: #ffd89a;
+}
+
 .live-statusbar strong {
   color: var(--text);
 }
@@ -929,6 +941,14 @@
 .message-moderator {
   justify-self: center;
   max-width: min(86%, 900px);
+}
+
+.message-room-chat {
+  filter: saturate(0.86);
+}
+
+.message-room-chat .message-body {
+  border-style: dashed;
 }
 
 .message-body {

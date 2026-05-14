@@ -76,7 +76,7 @@ def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[s
     )
     artifacts = {
         name: _read_optional(meeting_dir / name)
-        for name in ("agenda.md", "transcript.md", "decision.md", "meeting.json")
+        for name in ("agenda.md", "transcript.md", "decision.md", "room-log.md", "meeting.json")
     }
     tasks = {
         task_path.name: task_path.read_text(encoding="utf-8")

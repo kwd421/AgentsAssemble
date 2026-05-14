@@ -3,6 +3,9 @@ import { escapeHtml, roleMeta, state } from "./shared.js";
 export function renderArchive(payload) {
   const archive = document.querySelector("#archive");
   const entries = buildArchiveEntries(payload);
+  if (payload.meeting?.meeting_mode === "free_chat" && entries["room-log.md"] && (!entries[state.archiveKey] || state.archiveKey === "decision.md")) {
+    state.archiveKey = "room-log.md";
+  }
   if (!entries[state.archiveKey]) state.archiveKey = Object.keys(entries)[0];
   const currentDocument = entries[state.archiveKey] || "";
   const manifest = buildArchiveManifest(payload, entries);
@@ -14,6 +17,8 @@ export function renderArchive(payload) {
         <small>회의 산출물, 인수인계 기록, 에이전트별 자료를 장기 기록으로 보관합니다.</small>
       </div>
       <div class="room-actions">
+        <span class="room-status">${escapeHtml(archiveMeetingModeLabel(payload.meeting))}</span>
+        <span class="room-status">${escapeHtml(archiveModeratorStateLabel(payload.meeting))}</span>
         <span class="room-status">${escapeHtml(Object.keys(entries).length)}개 문서</span>
         <span class="room-status room-status-hot">${escapeHtml(archiveKindLabel(state.archiveKey))}</span>
       </div>
@@ -66,6 +71,14 @@ export function renderArchive(payload) {
   archive.querySelectorAll("[data-archive-command]").forEach((button) => {
     button.addEventListener("click", () => handleArchiveCommand(button.dataset.archiveCommand, state.archiveKey, currentDocument, button));
   });
+}
+
+function archiveMeetingModeLabel(meeting) {
+  return meeting?.meeting_mode === "free_chat" ? "자유채팅" : "토론모드";
+}
+
+function archiveModeratorStateLabel(meeting) {
+  return meeting?.moderator?.enabled === false ? "모더레이터 OFF" : "모더레이터 ON";
 }
 
 function buildArchiveManifest(payload, entries) {
@@ -155,6 +168,7 @@ function archiveKindLabel(key) {
   if (key.includes("research/")) return "리서치";
   if (key.includes("tasks/")) return "작업 배정";
   if (key.includes("return_packets/")) return "세션 복귀";
+  if (key === "room-log.md") return "자유채팅";
   if (key === "decision.md") return "결정";
   if (key === "transcript.md") return "회의록";
   if (key === "agenda.md") return "안건";
@@ -170,13 +184,17 @@ function archiveOwnerLabel(key, payload) {
 }
 
 function buildArchiveEntries(payload) {
-  return {
+  return compactArchiveEntries({
     ...payload.artifacts,
     ...Object.fromEntries(Object.entries(payload.tasks).map(([key, value]) => [`tasks/${key}`, value])),
     ...Object.fromEntries(Object.entries(payload.return_packets || {}).map(([key, value]) => [`return_packets/${key}`, value])),
     ...Object.fromEntries(Object.entries(payload.research).map(([key, value]) => [`research/${key}`, value])),
     ...buildEvidenceArchiveEntries(payload),
-  };
+  });
+}
+
+function compactArchiveEntries(entries) {
+  return Object.fromEntries(Object.entries(entries).filter(([, value]) => String(value || "").trim().length > 0));
 }
 
 function buildEvidenceArchiveEntries(payload) {
@@ -233,7 +251,7 @@ function tableCell(value) {
 }
 
 function renderArchiveGroups(payload, entries) {
-  const publicKeys = ["agenda.md", "transcript.md", "decision.md", "meeting.json"].filter((key) => key in entries);
+  const publicKeys = ["agenda.md", "room-log.md", "transcript.md", "decision.md", "meeting.json"].filter((key) => key in entries);
   const roleGroups = (payload.meeting.roles || []).map((role) => {
     const meta = roleMeta[role.id] || { color: "purple", title: role.lens, badge: role.lens, avatar: "/static/avatar-moderator.svg" };
     const keys = Object.keys(entries)

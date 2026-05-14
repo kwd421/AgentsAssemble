@@ -49,6 +49,18 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["tab_labels"]["board"], "작전판")
             self.assertEqual(payload["tab_labels"]["archive"], "아카이브")
 
+    def test_build_meeting_payload_includes_room_log_for_free_chat(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_demo_meeting(adapter_name="mock", output_root=Path(temp_dir), meeting_mode="free_chat")
+
+            payload = build_meeting_payload(result.meeting_dir)
+
+            self.assertEqual(payload["meeting"]["meeting_mode"], "free_chat")
+            self.assertIn("room-log.md", payload["artifacts"])
+            self.assertIn("informal free-chat record", payload["artifacts"]["room-log.md"])
+            self.assertEqual(payload["artifacts"].get("decision.md"), "")
+            self.assertEqual(payload["artifacts"].get("transcript.md"), "")
+
     def test_lobby_events_are_appended_and_sanitized(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
