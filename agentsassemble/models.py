@@ -8,6 +8,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 ResearchDepthName = Literal["smoke", "standard", "deep"]
 ResearchStance = Literal["open", "user_leaning"]
 EngagementMode = Literal["manual", "mentioned", "moderator_called", "human_only", "always", "watch"]
+MeetingMode = Literal["debate", "free_chat"]
 TurnSelection = Literal["all_roles", "selected_roles"]
 ProviderKind = Literal[
     "mock",
@@ -154,6 +155,14 @@ class MeetingResult:
 
 
 @dataclass(frozen=True)
+class ModeratorConfig:
+    enabled: bool = True
+
+    def to_dict(self) -> dict[str, object]:
+        return {"enabled": self.enabled}
+
+
+@dataclass(frozen=True)
 class CouncilConfig:
     topic: str
     display_topic: str
@@ -163,6 +172,8 @@ class CouncilConfig:
     meeting_template_id: str = "default"
     meeting_template_name: str = "Default"
     rounds: list["MeetingRound"] = field(default_factory=list)
+    meeting_mode: MeetingMode = "debate"
+    moderator: ModeratorConfig = field(default_factory=ModeratorConfig)
 
 
 @dataclass(frozen=True)
@@ -285,10 +296,19 @@ def get_research_depth(name: str) -> ResearchDepth:
 
 
 ENGAGEMENT_MODES: set[str] = {"manual", "mentioned", "moderator_called", "human_only", "always", "watch"}
+MEETING_MODES: set[str] = {"debate", "free_chat"}
 
 
 def normalize_engagement_mode(value: object, default: EngagementMode = "manual") -> EngagementMode:
     if value in ENGAGEMENT_MODES:
+        return value  # type: ignore[return-value]
+    return default
+
+
+def normalize_meeting_mode(value: object, default: MeetingMode = "debate") -> MeetingMode:
+    if value == "free-chat":
+        return "free_chat"
+    if value in MEETING_MODES:
         return value  # type: ignore[return-value]
     return default
 

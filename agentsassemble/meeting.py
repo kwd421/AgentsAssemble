@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
@@ -22,9 +23,11 @@ from agentsassemble.meeting_events import MeetingEventLog, append_live_event, wr
 from agentsassemble.memory import load_memory_context, write_memory_artifacts
 from agentsassemble.models import (
     MeetingResult,
+    ModeratorConfig,
     ResearchDepthName,
     ResearchSteering,
     get_research_depth,
+    normalize_meeting_mode,
 )
 from agentsassemble.templates import DEMO_MEETING_TEMPLATE
 
@@ -39,6 +42,8 @@ def run_demo_meeting(
     research_steering: str | None = None,
     council_config_path: Path | str | None = None,
     agent_config_path: Path | str | None = None,
+    meeting_mode: str | None = None,
+    moderator_enabled: bool | None = None,
     follow_up_of: str | None = None,
     follow_up_note: str | None = None,
     follow_up_from: Path | str | None = None,
@@ -48,6 +53,10 @@ def run_demo_meeting(
             reporter(message)
 
     config = load_council_config(council_config_path)
+    if meeting_mode is not None:
+        config = replace(config, meeting_mode=normalize_meeting_mode(meeting_mode))
+    if moderator_enabled is not None:
+        config = replace(config, moderator=ModeratorConfig(enabled=moderator_enabled))
     depth = get_research_depth(research_depth)
     steering = ResearchSteering(
         stance="user_leaning" if research_steering else "open",

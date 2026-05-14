@@ -9,11 +9,13 @@ from agentsassemble.models import (
     AgentBinding,
     CouncilConfig,
     MeetingRound,
+    ModeratorConfig,
     PermissionProfile,
     ProviderConfig,
     Role,
     RoundTurnControl,
     normalize_engagement_mode,
+    normalize_meeting_mode,
 )
 from agentsassemble.templates import DEMO_MEETING_TEMPLATE
 
@@ -34,6 +36,8 @@ def load_council_config(path: Path | str | None = None) -> CouncilConfig:
         meeting_template_id=_meeting_template_id(data),
         meeting_template_name=_meeting_template_name(data),
         rounds=_rounds_from_dict(data, {role.id for role in roles}),
+        meeting_mode=normalize_meeting_mode(data.get("meeting_mode")),
+        moderator=_moderator_from_dict(data.get("moderator")),
     )
 
 
@@ -90,6 +94,12 @@ def _turn_control_from_dict(data: dict[str, Any], valid_role_ids: set[str]) -> R
         non_speaker_mode=normalize_engagement_mode(data.get("non_speaker_mode"), default="watch"),
         moderator_instruction=data.get("moderator_instruction") if isinstance(data.get("moderator_instruction"), str) else None,
     )
+
+
+def _moderator_from_dict(data: Any) -> ModeratorConfig:
+    if not isinstance(data, dict):
+        return ModeratorConfig()
+    return ModeratorConfig(enabled=bool(data.get("enabled", True)))
 
 
 def load_agent_runtime_config(path: Path | str | None) -> dict[str, Any] | None:

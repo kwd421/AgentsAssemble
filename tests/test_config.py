@@ -23,7 +23,38 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual([role.id for role in config.roles], ["lore_lawyer", "show_me_the_feats", "fanboard_skeptic"])
         self.assertEqual(config.roles[0].personality["preset"], "pedantic_lore_nerd")
         self.assertIn("dcinside", config.roles[2].source_preferences[0])
+        self.assertEqual(config.meeting_mode, "debate")
+        self.assertTrue(config.moderator.enabled)
         self.assertEqual([round_definition.id for round_definition in config.rounds], ["round_1", "round_2"])
+
+    def test_load_council_config_with_meeting_mode_and_moderator(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "council.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "topic": "topic",
+                        "question": "question",
+                        "meeting_mode": "free_chat",
+                        "moderator": {"enabled": False},
+                        "roles": [
+                            {
+                                "id": "role_a",
+                                "display_name": "A",
+                                "lens": "Lens",
+                                "research_focus": "focus",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = load_council_config(path)
+
+        self.assertEqual(config.meeting_mode, "free_chat")
+        self.assertFalse(config.moderator.enabled)
+        self.assertEqual(config.moderator.to_dict(), {"enabled": False})
 
     def test_load_council_config_with_custom_rounds(self):
         with tempfile.TemporaryDirectory() as temp_dir:
