@@ -4,6 +4,7 @@ export function renderLive(payload, options = {}) {
   const roles = payload.meeting.roles || [];
   const rounds = payload.meeting.debate_rounds || [];
   const isFreeChat = payload.meeting.meeting_mode === "free_chat";
+  const isGame = payload.meeting.meeting_mode === "game";
   const live = document.querySelector("#live");
   const sideChatFocused = document.activeElement?.id === "side-chat-message";
   const sideChatDraft = live?.querySelector("#side-chat-message")?.value || "";
@@ -13,9 +14,10 @@ export function renderLive(payload, options = {}) {
   );
   const liveEvents = payload.live_events || [];
   const officialLiveEvents = liveEvents.filter(isOfficialLiveItem);
+  const gameLiveEvents = liveEvents.filter((event) => event.kind !== "room_chat");
   const roomChatEvents = liveEvents.filter((event) => event.kind === "room_chat");
-  const systemLiveEvents = liveEvents.filter((event) => !isOfficialLiveItem(event) && event.kind !== "room_chat");
-  const liveMessages = isFreeChat ? roomChatEvents : liveEvents.length ? officialLiveEvents : messages;
+  const systemLiveEvents = isGame ? [] : liveEvents.filter((event) => !isOfficialLiveItem(event) && event.kind !== "room_chat");
+  const liveMessages = isFreeChat ? roomChatEvents : isGame && liveEvents.length ? gameLiveEvents : liveEvents.length ? officialLiveEvents : messages;
   const liveOverviewItems = liveEvents.length ? liveEvents : messages;
   const synthesis = payload.meeting.moderator_synthesis || {};
   const gate = payload.meeting.decision_gate || {};
@@ -48,10 +50,10 @@ export function renderLive(payload, options = {}) {
           <button type="button" class="latest-jump" hidden>최신으로 가기</button>
           <div class="feed-head">
             <div>
-              <strong>${escapeHtml(isFreeChat ? "자유채팅" : "공식 토론")}</strong>
-              <span>${escapeHtml(isFreeChat ? "room-log.md에만 남고 공식 결정 근거에는 들어가지 않습니다." : "이 영역의 발언은 transcript.md와 decision.md의 근거가 됩니다.")}</span>
+              <strong>${escapeHtml(liveFeedTitle(payload.meeting))}</strong>
+              <span>${escapeHtml(liveFeedDescription(payload.meeting))}</span>
             </div>
-            <em class="record-badge">${escapeHtml(isFreeChat ? "공식 기록 제외" : "공식 기록")}</em>
+            <em class="record-badge">${escapeHtml(liveFeedRecordLabel(payload.meeting))}</em>
           </div>
           ${liveMessages.map(renderLiveItem).join("")}
           ${shouldRenderModeratorMessage(payload.meeting, synthesis) ? `<article class="message message-purple message-moderator">
@@ -414,23 +416,24 @@ function renderLiveOutcome(payload, messages) {
   const gate = payload.meeting.decision_gate || {};
   const counts = liveEventCounts(messages);
   const isFreeChat = payload.meeting.meeting_mode === "free_chat";
+  const isGame = payload.meeting.meeting_mode === "game";
   return `
     <aside class="live-outcome">
       <div class="outcome-card">
-        <span>현재 판정</span>
-        <strong>${escapeHtml(synthesis.winner || "판정 대기")}</strong>
+        <span>${escapeHtml(isGame ? "게임 결과" : "현재 판정")}</span>
+        <strong>${escapeHtml(synthesis.winner || (isGame ? "진행 중" : "판정 대기"))}</strong>
         ${renderTextBlocks(userVisibleSummary(synthesis.summary || outcomeEmptyText(payload.meeting)), { highlight: synthesis.winner })}
       </div>
       <div class="consensus-card">
-        <strong>결정 상태</strong>
+        <strong>${escapeHtml(isGame ? "게임 상태" : "결정 상태")}</strong>
         <div class="consensus-score">${escapeHtml(decisionGateLabel(gate.status))}</div>
         <div class="consensus-track"><span></span></div>
-        <p>${escapeHtml(gate.can_finalize ? "확정 가능" : "보류")} · ${escapeHtml(isFreeChat ? `자유채팅 ${counts.roomChat}개` : `공식 발언 ${counts.messages}개 기반`)}</p>
+        <p>${escapeHtml(gate.can_finalize ? "확정 가능" : "보류")} · ${escapeHtml(isGame ? `공개 이벤트 ${counts.messages + counts.status + counts.synthesis}개 기반` : isFreeChat ? `자유채팅 ${counts.roomChat}개` : `공식 발언 ${counts.messages}개 기반`)}</p>
       </div>
       ${renderDecisionGateCard(payload.meeting)}
       <section class="rail-card rail-compact">
         <strong>최근 산출물</strong>
-        ${isFreeChat ? renderArtifactRow("자유채팅", "room-log.md") : renderArtifactRow("결정안", "decision.md")}
+        ${isFreeChat ? renderArtifactRow("자유채팅", "room-log.md") : isGame ? renderArtifactRow("게임 결과", "decision.md") : renderArtifactRow("결정안", "decision.md")}
         ${isFreeChat ? "" : renderArtifactRow("발언 로그", "transcript.md")}
         ${renderArtifactRow("의제", "agenda.md")}
       </section>
@@ -440,9 +443,10 @@ function renderLiveOutcome(payload, messages) {
 
 function renderDecisionGateCard(meeting) {
   const gate = meeting.decision_gate || {};
+  const isGame = meeting?.meeting_mode === "game";
   return `
     <section class="rail-card rail-compact decision-gate-card">
-      <strong>Decision Gate</strong>
+      <strong>${escapeHtml(isGame ? "Game State" : "Decision Gate")}</strong>
       <div class="artifact-row"><span>상태</span><em>${escapeHtml(decisionGateLabel(gate.status))}</em></div>
       <div class="artifact-row"><span>다음</span><em>${escapeHtml(decisionActionLabel(gate.required_action))}</em></div>
       ${(gate.reasons || []).slice(0, 3).map((reason) => `<p>${escapeHtml(decisionReasonLabel(reason))}</p>`).join("")}
@@ -452,6 +456,7 @@ function renderDecisionGateCard(meeting) {
 
 function liveStatusLabel(meeting, rounds, isComplete) {
   if (meeting.live_status === "stalled") return "중단됨";
+  if (meeting.meeting_mode === "game") return isComplete ? "게임 종료" : "게임 진행";
   if (isComplete) return "회의 완료";
   return `Round ${escapeHtml(rounds.length || 0)}`;
 }
@@ -569,11 +574,32 @@ function confidenceLabel(confidence) {
 }
 
 function meetingModeLabel(meeting) {
-  return meeting?.meeting_mode === "free_chat" ? "자유채팅" : "토론모드";
+  if (meeting?.meeting_mode === "free_chat") return "자유채팅";
+  if (meeting?.meeting_mode === "game") return "게임모드";
+  return "토론모드";
 }
 
 function moderatorStateLabel(meeting) {
+  if (meeting?.meeting_mode === "game") return meeting?.moderator?.enabled === false ? "사회자 OFF" : "사회자 ON";
   return meeting?.moderator?.enabled === false ? "모더레이터 OFF" : "모더레이터 ON";
+}
+
+function liveFeedTitle(meeting) {
+  if (meeting?.meeting_mode === "free_chat") return "자유채팅";
+  if (meeting?.meeting_mode === "game") return "게임 채팅";
+  return "공식 토론";
+}
+
+function liveFeedDescription(meeting) {
+  if (meeting?.meeting_mode === "free_chat") return "room-log.md에만 남고 공식 결정 근거에는 들어가지 않습니다.";
+  if (meeting?.meeting_mode === "game") return "공개 사회자 멘트와 플레이어 발언을 시간순으로 봅니다.";
+  return "이 영역의 발언은 transcript.md와 decision.md의 근거가 됩니다.";
+}
+
+function liveFeedRecordLabel(meeting) {
+  if (meeting?.meeting_mode === "free_chat") return "공식 기록 제외";
+  if (meeting?.meeting_mode === "game") return "게임 기록";
+  return "공식 기록";
 }
 
 function shouldRenderModeratorMessage(meeting, synthesis) {
@@ -584,6 +610,7 @@ function shouldRenderModeratorMessage(meeting, synthesis) {
 
 function outcomeEmptyText(meeting) {
   if (meeting?.meeting_mode === "free_chat") return "자유채팅 모드는 공식 판정을 만들지 않습니다.";
+  if (meeting?.meeting_mode === "game") return "아직 게임 결과가 없습니다.";
   if (meeting?.moderator?.enabled === false) return "모더레이터가 꺼져 있어 사용자 판정이 필요합니다.";
   return "아직 종합 의견이 없습니다.";
 }
@@ -751,6 +778,8 @@ function renderDecisionGateBoard(meeting) {
 function decisionGateLabel(status) {
   return {
     decided: "결정 가능",
+    game_resolved: "게임 종료",
+    needs_more_rounds: "게임 계속",
     split_decision: "분리 결정",
     no_consensus: "합의 실패",
     needs_more_research: "추가 조사",
@@ -765,6 +794,7 @@ function decisionGateLabel(status) {
 function decisionActionLabel(action) {
   return {
     write_decision: "결정 기록",
+    none: "없음",
     record_split_decision: "반대 의견 포함",
     add_round_or_user_decision: "라운드 추가/사용자 판단",
     run_research_or_verifier_round: "재조사/검증",
