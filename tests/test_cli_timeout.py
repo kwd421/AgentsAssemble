@@ -728,6 +728,20 @@ class CliTimeoutTests(unittest.TestCase):
                     "restart_count": 1,
                     "max_restarts": 3,
                     "config_path": "configs/live-agents.example.json",
+                    "agents": [
+                        {
+                            "agent_id": "local-a",
+                            "display_name": "Local A",
+                            "provider_kind": "local_cli",
+                            "connection_kind": "local_cli",
+                        },
+                        {
+                            "agent_id": "friend-b",
+                            "display_name": "Friend B",
+                            "provider_kind": "claude_code",
+                            "connection_kind": "remote_bridge",
+                        },
+                    ],
                 },
                 {"group_id": "stopped-crew", "status": "stopped", "pid": None, "config_path": "fake.json"},
             ]
@@ -743,6 +757,9 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("crew: running", output)
         self.assertIn("pid 1234", output)
         self.assertIn("restarts 1/3", output)
+        self.assertIn("agents Local A/local_cli, Friend B/remote_bridge", output)
+        self.assertNotIn("command", output)
+        self.assertNotIn("auth", output)
         self.assertIn("stopped-crew: stopped", output)
 
     def test_live_agent_processes_start_posts_supervisor_payload(self):

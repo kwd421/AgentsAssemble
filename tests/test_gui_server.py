@@ -280,6 +280,14 @@ class GuiServerTests(unittest.TestCase):
                     "max_restarts": max_restarts,
                     "restart_backoff_seconds": restart_backoff_seconds,
                     "next_restart_at": "",
+                    "agents": [
+                        {
+                            "agent_id": "local-a",
+                            "display_name": "Local A",
+                            "provider_kind": "local_cli",
+                            "connection_kind": "local_cli",
+                        }
+                    ],
                 }
                 self.groups = [record]
                 return record
@@ -349,11 +357,14 @@ class GuiServerTests(unittest.TestCase):
                 server.server_close()
 
             self.assertEqual(started["group"]["status"], "running")
+            self.assertEqual(started["group"]["agents"][0]["agent_id"], "local-a")
             self.assertEqual(listed["groups"][0]["group_id"], "crew")
+            self.assertEqual(listed["groups"][0]["agents"][0]["connection_kind"], "local_cli")
             self.assertEqual(listed["groups"][0]["log_tail"], "resident booted")
             self.assertEqual(stopped["group"]["status"], "stopped")
             self.assertEqual(restarted["group"]["status"], "running")
             self.assertEqual(restarted["group"]["pid"], 9876)
+            self.assertEqual(restarted["group"]["agents"][0]["display_name"], "Local A")
             self.assertEqual(supervisor.started[0]["server"], f"http://127.0.0.1:{server.server_port}")
             self.assertEqual(supervisor.started[0]["auto_restart"], True)
             self.assertEqual(supervisor.started[0]["max_restarts"], 2)

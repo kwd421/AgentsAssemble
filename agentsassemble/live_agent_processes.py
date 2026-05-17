@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
+from agentsassemble.live_agent_runner import ResidentAgentConfig, load_group_configs
 
 
 class LiveAgentProcessSupervisor:
@@ -177,7 +178,8 @@ class LiveAgentProcessSupervisor:
                 raise ValueError(f"Live agent group {clean_group_id} is already running.")
         if not config_path.exists():
             raise ValueError(f"Live agent config {config_path} was not found.")
-        self._raise_for_failed_preflight(config_path, server=server)
+        self._preflight_report_or_raise(config_path, server=server)
+        agent_manifest = _safe_agent_manifest(load_group_configs(config_path, server_override=server))
 
         log_path = self._log_path(clean_group_id)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -215,6 +217,7 @@ class LiveAgentProcessSupervisor:
             "restart_backoff_seconds": _nonnegative_float(restart_backoff_seconds, 5.0),
             "next_restart_at": "",
             "diagnostic": bool(diagnostic),
+            "agents": agent_manifest,
         }
         self._records[clean_group_id] = record
         self._processes[clean_group_id] = process
@@ -416,10 +419,11 @@ class LiveAgentProcessSupervisor:
         visible["log_tail"] = _read_log_tail(Path(str(record.get("log_path") or "")), self.log_tail_bytes)
         return visible
 
-    def _raise_for_failed_preflight(self, config_path: Path, *, server: str) -> None:
+    def _preflight_report_or_raise(self, config_path: Path, *, server: str) -> dict[str, object]:
         report = self.preflight_checker(config_path, server_override=server)
         if report.get("status") != "ok":
             raise ValueError(_preflight_failure_message(report))
+        return report
 
 
 def _clean_group_id(value: str) -> str:
@@ -450,6 +454,7 @@ def _process_record(payload: dict[str, object]) -> dict[str, object]:
         "restart_backoff_seconds": _nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
         "next_restart_at": str(payload.get("next_restart_at") or ""),
         "diagnostic": _bool_value(payload.get("diagnostic")),
+        "agents": _safe_agent_manifest(payload.get("agents")),
     }
 
 
@@ -488,6 +493,36 @@ def _preflight_check_summary(prefix: str, check: dict[str, object]) -> str:
     message = str(check.get("message") or "failed")
     label = f"{prefix} {check_id}".strip()
     return f"{label}: {message}"
+
+
+def _safe_agent_manifest(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    agents = []
+    for item in value:
+        if isinstance(item, ResidentAgentConfig):
+            agent_id = item.agent_id.strip()
+            display_name = item.display_name or agent_id
+            provider_kind = item.provider_kind
+            connection_kind = item.connection_kind
+        elif isinstance(item, dict):
+            agent_id = str(item.get("agent_id") or "").strip()
+            display_name = str(item.get("display_name") or agent_id)
+            provider_kind = str(item.get("provider_kind") or "")
+            connection_kind = str(item.get("connection_kind") or "")
+        else:
+            continue
+        if not agent_id:
+            continue
+        agents.append(
+            {
+                "agent_id": agent_id,
+                "display_name": str(display_name),
+                "provider_kind": str(provider_kind),
+                "connection_kind": str(connection_kind),
+            }
+        )
+    return agents
 
 
 def _should_auto_restart(record: dict[str, object], returncode: object) -> bool:

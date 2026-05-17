@@ -151,6 +151,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('state.liveAgentProcessStatus = { message: `${groupId} 재시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };', script)
         self.assertIn("async function stopLiveAgentProcessGroup", script)
         self.assertIn("async function restartLiveAgentProcessGroup", script)
+        self.assertIn("function liveAgentProcessAgentsLabel", script)
+        self.assertIn('class="live-agent-process-agents"', script)
         self.assertIn("async function sendLiveAgentRegistration", script)
         self.assertIn("async function loadCodexSessions", script)
         self.assertIn("async function sendCodexSessionInvite", script)

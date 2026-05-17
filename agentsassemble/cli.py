@@ -733,7 +733,9 @@ def _format_live_agent_process_group(group: dict[str, object]) -> str:
     restart_count = group.get("restart_count", 0)
     max_restarts = group.get("max_restarts", 0)
     config_path = str(group.get("config_path") or "").strip()
-    suffix = f" {config_path}" if config_path else ""
+    agents = _format_live_agent_process_agents(group.get("agents"))
+    suffix_parts = [part for part in (config_path, agents) if part]
+    suffix = f" {'; '.join(suffix_parts)}" if suffix_parts else ""
     return f"{group_id}: {status} ({pid_text}, {auto_restart}, restarts {restart_count}/{max_restarts}){suffix}"
 
 
@@ -748,6 +750,21 @@ def _format_live_agent_process_action(group: dict[str, object], action: str) -> 
     if action == "restart":
         return f"Restarted {group_id} (pid {pid if pid not in (None, '') else '-'})"
     return _format_live_agent_process_group(group)
+
+
+def _format_live_agent_process_agents(value: object) -> str:
+    if not isinstance(value, list) or not value:
+        return ""
+    labels = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("display_name") or item.get("agent_id") or "").strip()
+        connection_kind = str(item.get("connection_kind") or "").strip()
+        if not name:
+            continue
+        labels.append(f"{name}/{connection_kind}" if connection_kind else name)
+    return f"agents {', '.join(labels)}" if labels else ""
 
 
 def _run_live_agent_delegate(args: argparse.Namespace) -> int:

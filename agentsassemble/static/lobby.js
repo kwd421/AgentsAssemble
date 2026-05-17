@@ -485,6 +485,7 @@ function renderLiveAgentProcessCard(group) {
   const status = group.status || "unknown";
   const canStop = status === "running" || status === "restarting";
   const logTail = group.log_tail == null ? "" : String(group.log_tail);
+  const agentLabel = liveAgentProcessAgentsLabel(group);
   return `
     <article class="live-agent-process-row live-agent-process-${escapeHtml(status)}">
       <div>
@@ -492,6 +493,7 @@ function renderLiveAgentProcessCard(group) {
         <span>${escapeHtml(group.config_path || "")}</span>
         <small>${escapeHtml(group.pid ? `pid ${group.pid}` : "pid 없음")} · ${escapeHtml(group.server || "")}</small>
         <small>${escapeHtml(liveAgentProcessRestartLabel(group))}</small>
+        ${agentLabel ? `<small class="live-agent-process-agents">${escapeHtml(agentLabel)}</small>` : ""}
       </div>
       <em>${escapeHtml(liveAgentProcessStatusLabel(status))}</em>
       ${
@@ -502,6 +504,18 @@ function renderLiveAgentProcessCard(group) {
       ${logTail ? `<pre class="live-agent-process-log">${escapeHtml(logTail)}</pre>` : ""}
     </article>
   `;
+}
+
+function liveAgentProcessAgentsLabel(group) {
+  const agents = Array.isArray(group.agents) ? group.agents : [];
+  const labels = agents
+    .map((agent) => {
+      const name = String(agent.display_name || agent.agent_id || "").trim();
+      const connection = connectionKindLabel(agent.connection_kind);
+      return name ? `${name}/${connection}` : "";
+    })
+    .filter(Boolean);
+  return labels.length ? `agents ${labels.join(", ")}` : "";
 }
 
 function renderLiveAgentCard(agent) {

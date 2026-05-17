@@ -376,6 +376,7 @@ Document that the GUI `진단` button calls `POST /api/live-agent-smoke` and use
 - Modify: `docs/live-agent-ops.md`
 - Test: `tests/test_gui_server.py`
 - Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
 - Test: `tests/test_static_ui_assets.py`
 - Test: `tests/test_docs_architecture.py`
 
@@ -664,6 +665,32 @@ Define the resident runtime support set as `local_cli`, `live_session`, and `rem
 - [x] **Step 3: Document registration-vs-resident boundaries**
 
 Document that `manual` and `codex_resume` are roster/registration kinds, not resident process connection kinds. Direct CLI run, run-group, supervised start, and preflight now reject them as resident configs.
+
+---
+
+### Task 20: Supervised Group Agent Manifest
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for safe launch-time manifests**
+
+Cover supervised start and restart persisting an `agents` manifest from the group config, historical records defaulting missing manifests to `[]`, API payloads preserving the manifest, CLI process list output including agent labels, and GUI process rows having a manifest rendering hook.
+
+- [x] **Step 2: Persist only safe manifest fields**
+
+Extract `agent_id`, `display_name`, `provider_kind`, and `connection_kind` from the same normalized group config that `run-group` consumes at the supervised launch boundary. Do not persist commands, command paths, endpoints, auth refs, prompts, or environment-derived values.
+
+- [x] **Step 3: Surface manifests to operators**
+
+Return manifest entries through the process API, show them in the CLI process list, render them on GUI process rows, and document that the manifest is launch-time observability rather than a secret-bearing config dump.
 
 ---
 

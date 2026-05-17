@@ -106,6 +106,101 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
             self.assertTrue(persisted["groups"][0]["diagnostic"])
 
+    def test_start_group_persists_safe_agent_manifest_from_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "local-a",
+                                "display_name": "Local A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": ["fake"],
+                            },
+                            {
+                                "agent_id": "friend-b",
+                                "display_name": "Friend B",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "remote_bridge",
+                                "endpoint": "http://friend.local:8777",
+                                "auth_ref": "env:SECRET_TOKEN",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def preflight_checker(path, *, server_override=None):
+                return {
+                    "status": "ok",
+                    "checks": [],
+                    "agents": [
+                        {
+                            "agent_id": "local-a",
+                            "display_name": "Preflight Local A",
+                            "provider_kind": "local_cli",
+                            "connection_kind": "local_cli",
+                            "command": ["fake", "--token", "secret-value"],
+                            "command_path": "/usr/local/bin/fake",
+                            "endpoint": "http://must-not-persist.local",
+                            "auth_ref": "env:SECRET_TOKEN",
+                        },
+                        {
+                            "agent_id": "friend-b",
+                            "display_name": "Preflight Friend B",
+                            "provider_kind": "preflight_provider",
+                            "connection_kind": "remote_bridge",
+                            "endpoint": "http://friend.local:8777",
+                            "auth_ref": "env:SECRET_TOKEN",
+                        },
+                        {
+                            "agent_id": "preflight-only",
+                            "display_name": "Preflight Only",
+                            "provider_kind": "local_cli",
+                            "connection_kind": "local_cli",
+                            "command": ["fake"],
+                        },
+                    ],
+                }
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: FakeProcess(),
+                preflight_checker=preflight_checker,
+            )
+
+            record = supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew")
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+            persisted_text = json.dumps(persisted, ensure_ascii=False)
+
+        expected_agents = [
+            {
+                "agent_id": "local-a",
+                "display_name": "Local A",
+                "provider_kind": "local_cli",
+                "connection_kind": "local_cli",
+            },
+            {
+                "agent_id": "friend-b",
+                "display_name": "Friend B",
+                "provider_kind": "claude_code",
+                "connection_kind": "remote_bridge",
+            },
+        ]
+        self.assertEqual(record["agents"], expected_agents)
+        self.assertEqual(persisted["groups"][0]["agents"], expected_agents)
+        self.assertNotIn("secret-value", persisted_text)
+        self.assertNotIn("SECRET_TOKEN", persisted_text)
+        self.assertNotIn("friend.local", persisted_text)
+        self.assertNotIn("command_path", persisted_text)
+        self.assertNotIn("Preflight", persisted_text)
+        self.assertNotIn("preflight-only", persisted_text)
+
     def test_start_group_preflights_config_before_launching_process(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -547,12 +642,15 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
 
         self.assertEqual(recovered["orphan-running"]["status"], "unknown")
         self.assertIsNone(recovered["orphan-running"]["pid"])
+        self.assertEqual(recovered["orphan-running"]["agents"], [])
         self.assertIsNone(persisted_by_id["orphan-running"]["pid"])
         self.assertEqual(recovered["finished"]["status"], "stopped")
         self.assertEqual(recovered["finished"]["pid"], 2222)
+        self.assertEqual(recovered["finished"]["agents"], [])
         self.assertEqual(persisted_by_id["finished"]["pid"], 2222)
         self.assertEqual(recovered["crashed"]["status"], "error")
         self.assertEqual(recovered["crashed"]["pid"], 3333)
+        self.assertEqual(recovered["crashed"]["agents"], [])
         self.assertEqual(persisted_by_id["crashed"]["pid"], 3333)
 
     def test_list_groups_includes_bounded_log_tail_without_persisting_it(self):
@@ -665,7 +763,22 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             config_path = root / "live-agents.json"
-            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": ["fake"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
             launched = []
 
             def command_factory(command, **kwargs):
@@ -682,12 +795,25 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             supervisor.stop_group("crew")
 
             restarted = supervisor.restart_group("crew")
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
 
         self.assertEqual(restarted["group_id"], "crew")
         self.assertEqual(restarted["status"], "running")
         self.assertEqual(restarted["pid"], 5001)
         self.assertEqual(restarted["config_path"], str(config_path))
         self.assertEqual(restarted["server"], "http://room.local")
+        self.assertEqual(
+            restarted["agents"],
+            [
+                {
+                    "agent_id": "a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                }
+            ],
+        )
+        self.assertEqual(persisted["groups"][0]["agents"], restarted["agents"])
         self.assertEqual(len(launched), 2)
 
     def test_restart_group_resets_auto_restart_budget_for_new_manual_run(self):
@@ -749,7 +875,22 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             runs_dir = root / "live-agent-runs"
             runs_dir.mkdir()
             config_path = root / "live-agents.json"
-            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": ["fake"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
             (runs_dir / "processes.json").write_text(
                 json.dumps(
                     {
@@ -780,11 +921,24 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
 
             restarted = supervisor.restart_group("crew")
+            persisted = json.loads((runs_dir / "processes.json").read_text(encoding="utf-8"))
 
         self.assertEqual(restarted["status"], "running")
         self.assertEqual(restarted["pid"], 6789)
         self.assertEqual(restarted["config_path"], str(config_path))
         self.assertEqual(restarted["server"], "http://room.local")
+        self.assertEqual(
+            restarted["agents"],
+            [
+                {
+                    "agent_id": "a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                }
+            ],
+        )
+        self.assertEqual(persisted["groups"][0]["agents"], restarted["agents"])
         self.assertEqual(len(launched), 1)
 
     def test_auto_restart_relaunches_crashed_group_within_limit(self):
