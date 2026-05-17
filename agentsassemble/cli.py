@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     demo = subparsers.add_parser("demo", help="Run the canned v0 council demo.")
-    demo.add_argument("--adapter", choices=["mock", "codex"], default="mock")
+    demo.add_argument("--adapter", choices=["mock", "codex", "codex-live"], default="mock")
     demo.add_argument("--output-root", default=".agentsassemble")
     demo.add_argument(
         "--codex-timeout",

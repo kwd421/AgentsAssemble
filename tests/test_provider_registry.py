@@ -8,6 +8,7 @@ from agentsassemble.adapters.http_llm import (
     GrokChatAdapter,
     LocalOpenAICompatibleAdapter,
 )
+from agentsassemble.adapters.codex_live import CodexLiveSessionAdapter
 from agentsassemble.adapters.local_cli import LocalCliAdapter
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.adapters.unsupported import UnsupportedProviderAdapter
@@ -198,6 +199,7 @@ class ProviderRegistryTests(unittest.TestCase):
 
         self.assertEqual(catalog["mock"]["status"], "available")
         self.assertEqual(catalog["codex"]["status"], "available")
+        self.assertEqual(catalog["codex_live_session"]["status"], "available")
         self.assertEqual(catalog["gemini"]["status"], "available")
         self.assertEqual(catalog["grok"]["status"], "available")
         self.assertEqual(catalog["remote_http_bridge"]["status"], "available")
@@ -252,6 +254,17 @@ class ProviderRegistryTests(unittest.TestCase):
                 )
             ),
             LocalCliAdapter,
+        )
+        self.assertIsInstance(
+            registry.create(
+                ProviderConfig(
+                    id="codex-live",
+                    kind="codex_live_session",
+                    display_name="Codex Live Session",
+                    timeout_seconds=240,
+                )
+            ),
+            CodexLiveSessionAdapter,
         )
 
 

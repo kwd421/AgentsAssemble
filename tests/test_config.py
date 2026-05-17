@@ -226,6 +226,7 @@ class ConfigTests(unittest.TestCase):
                                 "provider_id": "guest-cursor",
                                 "permission_profile_id": "meeting_readonly_tools",
                                 "join_mode": "current_session",
+                                "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44",
                             }
                         ],
                     }
@@ -244,6 +245,8 @@ class ConfigTests(unittest.TestCase):
             self.assertFalse(permissions["meeting_readonly_tools"].filesystem_write)
             self.assertEqual(bindings[0].owner_id, "friend")
             self.assertEqual(bindings[0].join_mode, "current_session")
+            self.assertEqual(bindings[0].session_id, "019e02af-c287-7cd1-aab7-c1e059c5ed44")
+            self.assertEqual(bindings[0].to_dict()["session_id"], "019e02af-c287-7cd1-aab7-c1e059c5ed44")
             self.assertEqual(bindings[0].engagement_mode, "moderator_called")
 
     def test_agent_binding_engagement_mode_can_be_configured(self):
@@ -277,6 +280,7 @@ class ConfigTests(unittest.TestCase):
     def test_example_agent_configs_are_parseable(self):
         for path in (
             Path("configs/agents.example.json"),
+            Path("configs/codex-live-session.example.json"),
             Path("configs/codex-sessions.example.json"),
             Path("configs/http-providers.example.json"),
             Path("configs/remote-bridge.example.json"),

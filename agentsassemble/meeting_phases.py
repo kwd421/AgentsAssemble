@@ -31,6 +31,8 @@ def start_role_sessions(
         session.setdefault("agent_id", binding.agent_id)
         session.setdefault("owner_id", binding.owner_id)
         session.setdefault("join_mode", binding.join_mode)
+        if getattr(binding, "session_id", None):
+            session["session_id"] = binding.session_id
         sessions[role.id] = session
         if live_event is not None:
             live_event({"kind": "status", "role_id": role.id, "display_name": role.display_name, "content": f"{role.display_name} 세션 준비 완료"})

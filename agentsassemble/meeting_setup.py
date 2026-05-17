@@ -46,6 +46,15 @@ def provider_config_for_adapter(
             timeout_seconds=codex_timeout_seconds,
             search_enabled=codex_search_enabled,
         )
+    if adapter_name == "codex-live":
+        return ProviderConfig(
+            id="codex-live",
+            kind="codex_live_session",
+            display_name="Codex CLI Live Session",
+            default_model="local-codex-session",
+            timeout_seconds=codex_timeout_seconds,
+            search_enabled=codex_search_enabled,
+        )
     raise ValueError(f"Unknown adapter: {adapter_name}")
 
 
@@ -53,7 +62,7 @@ def default_permissions(adapter_name: str, codex_search_enabled: bool) -> dict[s
     return {
         "meeting_read_only": PermissionProfile(
             id="meeting_read_only",
-            web_search=adapter_name == "codex" and codex_search_enabled,
+            web_search=adapter_name in {"codex", "codex-live"} and codex_search_enabled,
             tool_use=False,
             filesystem_read=False,
             filesystem_write=False,
@@ -104,6 +113,7 @@ def prepare_meeting_setup(
             if isinstance(item, dict)
         ]
     _validate_role_bindings(config_roles, agent_bindings)
+    _validate_live_session_bindings(agent_bindings)
     registry = default_provider_registry(
         codex_timeout_seconds=codex_timeout_seconds,
         codex_search_enabled=codex_search_enabled,
@@ -142,3 +152,15 @@ def _validate_role_bindings(config_roles: list[Any], agent_bindings: list[AgentB
         raise ValueError(f"Missing agent binding for role(s): {', '.join(missing)}")
     if unknown:
         raise ValueError(f"Agent binding references unknown role(s): {', '.join(unknown)}")
+
+
+def _validate_live_session_bindings(agent_bindings: list[AgentBinding]) -> None:
+    seen: dict[str, str] = {}
+    for binding in agent_bindings:
+        if not binding.session_id:
+            continue
+        if binding.session_id in seen:
+            raise ValueError(
+                f"Duplicate live session_id {binding.session_id} for roles {seen[binding.session_id]} and {binding.role_id}"
+            )
+        seen[binding.session_id] = binding.role_id

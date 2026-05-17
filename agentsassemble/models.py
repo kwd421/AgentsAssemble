@@ -13,6 +13,7 @@ TurnSelection = Literal["all_roles", "selected_roles"]
 ProviderKind = Literal[
     "mock",
     "codex",
+    "codex_live_session",
     "anthropic",
     "gemini",
     "grok",
@@ -133,6 +134,7 @@ class AgentBinding:
     memory_profile_id: str | None = None
     join_mode: Literal["fresh", "current_session", "imported_pack"] = "fresh"
     engagement_mode: EngagementMode = "moderator_called"
+    session_id: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -145,6 +147,7 @@ class AgentBinding:
             "memory_profile_id": self.memory_profile_id,
             "join_mode": self.join_mode,
             "engagement_mode": self.engagement_mode,
+            "session_id": self.session_id,
         }
 
 

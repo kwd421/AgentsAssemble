@@ -5,6 +5,7 @@ from typing import Callable
 
 from agentsassemble.adapters.base import ProviderAdapter
 from agentsassemble.adapters.codex import CodexAdapter
+from agentsassemble.adapters.codex_live import CodexLiveSessionAdapter
 from agentsassemble.adapters.http_llm import (
     AnthropicMessagesAdapter,
     GeminiGenerateContentAdapter,
@@ -120,6 +121,22 @@ def default_provider_registry(
     registry.register(
         "codex",
         lambda provider: CodexAdapter(
+            timeout_seconds=provider.timeout_seconds if provider.timeout_seconds is not None else codex_timeout_seconds,
+            search_enabled=provider.search_enabled and codex_search_enabled,
+        ),
+        ProviderCapabilities(
+            supports_research=True,
+            supports_web_search=codex_search_enabled,
+            supports_tools=True,
+            supports_filesystem=True,
+            supports_session_resume=True,
+            supports_structured_output=True,
+            cost_class="subscription",
+        ),
+    )
+    registry.register(
+        "codex_live_session",
+        lambda provider: CodexLiveSessionAdapter(
             timeout_seconds=provider.timeout_seconds if provider.timeout_seconds is not None else codex_timeout_seconds,
             search_enabled=provider.search_enabled and codex_search_enabled,
         ),

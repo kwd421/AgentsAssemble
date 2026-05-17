@@ -49,6 +49,7 @@ The default registry exposes provider kinds with explicit capability snapshots:
 
 - `mock`
 - `codex`
+- `codex_live_session`
 - `anthropic`
 - `gemini`
 - `grok`
@@ -61,7 +62,7 @@ The default registry exposes provider kinds with explicit capability snapshots:
 - `openclaw_memory`
 - `memory_pack`
 
-`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, and `local_cli` have meeting adapters. `cursor` and `claude_code` remain implementation-phase planned providers; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
+`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `cursor` and `claude_code` remain implementation-phase planned providers; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
 ## Provider Families
 
@@ -149,7 +150,9 @@ Example provider config:
 
 Local readiness can be verified with a fake command runner or a local smoke script. Real provider readiness still requires the user's actual CLI installation, login state, model availability, and billing/subscription state.
 
-`local_cli` is one-shot/delegate style. It can test provider connectivity and opinion mode, but it should not be presented as the final live teammate experience. A future `live_session` adapter should keep a CLI, SDK, PTY, or socket-backed session attached to the room while preserving its own process state.
+`local_cli` is one-shot/delegate style. It can test provider connectivity and opinion mode, but it should not be presented as the final live teammate experience.
+
+`codex_live_session` is the first live-session slice. It uses Codex CLI session ids and `codex exec resume` so repeated meeting turns continue the same Codex session history. This is still a read-only meeting participant: implementation, filesystem write, git write, push, and release actions remain blocked by the meeting permission gate.
 
 The `meeting_read_only` permissions sent to `local_cli` and `remote_http_bridge` are currently advisory unless the caller also provides a real sandbox or constrained execution environment. Public artifacts should record this honestly as `enforcement: advisory`. Do not claim filesystem, credential, git, or implementation isolation is enforced for arbitrary CLI or bridge processes until a sandboxed launch path exists and is verified.
 

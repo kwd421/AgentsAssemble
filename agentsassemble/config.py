@@ -182,6 +182,7 @@ def agent_bindings_from_config(data: dict[str, Any]) -> list[AgentBinding]:
             memory_profile_id=binding_data.get("memory_profile_id"),
             join_mode=binding_data.get("join_mode", "fresh"),
             engagement_mode=engagement_mode,
+            session_id=binding_data.get("session_id") if isinstance(binding_data.get("session_id"), str) else None,
         )
         )
     return bindings

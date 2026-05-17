@@ -25,6 +25,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Shared Room Event Stream", doc)
         self.assertIn("docs/live-session-room-model.md", doc)
         self.assertIn("live_session", doc)
+        self.assertIn("codex_live_session", doc)
         self.assertIn("advisory", doc)
 
     def test_roadmap_mentions_room_event_log_and_live_session_adapter(self):
