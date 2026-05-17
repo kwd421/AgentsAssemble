@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
+import signal
 import subprocess
 import sys
 import threading
@@ -872,7 +874,12 @@ class _LocalCliCommandRunner:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=_supports_process_groups(),
         )
+        if _supports_process_groups():
+            process_group_pid = getattr(process, "pid", None)
+            if isinstance(process_group_pid, int) and process_group_pid > 0:
+                setattr(process, "_agentsassemble_process_group_pid", process_group_pid)
         with self._lock:
             if self.closed:
                 should_close = True
@@ -911,15 +918,47 @@ class _LocalCliCommandRunner:
 def _terminate_process(process: subprocess.Popen) -> None:
     if process.poll() is not None:
         return
-    try:
-        process.terminate()
-    except ProcessLookupError:
-        return
+    _send_process_stop_signal(process, _stop_signal("SIGTERM"), force=False)
     try:
         process.wait(timeout=1)
     except subprocess.TimeoutExpired:
-        process.kill()
+        _send_process_stop_signal(process, _stop_signal("SIGKILL"), force=True)
         process.wait(timeout=1)
+
+
+def _send_process_stop_signal(process: subprocess.Popen, stop_signal: int | None, *, force: bool) -> None:
+    process_group_pid = _process_group_pid(process)
+    if process_group_pid is not None and stop_signal is not None:
+        try:
+            os.killpg(process_group_pid, stop_signal)
+            return
+        except ProcessLookupError:
+            return
+        except OSError:
+            pass
+    try:
+        if force:
+            process.kill()
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        return
+
+
+def _process_group_pid(process: subprocess.Popen) -> int | None:
+    if not _supports_process_groups():
+        return None
+    pgid = getattr(process, "_agentsassemble_process_group_pid", None)
+    return pgid if isinstance(pgid, int) and pgid > 0 else None
+
+
+def _supports_process_groups() -> bool:
+    return hasattr(os, "killpg") and hasattr(os, "setsid")
+
+
+def _stop_signal(name: str) -> int | None:
+    value = getattr(signal, name, None)
+    return value if isinstance(value, int) else None
 
 
 def _validate_resident_config(config: ResidentAgentConfig) -> None:

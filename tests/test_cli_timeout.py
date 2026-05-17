@@ -1,6 +1,7 @@
 import unittest
 import json
 import os
+import signal
 import sys
 import tempfile
 import threading
@@ -16,6 +17,30 @@ from agentsassemble.cli import build_parser, main
 from agentsassemble.gui import _make_handler, append_lobby_event, read_lobby
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
+
+
+def _pid_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _wait_for_pid_exit(pid: int, timeout: float = 2.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _pid_exists(pid):
+            return True
+        time.sleep(0.01)
+    return not _pid_exists(pid)
+
+
+def _kill_pid(pid: int) -> None:
+    stop_signal = getattr(signal, "SIGKILL", getattr(signal, "SIGTERM", None))
+    if stop_signal is None:
+        return
+    os.kill(pid, stop_signal)
 
 
 class CliTimeoutTests(unittest.TestCase):
@@ -1649,6 +1674,101 @@ class CliTimeoutTests(unittest.TestCase):
                 thread.join(timeout=1)
 
             self.assertFalse(thread.is_alive())
+            self.assertTrue(errors)
+
+    def test_local_cli_terminate_falls_back_to_process_kill_without_sigkill(self):
+        class FakeSignal:
+            SIGTERM = 15
+
+        class TimeoutProcess:
+            def __init__(self):
+                self.returncode = None
+                self.terminated = False
+                self.killed = False
+                self.waits = 0
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                self.terminated = True
+
+            def wait(self, timeout=None):
+                del timeout
+                self.waits += 1
+                if self.waits == 1:
+                    raise cli_module.subprocess.TimeoutExpired(["fake"], 1)
+                self.returncode = -9
+                return self.returncode
+
+            def kill(self):
+                self.killed = True
+                self.returncode = -9
+
+        process = TimeoutProcess()
+
+        with (
+            patch("agentsassemble.cli._supports_process_groups", return_value=False),
+            patch("agentsassemble.cli.signal", FakeSignal),
+        ):
+            cli_module._terminate_process(process)
+
+        self.assertTrue(process.terminated)
+        self.assertTrue(process.killed)
+
+    @unittest.skipUnless(cli_module._supports_process_groups(), "requires POSIX process-group support")
+    def test_local_cli_resident_command_runner_close_terminates_child_processes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            child_pid_path = Path(temp_dir) / "grandchild.pid"
+            runner = cli_module._LocalCliCommandRunner()
+            errors = []
+
+            def invoke_runner():
+                try:
+                    runner(
+                        [
+                            sys.executable,
+                            "-u",
+                            "-c",
+                            (
+                                "import pathlib, subprocess, sys, time; "
+                                "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+                                "pathlib.Path(sys.argv[1]).write_text(str(child.pid), encoding='utf-8'); "
+                                "time.sleep(30)"
+                            ),
+                            str(child_pid_path),
+                        ],
+                        "prompt",
+                        timeout_seconds=30,
+                    )
+                except Exception as error:
+                    errors.append(error)
+
+            thread = threading.Thread(target=invoke_runner)
+            thread.start()
+            child_pid = None
+            child_alive_after_close = None
+            try:
+                deadline = time.time() + 5
+                while time.time() < deadline and not child_pid_path.exists():
+                    time.sleep(0.01)
+                self.assertTrue(child_pid_path.exists())
+                child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+
+                runner.close()
+                thread.join(timeout=3)
+                child_alive_after_close = not _wait_for_pid_exit(child_pid)
+            finally:
+                if child_pid is not None and _pid_exists(child_pid):
+                    try:
+                        _kill_pid(child_pid)
+                    except ProcessLookupError:
+                        pass
+                runner.close()
+                thread.join(timeout=1)
+
+            self.assertFalse(thread.is_alive())
+            self.assertFalse(child_alive_after_close)
             self.assertTrue(errors)
 
     def test_local_cli_resident_command_runner_terminates_child_on_interruption(self):

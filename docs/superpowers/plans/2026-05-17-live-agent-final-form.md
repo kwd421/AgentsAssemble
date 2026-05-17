@@ -774,6 +774,29 @@ Document that supervised stop can interrupt active local provider commands and t
 
 ---
 
+### Task 24: Resident Local CLI Process Group Cleanup
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for child-process cleanup**
+
+Cover a resident `local_cli` provider wrapper that spawns a long-running child process. Closing the resident command runner must stop the child as well as the direct provider process.
+
+- [x] **Step 2: Start resident commands in a stoppable process group**
+
+On POSIX hosts, launch resident local CLI provider commands in a new session and send stop signals to the process group. Keep fake-process and non-POSIX behavior on the existing direct-process fallback.
+
+- [x] **Step 3: Document subprocess-tree stop semantics**
+
+Document that resident local CLI stop semantics cover ordinary provider child processes on POSIX hosts while one-shot delegate semantics remain unchanged.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
