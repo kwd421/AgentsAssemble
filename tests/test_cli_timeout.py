@@ -943,14 +943,14 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual(payload["group_id"], "operator-smoke")
             self.assertEqual(
                 {reply["message"] for reply in payload["replies"]},
-                {"smoke local_cli ok", "smoke live_session ok"},
+                {"smoke local_cli ok", "smoke live_session ok", "smoke remote_bridge ok"},
             )
             self.assertNotEqual(payload["source_event_id"], old_event["id"])
             self.assertEqual({reply["source_event_id"] for reply in payload["replies"]}, {payload["source_event_id"]})
             events = read_lobby(root)
             self.assertEqual(
                 {event["message"] for event in events if event.get("actor_id") in payload["agent_ids"]},
-                {"smoke local_cli ok", "smoke live_session ok"},
+                {"smoke local_cli ok", "smoke live_session ok", "smoke remote_bridge ok"},
             )
             processes = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
             group = next(item for item in processes["groups"] if item["group_id"] == "operator-smoke")

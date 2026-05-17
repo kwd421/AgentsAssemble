@@ -100,6 +100,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("credential-free", doc)
         self.assertIn("smoke local_cli ok", doc)
         self.assertIn("smoke live_session ok", doc)
+        self.assertIn("smoke remote_bridge ok", doc)
+        self.assertIn("fake `remote_bridge`", doc)
         self.assertIn("--fail-on-degraded", doc)
         self.assertIn("--json", doc)
         self.assertIn("Exit code contract", doc)

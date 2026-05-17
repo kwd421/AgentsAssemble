@@ -1076,6 +1076,35 @@ After xhigh review, tightened the probe so CLI HTTP timeout outlives the probe w
 
 ---
 
+### Task 35: Remote Bridge Credential-Free Smoke Coverage
+
+**Files:**
+- Modify: `agentsassemble/live_agent_smoke.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_smoke.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for all resident connection kinds**
+
+Cover a credential-free smoke config and cursor seeding path that includes `local_cli`, `live_session`, and `remote_bridge`, plus CLI/GUI smoke expectations for `smoke remote_bridge ok`.
+
+- [x] **Step 2: Add loopback fake remote bridge to smoke**
+
+Start a temporary loopback bridge server inside `run_live_agent_smoke()`, require its bearer token, include a `remote_bridge` resident group member with a literal smoke auth ref, and return `smoke remote_bridge ok` through the normal bridge response envelope.
+
+- [x] **Step 3: Require live-agent endpoint evidence for smoke replies**
+
+Accept smoke replies only when their `actor_id`, message, `source_event_id`, and server-issued `live_agent_endpoint` evidence match the smoke probe event, so generic lobby posts cannot forge the operator smoke.
+
+- [x] **Step 4: Document operator semantics**
+
+Document that `live-agent smoke`, GUI `진단`, and `live-agent doctor` now cover fake `local_cli`, `live_session`, and fake `remote_bridge` without real provider credentials or paid/network model calls.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

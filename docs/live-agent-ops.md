@@ -146,16 +146,17 @@ python3 -m agentsassemble.cli live-agent smoke \
   --server http://127.0.0.1:8765
 ```
 
-This command posts a human lobby event, starts a temporary supervised process group through `/api/live-agent-processes/start`, and waits for two fake resident agents to answer:
+This command posts a human lobby event, starts a temporary supervised process group through `/api/live-agent-processes/start`, and waits for three fake resident agents to answer:
 
 - `smoke local_cli ok`
 - `smoke live_session ok`
+- `smoke remote_bridge ok`
 
-The smoke is credential-free: it uses local Python fake agents only, not Claude, Gemini, Cursor, account login, network model calls, or paid provider APIs. It verifies the GUI control plane, lobby event ingestion, supervised `run-group`, one-shot `local_cli`, long-lived JSONL `live_session`, and process cleanup path from the same CLI surface an operator uses.
+The smoke is credential-free: it uses local Python fake agents plus a loopback fake `remote_bridge`, not Claude, Gemini, Cursor, account login, network model calls, or paid provider APIs. It verifies the GUI control plane, lobby event ingestion, supervised `run-group`, one-shot `local_cli`, long-lived JSONL `live_session`, remote bridge resident dispatch, and process cleanup path from the same CLI surface an operator uses.
 
-For a clean doctor run, start the GUI with a temporary `--output-root` and point smoke at that local server. The smoke server must be able to read a temporary config path from the same machine, so treat this as a local GUI diagnostic rather than a remote bridge test.
+For a clean doctor run, start the GUI with a temporary `--output-root` and point smoke at that local server. The smoke server must be able to read a temporary config path from the same machine, so treat this as a local GUI diagnostic with a loopback fake bridge rather than proof that a friend's real bridge is reachable.
 
-The GUI "상주 실행" panel exposes the same local diagnostic as the `진단` button. It calls `POST /api/live-agent-smoke`, starts the same temporary fake `local_cli` and `live_session` group, verifies the smoke replies by `source_event_id`, then refreshes the lobby, presence roster, and process records. Use it when you want operator-visible evidence without leaving the room UI.
+The GUI "상주 실행" panel exposes the same local diagnostic as the `진단` button. It calls `POST /api/live-agent-smoke`, starts the same temporary fake `local_cli`, `live_session`, and fake `remote_bridge` group, verifies the smoke replies by `source_event_id` and live-agent endpoint evidence, then refreshes the lobby, presence roster, and process records. Use it when you want operator-visible evidence without leaving the room UI.
 
 Use `--json` when another script needs machine-readable evidence:
 
@@ -182,7 +183,7 @@ Smoke-created fake agents and process groups are marked `diagnostic`. They remai
 
 Status meanings:
 
-- `ready`: pre-smoke health is `ok`, and the fake `local_cli` plus `live_session` smoke passed.
+- `ready`: pre-smoke health is `ok`, and the fake `local_cli`, `live_session`, plus `remote_bridge` smoke passed.
 - `degraded`: smoke passed, but pre-smoke health already had agent or process attention.
 - `failed`: the room was reached, but the smoke check did not pass.
 

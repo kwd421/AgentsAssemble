@@ -780,7 +780,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual({reply["source_event_id"] for reply in payload["replies"]}, {payload["source_event_id"]})
             self.assertEqual(
                 {reply["message"] for reply in payload["replies"]},
-                {"smoke local_cli ok", "smoke live_session ok"},
+                {"smoke local_cli ok", "smoke live_session ok", "smoke remote_bridge ok"},
             )
             processes = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
             group = next(item for item in processes["groups"] if item["group_id"] == "gui-smoke")
@@ -789,6 +789,9 @@ class GuiServerTests(unittest.TestCase):
                 (operation["operation"], operation["status"], operation["target_id"])
                 for operation in operations["operations"]
             ])
+            persisted_text = json.dumps({"processes": processes, "operations": operations}, ensure_ascii=False)
+            self.assertNotIn("agentsassemble-smoke-token", persisted_text)
+            self.assertNotIn("auth_ref", persisted_text)
 
     def test_live_agent_readiness_endpoint_uses_pre_smoke_health_and_runs_smoke(self):
         with tempfile.TemporaryDirectory() as temp_dir:
