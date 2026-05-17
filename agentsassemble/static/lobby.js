@@ -259,14 +259,15 @@ function renderLobbyRoster(roster) {
 
 function renderLiveAgentConnections() {
   const agents = state.liveAgents || [];
-  const liveCount = agents.filter((agent) => agent.status === "online" || agent.status === "working").length;
+  const counts = liveAgentStatusCounts(agents);
   const status = state.liveAgentStatus;
   return `
     <section class="live-agent-connections" aria-label="살아있는 에이전트">
       <div class="roster-head">
         <strong>살아있는 에이전트</strong>
-        <span>${liveCount} online · ${agents.length} connected</span>
+        <span>${counts.live} live · ${counts.error} error · ${counts.stale} stale · ${counts.total} connected</span>
       </div>
+      ${renderLiveAgentHealthStrip(counts)}
       <div class="live-agent-list">
         ${
           agents.length
@@ -297,13 +298,15 @@ function renderLiveAgentConnections() {
 
 function renderLiveAgentProcessControls() {
   const groups = state.liveAgentProcesses || [];
+  const counts = processGroupStatusCounts(groups);
   const status = state.liveAgentProcessStatus;
   return `
     <section class="live-agent-processes" aria-label="상주 실행">
       <div class="roster-head">
         <strong>상주 실행</strong>
-        <span>${groups.filter((group) => group.status === "running").length} running · ${groups.length} groups</span>
+        <span>${counts.running} running · ${counts.restarting} restarting · ${counts.error} error · ${counts.total} groups</span>
       </div>
+      ${renderProcessGroupHealthStrip(counts)}
       <form id="live-agent-process-form" class="live-agent-process-form">
         <input id="live-agent-process-config" maxlength="240" value="configs/live-agents.example.json" />
         <input id="live-agent-process-group" maxlength="64" placeholder="group id" />
@@ -326,6 +329,61 @@ function renderLiveAgentProcessControls() {
       ${status ? `<p class="live-agent-status" data-tone="${escapeHtml(status.tone || "info")}">${escapeHtml(status.message)}</p>` : ""}
     </section>
   `;
+}
+
+function liveAgentStatusCounts(agents) {
+  const counts = { online: 0, working: 0, error: 0, stale: 0, offline: 0, live: 0, total: agents.length };
+  for (const agent of agents) {
+    const status = String(agent.status || "offline");
+    if (status === "online" || status === "working" || status === "error" || status === "stale" || status === "offline") {
+      counts[status] += 1;
+    } else {
+      counts.offline += 1;
+    }
+  }
+  counts.live = counts.online + counts.working;
+  return counts;
+}
+
+function processGroupStatusCounts(groups) {
+  const counts = { running: 0, restarting: 0, error: 0, unknown: 0, stopped: 0, total: groups.length };
+  for (const group of groups) {
+    const status = String(group.status || "unknown");
+    if (status === "running" || status === "restarting" || status === "error" || status === "unknown" || status === "stopped") {
+      counts[status] += 1;
+    } else {
+      counts.unknown += 1;
+    }
+  }
+  return counts;
+}
+
+function renderLiveAgentHealthStrip(counts) {
+  return `
+    <div class="live-agent-health-strip" aria-label="Live agent status summary">
+      ${renderHealthPill("online", "online", counts.online)}
+      ${renderHealthPill("working", "working", counts.working)}
+      ${renderHealthPill("error", "error", counts.error)}
+      ${renderHealthPill("stale", "stale", counts.stale)}
+      ${renderHealthPill("offline", "offline", counts.offline)}
+    </div>
+  `;
+}
+
+function renderProcessGroupHealthStrip(counts) {
+  return `
+    <div class="live-agent-process-health-strip" aria-label="Live agent process status summary">
+      ${renderHealthPill("running", "running", counts.running)}
+      ${renderHealthPill("restarting", "restarting", counts.restarting)}
+      ${renderHealthPill("error", "error", counts.error)}
+      ${renderHealthPill("unknown", "unknown", counts.unknown)}
+      ${renderHealthPill("stopped", "stopped", counts.stopped)}
+    </div>
+  `;
+}
+
+function renderHealthPill(status, label, count) {
+  return `<span class="live-agent-health-pill live-agent-health-${escapeHtml(status)}"><strong>${escapeHtml(count)}</strong>${escapeHtml(label)}</span>`;
 }
 
 function renderLiveAgentProcessCard(group) {

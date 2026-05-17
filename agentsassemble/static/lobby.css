@@ -574,6 +574,63 @@
   gap: 7px;
 }
 
+.live-agent-health-strip,
+.live-agent-process-health-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.live-agent-health-pill {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-radius: 999px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 10px;
+  gap: 4px;
+  line-height: 1;
+  min-height: 22px;
+  min-width: 0;
+  padding: 0 7px;
+  white-space: nowrap;
+}
+
+.live-agent-health-pill strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.live-agent-health-online,
+.live-agent-health-running {
+  border-color: rgba(130, 209, 115, 0.36);
+  color: #bdf2b4;
+}
+
+.live-agent-health-working,
+.live-agent-health-restarting {
+  border-color: rgba(245, 197, 69, 0.36);
+  color: #ffe39a;
+}
+
+.live-agent-health-error {
+  border-color: rgba(255, 123, 123, 0.42);
+  color: #ffc3c3;
+}
+
+.live-agent-health-stale,
+.live-agent-health-unknown {
+  border-color: rgba(255, 183, 96, 0.34);
+  color: #ffd89a;
+}
+
+.live-agent-health-offline,
+.live-agent-health-stopped {
+  border-color: rgba(212, 225, 255, 0.16);
+  color: var(--muted);
+}
+
 .live-agent-card {
   background: rgba(8, 11, 17, 0.55);
   border: 1px solid rgba(212, 225, 255, 0.12);
