@@ -16,6 +16,9 @@ export const state = {
   liveAgentProcesses: [],
   liveAgentProcessesLoaded: false,
   liveAgentProcessesLoading: false,
+  liveAgentOperations: [],
+  liveAgentOperationsLoaded: false,
+  liveAgentOperationsLoading: false,
   liveAgentProcessStartRunning: false,
   liveAgentPreflightRunning: false,
   liveAgentSmokeRunning: false,
@@ -150,6 +153,10 @@ export function setLiveAgents(agents) {
 
 export function setLiveAgentProcesses(groups) {
   state.liveAgentProcesses = groups || [];
+}
+
+export function setLiveAgentOperations(operations) {
+  state.liveAgentOperations = operations || [];
 }
 
 export function bindingForRole(meeting, roleId) {

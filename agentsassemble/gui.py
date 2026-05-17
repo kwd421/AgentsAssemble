@@ -21,6 +21,7 @@ from agentsassemble.codex_sessions import (
 from agentsassemble.config import load_agent_runtime_config, load_council_config, providers_from_config
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
+from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.meeting import run_demo_meeting
@@ -334,6 +335,10 @@ def live_agents_payload(output_root: Path) -> dict[str, object]:
     return {"agents": read_live_agents(output_root)}
 
 
+def live_agent_operations_payload(output_root: Path, *, limit: int = 50) -> dict[str, object]:
+    return {"operations": read_live_agent_operations(output_root, limit=limit)}
+
+
 def connect_live_agent_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
     return {"agent": connect_live_agent(output_root, payload), "agents": read_live_agents(output_root)}
 
@@ -562,6 +567,27 @@ def restart_live_agent_process_payload(
     return {"group": group, "groups": process_supervisor.list_groups()}
 
 
+def record_live_agent_operation(
+    output_root: Path,
+    *,
+    operation: str,
+    status: str,
+    target_id: str = "",
+    summary: str = "",
+    error: str = "",
+    details: dict[str, object] | None = None,
+) -> dict[str, object]:
+    return append_live_agent_operation(
+        output_root,
+        operation=operation,
+        status=status,
+        target_id=target_id,
+        summary=summary,
+        error=error,
+        details=details or {},
+    )
+
+
 def codex_session_invite_payload(
     output_root: Path,
     *,
@@ -732,6 +758,27 @@ def _optional_str(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _operation_group_id(payload: dict[str, object], group: dict[str, object] | None = None) -> str:
+    if group is not None and group.get("group_id"):
+        return str(group["group_id"])
+    return str(payload.get("group_id") or "").strip()
+
+
+def _operation_agent_engagement(output_root: Path, agent_id: str) -> str:
+    for agent in read_live_agents(output_root):
+        if str(agent.get("agent_id") or "") == agent_id:
+            return str(agent.get("engagement_mode") or "")
+    return ""
+
+
+def _operation_result_status(value: object) -> str:
+    return str(value or "unknown").strip() or "unknown"
+
+
+def _operation_success_for_result(value: object, *, success_values: set[str]) -> str:
+    return "success" if _operation_result_status(value) in success_values else "failed"
+
+
 def _payload_bool(value: object) -> bool:
     if isinstance(value, bool):
         return value
@@ -837,6 +884,9 @@ def _make_handler(
             if path == "/api/live-agent-processes":
                 self._send_json(live_agent_processes_payload(live_agent_process_supervisor))
                 return
+            if path == "/api/live-agent-operations":
+                self._send_json(live_agent_operations_payload(output_root, limit=self._limit(query, default=50)))
+                return
             live_agent_room_id = _live_agent_action_path(path, "room")
             if live_agent_room_id is not None:
                 try:
@@ -940,31 +990,43 @@ def _make_handler(
                 return
             live_agent_engagement_id = _live_agent_action_path(parsed.path, "engagement")
             if live_agent_engagement_id is not None:
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                payload = self._operation_json_payload(
+                    operation="engagement.update",
+                    target_id=live_agent_engagement_id,
+                )
+                if payload is None:
                     return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
+                previous_mode = _operation_agent_engagement(output_root, live_agent_engagement_id)
                 try:
                     engagement = update_live_agent_engagement_payload(output_root, live_agent_engagement_id, payload)
                 except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="engagement.update",
+                        status="failed",
+                        target_id=live_agent_engagement_id,
+                        error=str(error),
+                        details={"engagement_mode": str(payload.get("engagement_mode") or "")},
+                    )
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
+                agent = engagement.get("agent") if isinstance(engagement.get("agent"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="engagement.update",
+                    status="success",
+                    target_id=live_agent_engagement_id,
+                    summary="updated engagement mode",
+                    details={
+                        "previous_engagement_mode": previous_mode,
+                        "engagement_mode": str(agent.get("engagement_mode") or payload.get("engagement_mode") or ""),
+                    },
+                )
                 self._send_json(engagement)
                 return
             if parsed.path == "/api/live-agent-processes/start":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                payload = self._operation_json_payload(operation="process.start")
+                if payload is None:
                     return
                 try:
                     started = start_live_agent_process_payload(
@@ -973,21 +1035,77 @@ def _make_handler(
                         default_server=self._request_server_url(),
                     )
                 except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="process.start",
+                        status="failed",
+                        target_id=_operation_group_id(payload),
+                        error=str(error),
+                        details={
+                            "group_id": _operation_group_id(payload),
+                            "auto_restart": _payload_bool(payload.get("auto_restart")),
+                            "max_restarts": _payload_nonnegative_int(payload.get("max_restarts"), 0),
+                            "restart_backoff_seconds": _payload_nonnegative_float(
+                                payload.get("restart_backoff_seconds"),
+                                5.0,
+                            ),
+                        },
+                    )
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
+                group = started.get("group") if isinstance(started.get("group"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="process.start",
+                    status="success",
+                    target_id=_operation_group_id(payload, group),
+                    summary="started live-agent process group",
+                    details={
+                        "group_id": _operation_group_id(payload, group),
+                        "group_status": str(group.get("status") or ""),
+                        "auto_restart": _payload_bool(payload.get("auto_restart")),
+                        "max_restarts": _payload_nonnegative_int(payload.get("max_restarts"), 0),
+                        "restart_backoff_seconds": _payload_nonnegative_float(
+                            payload.get("restart_backoff_seconds"),
+                            5.0,
+                        ),
+                    },
+                )
                 self._send_json(started)
                 return
             if parsed.path == "/api/live-agent-preflight":
-                length = int(self.headers.get("Content-Length", "0") or "0")
+                payload = self._operation_json_payload(operation="preflight.check")
+                if payload is None:
+                    return
                 try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    preflight = live_agent_preflight_payload(payload, default_server=self._request_server_url())
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="preflight.check",
+                        status="failed",
+                        error=str(error),
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                self._send_json(live_agent_preflight_payload(payload, default_server=self._request_server_url()))
+                result_status = _operation_result_status(preflight.get("status"))
+                record_live_agent_operation(
+                    output_root,
+                    operation="preflight.check",
+                    status=_operation_success_for_result(result_status, success_values={"ok"}),
+                    target_id=str(payload.get("group_id") or ""),
+                    summary="checked live-agent config",
+                    details={
+                        "result_status": result_status,
+                        "agents": (preflight.get("summary") or {}).get("agents", 0)
+                        if isinstance(preflight.get("summary"), dict)
+                        else 0,
+                        "failed_agents": (preflight.get("summary") or {}).get("failed_agents", 0)
+                        if isinstance(preflight.get("summary"), dict)
+                        else 0,
+                    },
+                )
+                self._send_json(preflight)
                 return
             if parsed.path == "/api/provider-health":
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -1005,34 +1123,47 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                 return
             if parsed.path == "/api/live-agent-smoke":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                payload = self._operation_json_payload(operation="smoke.run")
+                if payload is None:
                     return
                 try:
                     smoke = live_agent_smoke_payload(payload, default_server=self._local_server_url())
                 except LiveAgentSmokeFailed as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="smoke.run",
+                        status="failed",
+                        target_id=str(payload.get("group_id") or ""),
+                        error=str(error),
+                        details={"group_id": str(payload.get("group_id") or "")},
+                    )
                     self._send_error(HTTPStatus.CONFLICT, str(error))
                     return
                 except (ValueError, urllib.error.URLError) as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="smoke.run",
+                        status="failed",
+                        target_id=str(payload.get("group_id") or ""),
+                        error=str(error),
+                        details={"group_id": str(payload.get("group_id") or "")},
+                    )
                     self._send_error(HTTPStatus.BAD_GATEWAY, str(error))
                     return
+                result_status = _operation_result_status(smoke.get("status"))
+                record_live_agent_operation(
+                    output_root,
+                    operation="smoke.run",
+                    status=_operation_success_for_result(result_status, success_values={"ok"}),
+                    target_id=str(smoke.get("group_id") or payload.get("group_id") or ""),
+                    summary="ran credential-free live-agent smoke",
+                    details={"group_id": str(smoke.get("group_id") or ""), "result_status": result_status},
+                )
                 self._send_json(smoke)
                 return
             if parsed.path == "/api/live-agent-readiness":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                payload = self._operation_json_payload(operation="readiness.check")
+                if payload is None:
                     return
                 try:
                     readiness = live_agent_readiness_payload(
@@ -1042,8 +1173,31 @@ def _make_handler(
                         default_server=self._local_server_url(),
                     )
                 except (ValueError, urllib.error.URLError) as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="readiness.check",
+                        status="failed",
+                        target_id=str(payload.get("group_id") or ""),
+                        error=str(error),
+                        details={"group_id": str(payload.get("group_id") or "")},
+                    )
                     self._send_error(HTTPStatus.BAD_GATEWAY, str(error))
                     return
+                result_status = _operation_result_status(readiness.get("status"))
+                smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="readiness.check",
+                    status="degraded"
+                    if result_status == "degraded"
+                    else _operation_success_for_result(result_status, success_values={"ready"}),
+                    target_id=str(smoke.get("group_id") or payload.get("group_id") or ""),
+                    summary="checked live-agent readiness",
+                    details={
+                        "group_id": str(smoke.get("group_id") or payload.get("group_id") or ""),
+                        "result_status": result_status,
+                    },
+                )
                 self._send_json(readiness)
                 return
             live_agent_process_stop_id = _live_agent_process_action_path(parsed.path, "stop")
@@ -1051,8 +1205,28 @@ def _make_handler(
                 try:
                     stopped = stop_live_agent_process_payload(live_agent_process_supervisor, live_agent_process_stop_id)
                 except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="process.stop",
+                        status="failed",
+                        target_id=live_agent_process_stop_id,
+                        error=str(error),
+                        details={"group_id": live_agent_process_stop_id},
+                    )
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
+                group = stopped.get("group") if isinstance(stopped.get("group"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="process.stop",
+                    status="success",
+                    target_id=_operation_group_id({}, group) or live_agent_process_stop_id,
+                    summary="stopped live-agent process group",
+                    details={
+                        "group_id": _operation_group_id({}, group) or live_agent_process_stop_id,
+                        "group_status": str(group.get("status") or ""),
+                    },
+                )
                 self._send_json(stopped)
                 return
             live_agent_process_restart_id = _live_agent_process_action_path(parsed.path, "restart")
@@ -1060,8 +1234,28 @@ def _make_handler(
                 try:
                     restarted = restart_live_agent_process_payload(live_agent_process_supervisor, live_agent_process_restart_id)
                 except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="process.restart",
+                        status="failed",
+                        target_id=live_agent_process_restart_id,
+                        error=str(error),
+                        details={"group_id": live_agent_process_restart_id},
+                    )
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
+                group = restarted.get("group") if isinstance(restarted.get("group"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="process.restart",
+                    status="success",
+                    target_id=_operation_group_id({}, group) or live_agent_process_restart_id,
+                    summary="restarted live-agent process group",
+                    details={
+                        "group_id": _operation_group_id({}, group) or live_agent_process_restart_id,
+                        "group_status": str(group.get("status") or ""),
+                    },
+                )
                 self._send_json(restarted)
                 return
             live_agent_heartbeat_id = _live_agent_action_path(parsed.path, "heartbeat")
@@ -1212,6 +1406,40 @@ def _make_handler(
                     return
                 except (BrokenPipeError, ConnectionResetError):
                     return
+
+        def _operation_json_payload(
+            self,
+            *,
+            operation: str,
+            target_id: str = "",
+            details: dict[str, object] | None = None,
+        ) -> dict[str, object] | None:
+            length = int(self.headers.get("Content-Length", "0") or "0")
+            try:
+                payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                record_live_agent_operation(
+                    output_root,
+                    operation=operation,
+                    status="failed",
+                    target_id=target_id,
+                    error="Invalid JSON",
+                    details=details or {},
+                )
+                self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                return None
+            if not isinstance(payload, dict):
+                record_live_agent_operation(
+                    output_root,
+                    operation=operation,
+                    status="failed",
+                    target_id=target_id,
+                    error="Invalid JSON",
+                    details=details or {},
+                )
+                self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                return None
+            return payload
 
         def _send_error(self, status: HTTPStatus, message: str) -> None:
             data = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")

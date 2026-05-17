@@ -242,6 +242,11 @@ class GuiServerTests(unittest.TestCase):
                 )
                 with urlopen(request, timeout=4) as response:
                     payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -378,6 +383,11 @@ class GuiServerTests(unittest.TestCase):
                 )
                 with urlopen(restart_request, timeout=4) as response:
                     restarted = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=10",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -399,6 +409,17 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(supervisor.started[0]["restart_backoff_seconds"], 1.5)
             self.assertEqual(supervisor.stopped, ["crew"])
             self.assertEqual(supervisor.restarted, ["crew"])
+            self.assertEqual(
+                [(operation["operation"], operation["status"], operation["target_id"]) for operation in operations["operations"]],
+                [
+                    ("process.start", "success", "crew"),
+                    ("process.stop", "success", "crew"),
+                    ("process.restart", "success", "crew"),
+                ],
+            )
+            operation_text = json.dumps(operations, ensure_ascii=False)
+            self.assertNotIn(str(config_path), operation_text)
+            self.assertNotIn(f"http://127.0.0.1:{server.server_port}", operation_text)
 
     def test_live_agent_process_start_sanitizes_non_finite_backoff(self):
         class FakeSupervisor:
@@ -453,6 +474,11 @@ class GuiServerTests(unittest.TestCase):
                 )
                 with urlopen(request, timeout=4) as response:
                     payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -512,6 +538,9 @@ class GuiServerTests(unittest.TestCase):
                 )
                 with urlopen(request, timeout=4) as response:
                     payload = json.loads(response.read().decode("utf-8"))
+                operations_url = f"http://127.0.0.1:{server.server_port}/api/live-agent-operations"
+                with urlopen(operations_url, timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -550,6 +579,11 @@ class GuiServerTests(unittest.TestCase):
                     error.close()
                 else:
                     self.fail("preflight failure should return HTTP 400")
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -560,6 +594,82 @@ class GuiServerTests(unittest.TestCase):
             self.assertIn("bad-agent command", body)
             self.assertFalse((root / "live-agent-runs" / "crew.log").exists())
             self.assertFalse((root / "live-agent-runs" / "processes.json").exists())
+            self.assertEqual(operations["operations"][0]["operation"], "process.start")
+            self.assertEqual(operations["operations"][0]["status"], "failed")
+            self.assertEqual(operations["operations"][0]["target_id"], "crew")
+            self.assertIn("Live agent preflight failed", operations["operations"][0]["error"])
+            self.assertNotIn("bad-agent command", operations["operations"][0]["error"])
+            self.assertNotIn("definitely-missing-agentsassemble-cli", json.dumps(operations, ensure_ascii=False))
+
+    def test_live_agent_process_start_records_invalid_json_operation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/start",
+                    data=b"{not json",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urlopen(request, timeout=4)
+                except HTTPError as error:
+                    error_code = error.code
+                    error.read()
+                    error.close()
+                else:
+                    self.fail("invalid JSON should return HTTP 400")
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(error_code, 400)
+            self.assertEqual(operations["operations"][0]["operation"], "process.start")
+            self.assertEqual(operations["operations"][0]["status"], "failed")
+            self.assertEqual(operations["operations"][0]["error"], "Invalid JSON")
+
+    def test_live_agent_process_start_records_invalid_utf8_operation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/start",
+                    data=b"\xff",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urlopen(request, timeout=4)
+                except HTTPError as error:
+                    error_code = error.code
+                    error.read()
+                    error.close()
+                else:
+                    self.fail("invalid UTF-8 should return HTTP 400")
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(error_code, 400)
+            self.assertEqual(operations["operations"][0]["operation"], "process.start")
+            self.assertEqual(operations["operations"][0]["status"], "failed")
+            self.assertEqual(operations["operations"][0]["error"], "Invalid JSON")
 
     def test_live_agent_process_restart_returns_400_when_preflight_fails_without_launch(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -615,6 +725,11 @@ class GuiServerTests(unittest.TestCase):
                     error.close()
                 else:
                     self.fail("preflight failure should return HTTP 400")
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -628,6 +743,10 @@ class GuiServerTests(unittest.TestCase):
             self.assertFalse((runs_dir / "crew.log").exists())
             self.assertEqual(persisted["groups"][0]["status"], "stopped")
             self.assertEqual(persisted["groups"][0]["pid"], None)
+            self.assertEqual(operations["operations"][0]["operation"], "process.restart")
+            self.assertEqual(operations["operations"][0]["status"], "failed")
+            self.assertEqual(operations["operations"][0]["target_id"], "crew")
+            self.assertIn("Live agent preflight failed", operations["operations"][0]["error"])
 
     def test_live_agent_smoke_endpoint_runs_credential_free_group(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -646,6 +765,11 @@ class GuiServerTests(unittest.TestCase):
                 )
                 with urlopen(request, timeout=12) as response:
                     payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=10",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -661,6 +785,10 @@ class GuiServerTests(unittest.TestCase):
             processes = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
             group = next(item for item in processes["groups"] if item["group_id"] == "gui-smoke")
             self.assertEqual(group["status"], "stopped")
+            self.assertIn(("smoke.run", "success", "gui-smoke"), [
+                (operation["operation"], operation["status"], operation["target_id"])
+                for operation in operations["operations"]
+            ])
 
     def test_live_agent_readiness_endpoint_uses_pre_smoke_health_and_runs_smoke(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -682,6 +810,11 @@ class GuiServerTests(unittest.TestCase):
                         payloads.append(json.loads(response.read().decode("utf-8")))
                 with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
                     health_after_smoke = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -702,6 +835,47 @@ class GuiServerTests(unittest.TestCase):
             self.assertTrue(group["diagnostic"])
             agents = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"]
             self.assertEqual({agent["diagnostic"] for agent in agents if agent["agent_id"].startswith("doctor-smoke-")}, {True})
+            readiness_operations = [
+                operation for operation in operations["operations"] if operation["operation"] == "readiness.check"
+            ]
+            self.assertEqual([operation["status"] for operation in readiness_operations], ["success", "success"])
+            self.assertEqual({operation["target_id"] for operation in readiness_operations}, {"doctor-smoke"})
+
+    def test_live_agent_readiness_endpoint_records_degraded_operation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            (root / "live_agents.json").write_text(
+                json.dumps({"agents": [{"agent_id": "offline-agent", "status": "offline"}]}),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                    data=json.dumps({"group_id": "doctor-smoke", "timeout": 8}).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=12) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "degraded")
+            readiness_operations = [
+                operation for operation in operations["operations"] if operation["operation"] == "readiness.check"
+            ]
+            self.assertEqual(readiness_operations[-1]["status"], "degraded")
+            self.assertEqual(readiness_operations[-1]["details"]["result_status"], "degraded")
 
     def test_live_agent_preflight_endpoint_checks_config_without_starting_processes(self):
         class FakeSupervisor:
@@ -747,6 +921,11 @@ class GuiServerTests(unittest.TestCase):
                 )
                 with urlopen(request, timeout=4) as response:
                     payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -756,6 +935,9 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["server"], "http://127.0.0.1:1")
             self.assertEqual(payload["summary"], {"agents": 1, "failed_agents": 0, "checks_failed": 0})
             self.assertEqual(payload["agents"][0]["agent_id"], "preflight-agent")
+            self.assertEqual(operations["operations"][0]["operation"], "preflight.check")
+            self.assertEqual(operations["operations"][0]["status"], "success")
+            self.assertEqual(operations["operations"][0]["details"]["result_status"], "ok")
 
     def test_live_agent_health_endpoint_summarizes_agents_and_processes(self):
         class FakeSupervisor:
@@ -1098,6 +1280,11 @@ class GuiServerTests(unittest.TestCase):
                     payload = json.loads(response.read().decode("utf-8"))
                 with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
                     room = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -1106,6 +1293,11 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(payload["agent"]["last_seen_at"], original_last_seen)
         self.assertEqual(room["agent"]["engagement_mode"], "watch")
         self.assertEqual(room["agent"]["last_seen_at"], original_last_seen)
+        self.assertEqual(operations["operations"][0]["operation"], "engagement.update")
+        self.assertEqual(operations["operations"][0]["status"], "success")
+        self.assertEqual(operations["operations"][0]["target_id"], "agent-a")
+        self.assertEqual(operations["operations"][0]["details"]["previous_engagement_mode"], "always")
+        self.assertEqual(operations["operations"][0]["details"]["engagement_mode"], "watch")
 
     def test_live_agent_engagement_endpoint_rejects_invalid_policy(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1124,11 +1316,20 @@ class GuiServerTests(unittest.TestCase):
                 with self.assertRaises(HTTPError) as context:
                     urlopen(request, timeout=4)
                 context.exception.close()
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
 
         self.assertEqual(context.exception.code, 400)
+        self.assertEqual(operations["operations"][0]["operation"], "engagement.update")
+        self.assertEqual(operations["operations"][0]["status"], "failed")
+        self.assertEqual(operations["operations"][0]["target_id"], "agent-a")
+        self.assertIn("Unknown engagement mode", operations["operations"][0]["error"])
 
     def test_live_agent_room_endpoint_returns_lobby_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:

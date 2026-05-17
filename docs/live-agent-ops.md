@@ -425,6 +425,7 @@ Default files under `--output-root .agentsassemble`:
 .agentsassemble/lobby.jsonl
 .agentsassemble/live-agent-runs/processes.json
 .agentsassemble/live-agent-runs/events.jsonl
+.agentsassemble/live-agent-runs/operations.jsonl
 .agentsassemble/live-agent-runs/<group_id>.log
 ```
 
@@ -437,7 +438,33 @@ What to check:
 - agents manifest entries contain only `agent_id`, `display_name`, `provider_kind`, and `connection_kind`. The manifest does not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
 - auto-restart fields in `processes.json`: `auto_restart`, `restart_count`, `max_restarts`, `restart_backoff_seconds`, and `next_restart_at`.
 - `.agentsassemble/live-agent-runs/events.jsonl`: safe lifecycle event history for supervised groups. It records bounded operator facts such as `started`, `stopped`, `error`, `restart_scheduled`, `restart_failed`, and `recovered_unknown` with `timestamp`, `group_id`, `status`, `pid`, `returncode`, and restart counters. The process API and GUI expose each group's bounded `recent_events` view. Lifecycle events do not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
+- `.agentsassemble/live-agent-runs/operations.jsonl`: safe control-operation history for API, GUI, and CLI operator actions. It records bounded entries for process start/stop/restart, engagement updates, preflight checks, smoke runs, and readiness checks, including success, degraded, and refused/failed attempts. The operation ledger does not include command arguments, endpoint URLs, auth references, prompts, log tails, config paths, environment-derived values, or provider secrets. Ordinary heartbeat polling and health reads are intentionally not operation records.
 - `.agentsassemble/live-agent-runs/<group_id>.log`: stdout/stderr for the supervised `run-group` process. Delegate provider subprocess stdout/stderr is captured by the runner, not streamed directly into this file. The GUI and process API expose only a bounded `log_tail`.
+
+The recent operation history is available through the GUI "최근 작업" list, through HTTP:
+
+```bash
+curl 'http://127.0.0.1:8765/api/live-agent-operations?limit=20'
+```
+
+and through the CLI:
+
+```bash
+assemble live-agent operations list \
+  --server http://127.0.0.1:8765 \
+  --limit 20
+```
+
+The module form is equivalent when running from a checkout:
+
+```bash
+python3 -m agentsassemble.cli live-agent operations list \
+  --server http://127.0.0.1:8765 \
+  --limit 20 \
+  --json
+```
+
+Use the operation ledger to answer "what control action happened" and the process lifecycle events to answer "what did the supervised process do next." They are deliberately separate surfaces.
 
 For scriptable monitoring, fetch the combined health summary:
 

@@ -945,6 +945,41 @@ Document that GUI event streams close gracefully with a bounded SSE error event 
 
 ---
 
+### Task 31: Live-Agent Control Operation History
+
+**Files:**
+- Create: `agentsassemble/live_agent_operations.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/shared.js`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `agentsassemble/static/lobby.css`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_operations.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for a safe operation ledger**
+
+Cover safe append/read behavior for `.agentsassemble/live-agent-runs/operations.jsonl`, including bounded records, corrupt-line tolerance, recent-limit reads, and removal of sensitive detail keys such as command args, endpoint URLs, auth references, prompts, log tails, config paths, and environment-derived values.
+
+- [x] **Step 2: Record API control operations**
+
+Record bounded success and failure entries for process start, stop, restart, engagement update, preflight, smoke, and readiness operations. Keep ordinary heartbeat polling and health reads out of the ledger so the history stays useful as operator evidence rather than noisy runtime telemetry.
+
+- [x] **Step 3: Expose API, CLI, and GUI history surfaces**
+
+Add `GET /api/live-agent-operations?limit=N`, `assemble live-agent operations list --limit N [--json]`, and a compact GUI "최근 작업" list inside the existing "상주 실행" panel. Keep lifecycle events separate from operation history.
+
+- [x] **Step 4: Document operator semantics**
+
+Document `operations.jsonl`, API and CLI usage, safe redaction limits, and the distinction between control operations and process lifecycle events.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

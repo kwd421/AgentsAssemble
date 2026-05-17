@@ -62,6 +62,13 @@ def parse_nonnegative_int(value: str) -> int:
     return parsed
 
 
+def parse_positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be positive")
+    return parsed
+
+
 def parse_nonnegative_float(value: str) -> float:
     parsed = float(value)
     if not math.isfinite(parsed) or parsed < 0:
@@ -270,6 +277,16 @@ def build_parser() -> argparse.ArgumentParser:
     live_process_restart.add_argument("group_id")
     live_process_restart.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
 
+    live_operations = live_agent_subparsers.add_parser("operations", help="Inspect live-agent control operation history.")
+    live_operations_subparsers = live_operations.add_subparsers(dest="live_agent_operations_command", required=True)
+    live_operations_list = live_operations_subparsers.add_parser(
+        "list",
+        parents=[live_server],
+        help="List recent live-agent control operations.",
+    )
+    live_operations_list.add_argument("--limit", type=parse_positive_int, default=50)
+    live_operations_list.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON operation payload.")
+
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
     session_subparsers = sessions.add_subparsers(dest="sessions_command", required=True)
 
@@ -387,6 +404,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_doctor(args)
         if args.live_agent_command == "processes":
             return _run_live_agent_processes(args)
+        if args.live_agent_command == "operations":
+            return _run_live_agent_operations(args)
         if args.live_agent_command == "delegate":
             return _run_live_agent_delegate(args)
         if args.live_agent_command == "run":
@@ -563,13 +582,12 @@ def _run_provider_health(args: argparse.Namespace) -> int:
 
 def _run_live_agent_smoke(args: argparse.Namespace) -> int:
     try:
-        result = run_live_agent_smoke(
-            server=args.server,
-            group_id=args.group_id,
-            timeout_seconds=float(args.timeout),
-            request_json=_request_json,
+        result = _request_json(
+            _server_url(args.server, "/api/live-agent-smoke"),
+            method="POST",
+            payload={"group_id": args.group_id, "timeout": float(args.timeout)},
         )
-    except LiveAgentSmokeFailed as error:
+    except (LiveAgentSmokeFailed, ValueError) as error:
         print(f"smoke failed: {error}", file=sys.stderr)
         return 1
     if args.as_json:
@@ -735,6 +753,37 @@ def _run_live_agent_processes(args: argparse.Namespace) -> int:
         _print_live_agent_process_payload(response, as_json=args.as_json, action=args.live_agent_process_command)
         return 0
     return 1
+
+
+def _run_live_agent_operations(args: argparse.Namespace) -> int:
+    if args.live_agent_operations_command == "list":
+        payload = _request_json(_server_url(args.server, f"/api/live-agent-operations?limit={args.limit}"))
+        _print_live_agent_operations_payload(payload, as_json=args.as_json)
+        return 0
+    return 1
+
+
+def _print_live_agent_operations_payload(payload: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    operations = payload.get("operations") if isinstance(payload.get("operations"), list) else []
+    if not operations:
+        print("no live-agent operations")
+        return
+    for item in operations:
+        if isinstance(item, dict):
+            print(_format_live_agent_operation(item))
+
+
+def _format_live_agent_operation(operation: dict[str, object]) -> str:
+    timestamp = str(operation.get("timestamp") or "-")
+    operation_name = str(operation.get("operation") or "unknown")
+    status = str(operation.get("status") or "unknown")
+    target_id = str(operation.get("target_id") or "-")
+    summary = str(operation.get("summary") or operation.get("error") or "").strip()
+    suffix = f" · {summary}" if summary else ""
+    return f"{timestamp} {operation_name} {status} {target_id}{suffix}"
 
 
 def _print_live_agent_process_payload(payload: dict[str, object], *, as_json: bool, action: str = "list") -> None:

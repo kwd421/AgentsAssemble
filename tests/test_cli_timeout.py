@@ -364,6 +364,74 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(json.loads(stdout.getvalue()), payload)
 
+    def test_live_agent_operations_list_parses_limit_and_json(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "operations",
+                "list",
+                "--server",
+                "http://room.local",
+                "--limit",
+                "3",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "operations")
+        self.assertEqual(args.live_agent_operations_command, "list")
+        self.assertEqual(args.limit, 3)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_operations_list_rejects_zero_limit(self):
+        with patch("sys.stderr", StringIO()):
+            with self.assertRaises(SystemExit):
+                build_parser().parse_args(
+                    [
+                        "live-agent",
+                        "operations",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--limit",
+                        "0",
+                    ]
+                )
+
+    def test_live_agent_operations_list_fetches_recent_operations(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "process.start",
+                    "status": "success",
+                    "target_id": "crew",
+                    "summary": "started live-agent process group",
+                    "details": {},
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "operations",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--limit",
+                        "3",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-operations?limit=3")
+        self.assertIn("process.start", stdout.getvalue())
+        self.assertIn("success", stdout.getvalue())
+        self.assertIn("crew", stdout.getvalue())
+
     def test_live_agent_engagement_updates_real_http_endpoint_without_refreshing_heartbeat(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
@@ -783,10 +851,14 @@ class CliTimeoutTests(unittest.TestCase):
             processes = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
             group = next(item for item in processes["groups"] if item["group_id"] == "operator-smoke")
             self.assertEqual(group["status"], "stopped")
+            operations = json.loads((root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+            self.assertEqual(operations["operation"], "smoke.run")
+            self.assertEqual(operations["status"], "success")
+            self.assertEqual(operations["target_id"], "operator-smoke")
 
     def test_live_agent_smoke_returns_one_for_reached_server_failure(self):
         stderr = StringIO()
-        with patch("agentsassemble.cli.run_live_agent_smoke", side_effect=LiveAgentSmokeFailed("missing replies")):
+        with patch("agentsassemble.cli._request_json", side_effect=LiveAgentSmokeFailed("missing replies")):
             with patch("sys.stderr", stderr):
                 exit_code = main(["live-agent", "smoke", "--server", "http://room.local"])
 
