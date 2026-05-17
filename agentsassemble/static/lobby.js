@@ -16,7 +16,10 @@ export function renderLobby(options = {}) {
   const lobby = document.querySelector("#lobby");
   if (!lobby) return;
   const focusedId = document.activeElement?.id;
+  const focusedSelection = readFocusedSelection(document.activeElement);
   const draftMessage = lobby.querySelector("#lobby-message")?.value || "";
+  const processDraft = readLiveAgentProcessDraft(lobby);
+  const registrationDraft = readLiveAgentRegistrationDraft(lobby);
   const previousFeed = lobby.querySelector(".lobby-feed");
   const previousScrollTop = previousFeed?.scrollTop || 0;
   const roster = buildLobbyRoster(state.lobbyEvents);
@@ -59,6 +62,8 @@ export function renderLobby(options = {}) {
       </div>
     </section>
   `;
+  restoreLiveAgentProcessDraft(lobby, processDraft);
+  restoreLiveAgentRegistrationDraft(lobby, registrationDraft);
   const form = lobby.querySelector("#lobby-form");
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -69,6 +74,7 @@ export function renderLobby(options = {}) {
     messageInput.value = draftMessage;
     messageInput.focus();
   }
+  restoreFocusedLiveAgentField(lobby, focusedId, focusedSelection);
   messageInput?.addEventListener("keydown", async (event) => {
     if (event.key !== "Enter" || event.isComposing) return;
     event.preventDefault();
@@ -123,6 +129,74 @@ export function renderLobby(options = {}) {
   }
   if (shouldFollowLatest) scrollLobbyFeedToLatest(lobby);
   else restoreLobbyFeedScroll(lobby, previousScrollTop);
+}
+
+function readLiveAgentProcessDraft(lobby) {
+  const form = lobby.querySelector("#live-agent-process-form");
+  if (!form) return null;
+  return {
+    configPath: form.querySelector("#live-agent-process-config")?.value ?? "",
+    groupId: form.querySelector("#live-agent-process-group")?.value ?? "",
+    autoRestart: Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked),
+    maxRestarts: form.querySelector("#live-agent-process-max-restarts")?.value ?? "",
+    restartBackoff: form.querySelector("#live-agent-process-restart-backoff")?.value ?? "",
+  };
+}
+
+function readLiveAgentRegistrationDraft(lobby) {
+  const form = lobby.querySelector("#live-agent-form");
+  if (!form) return null;
+  return {
+    agentId: form.querySelector("#live-agent-id")?.value ?? "",
+    displayName: form.querySelector("#live-agent-display-name")?.value ?? "",
+    providerKind: form.querySelector("#live-agent-provider-kind")?.value ?? "",
+    connectionKind: form.querySelector("#live-agent-connection-kind")?.value ?? "",
+  };
+}
+
+function restoreLiveAgentProcessDraft(lobby, draft) {
+  if (!draft) return;
+  const config = lobby.querySelector("#live-agent-process-config");
+  const group = lobby.querySelector("#live-agent-process-group");
+  const autoRestart = lobby.querySelector("#live-agent-process-auto-restart");
+  const maxRestarts = lobby.querySelector("#live-agent-process-max-restarts");
+  const restartBackoff = lobby.querySelector("#live-agent-process-restart-backoff");
+  if (config) config.value = draft.configPath;
+  if (group) group.value = draft.groupId;
+  if (autoRestart) autoRestart.checked = draft.autoRestart;
+  if (maxRestarts) maxRestarts.value = draft.maxRestarts;
+  if (restartBackoff) restartBackoff.value = draft.restartBackoff;
+}
+
+function restoreLiveAgentRegistrationDraft(lobby, draft) {
+  if (!draft) return;
+  const agentId = lobby.querySelector("#live-agent-id");
+  const displayName = lobby.querySelector("#live-agent-display-name");
+  const providerKind = lobby.querySelector("#live-agent-provider-kind");
+  const connectionKind = lobby.querySelector("#live-agent-connection-kind");
+  if (agentId) agentId.value = draft.agentId;
+  if (displayName) displayName.value = draft.displayName;
+  if (providerKind && draft.providerKind) providerKind.value = draft.providerKind;
+  if (connectionKind && draft.connectionKind) connectionKind.value = draft.connectionKind;
+}
+
+function readFocusedSelection(element) {
+  if (!element?.id || typeof element.selectionStart !== "number") return null;
+  return {
+    start: element.selectionStart,
+    end: element.selectionEnd,
+    direction: element.selectionDirection || "none",
+  };
+}
+
+function restoreFocusedLiveAgentField(lobby, focusedId, selection) {
+  if (!focusedId?.startsWith("live-agent-")) return;
+  const focused = lobby.querySelector(`#${focusedId}`);
+  if (!focused) return;
+  focused.focus();
+  if (selection && typeof focused.setSelectionRange === "function") {
+    focused.setSelectionRange(selection.start, selection.end, selection.direction);
+  }
 }
 
 function isLobbyFeedNearBottom(lobby) {
@@ -688,44 +762,66 @@ async function sendLobbyRemote(message, speakerName, options = {}) {
 
 async function loadLiveAgents(options = {}) {
   if (state.liveAgentsLoading && !options.force) return;
+  const previousSignature = JSON.stringify(state.liveAgents || []);
+  let shouldRender = !options.background;
   state.liveAgentsLoading = true;
   if (options.force) state.liveAgentStatus = { message: "살아있는 에이전트 갱신 중", tone: "info" };
-  renderLobby({ followLatest: false });
+  if (!options.background) renderLobby({ followLatest: false });
   try {
     const payload = await fetchJson("/api/live-agents");
-    setLiveAgents(payload.agents || []);
+    const agents = payload.agents || [];
+    setLiveAgents(agents);
     state.liveAgentsLoaded = true;
-    if (state.liveAgentStatus?.message === "살아있는 에이전트 갱신 중") {
+    shouldRender = shouldRender || JSON.stringify(agents) !== previousSignature;
+    if (
+      state.liveAgentStatus?.message === "살아있는 에이전트 갱신 중" ||
+      state.liveAgentStatus?.message === "살아있는 에이전트 목록을 불러오지 못했습니다."
+    ) {
       state.liveAgentStatus = null;
+      shouldRender = true;
     }
   } catch {
     state.liveAgentStatus = { message: "살아있는 에이전트 목록을 불러오지 못했습니다.", tone: "error" };
     state.liveAgentsLoaded = true;
+    shouldRender = true;
   } finally {
     state.liveAgentsLoading = false;
-    renderLobby({ followLatest: false });
+    if (shouldRender) renderLobby({ followLatest: false });
   }
 }
 
 async function loadLiveAgentProcesses(options = {}) {
   if (state.liveAgentProcessesLoading && !options.force) return;
+  const previousSignature = JSON.stringify(state.liveAgentProcesses || []);
+  let shouldRender = !options.background;
   state.liveAgentProcessesLoading = true;
   if (options.force) state.liveAgentProcessStatus = { message: "상주 실행 상태 갱신 중", tone: "info" };
-  renderLobby({ followLatest: false });
+  if (!options.background) renderLobby({ followLatest: false });
   try {
     const payload = await fetchJson("/api/live-agent-processes");
-    setLiveAgentProcesses(payload.groups || []);
+    const groups = payload.groups || [];
+    setLiveAgentProcesses(groups);
     state.liveAgentProcessesLoaded = true;
-    if (state.liveAgentProcessStatus?.message === "상주 실행 상태 갱신 중") {
+    shouldRender = shouldRender || JSON.stringify(groups) !== previousSignature;
+    if (
+      state.liveAgentProcessStatus?.message === "상주 실행 상태 갱신 중" ||
+      state.liveAgentProcessStatus?.message === "상주 실행 상태를 불러오지 못했습니다."
+    ) {
       state.liveAgentProcessStatus = null;
+      shouldRender = true;
     }
   } catch {
     state.liveAgentProcessStatus = { message: "상주 실행 상태를 불러오지 못했습니다.", tone: "error" };
     state.liveAgentProcessesLoaded = true;
+    shouldRender = true;
   } finally {
     state.liveAgentProcessesLoading = false;
-    renderLobby({ followLatest: false });
+    if (shouldRender) renderLobby({ followLatest: false });
   }
+}
+
+export function refreshLiveAgentRuntimeSurfaces() {
+  return Promise.all([loadLiveAgents({ background: true }), loadLiveAgentProcesses({ background: true })]);
 }
 
 async function startLiveAgentProcessGroup(form) {

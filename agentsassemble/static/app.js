@@ -1,5 +1,5 @@
 import { renderArchive } from "./archive.js";
-import { renderLobby } from "./lobby.js";
+import { refreshLiveAgentRuntimeSurfaces, renderLobby } from "./lobby.js";
 import { refreshSideChatFeed, renderBoard, renderLive } from "./meeting-views.js";
 import {
   displayTopic,
@@ -26,6 +26,7 @@ const roomStreams = {
   sideChat: null,
   meeting: null,
   fallbackStarted: false,
+  liveAgentRuntimeStarted: false,
   reconnectNotice: null,
 };
 
@@ -264,6 +265,12 @@ function startPollingFallback() {
   setInterval(refreshCurrentMeetingSafely, 2000);
 }
 
+function startLiveAgentRuntimePolling() {
+  if (roomStreams.liveAgentRuntimeStarted) return;
+  roomStreams.liveAgentRuntimeStarted = true;
+  setInterval(refreshLiveAgentRuntimeSurfaces, 5000);
+}
+
 tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     setActiveTab(tab.dataset.tab);
@@ -330,4 +337,5 @@ meetingSelect.addEventListener("change", () => {
   const latest = await loadMeetings();
   await loadMeeting(latest);
   connectRoomStreams();
+  startLiveAgentRuntimePolling();
 })();

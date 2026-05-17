@@ -22,6 +22,8 @@ The lobby is the public room surface. The "상주 실행" panel can start, refre
 configs/live-agents.example.json
 ```
 
+The live-agent roster and supervised process panel auto-refresh in the GUI every 5 seconds. This keeps stale presence, process crashes, pending auto-restart state, and recovered groups visible during long sessions without relying only on the manual refresh buttons. The manual refresh buttons remain useful when you want an immediate read after changing files or process state from another terminal.
+
 That example config contains real `claude` and `gemini` commands. Do not start it until the real-provider checklist below is satisfied.
 
 ## Fake CLI Smoke

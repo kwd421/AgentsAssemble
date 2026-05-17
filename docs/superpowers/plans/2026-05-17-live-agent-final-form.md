@@ -226,6 +226,37 @@ Status: deferred until explicit real-provider approval. The required fake CLI an
 
 ---
 
+### Task 6: GUI Runtime Status Polling
+
+**Files:**
+- Modify: `agentsassemble/static/app.js`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add static coverage for resident status polling**
+
+Assert the frontend starts a background refresh loop for live-agent presence and supervised process groups, and that lobby renders preserve process start and live-agent registration form drafts while a background refresh re-renders the panel.
+
+Run: `python3 -m unittest tests.test_static_ui_assets.StaticUiAssetTests.test_lobby_separates_stage_from_activity_feed`
+Expected: fail before JS edits, pass after implementation.
+
+- [x] **Step 2: Implement non-destructive background refresh**
+
+Add an app-level 5-second `refreshLiveAgentRuntimeSurfaces` interval. Fetch `/api/live-agents` and `/api/live-agent-processes` in background mode, re-render only when data changes or a stale load banner is cleared, and preserve the process config/group/restart controls plus live-agent registration controls across re-renders.
+
+Run: `node --check agentsassemble/static/lobby.js` and `node --check agentsassemble/static/app.js`
+Expected: pass.
+
+- [x] **Step 3: Browser smoke**
+
+Start a temporary GUI server, register a live agent from another terminal, wait for the background refresh interval, and confirm the lobby roster updates without horizontal overflow.
+
+Evidence: Browser smoke against `http://127.0.0.1:8877/` saw `Polling Smoke Agent` appear through auto-refresh, kept the process form present, and reported no document horizontal overflow.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

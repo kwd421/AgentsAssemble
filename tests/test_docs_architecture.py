@@ -63,6 +63,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("fake-beta", doc)
         self.assertIn("configs/live-agents.example.json", doc)
         self.assertIn("Do not start it until the real-provider checklist below is satisfied.", doc)
+        self.assertIn("auto-refresh in the GUI every 5 seconds", doc)
         self.assertIn("claude", doc)
         self.assertIn("gemini", doc)
         self.assertIn("curl -X POST", doc)
