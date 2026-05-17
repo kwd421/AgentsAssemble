@@ -104,9 +104,12 @@ Use the GUI "상주 실행" panel for supervised process records and stop contro
 
 - config path: the temporary fake config, or `configs/live-agents.example.json` after real-provider approval
 - group id: optional, for example `local-cli-group`
+- auto restart: optional; auto restart is off by default
+- max restarts: bounded retry count written as `max_restarts`
+- restart backoff: seconds between crash detection and relaunch, written as `restart_backoff_seconds`
 - press `시작`
 
-The GUI start button runs the same resident group through the local process supervisor. Group records and log tails remain visible even after the process stops or crashes.
+The GUI start button runs the same resident group through the local process supervisor. Group records and log tails remain visible even after the process stops or crashes. Auto restart only applies to a group launched with that option enabled, and it starts a fresh local process rather than attaching to an old PID.
 
 ## Stop Or Restart A Group
 
@@ -146,6 +149,7 @@ What to check:
 - `.agentsassemble/live_agents.json`: presence, status, heartbeat metadata, `last_error`, `last_reply_at`, and `last_observed_event_id`.
 - `.agentsassemble/lobby.jsonl`: human lobby messages and live-agent replies. Live-agent auto replies include `actor_id`, `source_event_id`, and `auto_chain_depth`.
 - `.agentsassemble/live-agent-runs/processes.json`: durable group records with `group_id`, `status`, `pid`, `config_path`, `server`, `log_path`, timestamps, `returncode`, and `last_error`.
+- auto-restart fields in `processes.json`: `auto_restart`, `restart_count`, `max_restarts`, `restart_backoff_seconds`, and `next_restart_at`.
 - `.agentsassemble/live-agent-runs/<group_id>.log`: stdout/stderr for the supervised `run-group` process. Delegate provider subprocess stdout/stderr is captured by the runner, not streamed directly into this file. The GUI and process API expose only a bounded `log_tail`.
 
 ## Claude And Gemini CLI Smoke
@@ -185,6 +189,6 @@ After restarting the GUI:
 - old `stopped` and `error` records remain listed;
 - previous logs remain inspectable through their `log_path`;
 - the new GUI supervisor does not claim it can stop PIDs it did not launch;
-- existing presence rows in `.agentsassemble/live_agents.json` can remain until heartbeat age makes them `stale`; restarting the GUI does not resume old resident agents.
+- existing presence rows in `.agentsassemble/live_agents.json` can remain until heartbeat age makes them `stale`; restarting the GUI does not resume old resident agents except pending auto-restart records, which can start a fresh process after `next_restart_at`.
 
 This slice is not native Claude Code Channels, Gemini SDK sessions, Cursor PTY persistence, or OS-level sandboxing. Those are future backend variants behind the same room and supervisor shape.

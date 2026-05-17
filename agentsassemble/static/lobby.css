@@ -700,10 +700,11 @@
 .live-agent-process-form {
   display: grid;
   gap: 7px;
-  grid-template-columns: minmax(0, 1fr) minmax(74px, 0.52fr);
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
 }
 
 .live-agent-process-form input,
+.live-agent-process-options,
 .live-agent-process-form button {
   min-height: 30px;
 }
@@ -716,6 +717,30 @@
   font: inherit;
   min-width: 0;
   padding: 0 8px;
+}
+
+.live-agent-process-form #live-agent-process-config {
+  grid-column: 1 / -1;
+}
+
+.live-agent-process-options {
+  align-items: center;
+  background: rgba(8, 11, 17, 0.68);
+  border: 1px solid rgba(212, 225, 255, 0.14);
+  border-radius: 8px;
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  gap: 5px;
+  line-height: 1.1;
+  min-width: 0;
+  padding: 0 8px;
+  white-space: normal;
+}
+
+.live-agent-process-options input {
+  min-height: 0;
+  padding: 0;
 }
 
 .live-agent-process-form button {
@@ -813,6 +838,14 @@
 
 .live-agent-process-stopped em {
   color: var(--muted);
+}
+
+.live-agent-process-restarting {
+  border-left-color: rgba(245, 197, 69, 0.72);
+}
+
+.live-agent-process-restarting em {
+  color: #ffe39a;
 }
 
 .live-agent-process-error {

@@ -307,6 +307,12 @@ function renderLiveAgentProcessControls() {
       <form id="live-agent-process-form" class="live-agent-process-form">
         <input id="live-agent-process-config" maxlength="240" value="configs/live-agents.example.json" />
         <input id="live-agent-process-group" maxlength="64" placeholder="group id" />
+        <label class="live-agent-process-options">
+          <input id="live-agent-process-auto-restart" type="checkbox" />
+          <span>auto restart</span>
+        </label>
+        <input id="live-agent-process-max-restarts" type="number" min="0" max="99" value="3" aria-label="max restarts" />
+        <input id="live-agent-process-restart-backoff" type="number" min="0" max="3600" step="1" value="5" aria-label="restart backoff seconds" />
         <button type="submit" id="live-agent-process-start" ${state.liveAgentProcessesLoading ? "disabled" : ""}>시작</button>
         <button type="button" id="live-agent-process-refresh">상태</button>
       </form>
@@ -324,7 +330,7 @@ function renderLiveAgentProcessControls() {
 
 function renderLiveAgentProcessCard(group) {
   const status = group.status || "unknown";
-  const isRunning = status === "running";
+  const canStop = status === "running" || status === "restarting";
   const logTail = group.log_tail == null ? "" : String(group.log_tail);
   return `
     <article class="live-agent-process-row live-agent-process-${escapeHtml(status)}">
@@ -332,10 +338,11 @@ function renderLiveAgentProcessCard(group) {
         <strong>${escapeHtml(group.group_id || "live-agents")}</strong>
         <span>${escapeHtml(group.config_path || "")}</span>
         <small>${escapeHtml(group.pid ? `pid ${group.pid}` : "pid 없음")} · ${escapeHtml(group.server || "")}</small>
+        <small>${escapeHtml(liveAgentProcessRestartLabel(group))}</small>
       </div>
       <em>${escapeHtml(liveAgentProcessStatusLabel(status))}</em>
       ${
-        isRunning
+        canStop
           ? `<button type="button" data-live-agent-process-stop="${escapeHtml(group.group_id || "")}">중지</button>`
           : `<button type="button" class="live-agent-process-restart" data-live-agent-process-restart="${escapeHtml(group.group_id || "")}">재시작</button>`
       }
@@ -474,9 +481,18 @@ function liveAgentStatusLabel(status) {
 
 function liveAgentProcessStatusLabel(status) {
   if (status === "running") return "실행 중";
+  if (status === "restarting") return "재시작 대기";
   if (status === "error") return "오류";
   if (status === "stopped") return "중지됨";
   return "상태 미정";
+}
+
+function liveAgentProcessRestartLabel(group) {
+  if (!group?.auto_restart) return "auto restart off";
+  const count = group.restart_count ?? 0;
+  const max = group.max_restarts ?? 0;
+  const backoff = group.restart_backoff_seconds ?? 0;
+  return `auto restart ${count}/${max} · backoff ${backoff}s`;
 }
 
 function providerKindLabel(kind) {
@@ -646,6 +662,9 @@ async function loadLiveAgentProcesses(options = {}) {
 async function startLiveAgentProcessGroup(form) {
   const configPath = form.querySelector("#live-agent-process-config")?.value.trim() || "";
   const groupId = form.querySelector("#live-agent-process-group")?.value.trim() || "";
+  const autoRestart = Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked);
+  const maxRestarts = Math.max(0, Number(form.querySelector("#live-agent-process-max-restarts")?.value || 0));
+  const restartBackoffSeconds = Math.max(0, Number(form.querySelector("#live-agent-process-restart-backoff")?.value || 0));
   if (!configPath) return;
   state.liveAgentProcessStatus = { message: "상주 그룹 시작 중", tone: "info" };
   renderLobby({ followLatest: false });
@@ -653,7 +672,13 @@ async function startLiveAgentProcessGroup(form) {
     const payload = await fetchJson("/api/live-agent-processes/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config_path: configPath, group_id: groupId }),
+      body: JSON.stringify({
+        config_path: configPath,
+        group_id: groupId,
+        auto_restart: autoRestart,
+        max_restarts: maxRestarts,
+        restart_backoff_seconds: restartBackoffSeconds,
+      }),
     });
     setLiveAgentProcesses(payload.groups || []);
     state.liveAgentProcessesLoaded = true;

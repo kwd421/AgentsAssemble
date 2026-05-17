@@ -5,7 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
@@ -412,6 +412,192 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(restarted["config_path"], str(config_path))
         self.assertEqual(restarted["server"], "http://room.local")
         self.assertEqual(len(launched), 1)
+
+    def test_auto_restart_relaunches_crashed_group_within_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=7000 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=2,
+                restart_backoff_seconds=0,
+            )
+            processes[0].returncode = 2
+
+            groups = supervisor.list_groups()
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(groups[0]["status"], "running")
+        self.assertEqual(groups[0]["pid"], 7001)
+        self.assertEqual(groups[0]["auto_restart"], True)
+        self.assertEqual(groups[0]["restart_count"], 1)
+        self.assertEqual(groups[0]["max_restarts"], 2)
+        self.assertIn("return code 2", groups[0]["last_error"])
+        self.assertEqual(persisted["groups"][0]["restart_count"], 1)
+        self.assertEqual(len(processes), 2)
+
+    def test_auto_restart_waits_for_backoff_before_relaunching(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=8000 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+            )
+            processes[0].returncode = 2
+
+            waiting = supervisor.list_groups()
+            current_time["value"] += timedelta(seconds=11)
+            restarted = supervisor.list_groups()
+
+        self.assertEqual(waiting[0]["status"], "restarting")
+        self.assertIsNone(waiting[0]["pid"])
+        self.assertEqual(waiting[0]["restart_count"], 1)
+        self.assertEqual(waiting[0]["next_restart_at"], "2026-05-17T12:00:10+00:00")
+        self.assertEqual(len(processes), 2)
+        self.assertEqual(restarted[0]["status"], "running")
+        self.assertEqual(restarted[0]["pid"], 8001)
+
+    def test_stop_group_cancels_pending_auto_restart(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=8100 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=30,
+            )
+            processes[0].returncode = 2
+            supervisor.list_groups()
+
+            stopped = supervisor.stop_group("crew")
+            current_time["value"] += timedelta(seconds=31)
+            after_due = supervisor.list_groups()
+
+        self.assertEqual(stopped["status"], "stopped")
+        self.assertEqual(stopped["next_restart_at"], "")
+        self.assertEqual(after_due[0]["status"], "stopped")
+        self.assertEqual(len(processes), 1)
+
+    def test_auto_restart_launch_failure_marks_error_without_stale_running_state(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            processes = []
+
+            def command_factory(command, **kwargs):
+                if processes:
+                    raise OSError("restart command unavailable")
+                process = FakeProcess(pid=8200)
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=0,
+            )
+            processes[0].returncode = 2
+
+            groups = supervisor.list_groups()
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(groups[0]["status"], "error")
+        self.assertIsNone(groups[0]["pid"])
+        self.assertEqual(groups[0]["returncode"], 2)
+        self.assertEqual(groups[0]["restart_count"], 1)
+        self.assertIn("restart command unavailable", groups[0]["last_error"])
+        self.assertEqual(persisted["groups"][0]["status"], "error")
+
+    def test_auto_restart_stops_at_max_restarts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=9000 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=0,
+                restart_backoff_seconds=0,
+            )
+            processes[0].returncode = 2
+
+            groups = supervisor.list_groups()
+
+        self.assertEqual(groups[0]["status"], "error")
+        self.assertEqual(groups[0]["returncode"], 2)
+        self.assertEqual(groups[0]["restart_count"], 0)
+        self.assertEqual(len(processes), 1)
 
 
 if __name__ == "__main__":

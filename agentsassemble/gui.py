@@ -338,7 +338,14 @@ def start_live_agent_process_payload(
     config_path = Path(str(payload.get("config_path") or "configs/live-agents.example.json"))
     server = str(payload.get("server") or default_server)
     group_id = str(payload.get("group_id") or "").strip() or None
-    group = process_supervisor.start_group(config_path=config_path, server=server, group_id=group_id)
+    group = process_supervisor.start_group(
+        config_path=config_path,
+        server=server,
+        group_id=group_id,
+        auto_restart=_payload_bool(payload.get("auto_restart")),
+        max_restarts=_payload_nonnegative_int(payload.get("max_restarts"), 0),
+        restart_backoff_seconds=_payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
+    )
     return {"group": group, "groups": process_supervisor.list_groups()}
 
 
@@ -526,6 +533,30 @@ def _provider_from_agent_config(source: object, provider_id: str) -> ProviderCon
 
 def _optional_str(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _payload_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
+def _payload_nonnegative_int(value: object, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0, parsed)
+
+
+def _payload_nonnegative_float(value: object, default: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, parsed)
 
 
 def _make_handler(

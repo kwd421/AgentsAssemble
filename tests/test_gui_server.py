@@ -240,8 +240,26 @@ class GuiServerTests(unittest.TestCase):
             def list_groups(self):
                 return list(self.groups)
 
-            def start_group(self, *, config_path, server, group_id=None):
-                self.started.append((config_path, server, group_id))
+            def start_group(
+                self,
+                *,
+                config_path,
+                server,
+                group_id=None,
+                auto_restart=False,
+                max_restarts=0,
+                restart_backoff_seconds=5.0,
+            ):
+                self.started.append(
+                    {
+                        "config_path": config_path,
+                        "server": server,
+                        "group_id": group_id,
+                        "auto_restart": auto_restart,
+                        "max_restarts": max_restarts,
+                        "restart_backoff_seconds": restart_backoff_seconds,
+                    }
+                )
                 record = {
                     "group_id": group_id or "default",
                     "status": "running",
@@ -254,6 +272,11 @@ class GuiServerTests(unittest.TestCase):
                     "returncode": None,
                     "last_error": "",
                     "log_tail": "resident booted",
+                    "auto_restart": auto_restart,
+                    "restart_count": 0,
+                    "max_restarts": max_restarts,
+                    "restart_backoff_seconds": restart_backoff_seconds,
+                    "next_restart_at": "",
                 }
                 self.groups = [record]
                 return record
@@ -286,7 +309,15 @@ class GuiServerTests(unittest.TestCase):
             try:
                 start_request = Request(
                     f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/start",
-                    data=json.dumps({"config_path": str(config_path), "group_id": "crew"}).encode("utf-8"),
+                    data=json.dumps(
+                        {
+                            "config_path": str(config_path),
+                            "group_id": "crew",
+                            "auto_restart": True,
+                            "max_restarts": 2,
+                            "restart_backoff_seconds": 1.5,
+                        }
+                    ).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
@@ -320,7 +351,10 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(stopped["group"]["status"], "stopped")
             self.assertEqual(restarted["group"]["status"], "running")
             self.assertEqual(restarted["group"]["pid"], 9876)
-            self.assertEqual(supervisor.started[0][1], f"http://127.0.0.1:{server.server_port}")
+            self.assertEqual(supervisor.started[0]["server"], f"http://127.0.0.1:{server.server_port}")
+            self.assertEqual(supervisor.started[0]["auto_restart"], True)
+            self.assertEqual(supervisor.started[0]["max_restarts"], 2)
+            self.assertEqual(supervisor.started[0]["restart_backoff_seconds"], 1.5)
             self.assertEqual(supervisor.stopped, ["crew"])
             self.assertEqual(supervisor.restarted, ["crew"])
 
