@@ -118,6 +118,64 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(error_payloads[0]["last_error"], "boom")
         self.assertEqual(error_payloads[0]["last_observed_event_id"], "evt1")
 
+    def test_watch_mode_observes_without_replying_and_advances_cursor(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "side": "mine", "name": "나", "message": "보고만 있어"}]}
+        client = FakeRoomClient([room])
+        command_calls = []
+        runner = LiveAgentRunner(
+            config(engagement_mode="watch"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: command_calls.append(prompt) or "reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        self.assertEqual(command_calls, [])
+        self.assertEqual([call for call in client.calls if call[0].endswith("/lobby")], [])
+        observed = [
+            payload["last_observed_event_id"]
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload.get("last_observed_event_id")
+        ]
+        self.assertIn("evt1", observed)
+
+    def test_human_only_mode_replies_to_humans_and_ignores_agent_chatter(self):
+        human_event = {"id": "human", "side": "mine", "name": "나", "message": "사람 질문"}
+        other_human_event = {"id": "other-human", "side": "other", "name": "상대", "message": "상대 질문"}
+        agent_event = {"id": "agent", "side": "other-agent", "actor_id": "agent-b", "name": "Agent B", "message": "에이전트 말"}
+
+        self.assertEqual(
+            event_reply_candidate([human_event], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="human_only"),
+            human_event,
+        )
+        self.assertEqual(
+            event_reply_candidate([other_human_event], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="human_only"),
+            other_human_event,
+        )
+        self.assertIsNone(
+            event_reply_candidate([agent_event], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="human_only")
+        )
+
+    def test_mentioned_mode_replies_only_when_called_by_display_name_or_agent_id(self):
+        called_by_name = {"id": "name", "side": "mine", "name": "나", "message": "Agent A 지금 가능해?"}
+        called_by_id = {"id": "id", "side": "mine", "name": "나", "message": "agent-a 상태 알려줘"}
+        unrelated = {"id": "other", "side": "mine", "name": "나", "message": "아무나 답해"}
+
+        self.assertEqual(
+            event_reply_candidate([called_by_name], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="mentioned"),
+            called_by_name,
+        )
+        self.assertEqual(
+            event_reply_candidate([called_by_id], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="mentioned"),
+            called_by_id,
+        )
+        self.assertIsNone(
+            event_reply_candidate([unrelated], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="mentioned")
+        )
+
     def test_idle_runner_sends_periodic_heartbeat(self):
         clock = FakeClock()
         client = FakeRoomClient([{"lobby_events": []}, {"lobby_events": []}])
@@ -186,3 +244,24 @@ class LiveAgentRunnerTests(unittest.TestCase):
             loaded = load_group_configs(path, server_override="http://override.local")
 
         self.assertEqual([config.server for config in loaded], ["http://override.local", "http://override.local"])
+
+    def test_group_config_defaults_to_safe_mentioned_policy_unless_explicit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {"agent_id": "agent-default", "command": ["fake"]},
+                            {"agent_id": "agent-always", "engagement_mode": "always", "command": ["fake"]},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        modes = {config.agent_id: config.engagement_mode for config in loaded}
+        self.assertEqual(modes["agent-default"], "mentioned")
+        self.assertEqual(modes["agent-always"], "always")

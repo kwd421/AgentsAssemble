@@ -74,6 +74,7 @@ class LiveAgentRunner:
             self.config.display_name,
             self.last_observed_event_id,
             max_chain_depth=self.config.max_chain_depth,
+            engagement_mode=self.config.engagement_mode,
         )
         if candidate is None:
             self._advance_cursor(events)
@@ -180,6 +181,7 @@ def event_reply_candidate(
     last_observed_event_id: str,
     *,
     max_chain_depth: int,
+    engagement_mode: str = "always",
 ) -> dict[str, object] | None:
     for event in _events_after(events, last_observed_event_id):
         if _is_self_event(event, agent_id, display_name):
@@ -188,8 +190,28 @@ def event_reply_candidate(
             continue
         if not str(event.get("message") or "").strip():
             continue
+        if not should_reply_to_event(engagement_mode, event, agent_id, display_name):
+            continue
         return event
     return None
+
+
+def should_reply_to_event(
+    engagement_mode: str,
+    event: dict[str, object],
+    agent_id: str,
+    display_name: str,
+) -> bool:
+    mode = str(engagement_mode or "mentioned").strip().lower().replace("-", "_")
+    if mode == "always":
+        return True
+    if mode in {"watch", "manual", "moderator_called"}:
+        return False
+    if mode == "human_only":
+        return _is_human_lobby_event(event)
+    if mode == "mentioned":
+        return _message_mentions_agent(str(event.get("message") or ""), agent_id, display_name)
+    return _message_mentions_agent(str(event.get("message") or ""), agent_id, display_name)
 
 
 def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source_event: dict[str, object]) -> str:
@@ -283,7 +305,7 @@ def _config_from_mapping(
         session_id=str(data.get("session_id") or ""),
         endpoint=str(data.get("endpoint") or ""),
         meeting_id=str(data.get("meeting_id") or ""),
-        engagement_mode=str(data.get("engagement_mode") or "always"),
+        engagement_mode=str(data.get("engagement_mode") or "mentioned"),
         command=[str(part) for part in command],
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),
         poll_interval=float(_value_or_default(data.get("poll_interval"), defaults["poll_interval"])),
@@ -315,6 +337,19 @@ def _is_self_event(event: dict[str, object], agent_id: str, display_name: str) -
     if actor_id and actor_id == agent_id:
         return True
     return bool(display_name) and str(event.get("name") or "") == display_name
+
+
+def _is_human_lobby_event(event: dict[str, object]) -> bool:
+    if str(event.get("actor_id") or ""):
+        return False
+    side = str(event.get("side") or "")
+    return side in {"", "mine", "other"}
+
+
+def _message_mentions_agent(message: str, agent_id: str, display_name: str) -> bool:
+    normalized_message = message.casefold()
+    mentions = [agent_id, display_name]
+    return any(str(mention or "").casefold() in normalized_message for mention in mentions if str(mention or "").strip())
 
 
 def _chain_depth(event: dict[str, object]) -> int:

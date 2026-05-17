@@ -378,6 +378,7 @@ class CliTimeoutTests(unittest.TestCase):
                                 {
                                     "agent_id": "agent-a",
                                     "display_name": "Agent A",
+                                    "engagement_mode": "always",
                                     "command": [
                                         sys.executable,
                                         "-c",
@@ -387,6 +388,7 @@ class CliTimeoutTests(unittest.TestCase):
                                 {
                                     "agent_id": "agent-b",
                                     "display_name": "Agent B",
+                                    "engagement_mode": "always",
                                     "command": [
                                         sys.executable,
                                         "-c",
