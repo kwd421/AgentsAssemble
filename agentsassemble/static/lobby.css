@@ -560,3 +560,59 @@
 .binding-purple {
   border-left-color: var(--purple);
 }
+
+.codex-session-invite {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.codex-invite-form {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.78fr);
+}
+
+.codex-invite-form select,
+.codex-invite-form button {
+  min-height: 30px;
+}
+
+.codex-invite-form select {
+  background: rgba(8, 11, 17, 0.68);
+  border: 1px solid rgba(212, 225, 255, 0.14);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.codex-invite-form button {
+  background: rgba(242, 184, 75, 0.12);
+  border-color: rgba(242, 184, 75, 0.34);
+  color: #ffe0a0;
+}
+
+.codex-invite-status {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: 7px 8px;
+}
+
+.codex-invite-status[data-tone="success"] {
+  border-color: rgba(130, 209, 115, 0.34);
+  color: #bdf2b4;
+}
+
+.codex-invite-status[data-tone="error"] {
+  border-color: rgba(255, 123, 123, 0.36);
+  color: #ffc3c3;
+}

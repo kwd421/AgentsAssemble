@@ -9,7 +9,13 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
-from agentsassemble.config import load_agent_runtime_config, providers_from_config
+from agentsassemble.codex_sessions import (
+    build_codex_live_invite_config,
+    list_codex_sessions,
+    read_agent_config,
+    write_agent_config,
+)
+from agentsassemble.config import load_agent_runtime_config, load_council_config, providers_from_config
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_events import (
     append_lobby_event_to_file,
@@ -267,6 +273,49 @@ def provider_catalog_payload() -> dict[str, object]:
     return {"providers": default_provider_registry().catalog()}
 
 
+def codex_sessions_payload(limit: int = 20) -> dict[str, object]:
+    return {"sessions": list_codex_sessions(limit=limit)}
+
+
+def codex_session_invite_payload(
+    output_root: Path,
+    *,
+    session_id: str,
+    role_id: str,
+    meeting_id: str | None = None,
+) -> dict[str, object]:
+    config_path = output_root / "codex-live-session.local.json"
+    role_ids = _codex_invite_role_ids(output_root, meeting_id)
+    config = build_codex_live_invite_config(
+        session_id=session_id,
+        role_id=role_id,
+        role_ids=role_ids,
+        existing=read_agent_config(config_path),
+    )
+    write_agent_config(config_path, config)
+    binding = _binding_for_role(config.get("agent_bindings", []), role_id)
+    return {"config_path": str(config_path), "binding": binding}
+
+
+def _codex_invite_role_ids(output_root: Path, meeting_id: str | None) -> list[str]:
+    if meeting_id:
+        meeting_dir = output_root / "meetings" / meeting_id
+        if not meeting_dir.exists():
+            raise ValueError(f"Meeting {meeting_id} was not found.")
+        meeting = _read_meeting_record(meeting_dir)
+        role_ids = [str(role["id"]) for role in _as_dict_list(meeting.get("roles", [])) if role.get("id")]
+        if role_ids:
+            return role_ids
+    return [role.id for role in load_council_config().roles]
+
+
+def _binding_for_role(bindings: object, role_id: str) -> dict[str, object]:
+    for binding in _as_dict_list(bindings):
+        if binding.get("role_id") == role_id:
+            return binding
+    raise ValueError(f"No Codex live binding was written for role {role_id}.")
+
+
 def _resolve_lobby_meeting_dir(output_root: Path, meeting_id: str | None) -> Path:
     if meeting_id:
         meeting_dir = output_root / "meetings" / meeting_id
@@ -414,6 +463,9 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
             if path == "/api/providers":
                 self._send_json(provider_catalog_payload())
                 return
+            if path == "/api/codex-sessions":
+                self._send_json(codex_sessions_payload(limit=self._limit(query, default=20)))
+                return
             if path == "/api/meetings/latest":
                 meetings = list_meetings(output_root)
                 if not meetings:
@@ -487,6 +539,28 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
+                return
+            if parsed.path == "/api/codex-sessions/invite":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    invite = codex_session_invite_payload(
+                        output_root,
+                        session_id=str(payload.get("session_id") or ""),
+                        role_id=str(payload.get("role_id") or ""),
+                        meeting_id=_optional_str(payload.get("meeting_id")),
+                    )
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(invite)
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 
@@ -580,6 +654,12 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                 return None
             meeting_id = path[len(prefix) : -len(suffix)]
             return unquote(meeting_id) if meeting_id else None
+
+        def _limit(self, query: dict[str, list[str]], default: int) -> int:
+            try:
+                return int(query.get("limit", [str(default)])[0])
+            except (TypeError, ValueError):
+                return default
 
     return AgentsAssembleHandler
 

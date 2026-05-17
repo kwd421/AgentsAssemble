@@ -6,6 +6,7 @@ import threading
 import time
 from pathlib import Path
 from http.server import ThreadingHTTPServer
+from unittest.mock import patch
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import (
@@ -19,6 +20,8 @@ from agentsassemble.gui import (
     provider_catalog_payload,
     read_lobby,
     read_side_chat,
+    codex_session_invite_payload,
+    codex_sessions_payload,
     send_lobby_message_to_remote_bridge,
     append_side_chat_event,
 )
@@ -114,6 +117,113 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(binding["join_mode"], "current_session")
             self.assertEqual(binding["session_id"], "019e3038-39cc-76a2-a746-5ba8c0f3b408")
             self.assertEqual(payload["meeting"]["provider_configs"]["codex-live"]["kind"], "codex_live_session")
+
+    def test_codex_sessions_payload_reads_recent_codex_sessions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            codex_home = Path(temp_dir) / "codex-home"
+            codex_home.mkdir()
+            (codex_home / "session_index.jsonl").write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "id": "old",
+                                "thread_name": "Old thread",
+                                "updated_at": "2026-05-15T00:00:00Z",
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "id": "new",
+                                "thread_name": "New thread",
+                                "updated_at": "2026-05-17T00:00:00Z",
+                            }
+                        ),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}):
+                payload = codex_sessions_payload(limit=1)
+
+            self.assertEqual(payload["sessions"], [{"id": "new", "thread_name": "New thread", "updated_at": "2026-05-17T00:00:00Z"}])
+
+    def test_codex_session_invite_payload_writes_config_for_meeting_roles(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "roles": [
+                            {"id": "lore_lawyer", "display_name": "설정충"},
+                            {"id": "fanboard_skeptic", "display_name": "회의론자"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            payload = codex_session_invite_payload(
+                root,
+                session_id="019e02af-c287-7cd1-aab7-c1e059c5ed44",
+                role_id="lore_lawyer",
+                meeting_id="m1",
+            )
+
+            config_path = root / "codex-live-session.local.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            bindings = {binding["role_id"]: binding for binding in config["agent_bindings"]}
+            self.assertEqual(payload["config_path"], str(config_path))
+            self.assertEqual(payload["binding"]["role_id"], "lore_lawyer")
+            self.assertEqual(payload["binding"]["join_mode"], "current_session")
+            self.assertEqual(payload["binding"]["session_id"], "019e02af-c287-7cd1-aab7-c1e059c5ed44")
+            self.assertEqual(bindings["lore_lawyer"]["session_id"], "019e02af-c287-7cd1-aab7-c1e059c5ed44")
+            self.assertEqual(bindings["fanboard_skeptic"]["join_mode"], "fresh")
+
+    def test_codex_session_invite_http_endpoint_writes_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "roles": [{"id": "lore_lawyer", "display_name": "설정충"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/codex-sessions/invite",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "role_id": "lore_lawyer",
+                            "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["binding"]["role_id"], "lore_lawyer")
+            self.assertTrue((root / "codex-live-session.local.json").exists())
 
     def test_lobby_events_are_appended_and_sanitized(self):
         with tempfile.TemporaryDirectory() as temp_dir:

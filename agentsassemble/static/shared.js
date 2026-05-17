@@ -7,6 +7,10 @@ export const state = {
   lobbySignature: "[]",
   sideChatEvents: [],
   sideChatSignature: "[]",
+  codexSessions: [],
+  codexSessionsLoaded: false,
+  codexSessionsLoading: false,
+  codexInviteStatus: null,
 };
 
 export const roleMeta = {
