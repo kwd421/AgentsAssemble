@@ -41,6 +41,7 @@ from agentsassemble.models import ProviderConfig, Role
 TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
 TABS = ["lobby", "live", "board", "archive"]
 STALE_RUNNING_SECONDS = 300
+SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
 
 
@@ -210,6 +211,21 @@ def _sse_event(event_name: str, payload: dict[str, object], event_id: str | None
     return ("\n".join(lines) + "\n\n").encode("utf-8")
 
 
+def _meeting_not_found_error(meeting_id: str) -> ValueError:
+    return ValueError(f"Meeting {meeting_id} was not found.")
+
+
+def _sse_stream_error_payload(stream: str, error: Exception, meeting_id: str | None = None) -> dict[str, object]:
+    if stream == "meeting" and meeting_id and isinstance(error, FileNotFoundError):
+        message = str(_meeting_not_found_error(meeting_id))
+    else:
+        message = str(error).replace("\r", " ").replace("\n", " ").strip()
+    payload: dict[str, object] = {"stream": stream, "error": message[:SSE_ERROR_MESSAGE_LIMIT]}
+    if meeting_id:
+        payload["meeting_id"] = meeting_id
+    return payload
+
+
 def _stream_snapshot_payload(
     output_root: Path,
     stream: str,
@@ -227,8 +243,13 @@ def _stream_snapshot_payload(
             raise ValueError("Meeting id is required for meeting event stream.")
         meeting_dir = output_root / "meetings" / meeting_id
         if not meeting_dir.exists():
-            raise ValueError(f"Meeting {meeting_id} was not found.")
-        events = read_live_events_after(meeting_dir, last_event_id)
+            raise _meeting_not_found_error(meeting_id)
+        try:
+            events = read_live_events_after(meeting_dir, last_event_id)
+        except FileNotFoundError as error:
+            raise _meeting_not_found_error(meeting_id) from error
+        if not meeting_dir.exists():
+            raise _meeting_not_found_error(meeting_id)
         payload: dict[str, object] = {
             "stream": "meeting",
             "meeting_id": meeting_id,
@@ -238,6 +259,8 @@ def _stream_snapshot_payload(
         if (meeting_dir / "meeting.json").exists():
             try:
                 meeting_payload = build_meeting_payload(meeting_dir)
+            except FileNotFoundError as error:
+                raise _meeting_not_found_error(meeting_id) from error
             except json.JSONDecodeError:
                 payload["meeting_payload_pending"] = True
                 payload["payload_signature"] = json.dumps(payload, ensure_ascii=False, sort_keys=True)
@@ -1151,10 +1174,11 @@ def _make_handler(
             meeting_id: str | None = None,
             last_event_id: str | None = None,
         ) -> None:
+            self.close_connection = True
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
             self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "keep-alive")
+            self.send_header("Connection", "close")
             self.end_headers()
             current_last_event_id = last_event_id
             current_payload_signature: str | None = None
@@ -1178,6 +1202,14 @@ def _make_handler(
                         self.wfile.write(b": keep-alive\n\n")
                     self.wfile.flush()
                     time.sleep(1)
+                except (ValueError, FileNotFoundError) as error:
+                    error_payload = _sse_stream_error_payload(stream, error, meeting_id=meeting_id)
+                    try:
+                        self.wfile.write(_sse_event("error", error_payload))
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        return
+                    return
                 except (BrokenPipeError, ConnectionResetError):
                     return
 

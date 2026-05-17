@@ -16,6 +16,7 @@ from agentsassemble.gui import (
     _make_handler,
     _safe_static_path,
     _sse_event,
+    _sse_stream_error_payload,
     _stream_snapshot_payload,
     append_lobby_event,
     build_meeting_payload,
@@ -35,6 +36,22 @@ from agentsassemble.meeting_events import append_live_event, write_live_state
 from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
+
+
+def _read_sse_frame(response, timeout: float = 3.0) -> str:
+    lines = []
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        raw_line = response.readline()
+        if raw_line == b"":
+            break
+        line = raw_line.decode("utf-8").strip()
+        if not line:
+            if lines:
+                break
+            continue
+        lines.append(line)
+    return "\n".join(lines)
 
 
 class GuiServerTests(unittest.TestCase):
@@ -1355,27 +1372,65 @@ class GuiServerTests(unittest.TestCase):
         self.assertIn("event: lobby\n", body)
         self.assertIn('data: {"id": "abc", "message": "안녕"}\n\n', body)
 
+    def test_sse_stream_error_payload_bounds_error_text(self):
+        payload = _sse_stream_error_payload(
+            "meeting",
+            ValueError("line one\n" + ("x" * 700)),
+            meeting_id="m1",
+        )
+
+        self.assertEqual(payload["stream"], "meeting")
+        self.assertEqual(payload["meeting_id"], "m1")
+        self.assertNotIn("\n", payload["error"])
+        self.assertLessEqual(len(payload["error"]), 500)
+
     def test_lobby_sse_keeps_connection_open_with_heartbeat(self):
+        stderr = StringIO()
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             append_lobby_event(root, {"name": "나", "side": "mine", "message": "첫 로비"})
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            try:
-                with urlopen(f"http://127.0.0.1:{server.server_port}/api/events/lobby", timeout=4) as response:
-                    lines = []
-                    deadline = time.time() + 3
-                    while time.time() < deadline and ": keep-alive" not in "\n".join(lines):
-                        lines.append(response.readline().decode("utf-8").strip())
-            finally:
-                server.shutdown()
-                server.server_close()
+            with patch("sys.stderr", stderr):
+                thread.start()
+                try:
+                    with urlopen(f"http://127.0.0.1:{server.server_port}/api/events/lobby", timeout=4) as response:
+                        lines = []
+                        deadline = time.time() + 3
+                        while time.time() < deadline and ": keep-alive" not in "\n".join(lines):
+                            lines.append(response.readline().decode("utf-8").strip())
+                    time.sleep(0.2)
+                finally:
+                    server.shutdown()
+                    server.server_close()
 
             body = "\n".join(lines)
             self.assertIn("event: lobby", body)
             self.assertIn('"stream": "lobby"', body)
             self.assertIn(": keep-alive", body)
+            self.assertNotIn("ConnectionResetError", stderr.getvalue())
+
+    def test_sse_client_disconnect_does_not_log_connection_reset_traceback(self):
+        stderr = StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            append_lobby_event(root, {"name": "나", "side": "mine", "message": "첫 로비"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            with patch("sys.stderr", stderr):
+                thread.start()
+                try:
+                    response = urlopen(f"http://127.0.0.1:{server.server_port}/api/events/lobby", timeout=4)
+                    try:
+                        self.assertIn("event: lobby", _read_sse_frame(response))
+                    finally:
+                        response.close()
+                    time.sleep(0.2)
+                finally:
+                    server.shutdown()
+                    server.server_close()
+
+        self.assertNotIn("ConnectionResetError", stderr.getvalue())
 
     def test_meeting_sse_sends_final_payload_after_event_cursor_is_current(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1418,6 +1473,87 @@ class GuiServerTests(unittest.TestCase):
             self.assertIn("event: meeting", body)
             self.assertIn('"meeting_payload"', body)
             self.assertIn('"live_status": "complete"', body)
+
+    def test_meeting_sse_reports_error_if_meeting_disappears_during_stream(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            append_live_event(meeting_dir, {"kind": "message", "content": "공식"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/meetings/m1/events", timeout=4) as response:
+                    meeting_frame = _read_sse_frame(response)
+                    for path in sorted(meeting_dir.glob("*")):
+                        path.unlink()
+                    meeting_dir.rmdir()
+                    error_frame = _read_sse_frame(response)
+                    trailing = response.readline()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertIn("event: meeting", meeting_frame)
+            self.assertIn("event: error", error_frame)
+            self.assertEqual(error_frame.count("event: error"), 1)
+            self.assertIn('"stream": "meeting"', error_frame)
+            self.assertIn('"meeting_id": "m1"', error_frame)
+            self.assertIn("Meeting m1 was not found.", error_frame)
+            self.assertEqual(trailing, b"")
+
+    def test_meeting_sse_reports_error_if_payload_file_vanishes_after_headers(self):
+        stderr = StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            append_live_event(meeting_dir, {"kind": "message", "content": "공식"})
+            (meeting_dir / "meeting.json").write_text("{}", encoding="utf-8")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            with patch("agentsassemble.gui.build_meeting_payload", side_effect=FileNotFoundError("lost")):
+                with patch("sys.stderr", stderr):
+                    thread.start()
+                    try:
+                        with urlopen(
+                            f"http://127.0.0.1:{server.server_port}/api/meetings/m1/events",
+                            timeout=4,
+                        ) as response:
+                            error_frame = _read_sse_frame(response)
+                            trailing = response.readline()
+                    finally:
+                        server.shutdown()
+                        server.server_close()
+
+            self.assertIn("event: error", error_frame)
+            self.assertEqual(error_frame.count("event: error"), 1)
+            self.assertIn('"stream": "meeting"', error_frame)
+            self.assertIn('"meeting_id": "m1"', error_frame)
+            self.assertIn("Meeting m1 was not found.", error_frame)
+            self.assertEqual(trailing, b"")
+            self.assertNotIn("FileNotFoundError", stderr.getvalue())
+
+    def test_missing_meeting_sse_returns_json_404_before_stream_opens(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with self.assertRaises(HTTPError) as context:
+                    urlopen(f"http://127.0.0.1:{server.server_port}/api/meetings/missing/events", timeout=4)
+                content_type = context.exception.headers.get("Content-Type")
+                body = json.loads(context.exception.read().decode("utf-8"))
+                context.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(context.exception.code, 404)
+            self.assertEqual(content_type, "application/json; charset=utf-8")
+            self.assertEqual(body, {"error": "Meeting not found"})
 
     def test_stream_snapshot_payload_keeps_lobby_side_chat_and_meeting_distinct(self):
         with tempfile.TemporaryDirectory() as temp_dir:

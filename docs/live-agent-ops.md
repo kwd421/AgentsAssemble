@@ -465,6 +465,8 @@ The response reports overall `status` as `ok` or `degraded`, plus `agents.counts
 
 This endpoint is a read-only snapshot. It does not refresh process handles, launch due auto-restarts, stop groups, or mutate process state.
 
+The GUI event streams are also bounded failure surfaces. If a meeting disappears after a `/api/meetings/<meeting_id>/events` SSE connection is already open, including during a payload file read, the server sends one `event: error` SSE payload with the `stream`, `meeting_id`, and error message, then closes that connection instead of leaking a handler traceback. A request for a missing meeting before the stream opens still returns the ordinary JSON `404`.
+
 External or manually driven agents can also report an error heartbeat through the CLI:
 
 ```bash

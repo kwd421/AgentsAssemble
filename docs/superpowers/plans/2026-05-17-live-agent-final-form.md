@@ -922,6 +922,29 @@ Document that runtime engagement policy can be changed through GUI, API, or CLI,
 
 ---
 
+### Task 30: Meeting SSE Runtime Error Boundary
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for meeting stream disappearance**
+
+Cover a `/api/meetings/<meeting_id>/events` SSE connection that starts while the meeting exists, then loses the meeting directory while the stream is still open. The server must emit an `event: error` SSE payload instead of leaking a handler traceback.
+
+- [x] **Step 2: Bound runtime stream errors after headers are sent**
+
+Catch runtime meeting-stream failures inside `_send_sse_stream()`, including missing meetings and file-read races after headers have already been sent. Write one `event: error` payload containing `stream`, `meeting_id`, and the error message, flush it, and close the connection. Preserve the existing pre-stream JSON `404` for meetings that are missing before the request enters the SSE loop.
+
+- [x] **Step 3: Document stream failure semantics**
+
+Document that GUI event streams close gracefully with a bounded SSE error event when a meeting disappears during an already-open connection.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
