@@ -91,6 +91,9 @@ export function renderLobby(options = {}) {
   lobby.querySelectorAll("[data-lobby-action]").forEach((button) => {
     button.addEventListener("click", () => sendLobbyAction(button));
   });
+  lobby.querySelector("#provider-health-check")?.addEventListener("click", async () => {
+    await runProviderHealthCheck();
+  });
   lobby.querySelector("#live-agent-refresh")?.addEventListener("click", () => {
     loadLiveAgents({ force: true });
   });
@@ -542,6 +545,8 @@ function renderLiveAgentProviderOptions() {
 
 function renderApprovedBindings(meeting) {
   const roles = meeting?.roles || [];
+  const status = state.providerHealthStatus;
+  const source = meeting?.agent_config_source || "";
   if (!roles.length) return "";
   return `
     <section class="approved-bindings" aria-label="승인된 본회의 에이전트">
@@ -549,7 +554,11 @@ function renderApprovedBindings(meeting) {
         <strong>본회의 승인</strong>
         <span>host가 확정한 role → agent → provider</span>
       </div>
+      <div class="room-actions">
+        <button type="button" id="provider-health-check" ${!source || source === "default" || state.providerHealthRunning ? "disabled" : ""}>Provider 점검</button>
+      </div>
       ${roles.map(renderApprovedBinding).join("")}
+      ${status ? `<p class="live-agent-status" data-tone="${escapeHtml(status.tone || "info")}">${escapeHtml(status.message)}</p>` : ""}
     </section>
   `;
 }
@@ -841,6 +850,34 @@ async function loadLiveAgentProcesses(options = {}) {
 
 export function refreshLiveAgentRuntimeSurfaces() {
   return Promise.all([loadLiveAgents({ background: true }), loadLiveAgentProcesses({ background: true })]);
+}
+
+async function runProviderHealthCheck() {
+  if (state.providerHealthRunning) return;
+  const configPath = state.payload?.meeting?.agent_config_source || "";
+  if (!configPath || configPath === "default") {
+    state.providerHealthStatus = { message: "provider config 없음", tone: "error" };
+    renderLobby({ followLatest: false });
+    return;
+  }
+  state.providerHealthRunning = true;
+  state.providerHealthStatus = { message: "provider health 점검 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/provider-health", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config_path: configPath }),
+    });
+    const tone = payload.status === "ok" ? "success" : "error";
+    const summary = payload.summary || {};
+    state.providerHealthStatus = { message: `provider health ${payload.status || "unknown"} · ${summary.providers || 0} providers`, tone };
+  } catch {
+    state.providerHealthStatus = { message: "provider health 점검 실패", tone: "error" };
+  } finally {
+    state.providerHealthRunning = false;
+    renderLobby({ followLatest: false });
+  }
 }
 
 async function runLiveAgentSmoke(lobby) {

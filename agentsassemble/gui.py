@@ -24,6 +24,7 @@ from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent,
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.provider_health import provider_health_report
 from agentsassemble.meeting_events import (
     append_lobby_event_to_file,
     append_side_chat_event_to_file,
@@ -281,6 +282,13 @@ def send_lobby_message_to_remote_bridge(
 
 def provider_catalog_payload() -> dict[str, object]:
     return {"providers": default_provider_registry().catalog()}
+
+
+def provider_health_payload(payload: dict[str, object]) -> dict[str, object]:
+    config_path = str(payload.get("config_path") or "").strip()
+    if not config_path:
+        raise ValueError("Provider health requires config_path.")
+    return provider_health_report(Path(config_path))
 
 
 def codex_sessions_payload(limit: int = 20) -> dict[str, object]:
@@ -922,6 +930,21 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
                     return
                 self._send_json(live_agent_preflight_payload(payload, default_server=self._request_server_url()))
+                return
+            if parsed.path == "/api/provider-health":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    self._send_json(provider_health_payload(payload))
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                 return
             if parsed.path == "/api/live-agent-smoke":
                 length = int(self.headers.get("Content-Length", "0") or "0")

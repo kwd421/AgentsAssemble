@@ -38,6 +38,17 @@ python3 -m agentsassemble.cli live-agent preflight \
 
 The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not execute provider commands. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, and command executables are present on this machine. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint. It cannot prove Claude, Gemini, Cursor, account login, billing, subscription, model availability, network access, or native PTY/session readiness.
 
+## Provider Runtime Health
+
+Before running a meeting with API, local model, bridge, Codex, or CLI-backed providers, check the host-approved provider config:
+
+```bash
+python3 -m agentsassemble.cli providers health \
+  --config configs/http-providers.example.json
+```
+
+The GUI "본회의 승인" panel exposes the same static check as `Provider 점검` through `POST /api/provider-health` when the current meeting was created from an agent runtime config file. Provider health uses `probe_mode: none`: it parses provider configs, permission profiles, and approved bindings; checks registry availability, auth_ref presence, endpoint requirements, local command executable availability, duplicate ids, and meeting-only permission compatibility; and redacts auth values and command arguments. It does not execute provider commands, does not start a meeting, does not call paid model APIs, and does not contact remote bridges. A passing static report means the config is locally coherent, not that account login, billing, model availability, network reachability, or real provider behavior has been proven.
+
 ## Credential-Free Operator Smoke
 
 After the GUI room is running, use the one-command smoke before touching real providers:

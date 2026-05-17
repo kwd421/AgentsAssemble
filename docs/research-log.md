@@ -444,6 +444,7 @@ This file records external papers, frameworks, and product references used while
   - Added admission decisions for incoming external agents so host approval, effective bindings, rejected requests, and non-executed requests are auditable.
   - Added HTTP meeting adapters for Anthropic Messages API, Gemini `generateContent`, xAI/OpenAI-compatible chat completions, and local OpenAI-compatible servers such as LM Studio.
   - Added a remote HTTP bridge path so a friend-owned Claude Code session can participate in meeting rounds without raw session import.
+  - Added static provider-health checks (`probe_mode: none`) as an operator gate before meetings: config parsing, provider registry availability, auth_ref presence without value disclosure, endpoint requirements, local command availability, duplicate ids, and meeting-only binding validation. This deliberately avoids provider command execution, model generation calls, paid API probes, and remote bridge execution.
 
 ## Candidate Memory Layer Translation
 

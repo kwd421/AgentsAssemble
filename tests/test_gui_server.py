@@ -1542,6 +1542,49 @@ class GuiServerTests(unittest.TestCase):
         self.assertIn("capabilities", providers["claude_code"])
         self.assertTrue(providers["cursor"]["capabilities"]["supports_filesystem"])
 
+    def test_provider_health_endpoint_checks_runtime_config_without_starting_meeting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "providers": [
+                            {"id": "mock-provider", "kind": "mock", "display_name": "Mock"}
+                        ],
+                        "permission_profiles": [{"id": "meeting"}],
+                        "agent_bindings": [
+                            {
+                                "agent_id": "mock-agent",
+                                "role_id": "lore_lawyer",
+                                "provider_id": "mock-provider",
+                                "permission_profile_id": "meeting",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/provider-health",
+                    data=json.dumps({"config_path": str(config_path)}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["summary"]["providers"], 1)
+            self.assertEqual(payload["providers"][0]["provider_id"], "mock-provider")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,6 +7,8 @@ export const state = {
   lobbySignature: "[]",
   sideChatEvents: [],
   sideChatSignature: "[]",
+  providerHealthRunning: false,
+  providerHealthStatus: null,
   liveAgents: [],
   liveAgentsLoaded: false,
   liveAgentsLoading: false,

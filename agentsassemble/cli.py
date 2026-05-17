@@ -27,6 +27,7 @@ from agentsassemble.live_agent_runner import LiveAgentRunner, config_from_args, 
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.live_session_transport import JsonlLiveSession
 from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.provider_health import provider_health_report
 
 
 LIVE_AGENT_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "live_session", "remote_bridge", "manual"]
@@ -104,6 +105,15 @@ def build_parser() -> argparse.ArgumentParser:
     bridge.add_argument("--port", type=int, default=8777)
     bridge.add_argument("--token", required=True)
     bridge.add_argument("--command", dest="bridge_command", default="claude")
+
+    providers = subparsers.add_parser("providers", help="Inspect provider runtime configs.")
+    provider_subparsers = providers.add_subparsers(dest="providers_command", required=True)
+    provider_health = provider_subparsers.add_parser(
+        "health",
+        help="Check provider runtime config without starting a meeting.",
+    )
+    provider_health.add_argument("--config", required=True, help="Agent runtime config path.")
+    provider_health.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable provider health report.")
 
     live_server = argparse.ArgumentParser(add_help=False)
     live_server.add_argument("--server", default="http://127.0.0.1:8765", help="AgentsAssemble GUI server URL.")
@@ -273,9 +283,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "live-agent":
         return run_live_agent_command(args)
+    if args.command == "providers":
+        return run_providers_command(args)
     if args.command == "sessions":
         return run_sessions_command(args)
 
+    return 1
+
+
+def run_providers_command(args: argparse.Namespace) -> int:
+    try:
+        if args.providers_command == "health":
+            return _run_provider_health(args)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     return 1
 
 
@@ -448,6 +470,15 @@ def _run_live_agent_preflight(args: argparse.Namespace) -> int:
     return 0 if report.get("status") == "ok" else 1
 
 
+def _run_provider_health(args: argparse.Namespace) -> int:
+    report = provider_health_report(Path(args.config))
+    if args.as_json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print(_format_provider_health(report))
+    return 0 if report.get("status") == "ok" else 1
+
+
 def _run_live_agent_smoke(args: argparse.Namespace) -> int:
     try:
         result = run_live_agent_smoke(
@@ -499,6 +530,39 @@ def _format_live_agent_preflight(report: dict[str, object]) -> str:
         ]
         for check in failed_checks:
             lines.append(f"{agent.get('agent_id') or 'unknown'}: {check.get('id')}: {check.get('message')}")
+    return "\n".join(lines)
+
+
+def _format_provider_health(report: dict[str, object]) -> str:
+    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    providers = report.get("providers") if isinstance(report.get("providers"), list) else []
+    bindings = report.get("bindings") if isinstance(report.get("bindings"), list) else []
+    lines = [
+        f"provider health: {report.get('status') or 'unknown'}",
+        f"providers: {summary.get('providers', 0)} checked, {summary.get('failed_providers', 0)} failed",
+        f"bindings: {summary.get('bindings', 0)} checked, {summary.get('failed_bindings', 0)} failed",
+        f"checks failed: {summary.get('checks_failed', 0)}, warnings: {summary.get('warnings', 0)}",
+    ]
+    for provider in providers:
+        if not isinstance(provider, dict) or provider.get("status") == "ok":
+            continue
+        failed_checks = [
+            check
+            for check in provider.get("checks", [])
+            if isinstance(check, dict) and check.get("status") in {"failed", "warning"}
+        ]
+        for check in failed_checks:
+            lines.append(f"{provider.get('provider_id') or 'unknown'}: {check.get('id')}: {check.get('message')}")
+    for binding in bindings:
+        if not isinstance(binding, dict) or binding.get("status") == "ok":
+            continue
+        failed_checks = [
+            check
+            for check in binding.get("checks", [])
+            if isinstance(check, dict) and check.get("status") in {"failed", "warning"}
+        ]
+        for check in failed_checks:
+            lines.append(f"{binding.get('agent_id') or 'unknown'}: {check.get('id')}: {check.get('message')}")
     return "\n".join(lines)
 
 

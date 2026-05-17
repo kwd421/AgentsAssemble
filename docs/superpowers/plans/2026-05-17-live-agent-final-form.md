@@ -493,6 +493,41 @@ Document that preflight is credential-free and does not execute provider command
 
 ---
 
+### Task 14: Provider Runtime Health
+
+**Files:**
+- Create: `agentsassemble/provider_health.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/static/shared.js`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/provider-architecture.md`
+- Modify: `docs/research-log.md`
+- Test: `tests/test_provider_health.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for static provider readiness**
+
+Cover `providers health --config`, `POST /api/provider-health`, and the GUI `Provider 점검` hook. The report must parse runtime provider config without starting a meeting, executing provider commands, or making model/network calls.
+
+- [x] **Step 2: Implement side-effect-free provider health**
+
+Validate provider registry availability, duplicate provider/permission/agent/role ids, required auth_ref presence without leaking values, endpoint requirements, local command executable presence, and meeting-only binding permission compatibility. Return a machine-readable report with `probe_mode: none`.
+
+- [x] **Step 3: Add CLI, API, and GUI operator controls**
+
+Expose `assemble providers health --config ... [--json]`, `POST /api/provider-health`, and a GUI `Provider 점검` action for meetings created from an agent runtime config.
+
+- [x] **Step 4: Document the static readiness contract**
+
+Document that provider health proves local config coherence only. It does not prove account login, billing, model availability, network reachability, bridge reachability, or real provider behavior until an explicit probe mode is designed and verified.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

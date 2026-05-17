@@ -436,6 +436,62 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         preflight.assert_called_once_with(Path("configs/live-agents.example.json"), server_override=None)
 
+    def test_providers_health_parses_operator_options(self):
+        args = build_parser().parse_args(
+            [
+                "providers",
+                "health",
+                "--config",
+                "configs/http-providers.example.json",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.command, "providers")
+        self.assertEqual(args.providers_command, "health")
+        self.assertEqual(args.config, "configs/http-providers.example.json")
+        self.assertTrue(args.as_json)
+
+    def test_providers_health_prints_summary_and_exits_nonzero_when_failed(self):
+        report = {
+            "status": "failed",
+            "summary": {
+                "providers": 2,
+                "failed_providers": 1,
+                "bindings": 1,
+                "failed_bindings": 1,
+                "checks_failed": 2,
+                "warnings": 0,
+            },
+            "providers": [
+                {
+                    "provider_id": "bad-provider",
+                    "kind": "anthropic",
+                    "status": "failed",
+                    "checks": [{"id": "auth_ref", "status": "failed", "message": "Required auth_ref is not available."}],
+                }
+            ],
+            "bindings": [
+                {
+                    "agent_id": "bad-agent",
+                    "status": "failed",
+                    "checks": [{"id": "provider_ready", "status": "failed", "message": "Provider bad-provider is not ready."}],
+                }
+            ],
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli.provider_health_report", return_value=report) as provider_health:
+            with patch("sys.stdout", stdout):
+                exit_code = main(["providers", "health", "--config", "configs/http-providers.example.json"])
+
+        self.assertEqual(exit_code, 1)
+        provider_health.assert_called_once_with(Path("configs/http-providers.example.json"))
+        output = stdout.getvalue()
+        self.assertIn("provider health: failed", output)
+        self.assertIn("providers: 2 checked, 1 failed", output)
+        self.assertIn("bad-provider: auth_ref: Required auth_ref is not available.", output)
+        self.assertIn("bad-agent: provider_ready: Provider bad-provider is not ready.", output)
+
     def test_live_agent_doctor_posts_readiness_request_and_prints_summary(self):
         payload = {
             "status": "ready",
