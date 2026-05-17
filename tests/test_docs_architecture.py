@@ -111,6 +111,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("The process CLI uses exit code `0` for successful supervisor requests", doc)
         self.assertIn("does not control arbitrary OS PIDs", doc)
         self.assertIn("resets the auto-restart counter", doc)
+        self.assertIn("supervised `run-group` processes start in their own process group", doc)
+        self.assertIn("ordinary child processes created by the resident group", doc)
         self.assertIn("interruptible subprocess runner", doc)
         self.assertIn("active local provider commands are terminated", doc)
         self.assertIn("provider command hits its timeout", doc)

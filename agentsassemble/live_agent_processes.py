@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import signal
 import subprocess
@@ -198,11 +199,19 @@ class LiveAgentProcessSupervisor:
             "--server",
             server,
         ]
+        start_new_session = _supports_process_groups()
         try:
-            process = self.command_factory(command, stdout=log_file, stderr=log_file, text=True)
+            process = self.command_factory(
+                command,
+                stdout=log_file,
+                stderr=log_file,
+                text=True,
+                start_new_session=start_new_session,
+            )
         except Exception:
             log_file.close()
             raise
+        _remember_process_group(process, start_new_session=start_new_session)
         record = {
             "group_id": clean_group_id,
             "status": "running",
@@ -337,16 +346,7 @@ class LiveAgentProcessSupervisor:
         if existing_returncode is not None:
             return self._mark_stopped(clean_group_id, returncode=existing_returncode)
 
-        try:
-            process.send_signal(signal.SIGINT)
-            returncode = process.wait(timeout=timeout_seconds)
-        except subprocess.TimeoutExpired:
-            process.terminate()
-            try:
-                returncode = process.wait(timeout=timeout_seconds)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                returncode = process.wait(timeout=timeout_seconds)
+        returncode = _stop_supervised_process(process, timeout_seconds=timeout_seconds)
         return self._mark_stopped(clean_group_id, returncode=returncode)
 
     def _mark_pending_restart_stopped(self, group_id: str) -> dict[str, object]:
@@ -495,6 +495,84 @@ def _clean_group_id(value: str) -> str:
 def _poll_process(process: object) -> object:
     poll = getattr(process, "poll")
     return poll()
+
+
+def _stop_supervised_process(process: object, *, timeout_seconds: float) -> object:
+    _send_process_stop_signal(process, _stop_signal("SIGINT"), force=False, interrupt=True)
+    try:
+        return _wait_for_process(process, timeout_seconds=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        _send_process_stop_signal(process, _stop_signal("SIGTERM"), force=False)
+        try:
+            return _wait_for_process(process, timeout_seconds=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            _send_process_stop_signal(process, _stop_signal("SIGKILL"), force=True)
+            return _wait_for_process(process, timeout_seconds=timeout_seconds)
+
+
+def _wait_for_process(process: object, *, timeout_seconds: float) -> object:
+    wait = getattr(process, "wait")
+    return wait(timeout=timeout_seconds)
+
+
+def _send_process_stop_signal(
+    process: object,
+    stop_signal: int | None,
+    *,
+    force: bool,
+    interrupt: bool = False,
+) -> None:
+    process_group_pid = _process_group_pid(process)
+    if process_group_pid is not None and stop_signal is not None:
+        try:
+            os.killpg(process_group_pid, stop_signal)
+            return
+        except ProcessLookupError:
+            return
+        except OSError:
+            pass
+    try:
+        if force:
+            kill = getattr(process, "kill")
+            kill()
+        elif interrupt and stop_signal is not None:
+            send_signal = getattr(process, "send_signal")
+            send_signal(stop_signal)
+        else:
+            terminate = getattr(process, "terminate")
+            terminate()
+    except ProcessLookupError:
+        return
+
+
+def _remember_process_group(process: object, *, start_new_session: bool) -> None:
+    if not start_new_session or not isinstance(process, subprocess.Popen):
+        return
+    process_group_pid = getattr(process, "pid", None)
+    if not isinstance(process_group_pid, int) or process_group_pid <= 0:
+        return
+    try:
+        if os.getpgid(process_group_pid) != process_group_pid:
+            return
+    except OSError:
+        return
+    setattr(process, "_agentsassemble_process_group_pid", process_group_pid)
+
+
+def _process_group_pid(process: object) -> int | None:
+    if not _supports_process_groups():
+        return None
+    pgid = getattr(process, "_agentsassemble_process_group_pid", None)
+    return pgid if isinstance(pgid, int) and pgid > 0 else None
+
+
+def _supports_process_groups() -> bool:
+    return hasattr(os, "killpg") and hasattr(os, "setsid") and hasattr(os, "getpgid")
+
+
+def _stop_signal(name: str) -> int | None:
+    value = getattr(signal, name, None)
+    return value if isinstance(value, int) else None
 
 
 def _process_record(payload: dict[str, object]) -> dict[str, object]:

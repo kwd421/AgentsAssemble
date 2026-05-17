@@ -819,6 +819,29 @@ Document that provider command timeouts use the same cleanup path as supervised 
 
 ---
 
+### Task 26: Supervised Run-Group Process Tree Cleanup
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for supervised child-process cleanup**
+
+Cover a supervised `run-group` process that spawns a long-running child process and ignores SIGINT. Stopping the group must escalate cleanup and stop the child process on POSIX hosts.
+
+- [x] **Step 2: Start supervised groups in a stoppable process group**
+
+On POSIX hosts, launch supervised resident `run-group` processes in a new session and remember the process group only when the child is actually the group leader. Send SIGINT, SIGTERM, and SIGKILL through that group before falling back to direct process termination.
+
+- [x] **Step 3: Document outer supervisor stop semantics**
+
+Document that the GUI/API supervisor cleanup boundary covers ordinary child processes created by the supervised resident group when the group fails to exit after SIGINT.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

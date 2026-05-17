@@ -1,6 +1,8 @@
 import json
+import os
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -18,6 +20,29 @@ def _ok_preflight(path, *, server_override=None):
 def _read_lifecycle_events(root: Path):
     path = root / "live-agent-runs" / "events.jsonl"
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _supports_process_groups():
+    return hasattr(os, "killpg") and hasattr(os, "setsid") and hasattr(os, "getpgid")
+
+
+def _pid_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _wait_for_pid_exit(pid: int, *, timeout_seconds: float = 5.0) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if not _pid_exists(pid):
+            return True
+        time.sleep(0.01)
+    return not _pid_exists(pid)
 
 
 def LiveAgentProcessSupervisor(output_root, **kwargs):
@@ -566,6 +591,62 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             self.assertEqual(process.signals, [signal.SIGINT])
             self.assertTrue(process.terminated)
             self.assertEqual(record["returncode"], 0)
+
+    @unittest.skipUnless(_supports_process_groups(), "requires POSIX process-group support")
+    def test_stop_group_timeout_terminates_supervised_child_processes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            child_pid_path = root / "supervised-child.pid"
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+
+            def command_factory(command, **kwargs):
+                del command
+                return subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-u",
+                        "-c",
+                        (
+                            "import pathlib, signal, subprocess, sys, time; "
+                            "signal.signal(signal.SIGINT, signal.SIG_IGN); "
+                            "child = subprocess.Popen(["
+                            "sys.executable, '-c', "
+                            "'import signal, time; signal.signal(signal.SIGINT, signal.SIG_IGN); time.sleep(30)'"
+                            "]); "
+                            "pathlib.Path(sys.argv[1]).write_text(str(child.pid), encoding='utf-8'); "
+                            "time.sleep(30)"
+                        ),
+                        str(child_pid_path),
+                    ],
+                    stdout=kwargs.get("stdout"),
+                    stderr=kwargs.get("stderr"),
+                    text=kwargs.get("text", True),
+                    start_new_session=kwargs.get("start_new_session", False),
+                )
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            child_pid = None
+            child_alive_after_stop = None
+            try:
+                supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew")
+                deadline = time.time() + 5
+                while time.time() < deadline and not child_pid_path.exists():
+                    time.sleep(0.01)
+                self.assertTrue(child_pid_path.exists())
+                child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+
+                supervisor.stop_group("crew", timeout_seconds=0.1)
+                child_alive_after_stop = not _wait_for_pid_exit(child_pid)
+            finally:
+                if child_pid is not None and _pid_exists(child_pid):
+                    try:
+                        os.kill(child_pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                supervisor.close()
+
+            self.assertFalse(child_alive_after_stop)
 
     def test_start_and_stop_persist_process_records(self):
         with tempfile.TemporaryDirectory() as temp_dir:
