@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, main
 from agentsassemble.gui import _make_handler, append_lobby_event, read_lobby
+from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 
 
 class CliTimeoutTests(unittest.TestCase):
@@ -327,6 +328,83 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("status: ok", stdout.getvalue())
+
+    def test_live_agent_smoke_parses_operator_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "smoke",
+                "--server",
+                "http://room.local",
+                "--group-id",
+                "operator-smoke",
+                "--timeout",
+                "8",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "smoke")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.group_id, "operator-smoke")
+        self.assertEqual(args.timeout, 8.0)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_smoke_verifies_supervised_fake_local_cli_and_live_session(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            old_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "smoke 이전 잡담"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "smoke",
+                            "--server",
+                            f"http://127.0.0.1:{server.server_port}",
+                            "--group-id",
+                            "operator-smoke",
+                            "--timeout",
+                            "8",
+                            "--json",
+                        ]
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["group_id"], "operator-smoke")
+            self.assertEqual(
+                {reply["message"] for reply in payload["replies"]},
+                {"smoke local_cli ok", "smoke live_session ok"},
+            )
+            self.assertNotEqual(payload["source_event_id"], old_event["id"])
+            self.assertEqual({reply["source_event_id"] for reply in payload["replies"]}, {payload["source_event_id"]})
+            events = read_lobby(root)
+            self.assertEqual(
+                {event["message"] for event in events if event.get("actor_id") in payload["agent_ids"]},
+                {"smoke local_cli ok", "smoke live_session ok"},
+            )
+            processes = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+            group = next(item for item in processes["groups"] if item["group_id"] == "operator-smoke")
+            self.assertEqual(group["status"], "stopped")
+
+    def test_live_agent_smoke_returns_one_for_reached_server_failure(self):
+        stderr = StringIO()
+        with patch("agentsassemble.cli.run_live_agent_smoke", side_effect=LiveAgentSmokeFailed("missing replies")):
+            with patch("sys.stderr", stderr):
+                exit_code = main(["live-agent", "smoke", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("missing replies", stderr.getvalue())
 
     def test_live_agent_health_reads_real_http_endpoint(self):
         class FakeSupervisor:

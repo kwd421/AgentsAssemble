@@ -310,6 +310,34 @@ Add fake live-session smoke instructions to `docs/live-agent-ops.md`, including 
 
 ---
 
+### Task 8: Credential-Free Operator Smoke Command
+
+**Files:**
+- Create: `agentsassemble/live_agent_smoke.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_live_agent_smoke.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for `live-agent smoke`**
+
+Cover parser options and an end-to-end local HTTP smoke against a temporary GUI room. The smoke must start a supervised fake group, verify one `local_cli` reply and one `live_session` reply, and leave the process group stopped.
+
+- [x] **Step 2: Implement operator smoke through public control-plane APIs**
+
+Add `assemble live-agent smoke` as a credential-free operator command. It posts a human lobby event, writes a temporary fake group config, starts it through `/api/live-agent-processes/start`, waits for `smoke local_cli ok` and `smoke live_session ok`, and cleans up the group.
+
+- [x] **Step 2b: Seed cursors and verify the probe source**
+
+Before posting the probe event, pre-register the smoke agents and heartbeat `last_observed_event_id` to the current latest lobby event. The smoke only accepts replies whose `source_event_id` matches the probe event, so old room chatter cannot produce a false pass.
+
+- [x] **Step 3: Document the smoke path**
+
+Document the command as the first operator check after the GUI starts, including `--json`, `--group-id`, and the fact that it uses no real provider credentials or model calls.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

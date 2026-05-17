@@ -26,6 +26,34 @@ The live-agent roster and supervised process panel auto-refresh in the GUI every
 
 That example config contains real `claude` and `gemini` commands. Do not start it until the real-provider checklist below is satisfied.
 
+## Credential-Free Operator Smoke
+
+After the GUI room is running, use the one-command smoke before touching real providers:
+
+```bash
+python3 -m agentsassemble.cli live-agent smoke \
+  --server http://127.0.0.1:8765
+```
+
+This command posts a human lobby event, starts a temporary supervised process group through `/api/live-agent-processes/start`, and waits for two fake resident agents to answer:
+
+- `smoke local_cli ok`
+- `smoke live_session ok`
+
+The smoke is credential-free: it uses local Python fake agents only, not Claude, Gemini, Cursor, account login, network model calls, or paid provider APIs. It verifies the GUI control plane, lobby event ingestion, supervised `run-group`, one-shot `local_cli`, long-lived JSONL `live_session`, and process cleanup path from the same CLI surface an operator uses.
+
+For a clean doctor run, start the GUI with a temporary `--output-root` and point smoke at that local server. The smoke server must be able to read a temporary config path from the same machine, so treat this as a local GUI diagnostic rather than a remote bridge test.
+
+Use `--json` when another script needs machine-readable evidence:
+
+```bash
+python3 -m agentsassemble.cli live-agent smoke \
+  --server http://127.0.0.1:8765 \
+  --group-id operator-smoke \
+  --timeout 12 \
+  --json
+```
+
 ## Fake CLI Smoke
 
 Use a fake CLI first. It proves the resident loop, room polling, heartbeat, lobby reply, log capture, and stop path without depending on Claude, Gemini, auth, network, or paid model calls.

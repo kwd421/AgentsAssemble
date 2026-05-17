@@ -23,6 +23,7 @@ from agentsassemble.codex_sessions import (
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agent_runner import LiveAgentRunner, config_from_args, load_group_configs
+from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.live_session_transport import JsonlLiveSession
 from agentsassemble.meeting import run_demo_meeting
 
@@ -140,6 +141,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Exit 1 when the health status is not ok.",
     )
+
+    live_smoke = live_agent_subparsers.add_parser(
+        "smoke",
+        parents=[live_server],
+        help="Run credential-free local smoke against a running GUI room.",
+    )
+    live_smoke.add_argument("--group-id", default="", help="Optional supervised process group id for the smoke run.")
+    live_smoke.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait for fake agent replies.")
+    live_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable smoke result.")
 
     live_delegate = live_agent_subparsers.add_parser(
         "delegate",
@@ -296,6 +306,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return 0
         if args.live_agent_command == "health":
             return _run_live_agent_health(args)
+        if args.live_agent_command == "smoke":
+            return _run_live_agent_smoke(args)
         if args.live_agent_command == "processes":
             return _run_live_agent_processes(args)
         if args.live_agent_command == "delegate":
@@ -403,6 +415,26 @@ def _run_live_agent_health(args: argparse.Namespace) -> int:
     else:
         print(_format_live_agent_health(payload))
     return 1 if args.fail_on_degraded and payload.get("status") != "ok" else 0
+
+
+def _run_live_agent_smoke(args: argparse.Namespace) -> int:
+    try:
+        result = run_live_agent_smoke(
+            server=args.server,
+            group_id=args.group_id,
+            timeout_seconds=float(args.timeout),
+            request_json=_request_json,
+        )
+    except LiveAgentSmokeFailed as error:
+        print(f"smoke failed: {error}", file=sys.stderr)
+        return 1
+    if args.as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"live-agent smoke ok: {result['group_id']}")
+        for reply in result["replies"]:
+            print(f"- {reply['actor_id']}: {reply['message']}")
+    return 0
 
 
 def _format_live_agent_health(payload: dict[str, object]) -> str:
