@@ -56,6 +56,41 @@ python3 -m agentsassemble.cli live-agent smoke \
   --json
 ```
 
+## Operator Readiness Doctor
+
+Use the doctor command when you want one operator-verifiable readiness answer instead of mentally combining health and smoke:
+
+```bash
+python3 -m agentsassemble.cli live-agent doctor \
+  --server http://127.0.0.1:8765
+```
+
+The doctor calls `POST /api/live-agent-readiness`. The readiness endpoint first records the current `/api/live-agent-health` snapshot, then runs the same credential-free smoke used by `live-agent smoke`. This order is intentional: the smoke leaves offline fake agents and a stopped smoke process record behind, so readiness uses pre-smoke health as the room health proof and treats the smoke result as a separate control-plane proof.
+
+Status meanings:
+
+- `ready`: pre-smoke health is `ok`, and the fake `local_cli` plus `live_session` smoke passed.
+- `degraded`: smoke passed, but pre-smoke health already had agent or process attention.
+- `failed`: the room was reached, but the smoke check did not pass.
+
+For scripts:
+
+```bash
+python3 -m agentsassemble.cli live-agent doctor \
+  --server http://127.0.0.1:8765 \
+  --group-id doctor-smoke \
+  --timeout 12 \
+  --json
+```
+
+Exit code contract:
+
+- `0`: readiness status is `ready`.
+- `1`: the server returned a readiness payload, but status was `degraded` or `failed`.
+- `2`: the CLI could not fetch or parse the readiness response, or the command arguments were invalid.
+
+The GUI "상주 실행" panel exposes the same readiness path as the `점검` button. Use `진단` for a raw smoke run and `점검` when you want the combined health-plus-smoke answer.
+
 ## Fake CLI Smoke
 
 Use a fake CLI first. It proves the resident loop, room polling, heartbeat, lobby reply, log capture, and stop path without depending on Claude, Gemini, auth, network, or paid model calls.

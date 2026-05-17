@@ -151,6 +151,15 @@ def build_parser() -> argparse.ArgumentParser:
     live_smoke.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait for fake agent replies.")
     live_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable smoke result.")
 
+    live_doctor = live_agent_subparsers.add_parser(
+        "doctor",
+        parents=[live_server],
+        help="Run health plus credential-free smoke readiness checks against a GUI room.",
+    )
+    live_doctor.add_argument("--group-id", default="", help="Optional supervised process group id for the smoke check.")
+    live_doctor.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait for fake agent replies.")
+    live_doctor.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable readiness result.")
+
     live_delegate = live_agent_subparsers.add_parser(
         "delegate",
         parents=[live_server],
@@ -308,6 +317,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_health(args)
         if args.live_agent_command == "smoke":
             return _run_live_agent_smoke(args)
+        if args.live_agent_command == "doctor":
+            return _run_live_agent_doctor(args)
         if args.live_agent_command == "processes":
             return _run_live_agent_processes(args)
         if args.live_agent_command == "delegate":
@@ -435,6 +446,40 @@ def _run_live_agent_smoke(args: argparse.Namespace) -> int:
         for reply in result["replies"]:
             print(f"- {reply['actor_id']}: {reply['message']}")
     return 0
+
+
+def _run_live_agent_doctor(args: argparse.Namespace) -> int:
+    payload = _request_json(
+        _server_url(args.server, "/api/live-agent-readiness"),
+        method="POST",
+        payload={"group_id": args.group_id, "timeout": float(args.timeout)},
+    )
+    if args.as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_readiness(payload))
+    return 0 if payload.get("status") == "ready" else 1
+
+
+def _format_live_agent_readiness(payload: dict[str, object]) -> str:
+    health = payload.get("health") if isinstance(payload.get("health"), dict) else {}
+    smoke = payload.get("smoke") if isinstance(payload.get("smoke"), dict) else {}
+    agents = health.get("agents") if isinstance(health.get("agents"), dict) else {}
+    processes = health.get("processes") if isinstance(health.get("processes"), dict) else {}
+    agent_attention = agents.get("attention") if isinstance(agents.get("attention"), list) else []
+    process_attention = processes.get("attention") if isinstance(processes.get("attention"), list) else []
+    smoke_suffix = str(smoke.get("group_id") or "").strip()
+    smoke_label = f"{smoke.get('status') or 'unknown'} {smoke_suffix}".strip()
+    lines = [
+        f"readiness: {payload.get('status') or 'unknown'}",
+        f"health: {health.get('status') or 'unknown'}",
+        f"smoke: {smoke_label}",
+        f"agent attention: {_attention_summary(agent_attention)}",
+        f"process attention: {_attention_summary(process_attention)}",
+    ]
+    if smoke.get("error"):
+        lines.append(f"smoke error: {smoke.get('error')}")
+    return "\n".join(lines)
 
 
 def _format_live_agent_health(payload: dict[str, object]) -> str:

@@ -342,6 +342,33 @@ def live_agent_smoke_payload(payload: dict[str, object], *, default_server: str)
     )
 
 
+def live_agent_readiness_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+    *,
+    default_server: str,
+) -> dict[str, object]:
+    health = live_agent_health_payload(output_root, process_supervisor)
+    checks = [{"id": "health", "status": health.get("status") or "unknown"}]
+    try:
+        smoke = live_agent_smoke_payload(payload, default_server=default_server)
+    except LiveAgentSmokeFailed as error:
+        smoke = {
+            "status": "failed",
+            "group_id": str(payload.get("group_id") or ""),
+            "error": str(error),
+        }
+    checks.append({"id": "smoke", "status": smoke.get("status") or "unknown"})
+    if smoke.get("status") != "ok":
+        status = "failed"
+    elif health.get("status") != "ok":
+        status = "degraded"
+    else:
+        status = "ready"
+    return {"status": status, "checks": checks, "health": health, "smoke": smoke}
+
+
 def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentProcessSupervisor) -> dict[str, object]:
     agents = read_live_agents(output_root)
     groups = process_supervisor.snapshot_groups()
@@ -827,6 +854,28 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_GATEWAY, str(error))
                     return
                 self._send_json(smoke)
+                return
+            if parsed.path == "/api/live-agent-readiness":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    readiness = live_agent_readiness_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                        default_server=self._local_server_url(),
+                    )
+                except (ValueError, urllib.error.URLError) as error:
+                    self._send_error(HTTPStatus.BAD_GATEWAY, str(error))
+                    return
+                self._send_json(readiness)
                 return
             live_agent_process_stop_id = _live_agent_process_action_path(parsed.path, "stop")
             if live_agent_process_stop_id is not None:

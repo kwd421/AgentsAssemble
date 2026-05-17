@@ -510,6 +510,38 @@ class GuiServerTests(unittest.TestCase):
             group = next(item for item in processes["groups"] if item["group_id"] == "gui-smoke")
             self.assertEqual(group["status"], "stopped")
 
+    def test_live_agent_readiness_endpoint_uses_pre_smoke_health_and_runs_smoke(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                    data=json.dumps({"group_id": "doctor-smoke", "timeout": 8}).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=12) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["health"]["status"], "ok")
+            self.assertEqual(payload["smoke"]["status"], "ok")
+            self.assertEqual(payload["smoke"]["group_id"], "doctor-smoke")
+            self.assertEqual(
+                {check["id"]: check["status"] for check in payload["checks"]},
+                {"health": "ok", "smoke": "ok"},
+            )
+            processes = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+            group = next(item for item in processes["groups"] if item["group_id"] == "doctor-smoke")
+            self.assertEqual(group["status"], "stopped")
+
     def test_live_agent_health_endpoint_summarizes_agents_and_processes(self):
         class FakeSupervisor:
             def __init__(self):

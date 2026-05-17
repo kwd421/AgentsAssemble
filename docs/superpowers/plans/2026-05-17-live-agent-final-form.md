@@ -366,6 +366,37 @@ Document that the GUI `진단` button calls `POST /api/live-agent-smoke` and use
 
 ---
 
+### Task 10: Operator Readiness Doctor
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/shared.js`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for combined readiness**
+
+Cover `POST /api/live-agent-readiness`, `live-agent doctor`, and the GUI `점검` button. The endpoint test proves readiness uses pre-smoke health, because a successful smoke leaves stopped/offline smoke artifacts behind.
+
+- [x] **Step 2: Implement readiness as a thin orchestration layer**
+
+Compute health first, run the existing credential-free smoke second, and return `ready`, `degraded`, or `failed` with `checks`, `health`, and `smoke` payloads. Keep the endpoint local-control-plane only; do not accept config paths, command overrides, provider ids, or server overrides.
+
+- [x] **Step 3: Add CLI and GUI operator controls**
+
+Add `assemble live-agent doctor` with `--json`, `--group-id`, and `--timeout`, plus a `점검` button in the GUI process controls. Exit `0` only for `ready`, `1` for reached-but-not-ready, and `2` for connection/argument failures through the existing CLI error wrapper.
+
+- [x] **Step 4: Document the doctor contract**
+
+Document why health is captured before smoke, the `/api/live-agent-readiness` path, the GUI `점검` button, and the exit-code contract.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

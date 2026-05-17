@@ -350,6 +350,80 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.timeout, 8.0)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_doctor_parses_operator_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "doctor",
+                "--server",
+                "http://room.local",
+                "--group-id",
+                "doctor-smoke",
+                "--timeout",
+                "8",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "doctor")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.group_id, "doctor-smoke")
+        self.assertEqual(args.timeout, 8.0)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_doctor_posts_readiness_request_and_prints_summary(self):
+        payload = {
+            "status": "ready",
+            "checks": [{"id": "health", "status": "ok"}, {"id": "smoke", "status": "ok"}],
+            "health": {"status": "ok", "agents": {"attention": []}, "processes": {"attention": []}},
+            "smoke": {"status": "ok", "group_id": "doctor-smoke", "replies": []},
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "doctor",
+                        "--server",
+                        "http://room.local",
+                        "--group-id",
+                        "doctor-smoke",
+                        "--timeout",
+                        "8",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-readiness",
+            method="POST",
+            payload={"group_id": "doctor-smoke", "timeout": 8.0},
+        )
+        output = stdout.getvalue()
+        self.assertIn("readiness: ready", output)
+        self.assertIn("health: ok", output)
+        self.assertIn("smoke: ok doctor-smoke", output)
+
+    def test_live_agent_doctor_json_exits_one_when_not_ready(self):
+        payload = {
+            "status": "degraded",
+            "checks": [{"id": "health", "status": "degraded"}, {"id": "smoke", "status": "ok"}],
+            "health": {
+                "status": "degraded",
+                "agents": {"attention": ["offline-agent"]},
+                "processes": {"attention": []},
+            },
+            "smoke": {"status": "ok", "group_id": "doctor-smoke", "replies": []},
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "doctor", "--server", "http://room.local", "--json"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(json.loads(stdout.getvalue())["status"], "degraded")
+
     def test_live_agent_smoke_verifies_supervised_fake_local_cli_and_live_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
