@@ -10,7 +10,7 @@ from agentsassemble.meeting_events import clean_lobby_text
 
 LIVE_AGENT_STATE = "live_agents.json"
 PERSISTED_STATUSES = {"online", "working", "offline", "error"}
-LIVE_AGENT_CONNECTION_KINDS = {"codex_resume", "local_cli", "remote_bridge", "manual"}
+LIVE_AGENT_CONNECTION_KINDS = {"codex_resume", "local_cli", "live_session", "remote_bridge", "manual"}
 DEFAULT_STALE_AFTER_SECONDS = 180
 LIVE_AGENT_STATE_LOCK = threading.Lock()
 

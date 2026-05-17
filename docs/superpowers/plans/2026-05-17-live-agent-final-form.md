@@ -257,6 +257,59 @@ Evidence: Browser smoke against `http://127.0.0.1:8877/` saw `Polling Smoke Agen
 
 ---
 
+### Task 7: Credential-Free Live Session Transport
+
+**Files:**
+- Create: `agentsassemble/live_session_transport.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/live_agents.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_session_transport.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_live_agent_runner.py`
+- Test: `tests/test_live_agents.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for resident JSONL sessions**
+
+Cover a long-lived fake subprocess that preserves state across two prompts, parser acceptance for `--connection-kind live_session`, and an HTTP resident smoke where two human lobby events are answered by the same process.
+
+- [x] **Step 2: Implement strict JSONL subprocess transport**
+
+Add `JsonlLiveSession` as a small local subprocess adapter. It sends `{"request_id", "prompt"}` JSONL to stdin and requires matching `{"request_id", "message"}` JSONL on stdout. It bounds response size, drains stderr into a bounded tail, and closes timed-out processes.
+
+- [x] **Step 2b: Cover stuck stdin writes**
+
+Apply the configured timeout to both request writes and response reads, so a child process that stops reading stdin cannot hang a resident worker before error heartbeat and recovery.
+
+- [x] **Step 3: Wire resident run and run-group selection**
+
+Keep `local_cli` as one-shot delegation. Select the long-lived JSONL transport only when `ResidentAgentConfig.connection_kind == "live_session"`, with one subprocess per resident runner or run-group worker.
+
+- [x] **Step 3a: Keep one-shot delegate semantics plain**
+
+Reject `live_session` on `live-agent delegate`, because that command sends one plain prompt to a local CLI and does not speak the JSONL session protocol.
+
+- [x] **Step 3b: Recover from failed live-session subprocesses**
+
+When a JSONL subprocess exits, times out, or violates the protocol, close that process and let the same resident runner start a fresh subprocess for the next eligible event after normal cooldown/error handling.
+
+- [x] **Step 3c: Close live-session workers on group interrupt**
+
+Track active run-group command runners so SIGINT can close long-lived JSONL subprocesses even when a worker is blocked inside a session call.
+
+- [x] **Step 4: Preserve public control-plane metadata**
+
+Allow `live_session` in CLI parser choices, live-agent presence normalization, and the GUI connection-kind selector. Group configs preserve `connection_kind: "live_session"`.
+
+- [x] **Step 5: Document the operator contract**
+
+Add fake live-session smoke instructions to `docs/live-agent-ops.md`, including the JSONL protocol, one-local-process expectation, and the explicit caveat that this is not native Claude/Gemini/Cursor PTY persistence.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

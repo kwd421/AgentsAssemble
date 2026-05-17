@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 from pathlib import Path
 from http.server import ThreadingHTTPServer
@@ -164,6 +165,20 @@ class CliTimeoutTests(unittest.TestCase):
             },
         )
         self.assertIn("claude-code-live", stdout.getvalue())
+
+    def test_live_agent_register_accepts_live_session_connection_kind(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "register",
+                "--agent-id",
+                "jsonl-session",
+                "--connection-kind",
+                "live_session",
+            ]
+        )
+
+        self.assertEqual(args.connection_kind, "live_session")
 
     def test_live_agent_say_posts_lobby_message(self):
         stdout = StringIO()
@@ -731,6 +746,28 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertNotIn("AgentCouncil", run_delegate.call_args.args[1])
         self.assertIn("Posted evt1", stdout.getvalue())
 
+    def test_live_agent_delegate_rejects_live_session_connection_kind(self):
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            with self.assertRaises(SystemExit) as raised:
+                build_parser().parse_args(
+                    [
+                        "live-agent",
+                        "delegate",
+                        "--agent-id",
+                        "jsonl-session",
+                        "--connection-kind",
+                        "live_session",
+                        "--command",
+                        "python3",
+                        "-u",
+                        "session.py",
+                    ]
+                )
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("invalid choice", stderr.getvalue())
+
     def test_live_agent_run_parser_defaults_to_resident_always_policy(self):
         args = build_parser().parse_args(
             [
@@ -754,6 +791,24 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.max_chain_depth, 1)
         self.assertEqual(args.max_ticks, 0)
         self.assertEqual(args.resident_command, ["claude", "-p"])
+
+    def test_live_agent_run_accepts_live_session_connection_kind(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run",
+                "--agent-id",
+                "local-session",
+                "--connection-kind",
+                "live_session",
+                "--command",
+                "python3",
+                "-u",
+                "fake_session.py",
+            ]
+        )
+
+        self.assertEqual(args.connection_kind, "live_session")
 
     def test_live_agent_run_group_accepts_config_path_and_tick_bound(self):
         args = build_parser().parse_args(
@@ -975,6 +1030,161 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual({event["message"] for event in replies}, {"Agent A reply", "Agent B reply"})
             self.assertEqual({event["source_event_id"] for event in replies}, {source_event["id"]})
             self.assertEqual({event["auto_chain_depth"] for event in replies}, {1})
+
+    def test_live_agent_run_live_session_reuses_one_process_for_multiple_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            first_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "첫 이벤트"})
+            session_script = "\n".join(
+                [
+                    "import json, sys",
+                    "count = 0",
+                    "for line in sys.stdin:",
+                    "    payload = json.loads(line)",
+                    "    count += 1",
+                    "    print(json.dumps({'request_id': payload['request_id'], 'message': f'Live session state {count}'}), flush=True)",
+                ]
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            result = {}
+
+            def run_resident():
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    result["exit_code"] = main(
+                        [
+                            "live-agent",
+                            "run",
+                            "--server",
+                            f"http://127.0.0.1:{server.server_port}",
+                            "--agent-id",
+                            "stateful-session",
+                            "--display-name",
+                            "Stateful Session",
+                            "--connection-kind",
+                            "live_session",
+                            "--poll-interval",
+                            "0.05",
+                            "--cooldown",
+                            "0",
+                            "--max-chain-depth",
+                            "0",
+                            "--max-ticks",
+                            "50",
+                            "--command",
+                            sys.executable,
+                            "-u",
+                            "-c",
+                            session_script,
+                        ]
+                    )
+                result["stdout"] = stdout.getvalue()
+
+            resident_thread = threading.Thread(target=run_resident)
+            resident_thread.start()
+            try:
+                deadline = time.time() + 5
+                while time.time() < deadline:
+                    replies = [event for event in read_lobby(root) if event.get("actor_id") == "stateful-session"]
+                    if replies:
+                        break
+                    time.sleep(0.05)
+                else:
+                    self.fail("live session resident did not post the first reply")
+                second_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "두 번째 이벤트"})
+                resident_thread.join(timeout=6)
+            finally:
+                server.shutdown()
+                server.server_close()
+            self.assertFalse(resident_thread.is_alive())
+
+            self.assertEqual(result.get("exit_code"), 0)
+            replies = [event for event in read_lobby(root) if event.get("actor_id") == "stateful-session"]
+            self.assertEqual([event["message"] for event in replies], ["Live session state 1", "Live session state 2"])
+            self.assertEqual([event["source_event_id"] for event in replies], [first_event["id"], second_event["id"]])
+            self.assertIn("Resident agent stopped after posting 2 replies", result.get("stdout", ""))
+
+    def test_live_agent_run_live_session_restarts_after_process_failure_for_new_event(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            first_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "첫 이벤트는 실패"})
+            marker_path = Path(temp_dir) / "failed-once.txt"
+            session_script = "\n".join(
+                [
+                    "import json, pathlib, sys",
+                    f"marker = pathlib.Path({str(marker_path)!r})",
+                    "for line in sys.stdin:",
+                    "    payload = json.loads(line)",
+                    "    if not marker.exists():",
+                    "        marker.write_text('failed', encoding='utf-8')",
+                    "        sys.exit(9)",
+                    "    print(json.dumps({'request_id': payload['request_id'], 'message': 'Recovered live session'}), flush=True)",
+                ]
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            result = {}
+
+            def run_resident():
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    result["exit_code"] = main(
+                        [
+                            "live-agent",
+                            "run",
+                            "--server",
+                            f"http://127.0.0.1:{server.server_port}",
+                            "--agent-id",
+                            "recovering-session",
+                            "--display-name",
+                            "Recovering Session",
+                            "--connection-kind",
+                            "live_session",
+                            "--poll-interval",
+                            "0.05",
+                            "--cooldown",
+                            "0",
+                            "--max-chain-depth",
+                            "0",
+                            "--max-ticks",
+                            "60",
+                            "--command",
+                            sys.executable,
+                            "-u",
+                            "-c",
+                            session_script,
+                        ]
+                    )
+                result["stdout"] = stdout.getvalue()
+
+            resident_thread = threading.Thread(target=run_resident)
+            resident_thread.start()
+            try:
+                deadline = time.time() + 5
+                while time.time() < deadline:
+                    if marker_path.exists():
+                        break
+                    time.sleep(0.05)
+                else:
+                    self.fail("live session resident did not reach the first failing event")
+                second_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "두 번째 이벤트는 복구"})
+                resident_thread.join(timeout=6)
+            finally:
+                server.shutdown()
+                server.server_close()
+            self.assertFalse(resident_thread.is_alive())
+
+            self.assertEqual(result.get("exit_code"), 0)
+            replies = [event for event in read_lobby(root) if event.get("actor_id") == "recovering-session"]
+            self.assertEqual([event["message"] for event in replies], ["Recovered live session"])
+            self.assertEqual([event["source_event_id"] for event in replies], [second_event["id"]])
+            self.assertNotEqual(first_event["id"], replies[0]["source_event_id"])
+            self.assertIn("Resident agent stopped after posting 1 replies", result.get("stdout", ""))
 
 
 if __name__ == "__main__":

@@ -415,3 +415,25 @@ class LiveAgentRunnerTests(unittest.TestCase):
         modes = {config.agent_id: config.engagement_mode for config in loaded}
         self.assertEqual(modes["agent-default"], "mentioned")
         self.assertEqual(modes["agent-always"], "always")
+
+    def test_group_config_preserves_live_session_connection_kind(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-session",
+                                "connection_kind": "live_session",
+                                "command": ["python3", "-u", "session.py"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        self.assertEqual(loaded[0].connection_kind, "live_session")

@@ -79,3 +79,16 @@ class LiveAgentPresenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             with self.assertRaises(ValueError):
                 connect_live_agent(Path(temp_dir), {"agent_id": "\n "})
+
+    def test_connect_live_agent_preserves_live_session_connection_kind(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = connect_live_agent(
+                Path(temp_dir),
+                {
+                    "agent_id": "jsonl-session",
+                    "display_name": "JSONL Session",
+                    "connection_kind": "live_session",
+                },
+            )
+
+        self.assertEqual(agent["connection_kind"], "live_session")

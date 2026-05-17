@@ -56,6 +56,44 @@ fake-live-one, respond once
 
 Expected result: `Fake CLI` appears in the live-agent roster, reads the lobby event, and posts one lobby reply. Because `--max-ticks 5` is bounded, the command exits after the smoke window and sends an offline heartbeat.
 
+## Fake Live Session Smoke
+
+Use `--connection-kind live_session` when the resident agent command speaks the AgentsAssemble JSONL session protocol. Unlike `local_cli`, this keeps one local process alive for the resident runner and sends multiple room events through that same stdin/stdout bridge.
+
+This connection kind is for `live-agent run` and `live-agent run-group`. The one-shot `live-agent delegate` command keeps plain local CLI semantics and does not use the JSONL session envelope.
+
+Protocol:
+
+- request JSONL: `{"request_id": "...", "prompt": "..."}`
+- response JSONL: `{"request_id": "...", "message": "one lobby reply"}`
+
+The subprocess must write only response JSONL to stdout. Diagnostic logs belong on stderr; the runner drains stderr separately and keeps only a bounded tail for error reporting.
+
+Post a human lobby message first, then run a bounded stateful fake session:
+
+```bash
+python3 -m agentsassemble.cli live-agent run \
+  --server http://127.0.0.1:8765 \
+  --agent-id fake-jsonl-session \
+  --display-name "Fake JSONL Session" \
+  --provider-kind local_cli \
+  --connection-kind live_session \
+  --engagement-mode always \
+  --poll-interval 1 \
+  --heartbeat-interval 5 \
+  --cooldown 0 \
+  --max-chain-depth 1 \
+  --max-ticks 5 \
+  --command python3 -u -c "import json, sys; count=0
+for line in sys.stdin:
+    payload=json.loads(line); count += 1
+    print(json.dumps({'request_id': payload['request_id'], 'message': f'Fake JSONL state {count}'}), flush=True)"
+```
+
+Expected result: the first eligible lobby event gets `Fake JSONL state 1`. A later eligible lobby event in the same bounded run gets `Fake JSONL state 2`, proving the same process stayed alive. This is a JSONL bridge for local subprocesses, not a native Claude, Gemini, or Cursor PTY protocol.
+
+If the JSONL subprocess exits, times out, stops reading stdin, or returns invalid protocol output, the resident runner records an `error` heartbeat with `last_error`, closes that subprocess, and starts a fresh subprocess for the next eligible event after the normal cooldown gate.
+
 ## Fake Group Smoke
 
 Use a temporary two-agent config when you want to verify `run-group` without real providers:
@@ -274,4 +312,4 @@ After restarting the GUI:
 - restarted resident runners reuse `last_observed_event_id` from their live-agent presence so they do not answer the same lobby event again;
 - existing presence rows in `.agentsassemble/live_agents.json` can remain until heartbeat age makes them `stale`; restarting the GUI does not resume old resident agents except pending auto-restart records, which can start a fresh process after `next_restart_at`.
 
-This slice is not native Claude Code Channels, Gemini SDK sessions, Cursor PTY persistence, or OS-level sandboxing. Those are future backend variants behind the same room and supervisor shape.
+This slice is not native Claude Code Channels, Gemini SDK sessions, Cursor PTY persistence, or OS-level sandboxing. The `live_session` transport is not a native Claude, Gemini, or Cursor PTY protocol. Those are future backend variants behind the same room and supervisor shape.

@@ -23,7 +23,12 @@ from agentsassemble.codex_sessions import (
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agent_runner import LiveAgentRunner, config_from_args, load_group_configs
+from agentsassemble.live_session_transport import JsonlLiveSession
 from agentsassemble.meeting import run_demo_meeting
+
+
+LIVE_AGENT_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "live_session", "remote_bridge", "manual"]
+LIVE_AGENT_DELEGATE_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "remote_bridge", "manual"]
 
 
 def parse_codex_timeout(value: str) -> int | None:
@@ -108,7 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_register.add_argument("--agent-id", required=True)
     live_register.add_argument("--display-name", default="")
     live_register.add_argument("--provider-kind", default="manual")
-    live_register.add_argument("--connection-kind", choices=["codex_resume", "local_cli", "remote_bridge", "manual"], default="manual")
+    live_register.add_argument("--connection-kind", choices=LIVE_AGENT_CONNECTION_KIND_CHOICES, default="manual")
     live_register.add_argument("--session-id", default="")
     live_register.add_argument("--endpoint", default="")
     live_register.add_argument("--meeting-id", default="")
@@ -144,7 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_delegate.add_argument("--agent-id", required=True)
     live_delegate.add_argument("--display-name", default="")
     live_delegate.add_argument("--provider-kind", default="local_cli")
-    live_delegate.add_argument("--connection-kind", choices=["codex_resume", "local_cli", "remote_bridge", "manual"], default="local_cli")
+    live_delegate.add_argument("--connection-kind", choices=LIVE_AGENT_DELEGATE_CONNECTION_KIND_CHOICES, default="local_cli")
     live_delegate.add_argument("--session-id", default="")
     live_delegate.add_argument("--endpoint", default="")
     live_delegate.add_argument("--meeting-id", default="")
@@ -156,7 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--agent-id", required=True)
     live_run.add_argument("--display-name", default="")
     live_run.add_argument("--provider-kind", default="local_cli")
-    live_run.add_argument("--connection-kind", choices=["codex_resume", "local_cli", "remote_bridge", "manual"], default="local_cli")
+    live_run.add_argument("--connection-kind", choices=LIVE_AGENT_CONNECTION_KIND_CHOICES, default="local_cli")
     live_run.add_argument("--session-id", default="")
     live_run.add_argument("--endpoint", default="")
     live_run.add_argument("--meeting-id", default="")
@@ -319,13 +324,19 @@ def _heartbeat_payload(args: argparse.Namespace) -> dict[str, object]:
 
 
 def _run_live_agent_resident(args: argparse.Namespace) -> int:
+    config = config_from_args(args)
+    command_runner = _command_runner_for_config(config.connection_kind)
     runner = LiveAgentRunner(
-        config_from_args(args),
+        config,
         request_json=_request_json,
-        command_runner=_run_delegate_command,
+        command_runner=command_runner,
         sleep_fn=time.sleep,
     )
-    replies = runner.run()
+    replies = 0
+    try:
+        replies = runner.run()
+    finally:
+        _close_command_runner(command_runner)
     print(f"Resident agent stopped after posting {replies} replies")
     return 0
 
@@ -335,22 +346,32 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
     stop_event = threading.Event()
     results: dict[str, int] = {}
     errors: dict[str, str] = {}
+    active_command_runners: list[object] = []
+    active_command_runners_lock = threading.Lock()
 
     def sleep(seconds: float) -> None:
         stop_event.wait(seconds)
 
     def run_agent(config) -> None:
+        command_runner = _command_runner_for_config(config.connection_kind)
+        with active_command_runners_lock:
+            active_command_runners.append(command_runner)
         try:
             runner = LiveAgentRunner(
                 config,
                 request_json=_request_json,
-                command_runner=_run_delegate_command,
+                command_runner=command_runner,
                 sleep_fn=sleep,
                 stop_event=stop_event,
             )
             results[config.agent_id] = runner.run()
         except Exception as error:  # pragma: no cover - surfaced through CLI status in integration use
             errors[config.agent_id] = str(error)
+        finally:
+            _close_command_runner(command_runner)
+            with active_command_runners_lock:
+                if command_runner in active_command_runners:
+                    active_command_runners.remove(command_runner)
 
     threads = [threading.Thread(target=run_agent, args=(config,), daemon=True) for config in configs]
     try:
@@ -360,6 +381,10 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
             thread.join()
     except KeyboardInterrupt:
         stop_event.set()
+        with active_command_runners_lock:
+            runners_to_close = list(active_command_runners)
+        for command_runner in runners_to_close:
+            _close_command_runner(command_runner)
         for thread in threads:
             thread.join(timeout=5)
     if errors:
@@ -529,6 +554,48 @@ def _run_live_agent_delegate(args: argparse.Namespace) -> int:
     event = response.get("event", {}) if isinstance(response.get("event"), dict) else {}
     print(f"Posted {event.get('id') or 'lobby message'}")
     return 0
+
+
+class _JsonlLiveSessionCommandRunner:
+    def __init__(self) -> None:
+        self.session: JsonlLiveSession | None = None
+        self._lock = threading.Lock()
+
+    def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
+        with self._lock:
+            if self.session is None:
+                self.session = JsonlLiveSession(command)
+            session = self.session
+        try:
+            return session.ask(prompt, timeout_seconds=timeout_seconds)
+        except Exception:
+            self._close_session(session)
+            raise
+
+    def close(self) -> None:
+        with self._lock:
+            session = self.session
+            self.session = None
+        if session is not None:
+            session.close()
+
+    def _close_session(self, session: JsonlLiveSession) -> None:
+        with self._lock:
+            if self.session is session:
+                self.session = None
+        session.close()
+
+
+def _command_runner_for_config(connection_kind: str):
+    if connection_kind == "live_session":
+        return _JsonlLiveSessionCommandRunner()
+    return _run_delegate_command
+
+
+def _close_command_runner(command_runner) -> None:
+    close = getattr(command_runner, "close", None)
+    if close is not None:
+        close()
 
 
 def _delegate_prompt(args: argparse.Namespace, room: dict[str, object]) -> str:

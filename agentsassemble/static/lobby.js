@@ -358,6 +358,7 @@ function renderLiveAgentConnections() {
         </select>
         <select id="live-agent-connection-kind">
           <option value="local_cli">Local CLI</option>
+          <option value="live_session">Live session</option>
           <option value="remote_bridge">Remote bridge</option>
           <option value="codex_resume">Codex resume</option>
           <option value="manual">Manual</option>
@@ -650,6 +651,7 @@ function providerKindLabel(kind) {
 
 function connectionKindLabel(kind) {
   if (kind === "local_cli") return "Local CLI";
+  if (kind === "live_session") return "Live session";
   if (kind === "remote_bridge") return "Remote bridge";
   if (kind === "codex_resume") return "Codex resume";
   return "Manual";
