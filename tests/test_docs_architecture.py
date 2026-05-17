@@ -70,6 +70,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("one local process", doc)
         self.assertIn("one-shot `live-agent delegate`", doc)
         self.assertIn("stops reading stdin", doc)
+        self.assertIn("JSONL live-session subprocess starts in its own process group", doc)
+        self.assertIn("timing out while writing a blocked request", doc)
         self.assertIn("claude", doc)
         self.assertIn("gemini", doc)
         self.assertIn("curl -X POST", doc)

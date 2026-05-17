@@ -842,6 +842,29 @@ Document that the GUI/API supervisor cleanup boundary covers ordinary child proc
 
 ---
 
+### Task 27: Live Session Subprocess Tree Cleanup
+
+**Files:**
+- Modify: `agentsassemble/live_session_transport.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_session_transport.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for JSONL session child cleanup**
+
+Cover a JSONL `live_session` subprocess that spawns a long-running child. Closing the session and timing out while waiting for a reply must stop the child process on POSIX hosts.
+
+- [x] **Step 2: Start JSONL sessions in a stoppable process group**
+
+On POSIX hosts, launch the JSONL live-session subprocess in a new session and remember the process group only when the child is actually the group leader. The close path sends SIGTERM and SIGKILL through that group before falling back to direct process termination.
+
+- [x] **Step 3: Document live-session cleanup semantics**
+
+Document that close, reply timeout, and blocked-write timeout all use the same JSONL session cleanup boundary for ordinary child processes created by wrappers.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

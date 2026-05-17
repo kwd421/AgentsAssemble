@@ -1,10 +1,37 @@
 import json
+import os
+import signal
 import sys
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 
 from agentsassemble.live_session_transport import JsonlLiveSession
+
+
+def _supports_process_groups():
+    return hasattr(os, "killpg") and hasattr(os, "setsid") and hasattr(os, "getpgid")
+
+
+def _pid_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _wait_for_pid_exit(pid: int, *, timeout_seconds: float = 5.0) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if not _pid_exists(pid):
+            return True
+        time.sleep(0.01)
+    return not _pid_exists(pid)
 
 
 class JsonlLiveSessionTests(unittest.TestCase):
@@ -68,6 +95,110 @@ class JsonlLiveSessionTests(unittest.TestCase):
             session.ask("prompt", timeout_seconds=0.1)
 
         self.assertIsNotNone(session.process.poll())
+
+    @unittest.skipUnless(_supports_process_groups(), "requires POSIX process-group support")
+    def test_jsonl_session_close_terminates_child_processes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            child_pid_path = Path(temp_dir) / "jsonl-child.pid"
+            script = (
+                "import pathlib, subprocess, sys, time; "
+                "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+                "pathlib.Path(sys.argv[1]).write_text(str(child.pid), encoding='utf-8'); "
+                "time.sleep(30)"
+            )
+            session = JsonlLiveSession([sys.executable, "-u", "-c", script, str(child_pid_path)])
+            child_pid = None
+            child_alive_after_close = None
+            try:
+                deadline = time.time() + 5
+                while time.time() < deadline and not child_pid_path.exists():
+                    time.sleep(0.01)
+                self.assertTrue(child_pid_path.exists())
+                child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+
+                session.close(timeout_seconds=0.1)
+                child_alive_after_close = not _wait_for_pid_exit(child_pid)
+            finally:
+                if child_pid is not None and _pid_exists(child_pid):
+                    try:
+                        os.kill(child_pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                session.close()
+
+            self.assertFalse(child_alive_after_close)
+
+    @unittest.skipUnless(_supports_process_groups(), "requires POSIX process-group support")
+    def test_jsonl_session_close_terminates_child_after_wrapper_exits_on_eof(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            child_pid_path = Path(temp_dir) / "jsonl-eof-child.pid"
+            script = "\n".join(
+                [
+                    "import pathlib, subprocess, sys",
+                    "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])",
+                    "pathlib.Path(sys.argv[1]).write_text(str(child.pid), encoding='utf-8')",
+                    "for _ in sys.stdin:",
+                    "    pass",
+                ]
+            )
+            session = JsonlLiveSession([sys.executable, "-u", "-c", script, str(child_pid_path)])
+            child_pid = None
+            child_alive_after_close = None
+            try:
+                deadline = time.time() + 5
+                while time.time() < deadline and not child_pid_path.exists():
+                    time.sleep(0.01)
+                self.assertTrue(child_pid_path.exists())
+                child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+
+                session.close(timeout_seconds=0.5)
+                child_alive_after_close = not _wait_for_pid_exit(child_pid)
+            finally:
+                if child_pid is not None and _pid_exists(child_pid):
+                    try:
+                        os.kill(child_pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                session.close()
+
+            self.assertEqual(session.process.poll(), 0)
+            self.assertFalse(child_alive_after_close)
+
+    @unittest.skipUnless(_supports_process_groups(), "requires POSIX process-group support")
+    def test_jsonl_session_timeout_terminates_child_processes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            child_pid_path = Path(temp_dir) / "jsonl-timeout-child.pid"
+            script = "\n".join(
+                [
+                    "import pathlib, subprocess, sys, time",
+                    "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])",
+                    "pathlib.Path(sys.argv[1]).write_text(str(child.pid), encoding='utf-8')",
+                    "for line in sys.stdin:",
+                    "    time.sleep(30)",
+                ]
+            )
+            session = JsonlLiveSession([sys.executable, "-u", "-c", script, str(child_pid_path)])
+            child_pid = None
+            child_alive_after_timeout = None
+            try:
+                deadline = time.time() + 5
+                while time.time() < deadline and not child_pid_path.exists():
+                    time.sleep(0.01)
+                self.assertTrue(child_pid_path.exists())
+                child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+
+                with self.assertRaisesRegex(TimeoutError, "timed out"):
+                    session.ask("prompt", timeout_seconds=0.1)
+                child_alive_after_timeout = not _wait_for_pid_exit(child_pid)
+            finally:
+                if child_pid is not None and _pid_exists(child_pid):
+                    try:
+                        os.kill(child_pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                session.close()
+
+            self.assertFalse(child_alive_after_timeout)
 
     def test_jsonl_session_close_interrupts_blocked_ask(self):
         script = "\n".join(

@@ -185,6 +185,8 @@ Protocol:
 
 The subprocess must write only response JSONL to stdout. Diagnostic logs belong on stderr; the runner drains stderr separately and keeps only a bounded tail for error reporting.
 
+On POSIX hosts, the JSONL live-session subprocess starts in its own process group. Closing a session, timing out while waiting for a reply, or timing out while writing a blocked request terminates that process group so ordinary child processes created by a wrapper are cleaned up with the session.
+
 Post a human lobby message first, then run a bounded stateful fake session:
 
 ```bash

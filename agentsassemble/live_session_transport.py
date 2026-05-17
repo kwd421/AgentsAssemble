@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import selectors
+import signal
 import subprocess
 import threading
 import time
@@ -39,7 +40,9 @@ class JsonlLiveSession:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=0,
+            start_new_session=_supports_process_groups(),
         )
+        _remember_process_group(self.process)
         if self.process.stdin is None or self.process.stdout is None:
             self.close()
             raise RuntimeError("Live session process did not expose stdin/stdout.")
@@ -78,12 +81,8 @@ class JsonlLiveSession:
             try:
                 self.process.wait(timeout=timeout_seconds)
             except subprocess.TimeoutExpired:
-                self.process.terminate()
-                try:
-                    self.process.wait(timeout=timeout_seconds)
-                except subprocess.TimeoutExpired:
-                    self.process.kill()
-                    self.process.wait(timeout=timeout_seconds)
+                _terminate_process(self.process, timeout_seconds=timeout_seconds)
+        _terminate_process_group_children(self.process, timeout_seconds=timeout_seconds)
         self._join_stderr_thread(timeout_seconds=0.2)
         self._close_stream(self.process.stdout)
         self._close_stream(self.process.stderr)
@@ -245,6 +244,90 @@ class JsonlLiveSession:
             close()
         except OSError:
             pass
+
+
+def _terminate_process(process: subprocess.Popen[bytes], *, timeout_seconds: float) -> None:
+    if process.poll() is not None:
+        return
+    _send_process_stop_signal(process, _stop_signal("SIGTERM"), force=False)
+    try:
+        process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        _send_process_stop_signal(process, _stop_signal("SIGKILL"), force=True)
+        process.wait(timeout=timeout_seconds)
+
+
+def _terminate_process_group_children(process: subprocess.Popen[bytes], *, timeout_seconds: float) -> None:
+    if _process_group_pid(process) is None:
+        return
+    _send_process_stop_signal(process, _stop_signal("SIGTERM"), force=False)
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    while _process_group_exists(process) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    if _process_group_exists(process):
+        _send_process_stop_signal(process, _stop_signal("SIGKILL"), force=True)
+
+
+def _send_process_stop_signal(process: subprocess.Popen[bytes], stop_signal: int | None, *, force: bool) -> None:
+    process_group_pid = _process_group_pid(process)
+    if process_group_pid is not None and stop_signal is not None:
+        try:
+            os.killpg(process_group_pid, stop_signal)
+            return
+        except ProcessLookupError:
+            return
+        except OSError:
+            pass
+    try:
+        if force:
+            process.kill()
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        return
+
+
+def _remember_process_group(process: subprocess.Popen[bytes]) -> None:
+    if not _supports_process_groups():
+        return
+    process_group_pid = getattr(process, "pid", None)
+    if not isinstance(process_group_pid, int) or process_group_pid <= 0:
+        return
+    try:
+        if os.getpgid(process_group_pid) != process_group_pid:
+            return
+    except OSError:
+        return
+    setattr(process, "_agentsassemble_process_group_pid", process_group_pid)
+
+
+def _process_group_pid(process: subprocess.Popen[bytes]) -> int | None:
+    if not _supports_process_groups():
+        return None
+    pgid = getattr(process, "_agentsassemble_process_group_pid", None)
+    return pgid if isinstance(pgid, int) and pgid > 0 else None
+
+
+def _process_group_exists(process: subprocess.Popen[bytes]) -> bool:
+    pgid = _process_group_pid(process)
+    if pgid is None:
+        return False
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _supports_process_groups() -> bool:
+    return hasattr(os, "killpg") and hasattr(os, "setsid") and hasattr(os, "getpgid")
+
+
+def _stop_signal(name: str) -> int | None:
+    value = getattr(signal, name, None)
+    return value if isinstance(value, int) else None
 
 
 def _message_from_jsonl(line: bytes, *, expected_request_id: str) -> str:
