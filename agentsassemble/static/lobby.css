@@ -858,6 +858,8 @@
 .live-agent-process-row small {
   color: var(--muted);
   font-size: 11px;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .live-agent-process-row em {

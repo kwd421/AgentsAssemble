@@ -155,6 +155,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("min-width: 0;", css[css.index(".live-agent-process-options") :])
         self.assertIn("white-space: normal;", css)
         self.assertIn(".live-agent-process-log", css)
+        process_row_text_css = css[css.index(".live-agent-process-row span,") : css.index(".live-agent-process-row button")]
+        self.assertIn("overflow-wrap: anywhere;", process_row_text_css)
+        self.assertIn("white-space: normal;", process_row_text_css)
         self.assertIn(".live-agent-error", css)
         self.assertIn(".live-agent-status", css)
         self.assertIn('if (status === "error") return "오류";', script)

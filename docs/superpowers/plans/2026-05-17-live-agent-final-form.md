@@ -42,28 +42,28 @@ This plan targets the local CLI first-class final form. It does not add producti
 - Test: `tests/test_cli_timeout.py`
 - Test: `tests/test_gui_server.py`
 
-- [ ] **Step 1: Write failing supervisor tests**
+- [x] **Step 1: Write failing supervisor tests**
 
 Add tests that start a fake process with a config path, expose status with `pid`, write a log path under `live-agent-runs`, and stop the process with graceful interrupt before force kill.
 
 Run: `python3 -m unittest tests.test_live_agent_processes`
 Expected: fail because `agentsassemble.live_agent_processes` does not exist.
 
-- [ ] **Step 2: Implement the process supervisor**
+- [x] **Step 2: Implement the process supervisor**
 
 Create a supervisor class that owns only processes it launched. `start_group()` should refuse duplicate running group ids, create a log file, launch `python -m agentsassemble.cli live-agent run-group --config <path> --server <server-url>`, and return a serializable group record. `stop_group()` should signal interrupt, wait briefly, then terminate/kill if needed.
 
 Run: `python3 -m unittest tests.test_live_agent_processes`
 Expected: pass.
 
-- [ ] **Step 3: Add `run-group --server` override**
+- [x] **Step 3: Add `run-group --server` override**
 
 Extend parser coverage so `assemble live-agent run-group --config configs/live-agents.example.json --server http://127.0.0.1:9999` parses. Update config loading so every loaded resident agent uses the override server.
 
 Run: `python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_run_group_accepts_server_override`
 Expected: pass after a RED failure.
 
-- [ ] **Step 4: Add GUI process endpoints**
+- [x] **Step 4: Add GUI process endpoints**
 
 Expose:
 
@@ -76,7 +76,7 @@ Start should derive server URL from the request host unless the payload gives `s
 Run: `python3 -m unittest tests.test_gui_server.GuiServerTests.test_live_agent_process_endpoints_start_list_and_stop_group`
 Expected: pass after a RED failure.
 
-- [ ] **Step 5: Review checkpoint**
+- [x] **Step 5: Review checkpoint**
 
 Self-review invariants:
 
@@ -95,7 +95,7 @@ Self-review invariants:
 - Modify: `agentsassemble/static/lobby.css`
 - Test: `tests/test_static_ui_assets.py`
 
-- [ ] **Step 1: Write static UI hook tests**
+- [x] **Step 1: Write static UI hook tests**
 
 Assert the lobby UI contains:
 
@@ -108,14 +108,14 @@ Assert the lobby UI contains:
 Run: `python3 -m unittest tests.test_static_ui_assets.StaticUiAssetTests.test_lobby_separates_stage_from_activity_feed`
 Expected: fail before UI edits.
 
-- [ ] **Step 2: Add browser state and fetch helpers**
+- [x] **Step 2: Add browser state and fetch helpers**
 
 Add `liveAgentProcesses`, `liveAgentProcessesLoaded`, `liveAgentProcessesLoading`, and `liveAgentProcessStatus` to shared state. In `lobby.js`, add load/start/stop helpers using the existing `fetchJson` pattern.
 
 Run: same static UI test.
 Expected: still fail until markup exists.
 
-- [ ] **Step 3: Render controls**
+- [x] **Step 3: Render controls**
 
 Render a compact process control area inside the existing live-agent section:
 
@@ -127,7 +127,7 @@ Render a compact process control area inside the existing live-agent section:
 Run: same static UI test.
 Expected: pass.
 
-- [ ] **Step 4: Browser smoke**
+- [x] **Step 4: Browser smoke**
 
 Start `assemble gui`, open the lobby, verify the process section renders, and confirm no text overlaps at desktop and mobile widths.
 
@@ -142,7 +142,7 @@ Expected: lobby renders process controls and existing lobby functions remain rea
 - Modify: `agentsassemble/live_agent_runner.py`
 - Test: `tests/test_live_agent_runner.py`
 
-- [ ] **Step 1: Write policy tests**
+- [x] **Step 1: Write policy tests**
 
 Cover:
 
@@ -154,14 +154,14 @@ Cover:
 Run: `python3 -m unittest tests.test_live_agent_runner`
 Expected: fail for new policies.
 
-- [ ] **Step 2: Add a small policy function**
+- [x] **Step 2: Add a small policy function**
 
 Add `should_reply_to_event(config, event)` or equivalent at the event selection boundary. Keep chain-depth/self-loop guards separate from engagement policy.
 
 Run: `python3 -m unittest tests.test_live_agent_runner`
 Expected: pass.
 
-- [ ] **Step 3: Review checkpoint**
+- [x] **Step 3: Review checkpoint**
 
 Check the default remains safe: config file examples may use `always`, but manual registration should remain `mentioned` unless the user explicitly starts a resident group.
 
@@ -176,21 +176,21 @@ Check the default remains safe: config file examples may use `always`, but manua
 - Test: `tests/test_live_agent_processes.py`
 - Test: `tests/test_gui_server.py`
 
-- [ ] **Step 1: Write tests for process record persistence**
+- [x] **Step 1: Write tests for process record persistence**
 
 After a group starts, the supervisor should write a JSON status file under `live-agent-runs`. A new supervisor should list historical stopped/crashed records even though it cannot stop old PIDs.
 
 Run: `python3 -m unittest tests.test_live_agent_processes`
 Expected: fail before persistence.
 
-- [ ] **Step 2: Persist process state**
+- [x] **Step 2: Persist process state**
 
 Write `live-agent-runs/processes.json` with group records on start/stop/poll. Mark records from a previous GUI process as `unknown` unless the current supervisor owns the handle.
 
 Run: `python3 -m unittest tests.test_live_agent_processes`
 Expected: pass.
 
-- [ ] **Step 3: Expose latest log excerpt**
+- [x] **Step 3: Expose latest log excerpt**
 
 Add an optional `log_tail` field bounded to a small byte limit in the process API so GUI can show failure clues without dumping long logs.
 
@@ -205,7 +205,7 @@ Expected: pass.
 - Modify: `docs/live-agent-ops.md`
 - Test: documentation is verified by local fake commands and optional manual real CLI command.
 
-- [ ] **Step 1: Write operator doc**
+- [x] **Step 1: Write operator doc**
 
 Document:
 
@@ -221,6 +221,8 @@ Expected: pass; docs are not enough without the executable checks from earlier t
 - [ ] **Step 2: Optional real provider smoke**
 
 Only run real Claude/Gemini commands when the local CLI is installed, authenticated, and the user approves any cost or external side effect. Fake CLI remains the required automated verification.
+
+Status: deferred until explicit real-provider approval. The required fake CLI and GUI smoke paths are covered by automated tests and a browser smoke against a temporary local GUI room.
 
 ---
 
