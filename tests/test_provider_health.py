@@ -322,6 +322,436 @@ class ProviderHealthTests(unittest.TestCase):
                     providers[provider_id]["checks"],
                 )
 
+    def test_provider_health_bridge_probe_checks_remote_bridge_health_without_running_bridge(self):
+        requests = []
+
+        class BridgeHealthHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append({"method": "GET", "path": self.path, "auth": self.headers.get("Authorization")})
+                if self.path != "/agentsassemble/health":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                if self.headers.get("Authorization") != "Bearer bridge-token":
+                    self.send_response(401)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    b'{"status":"ok","bridge":"claude_code","health_endpoint":"/agentsassemble/health","run_endpoint":"/agentsassemble/run"}'
+                )
+
+            def do_POST(self):
+                requests.append({"method": "POST", "path": self.path, "auth": self.headers.get("Authorization")})
+                self.send_response(500)
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = ThreadingHTTPServer(("127.0.0.1", 0), BridgeHealthHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                config_path = self.write_config(
+                    temp_dir,
+                    {
+                        "providers": [
+                            {
+                                "id": "friend-bridge",
+                                "kind": "remote_http_bridge",
+                                "display_name": "Friend Bridge",
+                                "endpoint": f"http://127.0.0.1:{server.server_port}",
+                                "auth_ref": "literal:bridge-token",
+                            }
+                        ],
+                        "permission_profiles": [{"id": "meeting"}],
+                        "agent_bindings": [],
+                    },
+                )
+
+                report = provider_health_report(config_path, probe_mode="bridge")
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["probe_mode"], "bridge")
+        self.assertEqual(requests, [{"method": "GET", "path": "/agentsassemble/health", "auth": "Bearer bridge-token"}])
+        self.assertNotIn("bridge-token", json.dumps(report))
+        self.assertIn(
+            {
+                "id": "bridge_probe",
+                "status": "ok",
+                "message": "Remote bridge health endpoint is reachable.",
+            },
+            report["providers"][0]["checks"],
+        )
+
+    def test_provider_health_bridge_probe_requires_available_auth_without_calling_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "friend-bridge",
+                            "kind": "remote_http_bridge",
+                            "display_name": "Friend Bridge",
+                            "endpoint": "http://127.0.0.1:8777",
+                            "auth_ref": "env:AGENTSASSEMBLE_TEST_MISSING_BRIDGE_TOKEN",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, headers, timeout_seconds):
+                raise AssertionError("bridge probe must not call without an available auth_ref")
+
+            report = provider_health_report(config_path, probe_mode="bridge", bridge_probe_requester=requester)
+
+        self.assertEqual(report["status"], "failed")
+        self.assertIn(
+            {
+                "id": "bridge_probe",
+                "status": "failed",
+                "message": "Bridge probe requires an available auth_ref.",
+            },
+            report["providers"][0]["checks"],
+        )
+
+    def test_provider_health_bridge_probe_treats_redacted_auth_placeholder_as_missing_without_calling_endpoint(self):
+        for auth_ref in ["literal:<redacted>", "<redacted>"]:
+            with self.subTest(auth_ref=auth_ref):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    config_path = self.write_config(
+                        temp_dir,
+                        {
+                            "providers": [
+                                {
+                                    "id": "friend-bridge",
+                                    "kind": "remote_http_bridge",
+                                    "display_name": "Friend Bridge",
+                                    "endpoint": "http://127.0.0.1:8777",
+                                    "auth_ref": auth_ref,
+                                }
+                            ],
+                            "permission_profiles": [{"id": "meeting"}],
+                            "agent_bindings": [],
+                        },
+                    )
+
+                    def requester(url, headers, timeout_seconds):
+                        raise AssertionError("bridge probe must not call with redacted placeholder auth")
+
+                    report = provider_health_report(config_path, probe_mode="bridge", bridge_probe_requester=requester)
+
+                self.assertEqual(report["status"], "failed")
+                self.assertIn(
+                    {
+                        "id": "bridge_probe",
+                        "status": "failed",
+                        "message": "Bridge probe requires an available auth_ref.",
+                    },
+                    report["providers"][0]["checks"],
+                )
+
+    def test_provider_health_bridge_probe_skips_non_bridge_provider_kinds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {"id": "mock-provider", "kind": "mock", "display_name": "Mock"},
+                        {
+                            "id": "local-model",
+                            "kind": "local_openai_compatible",
+                            "display_name": "LM Studio",
+                            "endpoint": "http://127.0.0.1:1234/v1",
+                        },
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, headers, timeout_seconds):
+                raise AssertionError("bridge probe must not call non-bridge providers")
+
+            report = provider_health_report(config_path, probe_mode="bridge", bridge_probe_requester=requester)
+
+            self.assertEqual(report["status"], "ok")
+            for provider in report["providers"]:
+                self.assertIn(
+                    {
+                        "id": "bridge_probe",
+                        "status": "ok",
+                        "message": "Bridge probe is not applicable for this provider kind.",
+                    },
+                    provider["checks"],
+                )
+
+    def test_provider_health_bridge_probe_rejects_disallowed_endpoint_without_leaking_or_calling(self):
+        disallowed_endpoints = [
+            "http://user:super-secret@example.test:8777",
+            "http://example.test:8777?token=super-secret",
+            "http://example.test:8777#super-secret",
+        ]
+        for endpoint in disallowed_endpoints:
+            with self.subTest(endpoint=endpoint):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    config_path = self.write_config(
+                        temp_dir,
+                        {
+                            "providers": [
+                                {
+                                    "id": "friend-bridge",
+                                    "kind": "remote_http_bridge",
+                                    "display_name": "Friend Bridge",
+                                    "endpoint": endpoint,
+                                    "auth_ref": "literal:bridge-token",
+                                }
+                            ],
+                            "permission_profiles": [{"id": "meeting"}],
+                            "agent_bindings": [],
+                        },
+                    )
+
+                    def requester(url, headers, timeout_seconds):
+                        raise AssertionError("bridge probe must not call disallowed endpoints")
+
+                    report = provider_health_report(
+                        config_path,
+                        probe_mode="bridge",
+                        bridge_probe_requester=requester,
+                    )
+
+                    self.assertEqual(report["status"], "failed")
+                    self.assertNotIn("super-secret", json.dumps(report))
+                    self.assertNotIn("bridge-token", json.dumps(report))
+                    self.assertIn(
+                        {
+                            "id": "bridge_probe",
+                            "status": "failed",
+                            "message": "Bridge probe requires an HTTP or HTTPS endpoint without userinfo, query, or fragment.",
+                        },
+                        report["providers"][0]["checks"],
+                    )
+
+    def test_provider_health_bridge_probe_does_not_follow_redirects_to_run_endpoint(self):
+        paths = []
+
+        class RedirectBridgeHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                paths.append(self.path)
+                if self.path == "/agentsassemble/health":
+                    self.send_response(302)
+                    self.send_header("Location", "/agentsassemble/run")
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+
+            def do_POST(self):
+                paths.append(self.path)
+                self.send_response(500)
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectBridgeHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                config_path = self.write_config(
+                    temp_dir,
+                    {
+                        "providers": [
+                            {
+                                "id": "friend-bridge",
+                                "kind": "remote_http_bridge",
+                                "display_name": "Friend Bridge",
+                                "endpoint": f"http://127.0.0.1:{server.server_port}",
+                                "auth_ref": "literal:bridge-token",
+                            }
+                        ],
+                        "permission_profiles": [{"id": "meeting"}],
+                        "agent_bindings": [],
+                    },
+                )
+
+                report = provider_health_report(config_path, probe_mode="bridge")
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(paths, ["/agentsassemble/health"])
+
+    def test_provider_health_bridge_probe_reports_auth_rejection_without_leaking_token(self):
+        requests = []
+
+        class UnauthorizedBridgeHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append({"path": self.path, "auth": self.headers.get("Authorization")})
+                self.send_response(401)
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = ThreadingHTTPServer(("127.0.0.1", 0), UnauthorizedBridgeHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                config_path = self.write_config(
+                    temp_dir,
+                    {
+                        "providers": [
+                            {
+                                "id": "friend-bridge",
+                                "kind": "remote_http_bridge",
+                                "display_name": "Friend Bridge",
+                                "endpoint": f"http://127.0.0.1:{server.server_port}",
+                                "auth_ref": "literal:wrong-token",
+                            }
+                        ],
+                        "permission_profiles": [{"id": "meeting"}],
+                        "agent_bindings": [],
+                    },
+                )
+
+                report = provider_health_report(config_path, probe_mode="bridge")
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(requests, [{"path": "/agentsassemble/health", "auth": "Bearer wrong-token"}])
+        self.assertNotIn("wrong-token", json.dumps(report))
+        self.assertIn(
+            {
+                "id": "bridge_probe",
+                "status": "failed",
+                "message": "Remote bridge health endpoint rejected authentication.",
+            },
+            report["providers"][0]["checks"],
+        )
+
+    def test_provider_health_bridge_probe_requires_health_contract_fields(self):
+        class IncompleteBridgeHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok","bridge":"claude_code"}')
+
+            def log_message(self, format, *args):
+                return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = ThreadingHTTPServer(("127.0.0.1", 0), IncompleteBridgeHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                config_path = self.write_config(
+                    temp_dir,
+                    {
+                        "providers": [
+                            {
+                                "id": "friend-bridge",
+                                "kind": "remote_http_bridge",
+                                "display_name": "Friend Bridge",
+                                "endpoint": f"http://127.0.0.1:{server.server_port}",
+                                "auth_ref": "literal:bridge-token",
+                            }
+                        ],
+                        "permission_profiles": [{"id": "meeting"}],
+                        "agent_bindings": [],
+                    },
+                )
+
+                report = provider_health_report(config_path, probe_mode="bridge")
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(report["status"], "failed")
+        self.assertIn(
+            {
+                "id": "bridge_probe",
+                "status": "failed",
+                "message": "Remote bridge health endpoint did not return the expected bridge health contract.",
+            },
+            report["providers"][0]["checks"],
+        )
+
+    def test_provider_health_bridge_probe_ignores_environment_proxies(self):
+        proxy_paths = []
+
+        class ProxyHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                proxy_paths.append(self.path)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    b'{"status":"ok","bridge":"claude_code","health_endpoint":"/agentsassemble/health","run_endpoint":"/agentsassemble/run"}'
+                )
+
+            def log_message(self, format, *args):
+                return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            proxy = ThreadingHTTPServer(("127.0.0.1", 0), ProxyHandler)
+            thread = threading.Thread(target=proxy.serve_forever, daemon=True)
+            thread.start()
+            try:
+                config_path = self.write_config(
+                    temp_dir,
+                    {
+                        "providers": [
+                            {
+                                "id": "friend-bridge",
+                                "kind": "remote_http_bridge",
+                                "display_name": "Friend Bridge",
+                                "endpoint": "http://127.0.0.2:9",
+                                "auth_ref": "literal:bridge-token",
+                            }
+                        ],
+                        "permission_profiles": [{"id": "meeting"}],
+                        "agent_bindings": [],
+                    },
+                )
+
+                with patch.dict(
+                    "os.environ",
+                    {
+                        "HTTP_PROXY": f"http://127.0.0.1:{proxy.server_port}",
+                        "http_proxy": f"http://127.0.0.1:{proxy.server_port}",
+                        "NO_PROXY": "",
+                        "no_proxy": "",
+                    },
+                    clear=False,
+                ):
+                    report = provider_health_report(config_path, probe_mode="bridge")
+            finally:
+                proxy.shutdown()
+                proxy.server_close()
+
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(proxy_paths, [])
+
     def test_provider_health_local_probe_rejects_non_loopback_openai_endpoint_without_calling_it(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = self.write_config(
@@ -748,6 +1178,41 @@ class ProviderHealthTests(unittest.TestCase):
 
             self.assertEqual(report["status"], "ok")
             self.assertNotIn("super-secret-provider-token", json.dumps(report))
+
+    def test_provider_health_treats_redacted_auth_placeholder_as_unavailable(self):
+        for auth_ref in ["literal:<redacted>", "<redacted>"]:
+            with self.subTest(auth_ref=auth_ref):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    config_path = Path(temp_dir) / "agents.json"
+                    config_path.write_text(
+                        json.dumps(
+                            {
+                                "providers": [
+                                    {
+                                        "id": "gemini",
+                                        "kind": "gemini",
+                                        "display_name": "Gemini",
+                                        "auth_ref": auth_ref,
+                                    }
+                                ],
+                                "permission_profiles": [{"id": "meeting"}],
+                                "agent_bindings": [],
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    report = provider_health_report(config_path)
+
+                self.assertEqual(report["status"], "failed")
+                self.assertIn(
+                    {
+                        "id": "auth_ref",
+                        "status": "failed",
+                        "message": "Required auth_ref is not available.",
+                    },
+                    report["providers"][0]["checks"],
+                )
 
     def test_provider_health_returns_failed_report_for_invalid_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:

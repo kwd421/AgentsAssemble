@@ -125,12 +125,13 @@ Bridge responses return:
 
 The bridge is a meeting adapter, not an implementation adapter. It instructs the remote Claude Code session to avoid shell commands, file reads, edits, credentials, commits, pushes, deploys, and implementation work during meeting turns.
 
-Bridge readiness has two verification levels:
+Bridge readiness has three verification levels:
 
-- Local readiness: unit tests and a local smoke server can verify token auth, `POST /agentsassemble/run`, prompt delivery, command execution, response parsing, lobby messages, research, rounds, and synthesis envelopes.
+- Health readiness: `GET /agentsassemble/health` can verify bridge HTTP reachability and token acceptance without calling `POST /agentsassemble/run`, sending prompts, or executing Claude.
+- Local execution readiness: unit tests and a local smoke server can verify token auth, `POST /agentsassemble/run`, prompt delivery, command execution, response parsing, lobby messages, research, rounds, and synthesis envelopes.
 - Real friend readiness: only a real remote machine can verify the friend's Claude Code login state, reachable Tailscale/LAN/port-forward address, firewall rules, token sharing, latency, and whether the friend's live model follows the read-only meeting contract.
 
-Do not report a friend bridge as fully verified unless both levels have been checked.
+Do not report a friend bridge as fully verified unless the health probe, local execution readiness, and real friend readiness have all been checked.
 
 ### Local CLI Meeting Providers
 
@@ -218,7 +219,7 @@ Observed limitation: the final moderator synthesis can still fall back to `Undet
 
 ## Next Implementation Slices
 
-1. Add opt-in API credential probes without starting a full meeting. Static provider health (`probe_mode: none`) and local loopback OpenAI-compatible `/models` probes (`probe_mode: local`) are implemented; remote/API probes remain future work and must stay explicit to avoid paid calls.
+1. Add opt-in API credential probes without starting a full meeting. Static provider health (`probe_mode: none`), local loopback OpenAI-compatible `/models` probes (`probe_mode: local`), and remote HTTP bridge health probes (`probe_mode: bridge`) are implemented; paid API credential probes remain future work and must stay explicit.
 2. Add provider-specific evidence provenance for Gemini/Grok web-grounded outputs.
 3. Split meeting adapters from implementation/coding-agent adapters.
 4. Add an importable memory/profile packet schema and memory gate report.

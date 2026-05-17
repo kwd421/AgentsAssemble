@@ -1,8 +1,13 @@
 import json
+import threading
 import unittest
+from http.server import ThreadingHTTPServer
 from unittest.mock import Mock
+from unittest.mock import patch
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
-from agentsassemble.bridges.claude_code_bridge import require_bridge_token, run_bridge_request
+from agentsassemble.bridges.claude_code_bridge import _handler, require_bridge_token, run_bridge_request
 
 
 class ClaudeCodeBridgeTests(unittest.TestCase):
@@ -41,6 +46,48 @@ class ClaudeCodeBridgeTests(unittest.TestCase):
     def test_bridge_requires_token_before_serving(self):
         with self.assertRaisesRegex(ValueError, "requires --token"):
             require_bridge_token(None)
+
+    def test_bridge_health_endpoint_requires_auth_and_does_not_run_claude(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(token="bridge-token", command="claude"))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            health_url = f"http://127.0.0.1:{server.server_port}/agentsassemble/health"
+
+            with self.assertRaises(HTTPError) as unauthorized:
+                urlopen(health_url, timeout=4)
+            self.assertEqual(unauthorized.exception.code, 401)
+            unauthorized.exception.close()
+
+            request = Request(health_url, headers={"Authorization": "Bearer bridge-token"}, method="GET")
+            with patch(
+                "agentsassemble.bridges.claude_code_bridge.run_bridge_request",
+                side_effect=AssertionError("health check must not run Claude"),
+            ):
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["bridge"], "claude_code")
+        self.assertEqual(payload["health_endpoint"], "/agentsassemble/health")
+        self.assertEqual(payload["run_endpoint"], "/agentsassemble/run")
+
+    def test_bridge_handler_without_token_rejects_health_requests(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(token=None, command="claude"))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            health_url = f"http://127.0.0.1:{server.server_port}/agentsassemble/health"
+            with self.assertRaises(HTTPError) as unauthorized:
+                urlopen(health_url, timeout=4)
+            self.assertEqual(unauthorized.exception.code, 401)
+            unauthorized.exception.close()
+        finally:
+            server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":

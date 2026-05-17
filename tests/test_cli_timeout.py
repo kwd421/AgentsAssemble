@@ -444,7 +444,7 @@ class CliTimeoutTests(unittest.TestCase):
                 "--config",
                 "configs/http-providers.example.json",
                 "--probe",
-                "local",
+                "bridge",
                 "--probe-timeout",
                 "0.75",
                 "--json",
@@ -454,7 +454,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.command, "providers")
         self.assertEqual(args.providers_command, "health")
         self.assertEqual(args.config, "configs/http-providers.example.json")
-        self.assertEqual(args.probe_mode, "local")
+        self.assertEqual(args.probe_mode, "bridge")
         self.assertEqual(args.probe_timeout, 0.75)
         self.assertTrue(args.as_json)
 

@@ -555,6 +555,36 @@ Document that `--probe local` proves only local OpenAI-compatible model-list rea
 
 ---
 
+### Task 16: Remote Bridge Health Probe
+
+**Files:**
+- Modify: `agentsassemble/bridges/claude_code_bridge.py`
+- Modify: `agentsassemble/provider_health.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/provider-architecture.md`
+- Modify: `docs/research-log.md`
+- Test: `tests/test_claude_code_bridge.py`
+- Test: `tests/test_provider_health.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for bridge-only health**
+
+Cover authenticated `GET /agentsassemble/health`, `providers health --probe bridge`, GUI provider-health payload forwarding, non-bridge skip behavior, missing auth, auth rejection, malformed endpoints, redirects toward `/agentsassemble/run`, environment proxy bypass, and health response contract validation.
+
+- [x] **Step 2: Implement command-free bridge probe**
+
+Add bridge `GET /agentsassemble/health` and provider `probe_mode: bridge`. The probe only calls the health route for `remote_http_bridge` providers, sends bearer auth from explicit `auth_ref`, follows no redirects or environment proxies, sends no prompt or meeting payload, never calls `/agentsassemble/run`, and executes no Claude/provider command.
+
+- [x] **Step 3: Document bridge readiness limits**
+
+Document that `--probe bridge` proves only bridge HTTP reachability and token acceptance. It does not prove the friend's Claude login, billing, model availability, command execution, prompt compliance, or read-only behavior.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

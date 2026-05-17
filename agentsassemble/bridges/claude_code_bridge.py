@@ -56,11 +56,27 @@ def serve_bridge(host: str, port: int, token: str | None, command: str) -> None:
 
 def _handler(token: str | None, command: str) -> type[BaseHTTPRequestHandler]:
     class ClaudeCodeBridgeHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path != "/agentsassemble/health":
+                self._send_error(HTTPStatus.NOT_FOUND, "Not found")
+                return
+            if not token or self.headers.get("Authorization") != f"Bearer {token}":
+                self._send_error(HTTPStatus.UNAUTHORIZED, "Unauthorized")
+                return
+            self._send_json(
+                {
+                    "status": "ok",
+                    "bridge": "claude_code",
+                    "health_endpoint": "/agentsassemble/health",
+                    "run_endpoint": "/agentsassemble/run",
+                }
+            )
+
         def do_POST(self) -> None:
             if self.path != "/agentsassemble/run":
                 self._send_error(HTTPStatus.NOT_FOUND, "Not found")
                 return
-            if token and self.headers.get("Authorization") != f"Bearer {token}":
+            if not token or self.headers.get("Authorization") != f"Bearer {token}":
                 self._send_error(HTTPStatus.UNAUTHORIZED, "Unauthorized")
                 return
             length = int(self.headers.get("Content-Length", "0") or "0")

@@ -60,6 +60,17 @@ python3 -m agentsassemble.cli providers health \
 
 `--probe local` only sends `GET /models` to `local_openai_compatible` providers whose endpoint is a loopback `http://localhost`, `http://127.0.0.0/8`, or `http://[::1]` URL. It skips API providers, local CLI providers, Codex providers, and remote bridges without executing them. It never calls `/chat/completions`, never sends prompts, never reads auth values, rejects endpoint query strings or non-loopback hosts before making a request, and does not follow redirects or environment proxy settings. A passing local probe proves the local OpenAI-compatible models endpoint is reachable and returns at least one model; it still does not prove generation quality, prompt compliance, paid API access, or remote bridge readiness.
 
+For a friend-owned remote HTTP bridge, operators can opt into a bridge health probe:
+
+```bash
+python3 -m agentsassemble.cli providers health \
+  --config configs/remote-bridge.example.json \
+  --probe bridge \
+  --probe-timeout 2
+```
+
+`--probe bridge` only sends an authenticated `GET /agentsassemble/health` to `remote_http_bridge` providers. It skips non-bridge providers, does not call `/agentsassemble/run`, sends no prompt or meeting payload, does not execute Claude or any provider command, and does not follow redirects or environment proxy settings. This probe reads the configured `auth_ref` value only in the explicit bridge probe mode so it can set `Authorization: Bearer ...`; the report still redacts the token and endpoint details. A passing bridge probe proves the bridge HTTP server is reachable and accepts the configured token. It does not prove the friend's Claude login, billing, model availability, command execution, prompt compliance, or read-only behavior.
+
 ## Credential-Free Operator Smoke
 
 After the GUI room is running, use the one-command smoke before touching real providers:

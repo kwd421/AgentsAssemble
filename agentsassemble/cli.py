@@ -115,16 +115,16 @@ def build_parser() -> argparse.ArgumentParser:
     provider_health.add_argument("--config", required=True, help="Agent runtime config path.")
     provider_health.add_argument(
         "--probe",
-        choices=["none", "local"],
+        choices=["none", "local", "bridge"],
         default="none",
         dest="probe_mode",
-        help="Optional runtime probe mode. 'local' only checks loopback OpenAI-compatible /models endpoints.",
+        help="Optional runtime probe mode. 'local' checks loopback OpenAI-compatible /models; 'bridge' checks remote bridge health.",
     )
     provider_health.add_argument(
         "--probe-timeout",
         type=parse_nonnegative_float,
         default=2.0,
-        help="Seconds to wait for an opt-in local provider probe.",
+        help="Seconds to wait for an opt-in local or bridge provider probe.",
     )
     provider_health.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable provider health report.")
 

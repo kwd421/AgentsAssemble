@@ -5,7 +5,7 @@ import math
 import os
 import shutil
 from collections.abc import Callable
-from http.client import HTTPConnection
+from http.client import HTTPConnection, HTTPSConnection
 from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -25,11 +25,19 @@ ENDPOINT_REQUIRED_PROVIDER_KINDS = {"remote_http_bridge"}
 LOCAL_COMMAND_PROVIDER_KINDS = {"local_cli"}
 CODEX_COMMAND_PROVIDER_KINDS = {"codex", "codex_live_session"}
 DEFAULT_LOCAL_OPENAI_ENDPOINT = "http://127.0.0.1:1234/v1"
-PROBE_MODES = {"none", "local"}
+PROBE_MODES = {"none", "local", "bridge"}
 LOCAL_PROBE_PROVIDER_KINDS = {"local_openai_compatible"}
+BRIDGE_PROBE_PROVIDER_KINDS = {"remote_http_bridge"}
 LOOPBACK_HOSTS = {"localhost"}
 
 ProbeRequester = Callable[[str, float], dict[str, object]]
+BridgeProbeRequester = Callable[[str, dict[str, str], float], dict[str, object]]
+
+
+class BridgeProbeError(Exception):
+    def __init__(self, kind: str) -> None:
+        super().__init__(kind)
+        self.kind = kind
 
 
 def provider_health_report(
@@ -38,10 +46,11 @@ def provider_health_report(
     command_resolver: Callable[[str], str | None] | None = None,
     probe_mode: str = "none",
     probe_requester: ProbeRequester | None = None,
+    bridge_probe_requester: BridgeProbeRequester | None = None,
     probe_timeout_seconds: float = 2.0,
 ) -> dict[str, object]:
     if probe_mode not in PROBE_MODES:
-        raise ValueError("Provider health probe_mode must be 'none' or 'local'.")
+        raise ValueError("Provider health probe_mode must be 'none', 'local', or 'bridge'.")
     try:
         probe_timeout = float(probe_timeout_seconds)
     except (TypeError, ValueError) as error:
@@ -50,6 +59,7 @@ def provider_health_report(
         raise ValueError("Provider health probe_timeout_seconds must be a finite non-negative number.")
     resolver = command_resolver or _resolve_command_path
     requester = probe_requester or _request_probe_json
+    bridge_requester = bridge_probe_requester or _request_bridge_probe_json
     try:
         data = load_agent_runtime_config(config_path)
         if not isinstance(data, dict):
@@ -73,6 +83,7 @@ def provider_health_report(
             command_resolver=resolver,
             probe_mode=probe_mode,
             probe_requester=requester,
+            bridge_probe_requester=bridge_requester,
             probe_timeout_seconds=probe_timeout,
         )
         for provider in providers.values()
@@ -166,6 +177,7 @@ def _provider_report(
     command_resolver: Callable[[str], str | None],
     probe_mode: str,
     probe_requester: ProbeRequester,
+    bridge_probe_requester: BridgeProbeRequester,
     probe_timeout_seconds: float,
 ) -> dict[str, object]:
     checks: list[dict[str, object]] = [
@@ -176,6 +188,8 @@ def _provider_report(
     ]
     if probe_mode == "local":
         checks.append(_local_probe_check(provider, probe_requester, probe_timeout_seconds))
+    elif probe_mode == "bridge":
+        checks.append(_bridge_probe_check(provider, bridge_probe_requester, probe_timeout_seconds))
     status = _status_from_checks(checks)
     command_path = ""
     for check in checks:
@@ -262,12 +276,22 @@ def _auth_ref_check(provider: ProviderConfig) -> dict[str, str]:
 def _auth_ref_available(auth_ref: object) -> bool:
     if not isinstance(auth_ref, str) or not auth_ref:
         return False
+    if _is_redacted_auth_placeholder(auth_ref):
+        return False
     if auth_ref.startswith("env:"):
         env_name = auth_ref.removeprefix("env:")
         return bool(env_name) and env_name in os.environ
     if auth_ref.startswith("literal:"):
-        return bool(auth_ref.removeprefix("literal:"))
+        value = auth_ref.removeprefix("literal:")
+        return bool(value) and not _is_redacted_auth_placeholder(value)
     return True
+
+
+def _is_redacted_auth_placeholder(value: str) -> bool:
+    normalized = value.strip().casefold()
+    if normalized.startswith("literal:"):
+        normalized = normalized.removeprefix("literal:").strip()
+    return normalized in {"<redacted>", "[redacted]", "redacted", "***"}
 
 
 def _command_check(
@@ -394,6 +418,132 @@ def _request_probe_json(url: str, timeout_seconds: float) -> dict[str, object]:
         data = response.read(1_000_000)
         if response.status != 200:
             raise ValueError("probe endpoint returned a non-200 status")
+    finally:
+        connection.close()
+    payload = json.loads(data.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("response JSON is not an object")
+    return payload
+
+
+def _bridge_probe_check(
+    provider: ProviderConfig,
+    requester: BridgeProbeRequester,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    if not isinstance(provider.kind, str):
+        return {"id": "bridge_probe", "status": "ok", "message": "Bridge probe skipped until provider kind is valid."}
+    if provider.kind not in BRIDGE_PROBE_PROVIDER_KINDS:
+        return {
+            "id": "bridge_probe",
+            "status": "ok",
+            "message": "Bridge probe is not applicable for this provider kind.",
+        }
+    if provider.endpoint is not None and not isinstance(provider.endpoint, str):
+        return {"id": "bridge_probe", "status": "failed", "message": "Endpoint must be a string."}
+    health_url = _bridge_health_url(provider.endpoint or "")
+    if health_url is None:
+        return {
+            "id": "bridge_probe",
+            "status": "failed",
+            "message": "Bridge probe requires an HTTP or HTTPS endpoint without userinfo, query, or fragment.",
+        }
+    token = _resolve_bridge_probe_auth_ref(provider.auth_ref)
+    if not token:
+        return {
+            "id": "bridge_probe",
+            "status": "failed",
+            "message": "Bridge probe requires an available auth_ref.",
+        }
+    try:
+        payload = requester(
+            health_url,
+            {"Accept": "application/json", "Authorization": f"Bearer {token}"},
+            timeout_seconds,
+        )
+    except BridgeProbeError as error:
+        if error.kind == "auth":
+            return {
+                "id": "bridge_probe",
+                "status": "failed",
+                "message": "Remote bridge health endpoint rejected authentication.",
+            }
+        return {
+            "id": "bridge_probe",
+            "status": "failed",
+            "message": "Remote bridge health endpoint is unreachable.",
+        }
+    except Exception:
+        return {
+            "id": "bridge_probe",
+            "status": "failed",
+            "message": "Remote bridge health endpoint is unreachable.",
+        }
+    if (
+        payload.get("status") != "ok"
+        or payload.get("health_endpoint") != "/agentsassemble/health"
+        or payload.get("run_endpoint") != "/agentsassemble/run"
+    ):
+        return {
+            "id": "bridge_probe",
+            "status": "failed",
+            "message": "Remote bridge health endpoint did not return the expected bridge health contract.",
+        }
+    return {
+        "id": "bridge_probe",
+        "status": "ok",
+        "message": "Remote bridge health endpoint is reachable.",
+    }
+
+
+def _bridge_health_url(endpoint: str) -> str | None:
+    parsed = urlsplit(endpoint)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return None
+    base_path = parsed.path.rstrip("/")
+    health_path = f"{base_path}/agentsassemble/health" if base_path else "/agentsassemble/health"
+    return urlunsplit((parsed.scheme, parsed.netloc, health_path, "", ""))
+
+
+def _resolve_bridge_probe_auth_ref(auth_ref: object) -> str | None:
+    if not isinstance(auth_ref, str) or not auth_ref:
+        return None
+    if _is_redacted_auth_placeholder(auth_ref):
+        return None
+    if auth_ref.startswith("env:"):
+        value = os.environ.get(auth_ref.removeprefix("env:"))
+        if not value or _is_redacted_auth_placeholder(value):
+            return None
+        return value
+    if auth_ref.startswith("literal:"):
+        value = auth_ref.removeprefix("literal:")
+        if not value or _is_redacted_auth_placeholder(value):
+            return None
+        return value
+    return auth_ref
+
+
+def _request_bridge_probe_json(url: str, headers: dict[str, str], timeout_seconds: float) -> dict[str, object]:
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("bridge probe URL is not an approved HTTP(S) URL")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("bridge probe URL includes disallowed URL components")
+    if not parsed.path.rstrip("/").endswith("/agentsassemble/health"):
+        raise ValueError("bridge probe URL path is not a health endpoint")
+
+    connection_cls = HTTPSConnection if parsed.scheme == "https" else HTTPConnection
+    connection = connection_cls(parsed.hostname, parsed.port, timeout=timeout_seconds)
+    try:
+        connection.request("GET", parsed.path or "/", headers=headers)
+        response = connection.getresponse()
+        data = response.read(1_000_000)
+        if response.status in {401, 403}:
+            raise BridgeProbeError("auth")
+        if response.status != 200:
+            raise BridgeProbeError("unreachable")
     finally:
         connection.close()
     payload = json.loads(data.decode("utf-8"))
