@@ -747,6 +747,33 @@ Render compact heartbeat age in live-agent cards and document that roster freshn
 
 ---
 
+### Task 23: Interruptible Local CLI Resident Shutdown
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for local CLI cancellation**
+
+Cover resident `local_cli` command execution through a closeable runner that can terminate an active provider subprocess before its normal timeout.
+
+- [x] **Step 2: Add RED coverage for shutdown error hygiene**
+
+Cover `run-group` suppressing secondary worker errors that happen only after the group stop flag is set, while preserving the original failing agent error.
+
+- [x] **Step 3: Implement closeable local CLI resident execution**
+
+Use a `Popen`-based resident command runner for `local_cli` while keeping one-shot delegate command semantics plain. Close active local provider processes during SIGINT/shutdown through the same command-runner hook already used by `live_session`, and avoid writing a misleading error heartbeat for command failures caused after the stop flag is set.
+
+- [x] **Step 4: Document stop semantics**
+
+Document that supervised stop can interrupt active local provider commands and that shutdown-only secondary errors do not pollute the operator-facing process result.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

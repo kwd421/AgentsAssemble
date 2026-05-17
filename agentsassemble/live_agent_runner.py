@@ -113,6 +113,8 @@ class LiveAgentRunner:
             if not reply:
                 raise ValueError("Delegate command returned an empty reply.")
         except Exception as error:
+            if self.stop_event.is_set():
+                return 0
             self.last_error = str(error)
             self.last_error_at = self.now_fn()
             self._heartbeat("error", last_observed_event_id=source_event_id, last_error=self.last_error)

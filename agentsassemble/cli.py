@@ -453,8 +453,14 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
             )
             results[config.agent_id] = runner.run()
         except Exception as error:  # pragma: no cover - surfaced through CLI status in integration use
+            if stop_event.is_set():
+                return
             errors[config.agent_id] = str(error)
             stop_event.set()
+            with active_command_runners_lock:
+                runners_to_close = list(active_command_runners)
+            for active_runner in runners_to_close:
+                _close_command_runner(active_runner)
         finally:
             if command_runner is not None:
                 _close_command_runner(command_runner)
@@ -848,6 +854,74 @@ class _JsonlLiveSessionCommandRunner:
         session.close()
 
 
+class _LocalCliCommandRunner:
+    def __init__(self) -> None:
+        self.process: subprocess.Popen | None = None
+        self.closed = False
+        self._lock = threading.Lock()
+
+    def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
+        if not command:
+            raise ValueError("Delegate command is required.")
+        with self._lock:
+            if self.closed:
+                raise RuntimeError("Local CLI runner is closed.")
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        with self._lock:
+            if self.closed:
+                should_close = True
+            else:
+                self.process = process
+                should_close = False
+        if should_close:
+            _terminate_process(process)
+            raise RuntimeError("Local CLI runner is closed.")
+        try:
+            try:
+                stdout, stderr = process.communicate(input=prompt, timeout=timeout_seconds)
+            except subprocess.TimeoutExpired as error:
+                _terminate_process(process)
+                stdout, stderr = process.communicate()
+                raise subprocess.TimeoutExpired(command, timeout_seconds, output=stdout, stderr=stderr) from error
+            if process.returncode:
+                raise subprocess.CalledProcessError(process.returncode, command, output=stdout, stderr=stderr)
+            return stdout
+        except BaseException:
+            _terminate_process(process)
+            raise
+        finally:
+            with self._lock:
+                if self.process is process:
+                    self.process = None
+
+    def close(self) -> None:
+        with self._lock:
+            self.closed = True
+            process = self.process
+        if process is not None:
+            _terminate_process(process)
+
+
+def _terminate_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        process.terminate()
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=1)
+
+
 def _validate_resident_config(config: ResidentAgentConfig) -> None:
     if config.connection_kind not in SUPPORTED_RESIDENT_CONNECTION_KINDS:
         raise ValueError(resident_connection_kind_error())
@@ -866,7 +940,7 @@ def _command_runner_for_config(config: ResidentAgentConfig):
         return _JsonlLiveSessionCommandRunner()
     if config.connection_kind == "remote_bridge":
         return RemoteBridgeResidentCommandRunner(config)
-    return _run_delegate_command
+    return _LocalCliCommandRunner()
 
 
 def _close_command_runner(command_runner) -> None:

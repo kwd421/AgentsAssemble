@@ -1,5 +1,6 @@
 import unittest
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -10,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import StringIO
 from unittest.mock import patch
 
+from agentsassemble import cli as cli_module
 from agentsassemble.cli import build_parser, main
 from agentsassemble.gui import _make_handler, append_lobby_event, read_lobby
 from agentsassemble.live_agent_runner import ResidentAgentConfig
@@ -1605,6 +1607,244 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 2)
         self.assertEqual(constructed, [])
         self.assertIn("bad-bridge", stderr.getvalue())
+
+    def test_local_cli_resident_command_runner_close_terminates_active_process(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pid_path = Path(temp_dir) / "child.pid"
+            runner = cli_module._LocalCliCommandRunner()
+            errors = []
+
+            def invoke_runner():
+                try:
+                    runner(
+                        [
+                            sys.executable,
+                            "-u",
+                            "-c",
+                            (
+                                "import os, pathlib, sys, time; "
+                                "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()), encoding='utf-8'); "
+                                "time.sleep(30)"
+                            ),
+                            str(pid_path),
+                        ],
+                        "prompt",
+                        timeout_seconds=30,
+                    )
+                except Exception as error:
+                    errors.append(error)
+
+            thread = threading.Thread(target=invoke_runner)
+            thread.start()
+            try:
+                deadline = time.time() + 5
+                while time.time() < deadline and not pid_path.exists():
+                    time.sleep(0.01)
+                self.assertTrue(pid_path.exists())
+
+                runner.close()
+                thread.join(timeout=3)
+            finally:
+                runner.close()
+                thread.join(timeout=1)
+
+            self.assertFalse(thread.is_alive())
+            self.assertTrue(errors)
+
+    def test_local_cli_resident_command_runner_terminates_child_on_interruption(self):
+        class InterruptingProcess:
+            def __init__(self):
+                self.returncode = None
+                self.terminated = False
+                self.killed = False
+
+            def communicate(self, input=None, timeout=None):
+                del input, timeout
+                raise KeyboardInterrupt()
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                self.terminated = True
+                self.returncode = -15
+
+            def wait(self, timeout=None):
+                del timeout
+                return self.returncode
+
+            def kill(self):
+                self.killed = True
+                self.returncode = -9
+
+        process = InterruptingProcess()
+        with patch("agentsassemble.cli.subprocess.Popen", return_value=process):
+            runner = cli_module._LocalCliCommandRunner()
+            with self.assertRaises(KeyboardInterrupt):
+                runner(["fake-provider"], "prompt", timeout_seconds=30)
+
+        self.assertTrue(process.terminated)
+        self.assertFalse(process.killed)
+
+    def test_live_agent_run_group_suppresses_secondary_shutdown_errors(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="primary-error",
+                display_name="Primary Error",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            ),
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="secondary-stop",
+                display_name="Secondary Stop",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            ),
+        ]
+
+        class ShutdownAwareRunner:
+            def __init__(self, config, *, stop_event, **kwargs):
+                del kwargs
+                self.config = config
+                self.stop_event = stop_event
+
+            def run(self):
+                if self.config.agent_id == "primary-error":
+                    raise RuntimeError("primary boom")
+                while not self.stop_event.is_set():
+                    time.sleep(0.01)
+                raise RuntimeError("secondary closed during shutdown")
+
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.LiveAgentRunner", ShutdownAwareRunner),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("primary-error: primary boom", stderr.getvalue())
+        self.assertNotIn("secondary closed during shutdown", stderr.getvalue())
+
+    def test_live_agent_run_group_closes_sibling_runners_after_primary_failure(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="primary-error",
+                display_name="Primary Error",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            ),
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="secondary-blocked",
+                display_name="Secondary Blocked",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            ),
+        ]
+        runners = {}
+        sibling_started = threading.Event()
+        sibling_closed_while_running = threading.Event()
+
+        class CloseRecordingRunner:
+            def __init__(self, agent_id):
+                self.agent_id = agent_id
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        class BlockingSiblingRunner:
+            def __init__(self, config, *, command_runner, **kwargs):
+                del kwargs
+                self.config = config
+                self.command_runner = command_runner
+
+            def run(self):
+                if self.config.agent_id == "primary-error":
+                    if not sibling_started.wait(timeout=1):
+                        raise AssertionError("secondary runner did not start")
+                    raise RuntimeError("primary boom")
+                sibling_started.set()
+                deadline = time.time() + 0.5
+                while time.time() < deadline:
+                    if self.command_runner.closed:
+                        sibling_closed_while_running.set()
+                        return 0
+                    time.sleep(0.01)
+                return 0
+
+        def command_runner_for_config(config):
+            runner = CloseRecordingRunner(config.agent_id)
+            runners[config.agent_id] = runner
+            return runner
+
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli._command_runner_for_config", side_effect=command_runner_for_config),
+            patch("agentsassemble.cli.LiveAgentRunner", BlockingSiblingRunner),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("primary-error: primary boom", stderr.getvalue())
+        self.assertTrue(sibling_closed_while_running.is_set())
 
     def test_live_agent_run_live_session_reuses_one_process_for_multiple_events(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -111,6 +111,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("The process CLI uses exit code `0` for successful supervisor requests", doc)
         self.assertIn("does not control arbitrary OS PIDs", doc)
         self.assertIn("resets the auto-restart counter", doc)
+        self.assertIn("interruptible subprocess runner", doc)
+        self.assertIn("active local provider commands are terminated", doc)
         self.assertIn(".agentsassemble/live_agents.json", doc)
         self.assertIn(".agentsassemble/lobby.jsonl", doc)
         self.assertIn(".agentsassemble/live-agent-runs/processes.json", doc)

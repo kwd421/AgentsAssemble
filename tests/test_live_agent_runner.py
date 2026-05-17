@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -222,6 +223,32 @@ class LiveAgentRunnerTests(unittest.TestCase):
         error_payloads = [payload for url, method, payload in client.calls if url.endswith("/heartbeat") and payload["status"] == "error"]
         self.assertEqual(error_payloads[0]["last_error"], "boom")
         self.assertEqual(error_payloads[0]["last_observed_event_id"], "evt1")
+
+    def test_runner_does_not_record_error_when_command_fails_after_stop(self):
+        clock = FakeClock()
+        stop_event = threading.Event()
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "중지 중"}]}
+        client = FakeRoomClient([room])
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            del command, prompt, timeout_seconds
+            stop_event.set()
+            raise RuntimeError("closed during shutdown")
+
+        runner = LiveAgentRunner(
+            config(),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+            stop_event=stop_event,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        heartbeat_payloads = [payload for url, method, payload in client.calls if url.endswith("/heartbeat")]
+        self.assertNotIn("error", [payload["status"] for payload in heartbeat_payloads])
+        self.assertEqual(heartbeat_payloads[-1]["status"], "offline")
 
     def test_runner_backs_off_after_command_failure_before_next_reply(self):
         clock = FakeClock()
