@@ -38,6 +38,10 @@ class LiveAgentProcessSupervisor:
             self._refresh_running_groups()
             return [self._record_for_output(record) for record in self._records.values()]
 
+    def snapshot_groups(self) -> list[dict[str, object]]:
+        with self._lock:
+            return [self._record_for_output(record) for record in self._records.values()]
+
     def start_group(
         self,
         *,

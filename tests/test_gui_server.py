@@ -358,6 +358,84 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(supervisor.stopped, ["crew"])
             self.assertEqual(supervisor.restarted, ["crew"])
 
+    def test_live_agent_health_endpoint_summarizes_agents_and_processes(self):
+        class FakeSupervisor:
+            def __init__(self):
+                self.list_called = False
+
+            def list_groups(self):
+                self.list_called = True
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {"group_id": "running-group", "status": "running"},
+                    {"group_id": "restart-group", "status": "restarting"},
+                    {"group_id": "crashed-group", "status": "error"},
+                    {"group_id": "orphan-group", "status": "unknown"},
+                    {"group_id": "stopped-group", "status": "stopped"},
+                    {"status": "error"},
+                    {"group_id": "odd-group", "status": "mystery"},
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {"agent_id": "online-agent", "status": "online"},
+                            {"agent_id": "working-agent", "status": "working"},
+                            {"agent_id": "error-agent", "status": "error"},
+                            {"agent_id": "offline-agent", "status": "offline"},
+                            {"display_name": "Display Only", "status": "error"},
+                            {"agent_id": "odd-agent", "status": "mystery"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            supervisor = FakeSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "degraded")
+            self.assertEqual(payload["agents"]["counts"]["online"], 1)
+            self.assertEqual(payload["agents"]["counts"]["working"], 1)
+            self.assertEqual(payload["agents"]["counts"]["error"], 2)
+            self.assertEqual(payload["agents"]["counts"]["offline"], 2)
+            self.assertEqual(payload["agents"]["live"], 2)
+            self.assertEqual(payload["agents"]["total"], 6)
+            self.assertEqual(
+                payload["agents"]["attention"],
+                ["error-agent", "offline-agent", "missing-agent-id-5", "odd-agent"],
+            )
+            self.assertEqual(payload["processes"]["counts"]["running"], 1)
+            self.assertEqual(payload["processes"]["counts"]["restarting"], 1)
+            self.assertEqual(payload["processes"]["counts"]["error"], 2)
+            self.assertEqual(payload["processes"]["counts"]["unknown"], 2)
+            self.assertEqual(payload["processes"]["counts"]["stopped"], 1)
+            self.assertEqual(payload["processes"]["total"], 7)
+            self.assertEqual(
+                payload["processes"]["attention"],
+                [
+                    "restart-group",
+                    "crashed-group",
+                    "orphan-group",
+                    "stopped-group",
+                    "missing-process-group-id-6",
+                    "odd-group",
+                ],
+            )
+            self.assertFalse(supervisor.list_called)
+
     def test_serve_gui_closes_live_agent_process_supervisor(self):
         class FakeServer:
             def __init__(self, address, handler):

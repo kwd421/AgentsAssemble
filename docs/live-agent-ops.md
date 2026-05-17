@@ -152,6 +152,16 @@ What to check:
 - auto-restart fields in `processes.json`: `auto_restart`, `restart_count`, `max_restarts`, `restart_backoff_seconds`, and `next_restart_at`.
 - `.agentsassemble/live-agent-runs/<group_id>.log`: stdout/stderr for the supervised `run-group` process. Delegate provider subprocess stdout/stderr is captured by the runner, not streamed directly into this file. The GUI and process API expose only a bounded `log_tail`.
 
+For scriptable monitoring, fetch the combined health summary:
+
+```bash
+curl http://127.0.0.1:8765/api/live-agent-health
+```
+
+The response reports overall `status` as `ok` or `degraded`, plus `agents.counts`, `agents.attention`, `processes.counts`, and `processes.attention`. Treat `degraded` as a prompt to inspect the listed agent ids, process group ids, `last_error`, and log tails.
+
+This endpoint is a read-only snapshot. It does not refresh process handles, launch due auto-restarts, stop groups, or mutate process state.
+
 External or manually driven agents can also report an error heartbeat through the CLI:
 
 ```bash

@@ -313,6 +313,52 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertLessEqual(len(groups[0]["log_tail"]), 128)
         self.assertNotIn("log_tail", persisted["groups"][0])
 
+    def test_snapshot_groups_does_not_start_due_auto_restarts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            (runs_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "restarting",
+                                "pid": None,
+                                "config_path": str(config_path),
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "2026-05-17T12:01:00+00:00",
+                                "returncode": 2,
+                                "last_error": "waiting to restart",
+                                "auto_restart": True,
+                                "restart_count": 1,
+                                "max_restarts": 3,
+                                "restart_backoff_seconds": 0,
+                                "next_restart_at": "2026-05-17T12:01:00+00:00",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            launches = []
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: launches.append(command) or FakeProcess(pid=2468),
+                now_fn=lambda: datetime(2026, 5, 17, 12, 2, tzinfo=UTC),
+            )
+
+            snapshot = supervisor.snapshot_groups()
+
+        self.assertEqual(snapshot[0]["status"], "restarting")
+        self.assertEqual(snapshot[0]["pid"], None)
+        self.assertEqual(launches, [])
+
     def test_close_does_not_rewrite_already_stopped_process_records(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

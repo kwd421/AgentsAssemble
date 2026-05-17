@@ -329,6 +329,39 @@ def live_agent_processes_payload(process_supervisor: LiveAgentProcessSupervisor)
     return {"groups": process_supervisor.list_groups()}
 
 
+def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentProcessSupervisor) -> dict[str, object]:
+    agents = read_live_agents(output_root)
+    groups = process_supervisor.snapshot_groups()
+    agent_summary = _live_agent_health_summary(agents)
+    process_summary = _live_agent_process_health_summary(groups)
+    status = "degraded" if agent_summary["attention"] or process_summary["attention"] else "ok"
+    return {"status": status, "agents": agent_summary, "processes": process_summary}
+
+
+def _live_agent_health_summary(agents: list[dict[str, object]]) -> dict[str, object]:
+    counts = {"online": 0, "working": 0, "error": 0, "stale": 0, "offline": 0}
+    attention = []
+    for index, agent in enumerate(agents, start=1):
+        raw_status = str(agent.get("status") or "offline")
+        status = raw_status if raw_status in counts else "offline"
+        counts[status] += 1
+        if status in {"error", "stale", "offline"}:
+            attention.append(str(agent.get("agent_id") or f"missing-agent-id-{index}"))
+    return {"total": len(agents), "live": counts["online"] + counts["working"], "counts": counts, "attention": attention}
+
+
+def _live_agent_process_health_summary(groups: list[dict[str, object]]) -> dict[str, object]:
+    counts = {"running": 0, "restarting": 0, "error": 0, "unknown": 0, "stopped": 0}
+    attention = []
+    for index, group in enumerate(groups, start=1):
+        raw_status = str(group.get("status") or "unknown")
+        status = raw_status if raw_status in counts else "unknown"
+        counts[status] += 1
+        if status in {"restarting", "error", "unknown", "stopped"}:
+            attention.append(str(group.get("group_id") or f"missing-process-group-id-{index}"))
+    return {"total": len(groups), "counts": counts, "attention": attention}
+
+
 def start_live_agent_process_payload(
     process_supervisor: LiveAgentProcessSupervisor,
     payload: dict[str, object],
@@ -603,6 +636,9 @@ def _make_handler(
                 return
             if path == "/api/live-agents":
                 self._send_json(live_agents_payload(output_root))
+                return
+            if path == "/api/live-agent-health":
+                self._send_json(live_agent_health_payload(output_root, live_agent_process_supervisor))
                 return
             if path == "/api/live-agent-processes":
                 self._send_json(live_agent_processes_payload(live_agent_process_supervisor))
