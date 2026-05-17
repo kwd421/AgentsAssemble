@@ -322,6 +322,7 @@ function renderLiveAgentProcessControls() {
 function renderLiveAgentProcessCard(group) {
   const status = group.status || "unknown";
   const isRunning = status === "running";
+  const logTail = group.log_tail == null ? "" : String(group.log_tail);
   return `
     <article class="live-agent-process-row live-agent-process-${escapeHtml(status)}">
       <div>
@@ -335,6 +336,7 @@ function renderLiveAgentProcessCard(group) {
           ? `<button type="button" data-live-agent-process-stop="${escapeHtml(group.group_id || "")}">중지</button>`
           : ""
       }
+      ${logTail ? `<pre class="live-agent-process-log">${escapeHtml(logTail)}</pre>` : ""}
     </article>
   `;
 }

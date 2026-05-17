@@ -780,6 +780,23 @@
   padding: 0 8px;
 }
 
+.live-agent-process-log {
+  background: rgba(0, 0, 0, 0.24);
+  border: 1px solid rgba(212, 225, 255, 0.1);
+  border-radius: 6px;
+  color: #d9e6ff;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  grid-column: 1 / -1;
+  line-height: 1.45;
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  padding: 7px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .live-agent-process-running {
   border-left-color: rgba(130, 209, 115, 0.88);
 }

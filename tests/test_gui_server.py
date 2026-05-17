@@ -252,6 +252,7 @@ class GuiServerTests(unittest.TestCase):
                     "stopped_at": "",
                     "returncode": None,
                     "last_error": "",
+                    "log_tail": "resident booted",
                 }
                 self.groups = [record]
                 return record
@@ -297,6 +298,7 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(started["group"]["status"], "running")
             self.assertEqual(listed["groups"][0]["group_id"], "crew")
+            self.assertEqual(listed["groups"][0]["log_tail"], "resident booted")
             self.assertEqual(stopped["group"]["status"], "stopped")
             self.assertEqual(supervisor.started[0][1], f"http://127.0.0.1:{server.server_port}")
             self.assertEqual(supervisor.stopped, ["crew"])
