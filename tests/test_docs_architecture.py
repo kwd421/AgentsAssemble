@@ -49,6 +49,29 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("free chat", combined)
         self.assertIn("official", combined)
 
+    def test_live_agent_ops_documents_operator_smoke_path(self):
+        doc = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
+
+        self.assertIn("python3 -m agentsassemble.cli gui", doc)
+        self.assertIn("python3 -m agentsassemble.cli live-agent run", doc)
+        self.assertIn("python3 -m agentsassemble.cli live-agent run-group", doc)
+        self.assertIn("fake-alpha", doc)
+        self.assertIn("fake-beta", doc)
+        self.assertIn("configs/live-agents.example.json", doc)
+        self.assertIn("Do not start it until the real-provider checklist below is satisfied.", doc)
+        self.assertIn("claude", doc)
+        self.assertIn("gemini", doc)
+        self.assertIn("curl -X POST", doc)
+        self.assertIn(".agentsassemble/live_agents.json", doc)
+        self.assertIn(".agentsassemble/lobby.jsonl", doc)
+        self.assertIn(".agentsassemble/live-agent-runs/processes.json", doc)
+        self.assertIn("Delegate provider subprocess stdout/stderr is captured by the runner", doc)
+        self.assertIn("the final heartbeat can report `offline` while preserving `last_error`", doc)
+        self.assertIn("does not resume old resident agents", doc)
+        self.assertIn("not native Claude Code Channels", doc)
+        self.assertIn("Fake CLI", doc)
+        self.assertIn("approval", doc)
+
 
 if __name__ == "__main__":
     unittest.main()
