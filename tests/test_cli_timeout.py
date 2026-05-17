@@ -255,6 +255,100 @@ class CliTimeoutTests(unittest.TestCase):
             {"status": "online", "last_error": ""},
         )
 
+    def test_live_agent_health_parses_json_and_fail_on_degraded_options(self):
+        args = build_parser().parse_args(["live-agent", "health", "--json", "--fail-on-degraded"])
+
+        self.assertEqual(args.live_agent_command, "health")
+        self.assertTrue(args.as_json)
+        self.assertTrue(args.fail_on_degraded)
+
+    def test_live_agent_health_prints_summary(self):
+        payload = {
+            "status": "degraded",
+            "agents": {
+                "total": 6,
+                "live": 2,
+                "counts": {"online": 1, "working": 1, "error": 2, "stale": 0, "offline": 2},
+                "attention": ["error-agent", "offline-agent"],
+            },
+            "processes": {
+                "total": 7,
+                "counts": {"running": 1, "restarting": 1, "error": 2, "unknown": 2, "stopped": 1},
+                "attention": ["crashed-group", "orphan-group"],
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "health", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-health")
+        output = stdout.getvalue()
+        self.assertIn("status: degraded", output)
+        self.assertIn("agents: 2 live / 6 total", output)
+        self.assertIn("online 1", output)
+        self.assertIn("agent attention: error-agent, offline-agent", output)
+        self.assertIn("processes: 1 running / 7 total", output)
+        self.assertIn("process attention: crashed-group, orphan-group", output)
+
+    def test_live_agent_health_can_emit_json_and_fail_on_degraded(self):
+        payload = {"status": "degraded", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}}
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "health", "--server", "http://room.local", "--json", "--fail-on-degraded"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(json.loads(stdout.getvalue())["status"], "degraded")
+
+    def test_live_agent_health_fail_on_degraded_allows_ok_status(self):
+        payload = {"status": "ok", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}}
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "health", "--server", "http://room.local", "--fail-on-degraded"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("status: ok", stdout.getvalue())
+
+    def test_live_agent_health_reads_real_http_endpoint(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [{"group_id": "crashed-group", "status": "error"}]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            (root / "live_agents.json").write_text(
+                json.dumps({"agents": [{"agent_id": "error-agent", "status": "error"}]}),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "health",
+                            "--server",
+                            f"http://127.0.0.1:{server.server_port}",
+                            "--fail-on-degraded",
+                        ]
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(exit_code, 1)
+            output = stdout.getvalue()
+            self.assertIn("status: degraded", output)
+            self.assertIn("agent attention: error-agent", output)
+            self.assertIn("process attention: crashed-group", output)
+
     def test_live_agent_delegate_runs_local_command_and_posts_reply(self):
         stdout = StringIO()
         room_payload = {"lobby_events": [{"name": "나", "message": "방 상태 어때?"}]}

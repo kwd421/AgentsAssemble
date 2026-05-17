@@ -158,6 +158,22 @@ For scriptable monitoring, fetch the combined health summary:
 curl http://127.0.0.1:8765/api/live-agent-health
 ```
 
+The same health payload is available through the CLI for terminal checks and local monitors:
+
+```bash
+python3 -m agentsassemble.cli live-agent health \
+  --server http://127.0.0.1:8765 \
+  --fail-on-degraded
+```
+
+Add `--json` when another script needs the raw response instead of the compact operator summary.
+
+Exit code contract:
+
+- `0`: health was fetched and either reported `ok`, or reported `degraded` without `--fail-on-degraded`.
+- `1`: health reached the server but reported non-`ok` while `--fail-on-degraded` was set.
+- `2`: the CLI could not fetch or parse the health response, or the command arguments were invalid.
+
 The response reports overall `status` as `ok` or `degraded`, plus `agents.counts`, `agents.attention`, `processes.counts`, and `processes.attention`. Treat `degraded` as a prompt to inspect the listed agent ids, process group ids, `last_error`, and log tails.
 
 This endpoint is a read-only snapshot. It does not refresh process handles, launch due auto-restarts, stop groups, or mutate process state.

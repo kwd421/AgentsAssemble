@@ -113,6 +113,14 @@ def build_parser() -> argparse.ArgumentParser:
     live_room = live_agent_subparsers.add_parser("room", parents=[live_server], help="Read the live room snapshot for an agent.")
     live_room.add_argument("--agent-id", required=True)
 
+    live_health = live_agent_subparsers.add_parser("health", parents=[live_server], help="Read live-agent room health.")
+    live_health.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON health payload.")
+    live_health.add_argument(
+        "--fail-on-degraded",
+        action="store_true",
+        help="Exit 1 when the health status is not ok.",
+    )
+
     live_delegate = live_agent_subparsers.add_parser(
         "delegate",
         parents=[live_server],
@@ -244,6 +252,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             response = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
             print(json.dumps(response, ensure_ascii=False, indent=2))
             return 0
+        if args.live_agent_command == "health":
+            return _run_live_agent_health(args)
         if args.live_agent_command == "delegate":
             return _run_live_agent_delegate(args)
         if args.live_agent_command == "run":
@@ -320,6 +330,47 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
     total = sum(results.values())
     print(f"Resident group stopped after posting {total} replies")
     return 0
+
+
+def _run_live_agent_health(args: argparse.Namespace) -> int:
+    payload = _request_json(_server_url(args.server, "/api/live-agent-health"))
+    if args.as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_health(payload))
+    return 1 if args.fail_on_degraded and payload.get("status") != "ok" else 0
+
+
+def _format_live_agent_health(payload: dict[str, object]) -> str:
+    agents = payload.get("agents") if isinstance(payload.get("agents"), dict) else {}
+    processes = payload.get("processes") if isinstance(payload.get("processes"), dict) else {}
+    agent_counts = agents.get("counts") if isinstance(agents.get("counts"), dict) else {}
+    process_counts = processes.get("counts") if isinstance(processes.get("counts"), dict) else {}
+    agent_attention = agents.get("attention") if isinstance(agents.get("attention"), list) else []
+    process_attention = processes.get("attention") if isinstance(processes.get("attention"), list) else []
+    return "\n".join(
+        [
+            f"status: {payload.get('status') or 'unknown'}",
+            (
+                f"agents: {agents.get('live', 0)} live / {agents.get('total', 0)} total "
+                f"(online {agent_counts.get('online', 0)}, working {agent_counts.get('working', 0)}, "
+                f"error {agent_counts.get('error', 0)}, stale {agent_counts.get('stale', 0)}, "
+                f"offline {agent_counts.get('offline', 0)})"
+            ),
+            f"agent attention: {_attention_summary(agent_attention)}",
+            (
+                f"processes: {process_counts.get('running', 0)} running / {processes.get('total', 0)} total "
+                f"(restarting {process_counts.get('restarting', 0)}, error {process_counts.get('error', 0)}, "
+                f"unknown {process_counts.get('unknown', 0)}, stopped {process_counts.get('stopped', 0)})"
+            ),
+            f"process attention: {_attention_summary(process_attention)}",
+        ]
+    )
+
+
+def _attention_summary(items: list[object]) -> str:
+    cleaned = [str(item) for item in items if str(item)]
+    return ", ".join(cleaned) if cleaned else "none"
 
 
 def _run_live_agent_delegate(args: argparse.Namespace) -> int:
