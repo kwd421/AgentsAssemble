@@ -27,8 +27,10 @@ from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
     ResidentAgentConfig,
+    SUPPORTED_RESIDENT_CONNECTION_KINDS,
     config_from_args,
     load_group_configs,
+    resident_connection_kind_error,
 )
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.live_session_transport import JsonlLiveSession
@@ -38,6 +40,7 @@ from agentsassemble.provider_health import provider_health_report
 
 LIVE_AGENT_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "live_session", "remote_bridge", "manual"]
 LIVE_AGENT_DELEGATE_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "remote_bridge", "manual"]
+LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES = list(SUPPORTED_RESIDENT_CONNECTION_KINDS)
 
 
 def parse_codex_timeout(value: str) -> int | None:
@@ -218,7 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--agent-id", required=True)
     live_run.add_argument("--display-name", default="")
     live_run.add_argument("--provider-kind", default="local_cli")
-    live_run.add_argument("--connection-kind", choices=LIVE_AGENT_CONNECTION_KIND_CHOICES, default="local_cli")
+    live_run.add_argument("--connection-kind", choices=LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES, default="local_cli")
     live_run.add_argument("--session-id", default="")
     live_run.add_argument("--endpoint", default="")
     live_run.add_argument("--auth-ref", default="")
@@ -816,6 +819,8 @@ class _JsonlLiveSessionCommandRunner:
 
 
 def _validate_resident_config(config: ResidentAgentConfig) -> None:
+    if config.connection_kind not in SUPPORTED_RESIDENT_CONNECTION_KINDS:
+        raise ValueError(resident_connection_kind_error())
     if config.connection_kind == "remote_bridge":
         if not config.endpoint:
             raise ValueError("Remote bridge resident requires --endpoint.")

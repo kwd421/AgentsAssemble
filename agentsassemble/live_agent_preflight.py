@@ -6,11 +6,12 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-from agentsassemble.live_agent_runner import ResidentAgentConfig
+from agentsassemble.live_agent_runner import (
+    ResidentAgentConfig,
+    SUPPORTED_RESIDENT_CONNECTION_KINDS,
+    resident_connection_kind_error,
+)
 from agentsassemble.remote_bridge_config import remote_bridge_auth_ref_available, remote_bridge_endpoint_error
-
-
-SUPPORTED_RESIDENT_CONNECTION_KINDS = {"local_cli", "live_session", "remote_bridge"}
 
 
 def preflight_live_agent_config(
@@ -178,7 +179,7 @@ def _connection_kind_check(connection_kind: str) -> dict[str, str]:
     return {
         "id": "connection_kind",
         "status": "failed",
-        "message": "Resident groups support local_cli, live_session, and remote_bridge connections.",
+        "message": resident_connection_kind_error(),
     }
 
 

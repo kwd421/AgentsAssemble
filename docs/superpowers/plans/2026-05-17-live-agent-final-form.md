@@ -641,6 +641,32 @@ Document that supervised start and restart now run preflight automatically in th
 
 ---
 
+### Task 19: Resident Connection Kind Runtime Gate
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `agentsassemble/live_agent_preflight.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_runner.py`
+- Test: `tests/test_live_agent_preflight.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for runtime/preflight vocabulary drift**
+
+Cover `live-agent run --connection-kind manual` as a parser error, and `run-group` config loading with `connection_kind: manual` plus a command as a `ValueError`. This proves unsupported resident kinds cannot silently fall back to the local CLI runner.
+
+- [x] **Step 2: Share the supported resident connection kind vocabulary**
+
+Define the resident runtime support set as `local_cli`, `live_session`, and `remote_bridge`, then use it from CLI parser choices, direct resident validation, group config loading, and preflight reporting.
+
+- [x] **Step 3: Document registration-vs-resident boundaries**
+
+Document that `manual` and `codex_resume` are roster/registration kinds, not resident process connection kinds. Direct CLI run, run-group, supervised start, and preflight now reject them as resident configs.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

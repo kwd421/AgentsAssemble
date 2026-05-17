@@ -16,6 +16,9 @@ from agentsassemble.remote_bridge_config import (
 )
 
 
+SUPPORTED_RESIDENT_CONNECTION_KINDS = ("local_cli", "live_session", "remote_bridge")
+
+
 @dataclass(frozen=True)
 class ResidentAgentConfig:
     server: str
@@ -384,6 +387,8 @@ def _config_from_mapping(
     server_override: str | None = None,
 ) -> ResidentAgentConfig:
     connection_kind = str(data.get("connection_kind") or "local_cli")
+    if connection_kind not in SUPPORTED_RESIDENT_CONNECTION_KINDS:
+        raise ValueError(resident_connection_kind_error())
     command = data.get("command")
     endpoint = data.get("endpoint")
     auth_ref = data.get("auth_ref")
@@ -514,3 +519,7 @@ def _looks_sensitive_error(text: str) -> bool:
         "https://",
     )
     return any(marker in normalized for marker in markers)
+
+
+def resident_connection_kind_error() -> str:
+    return "Resident groups support local_cli, live_session, and remote_bridge connections."

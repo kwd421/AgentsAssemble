@@ -38,6 +38,8 @@ python3 -m agentsassemble.cli live-agent preflight \
 
 The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not execute provider commands. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, local command executables are present for `local_cli` and `live_session`, and remote bridge agents have an endpoint plus an available `auth_ref`. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint. It cannot prove Claude, Gemini, Cursor, account login, billing, subscription, model availability, network access, bridge command execution, or native PTY/session readiness.
 
+Resident runners support only `local_cli`, `live_session`, and `remote_bridge`. Registration-only kinds such as `manual` and `codex_resume` can appear in the roster, but `live-agent run`, `live-agent run-group`, supervised start, and preflight reject them as resident process configs instead of silently treating them like a local CLI command.
+
 Supervised process start and restart run this same preflight gate automatically inside the local GUI supervisor before opening a log file or launching `run-group`. A failed gate returns a GUI/API/CLI error immediately and leaves no new process record behind. The GUI status line shows the refusal reason returned by the API. The check runs in the GUI server environment, so PATH and `env:` auth references are evaluated from the process that would launch the resident group.
 
 ## Provider Runtime Health

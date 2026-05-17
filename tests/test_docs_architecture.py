@@ -76,6 +76,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("/api/live-agent-health", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent health", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent preflight", doc)
+        self.assertIn("Resident runners support only `local_cli`, `live_session`, and `remote_bridge`", doc)
+        self.assertIn("Registration-only kinds such as `manual` and `codex_resume`", doc)
         self.assertIn("python3 -m agentsassemble.cli providers health", doc)
         self.assertIn("--probe bridge", doc)
         self.assertIn("/agentsassemble/health", doc)

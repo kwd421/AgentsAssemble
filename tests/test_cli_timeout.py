@@ -1155,6 +1155,28 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(args.connection_kind, "live_session")
 
+    def test_live_agent_run_rejects_non_resident_connection_kind(self):
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            with self.assertRaises(SystemExit) as raised:
+                build_parser().parse_args(
+                    [
+                        "live-agent",
+                        "run",
+                        "--agent-id",
+                        "manual-agent",
+                        "--connection-kind",
+                        "manual",
+                        "--command",
+                        "python3",
+                        "-c",
+                        "print('should not run')",
+                    ]
+                )
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("invalid choice", stderr.getvalue())
+
     def test_live_agent_run_group_accepts_config_path_and_tick_bound(self):
         args = build_parser().parse_args(
             ["live-agent", "run-group", "--config", "configs/live-agents.example.json", "--max-ticks", "2"]

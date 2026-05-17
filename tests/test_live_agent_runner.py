@@ -474,6 +474,30 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(loaded[0].endpoint, "http://friend.local:8777")
         self.assertEqual(loaded[0].auth_ref, "env:BRIDGE_TOKEN")
 
+    def test_group_config_rejects_non_resident_connection_kind_even_with_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "manual-agent",
+                                "connection_kind": "manual",
+                                "command": ["python3", "-c", "print('should not run')"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "Resident groups support local_cli, live_session, and remote_bridge connections.",
+            ):
+                load_group_configs(path)
+
     def test_remote_bridge_resident_command_runner_calls_bridge_with_runner_prompt(self):
         calls = []
 
