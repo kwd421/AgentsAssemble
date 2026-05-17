@@ -423,6 +423,74 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual(replies[0]["auto_chain_depth"], 1)
             self.assertIn("Resident agent stopped after posting 1 replies", stdout.getvalue())
 
+    def test_live_agent_run_restores_persisted_cursor_over_http(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            first_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "이미 본 이벤트"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                with patch("sys.stdout", StringIO()):
+                    heartbeat_exit = main(
+                        [
+                            "live-agent",
+                            "heartbeat",
+                            "--server",
+                            server_url,
+                            "--agent-id",
+                            "agent-single",
+                            "--status",
+                            "online",
+                            "--last-observed-event-id",
+                            first_event["id"],
+                        ]
+                    )
+                persisted_before = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))
+                second_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "재접속 후 새 이벤트"})
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    run_exit = main(
+                        [
+                            "live-agent",
+                            "run",
+                            "--server",
+                            server_url,
+                            "--agent-id",
+                            "agent-single",
+                            "--display-name",
+                            "Single Agent",
+                            "--poll-interval",
+                            "0",
+                            "--cooldown",
+                            "0",
+                            "--max-chain-depth",
+                            "0",
+                            "--max-ticks",
+                            "1",
+                            "--command",
+                            sys.executable,
+                            "-c",
+                            "import sys; sys.stdin.read(); print('Recovered cursor reply')",
+                        ]
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(heartbeat_exit, 0)
+            self.assertEqual(run_exit, 0)
+            persisted_agent = next(agent for agent in persisted_before["agents"] if agent["agent_id"] == "agent-single")
+            self.assertEqual(persisted_agent["last_observed_event_id"], first_event["id"])
+            events = read_lobby(root)
+            replies = [event for event in events if event["actor_id"] == "agent-single"]
+            self.assertEqual(len(replies), 1)
+            self.assertEqual(replies[0]["message"], "Recovered cursor reply")
+            self.assertEqual(replies[0]["source_event_id"], second_event["id"])
+            self.assertIn("Resident agent stopped after posting 1 replies", stdout.getvalue())
+
     def test_live_agent_run_group_posts_two_fake_cli_replies(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
