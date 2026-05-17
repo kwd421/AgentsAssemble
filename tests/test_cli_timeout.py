@@ -1,11 +1,15 @@
 import unittest
 import json
+import sys
 import tempfile
+import threading
 from pathlib import Path
+from http.server import ThreadingHTTPServer
 from io import StringIO
 from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, main
+from agentsassemble.gui import _make_handler, append_lobby_event, read_lobby
 
 
 class CliTimeoutTests(unittest.TestCase):
@@ -229,7 +233,145 @@ class CliTimeoutTests(unittest.TestCase):
         run_delegate.assert_called_once()
         self.assertEqual(run_delegate.call_args.args[0], ["claude", "-p"])
         self.assertIn("방 상태 어때?", run_delegate.call_args.args[1])
+        self.assertIn("AgentsAssemble", run_delegate.call_args.args[1])
+        self.assertNotIn("AgentCouncil", run_delegate.call_args.args[1])
         self.assertIn("Posted evt1", stdout.getvalue())
+
+    def test_live_agent_run_parser_defaults_to_resident_always_policy(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run",
+                "--agent-id",
+                "claude-code-live",
+                "--display-name",
+                "Claude Code Live",
+                "--command",
+                "claude",
+                "-p",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "run")
+        self.assertEqual(args.engagement_mode, "always")
+        self.assertEqual(args.poll_interval, 2.0)
+        self.assertEqual(args.heartbeat_interval, 30.0)
+        self.assertEqual(args.cooldown, 5.0)
+        self.assertEqual(args.max_chain_depth, 1)
+        self.assertEqual(args.max_ticks, 0)
+        self.assertEqual(args.resident_command, ["claude", "-p"])
+
+    def test_live_agent_run_group_accepts_config_path_and_tick_bound(self):
+        args = build_parser().parse_args(
+            ["live-agent", "run-group", "--config", "configs/live-agents.example.json", "--max-ticks", "2"]
+        )
+
+        self.assertEqual(args.live_agent_command, "run-group")
+        self.assertEqual(args.config, "configs/live-agents.example.json")
+        self.assertEqual(args.max_ticks, 2)
+
+    def test_live_agent_run_posts_fake_cli_reply_with_tick_bound(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            source_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "상주 에이전트 응답해"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "run",
+                            "--server",
+                            f"http://127.0.0.1:{server.server_port}",
+                            "--agent-id",
+                            "agent-single",
+                            "--display-name",
+                            "Single Agent",
+                            "--poll-interval",
+                            "0",
+                            "--cooldown",
+                            "0",
+                            "--max-chain-depth",
+                            "0",
+                            "--max-ticks",
+                            "2",
+                            "--command",
+                            sys.executable,
+                            "-c",
+                            "import sys; sys.stdin.read(); print('Single reply')",
+                        ]
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(exit_code, 0)
+            events = read_lobby(root)
+            replies = [event for event in events if event["actor_id"] == "agent-single"]
+            self.assertEqual(len(replies), 1)
+            self.assertEqual(replies[0]["message"], "Single reply")
+            self.assertEqual(replies[0]["source_event_id"], source_event["id"])
+            self.assertEqual(replies[0]["auto_chain_depth"], 1)
+            self.assertIn("Resident agent stopped after posting 1 replies", stdout.getvalue())
+
+    def test_live_agent_run_group_posts_two_fake_cli_replies(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            source_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "다들 살아있어?"})
+            config_path = Path(temp_dir) / "live-agents.json"
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                config_path.write_text(
+                    json.dumps(
+                        {
+                            "server": f"http://127.0.0.1:{server.server_port}",
+                            "poll_interval": 0,
+                            "cooldown": 0,
+                            "max_chain_depth": 0,
+                            "agents": [
+                                {
+                                    "agent_id": "agent-a",
+                                    "display_name": "Agent A",
+                                    "command": [
+                                        sys.executable,
+                                        "-c",
+                                        "import sys; sys.stdin.read(); print('Agent A reply')",
+                                    ],
+                                },
+                                {
+                                    "agent_id": "agent-b",
+                                    "display_name": "Agent B",
+                                    "command": [
+                                        sys.executable,
+                                        "-c",
+                                        "import sys; sys.stdin.read(); print('Agent B reply')",
+                                    ],
+                                },
+                            ],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    exit_code = main(["live-agent", "run-group", "--config", str(config_path), "--max-ticks", "1"])
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(exit_code, 0)
+            events = read_lobby(root)
+            replies = [event for event in events if event["actor_id"] in {"agent-a", "agent-b"}]
+            self.assertEqual({event["message"] for event in replies}, {"Agent A reply", "Agent B reply"})
+            self.assertEqual({event["source_event_id"] for event in replies}, {source_event["id"]})
+            self.assertEqual({event["auto_chain_depth"] for event in replies}, {1})
 
 
 if __name__ == "__main__":

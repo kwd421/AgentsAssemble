@@ -4,6 +4,8 @@ import argparse
 import json
 import subprocess
 import sys
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,6 +21,7 @@ from agentsassemble.codex_sessions import (
 )
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
+from agentsassemble.live_agent_runner import LiveAgentRunner, config_from_args, load_group_configs
 from agentsassemble.meeting import run_demo_meeting
 
 
@@ -123,6 +126,27 @@ def build_parser() -> argparse.ArgumentParser:
     live_delegate.add_argument("--timeout", type=int, default=120)
     live_delegate.add_argument("--command", dest="delegate_command", nargs=argparse.REMAINDER, required=True)
 
+    live_run = live_agent_subparsers.add_parser("run", parents=[live_server], help="Run a resident local CLI live agent.")
+    live_run.add_argument("--agent-id", required=True)
+    live_run.add_argument("--display-name", default="")
+    live_run.add_argument("--provider-kind", default="local_cli")
+    live_run.add_argument("--connection-kind", choices=["codex_resume", "local_cli", "remote_bridge", "manual"], default="local_cli")
+    live_run.add_argument("--session-id", default="")
+    live_run.add_argument("--endpoint", default="")
+    live_run.add_argument("--meeting-id", default="")
+    live_run.add_argument("--engagement-mode", default="always")
+    live_run.add_argument("--timeout", type=int, default=120)
+    live_run.add_argument("--poll-interval", type=float, default=2.0)
+    live_run.add_argument("--heartbeat-interval", type=float, default=30.0)
+    live_run.add_argument("--cooldown", type=float, default=5.0)
+    live_run.add_argument("--max-chain-depth", type=int, default=1)
+    live_run.add_argument("--max-ticks", type=int, default=0)
+    live_run.add_argument("--command", dest="resident_command", nargs=argparse.REMAINDER, required=True)
+
+    live_group = live_agent_subparsers.add_parser("run-group", help="Run multiple resident local CLI live agents.")
+    live_group.add_argument("--config", required=True)
+    live_group.add_argument("--max-ticks", type=int, default=None)
+
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
     session_subparsers = sessions.add_subparsers(dest="sessions_command", required=True)
 
@@ -218,10 +242,67 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return 0
         if args.live_agent_command == "delegate":
             return _run_live_agent_delegate(args)
+        if args.live_agent_command == "run":
+            return _run_live_agent_resident(args)
+        if args.live_agent_command == "run-group":
+            return _run_live_agent_group(args)
     except (OSError, subprocess.SubprocessError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return 1
+
+
+def _run_live_agent_resident(args: argparse.Namespace) -> int:
+    runner = LiveAgentRunner(
+        config_from_args(args),
+        request_json=_request_json,
+        command_runner=_run_delegate_command,
+        sleep_fn=time.sleep,
+    )
+    replies = runner.run()
+    print(f"Resident agent stopped after posting {replies} replies")
+    return 0
+
+
+def _run_live_agent_group(args: argparse.Namespace) -> int:
+    configs = load_group_configs(Path(args.config), max_ticks_override=args.max_ticks)
+    stop_event = threading.Event()
+    results: dict[str, int] = {}
+    errors: dict[str, str] = {}
+
+    def sleep(seconds: float) -> None:
+        stop_event.wait(seconds)
+
+    def run_agent(config) -> None:
+        try:
+            runner = LiveAgentRunner(
+                config,
+                request_json=_request_json,
+                command_runner=_run_delegate_command,
+                sleep_fn=sleep,
+                stop_event=stop_event,
+            )
+            results[config.agent_id] = runner.run()
+        except Exception as error:  # pragma: no cover - surfaced through CLI status in integration use
+            errors[config.agent_id] = str(error)
+
+    threads = [threading.Thread(target=run_agent, args=(config,), daemon=True) for config in configs]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    except KeyboardInterrupt:
+        stop_event.set()
+        for thread in threads:
+            thread.join(timeout=5)
+    if errors:
+        for agent_id, error in errors.items():
+            print(f"{agent_id}: {error}", file=sys.stderr)
+        return 2
+    total = sum(results.values())
+    print(f"Resident group stopped after posting {total} replies")
+    return 0
 
 
 def _run_live_agent_delegate(args: argparse.Namespace) -> int:
@@ -265,7 +346,7 @@ def _run_live_agent_delegate(args: argparse.Namespace) -> int:
 def _delegate_prompt(args: argparse.Namespace, room: dict[str, object]) -> str:
     events = room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []
     lines = [
-        "You are a live AgentCouncil participant connected through a local CLI bridge.",
+        "You are a live AgentsAssemble participant connected through a local CLI bridge.",
         f"Agent id: {args.agent_id}",
         f"Display name: {args.display_name or args.agent_id}",
         "Reply with one concise lobby message only.",

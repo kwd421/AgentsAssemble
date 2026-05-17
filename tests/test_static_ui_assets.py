@@ -112,7 +112,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('title="${escapeHtml(binding.session_id)}"', script)
         self.assertIn(".live-agent-connections", css)
         self.assertIn(".live-agent-card", css)
+        self.assertIn(".live-agent-error", css)
         self.assertIn(".live-agent-status", css)
+        self.assertIn('if (status === "error") return "오류";', script)
         self.assertIn(".codex-session-invite", css)
         self.assertIn(".codex-invite-form", css)
 

@@ -391,6 +391,7 @@ function shortSessionId(sessionId) {
 function liveAgentStatusLabel(status) {
   if (status === "online") return "온라인";
   if (status === "working") return "작업 중";
+  if (status === "error") return "오류";
   if (status === "stale") return "응답 지연";
   return "오프라인";
 }

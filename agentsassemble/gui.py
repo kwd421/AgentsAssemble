@@ -298,7 +298,7 @@ def live_agent_room_payload(output_root: Path, agent_id: str) -> dict[str, objec
 
 
 def live_agent_heartbeat_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
-    agent = heartbeat_live_agent(output_root, agent_id, status=str(payload.get("status") or "online"))
+    agent = heartbeat_live_agent(output_root, agent_id, status=str(payload.get("status") or "online"), metadata=payload)
     return {"agent": agent, "agents": read_live_agents(output_root)}
 
 
@@ -314,6 +314,9 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
             "side": "other-agent",
             "kind": payload.get("kind") or "message",
             "message": message,
+            "actor_id": agent.get("agent_id") or agent_id,
+            "source_event_id": payload.get("source_event_id") or "",
+            "auto_chain_depth": payload.get("auto_chain_depth") or 0,
         },
     )
     return {"agent": agent, "event": event, "events": read_lobby(output_root)}

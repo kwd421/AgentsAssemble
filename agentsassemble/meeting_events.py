@@ -39,6 +39,9 @@ class LobbyEvent:
     channel: Literal["lobby", "side_chat"] = "lobby"
     audience: str = "room"
     official_record: bool = False
+    actor_id: str = ""
+    source_event_id: str = ""
+    auto_chain_depth: int = 0
 
     @classmethod
     def from_payload(cls, payload: dict[str, object], channel: Literal["lobby", "side_chat"] = "lobby") -> LobbyEvent:
@@ -56,6 +59,9 @@ class LobbyEvent:
             kind=kind,  # type: ignore[arg-type]
             message=message,
             channel=channel,
+            actor_id=clean_lobby_text(payload.get("actor_id", ""), limit=64),
+            source_event_id=clean_lobby_text(payload.get("source_event_id", ""), limit=128),
+            auto_chain_depth=normalize_chain_depth(payload.get("auto_chain_depth")),
         )
 
     @classmethod
@@ -76,6 +82,9 @@ class LobbyEvent:
             channel=normalize_lobby_channel(payload.get("channel"), default=default_channel),
             audience=clean_lobby_text(payload.get("audience", "room"), limit=32) or "room",
             official_record=False,
+            actor_id=clean_lobby_text(payload.get("actor_id", ""), limit=64),
+            source_event_id=clean_lobby_text(payload.get("source_event_id", ""), limit=128),
+            auto_chain_depth=normalize_chain_depth(payload.get("auto_chain_depth")),
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -89,6 +98,9 @@ class LobbyEvent:
             "channel": self.channel,
             "audience": self.audience,
             "official_record": self.official_record,
+            "actor_id": self.actor_id,
+            "source_event_id": self.source_event_id,
+            "auto_chain_depth": self.auto_chain_depth,
         }
 
 
@@ -250,6 +262,12 @@ def normalize_lobby_kind(value: object) -> LobbyKind:
 
 def normalize_lobby_channel(value: object, default: Literal["lobby", "side_chat"] = "lobby") -> Literal["lobby", "side_chat"]:
     return value if value in LOBBY_CHANNELS else default  # type: ignore[return-value]
+
+
+def normalize_chain_depth(value: object) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(0, value)
+    return 0
 
 
 def _live_channel(kind: str) -> RoomChannel:

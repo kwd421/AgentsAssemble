@@ -596,6 +596,10 @@
   border-left-color: rgba(255, 183, 96, 0.58);
 }
 
+.live-agent-error {
+  border-left-color: rgba(255, 123, 123, 0.72);
+}
+
 .live-agent-offline {
   border-left-color: rgba(255, 123, 123, 0.58);
 }
@@ -625,6 +629,10 @@
 
 .live-agent-stale em {
   color: #ffd89a;
+}
+
+.live-agent-error em {
+  color: #ffc3c3;
 }
 
 .live-agent-offline em {

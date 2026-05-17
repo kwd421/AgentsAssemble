@@ -1,0 +1,27 @@
+{
+  "server": "http://127.0.0.1:8765",
+  "poll_interval": 2,
+  "heartbeat_interval": 30,
+  "cooldown": 5,
+  "max_chain_depth": 1,
+  "agents": [
+    {
+      "agent_id": "claude-code-live",
+      "display_name": "Claude Code",
+      "provider_kind": "claude_code",
+      "connection_kind": "local_cli",
+      "engagement_mode": "always",
+      "command": ["claude", "-p"],
+      "timeout_seconds": 120
+    },
+    {
+      "agent_id": "gemini-cli-live",
+      "display_name": "Gemini CLI",
+      "provider_kind": "gemini",
+      "connection_kind": "local_cli",
+      "engagement_mode": "always",
+      "command": ["gemini"],
+      "timeout_seconds": 120
+    }
+  ]
+}
