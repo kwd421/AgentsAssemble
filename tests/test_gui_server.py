@@ -741,7 +741,11 @@ class GuiServerTests(unittest.TestCase):
             def __init__(self, output_root):
                 self.output_root = output_root
                 self.closed = False
+                self.monitor_started = False
                 self.instances.append(self)
+
+            def start_monitor(self):
+                self.monitor_started = True
 
             def close(self):
                 self.closed = True
@@ -758,6 +762,48 @@ class GuiServerTests(unittest.TestCase):
                 with patch("agentsassemble.gui.ThreadingHTTPServer", server_factory):
                     with patch("sys.stdout", StringIO()):
                         serve_gui(host="127.0.0.1", port=0, output_root=Path(temp_dir))
+
+        self.assertTrue(servers[0].closed)
+        self.assertTrue(FakeSupervisor.instances[0].monitor_started)
+        self.assertTrue(FakeSupervisor.instances[0].closed)
+
+    def test_serve_gui_cleans_up_when_monitor_start_fails(self):
+        class FakeServer:
+            def __init__(self, address, handler):
+                self.closed = False
+
+            def serve_forever(self):
+                raise AssertionError("serve_forever should not run after monitor startup failure")
+
+            def server_close(self):
+                self.closed = True
+
+        class FakeSupervisor:
+            instances = []
+
+            def __init__(self, output_root):
+                self.closed = False
+                self.instances.append(self)
+
+            def start_monitor(self):
+                raise RuntimeError("monitor failed")
+
+            def close(self):
+                self.closed = True
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            servers = []
+
+            def server_factory(address, handler):
+                server = FakeServer(address, handler)
+                servers.append(server)
+                return server
+
+            with patch("agentsassemble.gui.LiveAgentProcessSupervisor", FakeSupervisor):
+                with patch("agentsassemble.gui.ThreadingHTTPServer", server_factory):
+                    with patch("sys.stdout", StringIO()):
+                        with self.assertRaises(RuntimeError):
+                            serve_gui(host="127.0.0.1", port=0, output_root=Path(temp_dir))
 
         self.assertTrue(servers[0].closed)
         self.assertTrue(FakeSupervisor.instances[0].closed)

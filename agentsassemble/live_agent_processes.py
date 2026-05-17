@@ -31,6 +31,8 @@ class LiveAgentProcessSupervisor:
         self._processes: dict[str, object] = {}
         self._logs: dict[str, object] = {}
         self._lock = threading.Lock()
+        self._monitor_stop = threading.Event()
+        self._monitor_thread: threading.Thread | None = None
         if self._mark_orphan_running_groups_unknown():
             self._write_records()
 
@@ -94,7 +96,31 @@ class LiveAgentProcessSupervisor:
                 last_error=str(record.get("last_error") or ""),
             )
 
+    def start_monitor(self, *, interval_seconds: float = 2.0) -> None:
+        interval = max(0.01, _nonnegative_float(interval_seconds, 2.0))
+        with self._lock:
+            if self._monitor_thread is not None and self._monitor_thread.is_alive():
+                return
+            self._monitor_stop = threading.Event()
+            thread = threading.Thread(
+                target=self._monitor_loop,
+                args=(self._monitor_stop, interval),
+                daemon=True,
+                name="AgentsAssembleLiveAgentProcessMonitor",
+            )
+            self._monitor_thread = thread
+        thread.start()
+
+    def stop_monitor(self, *, timeout_seconds: float = 5.0) -> None:
+        self._monitor_stop.set()
+        with self._lock:
+            thread = self._monitor_thread
+            self._monitor_thread = None
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=max(0.0, timeout_seconds))
+
     def close(self) -> None:
+        self.stop_monitor()
         with self._lock:
             for group_id, process in list(self._processes.items()):
                 returncode = _poll_process(process)
@@ -110,6 +136,13 @@ class LiveAgentProcessSupervisor:
             self.close()
         except Exception:
             return
+
+    def _monitor_loop(self, stop_event: threading.Event, interval_seconds: float) -> None:
+        while not stop_event.wait(interval_seconds):
+            with self._lock:
+                if stop_event.is_set():
+                    return
+                self._refresh_running_groups()
 
     def _refresh_running_groups(self) -> None:
         for group_id, process in list(self._processes.items()):

@@ -566,6 +566,44 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(persisted["groups"][0]["restart_count"], 1)
         self.assertEqual(len(processes), 2)
 
+    def test_monitor_restarts_crashed_group_without_list_polling(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=7100 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            try:
+                supervisor.start_group(
+                    config_path=config_path,
+                    server="http://room.local",
+                    group_id="crew",
+                    auto_restart=True,
+                    max_restarts=1,
+                    restart_backoff_seconds=0,
+                )
+                processes[0].returncode = 2
+
+                supervisor.start_monitor(interval_seconds=0.01)
+                deadline = time.monotonic() + 1
+                while len(processes) < 2 and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                snapshot = supervisor.snapshot_groups()
+            finally:
+                supervisor.stop_monitor()
+                supervisor.close()
+
+        self.assertEqual(len(processes), 2)
+        self.assertEqual(snapshot[0]["status"], "running")
+        self.assertEqual(snapshot[0]["pid"], 7101)
+        self.assertEqual(snapshot[0]["restart_count"], 1)
+
     def test_auto_restart_waits_for_backoff_before_relaunching(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -605,6 +643,96 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(len(processes), 2)
         self.assertEqual(restarted[0]["status"], "running")
         self.assertEqual(restarted[0]["pid"], 8001)
+
+    def test_monitor_starts_due_backoff_restart_without_list_polling(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=8300 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory, now_fn=lambda: current_time["value"])
+            try:
+                supervisor.start_group(
+                    config_path=config_path,
+                    server="http://room.local",
+                    group_id="crew",
+                    auto_restart=True,
+                    max_restarts=1,
+                    restart_backoff_seconds=30,
+                )
+                processes[0].returncode = 2
+                supervisor.start_monitor(interval_seconds=0.01)
+                deadline = time.monotonic() + 1
+                while supervisor.snapshot_groups()[0]["status"] != "restarting" and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                waiting = supervisor.snapshot_groups()
+                current_time["value"] += timedelta(seconds=31)
+                deadline = time.monotonic() + 1
+                while len(processes) < 2 and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                restarted = supervisor.snapshot_groups()
+            finally:
+                supervisor.stop_monitor()
+                supervisor.close()
+
+        self.assertEqual(waiting[0]["status"], "restarting")
+        self.assertEqual(waiting[0]["next_restart_at"], "2026-05-17T12:00:30+00:00")
+        self.assertEqual(len(processes), 2)
+        self.assertEqual(restarted[0]["status"], "running")
+        self.assertEqual(restarted[0]["pid"], 8301)
+
+    def test_stop_monitor_prevents_blocked_refresh_after_stop_request(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=8400 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=0,
+            )
+            processes[0].returncode = 2
+            with supervisor._lock:
+                supervisor._monitor_stop = threading.Event()
+                monitor = threading.Thread(
+                    target=supervisor._monitor_loop,
+                    args=(supervisor._monitor_stop, 0.01),
+                    daemon=True,
+                )
+                supervisor._monitor_thread = monitor
+                monitor.start()
+                time.sleep(0.03)
+                stopper = threading.Thread(target=supervisor.stop_monitor)
+                stopper.start()
+                deadline = time.monotonic() + 1
+                while not supervisor._monitor_stop.is_set() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+            stopper.join(timeout=1)
+            snapshot = supervisor.snapshot_groups()
+            supervisor.close()
+
+        self.assertEqual(len(processes), 1)
+        self.assertEqual(snapshot[0]["status"], "running")
+        self.assertEqual(snapshot[0]["pid"], 8400)
+        self.assertFalse(stopper.is_alive())
 
     def test_stop_group_cancels_pending_auto_restart(self):
         with tempfile.TemporaryDirectory() as temp_dir:

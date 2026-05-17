@@ -432,6 +432,34 @@ Document that diagnostic artifacts remain in runtime files for inspection but do
 
 ---
 
+### Task 12: Backend Supervisor Monitor Loop
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for browser-independent supervision**
+
+Cover a crashed auto-restart group and a delayed backoff restart advancing through a backend monitor loop without calling `list_groups()`. Keep `snapshot_groups()` read-only so health checks still cannot mutate process state.
+
+- [x] **Step 2: Implement an idempotent monitor lifecycle**
+
+Add `start_monitor(interval_seconds=2.0)` and `stop_monitor()` to `LiveAgentProcessSupervisor`. The monitor owns a daemon thread that periodically refreshes running groups and starts due auto-restarts under the existing supervisor lock.
+
+- [x] **Step 3: Wire monitor to GUI server lifecycle**
+
+Start the monitor when `serve_gui()` starts and stop it through `process_supervisor.close()` in the existing shutdown path.
+
+- [x] **Step 4: Document backend supervision semantics**
+
+Document that auto-restart and crash detection continue while the GUI server is running, even without an open browser or `/api/live-agent-processes` polling client.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

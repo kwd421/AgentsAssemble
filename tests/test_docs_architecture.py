@@ -111,6 +111,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("the final heartbeat can report `offline` while preserving `last_error`", doc)
         self.assertIn("reuse `last_observed_event_id`", doc)
         self.assertIn("does not resume old resident agents except pending auto-restart records", doc)
+        self.assertIn("backend supervisor monitor", doc)
+        self.assertIn("without an open browser", doc)
         self.assertIn("not native Claude Code Channels", doc)
         self.assertIn("not a native Claude, Gemini, or Cursor PTY protocol", doc)
         self.assertIn("Fake CLI", doc)

@@ -168,8 +168,9 @@ def serve_gui(host: str = "127.0.0.1", port: int = 8765, output_root: Path | Non
     process_supervisor = LiveAgentProcessSupervisor(root)
     handler = _make_handler(root, process_supervisor=process_supervisor)
     server = ThreadingHTTPServer((host, port), handler)
-    print(f"AgentsAssemble GUI: http://{host}:{port}")
     try:
+        process_supervisor.start_monitor()
+        print(f"AgentsAssemble GUI: http://{host}:{port}")
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping AgentsAssemble GUI")
