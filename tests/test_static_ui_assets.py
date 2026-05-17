@@ -87,6 +87,13 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("/api/lobby/remote", script)
         self.assertIn("function hasRemoteLobbyBridge", script)
         self.assertIn("async function sendLobbyRemote", script)
+        self.assertIn("function providerDisplayName", script)
+        self.assertIn("function joinModeLabel", script)
+        self.assertIn("function shortSessionId", script)
+        self.assertIn('provider?.kind === "codex_live_session"', script)
+        self.assertIn('return "Codex Live";', script)
+        self.assertIn('return "이어받은 세션";', script)
+        self.assertIn('title="${escapeHtml(binding.session_id)}"', script)
 
     def test_live_view_prioritizes_official_chat(self):
         script = static_js()

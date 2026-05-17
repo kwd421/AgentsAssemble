@@ -61,6 +61,60 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["artifacts"].get("decision.md"), "")
             self.assertEqual(payload["artifacts"].get("transcript.md"), "")
 
+    def test_build_meeting_payload_preserves_codex_live_session_binding_metadata(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir) / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "테스트",
+                        "question": "기존 세션을 이어받나?",
+                        "roles": [
+                            {
+                                "id": "lore_lawyer",
+                                "display_name": "설정충",
+                                "lens": "Canon Analyst",
+                                "research_focus": "canon",
+                            }
+                        ],
+                        "provider_configs": {
+                            "codex-live": {
+                                "id": "codex-live",
+                                "kind": "codex_live_session",
+                                "display_name": "Codex CLI Live Session",
+                            }
+                        },
+                        "permission_profiles": {
+                            "codex_live_meeting_readonly": {"id": "codex_live_meeting_readonly"}
+                        },
+                        "agent_bindings": [
+                            {
+                                "agent_id": "codex-live-lore-lawyer",
+                                "role_id": "lore_lawyer",
+                                "owner_id": "host",
+                                "provider_id": "codex-live",
+                                "model_id": "local-codex-session",
+                                "permission_profile_id": "codex_live_meeting_readonly",
+                                "join_mode": "current_session",
+                                "session_id": "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                            }
+                        ],
+                        "debate_rounds": [],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            payload = build_meeting_payload(meeting_dir)
+
+            binding = payload["meeting"]["agent_bindings"][0]
+            self.assertEqual(binding["join_mode"], "current_session")
+            self.assertEqual(binding["session_id"], "019e3038-39cc-76a2-a746-5ba8c0f3b408")
+            self.assertEqual(payload["meeting"]["provider_configs"]["codex-live"]["kind"], "codex_live_session")
+
     def test_lobby_events_are_appended_and_sanitized(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

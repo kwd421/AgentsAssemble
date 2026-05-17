@@ -1,5 +1,8 @@
 import unittest
+import json
+import tempfile
 from pathlib import Path
+from io import StringIO
 from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, main
@@ -65,6 +68,58 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(args.command, "claude-bridge")
         self.assertEqual(args.bridge_command, "claude")
+
+    def test_sessions_list_outputs_codex_session_index_as_json(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            codex_home = Path(temp_dir) / ".codex"
+            codex_home.mkdir()
+            (codex_home / "session_index.jsonl").write_text(
+                json.dumps(
+                    {
+                        "id": "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                        "thread_name": "인수인계 받기",
+                        "updated_at": "2026-05-16T09:57:44Z",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with patch.dict("os.environ", {"CODEX_HOME": str(codex_home)}), patch("sys.stdout", stdout):
+                exit_code = main(["sessions", "list", "--json"])
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload[0]["id"], "019e3038-39cc-76a2-a746-5ba8c0f3b408")
+            self.assertEqual(payload[0]["thread_name"], "인수인계 받기")
+
+    def test_sessions_invite_writes_gitignored_codex_live_agent_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "codex-live-session.local.json"
+            stdout = StringIO()
+
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "sessions",
+                        "invite",
+                        "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                        "--role",
+                        "lore_lawyer",
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn(str(output), stdout.getvalue())
+            config = json.loads(output.read_text(encoding="utf-8"))
+            bindings = {binding["role_id"]: binding for binding in config["agent_bindings"]}
+            self.assertEqual(bindings["lore_lawyer"]["join_mode"], "current_session")
+            self.assertEqual(bindings["lore_lawyer"]["session_id"], "019e3038-39cc-76a2-a746-5ba8c0f3b408")
+            self.assertEqual(bindings["show_me_the_feats"]["join_mode"], "fresh")
+            self.assertEqual(bindings["fanboard_skeptic"]["join_mode"], "fresh")
 
 
 if __name__ == "__main__":

@@ -227,13 +227,35 @@ function renderApprovedBinding(role) {
   const { binding, provider, permissions } = bindingSummary(state.payload?.meeting, role.id);
   const meta = roleMeta[role.id] || { color: "purple", badge: role.lens };
   const permissionLabel = permissions?.implementation ? "구현" : permissions?.filesystem_write ? "쓰기" : "회의";
+  const providerLabel = providerDisplayName(provider, binding);
+  const joinLabel = joinModeLabel(binding?.join_mode);
+  const sessionBadge = binding?.session_id
+    ? ` · <small class="binding-session" title="${escapeHtml(binding.session_id)}">${escapeHtml(shortSessionId(binding.session_id))}</small>`
+    : "";
   return `
     <div class="approved-binding binding-${escapeHtml(meta.color)}">
       <strong>${escapeHtml(role.display_name)}</strong>
       <span>${escapeHtml(binding?.agent_id || "unbound")}</span>
-      <em>${escapeHtml(provider?.display_name || binding?.provider_id || "provider 없음")} · ${escapeHtml(permissionLabel)}</em>
+      <em>${escapeHtml(providerLabel)} · ${escapeHtml(permissionLabel)} · ${escapeHtml(joinLabel)}${sessionBadge}</em>
     </div>
   `;
+}
+
+function providerDisplayName(provider, binding) {
+  if (provider?.kind === "codex_live_session") return "Codex Live";
+  return provider?.display_name || binding?.provider_id || "provider 없음";
+}
+
+function joinModeLabel(joinMode) {
+  if (joinMode === "current_session") return "이어받은 세션";
+  if (joinMode === "imported_pack") return "가져온 기억";
+  return "새 세션";
+}
+
+function shortSessionId(sessionId) {
+  const value = String(sessionId || "");
+  if (value.length <= 14) return value;
+  return `${value.slice(0, 8)}...${value.slice(-4)}`;
 }
 
 function renderRosterUser(user) {
