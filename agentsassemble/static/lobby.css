@@ -884,6 +884,10 @@
   color: #d9e6ff;
 }
 
+.live-agent-process-connection {
+  color: #cfe6b8;
+}
+
 .live-agent-process-row button {
   background: rgba(255, 123, 123, 0.1);
   border-color: rgba(255, 123, 123, 0.3);

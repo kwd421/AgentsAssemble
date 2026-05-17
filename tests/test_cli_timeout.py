@@ -541,6 +541,11 @@ class CliTimeoutTests(unittest.TestCase):
                 "counts": {"running": 1, "restarting": 1, "error": 2, "unknown": 2, "stopped": 1},
                 "attention": ["crashed-group", "orphan-group"],
             },
+            "connections": {
+                "expected": 2,
+                "connected": 1,
+                "attention": ["crew:friend-b:missing"],
+            },
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
@@ -556,6 +561,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("agent attention: error-agent, offline-agent", output)
         self.assertIn("processes: 1 running / 7 total", output)
         self.assertIn("process attention: crashed-group, orphan-group", output)
+        self.assertIn("connections: 1 connected / 2 expected", output)
+        self.assertIn("connection attention: crew:friend-b:missing", output)
 
     def test_live_agent_health_can_emit_json_and_fail_on_degraded(self):
         payload = {"status": "degraded", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}}
@@ -1003,6 +1010,11 @@ class CliTimeoutTests(unittest.TestCase):
                             "restart_count": 1,
                         }
                     ],
+                    "agent_connection": {
+                        "expected": 2,
+                        "connected": 1,
+                        "attention": [{"agent_id": "friend-b", "status": "missing"}],
+                    },
                 },
                 {"group_id": "stopped-crew", "status": "stopped", "pid": None, "config_path": "fake.json"},
             ]
@@ -1019,6 +1031,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("pid 1234", output)
         self.assertIn("restarts 1/3", output)
         self.assertIn("agents Local A/local_cli, Friend B/remote_bridge", output)
+        self.assertIn("agents connected 1/2", output)
+        self.assertIn("missing friend-b", output)
         self.assertIn("last event started", output)
         self.assertNotIn("command", output)
         self.assertNotIn("auth", output)

@@ -458,8 +458,15 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
     return {"agent": agent, "event": event, "events": read_lobby(output_root)}
 
 
-def live_agent_processes_payload(process_supervisor: LiveAgentProcessSupervisor) -> dict[str, object]:
-    return {"groups": process_supervisor.list_groups()}
+def live_agent_processes_payload(
+    process_supervisor: LiveAgentProcessSupervisor,
+    *,
+    output_root: Path | None = None,
+) -> dict[str, object]:
+    groups = process_supervisor.list_groups()
+    if output_root is None:
+        return {"groups": groups}
+    return {"groups": _groups_with_agent_connection_evidence(groups, read_live_agents(output_root))}
 
 
 def live_agent_preflight_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
@@ -510,8 +517,13 @@ def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentPr
     diagnostic_group_ids = _diagnostic_agent_group_ids(agents)
     agent_summary = _live_agent_health_summary(agents)
     process_summary = _live_agent_process_health_summary(groups, diagnostic_group_ids=diagnostic_group_ids)
-    status = "degraded" if agent_summary["attention"] or process_summary["attention"] else "ok"
-    return {"status": status, "agents": agent_summary, "processes": process_summary}
+    connection_summary = _live_agent_connection_health_summary(
+        groups,
+        agents,
+        diagnostic_group_ids=diagnostic_group_ids,
+    )
+    status = "degraded" if agent_summary["attention"] or process_summary["attention"] or connection_summary["attention"] else "ok"
+    return {"status": status, "agents": agent_summary, "processes": process_summary, "connections": connection_summary}
 
 
 def _live_agent_health_summary(agents: list[dict[str, object]]) -> dict[str, object]:
@@ -543,6 +555,81 @@ def _live_agent_process_health_summary(
         if status in {"restarting", "error", "unknown", "stopped"}:
             attention.append(str(group.get("group_id") or f"missing-process-group-id-{index}"))
     return {"total": len(groups), "counts": counts, "attention": attention}
+
+
+def _live_agent_connection_health_summary(
+    groups: list[dict[str, object]],
+    agents: list[dict[str, object]],
+    *,
+    diagnostic_group_ids: set[str] | None = None,
+) -> dict[str, object]:
+    diagnostic_group_ids = diagnostic_group_ids or set()
+    visible_agents = [agent for agent in agents if not _is_diagnostic_agent(agent)]
+    expected = 0
+    connected = 0
+    attention = []
+    for group in groups:
+        if str(group.get("status") or "") != "running":
+            continue
+        if _is_diagnostic_process_group(group, diagnostic_group_ids):
+            continue
+        group_connection = _agent_connection_evidence(group, visible_agents)
+        expected += int(group_connection.get("expected") or 0)
+        connected += int(group_connection.get("connected") or 0)
+        group_id = str(group.get("group_id") or "unknown")
+        for item in _as_dict_list(group_connection.get("attention")):
+            agent_id = str(item.get("agent_id") or "unknown")
+            status = str(item.get("status") or "unknown")
+            attention.append(f"{group_id}:{agent_id}:{status}")
+    return {"expected": expected, "connected": connected, "attention": attention}
+
+
+def _groups_with_agent_connection_evidence(
+    groups: list[dict[str, object]],
+    agents: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    return [{**group, "agent_connection": _agent_connection_evidence(group, agents)} for group in groups]
+
+
+def _process_payload_with_agent_connection_evidence(
+    payload: dict[str, object],
+    output_root: Path | None,
+) -> dict[str, object]:
+    if output_root is None:
+        return payload
+    agents = read_live_agents(output_root)
+    response = dict(payload)
+    group = response.get("group")
+    if isinstance(group, dict):
+        response["group"] = {**group, "agent_connection": _agent_connection_evidence(group, agents)}
+    groups = response.get("groups")
+    if isinstance(groups, list):
+        response["groups"] = _groups_with_agent_connection_evidence([group for group in groups if isinstance(group, dict)], agents)
+    return response
+
+
+def _agent_connection_evidence(group: dict[str, object], agents: list[dict[str, object]]) -> dict[str, object]:
+    agents_by_id = {str(agent.get("agent_id") or ""): agent for agent in agents if str(agent.get("agent_id") or "")}
+    expected = 0
+    connected = 0
+    attention = []
+    for manifest_agent in _as_dict_list(group.get("agents")):
+        agent_id = str(manifest_agent.get("agent_id") or "").strip()
+        if not agent_id:
+            continue
+        expected += 1
+        agent = agents_by_id.get(agent_id)
+        if agent is None:
+            attention.append({"agent_id": agent_id, "status": "missing"})
+            continue
+        status = str(agent.get("status") or "offline")
+        if status in {"online", "working"}:
+            connected += 1
+            continue
+        if status not in {"error", "stale", "offline"}:
+            status = "offline"
+        attention.append({"agent_id": agent_id, "status": status})
+    return {"expected": expected, "connected": connected, "attention": attention}
 
 
 def _diagnostic_agent_group_ids(agents: list[dict[str, object]]) -> set[str]:
@@ -607,6 +694,7 @@ def start_live_agent_process_payload(
     payload: dict[str, object],
     *,
     default_server: str,
+    output_root: Path | None = None,
 ) -> dict[str, object]:
     config_path = Path(str(payload.get("config_path") or "configs/live-agents.example.json"))
     server = str(payload.get("server") or default_server)
@@ -622,23 +710,30 @@ def start_live_agent_process_payload(
     if _payload_bool(payload.get("diagnostic")):
         start_kwargs["diagnostic"] = True
     group = process_supervisor.start_group(**start_kwargs)
-    return {"group": group, "groups": process_supervisor.list_groups()}
+    response = {"group": group, "groups": process_supervisor.list_groups()}
+    return _process_payload_with_agent_connection_evidence(response, output_root)
 
 
 def stop_live_agent_process_payload(
     process_supervisor: LiveAgentProcessSupervisor,
     group_id: str,
+    *,
+    output_root: Path | None = None,
 ) -> dict[str, object]:
     group = process_supervisor.stop_group(group_id)
-    return {"group": group, "groups": process_supervisor.list_groups()}
+    response = {"group": group, "groups": process_supervisor.list_groups()}
+    return _process_payload_with_agent_connection_evidence(response, output_root)
 
 
 def restart_live_agent_process_payload(
     process_supervisor: LiveAgentProcessSupervisor,
     group_id: str,
+    *,
+    output_root: Path | None = None,
 ) -> dict[str, object]:
     group = process_supervisor.restart_group(group_id)
-    return {"group": group, "groups": process_supervisor.list_groups()}
+    response = {"group": group, "groups": process_supervisor.list_groups()}
+    return _process_payload_with_agent_connection_evidence(response, output_root)
 
 
 def record_live_agent_operation(
@@ -956,7 +1051,7 @@ def _make_handler(
                 self._send_json(live_agent_health_payload(output_root, live_agent_process_supervisor))
                 return
             if path == "/api/live-agent-processes":
-                self._send_json(live_agent_processes_payload(live_agent_process_supervisor))
+                self._send_json(live_agent_processes_payload(live_agent_process_supervisor, output_root=output_root))
                 return
             if path == "/api/live-agent-operations":
                 self._send_json(live_agent_operations_payload(output_root, limit=self._limit(query, default=50)))
@@ -1107,6 +1202,7 @@ def _make_handler(
                         live_agent_process_supervisor,
                         payload,
                         default_server=self._request_server_url(),
+                        output_root=output_root,
                     )
                 except ValueError as error:
                     record_live_agent_operation(
@@ -1277,7 +1373,11 @@ def _make_handler(
             live_agent_process_stop_id = _live_agent_process_action_path(parsed.path, "stop")
             if live_agent_process_stop_id is not None:
                 try:
-                    stopped = stop_live_agent_process_payload(live_agent_process_supervisor, live_agent_process_stop_id)
+                    stopped = stop_live_agent_process_payload(
+                        live_agent_process_supervisor,
+                        live_agent_process_stop_id,
+                        output_root=output_root,
+                    )
                 except ValueError as error:
                     record_live_agent_operation(
                         output_root,
@@ -1306,7 +1406,11 @@ def _make_handler(
             live_agent_process_restart_id = _live_agent_process_action_path(parsed.path, "restart")
             if live_agent_process_restart_id is not None:
                 try:
-                    restarted = restart_live_agent_process_payload(live_agent_process_supervisor, live_agent_process_restart_id)
+                    restarted = restart_live_agent_process_payload(
+                        live_agent_process_supervisor,
+                        live_agent_process_restart_id,
+                        output_root=output_root,
+                    )
                 except ValueError as error:
                     record_live_agent_operation(
                         output_root,

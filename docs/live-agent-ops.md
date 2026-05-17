@@ -458,6 +458,7 @@ What to check:
 - `.agentsassemble/lobby.jsonl`: human lobby messages and live-agent replies. Live-agent auto replies include `actor_id`, `source_event_id`, and `auto_chain_depth`.
 - `.agentsassemble/live-agent-runs/processes.json`: durable group records with `group_id`, `status`, `pid`, `config_path`, `server`, `log_path`, timestamps, `returncode`, `last_error`, and a safe launch-time `agents` manifest.
 - agents manifest entries contain only `agent_id`, `display_name`, `provider_kind`, and `connection_kind`. The manifest does not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
+- `/api/live-agent-processes`: process rows add output-only `agent_connection` evidence by comparing each group's launch-time manifest with current live-agent presence. This manifest-aware connection evidence reports `expected`, `connected`, and attention entries such as missing, stale, offline, or error agents. It is not persisted into `processes.json`.
 - auto-restart fields in `processes.json`: `auto_restart`, `restart_count`, `max_restarts`, `restart_backoff_seconds`, and `next_restart_at`.
 - `.agentsassemble/live-agent-runs/events.jsonl`: safe lifecycle event history for supervised groups. It records bounded operator facts such as `started`, `stopped`, `error`, `restart_scheduled`, `restart_failed`, and `recovered_unknown` with `timestamp`, `group_id`, `status`, `pid`, `returncode`, and restart counters. The process API and GUI expose each group's bounded `recent_events` view. Lifecycle events do not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
 - `.agentsassemble/live-agent-runs/operations.jsonl`: safe control-operation history for API, GUI, and CLI operator actions. It records bounded entries for process start/stop/restart, engagement updates, preflight checks, smoke runs, and readiness checks, including success, degraded, and refused/failed attempts. The operation ledger does not include command arguments, endpoint URLs, auth references, prompts, log tails, config paths, environment-derived values, or provider secrets. Ordinary heartbeat polling and health reads are intentionally not operation records.
@@ -510,7 +511,7 @@ Exit code contract:
 - `1`: health reached the server but reported non-`ok` while `--fail-on-degraded` was set.
 - `2`: the CLI could not fetch or parse the health response, or the command arguments were invalid.
 
-The response reports overall `status` as `ok` or `degraded`, plus `agents.counts`, `agents.attention`, `processes.counts`, and `processes.attention`. Treat `degraded` as a prompt to inspect the listed agent ids, process group ids, `last_error`, and log tails.
+The response reports overall `status` as `ok` or `degraded`, plus `agents.counts`, `agents.attention`, `processes.counts`, `processes.attention`, and manifest-aware `connections` evidence. A non-diagnostic running process group with manifest agents that are missing, stale, offline, or error adds `connection attention` and degrades health. Diagnostic smoke groups are ignored so repeated doctor checks do not contaminate readiness.
 
 This endpoint is a read-only snapshot. It does not refresh process handles, launch due auto-restarts, stop groups, or mutate process state.
 

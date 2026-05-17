@@ -704,10 +704,12 @@ def _format_live_agent_readiness(payload: dict[str, object]) -> str:
 def _format_live_agent_health(payload: dict[str, object]) -> str:
     agents = payload.get("agents") if isinstance(payload.get("agents"), dict) else {}
     processes = payload.get("processes") if isinstance(payload.get("processes"), dict) else {}
+    connections = payload.get("connections") if isinstance(payload.get("connections"), dict) else {}
     agent_counts = agents.get("counts") if isinstance(agents.get("counts"), dict) else {}
     process_counts = processes.get("counts") if isinstance(processes.get("counts"), dict) else {}
     agent_attention = agents.get("attention") if isinstance(agents.get("attention"), list) else []
     process_attention = processes.get("attention") if isinstance(processes.get("attention"), list) else []
+    connection_attention = connections.get("attention") if isinstance(connections.get("attention"), list) else []
     return "\n".join(
         [
             f"status: {payload.get('status') or 'unknown'}",
@@ -724,6 +726,8 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
                 f"unknown {process_counts.get('unknown', 0)}, stopped {process_counts.get('stopped', 0)})"
             ),
             f"process attention: {_attention_summary(process_attention)}",
+            f"connections: {connections.get('connected', 0)} connected / {connections.get('expected', 0)} expected",
+            f"connection attention: {_attention_summary(connection_attention)}",
         ]
     )
 
@@ -829,8 +833,9 @@ def _format_live_agent_process_group(group: dict[str, object]) -> str:
     max_restarts = group.get("max_restarts", 0)
     config_path = str(group.get("config_path") or "").strip()
     agents = _format_live_agent_process_agents(group.get("agents"))
+    connection = _format_live_agent_process_connection(group.get("agent_connection"))
     last_event = _format_live_agent_process_last_event(group.get("recent_events"))
-    suffix_parts = [part for part in (config_path, agents, last_event) if part]
+    suffix_parts = [part for part in (config_path, agents, connection, last_event) if part]
     suffix = f" {'; '.join(suffix_parts)}" if suffix_parts else ""
     return f"{group_id}: {status} ({pid_text}, {auto_restart}, restarts {restart_count}/{max_restarts}){suffix}"
 
@@ -863,6 +868,32 @@ def _format_live_agent_process_agents(value: object) -> str:
     return f"agents {', '.join(labels)}" if labels else ""
 
 
+def _format_live_agent_process_connection(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    expected = _safe_int(value.get("expected"))
+    connected = _safe_int(value.get("connected"))
+    if expected <= 0 and connected <= 0 and not value.get("attention"):
+        return ""
+    attention = _format_live_agent_process_connection_attention(value.get("attention"))
+    suffix = f"; {attention}" if attention else ""
+    return f"agents connected {connected}/{expected}{suffix}"
+
+
+def _format_live_agent_process_connection_attention(value: object) -> str:
+    if not isinstance(value, list):
+        return ""
+    labels = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        agent_id = str(item.get("agent_id") or "").strip()
+        status = str(item.get("status") or "").strip()
+        if agent_id and status:
+            labels.append(f"{status} {agent_id}")
+    return ", ".join(labels)
+
+
 def _format_live_agent_process_last_event(value: object) -> str:
     if not isinstance(value, list) or not value:
         return ""
@@ -873,6 +904,15 @@ def _format_live_agent_process_last_event(value: object) -> str:
         if event_type:
             return f"last event {event_type}"
     return ""
+
+
+def _safe_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _run_live_agent_delegate(args: argparse.Namespace) -> int:

@@ -495,6 +495,7 @@ function renderLiveAgentProcessCard(group) {
   const canStop = status === "running" || status === "restarting";
   const logTail = group.log_tail == null ? "" : String(group.log_tail);
   const agentLabel = liveAgentProcessAgentsLabel(group);
+  const connectionLabel = liveAgentProcessConnectionLabel(group);
   const eventLabel = liveAgentProcessEventLabel(group);
   return `
     <article class="live-agent-process-row live-agent-process-${escapeHtml(status)}">
@@ -504,6 +505,7 @@ function renderLiveAgentProcessCard(group) {
         <small>${escapeHtml(group.pid ? `pid ${group.pid}` : "pid 없음")} · ${escapeHtml(group.server || "")}</small>
         <small>${escapeHtml(liveAgentProcessRestartLabel(group))}</small>
         ${agentLabel ? `<small class="live-agent-process-agents">${escapeHtml(agentLabel)}</small>` : ""}
+        ${connectionLabel ? `<small class="live-agent-process-connection">${escapeHtml(connectionLabel)}</small>` : ""}
         ${eventLabel ? `<small class="live-agent-process-event">${escapeHtml(eventLabel)}</small>` : ""}
       </div>
       <em>${escapeHtml(liveAgentProcessStatusLabel(status))}</em>
@@ -557,6 +559,29 @@ function liveAgentProcessAgentsLabel(group) {
     })
     .filter(Boolean);
   return labels.length ? `agents ${labels.join(", ")}` : "";
+}
+
+function liveAgentProcessConnectionLabel(group) {
+  const connection = group.agent_connection;
+  if (!connection || typeof connection !== "object") return "";
+  const expected = Math.max(0, Number(connection.expected || 0));
+  const connected = Math.max(0, Number(connection.connected || 0));
+  const attention = liveAgentProcessConnectionAttentionLabel(connection.attention);
+  if (!expected && !connected && !attention) return "";
+  return `agents connected ${connected}/${expected}${attention ? ` · ${attention}` : ""}`;
+}
+
+function liveAgentProcessConnectionAttentionLabel(attention) {
+  if (!Array.isArray(attention)) return "";
+  return attention
+    .map((item) => {
+      if (!item || typeof item !== "object") return "";
+      const agentId = String(item.agent_id || "").trim();
+      const status = String(item.status || "").trim();
+      return agentId && status ? `${status} ${agentId}` : "";
+    })
+    .filter(Boolean)
+    .join(", ");
 }
 
 function liveAgentProcessEventLabel(group) {

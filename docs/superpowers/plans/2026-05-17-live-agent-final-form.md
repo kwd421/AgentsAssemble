@@ -1005,6 +1005,38 @@ Document that GUI startup autostart is explicit, does not start `configs/live-ag
 
 ---
 
+### Task 33: Manifest-Aware Resident Connection Evidence
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `agentsassemble/static/lobby.css`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for manifest-to-presence evidence**
+
+Cover `/api/live-agent-processes` output-only `agent_connection`, health degradation when a running non-diagnostic group has missing or stale manifest agents, diagnostic group exclusion, CLI health/process summaries, GUI rendering hooks, and operator docs.
+
+- [x] **Step 2: Join process manifests to live-agent presence at read boundaries**
+
+Add read-only connection evidence with `expected`, `connected`, and bounded attention entries. Count only current `online` and `working` presence as connected; report `missing`, `stale`, `offline`, or `error` for manifest agents that need operator attention. Do not persist connection evidence into `processes.json`.
+
+- [x] **Step 3: Surface connection evidence to operators**
+
+Expose connection health through `/api/live-agent-health`, `live-agent health`, `live-agent processes list`, and GUI process rows. Keep health read-only by using supervisor snapshots and preserve diagnostic smoke isolation.
+
+- [x] **Step 4: Document operator semantics**
+
+Document manifest-aware connection evidence, health degradation rules, diagnostic exclusions, and the `agent_connection` output-only API field.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
