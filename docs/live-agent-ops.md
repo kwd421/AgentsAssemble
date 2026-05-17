@@ -16,7 +16,7 @@ Open:
 http://127.0.0.1:8765
 ```
 
-The lobby is the public room surface. The "상주 실행" panel can start, refresh, and stop local live-agent process groups. The default group config path is:
+The lobby is the public room surface. The "상주 실행" panel can start, refresh, stop, and restart local live-agent process groups. The default group config path is:
 
 ```text
 configs/live-agents.example.json
@@ -108,7 +108,7 @@ Use the GUI "상주 실행" panel for supervised process records and stop contro
 
 The GUI start button runs the same resident group through the local process supervisor. Group records and log tails remain visible even after the process stops or crashes.
 
-## Stop A Group
+## Stop Or Restart A Group
 
 Prefer the GUI stop button for a running group. The HTTP stop path is also available:
 
@@ -119,7 +119,16 @@ curl -X POST \
   http://127.0.0.1:8765/api/live-agent-processes/local-cli-group/stop
 ```
 
-The supervisor only stops group ids it launched in the current GUI process. Historical records from a previous GUI process are shown as `unknown`, `stopped`, or `error`, but are not treated as externally stoppable PIDs.
+Use the GUI restart button on a stopped, crashed, or recovered group to relaunch it from the persisted `config_path` and `server`. The HTTP restart path is:
+
+```bash
+curl -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{}' \
+  http://127.0.0.1:8765/api/live-agent-processes/local-cli-group/restart
+```
+
+The supervisor only stops group ids it launched in the current GUI process. Historical records from a previous GUI process are shown as `unknown`, `stopped`, or `error`, but are not treated as externally stoppable PIDs. Restarting a historical record starts a fresh local process from the saved config and server instead of attaching to the old PID.
 
 ## Inspect Runtime State
 

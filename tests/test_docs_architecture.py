@@ -62,6 +62,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("claude", doc)
         self.assertIn("gemini", doc)
         self.assertIn("curl -X POST", doc)
+        self.assertIn("/api/live-agent-processes/local-cli-group/restart", doc)
         self.assertIn(".agentsassemble/live_agents.json", doc)
         self.assertIn(".agentsassemble/lobby.jsonl", doc)
         self.assertIn(".agentsassemble/live-agent-runs/processes.json", doc)

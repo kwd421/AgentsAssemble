@@ -329,6 +329,90 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
 
         self.assertEqual(persisted_close["groups"][0]["stopped_at"], persisted_stop["groups"][0]["stopped_at"])
 
+    def test_restart_group_relaunches_from_persisted_record(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            launched = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=5000 + len(launched))
+                launched.append((command, process))
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+            supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew")
+            supervisor.stop_group("crew")
+
+            restarted = supervisor.restart_group("crew")
+
+        self.assertEqual(restarted["group_id"], "crew")
+        self.assertEqual(restarted["status"], "running")
+        self.assertEqual(restarted["pid"], 5001)
+        self.assertEqual(restarted["config_path"], str(config_path))
+        self.assertEqual(restarted["server"], "http://room.local")
+        self.assertEqual(len(launched), 2)
+
+    def test_restart_group_refuses_owned_running_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=lambda command, **kwargs: FakeProcess())
+            supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew")
+
+            with self.assertRaises(ValueError):
+                supervisor.restart_group("crew")
+
+    def test_restart_group_relaunches_unknown_historical_record(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            (runs_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "running",
+                                "pid": 1111,
+                                "config_path": str(config_path),
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "",
+                                "returncode": None,
+                                "last_error": "",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            launched = []
+
+            def command_factory(command, **kwargs):
+                launched.append(command)
+                return FakeProcess(pid=6789)
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+
+            restarted = supervisor.restart_group("crew")
+
+        self.assertEqual(restarted["status"], "running")
+        self.assertEqual(restarted["pid"], 6789)
+        self.assertEqual(restarted["config_path"], str(config_path))
+        self.assertEqual(restarted["server"], "http://room.local")
+        self.assertEqual(len(launched), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

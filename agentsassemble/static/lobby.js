@@ -98,6 +98,9 @@ export function renderLobby(options = {}) {
   lobby.querySelectorAll("[data-live-agent-process-stop]").forEach((button) => {
     button.addEventListener("click", () => stopLiveAgentProcessGroup(button.dataset.liveAgentProcessStop));
   });
+  lobby.querySelectorAll("[data-live-agent-process-restart]").forEach((button) => {
+    button.addEventListener("click", () => restartLiveAgentProcessGroup(button.dataset.liveAgentProcessRestart));
+  });
   lobby.querySelector("#live-agent-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     await sendLiveAgentRegistration(event.currentTarget);
@@ -334,7 +337,7 @@ function renderLiveAgentProcessCard(group) {
       ${
         isRunning
           ? `<button type="button" data-live-agent-process-stop="${escapeHtml(group.group_id || "")}">중지</button>`
-          : ""
+          : `<button type="button" class="live-agent-process-restart" data-live-agent-process-restart="${escapeHtml(group.group_id || "")}">재시작</button>`
       }
       ${logTail ? `<pre class="live-agent-process-log">${escapeHtml(logTail)}</pre>` : ""}
     </article>
@@ -676,6 +679,25 @@ async function stopLiveAgentProcessGroup(groupId) {
     state.liveAgentProcessStatus = { message: `${groupId} 중지됨`, tone: "success" };
   } catch {
     state.liveAgentProcessStatus = { message: `${groupId} 중지 실패`, tone: "error" };
+  }
+  renderLobby({ followLatest: false });
+}
+
+async function restartLiveAgentProcessGroup(groupId) {
+  if (!groupId) return;
+  state.liveAgentProcessStatus = { message: `${groupId} 재시작 중`, tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson(`/api/live-agent-processes/${encodeURIComponent(groupId)}/restart`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    setLiveAgentProcesses(payload.groups || []);
+    state.liveAgentProcessesLoaded = true;
+    state.liveAgentProcessStatus = { message: `${groupId} 재시작됨`, tone: "success" };
+  } catch {
+    state.liveAgentProcessStatus = { message: `${groupId} 재시작 실패`, tone: "error" };
   }
   renderLobby({ followLatest: false });
 }

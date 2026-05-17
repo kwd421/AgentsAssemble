@@ -350,6 +350,14 @@ def stop_live_agent_process_payload(
     return {"group": group, "groups": process_supervisor.list_groups()}
 
 
+def restart_live_agent_process_payload(
+    process_supervisor: LiveAgentProcessSupervisor,
+    group_id: str,
+) -> dict[str, object]:
+    group = process_supervisor.restart_group(group_id)
+    return {"group": group, "groups": process_supervisor.list_groups()}
+
+
 def codex_session_invite_payload(
     output_root: Path,
     *,
@@ -698,6 +706,15 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json(stopped)
+                return
+            live_agent_process_restart_id = _live_agent_process_action_path(parsed.path, "restart")
+            if live_agent_process_restart_id is not None:
+                try:
+                    restarted = restart_live_agent_process_payload(live_agent_process_supervisor, live_agent_process_restart_id)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(restarted)
                 return
             live_agent_heartbeat_id = _live_agent_action_path(parsed.path, "heartbeat")
             if live_agent_heartbeat_id is not None:

@@ -780,6 +780,12 @@
   padding: 0 8px;
 }
 
+.live-agent-process-row button.live-agent-process-restart {
+  background: rgba(130, 209, 115, 0.1);
+  border-color: rgba(130, 209, 115, 0.28);
+  color: #c9f7c2;
+}
+
 .live-agent-process-log {
   background: rgba(0, 0, 0, 0.24);
   border: 1px solid rgba(212, 225, 255, 0.1);

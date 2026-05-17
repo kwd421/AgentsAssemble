@@ -118,6 +118,59 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(error_payloads[0]["last_error"], "boom")
         self.assertEqual(error_payloads[0]["last_observed_event_id"], "evt1")
 
+    def test_runner_backs_off_after_command_failure_before_next_reply(self):
+        clock = FakeClock()
+        first_room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "첫 실패"}]}
+        second_room = {
+            "lobby_events": [
+                {"id": "evt1", "name": "나", "message": "첫 실패"},
+                {"id": "evt2", "name": "나", "message": "바로 다시 호출하지 마"},
+            ]
+        }
+        client = FakeRoomClient([first_room, second_room])
+        command_calls = []
+
+        def fail_command(command, prompt, *, timeout_seconds):
+            command_calls.append(prompt)
+            raise RuntimeError("boom")
+
+        runner = LiveAgentRunner(
+            config(max_ticks=2, poll_interval=1.0, cooldown=5.0),
+            request_json=client,
+            command_runner=fail_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        self.assertEqual(len(command_calls), 1)
+        self.assertEqual([call for call in client.calls if call[0].endswith("/lobby")], [])
+
+    def test_runner_keeps_error_status_on_periodic_heartbeat_during_failure_backoff(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "실패 후 대기"}]}
+        client = FakeRoomClient([room, room])
+
+        def fail_command(command, prompt, *, timeout_seconds):
+            raise RuntimeError("boom")
+
+        runner = LiveAgentRunner(
+            config(max_ticks=2, poll_interval=2.0, heartbeat_interval=1.0, cooldown=5.0),
+            request_json=client,
+            command_runner=fail_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        heartbeats = [payload for url, method, payload in client.calls if url.endswith("/heartbeat")]
+        error_index = next(index for index, payload in enumerate(heartbeats) if payload["status"] == "error")
+        self.assertEqual(heartbeats[error_index + 1]["status"], "error")
+        self.assertEqual(heartbeats[error_index + 1]["last_error"], "boom")
+        self.assertEqual(heartbeats[error_index + 1]["last_observed_event_id"], "evt1")
+
     def test_watch_mode_observes_without_replying_and_advances_cursor(self):
         clock = FakeClock()
         room = {"lobby_events": [{"id": "evt1", "side": "mine", "name": "나", "message": "보고만 있어"}]}

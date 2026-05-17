@@ -47,6 +47,8 @@ class LiveAgentRunner:
         self.stop_event = stop_event or threading.Event()
         self.last_observed_event_id = ""
         self.last_reply_at: datetime | None = None
+        self.last_error_at: datetime | None = None
+        self.last_error = ""
         self.last_heartbeat_at: datetime | None = None
 
     def run(self) -> int:
@@ -83,6 +85,9 @@ class LiveAgentRunner:
         if self._in_cooldown():
             self._heartbeat_if_due()
             return 0
+        if self._in_failure_backoff():
+            self._heartbeat_if_due()
+            return 0
 
         source_event_id = str(candidate.get("id") or "")
         self.last_observed_event_id = source_event_id
@@ -96,7 +101,9 @@ class LiveAgentRunner:
             if not reply:
                 raise ValueError("Delegate command returned an empty reply.")
         except Exception as error:
-            self._heartbeat("error", last_observed_event_id=source_event_id, last_error=str(error))
+            self.last_error = str(error)
+            self.last_error_at = self.now_fn()
+            self._heartbeat("error", last_observed_event_id=source_event_id, last_error=self.last_error)
             return 0
 
         source_depth = _chain_depth(candidate)
@@ -115,6 +122,8 @@ class LiveAgentRunner:
         if isinstance(event, dict) and event.get("id"):
             self.last_observed_event_id = str(event["id"])
         self.last_reply_at = self.now_fn()
+        self.last_error_at = None
+        self.last_error = ""
         self._heartbeat(
             "online",
             last_observed_event_id=self.last_observed_event_id,
@@ -157,6 +166,9 @@ class LiveAgentRunner:
             return
         elapsed = (self.now_fn() - self.last_heartbeat_at).total_seconds()
         if elapsed >= self.config.heartbeat_interval:
+            if self._in_failure_backoff():
+                self._heartbeat("error", last_observed_event_id=self.last_observed_event_id, last_error=self.last_error)
+                return
             self._heartbeat("online", last_observed_event_id=self.last_observed_event_id)
 
     def _room(self) -> dict[str, object]:
@@ -172,6 +184,11 @@ class LiveAgentRunner:
         if self.last_reply_at is None or self.config.cooldown <= 0:
             return False
         return (self.now_fn() - self.last_reply_at).total_seconds() < self.config.cooldown
+
+    def _in_failure_backoff(self) -> bool:
+        if self.last_error_at is None or self.config.cooldown <= 0:
+            return False
+        return (self.now_fn() - self.last_error_at).total_seconds() < self.config.cooldown
 
 
 def event_reply_candidate(

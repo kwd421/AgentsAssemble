@@ -40,55 +40,27 @@ class LiveAgentProcessSupervisor:
 
     def start_group(self, *, config_path: Path, server: str, group_id: str | None = None) -> dict[str, object]:
         with self._lock:
-            clean_group_id = _clean_group_id(group_id or config_path.stem)
-            existing = self._records.get(clean_group_id)
-            if existing and existing.get("status") == "running":
-                process = self._processes.get(clean_group_id)
-                if process is not None and _poll_process(process) is None:
-                    raise ValueError(f"Live agent group {clean_group_id} is already running.")
-            if not config_path.exists():
-                raise ValueError(f"Live agent config {config_path} was not found.")
-
-            log_path = self._log_path(clean_group_id)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_file = log_path.open("a", encoding="utf-8")
-            command = [
-                self.python_executable,
-                "-m",
-                "agentsassemble.cli",
-                "live-agent",
-                "run-group",
-                "--config",
-                str(config_path),
-                "--server",
-                server,
-            ]
-            try:
-                process = self.command_factory(command, stdout=log_file, stderr=log_file, text=True)
-            except Exception:
-                log_file.close()
-                raise
-            record = {
-                "group_id": clean_group_id,
-                "status": "running",
-                "pid": getattr(process, "pid", None),
-                "config_path": str(config_path),
-                "server": server,
-                "log_path": str(log_path),
-                "started_at": self.now_fn().isoformat(),
-                "stopped_at": "",
-                "returncode": None,
-                "last_error": "",
-            }
-            self._records[clean_group_id] = record
-            self._processes[clean_group_id] = process
-            self._logs[clean_group_id] = log_file
-            self._write_records()
-            return self._record_for_output(record)
+            return self._start_group_unlocked(config_path=config_path, server=server, group_id=group_id)
 
     def stop_group(self, group_id: str, *, timeout_seconds: float = 5.0) -> dict[str, object]:
         with self._lock:
             return self._stop_group_unlocked(group_id, timeout_seconds=timeout_seconds)
+
+    def restart_group(self, group_id: str) -> dict[str, object]:
+        with self._lock:
+            self._refresh_running_groups()
+            clean_group_id = _clean_group_id(group_id)
+            record = self._records.get(clean_group_id)
+            if record is None:
+                raise ValueError(f"Live agent group {clean_group_id} was not found.")
+            process = self._processes.get(clean_group_id)
+            if process is not None and _poll_process(process) is None:
+                raise ValueError(f"Live agent group {clean_group_id} is already running.")
+            config_path = Path(str(record.get("config_path") or ""))
+            server = str(record.get("server") or "")
+            if not server:
+                raise ValueError(f"Live agent group {clean_group_id} has no server to restart.")
+            return self._start_group_unlocked(config_path=config_path, server=server, group_id=clean_group_id)
 
     def close(self) -> None:
         with self._lock:
@@ -113,6 +85,53 @@ class LiveAgentProcessSupervisor:
             record = self._records.get(group_id)
             if record is not None and record.get("status") == "running" and returncode is not None:
                 self._mark_stopped(group_id, returncode=returncode)
+
+    def _start_group_unlocked(self, *, config_path: Path, server: str, group_id: str | None = None) -> dict[str, object]:
+        clean_group_id = _clean_group_id(group_id or config_path.stem)
+        existing = self._records.get(clean_group_id)
+        if existing and existing.get("status") == "running":
+            process = self._processes.get(clean_group_id)
+            if process is not None and _poll_process(process) is None:
+                raise ValueError(f"Live agent group {clean_group_id} is already running.")
+        if not config_path.exists():
+            raise ValueError(f"Live agent config {config_path} was not found.")
+
+        log_path = self._log_path(clean_group_id)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_file = log_path.open("a", encoding="utf-8")
+        command = [
+            self.python_executable,
+            "-m",
+            "agentsassemble.cli",
+            "live-agent",
+            "run-group",
+            "--config",
+            str(config_path),
+            "--server",
+            server,
+        ]
+        try:
+            process = self.command_factory(command, stdout=log_file, stderr=log_file, text=True)
+        except Exception:
+            log_file.close()
+            raise
+        record = {
+            "group_id": clean_group_id,
+            "status": "running",
+            "pid": getattr(process, "pid", None),
+            "config_path": str(config_path),
+            "server": server,
+            "log_path": str(log_path),
+            "started_at": self.now_fn().isoformat(),
+            "stopped_at": "",
+            "returncode": None,
+            "last_error": "",
+        }
+        self._records[clean_group_id] = record
+        self._processes[clean_group_id] = process
+        self._logs[clean_group_id] = log_file
+        self._write_records()
+        return self._record_for_output(record)
 
     def _stop_group_unlocked(self, group_id: str, *, timeout_seconds: float) -> dict[str, object]:
         clean_group_id = _clean_group_id(group_id)

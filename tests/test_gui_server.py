@@ -235,6 +235,7 @@ class GuiServerTests(unittest.TestCase):
                 self.groups = []
                 self.started = []
                 self.stopped = []
+                self.restarted = []
 
             def list_groups(self):
                 return list(self.groups)
@@ -265,6 +266,15 @@ class GuiServerTests(unittest.TestCase):
                 self.groups = [record]
                 return record
 
+            def restart_group(self, group_id):
+                self.restarted.append(group_id)
+                record = dict(self.groups[0])
+                record["status"] = "running"
+                record["pid"] = 9876
+                record["returncode"] = None
+                self.groups = [record]
+                return record
+
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             config_path = root / "live-agents.json"
@@ -292,6 +302,14 @@ class GuiServerTests(unittest.TestCase):
                 )
                 with urlopen(stop_request, timeout=4) as response:
                     stopped = json.loads(response.read().decode("utf-8"))
+                restart_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/crew/restart",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(restart_request, timeout=4) as response:
+                    restarted = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -300,8 +318,11 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(listed["groups"][0]["group_id"], "crew")
             self.assertEqual(listed["groups"][0]["log_tail"], "resident booted")
             self.assertEqual(stopped["group"]["status"], "stopped")
+            self.assertEqual(restarted["group"]["status"], "running")
+            self.assertEqual(restarted["group"]["pid"], 9876)
             self.assertEqual(supervisor.started[0][1], f"http://127.0.0.1:{server.server_port}")
             self.assertEqual(supervisor.stopped, ["crew"])
+            self.assertEqual(supervisor.restarted, ["crew"])
 
     def test_serve_gui_closes_live_agent_process_supervisor(self):
         class FakeServer:
