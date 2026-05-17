@@ -131,7 +131,7 @@ curl -X POST \
   http://127.0.0.1:8765/api/live-agent-processes/local-cli-group/restart
 ```
 
-The supervisor only stops group ids it launched in the current GUI process. Historical records from a previous GUI process are shown as `unknown`, `stopped`, or `error`, but are not treated as externally stoppable PIDs. Restarting a historical record starts a fresh local process from the saved config and server instead of attaching to the old PID.
+The supervisor only stops group ids it launched in the current GUI process. Historical records from a previous GUI process are shown as `unknown`, `stopped`, or `error`, but are not treated as externally stoppable PIDs. Restarting a historical record starts a fresh local process from the saved config and server instead of attaching to the old PID. A manual restart resets the auto-restart counter for the new run while preserving the configured retry policy.
 
 ## Inspect Runtime State
 

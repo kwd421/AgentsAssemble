@@ -83,7 +83,6 @@ class LiveAgentProcessSupervisor:
                 auto_restart=_bool_value(record.get("auto_restart")),
                 max_restarts=_nonnegative_int(record.get("max_restarts"), 0),
                 restart_backoff_seconds=_nonnegative_float(record.get("restart_backoff_seconds"), 5.0),
-                restart_count=_nonnegative_int(record.get("restart_count"), 0),
                 last_error=str(record.get("last_error") or ""),
             )
 

@@ -358,6 +358,48 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(restarted["server"], "http://room.local")
         self.assertEqual(len(launched), 2)
 
+    def test_restart_group_resets_auto_restart_budget_for_new_manual_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=5100 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=0,
+            )
+            processes[0].returncode = 2
+            supervisor.list_groups()
+            processes[1].returncode = 2
+            exhausted = supervisor.list_groups()
+
+            manually_restarted = supervisor.restart_group("crew")
+            processes[2].returncode = 2
+            after_manual_crash = supervisor.list_groups()
+
+        self.assertEqual(exhausted[0]["status"], "error")
+        self.assertEqual(exhausted[0]["restart_count"], 1)
+        self.assertEqual(manually_restarted["status"], "running")
+        self.assertEqual(manually_restarted["auto_restart"], True)
+        self.assertEqual(manually_restarted["max_restarts"], 1)
+        self.assertEqual(manually_restarted["restart_backoff_seconds"], 0.0)
+        self.assertEqual(manually_restarted["restart_count"], 0)
+        self.assertEqual(after_manual_crash[0]["status"], "running")
+        self.assertEqual(after_manual_crash[0]["pid"], 5103)
+        self.assertEqual(after_manual_crash[0]["restart_count"], 1)
+        self.assertEqual(len(processes), 4)
+
     def test_restart_group_refuses_owned_running_group(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

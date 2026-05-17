@@ -66,6 +66,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("auto restart is off by default", doc)
         self.assertIn("max_restarts", doc)
         self.assertIn("restart_backoff_seconds", doc)
+        self.assertIn("resets the auto-restart counter", doc)
         self.assertIn(".agentsassemble/live_agents.json", doc)
         self.assertIn(".agentsassemble/lobby.jsonl", doc)
         self.assertIn(".agentsassemble/live-agent-runs/processes.json", doc)
