@@ -460,6 +460,39 @@ Document that auto-restart and crash detection continue while the GUI server is 
 
 ---
 
+### Task 13: Live-Agent Config Preflight
+
+**Files:**
+- Create: `agentsassemble/live_agent_preflight.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/static/shared.js`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_preflight.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for no-execution config checks**
+
+Cover `live-agent preflight --config`, `POST /api/live-agent-preflight`, and the GUI `예비점검` button. The checks must read and normalize the group config without starting supervised processes or executing provider commands.
+
+- [x] **Step 2: Implement safe preflight checks**
+
+Validate readable JSON config, duplicate `agent_id` values, resident-supported `connection_kind`, and command executable presence through PATH or explicit executable paths. Return a machine-readable report with `status`, `summary`, top-level `checks`, and per-agent check results.
+
+- [x] **Step 3: Add CLI and GUI operator controls**
+
+Expose `assemble live-agent preflight --config ... [--server ...] [--json]`, `POST /api/live-agent-preflight`, and a GUI `예비점검` button beside start/smoke/readiness controls.
+
+- [x] **Step 4: Document the preflight contract**
+
+Document that preflight is credential-free and does not execute provider commands, so it can prove config shape and command availability but not Claude/Gemini login, billing, or model readiness.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

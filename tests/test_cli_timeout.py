@@ -371,6 +371,71 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.timeout, 8.0)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_preflight_parses_operator_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "preflight",
+                "--config",
+                "configs/live-agents.example.json",
+                "--server",
+                "http://room.local",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "preflight")
+        self.assertEqual(args.config, "configs/live-agents.example.json")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_preflight_prints_summary_and_exits_nonzero_when_failed(self):
+        report = {
+            "status": "failed",
+            "summary": {"agents": 2, "failed_agents": 1, "checks_failed": 1},
+            "agents": [
+                {"agent_id": "ok-agent", "status": "ok", "checks": []},
+                {
+                    "agent_id": "bad-agent",
+                    "status": "failed",
+                    "checks": [{"id": "command", "status": "failed", "message": "Command not found: missing"}],
+                },
+            ],
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli.preflight_live_agent_config", return_value=report) as preflight:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "preflight",
+                        "--config",
+                        "configs/live-agents.example.json",
+                        "--server",
+                        "http://room.local",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        preflight.assert_called_once_with(Path("configs/live-agents.example.json"), server_override="http://room.local")
+        output = stdout.getvalue()
+        self.assertIn("preflight: failed", output)
+        self.assertIn("agents: 2 checked, 1 failed", output)
+        self.assertIn("bad-agent: command: Command not found: missing", output)
+
+    def test_live_agent_preflight_does_not_override_config_server_by_default(self):
+        report = {
+            "status": "ok",
+            "summary": {"agents": 1, "failed_agents": 0, "checks_failed": 0},
+            "agents": [],
+        }
+        with patch("agentsassemble.cli.preflight_live_agent_config", return_value=report) as preflight:
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(["live-agent", "preflight", "--config", "configs/live-agents.example.json"])
+
+        self.assertEqual(exit_code, 0)
+        preflight.assert_called_once_with(Path("configs/live-agents.example.json"), server_override=None)
+
     def test_live_agent_doctor_posts_readiness_request_and_prints_summary(self):
         payload = {
             "status": "ready",

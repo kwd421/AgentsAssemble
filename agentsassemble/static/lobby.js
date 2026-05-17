@@ -103,6 +103,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-readiness-check")?.addEventListener("click", async () => {
     await runLiveAgentReadiness(lobby);
   });
+  lobby.querySelector("#live-agent-preflight-check")?.addEventListener("click", async () => {
+    await runLiveAgentPreflight(lobby);
+  });
   lobby.querySelector("#live-agent-process-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     await startLiveAgentProcessGroup(event.currentTarget);
@@ -381,7 +384,7 @@ function renderLiveAgentProcessControls() {
   const groups = state.liveAgentProcesses || [];
   const counts = processGroupStatusCounts(groups);
   const status = state.liveAgentProcessStatus;
-  const processActionsDisabled = state.liveAgentProcessesLoading || state.liveAgentSmokeRunning || state.liveAgentReadinessRunning;
+  const processActionsDisabled = state.liveAgentProcessesLoading || liveAgentProcessActionBusy();
   return `
     <section class="live-agent-processes" aria-label="상주 실행">
       <div class="roster-head">
@@ -399,6 +402,7 @@ function renderLiveAgentProcessControls() {
         <input id="live-agent-process-max-restarts" type="number" min="0" max="99" value="3" aria-label="max restarts" />
         <input id="live-agent-process-restart-backoff" type="number" min="0" max="3600" step="1" value="5" aria-label="restart backoff seconds" />
         <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
+        <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
         <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
         <button type="button" id="live-agent-readiness-check" ${processActionsDisabled ? "disabled" : ""}>점검</button>
         <button type="button" id="live-agent-process-refresh">상태</button>
@@ -413,6 +417,10 @@ function renderLiveAgentProcessControls() {
       ${status ? `<p class="live-agent-status" data-tone="${escapeHtml(status.tone || "info")}">${escapeHtml(status.message)}</p>` : ""}
     </section>
   `;
+}
+
+function liveAgentProcessActionBusy() {
+  return state.liveAgentProcessStartRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentReadinessRunning;
 }
 
 function liveAgentStatusCounts(agents) {
@@ -836,7 +844,7 @@ export function refreshLiveAgentRuntimeSurfaces() {
 }
 
 async function runLiveAgentSmoke(lobby) {
-  if (state.liveAgentSmokeRunning || state.liveAgentReadinessRunning) return;
+  if (liveAgentProcessActionBusy()) return;
   const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
   state.liveAgentSmokeRunning = true;
   state.liveAgentProcessStatus = { message: "상주 smoke 진단 중", tone: "info" };
@@ -864,7 +872,7 @@ async function runLiveAgentSmoke(lobby) {
 }
 
 async function runLiveAgentReadiness(lobby) {
-  if (state.liveAgentSmokeRunning || state.liveAgentReadinessRunning) return;
+  if (liveAgentProcessActionBusy()) return;
   const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
   state.liveAgentReadinessRunning = true;
   state.liveAgentProcessStatus = { message: "상주 readiness 점검 중", tone: "info" };
@@ -892,13 +900,39 @@ async function runLiveAgentReadiness(lobby) {
   }
 }
 
+async function runLiveAgentPreflight(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  const configPath = lobby.querySelector("#live-agent-process-config")?.value.trim() || "";
+  if (!configPath) return;
+  state.liveAgentPreflightRunning = true;
+  state.liveAgentProcessStatus = { message: "상주 config 예비점검 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-preflight", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config_path: configPath }),
+    });
+    const tone = payload.status === "ok" ? "success" : "error";
+    const summary = payload.summary || {};
+    state.liveAgentProcessStatus = { message: `preflight ${payload.status || "unknown"} · ${summary.agents || 0} agents`, tone };
+  } catch {
+    state.liveAgentProcessStatus = { message: "preflight 예비점검 실패", tone: "error" };
+  } finally {
+    state.liveAgentPreflightRunning = false;
+    renderLobby({ followLatest: false });
+  }
+}
+
 async function startLiveAgentProcessGroup(form) {
+  if (liveAgentProcessActionBusy()) return;
   const configPath = form.querySelector("#live-agent-process-config")?.value.trim() || "";
   const groupId = form.querySelector("#live-agent-process-group")?.value.trim() || "";
   const autoRestart = Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked);
   const maxRestarts = Math.max(0, Number(form.querySelector("#live-agent-process-max-restarts")?.value || 0));
   const restartBackoffSeconds = Math.max(0, Number(form.querySelector("#live-agent-process-restart-backoff")?.value || 0));
   if (!configPath) return;
+  state.liveAgentProcessStartRunning = true;
   state.liveAgentProcessStatus = { message: "상주 그룹 시작 중", tone: "info" };
   renderLobby({ followLatest: false });
   try {
@@ -918,8 +952,10 @@ async function startLiveAgentProcessGroup(form) {
     state.liveAgentProcessStatus = { message: `${payload.group?.group_id || "live-agents"} 시작됨`, tone: "success" };
   } catch {
     state.liveAgentProcessStatus = { message: "상주 그룹 시작 실패", tone: "error" };
+  } finally {
+    state.liveAgentProcessStartRunning = false;
+    renderLobby({ followLatest: false });
   }
-  renderLobby({ followLatest: false });
 }
 
 async function stopLiveAgentProcessGroup(groupId) {

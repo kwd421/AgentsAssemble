@@ -26,6 +26,18 @@ The live-agent roster and supervised process panel auto-refresh in the GUI every
 
 That example config contains real `claude` and `gemini` commands. Do not start it until the real-provider checklist below is satisfied.
 
+## Config Preflight
+
+Before starting a real provider group, run a local preflight:
+
+```bash
+python3 -m agentsassemble.cli live-agent preflight \
+  --server http://127.0.0.1:8765 \
+  --config configs/live-agents.example.json
+```
+
+The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not execute provider commands. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, and command executables are present on this machine. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint. It cannot prove Claude, Gemini, Cursor, account login, billing, subscription, model availability, network access, or native PTY/session readiness.
+
 ## Credential-Free Operator Smoke
 
 After the GUI room is running, use the one-command smoke before touching real providers:

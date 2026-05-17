@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import json
 import os
+import sys
 import threading
 import time
 from io import StringIO
@@ -550,6 +551,60 @@ class GuiServerTests(unittest.TestCase):
             self.assertTrue(group["diagnostic"])
             agents = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"]
             self.assertEqual({agent["diagnostic"] for agent in agents if agent["agent_id"].startswith("doctor-smoke-")}, {True})
+
+    def test_live_agent_preflight_endpoint_checks_config_without_starting_processes(self):
+        class FakeSupervisor:
+            def __init__(self):
+                self.started = False
+
+            def start_group(self, **kwargs):
+                self.started = True
+                raise AssertionError("preflight must not start process groups")
+
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            config_path = root / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "preflight-agent",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": [sys.executable, "-c", "print('not executed')"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            supervisor = FakeSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-preflight",
+                    data=json.dumps({"config_path": str(config_path)}).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertFalse(supervisor.started)
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["server"], "http://127.0.0.1:1")
+            self.assertEqual(payload["summary"], {"agents": 1, "failed_agents": 0, "checks_failed": 0})
+            self.assertEqual(payload["agents"][0]["agent_id"], "preflight-agent")
 
     def test_live_agent_health_endpoint_summarizes_agents_and_processes(self):
         class FakeSupervisor:
