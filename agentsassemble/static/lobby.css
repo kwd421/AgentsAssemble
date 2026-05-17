@@ -635,6 +635,18 @@
   color: #ffc3c3;
 }
 
+.live-agent-card .live-agent-runtime,
+.live-agent-card .live-agent-error-detail {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.live-agent-card .live-agent-error-detail {
+  color: #ffc3c3;
+}
+
 .live-agent-offline em {
   color: #ffc3c3;
 }

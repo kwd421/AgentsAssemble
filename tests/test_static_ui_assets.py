@@ -139,6 +139,17 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn(".live-agent-error", css)
         self.assertIn(".live-agent-status", css)
         self.assertIn('if (status === "error") return "오류";', script)
+        self.assertIn("function liveAgentRuntimeDetails", script)
+        self.assertIn("agent.last_error", script)
+        self.assertIn("agent.last_reply_at", script)
+        self.assertIn("agent.last_observed_event_id", script)
+        self.assertIn('class="live-agent-error-detail"', script)
+        self.assertIn('class="live-agent-runtime"', script)
+        self.assertIn(".live-agent-error-detail", css)
+        error_detail_css = css[css.index(".live-agent-error-detail") :]
+        self.assertIn("overflow-wrap: anywhere;", error_detail_css)
+        self.assertIn("overflow: visible;", error_detail_css)
+        self.assertIn("text-overflow: clip;", error_detail_css)
         self.assertIn(".codex-session-invite", css)
         self.assertIn(".codex-invite-form", css)
 

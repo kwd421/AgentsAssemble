@@ -353,6 +353,8 @@ function renderLiveAgentProcessCard(group) {
 
 function renderLiveAgentCard(agent) {
   const status = agent.status || "offline";
+  const runtimeDetails = liveAgentRuntimeDetails(agent);
+  const lastError = String(agent.last_error || "").trim();
   return `
     <article class="live-agent-card live-agent-${escapeHtml(status)}">
       <div>
@@ -361,8 +363,17 @@ function renderLiveAgentCard(agent) {
       </div>
       <em>${escapeHtml(liveAgentStatusLabel(status))}</em>
       <small>${escapeHtml(providerKindLabel(agent.provider_kind))} · ${escapeHtml(connectionKindLabel(agent.connection_kind))} · ${escapeHtml(agent.engagement_mode || "mentioned")}</small>
+      ${runtimeDetails ? `<small class="live-agent-runtime">${escapeHtml(runtimeDetails)}</small>` : ""}
+      ${lastError ? `<small class="live-agent-error-detail">${escapeHtml(lastError)}</small>` : ""}
     </article>
   `;
+}
+
+function liveAgentRuntimeDetails(agent) {
+  const details = [];
+  if (agent.last_reply_at) details.push(`reply ${agent.last_reply_at}`);
+  if (agent.last_observed_event_id) details.push(`cursor ${shortSessionId(agent.last_observed_event_id)}`);
+  return details.join(" · ");
 }
 
 function renderLiveAgentProviderOptions() {
