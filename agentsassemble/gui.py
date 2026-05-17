@@ -4,6 +4,8 @@ import json
 import math
 import mimetypes
 import time
+import urllib.error
+import urllib.request
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -19,6 +21,7 @@ from agentsassemble.codex_sessions import (
 from agentsassemble.config import load_agent_runtime_config, load_council_config, providers_from_config
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
+from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_events import (
     append_lobby_event_to_file,
@@ -330,6 +333,15 @@ def live_agent_processes_payload(process_supervisor: LiveAgentProcessSupervisor)
     return {"groups": process_supervisor.list_groups()}
 
 
+def live_agent_smoke_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
+    return run_live_agent_smoke(
+        server=default_server,
+        group_id=str(payload.get("group_id") or ""),
+        timeout_seconds=_payload_nonnegative_float(payload.get("timeout"), 12.0),
+        request_json=_request_json,
+    )
+
+
 def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentProcessSupervisor) -> dict[str, object]:
     agents = read_live_agents(output_root)
     groups = process_supervisor.snapshot_groups()
@@ -595,6 +607,34 @@ def _payload_nonnegative_float(value: object, default: float) -> float:
     return max(0.0, parsed)
 
 
+def _request_json(
+    url: str,
+    *,
+    method: str = "GET",
+    payload: dict[str, object] | None = None,
+) -> dict[str, object]:
+    data = None
+    headers = {}
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(request, timeout=15) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _local_server_url(server_address: tuple[object, ...]) -> str:
+    host, port = server_address[:2]
+    host = str(host)
+    if host in {"", "0.0.0.0"}:
+        host = "127.0.0.1"
+    elif host == "::":
+        host = "::1"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return f"http://{host}:{port}"
+
+
 def _make_handler(
     output_root: Path,
     *,
@@ -768,6 +808,26 @@ def _make_handler(
                     return
                 self._send_json(started)
                 return
+            if parsed.path == "/api/live-agent-smoke":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    smoke = live_agent_smoke_payload(payload, default_server=self._local_server_url())
+                except LiveAgentSmokeFailed as error:
+                    self._send_error(HTTPStatus.CONFLICT, str(error))
+                    return
+                except (ValueError, urllib.error.URLError) as error:
+                    self._send_error(HTTPStatus.BAD_GATEWAY, str(error))
+                    return
+                self._send_json(smoke)
+                return
             live_agent_process_stop_id = _live_agent_process_action_path(parsed.path, "stop")
             if live_agent_process_stop_id is not None:
                 try:
@@ -855,6 +915,9 @@ def _make_handler(
                 return f"http://{host}"
             address = self.server.server_address
             return f"http://{address[0]}:{address[1]}"
+
+        def _local_server_url(self) -> str:
+            return _local_server_url(self.server.server_address)
 
         def _send_file(self, path: Path, content_type: str | None = None) -> None:
             if not path.exists() or not path.is_file():

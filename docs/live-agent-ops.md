@@ -16,7 +16,7 @@ Open:
 http://127.0.0.1:8765
 ```
 
-The lobby is the public room surface. The "상주 실행" panel can start, refresh, stop, and restart local live-agent process groups. The default group config path is:
+The lobby is the public room surface. The "상주 실행" panel can start, refresh, stop, restart, and diagnose local live-agent process groups. The default group config path is:
 
 ```text
 configs/live-agents.example.json
@@ -43,6 +43,8 @@ This command posts a human lobby event, starts a temporary supervised process gr
 The smoke is credential-free: it uses local Python fake agents only, not Claude, Gemini, Cursor, account login, network model calls, or paid provider APIs. It verifies the GUI control plane, lobby event ingestion, supervised `run-group`, one-shot `local_cli`, long-lived JSONL `live_session`, and process cleanup path from the same CLI surface an operator uses.
 
 For a clean doctor run, start the GUI with a temporary `--output-root` and point smoke at that local server. The smoke server must be able to read a temporary config path from the same machine, so treat this as a local GUI diagnostic rather than a remote bridge test.
+
+The GUI "상주 실행" panel exposes the same local diagnostic as the `진단` button. It calls `POST /api/live-agent-smoke`, starts the same temporary fake `local_cli` and `live_session` group, verifies the smoke replies by `source_event_id`, then refreshes the lobby, presence roster, and process records. Use it when you want operator-visible evidence without leaving the room UI.
 
 Use `--json` when another script needs machine-readable evidence:
 

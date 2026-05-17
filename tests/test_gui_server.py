@@ -477,6 +477,39 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["group"]["max_restarts"], 0)
             self.assertEqual(supervisor.started, [0])
 
+    def test_live_agent_smoke_endpoint_runs_credential_free_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            old_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "old chatter"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-smoke",
+                    data=json.dumps({"group_id": "gui-smoke", "timeout": 8}).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=12) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["group_id"], "gui-smoke")
+            self.assertNotEqual(payload["source_event_id"], old_event["id"])
+            self.assertEqual({reply["source_event_id"] for reply in payload["replies"]}, {payload["source_event_id"]})
+            self.assertEqual(
+                {reply["message"] for reply in payload["replies"]},
+                {"smoke local_cli ok", "smoke live_session ok"},
+            )
+            processes = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+            group = next(item for item in processes["groups"] if item["group_id"] == "gui-smoke")
+            self.assertEqual(group["status"], "stopped")
+
     def test_live_agent_health_endpoint_summarizes_agents_and_processes(self):
         class FakeSupervisor:
             def __init__(self):

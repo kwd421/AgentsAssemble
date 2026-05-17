@@ -338,6 +338,34 @@ Document the command as the first operator check after the GUI starts, including
 
 ---
 
+### Task 9: GUI Smoke Diagnostic Control
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for the GUI smoke endpoint and button**
+
+Cover `POST /api/live-agent-smoke` against a temporary GUI room and static UI hooks for `runLiveAgentSmoke`, `/api/live-agent-smoke`, and the `live-agent-process-smoke` button.
+
+- [x] **Step 2: Expose the existing credential-free smoke through the GUI control plane**
+
+Call `run_live_agent_smoke()` from the GUI endpoint using the bound local server address as the room server. The endpoint preserves the CLI smoke behavior: seed cursors, post one probe event, start a temporary supervised fake group, accept only replies whose `source_event_id` matches the probe, and leave the process group stopped.
+
+- [x] **Step 3: Add the operator UI action**
+
+Add the `진단` button to the existing "상주 실행" panel. On success it refreshes the lobby, live-agent roster, and process records, then reports the smoke group id in the panel status.
+
+- [x] **Step 4: Document the GUI diagnostic**
+
+Document that the GUI `진단` button calls `POST /api/live-agent-smoke` and uses the same credential-free fake `local_cli` plus JSONL `live_session` path as the CLI smoke command.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

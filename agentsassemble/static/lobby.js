@@ -97,6 +97,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-process-refresh")?.addEventListener("click", () => {
     loadLiveAgentProcesses({ force: true });
   });
+  lobby.querySelector("#live-agent-process-smoke")?.addEventListener("click", async () => {
+    await runLiveAgentSmoke(lobby);
+  });
   lobby.querySelector("#live-agent-process-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     await startLiveAgentProcessGroup(event.currentTarget);
@@ -392,6 +395,7 @@ function renderLiveAgentProcessControls() {
         <input id="live-agent-process-max-restarts" type="number" min="0" max="99" value="3" aria-label="max restarts" />
         <input id="live-agent-process-restart-backoff" type="number" min="0" max="3600" step="1" value="5" aria-label="restart backoff seconds" />
         <button type="submit" id="live-agent-process-start" ${state.liveAgentProcessesLoading ? "disabled" : ""}>시작</button>
+        <button type="button" id="live-agent-process-smoke" ${state.liveAgentProcessesLoading || state.liveAgentSmokeRunning ? "disabled" : ""}>진단</button>
         <button type="button" id="live-agent-process-refresh">상태</button>
       </form>
       <div class="live-agent-process-list">
@@ -824,6 +828,33 @@ async function loadLiveAgentProcesses(options = {}) {
 
 export function refreshLiveAgentRuntimeSurfaces() {
   return Promise.all([loadLiveAgents({ background: true }), loadLiveAgentProcesses({ background: true })]);
+}
+
+async function runLiveAgentSmoke(lobby) {
+  const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
+  state.liveAgentSmokeRunning = true;
+  state.liveAgentProcessStatus = { message: "상주 smoke 진단 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-smoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: groupId, timeout: 12 }),
+    });
+    try {
+      const lobbyPayload = await fetchJson("/api/lobby");
+      setLobbyEvents(lobbyPayload.events || []);
+    } catch {
+      // The smoke itself succeeded; transient lobby refresh failure should not hide that result.
+    }
+    await refreshLiveAgentRuntimeSurfaces();
+    state.liveAgentProcessStatus = { message: `smoke 진단 통과: ${payload.group_id || "live-agent-smoke"}`, tone: "success" };
+  } catch {
+    state.liveAgentProcessStatus = { message: "smoke 진단 실패", tone: "error" };
+  } finally {
+    state.liveAgentSmokeRunning = false;
+    renderLobby({ followLatest: false });
+  }
 }
 
 async function startLiveAgentProcessGroup(form) {

@@ -14,6 +14,7 @@ export const state = {
   liveAgentProcesses: [],
   liveAgentProcessesLoaded: false,
   liveAgentProcessesLoading: false,
+  liveAgentSmokeRunning: false,
   liveAgentProcessStatus: null,
   codexSessions: [],
   codexSessionsLoaded: false,
