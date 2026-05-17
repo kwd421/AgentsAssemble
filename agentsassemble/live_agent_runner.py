@@ -7,6 +7,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
 
+from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
+from agentsassemble.models import ProviderConfig, Role
+from agentsassemble.remote_bridge_config import (
+    remote_bridge_auth_ref_available,
+    remote_bridge_auth_ref_value,
+    remote_bridge_endpoint_error,
+)
+
 
 @dataclass(frozen=True)
 class ResidentAgentConfig:
@@ -17,6 +25,7 @@ class ResidentAgentConfig:
     connection_kind: str
     session_id: str
     endpoint: str
+    auth_ref: str
     meeting_id: str
     engagement_mode: str
     command: list[str]
@@ -204,6 +213,59 @@ class LiveAgentRunner:
         return (self.now_fn() - self.last_error_at).total_seconds() < self.config.cooldown
 
 
+class RemoteBridgeResidentCommandRunner:
+    def __init__(
+        self,
+        config: ResidentAgentConfig,
+        *,
+        requester: Callable[..., dict[str, object]] | None = None,
+    ) -> None:
+        self.config = config
+        self._validate_config()
+        provider = ProviderConfig(
+            id=config.agent_id,
+            kind="remote_http_bridge",
+            display_name=config.display_name or config.agent_id,
+            endpoint=config.endpoint,
+            auth_ref=config.auth_ref,
+            timeout_seconds=config.timeout_seconds,
+        )
+        self.adapter = RemoteBridgeAdapter(provider, requester=requester)
+        self.role = Role(
+            id=config.agent_id,
+            display_name=config.display_name or config.agent_id,
+            lens=_remote_bridge_lens(config),
+            research_focus="Live lobby participation",
+        )
+        self.session = {
+            "meeting_id": config.meeting_id,
+            "agent_id": config.agent_id,
+            "owner_id": "remote_bridge",
+            "join_mode": "current_session",
+            "session_id": config.session_id,
+        }
+
+    def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
+        del command, timeout_seconds
+        try:
+            response = self.adapter.run_lobby_prompt(self.role, self.session, prompt)
+        except Exception as error:
+            raise RuntimeError(_sanitized_remote_bridge_error(error, self.config.auth_ref)) from error
+        message = str(response.get("message") or "").strip()
+        if not message:
+            raise ValueError("Remote bridge returned an empty reply.")
+        return message
+
+    def _validate_config(self) -> None:
+        endpoint_error = remote_bridge_endpoint_error(self.config.endpoint)
+        if endpoint_error == "Remote bridge endpoint is required.":
+            raise ValueError("Remote bridge resident requires an endpoint.")
+        if endpoint_error:
+            raise ValueError("Remote bridge resident requires a safe endpoint.")
+        if not remote_bridge_auth_ref_available(self.config.auth_ref):
+            raise ValueError("Remote bridge resident requires an available auth_ref.")
+
+
 def event_reply_candidate(
     events: list[dict[str, object]],
     agent_id: str,
@@ -246,7 +308,7 @@ def should_reply_to_event(
 
 def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source_event: dict[str, object]) -> str:
     lines = [
-        "You are a live AgentsAssemble participant connected through a local CLI bridge.",
+        "You are a live AgentsAssemble participant connected through a resident agent bridge.",
         f"Agent id: {config.agent_id}",
         f"Display name: {config.display_name or config.agent_id}",
         "Reply with one concise lobby message only.",
@@ -301,9 +363,10 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         connection_kind=str(getattr(args, "connection_kind")),
         session_id=str(getattr(args, "session_id")),
         endpoint=str(getattr(args, "endpoint")),
+        auth_ref=str(getattr(args, "auth_ref", "")),
         meeting_id=str(getattr(args, "meeting_id")),
         engagement_mode=str(getattr(args, "engagement_mode")),
-        command=list(getattr(args, "resident_command")),
+        command=list(getattr(args, "resident_command", []) or []),
         timeout_seconds=int(getattr(args, "timeout")),
         poll_interval=float(getattr(args, "poll_interval")),
         heartbeat_interval=float(getattr(args, "heartbeat_interval")),
@@ -320,8 +383,12 @@ def _config_from_mapping(
     defaults: dict[str, int | float],
     server_override: str | None = None,
 ) -> ResidentAgentConfig:
+    connection_kind = str(data.get("connection_kind") or "local_cli")
     command = data.get("command")
-    if not isinstance(command, list) or not command:
+    endpoint = data.get("endpoint")
+    auth_ref = data.get("auth_ref")
+    command_parts = [str(part) for part in command] if isinstance(command, list) else []
+    if connection_kind != "remote_bridge" and not command_parts:
         raise ValueError("Each live agent requires a command list.")
     agent_id = str(data.get("agent_id") or "")
     if not agent_id:
@@ -331,12 +398,13 @@ def _config_from_mapping(
         agent_id=agent_id,
         display_name=str(data.get("display_name") or agent_id),
         provider_kind=str(data.get("provider_kind") or "local_cli"),
-        connection_kind=str(data.get("connection_kind") or "local_cli"),
+        connection_kind=connection_kind,
         session_id=str(data.get("session_id") or ""),
-        endpoint=str(data.get("endpoint") or ""),
+        endpoint=endpoint if isinstance(endpoint, str) else "",
+        auth_ref=auth_ref if isinstance(auth_ref, str) else "",
         meeting_id=str(data.get("meeting_id") or ""),
         engagement_mode=str(data.get("engagement_mode") or "mentioned"),
-        command=[str(part) for part in command],
+        command=command_parts,
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),
         poll_interval=float(_value_or_default(data.get("poll_interval"), defaults["poll_interval"])),
         heartbeat_interval=float(_value_or_default(data.get("heartbeat_interval"), defaults["heartbeat_interval"])),
@@ -408,3 +476,41 @@ def _quote(value: str) -> str:
 
 def _server_url(server: str, path: str) -> str:
     return f"{server.rstrip('/')}{path}"
+
+
+def _remote_bridge_lens(config: ResidentAgentConfig) -> str:
+    provider = str(config.provider_kind or "").strip()
+    if provider:
+        return f"{provider} remote bridge lobby participant"
+    return "Remote bridge lobby participant"
+
+
+def _sanitized_remote_bridge_error(error: Exception, auth_ref: str) -> str:
+    text = str(error).strip() or error.__class__.__name__
+    secret = _resolved_secret_for_redaction(auth_ref)
+    if secret and secret in text:
+        return "Remote bridge request failed."
+    if _looks_sensitive_error(text):
+        return "Remote bridge request failed."
+    return text
+
+
+def _resolved_secret_for_redaction(auth_ref: str) -> str:
+    return remote_bridge_auth_ref_value(auth_ref)
+
+
+def _looks_sensitive_error(text: str) -> bool:
+    normalized = text.casefold()
+    markers = (
+        "authorization",
+        "bearer ",
+        "secret",
+        "token",
+        "api-key",
+        "apikey",
+        "x-api-key",
+        "password",
+        "http://",
+        "https://",
+    )
+    return any(marker in normalized for marker in markers)

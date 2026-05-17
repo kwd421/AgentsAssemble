@@ -23,7 +23,13 @@ from agentsassemble.codex_sessions import (
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
-from agentsassemble.live_agent_runner import LiveAgentRunner, config_from_args, load_group_configs
+from agentsassemble.live_agent_runner import (
+    LiveAgentRunner,
+    RemoteBridgeResidentCommandRunner,
+    ResidentAgentConfig,
+    config_from_args,
+    load_group_configs,
+)
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.live_session_transport import JsonlLiveSession
 from agentsassemble.meeting import run_demo_meeting
@@ -215,6 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--connection-kind", choices=LIVE_AGENT_CONNECTION_KIND_CHOICES, default="local_cli")
     live_run.add_argument("--session-id", default="")
     live_run.add_argument("--endpoint", default="")
+    live_run.add_argument("--auth-ref", default="")
     live_run.add_argument("--meeting-id", default="")
     live_run.add_argument("--engagement-mode", default="always")
     live_run.add_argument("--timeout", type=int, default=120)
@@ -223,7 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--cooldown", type=float, default=5.0)
     live_run.add_argument("--max-chain-depth", type=int, default=1)
     live_run.add_argument("--max-ticks", type=int, default=0)
-    live_run.add_argument("--command", dest="resident_command", nargs=argparse.REMAINDER, required=True)
+    live_run.add_argument("--command", dest="resident_command", nargs=argparse.REMAINDER, default=[])
 
     live_group = live_agent_subparsers.add_parser("run-group", help="Run multiple resident local CLI live agents.")
     live_group.add_argument("--config", required=True)
@@ -394,7 +401,8 @@ def _heartbeat_payload(args: argparse.Namespace) -> dict[str, object]:
 
 def _run_live_agent_resident(args: argparse.Namespace) -> int:
     config = config_from_args(args)
-    command_runner = _command_runner_for_config(config.connection_kind)
+    _validate_resident_config(config)
+    command_runner = _command_runner_for_config(config)
     runner = LiveAgentRunner(
         config,
         request_json=_request_json,
@@ -412,6 +420,11 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
 
 def _run_live_agent_group(args: argparse.Namespace) -> int:
     configs = load_group_configs(Path(args.config), max_ticks_override=args.max_ticks, server_override=args.server)
+    config_errors = _resident_group_config_errors(configs)
+    if config_errors:
+        for agent_id, error in config_errors.items():
+            print(f"{agent_id}: {error}", file=sys.stderr)
+        return 2
     stop_event = threading.Event()
     results: dict[str, int] = {}
     errors: dict[str, str] = {}
@@ -422,10 +435,12 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
         stop_event.wait(seconds)
 
     def run_agent(config) -> None:
-        command_runner = _command_runner_for_config(config.connection_kind)
-        with active_command_runners_lock:
-            active_command_runners.append(command_runner)
+        command_runner = None
         try:
+            _validate_resident_config(config)
+            command_runner = _command_runner_for_config(config)
+            with active_command_runners_lock:
+                active_command_runners.append(command_runner)
             runner = LiveAgentRunner(
                 config,
                 request_json=_request_json,
@@ -436,11 +451,13 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
             results[config.agent_id] = runner.run()
         except Exception as error:  # pragma: no cover - surfaced through CLI status in integration use
             errors[config.agent_id] = str(error)
+            stop_event.set()
         finally:
-            _close_command_runner(command_runner)
-            with active_command_runners_lock:
-                if command_runner in active_command_runners:
-                    active_command_runners.remove(command_runner)
+            if command_runner is not None:
+                _close_command_runner(command_runner)
+                with active_command_runners_lock:
+                    if command_runner in active_command_runners:
+                        active_command_runners.remove(command_runner)
 
     threads = [threading.Thread(target=run_agent, args=(config,), daemon=True) for config in configs]
     try:
@@ -463,6 +480,19 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
     total = sum(results.values())
     print(f"Resident group stopped after posting {total} replies")
     return 0
+
+
+def _resident_group_config_errors(configs: list[ResidentAgentConfig]) -> dict[str, str]:
+    errors: dict[str, str] = {}
+    for config in configs:
+        try:
+            _validate_resident_config(config)
+            if config.connection_kind == "remote_bridge":
+                probe_runner = _command_runner_for_config(config)
+                _close_command_runner(probe_runner)
+        except Exception as error:
+            errors[config.agent_id] = str(error)
+    return errors
 
 
 def _run_live_agent_health(args: argparse.Namespace) -> int:
@@ -785,9 +815,22 @@ class _JsonlLiveSessionCommandRunner:
         session.close()
 
 
-def _command_runner_for_config(connection_kind: str):
-    if connection_kind == "live_session":
+def _validate_resident_config(config: ResidentAgentConfig) -> None:
+    if config.connection_kind == "remote_bridge":
+        if not config.endpoint:
+            raise ValueError("Remote bridge resident requires --endpoint.")
+        if not config.auth_ref:
+            raise ValueError("Remote bridge resident requires --auth-ref.")
+        return
+    if config.connection_kind in {"local_cli", "live_session", "codex_resume", "manual"} and not config.command:
+        raise ValueError(f"{config.connection_kind} resident requires --command.")
+
+
+def _command_runner_for_config(config: ResidentAgentConfig):
+    if config.connection_kind == "live_session":
         return _JsonlLiveSessionCommandRunner()
+    if config.connection_kind == "remote_bridge":
+        return RemoteBridgeResidentCommandRunner(config)
     return _run_delegate_command
 
 

@@ -1,6 +1,6 @@
 # Live Agent Ops
 
-This is the local operator checklist for the current AgentsAssemble resident live-agent slice. It uses the local GUI room as the control plane and local CLI processes as resident participants.
+This is the local operator checklist for the current AgentsAssemble resident live-agent slice. It uses the local GUI room as the control plane and local CLI, JSONL session, and explicitly configured remote HTTP bridge participants as resident agents.
 
 ## Start The GUI Room
 
@@ -36,7 +36,7 @@ python3 -m agentsassemble.cli live-agent preflight \
   --config configs/live-agents.example.json
 ```
 
-The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not execute provider commands. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, and command executables are present on this machine. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint. It cannot prove Claude, Gemini, Cursor, account login, billing, subscription, model availability, network access, or native PTY/session readiness.
+The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not execute provider commands. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, local command executables are present for `local_cli` and `live_session`, and remote bridge agents have an endpoint plus an available `auth_ref`. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint. It cannot prove Claude, Gemini, Cursor, account login, billing, subscription, model availability, network access, bridge command execution, or native PTY/session readiness.
 
 ## Provider Runtime Health
 
@@ -205,6 +205,47 @@ for line in sys.stdin:
 Expected result: the first eligible lobby event gets `Fake JSONL state 1`. A later eligible lobby event in the same bounded run gets `Fake JSONL state 2`, proving the same process stayed alive. This is a JSONL bridge for local subprocesses, not a native Claude, Gemini, or Cursor PTY protocol.
 
 If the JSONL subprocess exits, times out, stops reading stdin, or returns invalid protocol output, the resident runner records an `error` heartbeat with `last_error`, closes that subprocess, and starts a fresh subprocess for the next eligible event after the normal cooldown gate.
+
+## Remote Bridge Resident Smoke
+
+Use `--connection-kind remote_bridge` when a friend-owned bridge is already running and authenticated. Unlike `--probe bridge`, this is not health-only: the resident runner polls the local GUI room, sends one eligible lobby event plus recent lobby context to the bridge's `/agentsassemble/run` endpoint, then posts the returned message back through the same live-agent lobby endpoint used by local runners.
+
+The remote bridge runner still owns the local safety guards:
+
+- self-authored events are skipped by `actor_id`;
+- already observed events are skipped by `last_observed_event_id`;
+- chain depth is capped by `--max-chain-depth`;
+- bridge failures become sanitized `error` heartbeats and the runner retries after cooldown.
+
+Post a human lobby message first, then run one bounded remote bridge resident:
+
+```bash
+python3 -m agentsassemble.cli live-agent run \
+  --server http://127.0.0.1:8765 \
+  --agent-id friend-claude-live \
+  --display-name "Friend Claude" \
+  --provider-kind claude_code \
+  --connection-kind remote_bridge \
+  --endpoint http://100.64.0.10:8777 \
+  --auth-ref env:AGENTSASSEMBLE_BRIDGE_TOKEN \
+  --engagement-mode always \
+  --poll-interval 2 \
+  --heartbeat-interval 30 \
+  --cooldown 5 \
+  --max-chain-depth 1 \
+  --max-ticks 5
+```
+
+For a supervised group, use:
+
+```bash
+python3 -m agentsassemble.cli live-agent run-group \
+  --config configs/live-agents.remote-bridge.example.json \
+  --server http://127.0.0.1:8765 \
+  --max-ticks 5
+```
+
+Do not use a redacted public meeting artifact as the resident auth source. The runner needs a real `env:` or `literal:` `auth_ref`; an env var whose value is `<redacted>` is treated as unavailable. Keep bridge credentials out of endpoint URLs: resident bridge endpoints must be plain HTTP(S) URLs without userinfo, query strings, or fragments. The runner does not register, heartbeat, or log the token value.
 
 ## Fake Group Smoke
 

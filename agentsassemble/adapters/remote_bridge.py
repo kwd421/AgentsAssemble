@@ -4,8 +4,9 @@ import json
 from typing import Any
 
 from agentsassemble.adapters.base import ProviderAdapter
-from agentsassemble.adapters.http_llm import JsonRequester, parse_json_object, request_json, resolve_auth_ref
+from agentsassemble.adapters.http_llm import JsonRequester, parse_json_object, request_json
 from agentsassemble.models import ProviderConfig, ResearchDepth, ResearchSteering, Role
+from agentsassemble.remote_bridge_config import remote_bridge_auth_ref_value, remote_bridge_endpoint_error
 from agentsassemble.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
 
 
@@ -21,6 +22,7 @@ class RemoteBridgeAdapter(ProviderAdapter):
         self.requester = requester or request_json
 
     def start_session(self, role: Role, meeting_context: dict[str, Any]) -> dict[str, Any]:
+        endpoint = self._safe_endpoint()
         return {
             "adapter": self.name,
             "role_id": role.id,
@@ -29,7 +31,7 @@ class RemoteBridgeAdapter(ProviderAdapter):
             "provider_id": self.provider.id,
             "provider_kind": self.provider.kind,
             "meeting_id": meeting_context.get("meeting_id"),
-            "bridge_endpoint": self.provider.endpoint,
+            "bridge_endpoint": endpoint,
         }
 
     def run_research(
@@ -165,20 +167,28 @@ class RemoteBridgeAdapter(ProviderAdapter):
                 "prompt": _lobby_prompt(role, speaker_name, message),
             }
         )
-        text = _response_text(response)
-        parsed = parse_json_object(text) or {"message": text.strip(), "kind": "message"}
-        return {
-            "name": parsed.get("name") or role.display_name,
-            "side": "other-agent",
-            "kind": parsed.get("kind") or "message",
-            "message": parsed.get("message") or parsed.get("content") or text.strip(),
-            "readiness": parsed.get("readiness"),
-            "bridge": sanitize_bridge_metadata(response.get("metadata", {})),
-        }
+        return _lobby_response(role, response)
+
+    def run_lobby_prompt(
+        self,
+        role: Role,
+        session: dict[str, Any],
+        prompt: str,
+    ) -> dict[str, Any]:
+        response = self._call_bridge(
+            {
+                "step": "lobby",
+                **_session_payload(session),
+                "role": _role_payload(role),
+                "speaker": {"name": "AgentsAssemble lobby"},
+                "message": "",
+                "prompt": prompt,
+            }
+        )
+        return _lobby_response(role, response)
 
     def _call_bridge(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not self.provider.endpoint:
-            raise ValueError(f"Provider {self.provider.id} requires endpoint for remote bridge use.")
+        endpoint = self._safe_endpoint()
         envelope = {
             "provider_id": self.provider.id,
             "provider_kind": self.provider.kind,
@@ -186,15 +196,38 @@ class RemoteBridgeAdapter(ProviderAdapter):
             **payload,
         }
         headers = {"Content-Type": "application/json"}
-        token = resolve_auth_ref(self.provider.auth_ref)
+        token = remote_bridge_auth_ref_value(self.provider.auth_ref or "")
+        if self.provider.auth_ref and not token:
+            raise ValueError(f"Provider {self.provider.id} requires an available auth_ref for remote bridge use.")
         if token:
             headers["Authorization"] = f"Bearer {token}"
         return self.requester(
-            f"{self.provider.endpoint.rstrip('/')}/agentsassemble/run",
+            f"{endpoint.rstrip('/')}/agentsassemble/run",
             headers,
             envelope,
             self.provider.timeout_seconds,
         )
+
+    def _safe_endpoint(self) -> str:
+        if not self.provider.endpoint:
+            raise ValueError(f"Provider {self.provider.id} requires endpoint for remote bridge use.")
+        endpoint_error = remote_bridge_endpoint_error(self.provider.endpoint)
+        if endpoint_error:
+            raise ValueError(f"Provider {self.provider.id} requires a safe endpoint for remote bridge use.")
+        return self.provider.endpoint
+
+
+def _lobby_response(role: Role, response: dict[str, Any]) -> dict[str, Any]:
+    text = _response_text(response)
+    parsed = parse_json_object(text) or {"message": text.strip(), "kind": "message"}
+    return {
+        "name": parsed.get("name") or role.display_name,
+        "side": "other-agent",
+        "kind": parsed.get("kind") or "message",
+        "message": parsed.get("message") or parsed.get("content") or text.strip(),
+        "readiness": parsed.get("readiness"),
+        "bridge": sanitize_bridge_metadata(response.get("metadata", {})),
+    }
 
 
 def _response_text(response: dict[str, Any]) -> str:

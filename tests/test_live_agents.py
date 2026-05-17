@@ -93,6 +93,65 @@ class LiveAgentPresenceTests(unittest.TestCase):
 
         self.assertEqual(agent["connection_kind"], "live_session")
 
+    def test_connect_live_agent_rejects_unsafe_remote_bridge_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with self.assertRaisesRegex(ValueError, "Remote bridge endpoint"):
+                connect_live_agent(
+                    root,
+                    {
+                        "agent_id": "friend-bridge",
+                        "connection_kind": "remote_bridge",
+                        "endpoint": "http://bridge-token@friend.local:8777?secret=1",
+                    },
+                )
+
+            self.assertFalse((root / "live_agents.json").exists())
+
+    def test_connect_live_agent_rejects_blank_remote_bridge_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with self.assertRaisesRegex(ValueError, "Remote bridge endpoint"):
+                connect_live_agent(
+                    root,
+                    {
+                        "agent_id": "friend-bridge",
+                        "connection_kind": "remote_bridge",
+                    },
+                )
+
+            self.assertFalse((root / "live_agents.json").exists())
+
+    def test_connect_live_agent_rejects_malformed_remote_bridge_endpoint_netloc(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for endpoint in ("http://:8777", "http://friend.local:bad", "http://friend.local:99999"):
+                with self.assertRaisesRegex(ValueError, "valid host and port"):
+                    connect_live_agent(
+                        root,
+                        {
+                            "agent_id": f"friend-bridge-{endpoint}",
+                            "connection_kind": "remote_bridge",
+                            "endpoint": endpoint,
+                        },
+                    )
+
+            self.assertFalse((root / "live_agents.json").exists())
+
+    def test_connect_live_agent_preserves_safe_remote_bridge_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = connect_live_agent(
+                Path(temp_dir),
+                {
+                    "agent_id": "friend-bridge",
+                    "connection_kind": "remote_bridge",
+                    "endpoint": "http://friend.local:8777",
+                },
+            )
+
+        self.assertEqual(agent["connection_kind"], "remote_bridge")
+        self.assertEqual(agent["endpoint"], "http://friend.local:8777")
+
     def test_connect_live_agent_preserves_diagnostic_flag(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             agent = connect_live_agent(

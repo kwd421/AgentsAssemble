@@ -7,9 +7,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from agentsassemble.live_agent_runner import ResidentAgentConfig
+from agentsassemble.remote_bridge_config import remote_bridge_auth_ref_available, remote_bridge_endpoint_error
 
 
-SUPPORTED_RESIDENT_CONNECTION_KINDS = {"local_cli", "live_session"}
+SUPPORTED_RESIDENT_CONNECTION_KINDS = {"local_cli", "live_session", "remote_bridge"}
 
 
 def preflight_live_agent_config(
@@ -77,8 +78,16 @@ def _preflight_agent(
     checks = [
         _agent_id_check(config.agent_id),
         _connection_kind_check(config.connection_kind),
-        _command_check(config.command, command_resolver),
     ]
+    if config.connection_kind == "remote_bridge":
+        checks.extend(
+            [
+                _remote_bridge_endpoint_check(config.endpoint),
+                _remote_bridge_auth_ref_check(config.auth_ref),
+            ]
+        )
+    else:
+        checks.append(_command_check(config.command, command_resolver))
     status = "failed" if _failed_check_count(checks) else "ok"
     command_path = ""
     for check in checks:
@@ -126,6 +135,8 @@ def _preflight_config_from_mapping(
     server_override: str | None = None,
 ) -> ResidentAgentConfig:
     command = data.get("command")
+    endpoint = data.get("endpoint")
+    auth_ref = data.get("auth_ref")
     return ResidentAgentConfig(
         server=str(server_override or data.get("server") or server),
         agent_id=str(data.get("agent_id") or ""),
@@ -133,7 +144,8 @@ def _preflight_config_from_mapping(
         provider_kind=str(data.get("provider_kind") or "local_cli"),
         connection_kind=str(data.get("connection_kind") or "local_cli"),
         session_id=str(data.get("session_id") or ""),
-        endpoint=str(data.get("endpoint") or ""),
+        endpoint=endpoint if isinstance(endpoint, str) else "",
+        auth_ref=auth_ref if isinstance(auth_ref, str) else "",
         meeting_id=str(data.get("meeting_id") or ""),
         engagement_mode=str(data.get("engagement_mode") or "mentioned"),
         command=[str(part) for part in command] if isinstance(command, list) else [],
@@ -166,7 +178,7 @@ def _connection_kind_check(connection_kind: str) -> dict[str, str]:
     return {
         "id": "connection_kind",
         "status": "failed",
-        "message": "Resident groups support local_cli and live_session connections.",
+        "message": "Resident groups support local_cli, live_session, and remote_bridge connections.",
     }
 
 
@@ -183,6 +195,35 @@ def _command_check(command: list[str], command_resolver: Callable[[str], str | N
             "path": resolved,
         }
     return {"id": "command", "status": "failed", "message": f"Command not found: {executable}"}
+
+
+def _remote_bridge_endpoint_check(endpoint: str) -> dict[str, str]:
+    error = remote_bridge_endpoint_error(endpoint)
+    if not error:
+        return {
+            "id": "remote_bridge_endpoint",
+            "status": "ok",
+            "message": "Remote bridge endpoint is configured.",
+        }
+    return {
+        "id": "remote_bridge_endpoint",
+        "status": "failed",
+        "message": error,
+    }
+
+
+def _remote_bridge_auth_ref_check(auth_ref: str) -> dict[str, str]:
+    if remote_bridge_auth_ref_available(auth_ref):
+        return {
+            "id": "remote_bridge_auth_ref",
+            "status": "ok",
+            "message": "Remote bridge auth_ref is available.",
+        }
+    return {
+        "id": "remote_bridge_auth_ref",
+        "status": "failed",
+        "message": "Remote bridge auth_ref is not available.",
+    }
 
 
 def _resolve_command_path(command: str) -> str | None:

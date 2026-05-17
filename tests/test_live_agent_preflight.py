@@ -61,7 +61,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                             {
                                 "agent_id": "dup",
                                 "provider_kind": "claude_code",
-                                "connection_kind": "remote_bridge",
+                                "connection_kind": "manual",
                                 "command": ["missing-claude"],
                             },
                             {
@@ -90,7 +90,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 {
                     "id": "connection_kind",
                     "status": "failed",
-                    "message": "Resident groups support local_cli and live_session connections.",
+                    "message": "Resident groups support local_cli, live_session, and remote_bridge connections.",
                 },
                 first["checks"],
             )
@@ -109,7 +109,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                             {
                                 "agent_id": "dup",
                                 "provider_kind": "claude_code",
-                                "connection_kind": "remote_bridge",
+                                "connection_kind": "manual",
                             },
                             {
                                 "agent_id": "dup",
@@ -139,7 +139,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 {
                     "id": "connection_kind",
                     "status": "failed",
-                    "message": "Resident groups support local_cli and live_session connections.",
+                    "message": "Resident groups support local_cli, live_session, and remote_bridge connections.",
                 },
                 report["agents"][0]["checks"],
             )
@@ -238,6 +238,202 @@ class LiveAgentPreflightTests(unittest.TestCase):
             self.assertEqual(report["status"], "failed")
             self.assertEqual(report["summary"], {"agents": 0, "failed_agents": 0, "checks_failed": 1})
             self.assertEqual(report["checks"][0]["id"], "config_load")
+
+    def test_preflight_accepts_remote_bridge_without_command_and_checks_endpoint_auth_ref(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "friend",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "remote_bridge",
+                                "endpoint": "http://friend.local:8777",
+                                "auth_ref": "env:BRIDGE_TOKEN",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"BRIDGE_TOKEN": "available"}, clear=False):
+                report = preflight_live_agent_config(config_path, command_resolver=lambda command: None)
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 0, "checks_failed": 0})
+            friend = report["agents"][0]
+            self.assertEqual(friend["connection_kind"], "remote_bridge")
+            self.assertEqual(friend["command"], [])
+            self.assertEqual(friend["command_path"], "")
+            self.assertIn(
+                {"id": "remote_bridge_endpoint", "status": "ok", "message": "Remote bridge endpoint is configured."},
+                friend["checks"],
+            )
+            self.assertIn(
+                {"id": "remote_bridge_auth_ref", "status": "ok", "message": "Remote bridge auth_ref is available."},
+                friend["checks"],
+            )
+
+    def test_preflight_rejects_remote_bridge_redacted_auth_placeholder(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "friend",
+                                "connection_kind": "remote_bridge",
+                                "endpoint": "http://friend.local:8777",
+                                "auth_ref": "literal:<redacted>",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(config_path, command_resolver=lambda command: None)
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            self.assertIn(
+                {
+                    "id": "remote_bridge_auth_ref",
+                    "status": "failed",
+                    "message": "Remote bridge auth_ref is not available.",
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_preflight_rejects_remote_bridge_redacted_env_auth_value(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "friend",
+                                "connection_kind": "remote_bridge",
+                                "endpoint": "http://friend.local:8777",
+                                "auth_ref": "env:BRIDGE_TOKEN",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"BRIDGE_TOKEN": "<redacted>"}, clear=False):
+                report = preflight_live_agent_config(config_path, command_resolver=lambda command: None)
+
+            self.assertEqual(report["status"], "failed")
+            self.assertIn(
+                {
+                    "id": "remote_bridge_auth_ref",
+                    "status": "failed",
+                    "message": "Remote bridge auth_ref is not available.",
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_preflight_rejects_non_string_remote_bridge_auth_ref(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "friend",
+                                "connection_kind": "remote_bridge",
+                                "endpoint": "http://friend.local:8777",
+                                "auth_ref": ["literal:<redacted>"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(config_path, command_resolver=lambda command: None)
+
+            self.assertEqual(report["status"], "failed")
+            self.assertIn(
+                {
+                    "id": "remote_bridge_auth_ref",
+                    "status": "failed",
+                    "message": "Remote bridge auth_ref is not available.",
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_preflight_rejects_remote_bridge_endpoint_with_userinfo_query_or_fragment(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "friend",
+                                "connection_kind": "remote_bridge",
+                                "endpoint": "http://bridge-token@friend.local:8777?secret=1#frag",
+                                "auth_ref": "literal:bridge-token",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(config_path, command_resolver=lambda command: None)
+
+            self.assertEqual(report["status"], "failed")
+            self.assertIn(
+                {
+                    "id": "remote_bridge_endpoint",
+                    "status": "failed",
+                    "message": "Remote bridge endpoint must be HTTP(S) without userinfo, query, or fragment.",
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_preflight_rejects_malformed_remote_bridge_endpoint_netloc(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for endpoint in ("http://:8777", "http://friend.local:bad", "http://friend.local:99999"):
+                config_path = Path(temp_dir) / f"{endpoint.replace('/', '_').replace(':', '_')}.json"
+                config_path.write_text(
+                    json.dumps(
+                        {
+                            "agents": [
+                                {
+                                    "agent_id": "friend",
+                                    "connection_kind": "remote_bridge",
+                                    "endpoint": endpoint,
+                                    "auth_ref": "literal:bridge-token",
+                                }
+                            ]
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+                report = preflight_live_agent_config(config_path, command_resolver=lambda command: None)
+
+                self.assertEqual(report["status"], "failed", endpoint)
+                self.assertIn(
+                    {
+                        "id": "remote_bridge_endpoint",
+                        "status": "failed",
+                        "message": "Remote bridge endpoint must be an HTTP(S) URL with a valid host and port.",
+                    },
+                    report["agents"][0]["checks"],
+                )
 
 
 if __name__ == "__main__":

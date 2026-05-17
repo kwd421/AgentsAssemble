@@ -585,6 +585,36 @@ Document that `--probe bridge` proves only bridge HTTP reachability and token ac
 
 ---
 
+### Task 17: Resident Remote Bridge Runner
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `agentsassemble/adapters/remote_bridge.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/live_agent_preflight.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/provider-architecture.md`
+- Modify: `docs/research-log.md`
+- Add: `configs/live-agents.remote-bridge.example.json`
+- Test: `tests/test_live_agent_runner.py`
+- Test: `tests/test_live_agent_preflight.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_remote_bridge_adapter.py`
+
+- [x] **Step 1: Add RED coverage for resident remote bridge execution**
+
+Cover `live-agent run --connection-kind remote_bridge` parsing without local `--command`, group config loading without local commands, preflight endpoint/auth checks, remote bridge reply generation, sanitized auth failures, and an end-to-end fake GUI room plus fake bridge resident reply.
+
+- [x] **Step 2: Implement remote bridge reply runner behind existing resident loop**
+
+Add a remote bridge command runner chosen from the full `ResidentAgentConfig`. Keep polling, cursor restore, cooldown, failure backoff, self-loop skipping, chain-depth guards, and lobby posting in `LiveAgentRunner`, so remote replies still use `actor_id`, `source_event_id`, and `auto_chain_depth` metadata. Harden startup so invalid bridge setup stops the resident group, redacted auth values are unavailable, and unsafe bridge endpoints are rejected before request or presence persistence.
+
+- [x] **Step 3: Document execution-vs-health boundary**
+
+Document that bridge health probes call only `/agentsassemble/health`, while resident remote bridge agents intentionally call `/agentsassemble/run` after the operator starts `live-agent run` or `run-group` with endpoint and auth_ref.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

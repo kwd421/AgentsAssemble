@@ -3,8 +3,15 @@ import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
-from agentsassemble.live_agent_runner import LiveAgentRunner, ResidentAgentConfig, event_reply_candidate, load_group_configs
+from agentsassemble.live_agent_runner import (
+    LiveAgentRunner,
+    RemoteBridgeResidentCommandRunner,
+    ResidentAgentConfig,
+    event_reply_candidate,
+    load_group_configs,
+)
 
 
 class FakeClock:
@@ -44,6 +51,7 @@ def config(**overrides):
         "connection_kind": "local_cli",
         "session_id": "",
         "endpoint": "",
+        "auth_ref": "",
         "meeting_id": "",
         "engagement_mode": "always",
         "command": ["fake-agent"],
@@ -437,3 +445,103 @@ class LiveAgentRunnerTests(unittest.TestCase):
             loaded = load_group_configs(path)
 
         self.assertEqual(loaded[0].connection_kind, "live_session")
+
+    def test_group_config_accepts_remote_bridge_without_local_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "friend-claude",
+                                "display_name": "Friend Claude",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "remote_bridge",
+                                "endpoint": "http://friend.local:8777",
+                                "auth_ref": "env:BRIDGE_TOKEN",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        self.assertEqual(loaded[0].connection_kind, "remote_bridge")
+        self.assertEqual(loaded[0].command, [])
+        self.assertEqual(loaded[0].endpoint, "http://friend.local:8777")
+        self.assertEqual(loaded[0].auth_ref, "env:BRIDGE_TOKEN")
+
+    def test_remote_bridge_resident_command_runner_calls_bridge_with_runner_prompt(self):
+        calls = []
+
+        def requester(url, headers, payload, timeout_seconds):
+            calls.append({"url": url, "headers": headers, "payload": payload, "timeout_seconds": timeout_seconds})
+            return {
+                "text": '{"message":"원격 Claude가 로비 이벤트를 봤습니다.","kind":"message","readiness":"ready"}',
+                "metadata": {"bridge": "friend-mac", "command": "claude -p"},
+            }
+
+        runner = RemoteBridgeResidentCommandRunner(
+            config(
+                provider_kind="claude_code",
+                connection_kind="remote_bridge",
+                endpoint="http://friend.local:8777",
+                auth_ref="literal:bridge-token",
+                meeting_id="m1",
+                session_id="session-1",
+            ),
+            requester=requester,
+        )
+
+        reply = runner([], "Reply to this AgentsAssemble lobby context.", timeout_seconds=45)
+
+        self.assertEqual(reply, "원격 Claude가 로비 이벤트를 봤습니다.")
+        self.assertEqual(calls[0]["url"], "http://friend.local:8777/agentsassemble/run")
+        self.assertEqual(calls[0]["headers"]["Authorization"], "Bearer bridge-token")
+        self.assertEqual(calls[0]["timeout_seconds"], 30)
+        self.assertEqual(calls[0]["payload"]["step"], "lobby")
+        self.assertEqual(calls[0]["payload"]["prompt"], "Reply to this AgentsAssemble lobby context.")
+        self.assertEqual(calls[0]["payload"]["role"]["id"], "agent-a")
+        self.assertEqual(calls[0]["payload"]["session_id"], "session-1")
+        self.assertFalse(calls[0]["payload"]["permissions"]["filesystem_write"])
+        self.assertNotIn("command", calls[0]["payload"])
+
+    def test_remote_bridge_resident_command_runner_sanitizes_auth_failures(self):
+        def requester(url, headers, payload, timeout_seconds):
+            raise RuntimeError("Bearer bridge-token rejected by http://friend.local:8777")
+
+        runner = RemoteBridgeResidentCommandRunner(
+            config(
+                connection_kind="remote_bridge",
+                endpoint="http://friend.local:8777",
+                auth_ref="literal:bridge-token",
+            ),
+            requester=requester,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Remote bridge request failed."):
+            runner([], "prompt", timeout_seconds=45)
+
+    def test_remote_bridge_resident_command_runner_rejects_redacted_env_auth_value(self):
+        with patch.dict("os.environ", {"BRIDGE_TOKEN": "<redacted>"}, clear=False):
+            with self.assertRaisesRegex(ValueError, "available auth_ref"):
+                RemoteBridgeResidentCommandRunner(
+                    config(
+                        connection_kind="remote_bridge",
+                        endpoint="http://friend.local:8777",
+                        auth_ref="env:BRIDGE_TOKEN",
+                    )
+                )
+
+    def test_remote_bridge_resident_command_runner_rejects_unsafe_endpoint(self):
+        with self.assertRaisesRegex(ValueError, "safe endpoint"):
+            RemoteBridgeResidentCommandRunner(
+                config(
+                    connection_kind="remote_bridge",
+                    endpoint="http://bridge-token@friend.local:8777?secret=1",
+                    auth_ref="literal:bridge-token",
+                )
+            )

@@ -1,0 +1,19 @@
+{
+  "server": "http://127.0.0.1:8765",
+  "poll_interval": 2,
+  "heartbeat_interval": 30,
+  "cooldown": 5,
+  "max_chain_depth": 1,
+  "agents": [
+    {
+      "agent_id": "friend-claude-live",
+      "display_name": "Friend Claude",
+      "provider_kind": "claude_code",
+      "connection_kind": "remote_bridge",
+      "endpoint": "http://100.64.0.10:8777",
+      "auth_ref": "env:AGENTSASSEMBLE_BRIDGE_TOKEN",
+      "engagement_mode": "always",
+      "timeout_seconds": 120
+    }
+  ]
+}

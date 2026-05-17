@@ -183,7 +183,7 @@ Imported packs should pass a memory gate before they influence a meeting.
 - Grok: OpenAI-compatible xAI API provider; useful for skeptical critique, but evidence provenance must be strict.
 - Cursor: may join meetings in read-only opinion mode and later return to implementation work after `decision.md`.
 - Local/Ollama/LM Studio: useful for offline/private fallback and cheap drafts through OpenAI-compatible `/chat/completions`; web research requires a separate search capability.
-- Remote bridge: useful when a friend owns a Claude Code session and wants it to participate in a live meeting through an explicit, audited, read-only bridge.
+- Remote bridge: useful when a friend owns a Claude Code session and wants it to participate through an explicit, audited, read-only bridge. It now has two separate operator surfaces: bridge health probes call only `/agentsassemble/health`, while resident live agents opt into `/agentsassemble/run` so they can poll the lobby and auto-reply through the normal live-agent runner.
 - Hermes/OpenClaw: memory/profile inspiration, not raw hidden session import.
 
 ## Safety Boundaries
@@ -219,7 +219,7 @@ Observed limitation: the final moderator synthesis can still fall back to `Undet
 
 ## Next Implementation Slices
 
-1. Add opt-in API credential probes without starting a full meeting. Static provider health (`probe_mode: none`), local loopback OpenAI-compatible `/models` probes (`probe_mode: local`), and remote HTTP bridge health probes (`probe_mode: bridge`) are implemented; paid API credential probes remain future work and must stay explicit.
+1. Add opt-in API credential probes without starting a full meeting. Static provider health (`probe_mode: none`), local loopback OpenAI-compatible `/models` probes (`probe_mode: local`), remote HTTP bridge health probes (`probe_mode: bridge`), and resident remote bridge lobby runners are implemented; paid API credential probes remain future work and must stay explicit.
 2. Add provider-specific evidence provenance for Gemini/Grok web-grounded outputs.
 3. Split meeting adapters from implementation/coding-agent adapters.
 4. Add an importable memory/profile packet schema and memory gate report.

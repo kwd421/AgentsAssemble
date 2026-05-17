@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.models import ProviderConfig, Role
@@ -179,6 +180,119 @@ class RemoteBridgeAdapterTests(unittest.TestCase):
 
         self.assertEqual(message["bridge"], {"role_id": "fanboard_skeptic", "step": "round", "returncode": 0, "timed_out": False})
         self.assertNotIn("secret-token", str(message["bridge"]))
+
+    def test_remote_bridge_rejects_redacted_literal_auth_without_sending_request(self):
+        requester = FakeRequester({"text": "{}"})
+        adapter = RemoteBridgeAdapter(
+            ProviderConfig(
+                id="friend-claude-code",
+                kind="remote_http_bridge",
+                display_name="Friend Claude Code",
+                endpoint="http://friend.local:8777",
+                auth_ref="literal:<redacted>",
+            ),
+            requester=requester,
+        )
+        role = Role("fanboard_skeptic", "만갤러", "Skeptic", "반례 검증")
+
+        with self.assertRaisesRegex(ValueError, "available auth_ref"):
+            adapter.run_round(role, {"role_id": role.id}, "round_1", "첫 주장", {})
+
+        self.assertEqual(requester.calls, [])
+
+    def test_remote_bridge_rejects_redacted_env_auth_without_sending_request(self):
+        requester = FakeRequester({"text": "{}"})
+        adapter = RemoteBridgeAdapter(
+            ProviderConfig(
+                id="friend-claude-code",
+                kind="remote_http_bridge",
+                display_name="Friend Claude Code",
+                endpoint="http://friend.local:8777",
+                auth_ref="env:BRIDGE_TOKEN",
+            ),
+            requester=requester,
+        )
+        role = Role("fanboard_skeptic", "만갤러", "Skeptic", "반례 검증")
+
+        with patch.dict("os.environ", {"BRIDGE_TOKEN": "<redacted>"}, clear=False):
+            with self.assertRaisesRegex(ValueError, "available auth_ref"):
+                adapter.run_round(role, {"role_id": role.id}, "round_1", "첫 주장", {})
+
+        self.assertEqual(requester.calls, [])
+
+    def test_remote_bridge_rejects_non_string_redacted_auth_without_sending_request(self):
+        requester = FakeRequester({"text": "{}"})
+        adapter = RemoteBridgeAdapter(
+            ProviderConfig(
+                id="friend-claude-code",
+                kind="remote_http_bridge",
+                display_name="Friend Claude Code",
+                endpoint="http://friend.local:8777",
+                auth_ref=["literal:<redacted>"],  # type: ignore[arg-type]
+            ),
+            requester=requester,
+        )
+        role = Role("fanboard_skeptic", "만갤러", "Skeptic", "반례 검증")
+
+        with self.assertRaisesRegex(ValueError, "available auth_ref"):
+            adapter.run_round(role, {"role_id": role.id}, "round_1", "첫 주장", {})
+
+        self.assertEqual(requester.calls, [])
+
+    def test_remote_bridge_rejects_unsafe_endpoint_without_sending_request(self):
+        requester = FakeRequester({"text": "{}"})
+        adapter = RemoteBridgeAdapter(
+            ProviderConfig(
+                id="friend-claude-code",
+                kind="remote_http_bridge",
+                display_name="Friend Claude Code",
+                endpoint="http://bridge-token@friend.local:8777?secret=1",
+                auth_ref="literal:bridge-token",
+            ),
+            requester=requester,
+        )
+        role = Role("fanboard_skeptic", "만갤러", "Skeptic", "반례 검증")
+
+        with self.assertRaisesRegex(ValueError, "safe endpoint"):
+            adapter.run_round(role, {"role_id": role.id}, "round_1", "첫 주장", {})
+
+        self.assertEqual(requester.calls, [])
+
+    def test_remote_bridge_start_session_rejects_unsafe_endpoint_before_returning_session(self):
+        adapter = RemoteBridgeAdapter(
+            ProviderConfig(
+                id="friend-claude-code",
+                kind="remote_http_bridge",
+                display_name="Friend Claude Code",
+                endpoint="http://bridge-token@friend.local:8777?secret=1",
+                auth_ref="literal:bridge-token",
+            ),
+            requester=FakeRequester({"text": "{}"}),
+        )
+        role = Role("fanboard_skeptic", "만갤러", "Skeptic", "반례 검증")
+
+        with self.assertRaisesRegex(ValueError, "safe endpoint"):
+            adapter.start_session(role, {"meeting_id": "m1"})
+
+    def test_remote_bridge_rejects_malformed_endpoint_netloc_without_sending_request(self):
+        role = Role("fanboard_skeptic", "만갤러", "Skeptic", "반례 검증")
+        for endpoint in ("http://:8777", "http://friend.local:bad", "http://friend.local:99999"):
+            requester = FakeRequester({"text": "{}"})
+            adapter = RemoteBridgeAdapter(
+                ProviderConfig(
+                    id="friend-claude-code",
+                    kind="remote_http_bridge",
+                    display_name="Friend Claude Code",
+                    endpoint=endpoint,
+                    auth_ref="literal:bridge-token",
+                ),
+                requester=requester,
+            )
+
+            with self.assertRaisesRegex(ValueError, "safe endpoint"):
+                adapter.run_round(role, {"role_id": role.id}, "round_1", "첫 주장", {})
+
+            self.assertEqual(requester.calls, [])
 
     def test_remote_bridge_research_payload_preserves_role_and_depth(self):
         requester = FakeRequester(

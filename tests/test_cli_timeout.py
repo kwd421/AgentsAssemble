@@ -6,12 +6,13 @@ import threading
 import time
 import urllib.error
 from pathlib import Path
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import StringIO
 from unittest.mock import patch
 
 from agentsassemble.cli import build_parser, main
 from agentsassemble.gui import _make_handler, append_lobby_event, read_lobby
+from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 
 
@@ -1066,6 +1067,30 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertNotIn("AgentCouncil", run_delegate.call_args.args[1])
         self.assertIn("Posted evt1", stdout.getvalue())
 
+    def test_live_agent_run_accepts_remote_bridge_without_local_command(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run",
+                "--agent-id",
+                "friend-claude",
+                "--connection-kind",
+                "remote_bridge",
+                "--endpoint",
+                "http://friend.local:8777",
+                "--auth-ref",
+                "env:BRIDGE_TOKEN",
+                "--max-ticks",
+                "1",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "run")
+        self.assertEqual(args.connection_kind, "remote_bridge")
+        self.assertEqual(args.endpoint, "http://friend.local:8777")
+        self.assertEqual(args.auth_ref, "env:BRIDGE_TOKEN")
+        self.assertEqual(args.resident_command, [])
+
     def test_live_agent_delegate_rejects_live_session_connection_kind(self):
         stderr = StringIO()
         with patch("sys.stderr", stderr):
@@ -1226,6 +1251,94 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual(replies[0]["auto_chain_depth"], 1)
             self.assertIn("Resident agent stopped after posting 1 replies", stdout.getvalue())
 
+    def test_live_agent_run_remote_bridge_posts_reply_with_tick_bound(self):
+        bridge_calls = []
+
+        class FakeBridgeHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                if self.path != "/agentsassemble/run":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                bridge_calls.append({"authorization": self.headers.get("Authorization"), "payload": payload})
+                body = json.dumps(
+                    {
+                        "text": '{"message":"Remote bridge resident reply","kind":"message"}',
+                        "metadata": {"bridge": "fake"},
+                    }
+                ).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):
+                return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            source_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "원격 친구 살아있어?"})
+            room_server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            bridge_server = ThreadingHTTPServer(("127.0.0.1", 0), FakeBridgeHandler)
+            room_thread = threading.Thread(target=room_server.serve_forever, daemon=True)
+            bridge_thread = threading.Thread(target=bridge_server.serve_forever, daemon=True)
+            room_thread.start()
+            bridge_thread.start()
+            try:
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "run",
+                            "--server",
+                            f"http://127.0.0.1:{room_server.server_port}",
+                            "--agent-id",
+                            "friend-claude",
+                            "--display-name",
+                            "Friend Claude",
+                            "--provider-kind",
+                            "claude_code",
+                            "--connection-kind",
+                            "remote_bridge",
+                            "--endpoint",
+                            f"http://127.0.0.1:{bridge_server.server_port}",
+                            "--auth-ref",
+                            "literal:bridge-token",
+                            "--poll-interval",
+                            "0",
+                            "--cooldown",
+                            "0",
+                            "--max-chain-depth",
+                            "0",
+                            "--max-ticks",
+                            "1",
+                        ]
+                    )
+            finally:
+                room_server.shutdown()
+                bridge_server.shutdown()
+                room_server.server_close()
+                bridge_server.server_close()
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(bridge_calls[0]["authorization"], "Bearer bridge-token")
+            self.assertEqual(bridge_calls[0]["payload"]["step"], "lobby")
+            self.assertEqual(bridge_calls[0]["payload"]["role"]["id"], "friend-claude")
+            self.assertIn("원격 친구 살아있어?", bridge_calls[0]["payload"]["prompt"])
+            self.assertNotIn("command", bridge_calls[0]["payload"])
+            events = read_lobby(root)
+            replies = [event for event in events if event["actor_id"] == "friend-claude"]
+            self.assertEqual(len(replies), 1)
+            self.assertEqual(replies[0]["message"], "Remote bridge resident reply")
+            self.assertEqual(replies[0]["source_event_id"], source_event["id"])
+            self.assertEqual(replies[0]["auto_chain_depth"], 1)
+            self.assertIn("Resident agent stopped after posting 1 replies", stdout.getvalue())
+
     def test_live_agent_run_restores_persisted_cursor_over_http(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
@@ -1350,6 +1463,98 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual({event["message"] for event in replies}, {"Agent A reply", "Agent B reply"})
             self.assertEqual({event["source_event_id"] for event in replies}, {source_event["id"]})
             self.assertEqual({event["auto_chain_depth"] for event in replies}, {1})
+
+    def test_live_agent_run_group_reports_remote_bridge_setup_errors(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "friend-bridge",
+                                "connection_kind": "remote_bridge",
+                                "endpoint": "http://friend.local:8777",
+                                "auth_ref": "literal:<redacted>",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+            stderr = StringIO()
+
+            with patch("sys.stdout", stdout), patch("sys.stderr", stderr):
+                exit_code = main(["live-agent", "run-group", "--config", str(config_path), "--max-ticks", "1"])
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("friend-bridge", stderr.getvalue())
+            self.assertIn("available auth_ref", stderr.getvalue())
+            self.assertNotIn("Resident group stopped", stdout.getvalue())
+
+    def test_live_agent_run_group_does_not_register_any_agent_when_setup_fails(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="would-register",
+                display_name="Would Register",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=1,
+            ),
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="bad-bridge",
+                display_name="Bad Bridge",
+                provider_kind="claude_code",
+                connection_kind="remote_bridge",
+                session_id="",
+                endpoint="http://friend.local:8777",
+                auth_ref="literal:<redacted>",
+                meeting_id="",
+                engagement_mode="always",
+                command=[],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=1,
+            ),
+        ]
+        constructed = []
+
+        class RecordingRunner:
+            def __init__(self, *args, **kwargs):
+                constructed.append(args)
+
+            def run(self):
+                return 0
+
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.LiveAgentRunner", RecordingRunner),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(constructed, [])
+        self.assertIn("bad-bridge", stderr.getvalue())
 
     def test_live_agent_run_live_session_reuses_one_process_for_multiple_events(self):
         with tempfile.TemporaryDirectory() as temp_dir:
