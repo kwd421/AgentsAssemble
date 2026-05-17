@@ -1,4 +1,14 @@
-import { bindingSummary, displayTopic, escapeHtml, fetchJson, roleMeta, setLiveAgents, setLobbyEvents, state } from "./shared.js";
+import {
+  bindingSummary,
+  displayTopic,
+  escapeHtml,
+  fetchJson,
+  roleMeta,
+  setLiveAgentProcesses,
+  setLiveAgents,
+  setLobbyEvents,
+  state,
+} from "./shared.js";
 
 const lobbySides = new Set(["mine", "my-agent", "other", "other-agent"]);
 
@@ -78,6 +88,16 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-refresh")?.addEventListener("click", () => {
     loadLiveAgents({ force: true });
   });
+  lobby.querySelector("#live-agent-process-refresh")?.addEventListener("click", () => {
+    loadLiveAgentProcesses({ force: true });
+  });
+  lobby.querySelector("#live-agent-process-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await startLiveAgentProcessGroup(event.currentTarget);
+  });
+  lobby.querySelectorAll("[data-live-agent-process-stop]").forEach((button) => {
+    button.addEventListener("click", () => stopLiveAgentProcessGroup(button.dataset.liveAgentProcessStop));
+  });
   lobby.querySelector("#live-agent-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     await sendLiveAgentRegistration(event.currentTarget);
@@ -94,6 +114,9 @@ export function renderLobby(options = {}) {
   }
   if (!state.liveAgentsLoaded && !state.liveAgentsLoading) {
     loadLiveAgents();
+  }
+  if (!state.liveAgentProcessesLoaded && !state.liveAgentProcessesLoading) {
+    loadLiveAgentProcesses();
   }
   if (shouldFollowLatest) scrollLobbyFeedToLatest(lobby);
   else restoreLobbyFeedScroll(lobby, previousScrollTop);
@@ -248,6 +271,7 @@ function renderLiveAgentConnections() {
             : '<p class="roster-empty">아직 접속 등록된 에이전트가 없습니다.</p>'
         }
       </div>
+      ${renderLiveAgentProcessControls()}
       <form id="live-agent-form" class="live-agent-form">
         <input id="live-agent-id" maxlength="64" placeholder="agent id" required />
         <input id="live-agent-display-name" maxlength="64" placeholder="표시 이름" />
@@ -265,6 +289,53 @@ function renderLiveAgentConnections() {
       </form>
       ${status ? `<p class="live-agent-status" data-tone="${escapeHtml(status.tone || "info")}">${escapeHtml(status.message)}</p>` : ""}
     </section>
+  `;
+}
+
+function renderLiveAgentProcessControls() {
+  const groups = state.liveAgentProcesses || [];
+  const status = state.liveAgentProcessStatus;
+  return `
+    <section class="live-agent-processes" aria-label="상주 실행">
+      <div class="roster-head">
+        <strong>상주 실행</strong>
+        <span>${groups.filter((group) => group.status === "running").length} running · ${groups.length} groups</span>
+      </div>
+      <form id="live-agent-process-form" class="live-agent-process-form">
+        <input id="live-agent-process-config" maxlength="240" value="configs/live-agents.example.json" />
+        <input id="live-agent-process-group" maxlength="64" placeholder="group id" />
+        <button type="submit" id="live-agent-process-start" ${state.liveAgentProcessesLoading ? "disabled" : ""}>시작</button>
+        <button type="button" id="live-agent-process-refresh">상태</button>
+      </form>
+      <div class="live-agent-process-list">
+        ${
+          groups.length
+            ? groups.map(renderLiveAgentProcessCard).join("")
+            : '<p class="roster-empty">실행 중인 상주 그룹이 없습니다.</p>'
+        }
+      </div>
+      ${status ? `<p class="live-agent-status" data-tone="${escapeHtml(status.tone || "info")}">${escapeHtml(status.message)}</p>` : ""}
+    </section>
+  `;
+}
+
+function renderLiveAgentProcessCard(group) {
+  const status = group.status || "unknown";
+  const isRunning = status === "running";
+  return `
+    <article class="live-agent-process-row live-agent-process-${escapeHtml(status)}">
+      <div>
+        <strong>${escapeHtml(group.group_id || "live-agents")}</strong>
+        <span>${escapeHtml(group.config_path || "")}</span>
+        <small>${escapeHtml(group.pid ? `pid ${group.pid}` : "pid 없음")} · ${escapeHtml(group.server || "")}</small>
+      </div>
+      <em>${escapeHtml(liveAgentProcessStatusLabel(status))}</em>
+      ${
+        isRunning
+          ? `<button type="button" data-live-agent-process-stop="${escapeHtml(group.group_id || "")}">중지</button>`
+          : ""
+      }
+    </article>
   `;
 }
 
@@ -394,6 +465,13 @@ function liveAgentStatusLabel(status) {
   if (status === "error") return "오류";
   if (status === "stale") return "응답 지연";
   return "오프라인";
+}
+
+function liveAgentProcessStatusLabel(status) {
+  if (status === "running") return "실행 중";
+  if (status === "error") return "오류";
+  if (status === "stopped") return "중지됨";
+  return "상태 미정";
 }
 
 function providerKindLabel(kind) {
@@ -537,6 +615,67 @@ async function loadLiveAgents(options = {}) {
     state.liveAgentsLoading = false;
     renderLobby({ followLatest: false });
   }
+}
+
+async function loadLiveAgentProcesses(options = {}) {
+  if (state.liveAgentProcessesLoading && !options.force) return;
+  state.liveAgentProcessesLoading = true;
+  if (options.force) state.liveAgentProcessStatus = { message: "상주 실행 상태 갱신 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-processes");
+    setLiveAgentProcesses(payload.groups || []);
+    state.liveAgentProcessesLoaded = true;
+    if (state.liveAgentProcessStatus?.message === "상주 실행 상태 갱신 중") {
+      state.liveAgentProcessStatus = null;
+    }
+  } catch {
+    state.liveAgentProcessStatus = { message: "상주 실행 상태를 불러오지 못했습니다.", tone: "error" };
+    state.liveAgentProcessesLoaded = true;
+  } finally {
+    state.liveAgentProcessesLoading = false;
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function startLiveAgentProcessGroup(form) {
+  const configPath = form.querySelector("#live-agent-process-config")?.value.trim() || "";
+  const groupId = form.querySelector("#live-agent-process-group")?.value.trim() || "";
+  if (!configPath) return;
+  state.liveAgentProcessStatus = { message: "상주 그룹 시작 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-processes/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config_path: configPath, group_id: groupId }),
+    });
+    setLiveAgentProcesses(payload.groups || []);
+    state.liveAgentProcessesLoaded = true;
+    state.liveAgentProcessStatus = { message: `${payload.group?.group_id || "live-agents"} 시작됨`, tone: "success" };
+  } catch {
+    state.liveAgentProcessStatus = { message: "상주 그룹 시작 실패", tone: "error" };
+  }
+  renderLobby({ followLatest: false });
+}
+
+async function stopLiveAgentProcessGroup(groupId) {
+  if (!groupId) return;
+  state.liveAgentProcessStatus = { message: `${groupId} 중지 중`, tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson(`/api/live-agent-processes/${encodeURIComponent(groupId)}/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    setLiveAgentProcesses(payload.groups || []);
+    state.liveAgentProcessesLoaded = true;
+    state.liveAgentProcessStatus = { message: `${groupId} 중지됨`, tone: "success" };
+  } catch {
+    state.liveAgentProcessStatus = { message: `${groupId} 중지 실패`, tone: "error" };
+  }
+  renderLobby({ followLatest: false });
 }
 
 async function sendLiveAgentRegistration(form) {

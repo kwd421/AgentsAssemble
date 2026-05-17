@@ -211,11 +211,16 @@ def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source
     return "\n".join(lines).strip() + "\n"
 
 
-def load_group_configs(path: Path, *, max_ticks_override: int | None = None) -> list[ResidentAgentConfig]:
+def load_group_configs(
+    path: Path,
+    *,
+    max_ticks_override: int | None = None,
+    server_override: str | None = None,
+) -> list[ResidentAgentConfig]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("Live agent group config must be a JSON object.")
-    server = str(data.get("server") or "http://127.0.0.1:8765")
+    server = str(server_override or data.get("server") or "http://127.0.0.1:8765")
     defaults = {
         "poll_interval": float(data.get("poll_interval", 2.0)),
         "heartbeat_interval": float(data.get("heartbeat_interval", 30.0)),
@@ -228,7 +233,11 @@ def load_group_configs(path: Path, *, max_ticks_override: int | None = None) -> 
     agents = data.get("agents")
     if not isinstance(agents, list) or not agents:
         raise ValueError("Live agent group config requires a non-empty agents list.")
-    return [_config_from_mapping(agent, server=server, defaults=defaults) for agent in agents if isinstance(agent, dict)]
+    return [
+        _config_from_mapping(agent, server=server, defaults=defaults, server_override=server_override)
+        for agent in agents
+        if isinstance(agent, dict)
+    ]
 
 
 def config_from_args(args: object) -> ResidentAgentConfig:
@@ -257,6 +266,7 @@ def _config_from_mapping(
     *,
     server: str,
     defaults: dict[str, int | float],
+    server_override: str | None = None,
 ) -> ResidentAgentConfig:
     command = data.get("command")
     if not isinstance(command, list) or not command:
@@ -265,7 +275,7 @@ def _config_from_mapping(
     if not agent_id:
         raise ValueError("Each live agent requires agent_id.")
     return ResidentAgentConfig(
-        server=str(data.get("server") or server),
+        server=str(server_override or data.get("server") or server),
         agent_id=agent_id,
         display_name=str(data.get("display_name") or agent_id),
         provider_kind=str(data.get("provider_kind") or "local_cli"),

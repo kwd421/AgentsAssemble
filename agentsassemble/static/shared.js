@@ -11,6 +11,10 @@ export const state = {
   liveAgentsLoaded: false,
   liveAgentsLoading: false,
   liveAgentStatus: null,
+  liveAgentProcesses: [],
+  liveAgentProcessesLoaded: false,
+  liveAgentProcessesLoading: false,
+  liveAgentProcessStatus: null,
   codexSessions: [],
   codexSessionsLoaded: false,
   codexSessionsLoading: false,
@@ -121,6 +125,10 @@ export function setSideChatEvents(events) {
 
 export function setLiveAgents(agents) {
   state.liveAgents = agents || [];
+}
+
+export function setLiveAgentProcesses(groups) {
+  state.liveAgentProcesses = groups || [];
 }
 
 export function bindingForRole(meeting, roleId) {

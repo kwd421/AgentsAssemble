@@ -270,6 +270,45 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.config, "configs/live-agents.example.json")
         self.assertEqual(args.max_ticks, 2)
 
+    def test_live_agent_run_group_accepts_server_override(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run-group",
+                "--config",
+                "configs/live-agents.example.json",
+                "--server",
+                "http://127.0.0.1:9999",
+                "--max-ticks",
+                "1",
+            ]
+        )
+
+        self.assertEqual(args.server, "http://127.0.0.1:9999")
+
+        with patch("agentsassemble.cli.load_group_configs", return_value=[]) as load_configs:
+            stdout = StringIO()
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "run-group",
+                        "--config",
+                        "configs/live-agents.example.json",
+                        "--server",
+                        "http://127.0.0.1:9999",
+                        "--max-ticks",
+                        "1",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        load_configs.assert_called_once_with(
+            Path("configs/live-agents.example.json"),
+            max_ticks_override=1,
+            server_override="http://127.0.0.1:9999",
+        )
+
     def test_live_agent_run_posts_fake_cli_reply_with_tick_bound(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

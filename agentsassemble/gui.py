@@ -17,6 +17,7 @@ from agentsassemble.codex_sessions import (
 )
 from agentsassemble.config import load_agent_runtime_config, load_council_config, providers_from_config
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
+from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_events import (
     append_lobby_event_to_file,
@@ -160,7 +161,8 @@ def _latest_live_mtime(meeting_dir: Path) -> float | None:
 
 def serve_gui(host: str = "127.0.0.1", port: int = 8765, output_root: Path | None = None) -> None:
     root = output_root or Path(".agentsassemble")
-    handler = _make_handler(root)
+    process_supervisor = LiveAgentProcessSupervisor(root)
+    handler = _make_handler(root, process_supervisor=process_supervisor)
     server = ThreadingHTTPServer((host, port), handler)
     print(f"AgentsAssemble GUI: http://{host}:{port}")
     try:
@@ -168,6 +170,7 @@ def serve_gui(host: str = "127.0.0.1", port: int = 8765, output_root: Path | Non
     except KeyboardInterrupt:
         print("\nStopping AgentsAssemble GUI")
     finally:
+        process_supervisor.close()
         server.server_close()
 
 
@@ -322,6 +325,31 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
     return {"agent": agent, "event": event, "events": read_lobby(output_root)}
 
 
+def live_agent_processes_payload(process_supervisor: LiveAgentProcessSupervisor) -> dict[str, object]:
+    return {"groups": process_supervisor.list_groups()}
+
+
+def start_live_agent_process_payload(
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+    *,
+    default_server: str,
+) -> dict[str, object]:
+    config_path = Path(str(payload.get("config_path") or "configs/live-agents.example.json"))
+    server = str(payload.get("server") or default_server)
+    group_id = str(payload.get("group_id") or "").strip() or None
+    group = process_supervisor.start_group(config_path=config_path, server=server, group_id=group_id)
+    return {"group": group, "groups": process_supervisor.list_groups()}
+
+
+def stop_live_agent_process_payload(
+    process_supervisor: LiveAgentProcessSupervisor,
+    group_id: str,
+) -> dict[str, object]:
+    group = process_supervisor.stop_group(group_id)
+    return {"group": group, "groups": process_supervisor.list_groups()}
+
+
 def codex_session_invite_payload(
     output_root: Path,
     *,
@@ -371,6 +399,13 @@ def _live_agent_for_id(output_root: Path, agent_id: str) -> dict[str, object]:
 def _live_agent_action_path(path: str, action: str) -> str | None:
     parts = path.strip("/").split("/")
     if len(parts) == 4 and parts[0] == "api" and parts[1] == "live-agents" and parts[3] == action:
+        return unquote(parts[2])
+    return None
+
+
+def _live_agent_process_action_path(path: str, action: str) -> str | None:
+    parts = path.strip("/").split("/")
+    if len(parts) == 4 and parts[0] == "api" and parts[1] == "live-agent-processes" and parts[3] == action:
         return unquote(parts[2])
     return None
 
@@ -485,8 +520,13 @@ def _optional_str(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
+def _make_handler(
+    output_root: Path,
+    *,
+    process_supervisor: LiveAgentProcessSupervisor | None = None,
+) -> type[BaseHTTPRequestHandler]:
     static_root = Path(__file__).parent / "static"
+    live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
 
     class AgentsAssembleHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -524,6 +564,9 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                 return
             if path == "/api/live-agents":
                 self._send_json(live_agents_payload(output_root))
+                return
+            if path == "/api/live-agent-processes":
+                self._send_json(live_agent_processes_payload(live_agent_process_supervisor))
                 return
             live_agent_room_id = _live_agent_action_path(path, "room")
             if live_agent_room_id is not None:
@@ -626,6 +669,36 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                     return
                 self._send_json(live_agent)
                 return
+            if parsed.path == "/api/live-agent-processes/start":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    started = start_live_agent_process_payload(
+                        live_agent_process_supervisor,
+                        payload,
+                        default_server=self._request_server_url(),
+                    )
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(started)
+                return
+            live_agent_process_stop_id = _live_agent_process_action_path(parsed.path, "stop")
+            if live_agent_process_stop_id is not None:
+                try:
+                    stopped = stop_live_agent_process_payload(live_agent_process_supervisor, live_agent_process_stop_id)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(stopped)
+                return
             live_agent_heartbeat_id = _live_agent_action_path(parsed.path, "heartbeat")
             if live_agent_heartbeat_id is not None:
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -688,6 +761,13 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
 
         def log_message(self, format: str, *args: object) -> None:
             return
+
+        def _request_server_url(self) -> str:
+            host = self.headers.get("Host")
+            if host:
+                return f"http://{host}"
+            address = self.server.server_address
+            return f"http://{address[0]}:{address[1]}"
 
         def _send_file(self, path: Path, content_type: str | None = None) -> None:
             if not path.exists() or not path.is_file():

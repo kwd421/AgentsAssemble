@@ -4,6 +4,7 @@ import json
 import os
 import threading
 import time
+from io import StringIO
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
@@ -20,6 +21,7 @@ from agentsassemble.gui import (
     provider_catalog_payload,
     read_lobby,
     read_side_chat,
+    serve_gui,
     codex_session_invite_payload,
     codex_sessions_payload,
     connect_live_agent_payload,
@@ -226,6 +228,118 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(payload["binding"]["role_id"], "lore_lawyer")
             self.assertTrue((root / "codex-live-session.local.json").exists())
+
+    def test_live_agent_process_endpoints_start_list_and_stop_group(self):
+        class FakeSupervisor:
+            def __init__(self):
+                self.groups = []
+                self.started = []
+                self.stopped = []
+
+            def list_groups(self):
+                return list(self.groups)
+
+            def start_group(self, *, config_path, server, group_id=None):
+                self.started.append((config_path, server, group_id))
+                record = {
+                    "group_id": group_id or "default",
+                    "status": "running",
+                    "pid": 4321,
+                    "config_path": str(config_path),
+                    "server": server,
+                    "log_path": "live-agent-runs/default.log",
+                    "started_at": "2026-05-17T12:00:00+00:00",
+                    "stopped_at": "",
+                    "returncode": None,
+                    "last_error": "",
+                }
+                self.groups = [record]
+                return record
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                record = dict(self.groups[0])
+                record["status"] = "stopped"
+                record["returncode"] = 0
+                self.groups = [record]
+                return record
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor = FakeSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                start_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/start",
+                    data=json.dumps({"config_path": str(config_path), "group_id": "crew"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(start_request, timeout=4) as response:
+                    started = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-processes", timeout=4) as response:
+                    listed = json.loads(response.read().decode("utf-8"))
+                stop_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/crew/stop",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(stop_request, timeout=4) as response:
+                    stopped = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(started["group"]["status"], "running")
+            self.assertEqual(listed["groups"][0]["group_id"], "crew")
+            self.assertEqual(stopped["group"]["status"], "stopped")
+            self.assertEqual(supervisor.started[0][1], f"http://127.0.0.1:{server.server_port}")
+            self.assertEqual(supervisor.stopped, ["crew"])
+
+    def test_serve_gui_closes_live_agent_process_supervisor(self):
+        class FakeServer:
+            def __init__(self, address, handler):
+                self.address = address
+                self.handler = handler
+                self.closed = False
+
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+            def server_close(self):
+                self.closed = True
+
+        class FakeSupervisor:
+            instances = []
+
+            def __init__(self, output_root):
+                self.output_root = output_root
+                self.closed = False
+                self.instances.append(self)
+
+            def close(self):
+                self.closed = True
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            servers = []
+
+            def server_factory(address, handler):
+                server = FakeServer(address, handler)
+                servers.append(server)
+                return server
+
+            with patch("agentsassemble.gui.LiveAgentProcessSupervisor", FakeSupervisor):
+                with patch("agentsassemble.gui.ThreadingHTTPServer", server_factory):
+                    with patch("sys.stdout", StringIO()):
+                        serve_gui(host="127.0.0.1", port=0, output_root=Path(temp_dir))
+
+        self.assertTrue(servers[0].closed)
+        self.assertTrue(FakeSupervisor.instances[0].closed)
 
     def test_live_agent_payload_registers_non_codex_presence(self):
         with tempfile.TemporaryDirectory() as temp_dir:

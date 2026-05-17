@@ -689,6 +689,117 @@
   color: #ffc3c3;
 }
 
+.live-agent-processes {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.live-agent-process-form {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) minmax(74px, 0.52fr);
+}
+
+.live-agent-process-form input,
+.live-agent-process-form button {
+  min-height: 30px;
+}
+
+.live-agent-process-form input {
+  background: rgba(8, 11, 17, 0.68);
+  border: 1px solid rgba(212, 225, 255, 0.14);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.live-agent-process-form button {
+  background: rgba(69, 217, 245, 0.09);
+  border-color: rgba(69, 217, 245, 0.3);
+  color: #bdf4ff;
+  min-width: 62px;
+}
+
+.live-agent-process-form button[type="button"] {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(212, 225, 255, 0.14);
+  color: var(--muted);
+}
+
+.live-agent-process-list {
+  display: grid;
+  gap: 7px;
+}
+
+.live-agent-process-row {
+  align-items: center;
+  background: rgba(8, 11, 17, 0.55);
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-left: 4px solid rgba(212, 225, 255, 0.28);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  min-height: 54px;
+  padding: 7px 8px;
+}
+
+.live-agent-process-row strong,
+.live-agent-process-row span,
+.live-agent-process-row small,
+.live-agent-process-row em {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-agent-process-row span,
+.live-agent-process-row small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.live-agent-process-row em {
+  color: #bdf2b4;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.live-agent-process-row button {
+  background: rgba(255, 123, 123, 0.1);
+  border-color: rgba(255, 123, 123, 0.3);
+  color: #ffc3c3;
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.live-agent-process-running {
+  border-left-color: rgba(130, 209, 115, 0.88);
+}
+
+.live-agent-process-stopped {
+  border-left-color: rgba(212, 225, 255, 0.22);
+}
+
+.live-agent-process-stopped em {
+  color: var(--muted);
+}
+
+.live-agent-process-error {
+  border-left-color: rgba(255, 123, 123, 0.72);
+}
+
+.live-agent-process-error em {
+  color: #ffc3c3;
+}
+
 .codex-session-invite {
   border-top: 1px solid var(--line);
   display: grid;

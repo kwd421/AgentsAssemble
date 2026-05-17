@@ -145,6 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     live_group = live_agent_subparsers.add_parser("run-group", help="Run multiple resident local CLI live agents.")
     live_group.add_argument("--config", required=True)
+    live_group.add_argument("--server", default=None)
     live_group.add_argument("--max-ticks", type=int, default=None)
 
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
@@ -265,7 +266,7 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
 
 
 def _run_live_agent_group(args: argparse.Namespace) -> int:
-    configs = load_group_configs(Path(args.config), max_ticks_override=args.max_ticks)
+    configs = load_group_configs(Path(args.config), max_ticks_override=args.max_ticks, server_override=args.server)
     stop_event = threading.Event()
     results: dict[str, int] = {}
     errors: dict[str, str] = {}

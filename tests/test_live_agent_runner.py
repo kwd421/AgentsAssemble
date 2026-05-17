@@ -166,3 +166,23 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(loaded[0].poll_interval, 0)
         self.assertEqual(loaded[0].heartbeat_interval, 0)
         self.assertEqual(loaded[0].max_chain_depth, 0)
+
+    def test_group_config_server_override_applies_to_all_agents(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "server": "http://config-server.local",
+                        "agents": [
+                            {"agent_id": "agent-a", "command": ["fake"]},
+                            {"agent_id": "agent-b", "server": "http://agent-server.local", "command": ["fake"]},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path, server_override="http://override.local")
+
+        self.assertEqual([config.server for config in loaded], ["http://override.local", "http://override.local"])
