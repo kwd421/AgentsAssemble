@@ -123,6 +123,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("recovered_unknown", doc)
         self.assertIn("recent_events", doc)
         self.assertIn("live-agent heartbeat", doc)
+        self.assertIn("heartbeat_age_seconds", doc)
+        self.assertIn("stale_after_seconds", doc)
         self.assertIn("--status error", doc)
         self.assertIn("--last-error", doc)
         self.assertIn("the final heartbeat can report `offline` while preserving `last_error`", doc)

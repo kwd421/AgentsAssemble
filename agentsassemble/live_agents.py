@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 from datetime import UTC, datetime
+from math import ceil
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ LIVE_AGENT_STATE = "live_agents.json"
 PERSISTED_STATUSES = {"online", "working", "offline", "error"}
 LIVE_AGENT_CONNECTION_KINDS = {"codex_resume", "local_cli", "live_session", "remote_bridge", "manual"}
 DEFAULT_STALE_AFTER_SECONDS = 180
+OUTPUT_ONLY_FRESHNESS_FIELDS = {"heartbeat_age_seconds", "stale_after_seconds"}
 LIVE_AGENT_STATE_LOCK = threading.Lock()
 
 
@@ -110,7 +112,7 @@ def heartbeat_live_agent(
         agents = _agent_entries(state)
         existing = next((agent for agent in agents if agent.get("agent_id") == clean_agent_id), {})
         if existing:
-            agent = dict(existing)
+            agent = _without_output_only_freshness(existing)
             agent["status"] = _normalize_persisted_status(status)
             agent["updated_at"] = timestamp
             agent["last_seen_at"] = timestamp
@@ -159,7 +161,9 @@ def _write_state(output_root: Path, state: dict[str, object]) -> None:
     output_root.mkdir(parents=True, exist_ok=True)
     path = output_root / LIVE_AGENT_STATE
     temp_path = path.with_suffix(".json.tmp")
-    temp_path.write_text(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    writable = dict(state)
+    writable["agents"] = [_without_output_only_freshness(agent) for agent in _agent_entries(state)]
+    temp_path.write_text(json.dumps(writable, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     temp_path.replace(path)
 
 
@@ -184,16 +188,28 @@ def _with_inferred_status(
     now: datetime,
     stale_after_seconds: int,
 ) -> dict[str, object]:
-    visible = dict(agent)
+    visible = _without_output_only_freshness(agent)
+    stale_after = max(0, int(stale_after_seconds))
+    visible["stale_after_seconds"] = stale_after
+    last_seen = _parse_timestamp(visible.get("last_seen_at"))
+    if last_seen is not None:
+        heartbeat_age = max(0.0, (now - last_seen).total_seconds())
+        heartbeat_age_seconds = int(ceil(heartbeat_age))
+        visible["heartbeat_age_seconds"] = heartbeat_age_seconds
+    else:
+        heartbeat_age_seconds = None
     status = clean_lobby_text(visible.get("status"), limit=32)
     if status not in {"online", "working"}:
         return visible
-    last_seen = _parse_timestamp(visible.get("last_seen_at"))
-    if last_seen is None:
+    if heartbeat_age_seconds is None:
         return visible
-    if (now - last_seen).total_seconds() > stale_after_seconds:
+    if heartbeat_age_seconds > stale_after:
         visible["status"] = "stale"
     return visible
+
+
+def _without_output_only_freshness(agent: dict[str, object]) -> dict[str, object]:
+    return {key: value for key, value in agent.items() if key not in OUTPUT_ONLY_FRESHNESS_FIELDS}
 
 
 def _parse_timestamp(value: object) -> datetime | None:

@@ -722,6 +722,31 @@ Expose each group's bounded `recent_events` through the existing process API res
 
 ---
 
+### Task 22: Live-Agent Heartbeat Freshness Evidence
+
+**Files:**
+- Modify: `agentsassemble/live_agents.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agents.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for output-only freshness evidence**
+
+Cover stale inference including `heartbeat_age_seconds` and `stale_after_seconds`, fresh online agents with age evidence, API propagation, GUI rendering hooks, and operator docs. Assert the freshness fields are not persisted in `live_agents.json`.
+
+- [x] **Step 2: Infer freshness at the read boundary**
+
+Add freshness evidence in `read_live_agents()` output by comparing `last_seen_at` with the read timestamp. Preserve persisted presence shape for connect and heartbeat writes, and scrub any stale output-only freshness keys from loaded or rewritten presence rows.
+
+- [x] **Step 3: Surface freshness to operators**
+
+Render compact heartbeat age in live-agent cards and document that roster freshness evidence explains `stale` status without becoming durable state.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

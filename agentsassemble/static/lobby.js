@@ -548,9 +548,20 @@ function renderLiveAgentCard(agent) {
 
 function liveAgentRuntimeDetails(agent) {
   const details = [];
+  const heartbeatAge = heartbeatAgeLabel(agent);
+  if (heartbeatAge) details.push(heartbeatAge);
   if (agent.last_reply_at) details.push(`reply ${agent.last_reply_at}`);
   if (agent.last_observed_event_id) details.push(`cursor ${shortSessionId(agent.last_observed_event_id)}`);
   return details.join(" · ");
+}
+
+function heartbeatAgeLabel(agent) {
+  const age = Number(agent.heartbeat_age_seconds);
+  if (!Number.isFinite(age) || age < 0) return "";
+  const roundedAge = Math.round(age);
+  const staleAfter = Number(agent.stale_after_seconds);
+  if (!Number.isFinite(staleAfter) || staleAfter < 0) return `seen ${roundedAge}s ago`;
+  return `seen ${roundedAge}s ago / stale ${Math.round(staleAfter)}s`;
 }
 
 function renderLiveAgentProviderOptions() {

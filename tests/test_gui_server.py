@@ -1049,6 +1049,9 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(payload["agent"]["agent_id"], "gemini-cli")
             self.assertEqual(listed["agents"][0]["session_id"], "gemini-session")
+            self.assertIsInstance(listed["agents"][0]["heartbeat_age_seconds"], int)
+            self.assertGreaterEqual(listed["agents"][0]["heartbeat_age_seconds"], 0)
+            self.assertEqual(listed["agents"][0]["stale_after_seconds"], 180)
 
     def test_live_agent_room_endpoint_returns_lobby_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
