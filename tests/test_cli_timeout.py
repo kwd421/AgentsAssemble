@@ -1771,6 +1771,60 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertFalse(child_alive_after_close)
             self.assertTrue(errors)
 
+    @unittest.skipUnless(cli_module._supports_process_groups(), "requires POSIX process-group support")
+    def test_local_cli_resident_command_runner_timeout_terminates_child_processes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            child_pid_path = Path(temp_dir) / "timeout-grandchild.pid"
+            runner = cli_module._LocalCliCommandRunner()
+            errors = []
+
+            def invoke_runner():
+                try:
+                    runner(
+                        [
+                            sys.executable,
+                            "-u",
+                            "-c",
+                            (
+                                "import pathlib, subprocess, sys, time; "
+                                "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+                                "pathlib.Path(sys.argv[1]).write_text(str(child.pid), encoding='utf-8'); "
+                                "time.sleep(30)"
+                            ),
+                            str(child_pid_path),
+                        ],
+                        "prompt",
+                        timeout_seconds=0.2,
+                    )
+                except cli_module.subprocess.TimeoutExpired as error:
+                    errors.append(error)
+
+            thread = threading.Thread(target=invoke_runner)
+            thread.start()
+            child_pid = None
+            child_alive_after_timeout = None
+            try:
+                deadline = time.time() + 5
+                while time.time() < deadline and not child_pid_path.exists():
+                    time.sleep(0.01)
+                self.assertTrue(child_pid_path.exists())
+                child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+
+                thread.join(timeout=5)
+                child_alive_after_timeout = not _wait_for_pid_exit(child_pid)
+            finally:
+                if child_pid is not None and _pid_exists(child_pid):
+                    try:
+                        _kill_pid(child_pid)
+                    except ProcessLookupError:
+                        pass
+                runner.close()
+                thread.join(timeout=1)
+
+            self.assertFalse(thread.is_alive())
+            self.assertTrue(errors)
+            self.assertFalse(child_alive_after_timeout)
+
     def test_local_cli_resident_command_runner_terminates_child_on_interruption(self):
         class InterruptingProcess:
             def __init__(self):

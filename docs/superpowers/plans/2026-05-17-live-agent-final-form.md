@@ -797,6 +797,28 @@ Document that resident local CLI stop semantics cover ordinary provider child pr
 
 ---
 
+### Task 25: Resident Local CLI Timeout Subprocess Cleanup Evidence
+
+**Files:**
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add coverage for timeout subprocess cleanup**
+
+Cover a resident `local_cli` provider wrapper that spawns a long-running child process and then exceeds its timeout. The runner must finish with `TimeoutExpired` and stop the spawned child process on POSIX hosts.
+
+- [x] **Step 2: Reuse existing process-group cleanup**
+
+The new coverage passed against the Task 24 implementation, so no production code change was required. Timeout, close, and interruption cleanup all route through the same resident command-runner termination boundary.
+
+- [x] **Step 3: Document timeout cleanup semantics**
+
+Document that provider command timeouts use the same cleanup path as supervised stop for resident `local_cli` workers.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
