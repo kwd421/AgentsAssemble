@@ -300,6 +300,123 @@ class CliTimeoutTests(unittest.TestCase):
             {"status": "online", "last_error": ""},
         )
 
+    def test_live_agent_engagement_parses_mode_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "engagement",
+                "--agent-id",
+                "agent-a",
+                "--mode",
+                "watch",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "engagement")
+        self.assertEqual(args.engagement_mode, "watch")
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_engagement_posts_runtime_policy_update(self):
+        stdout = StringIO()
+        payload = {"agent": {"agent_id": "agent one", "engagement_mode": "watch"}}
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "engagement",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "agent one",
+                        "--mode",
+                        "watch",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents/agent%20one/engagement",
+            method="POST",
+            payload={"engagement_mode": "watch"},
+        )
+        self.assertIn("agent one: watch", stdout.getvalue())
+
+    def test_live_agent_engagement_can_emit_json_payload(self):
+        payload = {"agent": {"agent_id": "agent-a", "engagement_mode": "manual"}, "agents": []}
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", StringIO()) as stdout:
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "engagement",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "agent-a",
+                        "--mode",
+                        "manual",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), payload)
+
+    def test_live_agent_engagement_updates_real_http_endpoint_without_refreshing_heartbeat(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                with patch("sys.stdout", StringIO()):
+                    register_exit = main(
+                        [
+                            "live-agent",
+                            "register",
+                            "--server",
+                            server_url,
+                            "--agent-id",
+                            "agent-a",
+                            "--display-name",
+                            "Agent A",
+                            "--connection-kind",
+                            "local_cli",
+                            "--engagement-mode",
+                            "always",
+                        ]
+                    )
+                before = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    engagement_exit = main(
+                        [
+                            "live-agent",
+                            "engagement",
+                            "--server",
+                            server_url,
+                            "--agent-id",
+                            "agent-a",
+                            "--mode",
+                            "watch",
+                        ]
+                    )
+                after = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(register_exit, 0)
+        self.assertEqual(engagement_exit, 0)
+        self.assertEqual(after["engagement_mode"], "watch")
+        self.assertIn("engagement_mode_updated_at", after)
+        self.assertEqual(after["last_seen_at"], before["last_seen_at"])
+        self.assertIn("agent-a: watch", stdout.getvalue())
+
     def test_live_agent_health_parses_json_and_fail_on_degraded_options(self):
         args = build_parser().parse_args(["live-agent", "health", "--json", "--fail-on-degraded"])
 

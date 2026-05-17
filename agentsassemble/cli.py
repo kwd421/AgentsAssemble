@@ -37,6 +37,7 @@ from agentsassemble.live_agent_runner import (
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.live_session_transport import JsonlLiveSession
 from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 from agentsassemble.provider_health import provider_health_report
 
 
@@ -161,6 +162,11 @@ def build_parser() -> argparse.ArgumentParser:
     live_heartbeat.add_argument("--last-error", default=None)
     live_heartbeat.add_argument("--last-reply-at", default=None)
     live_heartbeat.add_argument("--last-observed-event-id", default=None)
+
+    live_engagement = live_agent_subparsers.add_parser("engagement", parents=[live_server], help="Update a live agent engagement mode.")
+    live_engagement.add_argument("--agent-id", required=True)
+    live_engagement.add_argument("--mode", choices=ENGAGEMENT_MODE_CHOICES, required=True, dest="engagement_mode")
+    live_engagement.add_argument("--json", action="store_true", dest="as_json", help="Print the raw engagement update payload.")
 
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
     live_say.add_argument("--agent-id", required=True)
@@ -354,6 +360,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
             print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('status') or args.status}")
             return 0
+        if args.live_agent_command == "engagement":
+            return _run_live_agent_engagement(args)
         if args.live_agent_command == "say":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
             response = _request_json(
@@ -402,6 +410,22 @@ def _heartbeat_payload(args: argparse.Namespace) -> dict[str, object]:
         if value is not None:
             payload[key] = value
     return payload
+
+
+def _run_live_agent_engagement(args: argparse.Namespace) -> int:
+    agent_id = urllib.parse.quote(args.agent_id, safe="")
+    payload = {"engagement_mode": args.engagement_mode}
+    response = _request_json(
+        _server_url(args.server, f"/api/live-agents/{agent_id}/engagement"),
+        method="POST",
+        payload=payload,
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
+        print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('engagement_mode') or args.engagement_mode}")
+    return 0
 
 
 def _run_live_agent_resident(args: argparse.Namespace) -> int:

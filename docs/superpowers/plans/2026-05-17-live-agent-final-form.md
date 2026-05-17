@@ -899,6 +899,29 @@ Document valid modes, the engagement API, no heartbeat freshness bump, per-poll 
 
 ---
 
+### Task 29: CLI Runtime Engagement Policy Control
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for scriptable engagement control**
+
+Cover `live-agent engagement --agent-id ... --mode ...`, endpoint quoting, JSON output, and a real GUI-server update that proves the CLI changes `engagement_mode` without refreshing `last_seen_at`.
+
+- [x] **Step 2: Wire the CLI to the explicit engagement endpoint**
+
+Add `assemble live-agent engagement` with valid mode choices, `--json`, and a `POST /api/live-agents/<agent_id>/engagement` request body of `{"engagement_mode": mode}`.
+
+- [x] **Step 3: Document CLI operator usage**
+
+Document that runtime engagement policy can be changed through GUI, API, or CLI, and that the CLI supports raw JSON output for automation.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

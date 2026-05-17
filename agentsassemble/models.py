@@ -298,7 +298,15 @@ def get_research_depth(name: str) -> ResearchDepth:
         raise ValueError(f"Unknown research depth: {name}. Expected one of: {allowed}") from error
 
 
-ENGAGEMENT_MODES: set[str] = {"manual", "mentioned", "moderator_called", "human_only", "always", "watch"}
+ENGAGEMENT_MODE_CHOICES: tuple[EngagementMode, ...] = (
+    "manual",
+    "mentioned",
+    "moderator_called",
+    "human_only",
+    "always",
+    "watch",
+)
+ENGAGEMENT_MODES: set[str] = set(ENGAGEMENT_MODE_CHOICES)
 MEETING_MODES: set[str] = {"debate", "free_chat"}
 
 

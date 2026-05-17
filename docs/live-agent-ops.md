@@ -40,6 +40,26 @@ with a JSON body like:
 {"engagement_mode": "watch"}
 ```
 
+The same runtime policy update is available from the CLI:
+
+```bash
+assemble live-agent engagement \
+  --server http://127.0.0.1:8765 \
+  --agent-id claude-code-live \
+  --mode watch
+```
+
+The module form is equivalent when running from a checkout:
+
+```bash
+python3 -m agentsassemble.cli live-agent engagement \
+  --server http://127.0.0.1:8765 \
+  --agent-id claude-code-live \
+  --mode watch
+```
+
+Use `--json` to print the raw API response after the update.
+
 Valid modes are `manual`, `mentioned`, `moderator_called`, `human_only`, `always`, and `watch`. Treat `always` as loop-prone: every non-self lobby event can trigger an automatic reply unless the chain-depth guard blocks it.
 
 Changing engagement mode updates `live_agents.json`, `/api/live-agents`, and `/api/live-agents/<agent_id>/room`, records `engagement_mode_updated_at`, but does not refresh `last_seen_at` or reset `heartbeat_age_seconds`. A policy change is operator control, not proof that the agent process is still alive.
