@@ -101,7 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     live_heartbeat = live_agent_subparsers.add_parser("heartbeat", parents=[live_server], help="Update live agent presence.")
     live_heartbeat.add_argument("--agent-id", required=True)
-    live_heartbeat.add_argument("--status", choices=["online", "working", "offline"], default="online")
+    live_heartbeat.add_argument("--status", choices=["online", "working", "offline", "error"], default="online")
+    live_heartbeat.add_argument("--last-error", default=None)
+    live_heartbeat.add_argument("--last-reply-at", default=None)
+    live_heartbeat.add_argument("--last-observed-event-id", default=None)
 
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
     live_say.add_argument("--agent-id", required=True)
@@ -221,7 +224,7 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             response = _request_json(
                 _server_url(args.server, f"/api/live-agents/{agent_id}/heartbeat"),
                 method="POST",
-                payload={"status": args.status},
+                payload=_heartbeat_payload(args),
             )
             agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
             print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('status') or args.status}")
@@ -251,6 +254,19 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return 1
+
+
+def _heartbeat_payload(args: argparse.Namespace) -> dict[str, object]:
+    payload = {"status": args.status}
+    optional_fields = {
+        "last_error": getattr(args, "last_error", None),
+        "last_reply_at": getattr(args, "last_reply_at", None),
+        "last_observed_event_id": getattr(args, "last_observed_event_id", None),
+    }
+    for key, value in optional_fields.items():
+        if value is not None:
+            payload[key] = value
+    return payload
 
 
 def _run_live_agent_resident(args: argparse.Namespace) -> int:

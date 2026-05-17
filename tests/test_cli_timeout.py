@@ -189,6 +189,72 @@ class CliTimeoutTests(unittest.TestCase):
             payload={"message": "Gemini 접속 확인", "kind": "message"},
         )
 
+    def test_live_agent_heartbeat_posts_error_status_and_metadata(self):
+        stdout = StringIO()
+        with patch(
+            "agentsassemble.cli._request_json",
+            return_value={"agent": {"agent_id": "claude-code-live", "status": "error"}},
+        ) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "heartbeat",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-code-live",
+                        "--status",
+                        "error",
+                        "--last-error",
+                        "delegate failed",
+                        "--last-observed-event-id",
+                        "evt1",
+                        "--last-reply-at",
+                        "2026-05-17T12:00:00+00:00",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents/claude-code-live/heartbeat",
+            method="POST",
+            payload={
+                "status": "error",
+                "last_error": "delegate failed",
+                "last_reply_at": "2026-05-17T12:00:00+00:00",
+                "last_observed_event_id": "evt1",
+            },
+        )
+        self.assertIn("claude-code-live: error", stdout.getvalue())
+
+    def test_live_agent_heartbeat_can_clear_stale_error_metadata(self):
+        with patch(
+            "agentsassemble.cli._request_json",
+            return_value={"agent": {"agent_id": "claude-code-live", "status": "online"}},
+        ) as request_json:
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "heartbeat",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-code-live",
+                        "--status",
+                        "online",
+                        "--last-error",
+                        "",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            request_json.call_args.kwargs["payload"],
+            {"status": "online", "last_error": ""},
+        )
+
     def test_live_agent_delegate_runs_local_command_and_posts_reply(self):
         stdout = StringIO()
         room_payload = {"lobby_events": [{"name": "나", "message": "방 상태 어때?"}]}

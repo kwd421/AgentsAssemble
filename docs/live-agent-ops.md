@@ -152,6 +152,20 @@ What to check:
 - auto-restart fields in `processes.json`: `auto_restart`, `restart_count`, `max_restarts`, `restart_backoff_seconds`, and `next_restart_at`.
 - `.agentsassemble/live-agent-runs/<group_id>.log`: stdout/stderr for the supervised `run-group` process. Delegate provider subprocess stdout/stderr is captured by the runner, not streamed directly into this file. The GUI and process API expose only a bounded `log_tail`.
 
+External or manually driven agents can also report an error heartbeat through the CLI:
+
+```bash
+python3 -m agentsassemble.cli live-agent heartbeat \
+  --server http://127.0.0.1:8765 \
+  --agent-id claude-code-live \
+  --status error \
+  --last-error "delegate command failed" \
+  --last-observed-event-id evt1 \
+  --last-reply-at 2026-05-17T12:00:00+00:00
+```
+
+That command writes the same `last_error`, `last_observed_event_id`, and `last_reply_at` fields used by resident runners, so non-runner agents can stay visible in the roster without inventing a separate status path.
+
 ## Claude And Gemini CLI Smoke
 
 Only run real provider smoke when the CLI is installed, authenticated, and you have explicit approval for any cost, network, account, or external side effect.
