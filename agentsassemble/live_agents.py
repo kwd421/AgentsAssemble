@@ -71,6 +71,7 @@ def connect_live_agent(
             or clean_lobby_text(existing.get("last_reply_at"), limit=64),
             "last_observed_event_id": clean_lobby_text(payload.get("last_observed_event_id"), limit=128)
             or clean_lobby_text(existing.get("last_observed_event_id"), limit=128),
+            "diagnostic": _bool_value(payload.get("diagnostic") if "diagnostic" in payload else existing.get("diagnostic")),
             "created_at": clean_lobby_text(existing.get("created_at"), limit=64) or timestamp,
             "updated_at": timestamp,
             "last_seen_at": timestamp,
@@ -119,6 +120,7 @@ def heartbeat_live_agent(
                 "last_error": "",
                 "last_reply_at": "",
                 "last_observed_event_id": "",
+                "diagnostic": _bool_value(metadata.get("diagnostic")),
                 "created_at": timestamp,
                 "updated_at": timestamp,
                 "last_seen_at": timestamp,
@@ -126,6 +128,8 @@ def heartbeat_live_agent(
         for key, limit in (("last_error", 500), ("last_reply_at", 64), ("last_observed_event_id", 128)):
             if key in metadata:
                 agent[key] = clean_lobby_text(metadata.get(key), limit=limit)
+        if "diagnostic" in metadata:
+            agent["diagnostic"] = _bool_value(metadata.get("diagnostic"))
         _upsert_agent(agents, agent)
         _write_state(output_root, {"agents": agents})
         return agent
@@ -203,6 +207,14 @@ def _normalize_connection_kind(value: object) -> str:
 def _normalize_persisted_status(value: object) -> str:
     cleaned = clean_lobby_text(value, limit=32)
     return cleaned if cleaned in PERSISTED_STATUSES else "online"
+
+
+def _bool_value(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
 
 
 def _clean_capabilities(value: object) -> list[str]:

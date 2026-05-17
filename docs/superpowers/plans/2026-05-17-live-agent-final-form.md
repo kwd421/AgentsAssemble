@@ -397,6 +397,41 @@ Document why health is captured before smoke, the `/api/live-agent-readiness` pa
 
 ---
 
+### Task 11: Diagnostic Artifact Health Isolation
+
+**Files:**
+- Modify: `agentsassemble/live_agents.py`
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `agentsassemble/live_agent_smoke.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_live_agents.py`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for repeated doctor and diagnostic flags**
+
+Cover repeated `POST /api/live-agent-readiness` calls, diagnostic agent/process records, and the health endpoint. The same smoke group id can run twice without the first run's offline/stopped diagnostic artifacts degrading the second run.
+
+- [x] **Step 2: Preserve diagnostic metadata on live-agent presence and process records**
+
+Store a boolean `diagnostic` flag on live-agent presence rows and supervised process group records while keeping the records inspectable for operator debugging.
+
+- [x] **Step 3: Mark smoke artifacts diagnostic**
+
+The credential-free smoke path tags pre-registered agents, heartbeat updates, and the supervised fake group as diagnostic.
+
+- [x] **Step 4: Exclude diagnostic records from health and readiness summaries**
+
+`/api/live-agent-health` ignores diagnostic presence rows and process groups before computing counts, attention lists, and the overall status. It also recognizes legacy smoke artifacts by the built-in smoke agent identities so pre-flag fake smoke runs do not permanently degrade an existing room. Readiness keeps using the pre-smoke health snapshot and can be repeated without self-inflicted degradation.
+
+- [x] **Step 5: Document the diagnostic isolation contract**
+
+Document that diagnostic artifacts remain in runtime files for inspection but do not contaminate later health checks or repeated readiness checks.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

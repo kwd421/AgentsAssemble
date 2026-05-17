@@ -64,7 +64,7 @@ def run_live_agent_smoke(
             start_response = request_json(
                 _server_url(server, "/api/live-agent-processes/start"),
                 method="POST",
-                payload={"config_path": str(config_path), "server": server, "group_id": clean_group_id},
+                payload={"config_path": str(config_path), "server": server, "group_id": clean_group_id, "diagnostic": True},
             )
             started_group = start_response.get("group") if isinstance(start_response.get("group"), dict) else {}
             replies = wait_for_smoke_replies(
@@ -177,12 +177,13 @@ def seed_smoke_agent_cursors(
                 "meeting_id": "",
                 "engagement_mode": "always",
                 "capabilities": ["room_chat", "mentions"],
+                "diagnostic": True,
             },
         )
         request_json(
             _server_url(server, f"/api/live-agents/{urllib.parse.quote(agent_id, safe='')}/heartbeat"),
             method="POST",
-            payload={"status": "online", "last_observed_event_id": last_observed_event_id},
+            payload={"status": "online", "last_observed_event_id": last_observed_event_id, "diagnostic": True},
         )
 
 

@@ -92,3 +92,17 @@ class LiveAgentPresenceTests(unittest.TestCase):
             )
 
         self.assertEqual(agent["connection_kind"], "live_session")
+
+    def test_connect_live_agent_preserves_diagnostic_flag(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = connect_live_agent(
+                Path(temp_dir),
+                {
+                    "agent_id": "doctor-smoke-local-cli",
+                    "display_name": "Smoke Local CLI",
+                    "diagnostic": True,
+                },
+            )
+
+            self.assertTrue(agent["diagnostic"])
+            self.assertTrue(read_live_agents(Path(temp_dir))[0]["diagnostic"])

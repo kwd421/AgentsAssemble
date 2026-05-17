@@ -518,29 +518,38 @@ class GuiServerTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                request = Request(
-                    f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
-                    data=json.dumps({"group_id": "doctor-smoke", "timeout": 8}).encode("utf-8"),
-                    headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
-                    method="POST",
-                )
-                with urlopen(request, timeout=12) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
+                payloads = []
+                for _ in range(2):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                        data=json.dumps({"group_id": "doctor-smoke", "timeout": 8}).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=12) as response:
+                        payloads.append(json.loads(response.read().decode("utf-8")))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    health_after_smoke = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
 
-            self.assertEqual(payload["status"], "ready")
-            self.assertEqual(payload["health"]["status"], "ok")
-            self.assertEqual(payload["smoke"]["status"], "ok")
-            self.assertEqual(payload["smoke"]["group_id"], "doctor-smoke")
-            self.assertEqual(
-                {check["id"]: check["status"] for check in payload["checks"]},
-                {"health": "ok", "smoke": "ok"},
-            )
+            for payload in payloads:
+                self.assertEqual(payload["status"], "ready")
+                self.assertEqual(payload["health"]["status"], "ok")
+                self.assertEqual(payload["smoke"]["status"], "ok")
+                self.assertEqual(payload["smoke"]["group_id"], "doctor-smoke")
+                self.assertEqual(
+                    {check["id"]: check["status"] for check in payload["checks"]},
+                    {"health": "ok", "smoke": "ok"},
+                )
+            self.assertEqual(health_after_smoke["status"], "ok")
             processes = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
             group = next(item for item in processes["groups"] if item["group_id"] == "doctor-smoke")
             self.assertEqual(group["status"], "stopped")
+            self.assertTrue(group["diagnostic"])
+            agents = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"]
+            self.assertEqual({agent["diagnostic"] for agent in agents if agent["agent_id"].startswith("doctor-smoke-")}, {True})
 
     def test_live_agent_health_endpoint_summarizes_agents_and_processes(self):
         class FakeSupervisor:
@@ -558,6 +567,14 @@ class GuiServerTests(unittest.TestCase):
                     {"group_id": "crashed-group", "status": "error"},
                     {"group_id": "orphan-group", "status": "unknown"},
                     {"group_id": "stopped-group", "status": "stopped"},
+                    {"group_id": "diagnostic-stopped", "status": "stopped", "diagnostic": True},
+                    {"group_id": "diagnostic-error", "status": "error", "diagnostic": True},
+                    {
+                        "group_id": "legacy-smoke",
+                        "status": "stopped",
+                        "returncode": 0,
+                        "config_path": "/dev/null/agentsassemble-missing-smoke/live-agents.json",
+                    },
                     {"status": "error"},
                     {"group_id": "odd-group", "status": "mystery"},
                 ]
@@ -572,6 +589,22 @@ class GuiServerTests(unittest.TestCase):
                             {"agent_id": "working-agent", "status": "working"},
                             {"agent_id": "error-agent", "status": "error"},
                             {"agent_id": "offline-agent", "status": "offline"},
+                            {"agent_id": "diagnostic-offline", "status": "offline", "diagnostic": True},
+                            {"agent_id": "diagnostic-error", "status": "error", "diagnostic": True},
+                            {
+                                "agent_id": "legacy-smoke-local-cli",
+                                "display_name": "Smoke Local CLI",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "status": "offline",
+                            },
+                            {
+                                "agent_id": "legacy-smoke-live-session",
+                                "display_name": "Smoke Live Session",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "live_session",
+                                "status": "error",
+                            },
                             {"display_name": "Display Only", "status": "error"},
                             {"agent_id": "odd-agent", "status": "mystery"},
                         ]
@@ -619,6 +652,75 @@ class GuiServerTests(unittest.TestCase):
                 ],
             )
             self.assertFalse(supervisor.list_called)
+
+    def test_live_agent_health_keeps_reused_legacy_smoke_group_visible(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            active_config = root / "active-live-agents.json"
+            active_config.write_text('{"agents": []}', encoding="utf-8")
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "legacy-smoke-local-cli",
+                                "display_name": "Smoke Local CLI",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "status": "offline",
+                            },
+                            {
+                                "agent_id": "legacy-smoke-live-session",
+                                "display_name": "Smoke Live Session",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "live_session",
+                                "status": "offline",
+                            },
+                            {
+                                "agent_id": "partial-smoke-local-cli",
+                                "display_name": "Smoke Local CLI",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "status": "offline",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            class FakeSupervisor:
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "legacy-smoke",
+                            "status": "error",
+                            "returncode": 1,
+                            "config_path": str(active_config),
+                        },
+                        {
+                            "group_id": "partial-smoke",
+                            "status": "stopped",
+                            "returncode": 0,
+                            "config_path": "/dev/null/partial-smoke/live-agents.json",
+                        }
+                    ]
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["agents"]["total"], 0)
+            self.assertEqual(payload["processes"]["total"], 2)
+            self.assertEqual(payload["processes"]["counts"]["error"], 1)
+            self.assertEqual(payload["processes"]["counts"]["stopped"], 1)
+            self.assertEqual(payload["processes"]["attention"], ["legacy-smoke", "partial-smoke"])
 
     def test_serve_gui_closes_live_agent_process_supervisor(self):
         class FakeServer:

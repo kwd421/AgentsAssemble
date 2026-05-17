@@ -79,6 +79,24 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             self.assertIn("http://127.0.0.1:8765", command)
             self.assertIs(kwargs["stderr"], kwargs["stdout"])
 
+    def test_start_group_persists_diagnostic_flag(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=lambda command, **kwargs: FakeProcess())
+
+            record = supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="doctor-smoke",
+                diagnostic=True,
+            )
+
+            self.assertTrue(record["diagnostic"])
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+            self.assertTrue(persisted["groups"][0]["diagnostic"])
+
     def test_stop_group_interrupts_owned_process_and_marks_stopped(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             process = FakeProcess(pid=9876)

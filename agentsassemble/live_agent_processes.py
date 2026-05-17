@@ -52,6 +52,7 @@ class LiveAgentProcessSupervisor:
         auto_restart: bool = False,
         max_restarts: int = 0,
         restart_backoff_seconds: float = 5.0,
+        diagnostic: bool = False,
     ) -> dict[str, object]:
         with self._lock:
             return self._start_group_unlocked(
@@ -61,6 +62,7 @@ class LiveAgentProcessSupervisor:
                 auto_restart=auto_restart,
                 max_restarts=max_restarts,
                 restart_backoff_seconds=restart_backoff_seconds,
+                diagnostic=diagnostic,
             )
 
     def stop_group(self, group_id: str, *, timeout_seconds: float = 5.0) -> dict[str, object]:
@@ -88,6 +90,7 @@ class LiveAgentProcessSupervisor:
                 auto_restart=_bool_value(record.get("auto_restart")),
                 max_restarts=_nonnegative_int(record.get("max_restarts"), 0),
                 restart_backoff_seconds=_nonnegative_float(record.get("restart_backoff_seconds"), 5.0),
+                diagnostic=_bool_value(record.get("diagnostic")),
                 last_error=str(record.get("last_error") or ""),
             )
 
@@ -127,6 +130,7 @@ class LiveAgentProcessSupervisor:
         restart_backoff_seconds: float = 5.0,
         restart_count: int = 0,
         last_error: str = "",
+        diagnostic: bool = False,
     ) -> dict[str, object]:
         clean_group_id = _clean_group_id(group_id or config_path.stem)
         existing = self._records.get(clean_group_id)
@@ -172,6 +176,7 @@ class LiveAgentProcessSupervisor:
             "max_restarts": _nonnegative_int(max_restarts, 0),
             "restart_backoff_seconds": _nonnegative_float(restart_backoff_seconds, 5.0),
             "next_restart_at": "",
+            "diagnostic": bool(diagnostic),
         }
         self._records[clean_group_id] = record
         self._processes[clean_group_id] = process
@@ -202,6 +207,7 @@ class LiveAgentProcessSupervisor:
                     restart_backoff_seconds=backoff_seconds,
                     restart_count=restart_count,
                     last_error=last_error,
+                    diagnostic=_bool_value(record.get("diagnostic")),
                 )
             except Exception as error:
                 return self._mark_auto_restart_failed(
@@ -241,6 +247,7 @@ class LiveAgentProcessSupervisor:
                     restart_backoff_seconds=_nonnegative_float(record.get("restart_backoff_seconds"), 5.0),
                     restart_count=_nonnegative_int(record.get("restart_count"), 0),
                     last_error=str(record.get("last_error") or ""),
+                    diagnostic=_bool_value(record.get("diagnostic")),
                 )
             except Exception as error:
                 record["status"] = "error"
@@ -399,6 +406,7 @@ def _process_record(payload: dict[str, object]) -> dict[str, object]:
         "max_restarts": _nonnegative_int(payload.get("max_restarts"), 0),
         "restart_backoff_seconds": _nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
         "next_restart_at": str(payload.get("next_restart_at") or ""),
+        "diagnostic": _bool_value(payload.get("diagnostic")),
     }
 
 

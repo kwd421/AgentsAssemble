@@ -372,13 +372,15 @@ def live_agent_readiness_payload(
 def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentProcessSupervisor) -> dict[str, object]:
     agents = read_live_agents(output_root)
     groups = process_supervisor.snapshot_groups()
+    diagnostic_group_ids = _diagnostic_agent_group_ids(agents)
     agent_summary = _live_agent_health_summary(agents)
-    process_summary = _live_agent_process_health_summary(groups)
+    process_summary = _live_agent_process_health_summary(groups, diagnostic_group_ids=diagnostic_group_ids)
     status = "degraded" if agent_summary["attention"] or process_summary["attention"] else "ok"
     return {"status": status, "agents": agent_summary, "processes": process_summary}
 
 
 def _live_agent_health_summary(agents: list[dict[str, object]]) -> dict[str, object]:
+    agents = [agent for agent in agents if not _is_diagnostic_agent(agent)]
     counts = {"online": 0, "working": 0, "error": 0, "stale": 0, "offline": 0}
     attention = []
     for index, agent in enumerate(agents, start=1):
@@ -390,7 +392,13 @@ def _live_agent_health_summary(agents: list[dict[str, object]]) -> dict[str, obj
     return {"total": len(agents), "live": counts["online"] + counts["working"], "counts": counts, "attention": attention}
 
 
-def _live_agent_process_health_summary(groups: list[dict[str, object]]) -> dict[str, object]:
+def _live_agent_process_health_summary(
+    groups: list[dict[str, object]],
+    *,
+    diagnostic_group_ids: set[str] | None = None,
+) -> dict[str, object]:
+    diagnostic_group_ids = diagnostic_group_ids or set()
+    groups = [group for group in groups if not _is_diagnostic_process_group(group, diagnostic_group_ids)]
     counts = {"running": 0, "restarting": 0, "error": 0, "unknown": 0, "stopped": 0}
     attention = []
     for index, group in enumerate(groups, start=1):
@@ -402,6 +410,63 @@ def _live_agent_process_health_summary(groups: list[dict[str, object]]) -> dict[
     return {"total": len(groups), "counts": counts, "attention": attention}
 
 
+def _diagnostic_agent_group_ids(agents: list[dict[str, object]]) -> set[str]:
+    by_group: dict[str, set[str]] = {}
+    for agent in agents:
+        group_id, smoke_role = _smoke_agent_identity(agent)
+        if group_id:
+            by_group.setdefault(group_id, set()).add(smoke_role)
+    return {group_id for group_id, roles in by_group.items() if {"local_cli", "live_session"}.issubset(roles)}
+
+
+def _is_diagnostic_agent(agent: dict[str, object]) -> bool:
+    return _payload_bool(agent.get("diagnostic")) or bool(_smoke_group_id_from_agent(agent))
+
+
+def _is_diagnostic_process_group(group: dict[str, object], diagnostic_group_ids: set[str]) -> bool:
+    return _payload_bool(group.get("diagnostic")) or _is_legacy_smoke_process_group(group, diagnostic_group_ids)
+
+
+def _is_legacy_smoke_process_group(group: dict[str, object], diagnostic_group_ids: set[str]) -> bool:
+    group_id = str(group.get("group_id") or "")
+    if group_id not in diagnostic_group_ids:
+        return False
+    if str(group.get("status") or "") != "stopped":
+        return False
+    if group.get("returncode") not in (0, None):
+        return False
+    config_path = str(group.get("config_path") or "")
+    if not config_path:
+        return False
+    return not Path(config_path).exists()
+
+
+def _smoke_group_id_from_agent(agent: dict[str, object]) -> str:
+    group_id, _ = _smoke_agent_identity(agent)
+    return group_id
+
+
+def _smoke_agent_identity(agent: dict[str, object]) -> tuple[str, str]:
+    if str(agent.get("provider_kind") or "") != "local_cli":
+        return "", ""
+    agent_id = str(agent.get("agent_id") or "")
+    display_name = str(agent.get("display_name") or "")
+    connection_kind = str(agent.get("connection_kind") or "")
+    if (
+        display_name == "Smoke Local CLI"
+        and connection_kind == "local_cli"
+        and agent_id.endswith("-local-cli")
+    ):
+        return agent_id[: -len("-local-cli")], "local_cli"
+    if (
+        display_name == "Smoke Live Session"
+        and connection_kind == "live_session"
+        and agent_id.endswith("-live-session")
+    ):
+        return agent_id[: -len("-live-session")], "live_session"
+    return "", ""
+
+
 def start_live_agent_process_payload(
     process_supervisor: LiveAgentProcessSupervisor,
     payload: dict[str, object],
@@ -411,14 +476,17 @@ def start_live_agent_process_payload(
     config_path = Path(str(payload.get("config_path") or "configs/live-agents.example.json"))
     server = str(payload.get("server") or default_server)
     group_id = str(payload.get("group_id") or "").strip() or None
-    group = process_supervisor.start_group(
-        config_path=config_path,
-        server=server,
-        group_id=group_id,
-        auto_restart=_payload_bool(payload.get("auto_restart")),
-        max_restarts=_payload_nonnegative_int(payload.get("max_restarts"), 0),
-        restart_backoff_seconds=_payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
-    )
+    start_kwargs = {
+        "config_path": config_path,
+        "server": server,
+        "group_id": group_id,
+        "auto_restart": _payload_bool(payload.get("auto_restart")),
+        "max_restarts": _payload_nonnegative_int(payload.get("max_restarts"), 0),
+        "restart_backoff_seconds": _payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
+    }
+    if _payload_bool(payload.get("diagnostic")):
+        start_kwargs["diagnostic"] = True
+    group = process_supervisor.start_group(**start_kwargs)
     return {"group": group, "groups": process_supervisor.list_groups()}
 
 
