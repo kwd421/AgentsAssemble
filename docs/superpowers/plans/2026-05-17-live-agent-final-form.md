@@ -1037,6 +1037,45 @@ Document manifest-aware connection evidence, health degradation rules, diagnosti
 
 ---
 
+### Task 34: Targeted Resident Reply Probe
+
+**Files:**
+- Create: `agentsassemble/live_agent_probe.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/shared.js`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `agentsassemble/static/lobby.css`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_probe.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for a targeted reply proof**
+
+Cover a probe that appends one diagnostic lobby event, succeeds only when the target agent replies with matching `actor_id` and `source_event_id`, ignores old/wrong/unlinked replies, skips non-live agents without appending a probe event, and rejects unknown agents.
+
+- [x] **Step 2: Expose probe through API, CLI, and GUI**
+
+Add `POST /api/live-agents/<agent_id>/probe`, `assemble live-agent probe --agent-id ...`, and a per-agent GUI `probe` button. The probe waits for the resident runner to answer through the ordinary room path; it does not call providers directly, start processes, or change engagement mode.
+
+- [x] **Step 3: Record safe operation evidence**
+
+Record bounded `probe.run` operation entries with agent id, result status, timeout, source event id, and reply event id. Do not record probe or reply message text in `operations.jsonl`.
+
+- [x] **Step 4: Document operator semantics**
+
+Document source-event reply proof, exit codes, GUI button behavior, and timeout limitations for passive policy modes, cooldown, provider failures, and remote bridge failures.
+
+- [x] **Review hardening: Align timeout proof and endpoint evidence**
+
+After xhigh review, tightened the probe so CLI HTTP timeout outlives the probe wait window, GUI operation history records the same effective timeout cap the probe used, and probe success requires the server-issued `live_agent_endpoint` flag from `/api/live-agents/<agent_id>/lobby` instead of accepting generic lobby posts with matching metadata.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

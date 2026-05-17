@@ -204,6 +204,29 @@ Exit code contract:
 
 The GUI "상주 실행" panel exposes the same readiness path as the `점검` button. Use `진단` for a raw smoke run and `점검` when you want the combined health-plus-smoke answer.
 
+## Targeted Resident Reply Probe
+
+Use `live-agent probe` when a resident agent is already registered as live and you want proof that it can observe a new room event and reply through its own runner path:
+
+```bash
+python3 -m agentsassemble.cli live-agent probe \
+  --server http://127.0.0.1:8765 \
+  --agent-id claude-code-live \
+  --timeout 12
+```
+
+The probe calls `POST /api/live-agents/<agent_id>/probe`. It does not directly invoke providers, does not start a process, and does not change engagement policy. Instead it appends one visible diagnostic lobby message addressed to the agent id and display name, then waits for a reply whose `actor_id` matches the agent, whose `source_event_id` matches the probe event, and whose event was written through `/api/live-agents/<agent_id>/lobby`. Generic `/api/lobby` posts cannot set the internal `live_agent_endpoint` evidence flag.
+
+Exit code contract:
+
+- `0`: the agent replied with matching `source_event_id`.
+- `1`: the agent existed but was skipped or timed out.
+- `2`: the CLI could not reach or parse the server response, or the agent was not found.
+
+Agents in `watch`, `manual`, `moderator_called`, cooldown, provider failure, or remote bridge failure can time out even if their process is alive. Treat timeout as a targeted reply failure, not as proof that the process is dead. The GUI roster exposes the same check as the per-agent `probe` button.
+
+Probe wait time is capped at 60 seconds. The CLI keeps its HTTP request timeout longer than the probe wait window, so an ordinary probe timeout returns the JSON `timeout` result instead of a transport failure.
+
 ## Fake CLI Smoke
 
 Use a fake CLI first. It proves the resident loop, room polling, heartbeat, lobby reply, log capture, and stop path without depending on Claude, Gemini, auth, network, or paid model calls.
@@ -455,7 +478,7 @@ What to check:
 
 - `.agentsassemble/live_agents.json`: presence, status, heartbeat metadata, `last_error`, `last_reply_at`, and `last_observed_event_id`.
 - `/api/live-agents`: roster entries add output-only `heartbeat_age_seconds` and `stale_after_seconds` so operators can see why an agent is fresh or stale. These freshness fields are inferred at read time and are not persisted in `live_agents.json`.
-- `.agentsassemble/lobby.jsonl`: human lobby messages and live-agent replies. Live-agent auto replies include `actor_id`, `source_event_id`, and `auto_chain_depth`.
+- `.agentsassemble/lobby.jsonl`: human lobby messages and live-agent replies. Live-agent auto replies include `actor_id`, `source_event_id`, `auto_chain_depth`, and the server-issued `live_agent_endpoint` evidence flag when they were posted through the resident live-agent lobby endpoint.
 - `.agentsassemble/live-agent-runs/processes.json`: durable group records with `group_id`, `status`, `pid`, `config_path`, `server`, `log_path`, timestamps, `returncode`, `last_error`, and a safe launch-time `agents` manifest.
 - agents manifest entries contain only `agent_id`, `display_name`, `provider_kind`, and `connection_kind`. The manifest does not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
 - `/api/live-agent-processes`: process rows add output-only `agent_connection` evidence by comparing each group's launch-time manifest with current live-agent presence. This manifest-aware connection evidence reports `expected`, `connected`, and attention entries such as missing, stale, offline, or error agents. It is not persisted into `processes.json`.

@@ -221,6 +221,15 @@ def build_parser() -> argparse.ArgumentParser:
     live_doctor.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait for fake agent replies.")
     live_doctor.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable readiness result.")
 
+    live_probe = live_agent_subparsers.add_parser(
+        "probe",
+        parents=[live_server],
+        help="Ask one already-running live agent to reply through the room.",
+    )
+    live_probe.add_argument("--agent-id", required=True)
+    live_probe.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait for the agent reply.")
+    live_probe.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable probe result.")
+
     live_delegate = live_agent_subparsers.add_parser(
         "delegate",
         parents=[live_server],
@@ -416,6 +425,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_smoke(args)
         if args.live_agent_command == "doctor":
             return _run_live_agent_doctor(args)
+        if args.live_agent_command == "probe":
+            return _run_live_agent_probe(args)
         if args.live_agent_command == "processes":
             return _run_live_agent_processes(args)
         if args.live_agent_command == "operations":
@@ -626,6 +637,21 @@ def _run_live_agent_doctor(args: argparse.Namespace) -> int:
     return 0 if payload.get("status") == "ready" else 1
 
 
+def _run_live_agent_probe(args: argparse.Namespace) -> int:
+    agent_id = urllib.parse.quote(args.agent_id, safe="")
+    payload = _request_json(
+        _server_url(args.server, f"/api/live-agents/{agent_id}/probe"),
+        method="POST",
+        payload={"timeout_seconds": float(args.timeout)},
+        timeout_seconds=_probe_http_timeout(float(args.timeout)),
+    )
+    if args.as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_probe(payload))
+    return 0 if payload.get("status") == "ok" else 1
+
+
 def _format_live_agent_preflight(report: dict[str, object]) -> str:
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     agents = report.get("agents") if isinstance(report.get("agents"), list) else []
@@ -698,6 +724,22 @@ def _format_live_agent_readiness(payload: dict[str, object]) -> str:
     ]
     if smoke.get("error"):
         lines.append(f"smoke error: {smoke.get('error')}")
+    return "\n".join(lines)
+
+
+def _format_live_agent_probe(payload: dict[str, object]) -> str:
+    lines = [
+        f"probe: {payload.get('status') or 'unknown'}",
+        f"agent: {payload.get('agent_id') or 'unknown'}",
+    ]
+    if payload.get("agent_status"):
+        lines.append(f"agent status: {payload.get('agent_status')}")
+    if payload.get("source_event_id"):
+        lines.append(f"source: {payload.get('source_event_id')}")
+    if payload.get("reply_event_id"):
+        lines.append(f"reply: {payload.get('reply_event_id')}")
+    if payload.get("reason"):
+        lines.append(f"reason: {payload.get('reason')}")
     return "\n".join(lines)
 
 
@@ -1153,12 +1195,22 @@ def _server_url(server: str, path: str) -> str:
     return f"{server.rstrip('/')}{path}"
 
 
-def _request_json(url: str, *, method: str = "GET", payload: dict[str, object] | None = None) -> dict[str, object]:
+def _probe_http_timeout(probe_timeout_seconds: float) -> float:
+    return max(10.0, float(probe_timeout_seconds) + 2.0)
+
+
+def _request_json(
+    url: str,
+    *,
+    method: str = "GET",
+    payload: dict[str, object] | None = None,
+    timeout_seconds: float = 10.0,
+) -> dict[str, object]:
     data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json"} if payload is not None else {}
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             loaded = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
         raise ValueError(_http_error_message(error)) from error

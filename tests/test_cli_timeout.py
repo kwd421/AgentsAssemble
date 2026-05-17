@@ -847,6 +847,68 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertEqual(json.loads(stdout.getvalue())["status"], "degraded")
 
+    def test_live_agent_probe_parses_operator_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "probe",
+                "--server",
+                "http://room.local",
+                "--agent-id",
+                "agent-a",
+                "--timeout",
+                "3",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "probe")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.agent_id, "agent-a")
+        self.assertEqual(args.timeout, 3.0)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_probe_posts_request_and_prints_summary(self):
+        payload = {
+            "status": "ok",
+            "agent_id": "agent-a",
+            "source_event_id": "probe-source",
+            "reply_event_id": "reply-event",
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "probe", "--server", "http://room.local", "--agent-id", "agent-a", "--timeout", "3"])
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents/agent-a/probe",
+            method="POST",
+            payload={"timeout_seconds": 3.0},
+            timeout_seconds=10.0,
+        )
+        output = stdout.getvalue()
+        self.assertIn("probe: ok", output)
+        self.assertIn("agent: agent-a", output)
+        self.assertIn("reply: reply-event", output)
+
+    def test_live_agent_probe_uses_http_timeout_beyond_probe_window(self):
+        with patch("agentsassemble.cli._request_json", return_value={"status": "timeout"}) as request_json:
+            exit_code = main(["live-agent", "probe", "--server", "http://room.local", "--agent-id", "agent-a"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(request_json.call_args.kwargs["timeout_seconds"], 14.0)
+
+    def test_live_agent_probe_json_exits_one_for_timeout(self):
+        payload = {"status": "timeout", "agent_id": "agent-a", "source_event_id": "probe-source"}
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "probe", "--server", "http://room.local", "--agent-id", "agent-a", "--json"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(json.loads(stdout.getvalue())["status"], "timeout")
+
     def test_live_agent_smoke_verifies_supervised_fake_local_cli_and_live_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

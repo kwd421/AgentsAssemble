@@ -23,6 +23,7 @@ from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
+from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
@@ -265,8 +266,8 @@ def read_lobby(output_root: Path, limit: int = 80) -> list[dict[str, object]]:
     return read_lobby_events(output_root / "lobby.jsonl", limit=limit)
 
 
-def append_lobby_event(output_root: Path, event: dict[str, object]) -> dict[str, object]:
-    return append_lobby_event_to_file(output_root / "lobby.jsonl", event)
+def append_lobby_event(output_root: Path, event: dict[str, object], *, live_agent_endpoint: bool = False) -> dict[str, object]:
+    return append_lobby_event_to_file(output_root / "lobby.jsonl", event, live_agent_endpoint=live_agent_endpoint)
 
 
 def read_side_chat(output_root: Path, limit: int = 120) -> list[dict[str, object]]:
@@ -454,8 +455,18 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
             "source_event_id": payload.get("source_event_id") or "",
             "auto_chain_depth": payload.get("auto_chain_depth") or 0,
         },
+        live_agent_endpoint=True,
     )
     return {"agent": agent, "event": event, "events": read_lobby(output_root)}
+
+
+def live_agent_probe_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
+    timeout_seconds = safe_probe_timeout(_payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 12.0))
+    return run_live_agent_probe(
+        output_root,
+        agent_id,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def live_agent_processes_payload(
@@ -1435,6 +1446,44 @@ def _make_handler(
                     },
                 )
                 self._send_json(restarted)
+                return
+            live_agent_probe_id = _live_agent_action_path(parsed.path, "probe")
+            if live_agent_probe_id is not None:
+                payload = self._operation_json_payload(operation="probe.run", target_id=live_agent_probe_id)
+                if payload is None:
+                    return
+                timeout_seconds = safe_probe_timeout(
+                    _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 12.0)
+                )
+                try:
+                    probe = live_agent_probe_payload(output_root, live_agent_probe_id, payload)
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="probe.run",
+                        status="failed",
+                        target_id=live_agent_probe_id,
+                        error=str(error),
+                        details={"result_status": "failed", "timeout_seconds": timeout_seconds},
+                    )
+                    status = HTTPStatus.NOT_FOUND if "was not found" in str(error) else HTTPStatus.BAD_REQUEST
+                    self._send_error(status, str(error))
+                    return
+                result_status = _operation_result_status(probe.get("status"))
+                record_live_agent_operation(
+                    output_root,
+                    operation="probe.run",
+                    status=_operation_success_for_result(result_status, success_values={"ok"}),
+                    target_id=live_agent_probe_id,
+                    summary="ran live-agent reply probe",
+                    details={
+                        "result_status": result_status,
+                        "timeout_seconds": timeout_seconds,
+                        "source_event_id": str(probe.get("source_event_id") or ""),
+                        "reply_event_id": str(probe.get("reply_event_id") or ""),
+                    },
+                )
+                self._send_json(probe)
                 return
             live_agent_heartbeat_id = _live_agent_action_path(parsed.path, "heartbeat")
             if live_agent_heartbeat_id is not None:

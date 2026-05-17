@@ -1220,6 +1220,125 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["connections"], {"expected": 0, "connected": 0, "attention": []})
 
+    def test_live_agent_probe_endpoint_records_success_without_message_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            result = {
+                "status": "ok",
+                "agent_id": "agent-a",
+                "source_event_id": "probe-source",
+                "reply_event_id": "reply-event",
+                "reply": {"id": "reply-event", "actor_id": "agent-a", "message": "secret probe reply"},
+            }
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=LiveAgentProcessSupervisor(root)))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch("agentsassemble.gui.run_live_agent_probe", return_value=result) as probe:
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/probe",
+                        data=json.dumps({"timeout_seconds": 3}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=4) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        probe.assert_called_once()
+        self.assertEqual(probe.call_args.args[:2], (root, "agent-a"))
+        self.assertEqual(probe.call_args.kwargs["timeout_seconds"], 3.0)
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["reply_event_id"], "reply-event")
+        self.assertEqual(operations["operations"][0]["operation"], "probe.run")
+        self.assertEqual(operations["operations"][0]["status"], "success")
+        self.assertEqual(operations["operations"][0]["target_id"], "agent-a")
+        self.assertEqual(operations["operations"][0]["details"]["result_status"], "ok")
+        self.assertEqual(operations["operations"][0]["details"]["timeout_seconds"], 3.0)
+        operation_text = json.dumps(operations, ensure_ascii=False)
+        self.assertNotIn("secret probe reply", operation_text)
+
+    def test_live_agent_probe_endpoint_records_effective_timeout_cap(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            result = {"status": "timeout", "agent_id": "agent-a", "source_event_id": "probe-source"}
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=LiveAgentProcessSupervisor(root)))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch("agentsassemble.gui.run_live_agent_probe", return_value=result) as probe:
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/probe",
+                        data=json.dumps({"timeout_seconds": 300}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=4) as response:
+                        json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(probe.call_args.kwargs["timeout_seconds"], 60.0)
+        self.assertEqual(operations["operations"][0]["details"]["timeout_seconds"], 60.0)
+
+    def test_live_agent_probe_endpoint_records_timeout_and_unknown_agent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=LiveAgentProcessSupervisor(root)))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                timeout_result = {"status": "timeout", "agent_id": "agent-a", "source_event_id": "probe-source"}
+                with patch("agentsassemble.gui.run_live_agent_probe", return_value=timeout_result):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/probe",
+                        data=b"{}",
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=4) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                with patch("agentsassemble.gui.run_live_agent_probe", side_effect=ValueError("Live agent missing was not found.")):
+                    missing_request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agents/missing/probe",
+                        data=json.dumps({"timeout_seconds": 300}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with self.assertRaises(HTTPError) as error:
+                        urlopen(missing_request, timeout=4)
+                    error.exception.read()
+                    error.exception.close()
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "timeout")
+        self.assertEqual(error.exception.code, 404)
+        self.assertEqual(
+            [(operation["operation"], operation["status"], operation["target_id"]) for operation in operations["operations"]],
+            [("probe.run", "failed", "agent-a"), ("probe.run", "failed", "missing")],
+        )
+        self.assertEqual(operations["operations"][1]["details"]["timeout_seconds"], 60.0)
+
     def test_live_agent_health_keeps_reused_legacy_smoke_group_visible(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -1807,9 +1926,40 @@ class GuiServerTests(unittest.TestCase):
                 server.server_close()
 
             event = payload["event"]
-            self.assertEqual(event["actor_id"], "gemini-cli")
-            self.assertEqual(event["source_event_id"], "evt1")
-            self.assertEqual(event["auto_chain_depth"], 1)
+        self.assertEqual(event["actor_id"], "gemini-cli")
+        self.assertEqual(event["source_event_id"], "evt1")
+        self.assertEqual(event["auto_chain_depth"], 1)
+        self.assertTrue(event["live_agent_endpoint"])
+
+    def test_generic_lobby_post_cannot_mark_live_agent_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/lobby",
+                    data=json.dumps(
+                        {
+                            "name": "Agent A",
+                            "side": "other-agent",
+                            "message": "forged",
+                            "actor_id": "agent-a",
+                            "source_event_id": "probe-source",
+                            "live_agent_endpoint": True,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertFalse(payload["event"]["live_agent_endpoint"])
 
     def test_lobby_events_are_appended_and_sanitized(self):
         with tempfile.TemporaryDirectory() as temp_dir:

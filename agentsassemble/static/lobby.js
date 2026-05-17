@@ -124,6 +124,9 @@ export function renderLobby(options = {}) {
   lobby.querySelectorAll("[data-live-agent-engagement]").forEach((select) => {
     select.addEventListener("change", () => updateLiveAgentEngagement(select.dataset.liveAgentEngagement, select.value));
   });
+  lobby.querySelectorAll("[data-live-agent-probe]").forEach((button) => {
+    button.addEventListener("click", () => runLiveAgentProbe(button.dataset.liveAgentProbe));
+  });
   lobby.querySelector("#live-agent-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     await sendLiveAgentRegistration(event.currentTarget);
@@ -596,6 +599,8 @@ function renderLiveAgentCard(agent) {
   const status = agent.status || "offline";
   const runtimeDetails = liveAgentRuntimeDetails(agent);
   const lastError = String(agent.last_error || "").trim();
+  const agentId = String(agent.agent_id || "");
+  const probeRunning = state.liveAgentProbeRunning === agentId;
   return `
     <article class="live-agent-card live-agent-${escapeHtml(status)}">
       <div>
@@ -607,6 +612,7 @@ function renderLiveAgentCard(agent) {
       <select class="live-agent-engagement" data-live-agent-engagement="${escapeHtml(agent.agent_id || "")}" aria-label="engagement mode">
         ${renderEngagementModeOptions(agent.engagement_mode)}
       </select>
+      <button type="button" class="live-agent-probe" data-live-agent-probe="${escapeHtml(agentId)}" ${probeRunning || !agentId ? "disabled" : ""}>probe</button>
       ${runtimeDetails ? `<small class="live-agent-runtime">${escapeHtml(runtimeDetails)}</small>` : ""}
       ${lastError ? `<small class="live-agent-error-detail">${escapeHtml(lastError)}</small>` : ""}
     </article>
@@ -1227,6 +1233,34 @@ async function updateLiveAgentEngagement(agentId, engagementMode) {
   }
   await loadLiveAgentOperations({ background: true, force: true });
   renderLobby({ followLatest: false });
+}
+
+async function runLiveAgentProbe(agentId) {
+  if (!agentId || state.liveAgentProbeRunning) return;
+  state.liveAgentProbeRunning = agentId;
+  state.liveAgentStatus = { message: `${agentId} probe 진행 중`, tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson(`/api/live-agents/${encodeURIComponent(agentId)}/probe`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timeout_seconds: 12 }),
+    });
+    try {
+      const lobbyPayload = await fetchJson("/api/lobby");
+      setLobbyEvents(lobbyPayload.events || []);
+    } catch {
+      // Probe result is still useful if only the lobby refresh fails.
+    }
+    await refreshLiveAgentRuntimeSurfaces();
+    const tone = payload.status === "ok" ? "success" : "error";
+    state.liveAgentStatus = { message: `${agentId} probe ${payload.status || "unknown"}`, tone };
+  } catch {
+    state.liveAgentStatus = { message: `${agentId} probe 실패`, tone: "error" };
+  } finally {
+    state.liveAgentProbeRunning = "";
+    renderLobby({ followLatest: false });
+  }
 }
 
 async function loadCodexSessions(options = {}) {

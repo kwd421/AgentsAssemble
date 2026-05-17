@@ -42,6 +42,7 @@ class LobbyEvent:
     actor_id: str = ""
     source_event_id: str = ""
     auto_chain_depth: int = 0
+    live_agent_endpoint: bool = False
 
     @classmethod
     def from_payload(cls, payload: dict[str, object], channel: Literal["lobby", "side_chat"] = "lobby") -> LobbyEvent:
@@ -85,6 +86,7 @@ class LobbyEvent:
             actor_id=clean_lobby_text(payload.get("actor_id", ""), limit=64),
             source_event_id=clean_lobby_text(payload.get("source_event_id", ""), limit=128),
             auto_chain_depth=normalize_chain_depth(payload.get("auto_chain_depth")),
+            live_agent_endpoint=payload.get("live_agent_endpoint") is True,
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -101,6 +103,7 @@ class LobbyEvent:
             "actor_id": self.actor_id,
             "source_event_id": self.source_event_id,
             "auto_chain_depth": self.auto_chain_depth,
+            "live_agent_endpoint": self.live_agent_endpoint,
         }
 
 
@@ -169,12 +172,14 @@ def read_side_chat_events_after(path: Path, last_event_id: str | None, limit: in
     return _events_after_id(read_side_chat_events(path, limit=limit), last_event_id)
 
 
-def append_lobby_event_to_file(path: Path, payload: dict[str, object]) -> dict[str, object]:
+def append_lobby_event_to_file(path: Path, payload: dict[str, object], *, live_agent_endpoint: bool = False) -> dict[str, object]:
     path.parent.mkdir(parents=True, exist_ok=True)
     event = LobbyEvent.from_payload(payload)
+    event_payload = event.to_dict()
+    event_payload["live_agent_endpoint"] = live_agent_endpoint
     with path.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(event.to_dict(), ensure_ascii=False, sort_keys=True) + "\n")
-    return event.to_dict()
+        file.write(json.dumps(event_payload, ensure_ascii=False, sort_keys=True) + "\n")
+    return event_payload
 
 
 def append_side_chat_event_to_file(path: Path, payload: dict[str, object]) -> dict[str, object]:

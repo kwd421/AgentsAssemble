@@ -716,6 +716,10 @@
   padding: 0 7px;
 }
 
+.live-agent-probe {
+  min-height: 28px;
+}
+
 .live-agent-offline em {
   color: #ffc3c3;
 }

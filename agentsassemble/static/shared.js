@@ -13,6 +13,7 @@ export const state = {
   liveAgentsLoaded: false,
   liveAgentsLoading: false,
   liveAgentStatus: null,
+  liveAgentProbeRunning: "",
   liveAgentProcesses: [],
   liveAgentProcessesLoaded: false,
   liveAgentProcessesLoading: false,
