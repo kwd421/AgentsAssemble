@@ -41,6 +41,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('showAppStatus("Mock Demo 실행 중"', script)
         self.assertIn('showAppStatus("Mock Demo 생성 완료"', script)
         self.assertIn(".app-status", css)
+        self.assertIn("async function responseErrorMessage", script)
+        self.assertIn("payload?.error || payload?.message || fallback", script)
 
     def test_lobby_separates_stage_from_activity_feed(self):
         script = static_js()
@@ -145,6 +147,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('state.liveAgentProcessStatus = { message: `readiness ${payload.status || "unknown"}`, tone };', script)
         self.assertIn('state.liveAgentProcessStatus = { message: "상주 config 예비점검 중", tone: "info" };', script)
         self.assertIn('state.liveAgentProcessStatus = { message: `preflight ${payload.status || "unknown"} · ${summary.agents || 0} agents`, tone };', script)
+        self.assertIn('state.liveAgentProcessStatus = { message: `상주 그룹 시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };', script)
+        self.assertIn('state.liveAgentProcessStatus = { message: `${groupId} 재시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };', script)
         self.assertIn("async function stopLiveAgentProcessGroup", script)
         self.assertIn("async function restartLiveAgentProcessGroup", script)
         self.assertIn("async function sendLiveAgentRegistration", script)

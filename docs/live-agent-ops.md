@@ -38,6 +38,8 @@ python3 -m agentsassemble.cli live-agent preflight \
 
 The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not execute provider commands. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, local command executables are present for `local_cli` and `live_session`, and remote bridge agents have an endpoint plus an available `auth_ref`. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint. It cannot prove Claude, Gemini, Cursor, account login, billing, subscription, model availability, network access, bridge command execution, or native PTY/session readiness.
 
+Supervised process start and restart run this same preflight gate automatically inside the local GUI supervisor before opening a log file or launching `run-group`. A failed gate returns a GUI/API/CLI error immediately and leaves no new process record behind. The GUI status line shows the refusal reason returned by the API. The check runs in the GUI server environment, so PATH and `env:` auth references are evaluated from the process that would launch the resident group.
+
 ## Provider Runtime Health
 
 Before running a meeting with API, local model, bridge, Codex, or CLI-backed providers, check the host-approved provider config:
@@ -302,7 +304,7 @@ Use the GUI "상주 실행" panel for supervised process records and stop contro
 - restart backoff: seconds between crash detection and relaunch, written as `restart_backoff_seconds`
 - press `시작`
 
-The GUI start button runs the same resident group through the local process supervisor. Group records and log tails remain visible even after the process stops or crashes. Auto restart only applies to a group launched with that option enabled, and it starts a fresh local process rather than attaching to an old PID.
+The GUI start button runs the same resident group through the local process supervisor. It preflights the config first, then launches only when the config passes. Group records and log tails remain visible after a launched process stops or crashes. Auto restart only applies to a group launched with that option enabled, and it starts a fresh local process rather than attaching to an old PID.
 
 The same supervised start path is available from the CLI:
 
@@ -338,7 +340,7 @@ curl -X POST \
   http://127.0.0.1:8765/api/live-agent-processes/local-cli-group/stop
 ```
 
-Use the GUI restart button on a stopped, crashed, or recovered group to relaunch it from the persisted `config_path` and `server`. The HTTP restart path is:
+Use the GUI restart button on a stopped, crashed, or recovered group to relaunch it from the persisted `config_path` and `server`. Restart also reruns preflight before launching, so a config or environment that became invalid while the group was down is refused synchronously. The HTTP restart path is:
 
 ```bash
 curl -X POST \

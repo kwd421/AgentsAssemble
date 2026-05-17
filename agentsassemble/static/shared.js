@@ -98,8 +98,23 @@ export function escapeHtml(value) {
 
 export async function fetchJson(url, options) {
   const response = await fetch(url, options);
-  if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+  if (!response.ok) throw new Error(await responseErrorMessage(response));
   return response.json();
+}
+
+async function responseErrorMessage(response) {
+  const fallback = `Request failed: ${response.status}`;
+  try {
+    const contentType = response.headers.get("Content-Type") || "";
+    if (contentType.includes("application/json")) {
+      const payload = await response.json();
+      return String(payload?.error || payload?.message || fallback);
+    }
+    const text = (await response.text()).trim();
+    return text || fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export function lobbyEventsSignature(events) {

@@ -987,8 +987,8 @@ async function startLiveAgentProcessGroup(form) {
     setLiveAgentProcesses(payload.groups || []);
     state.liveAgentProcessesLoaded = true;
     state.liveAgentProcessStatus = { message: `${payload.group?.group_id || "live-agents"} 시작됨`, tone: "success" };
-  } catch {
-    state.liveAgentProcessStatus = { message: "상주 그룹 시작 실패", tone: "error" };
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `상주 그룹 시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   } finally {
     state.liveAgentProcessStartRunning = false;
     renderLobby({ followLatest: false });
@@ -1027,8 +1027,8 @@ async function restartLiveAgentProcessGroup(groupId) {
     setLiveAgentProcesses(payload.groups || []);
     state.liveAgentProcessesLoaded = true;
     state.liveAgentProcessStatus = { message: `${groupId} 재시작됨`, tone: "success" };
-  } catch {
-    state.liveAgentProcessStatus = { message: `${groupId} 재시작 실패`, tone: "error" };
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `${groupId} 재시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   }
   renderLobby({ followLatest: false });
 }

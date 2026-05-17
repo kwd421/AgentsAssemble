@@ -8,7 +8,16 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
+from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor as _LiveAgentProcessSupervisor
+
+
+def _ok_preflight(path, *, server_override=None):
+    return {"status": "ok", "checks": [], "agents": []}
+
+
+def LiveAgentProcessSupervisor(output_root, **kwargs):
+    kwargs.setdefault("preflight_checker", _ok_preflight)
+    return _LiveAgentProcessSupervisor(output_root, **kwargs)
 
 
 class FakeProcess:
@@ -96,6 +105,257 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             self.assertTrue(record["diagnostic"])
             persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
             self.assertTrue(persisted["groups"][0]["diagnostic"])
+
+    def test_start_group_preflights_config_before_launching_process(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            preflights = []
+            launched = []
+
+            def preflight_checker(path, *, server_override=None):
+                preflights.append((path, server_override, len(launched)))
+                return {"status": "ok", "checks": [], "agents": []}
+
+            def command_factory(command, **kwargs):
+                launched.append(command)
+                return FakeProcess()
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                preflight_checker=preflight_checker,
+            )
+
+            record = supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew")
+
+        self.assertEqual(record["status"], "running")
+        self.assertEqual(preflights, [(config_path, "http://room.local", 0)])
+        self.assertEqual(len(launched), 1)
+
+    def test_start_group_refuses_failed_preflight_without_launching_process_or_log_record(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "bad-agent", "command": ["missing"]}]}', encoding="utf-8")
+
+            def preflight_checker(path, *, server_override=None):
+                return {
+                    "status": "failed",
+                    "checks": [],
+                    "agents": [
+                        {
+                            "agent_id": "bad-agent",
+                            "checks": [
+                                {
+                                    "id": "command",
+                                    "status": "failed",
+                                    "message": "Command not found: missing",
+                                }
+                            ],
+                        }
+                    ],
+                }
+
+            def command_factory(command, **kwargs):
+                raise AssertionError("preflight failure must not launch a process")
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                preflight_checker=preflight_checker,
+            )
+
+            with self.assertRaisesRegex(ValueError, "Live agent preflight failed: bad-agent command: Command not found"):
+                supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew")
+
+            self.assertFalse((root / "live-agent-runs" / "crew.log").exists())
+            self.assertFalse((root / "live-agent-runs" / "processes.json").exists())
+
+    def test_restart_group_refuses_failed_preflight_without_launching_process(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "bad-agent", "command": ["missing"]}]}', encoding="utf-8")
+            (runs_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "stopped",
+                                "pid": None,
+                                "config_path": str(config_path),
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "2026-05-17T12:01:00+00:00",
+                                "returncode": 0,
+                                "last_error": "",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            launched = []
+
+            def preflight_checker(path, *, server_override=None):
+                return {
+                    "status": "failed",
+                    "checks": [],
+                    "agents": [
+                        {
+                            "agent_id": "bad-agent",
+                            "checks": [
+                                {
+                                    "id": "command",
+                                    "status": "failed",
+                                    "message": "Command not found: missing",
+                                }
+                            ],
+                        }
+                    ],
+                }
+
+            def command_factory(command, **kwargs):
+                launched.append(command)
+                return FakeProcess()
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                preflight_checker=preflight_checker,
+            )
+
+            with self.assertRaisesRegex(ValueError, "bad-agent command"):
+                supervisor.restart_group("crew")
+
+        self.assertEqual(launched, [])
+
+    def test_auto_restart_failed_preflight_marks_error_without_relaunching_process(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            reports = {
+                "current": {"status": "ok", "checks": [], "agents": []},
+            }
+            processes = []
+
+            def preflight_checker(path, *, server_override=None):
+                return reports["current"]
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=6000 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                preflight_checker=preflight_checker,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=0,
+            )
+            reports["current"] = {
+                "status": "failed",
+                "checks": [],
+                "agents": [
+                    {
+                        "agent_id": "bad-agent",
+                        "checks": [
+                            {
+                                "id": "command",
+                                "status": "failed",
+                                "message": "Command not found: missing",
+                            }
+                        ],
+                    }
+                ],
+            }
+            processes[0].returncode = 2
+
+            groups = supervisor.list_groups()
+
+        self.assertEqual(len(processes), 1)
+        self.assertEqual(groups[0]["status"], "error")
+        self.assertEqual(groups[0]["restart_count"], 1)
+        self.assertIn("Live agent preflight failed", groups[0]["last_error"])
+        self.assertIn("bad-agent command", groups[0]["last_error"])
+
+    def test_delayed_auto_restart_failed_preflight_marks_error_without_relaunching_process(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            reports = {
+                "current": {"status": "ok", "checks": [], "agents": []},
+            }
+            processes = []
+
+            def preflight_checker(path, *, server_override=None):
+                return reports["current"]
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=6100 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                preflight_checker=preflight_checker,
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+            )
+            processes[0].returncode = 2
+            waiting = supervisor.list_groups()
+            reports["current"] = {
+                "status": "failed",
+                "checks": [],
+                "agents": [
+                    {
+                        "agent_id": "bad-agent",
+                        "checks": [
+                            {
+                                "id": "command",
+                                "status": "failed",
+                                "message": "Command not found: missing",
+                            }
+                        ],
+                    }
+                ],
+            }
+            current_time["value"] += timedelta(seconds=11)
+
+            groups = supervisor.list_groups()
+
+        self.assertEqual(len(processes), 1)
+        self.assertEqual(waiting[0]["status"], "restarting")
+        self.assertEqual(groups[0]["status"], "error")
+        self.assertIsNone(groups[0]["pid"])
+        self.assertEqual(groups[0]["restart_count"], 1)
+        self.assertIn("Live agent preflight failed", groups[0]["last_error"])
+        self.assertIn("bad-agent command", groups[0]["last_error"])
 
     def test_stop_group_interrupts_owned_process_and_marks_stopped(self):
         with tempfile.TemporaryDirectory() as temp_dir:

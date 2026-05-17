@@ -615,6 +615,32 @@ Document that bridge health probes call only `/agentsassemble/health`, while res
 
 ---
 
+### Task 18: Supervised Process Preflight Gate
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_gui_server.py`
+
+- [x] **Step 1: Add RED coverage for refused invalid launches**
+
+Cover supervised start, manual restart, immediate auto-restart, delayed auto-restart, API start, and API restart with failed preflight. The tests assert that failed configs raise before `command_factory`, before log creation, and before new process records are written.
+
+- [x] **Step 2: Gate the shared launch boundary**
+
+Run `preflight_live_agent_config()` inside `LiveAgentProcessSupervisor._start_group_unlocked()` after duplicate/existence checks and before log/process side effects. Keep GUI and CLI paths thin so start, restart, immediate auto-restart, and delayed monitor restart all share the same guard.
+
+- [x] **Step 3: Surface concise operator failures**
+
+Format failed top-level and per-agent checks into a short `ValueError` message. GUI/API/CLI callers receive an immediate refused-start error, the GUI status line surfaces the API refusal reason, and auto-restart records the failure in `last_error` while leaving the group in `error`.
+
+- [x] **Step 4: Document start/restart preflight semantics**
+
+Document that supervised start and restart now run preflight automatically in the GUI server environment before opening logs or launching `run-group`.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -9,6 +9,7 @@ from io import StringIO
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from agentsassemble.gui import (
@@ -33,6 +34,7 @@ from agentsassemble.gui import (
 from agentsassemble.meeting_events import append_live_event, write_live_state
 from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
 from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 
 
 class GuiServerTests(unittest.TestCase):
@@ -477,6 +479,116 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(payload["group"]["max_restarts"], 0)
             self.assertEqual(supervisor.started, [0])
+
+    def test_live_agent_process_start_returns_400_when_preflight_fails_without_launch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text(
+                '{"agents": [{"agent_id": "bad-agent", "command": ["definitely-missing-agentsassemble-cli"]}]}',
+                encoding="utf-8",
+            )
+
+            def command_factory(command, **kwargs):
+                raise AssertionError("preflight failure must not launch a process")
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/start",
+                    data=json.dumps({"config_path": str(config_path), "group_id": "crew"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urlopen(request, timeout=4)
+                except HTTPError as error:
+                    error_code = error.code
+                    body = error.read().decode("utf-8")
+                    error.close()
+                else:
+                    self.fail("preflight failure should return HTTP 400")
+            finally:
+                server.shutdown()
+                server.server_close()
+                supervisor.close()
+
+            self.assertEqual(error_code, 400)
+            self.assertIn("Live agent preflight failed", body)
+            self.assertIn("bad-agent command", body)
+            self.assertFalse((root / "live-agent-runs" / "crew.log").exists())
+            self.assertFalse((root / "live-agent-runs" / "processes.json").exists())
+
+    def test_live_agent_process_restart_returns_400_when_preflight_fails_without_launch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            config_path = root / "live-agents.json"
+            config_path.write_text(
+                '{"agents": [{"agent_id": "bad-agent", "command": ["definitely-missing-agentsassemble-cli"]}]}',
+                encoding="utf-8",
+            )
+            (runs_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "stopped",
+                                "pid": None,
+                                "config_path": str(config_path),
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "2026-05-17T12:01:00+00:00",
+                                "returncode": 0,
+                                "last_error": "",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def command_factory(command, **kwargs):
+                raise AssertionError("preflight failure must not launch a process")
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/crew/restart",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urlopen(request, timeout=4)
+                except HTTPError as error:
+                    error_code = error.code
+                    body = error.read().decode("utf-8")
+                    error.close()
+                else:
+                    self.fail("preflight failure should return HTTP 400")
+            finally:
+                server.shutdown()
+                server.server_close()
+                supervisor.close()
+
+            persisted = json.loads((runs_dir / "processes.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(error_code, 400)
+            self.assertIn("Live agent preflight failed", body)
+            self.assertIn("bad-agent command", body)
+            self.assertFalse((runs_dir / "crew.log").exists())
+            self.assertEqual(persisted["groups"][0]["status"], "stopped")
+            self.assertEqual(persisted["groups"][0]["pid"], None)
 
     def test_live_agent_smoke_endpoint_runs_credential_free_group(self):
         with tempfile.TemporaryDirectory() as temp_dir:

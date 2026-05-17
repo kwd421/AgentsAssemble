@@ -11,6 +11,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
+from agentsassemble.live_agent_preflight import preflight_live_agent_config
+
 
 class LiveAgentProcessSupervisor:
     def __init__(
@@ -21,12 +23,14 @@ class LiveAgentProcessSupervisor:
         now_fn: Callable[[], datetime] | None = None,
         python_executable: str | None = None,
         log_tail_bytes: int = 4000,
+        preflight_checker: Callable[..., dict[str, object]] | None = None,
     ) -> None:
         self.output_root = output_root
         self.command_factory = command_factory or subprocess.Popen
         self.now_fn = now_fn or (lambda: datetime.now(UTC))
         self.python_executable = python_executable or sys.executable
         self.log_tail_bytes = log_tail_bytes
+        self.preflight_checker = preflight_checker or preflight_live_agent_config
         self._records: dict[str, dict[str, object]] = self._read_records()
         self._processes: dict[str, object] = {}
         self._logs: dict[str, object] = {}
@@ -173,6 +177,7 @@ class LiveAgentProcessSupervisor:
                 raise ValueError(f"Live agent group {clean_group_id} is already running.")
         if not config_path.exists():
             raise ValueError(f"Live agent config {config_path} was not found.")
+        self._raise_for_failed_preflight(config_path, server=server)
 
         log_path = self._log_path(clean_group_id)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -411,6 +416,11 @@ class LiveAgentProcessSupervisor:
         visible["log_tail"] = _read_log_tail(Path(str(record.get("log_path") or "")), self.log_tail_bytes)
         return visible
 
+    def _raise_for_failed_preflight(self, config_path: Path, *, server: str) -> None:
+        report = self.preflight_checker(config_path, server_override=server)
+        if report.get("status") != "ok":
+            raise ValueError(_preflight_failure_message(report))
+
 
 def _clean_group_id(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value or "").strip()).strip(".-")
@@ -451,6 +461,33 @@ def _read_log_tail(path: Path, byte_limit: int) -> str:
         size = file.tell()
         file.seek(max(0, size - byte_limit))
         return file.read(byte_limit).decode("utf-8", errors="replace")
+
+
+def _preflight_failure_message(report: dict[str, object]) -> str:
+    failures: list[str] = []
+    top_checks = report.get("checks") if isinstance(report.get("checks"), list) else []
+    for check in top_checks:
+        if isinstance(check, dict) and check.get("status") == "failed":
+            failures.append(_preflight_check_summary("", check))
+    agents = report.get("agents") if isinstance(report.get("agents"), list) else []
+    for agent in agents:
+        if not isinstance(agent, dict):
+            continue
+        agent_id = str(agent.get("agent_id") or "agent")
+        checks = agent.get("checks") if isinstance(agent.get("checks"), list) else []
+        for check in checks:
+            if isinstance(check, dict) and check.get("status") == "failed":
+                failures.append(_preflight_check_summary(agent_id, check))
+    if not failures:
+        return "Live agent preflight failed."
+    return "Live agent preflight failed: " + "; ".join(failures[:5])
+
+
+def _preflight_check_summary(prefix: str, check: dict[str, object]) -> str:
+    check_id = str(check.get("id") or "check")
+    message = str(check.get("message") or "failed")
+    label = f"{prefix} {check_id}".strip()
+    return f"{label}: {message}"
 
 
 def _should_auto_restart(record: dict[str, object], returncode: object) -> bool:
