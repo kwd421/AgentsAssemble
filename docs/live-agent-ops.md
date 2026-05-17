@@ -199,7 +199,7 @@ Provider command failures are recorded on the live-agent presence as `last_error
 
 After restarting the GUI:
 
-- old `running` records in `.agentsassemble/live-agent-runs/processes.json` become `unknown`;
+- old `running` records in `.agentsassemble/live-agent-runs/processes.json` become `unknown` with their stale `pid` cleared;
 - old `stopped` and `error` records remain listed;
 - previous logs remain inspectable through their `log_path`;
 - the new GUI supervisor does not claim it can stop PIDs it did not launch;

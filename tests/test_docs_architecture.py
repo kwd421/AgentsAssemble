@@ -70,6 +70,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn(".agentsassemble/live_agents.json", doc)
         self.assertIn(".agentsassemble/lobby.jsonl", doc)
         self.assertIn(".agentsassemble/live-agent-runs/processes.json", doc)
+        self.assertIn("become `unknown` with their stale `pid` cleared", doc)
         self.assertIn("Delegate provider subprocess stdout/stderr is captured by the runner", doc)
         self.assertIn("live-agent heartbeat", doc)
         self.assertIn("--status error", doc)

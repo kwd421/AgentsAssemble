@@ -357,6 +357,7 @@ class LiveAgentProcessSupervisor:
         for record in self._records.values():
             if record.get("status") == "running":
                 record["status"] = "unknown"
+                record["pid"] = None
                 changed = True
         return changed
 

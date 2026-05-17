@@ -264,10 +264,18 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             )
 
             recovered = {record["group_id"]: record for record in LiveAgentProcessSupervisor(root).list_groups()}
+            persisted = json.loads((runs_dir / "processes.json").read_text(encoding="utf-8"))
+            persisted_by_id = {record["group_id"]: record for record in persisted["groups"]}
 
         self.assertEqual(recovered["orphan-running"]["status"], "unknown")
+        self.assertIsNone(recovered["orphan-running"]["pid"])
+        self.assertIsNone(persisted_by_id["orphan-running"]["pid"])
         self.assertEqual(recovered["finished"]["status"], "stopped")
+        self.assertEqual(recovered["finished"]["pid"], 2222)
+        self.assertEqual(persisted_by_id["finished"]["pid"], 2222)
         self.assertEqual(recovered["crashed"]["status"], "error")
+        self.assertEqual(recovered["crashed"]["pid"], 3333)
+        self.assertEqual(persisted_by_id["crashed"]["pid"], 3333)
 
     def test_list_groups_includes_bounded_log_tail_without_persisting_it(self):
         with tempfile.TemporaryDirectory() as temp_dir:
