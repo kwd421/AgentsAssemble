@@ -121,6 +121,70 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual(bindings["show_me_the_feats"]["join_mode"], "fresh")
             self.assertEqual(bindings["fanboard_skeptic"]["join_mode"], "fresh")
 
+    def test_live_agent_register_posts_connection_payload(self):
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value={"agent": {"agent_id": "claude-code-live"}}) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "register",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-code-live",
+                        "--display-name",
+                        "Claude Code Live",
+                        "--provider-kind",
+                        "claude_code",
+                        "--connection-kind",
+                        "local_cli",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents",
+            method="POST",
+            payload={
+                "agent_id": "claude-code-live",
+                "display_name": "Claude Code Live",
+                "provider_kind": "claude_code",
+                "connection_kind": "local_cli",
+                "session_id": "",
+                "endpoint": "",
+                "meeting_id": "",
+                "engagement_mode": "mentioned",
+                "capabilities": ["room_chat", "mentions"],
+            },
+        )
+        self.assertIn("claude-code-live", stdout.getvalue())
+
+    def test_live_agent_say_posts_lobby_message(self):
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value={"event": {"id": "evt1"}}) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "say",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "gemini-cli",
+                        "Gemini",
+                        "접속",
+                        "확인",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents/gemini-cli/lobby",
+            method="POST",
+            payload={"message": "Gemini 접속 확인", "kind": "message"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,4 @@
-import { bindingSummary, displayTopic, escapeHtml, fetchJson, roleMeta, setLobbyEvents, state } from "./shared.js";
+import { bindingSummary, displayTopic, escapeHtml, fetchJson, roleMeta, setLiveAgents, setLobbyEvents, state } from "./shared.js";
 
 const lobbySides = new Set(["mine", "my-agent", "other", "other-agent"]);
 
@@ -75,6 +75,13 @@ export function renderLobby(options = {}) {
   lobby.querySelectorAll("[data-lobby-action]").forEach((button) => {
     button.addEventListener("click", () => sendLobbyAction(button));
   });
+  lobby.querySelector("#live-agent-refresh")?.addEventListener("click", () => {
+    loadLiveAgents({ force: true });
+  });
+  lobby.querySelector("#live-agent-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await sendLiveAgentRegistration(event.currentTarget);
+  });
   lobby.querySelector("#codex-session-refresh")?.addEventListener("click", () => {
     loadCodexSessions({ force: true });
   });
@@ -84,6 +91,9 @@ export function renderLobby(options = {}) {
   });
   if (!state.codexSessionsLoaded && !state.codexSessionsLoading) {
     loadCodexSessions();
+  }
+  if (!state.liveAgentsLoaded && !state.liveAgentsLoading) {
+    loadLiveAgents();
   }
   if (shouldFollowLatest) scrollLobbyFeedToLatest(lobby);
   else restoreLobbyFeedScroll(lobby, previousScrollTop);
@@ -214,10 +224,76 @@ function renderLobbyRoster(roster) {
           ? roster.map(renderRosterUser).join("")
           : '<p class="roster-empty">아직 관찰된 참여자가 없습니다.</p>'
       }
+      ${renderLiveAgentConnections()}
       ${renderApprovedBindings(state.payload?.meeting)}
       ${renderCodexSessionInvite(state.payload?.meeting)}
     </aside>
   `;
+}
+
+function renderLiveAgentConnections() {
+  const agents = state.liveAgents || [];
+  const liveCount = agents.filter((agent) => agent.status === "online" || agent.status === "working").length;
+  const status = state.liveAgentStatus;
+  return `
+    <section class="live-agent-connections" aria-label="살아있는 에이전트">
+      <div class="roster-head">
+        <strong>살아있는 에이전트</strong>
+        <span>${liveCount} online · ${agents.length} connected</span>
+      </div>
+      <div class="live-agent-list">
+        ${
+          agents.length
+            ? agents.map(renderLiveAgentCard).join("")
+            : '<p class="roster-empty">아직 접속 등록된 에이전트가 없습니다.</p>'
+        }
+      </div>
+      <form id="live-agent-form" class="live-agent-form">
+        <input id="live-agent-id" maxlength="64" placeholder="agent id" required />
+        <input id="live-agent-display-name" maxlength="64" placeholder="표시 이름" />
+        <select id="live-agent-provider-kind">
+          ${renderLiveAgentProviderOptions()}
+        </select>
+        <select id="live-agent-connection-kind">
+          <option value="local_cli">Local CLI</option>
+          <option value="remote_bridge">Remote bridge</option>
+          <option value="codex_resume">Codex resume</option>
+          <option value="manual">Manual</option>
+        </select>
+        <button type="submit" ${state.liveAgentsLoading ? "disabled" : ""}>접속 등록</button>
+        <button type="button" id="live-agent-refresh">갱신</button>
+      </form>
+      ${status ? `<p class="live-agent-status" data-tone="${escapeHtml(status.tone || "info")}">${escapeHtml(status.message)}</p>` : ""}
+    </section>
+  `;
+}
+
+function renderLiveAgentCard(agent) {
+  const status = agent.status || "offline";
+  return `
+    <article class="live-agent-card live-agent-${escapeHtml(status)}">
+      <div>
+        <strong>${escapeHtml(agent.display_name || agent.agent_id || "agent")}</strong>
+        <span>${escapeHtml(agent.agent_id || "")}</span>
+      </div>
+      <em>${escapeHtml(liveAgentStatusLabel(status))}</em>
+      <small>${escapeHtml(providerKindLabel(agent.provider_kind))} · ${escapeHtml(connectionKindLabel(agent.connection_kind))} · ${escapeHtml(agent.engagement_mode || "mentioned")}</small>
+    </article>
+  `;
+}
+
+function renderLiveAgentProviderOptions() {
+  return [
+    ["claude_code", "Claude Code"],
+    ["gemini", "Gemini"],
+    ["grok", "Grok"],
+    ["local_openai_compatible", "OpenAI-compatible"],
+    ["remote_http_bridge", "Remote HTTP"],
+    ["codex_live_session", "Codex Live"],
+    ["manual", "Manual"],
+  ]
+    .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`)
+    .join("");
 }
 
 function renderApprovedBindings(meeting) {
@@ -310,6 +386,30 @@ function shortSessionId(sessionId) {
   const value = String(sessionId || "");
   if (value.length <= 14) return value;
   return `${value.slice(0, 8)}...${value.slice(-4)}`;
+}
+
+function liveAgentStatusLabel(status) {
+  if (status === "online") return "온라인";
+  if (status === "working") return "작업 중";
+  if (status === "stale") return "응답 지연";
+  return "오프라인";
+}
+
+function providerKindLabel(kind) {
+  if (kind === "claude_code") return "Claude Code";
+  if (kind === "gemini") return "Gemini";
+  if (kind === "grok") return "Grok";
+  if (kind === "local_openai_compatible") return "OpenAI-compatible";
+  if (kind === "remote_http_bridge") return "Remote HTTP";
+  if (kind === "codex_live_session") return "Codex Live";
+  return kind || "Manual";
+}
+
+function connectionKindLabel(kind) {
+  if (kind === "local_cli") return "Local CLI";
+  if (kind === "remote_bridge") return "Remote bridge";
+  if (kind === "codex_resume") return "Codex resume";
+  return "Manual";
 }
 
 function renderRosterUser(user) {
@@ -415,6 +515,58 @@ async function sendLobbyRemote(message, speakerName, options = {}) {
   setLobbyEvents(payload.events || []);
   renderLobby({ followLatest: options.followLatest ?? isLobbyFeedNearBottom(document.querySelector("#lobby")) });
   document.querySelector("#lobby-message")?.focus();
+}
+
+async function loadLiveAgents(options = {}) {
+  if (state.liveAgentsLoading && !options.force) return;
+  state.liveAgentsLoading = true;
+  if (options.force) state.liveAgentStatus = { message: "살아있는 에이전트 갱신 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agents");
+    setLiveAgents(payload.agents || []);
+    state.liveAgentsLoaded = true;
+    if (state.liveAgentStatus?.message === "살아있는 에이전트 갱신 중") {
+      state.liveAgentStatus = null;
+    }
+  } catch {
+    state.liveAgentStatus = { message: "살아있는 에이전트 목록을 불러오지 못했습니다.", tone: "error" };
+    state.liveAgentsLoaded = true;
+  } finally {
+    state.liveAgentsLoading = false;
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function sendLiveAgentRegistration(form) {
+  const agentId = form.querySelector("#live-agent-id")?.value.trim() || "";
+  if (!agentId) return;
+  const displayName = form.querySelector("#live-agent-display-name")?.value.trim() || agentId;
+  const providerKind = form.querySelector("#live-agent-provider-kind")?.value || "manual";
+  const connectionKind = form.querySelector("#live-agent-connection-kind")?.value || "manual";
+  state.liveAgentStatus = { message: "에이전트 접속 등록 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent_id: agentId,
+        display_name: displayName,
+        provider_kind: providerKind,
+        connection_kind: connectionKind,
+        meeting_id: state.payload?.meeting?.meeting_id,
+        engagement_mode: "mentioned",
+        capabilities: ["room_chat", "mentions"],
+      }),
+    });
+    setLiveAgents(payload.agents || []);
+    state.liveAgentsLoaded = true;
+    state.liveAgentStatus = { message: `${displayName} 접속 등록됨`, tone: "success" };
+  } catch {
+    state.liveAgentStatus = { message: "에이전트 접속 등록 실패", tone: "error" };
+  }
+  renderLobby({ followLatest: false });
 }
 
 async function loadCodexSessions(options = {}) {

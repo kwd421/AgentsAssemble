@@ -561,6 +561,126 @@
   border-left-color: var(--purple);
 }
 
+.live-agent-connections {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.live-agent-list {
+  display: grid;
+  gap: 7px;
+}
+
+.live-agent-card {
+  background: rgba(8, 11, 17, 0.55);
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-left: 4px solid rgba(212, 225, 255, 0.28);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+}
+
+.live-agent-online {
+  border-left-color: rgba(130, 209, 115, 0.88);
+}
+
+.live-agent-working {
+  border-left-color: rgba(242, 184, 75, 0.92);
+}
+
+.live-agent-stale {
+  border-left-color: rgba(255, 183, 96, 0.58);
+}
+
+.live-agent-offline {
+  border-left-color: rgba(255, 123, 123, 0.58);
+}
+
+.live-agent-card strong,
+.live-agent-card span,
+.live-agent-card em,
+.live-agent-card small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-agent-card span,
+.live-agent-card small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.live-agent-card em {
+  color: #bdf2b4;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.live-agent-stale em {
+  color: #ffd89a;
+}
+
+.live-agent-offline em {
+  color: #ffc3c3;
+}
+
+.live-agent-form {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.live-agent-form input,
+.live-agent-form select,
+.live-agent-form button {
+  min-height: 30px;
+}
+
+.live-agent-form input,
+.live-agent-form select {
+  background: rgba(8, 11, 17, 0.68);
+  border: 1px solid rgba(212, 225, 255, 0.14);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.live-agent-form button {
+  background: rgba(69, 217, 245, 0.09);
+  border-color: rgba(69, 217, 245, 0.3);
+  color: #bdf4ff;
+}
+
+.live-agent-status {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: 7px 8px;
+}
+
+.live-agent-status[data-tone="success"] {
+  border-color: rgba(130, 209, 115, 0.34);
+  color: #bdf2b4;
+}
+
+.live-agent-status[data-tone="error"] {
+  border-color: rgba(255, 123, 123, 0.36);
+  color: #ffc3c3;
+}
+
 .codex-session-invite {
   border-top: 1px solid var(--line);
   display: grid;

@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 from agentsassemble.bridges.claude_code_bridge import serve_bridge
@@ -76,6 +79,33 @@ def build_parser() -> argparse.ArgumentParser:
     bridge.add_argument("--token", required=True)
     bridge.add_argument("--command", dest="bridge_command", default="claude")
 
+    live_server = argparse.ArgumentParser(add_help=False)
+    live_server.add_argument("--server", default="http://127.0.0.1:8765", help="AgentsAssemble GUI server URL.")
+
+    live_agent = subparsers.add_parser("live-agent", help="Connect an external live agent to a GUI room.")
+    live_agent_subparsers = live_agent.add_subparsers(dest="live_agent_command", required=True)
+
+    live_register = live_agent_subparsers.add_parser("register", parents=[live_server], help="Register a live agent.")
+    live_register.add_argument("--agent-id", required=True)
+    live_register.add_argument("--display-name", default="")
+    live_register.add_argument("--provider-kind", default="manual")
+    live_register.add_argument("--connection-kind", choices=["codex_resume", "local_cli", "remote_bridge", "manual"], default="manual")
+    live_register.add_argument("--session-id", default="")
+    live_register.add_argument("--endpoint", default="")
+    live_register.add_argument("--meeting-id", default="")
+    live_register.add_argument("--engagement-mode", default="mentioned")
+
+    live_heartbeat = live_agent_subparsers.add_parser("heartbeat", parents=[live_server], help="Update live agent presence.")
+    live_heartbeat.add_argument("--agent-id", required=True)
+    live_heartbeat.add_argument("--status", choices=["online", "working", "offline"], default="online")
+
+    live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
+    live_say.add_argument("--agent-id", required=True)
+    live_say.add_argument("message", nargs="+")
+
+    live_room = live_agent_subparsers.add_parser("room", parents=[live_server], help="Read the live room snapshot for an agent.")
+    live_room.add_argument("--agent-id", required=True)
+
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
     session_subparsers = sessions.add_subparsers(dest="sessions_command", required=True)
 
@@ -118,10 +148,74 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "claude-bridge":
         serve_bridge(host=args.host, port=args.port, token=args.token, command=args.bridge_command)
         return 0
+    if args.command == "live-agent":
+        return run_live_agent_command(args)
     if args.command == "sessions":
         return run_sessions_command(args)
 
     return 1
+
+
+def run_live_agent_command(args: argparse.Namespace) -> int:
+    try:
+        if args.live_agent_command == "register":
+            payload = {
+                "agent_id": args.agent_id,
+                "display_name": args.display_name,
+                "provider_kind": args.provider_kind,
+                "connection_kind": args.connection_kind,
+                "session_id": args.session_id,
+                "endpoint": args.endpoint,
+                "meeting_id": args.meeting_id,
+                "engagement_mode": args.engagement_mode,
+                "capabilities": ["room_chat", "mentions"],
+            }
+            response = _request_json(_server_url(args.server, "/api/live-agents"), method="POST", payload=payload)
+            agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
+            print(f"Registered {agent.get('agent_id') or args.agent_id}")
+            return 0
+        if args.live_agent_command == "heartbeat":
+            agent_id = urllib.parse.quote(args.agent_id, safe="")
+            response = _request_json(
+                _server_url(args.server, f"/api/live-agents/{agent_id}/heartbeat"),
+                method="POST",
+                payload={"status": args.status},
+            )
+            agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
+            print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('status') or args.status}")
+            return 0
+        if args.live_agent_command == "say":
+            agent_id = urllib.parse.quote(args.agent_id, safe="")
+            response = _request_json(
+                _server_url(args.server, f"/api/live-agents/{agent_id}/lobby"),
+                method="POST",
+                payload={"message": " ".join(args.message), "kind": "message"},
+            )
+            event = response.get("event", {}) if isinstance(response.get("event"), dict) else {}
+            print(f"Posted {event.get('id') or 'lobby message'}")
+            return 0
+        if args.live_agent_command == "room":
+            agent_id = urllib.parse.quote(args.agent_id, safe="")
+            response = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
+            print(json.dumps(response, ensure_ascii=False, indent=2))
+            return 0
+    except (OSError, urllib.error.URLError, json.JSONDecodeError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    return 1
+
+
+def _server_url(server: str, path: str) -> str:
+    return f"{server.rstrip('/')}{path}"
+
+
+def _request_json(url: str, *, method: str = "GET", payload: dict[str, object] | None = None) -> dict[str, object]:
+    data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {"Content-Type": "application/json"} if payload is not None else {}
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(request, timeout=10) as response:
+        loaded = json.loads(response.read().decode("utf-8"))
+    return loaded if isinstance(loaded, dict) else {}
 
 
 def run_sessions_command(args: argparse.Namespace) -> int:

@@ -16,6 +16,7 @@ from agentsassemble.codex_sessions import (
     write_agent_config,
 )
 from agentsassemble.config import load_agent_runtime_config, load_council_config, providers_from_config
+from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_events import (
     append_lobby_event_to_file,
@@ -277,6 +278,47 @@ def codex_sessions_payload(limit: int = 20) -> dict[str, object]:
     return {"sessions": list_codex_sessions(limit=limit)}
 
 
+def live_agents_payload(output_root: Path) -> dict[str, object]:
+    return {"agents": read_live_agents(output_root)}
+
+
+def connect_live_agent_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
+    return {"agent": connect_live_agent(output_root, payload), "agents": read_live_agents(output_root)}
+
+
+def live_agent_room_payload(output_root: Path, agent_id: str) -> dict[str, object]:
+    agent = _live_agent_for_id(output_root, agent_id)
+    return {
+        "agent": agent,
+        "agents": read_live_agents(output_root),
+        "meetings": list_meetings(output_root),
+        "lobby_events": read_lobby(output_root),
+        "side_chat_events": read_side_chat(output_root),
+    }
+
+
+def live_agent_heartbeat_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
+    agent = heartbeat_live_agent(output_root, agent_id, status=str(payload.get("status") or "online"))
+    return {"agent": agent, "agents": read_live_agents(output_root)}
+
+
+def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
+    agent = heartbeat_live_agent(output_root, agent_id, status="online")
+    message = str(payload.get("message") or "").strip()
+    if not message:
+        raise ValueError("Message is required.")
+    event = append_lobby_event(
+        output_root,
+        {
+            "name": agent.get("display_name") or agent.get("agent_id") or agent_id,
+            "side": "other-agent",
+            "kind": payload.get("kind") or "message",
+            "message": message,
+        },
+    )
+    return {"agent": agent, "event": event, "events": read_lobby(output_root)}
+
+
 def codex_session_invite_payload(
     output_root: Path,
     *,
@@ -314,6 +356,20 @@ def _binding_for_role(bindings: object, role_id: str) -> dict[str, object]:
         if binding.get("role_id") == role_id:
             return binding
     raise ValueError(f"No Codex live binding was written for role {role_id}.")
+
+
+def _live_agent_for_id(output_root: Path, agent_id: str) -> dict[str, object]:
+    for agent in read_live_agents(output_root):
+        if agent.get("agent_id") == agent_id:
+            return agent
+    raise ValueError(f"Live agent {agent_id} was not found.")
+
+
+def _live_agent_action_path(path: str, action: str) -> str | None:
+    parts = path.strip("/").split("/")
+    if len(parts) == 4 and parts[0] == "api" and parts[1] == "live-agents" and parts[3] == action:
+        return unquote(parts[2])
+    return None
 
 
 def _resolve_lobby_meeting_dir(output_root: Path, meeting_id: str | None) -> Path:
@@ -463,6 +519,16 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
             if path == "/api/providers":
                 self._send_json(provider_catalog_payload())
                 return
+            if path == "/api/live-agents":
+                self._send_json(live_agents_payload(output_root))
+                return
+            live_agent_room_id = _live_agent_action_path(path, "room")
+            if live_agent_room_id is not None:
+                try:
+                    self._send_json(live_agent_room_payload(output_root, live_agent_room_id))
+                except ValueError as error:
+                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
+                return
             if path == "/api/codex-sessions":
                 self._send_json(codex_sessions_payload(limit=self._limit(query, default=20)))
                 return
@@ -539,6 +605,59 @@ def _make_handler(output_root: Path) -> type[BaseHTTPRequestHandler]:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
+                return
+            if parsed.path == "/api/live-agents":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    live_agent = connect_live_agent_payload(output_root, payload)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(live_agent)
+                return
+            live_agent_heartbeat_id = _live_agent_action_path(parsed.path, "heartbeat")
+            if live_agent_heartbeat_id is not None:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    heartbeat = live_agent_heartbeat_payload(output_root, live_agent_heartbeat_id, payload)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(heartbeat)
+                return
+            live_agent_lobby_id = _live_agent_action_path(parsed.path, "lobby")
+            if live_agent_lobby_id is not None:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    message = live_agent_lobby_message_payload(output_root, live_agent_lobby_id, payload)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(message)
                 return
             if parsed.path == "/api/codex-sessions/invite":
                 length = int(self.headers.get("Content-Length", "0") or "0")

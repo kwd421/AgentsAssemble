@@ -22,6 +22,8 @@ from agentsassemble.gui import (
     read_side_chat,
     codex_session_invite_payload,
     codex_sessions_payload,
+    connect_live_agent_payload,
+    live_agents_payload,
     send_lobby_message_to_remote_bridge,
     append_side_chat_event,
 )
@@ -224,6 +226,113 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(payload["binding"]["role_id"], "lore_lawyer")
             self.assertTrue((root / "codex-live-session.local.json").exists())
+
+    def test_live_agent_payload_registers_non_codex_presence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            payload = connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "claude-code-live",
+                    "display_name": "Claude Code Live",
+                    "provider_kind": "claude_code",
+                    "connection_kind": "local_cli",
+                    "engagement_mode": "mentioned",
+                    "meeting_id": "m1",
+                },
+            )
+
+            self.assertEqual(payload["agent"]["agent_id"], "claude-code-live")
+            self.assertEqual(payload["agent"]["provider_kind"], "claude_code")
+            self.assertEqual(payload["agent"]["connection_kind"], "local_cli")
+            self.assertEqual(live_agents_payload(root)["agents"][0]["display_name"], "Claude Code Live")
+
+    def test_live_agent_http_endpoint_registers_and_lists_presence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents",
+                    data=json.dumps(
+                        {
+                            "agent_id": "gemini-cli",
+                            "display_name": "Gemini CLI",
+                            "provider_kind": "gemini",
+                            "connection_kind": "local_cli",
+                            "session_id": "gemini-session",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents", timeout=4) as response:
+                    listed = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["agent"]["agent_id"], "gemini-cli")
+            self.assertEqual(listed["agents"][0]["session_id"], "gemini-session")
+
+    def test_live_agent_room_endpoint_returns_lobby_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(root, {"agent_id": "claude-code-live", "display_name": "Claude Code Live"})
+            append_lobby_event(root, {"name": "나", "side": "mine", "message": "방 상태 보여?"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/claude-code-live/room",
+                    timeout=4,
+                ) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["agent"]["display_name"], "Claude Code Live")
+            self.assertEqual(payload["lobby_events"][0]["message"], "방 상태 보여?")
+
+    def test_live_agent_heartbeat_and_lobby_message_endpoints_allow_participation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(root, {"agent_id": "gemini-cli", "display_name": "Gemini CLI"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                heartbeat_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/gemini-cli/heartbeat",
+                    data=json.dumps({"status": "working"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(heartbeat_request, timeout=4) as response:
+                    heartbeat = json.loads(response.read().decode("utf-8"))
+                message_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/gemini-cli/lobby",
+                    data=json.dumps({"message": "Gemini CLI 접속 확인", "kind": "message"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(message_request, timeout=4) as response:
+                    message = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(heartbeat["agent"]["status"], "working")
+            self.assertEqual(message["event"]["name"], "Gemini CLI")
+            self.assertEqual(message["event"]["side"], "other-agent")
+            self.assertEqual(message["event"]["message"], "Gemini CLI 접속 확인")
 
     def test_lobby_events_are_appended_and_sanitized(self):
         with tempfile.TemporaryDirectory() as temp_dir:

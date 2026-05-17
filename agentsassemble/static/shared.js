@@ -7,6 +7,10 @@ export const state = {
   lobbySignature: "[]",
   sideChatEvents: [],
   sideChatSignature: "[]",
+  liveAgents: [],
+  liveAgentsLoaded: false,
+  liveAgentsLoading: false,
+  liveAgentStatus: null,
   codexSessions: [],
   codexSessionsLoaded: false,
   codexSessionsLoading: false,
@@ -113,6 +117,10 @@ export function setLobbyEvents(events) {
 export function setSideChatEvents(events) {
   state.sideChatEvents = events || [];
   state.sideChatSignature = lobbyEventsSignature(state.sideChatEvents);
+}
+
+export function setLiveAgents(agents) {
+  state.liveAgents = agents || [];
 }
 
 export function bindingForRole(meeting, roleId) {
