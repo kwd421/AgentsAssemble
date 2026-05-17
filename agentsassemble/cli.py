@@ -113,6 +113,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check provider runtime config without starting a meeting.",
     )
     provider_health.add_argument("--config", required=True, help="Agent runtime config path.")
+    provider_health.add_argument(
+        "--probe",
+        choices=["none", "local"],
+        default="none",
+        dest="probe_mode",
+        help="Optional runtime probe mode. 'local' only checks loopback OpenAI-compatible /models endpoints.",
+    )
+    provider_health.add_argument(
+        "--probe-timeout",
+        type=parse_nonnegative_float,
+        default=2.0,
+        help="Seconds to wait for an opt-in local provider probe.",
+    )
     provider_health.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable provider health report.")
 
     live_server = argparse.ArgumentParser(add_help=False)
@@ -471,7 +484,11 @@ def _run_live_agent_preflight(args: argparse.Namespace) -> int:
 
 
 def _run_provider_health(args: argparse.Namespace) -> int:
-    report = provider_health_report(Path(args.config))
+    report = provider_health_report(
+        Path(args.config),
+        probe_mode=args.probe_mode,
+        probe_timeout_seconds=args.probe_timeout,
+    )
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:

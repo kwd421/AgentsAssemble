@@ -288,7 +288,19 @@ def provider_health_payload(payload: dict[str, object]) -> dict[str, object]:
     config_path = str(payload.get("config_path") or "").strip()
     if not config_path:
         raise ValueError("Provider health requires config_path.")
-    return provider_health_report(Path(config_path))
+    probe_mode = str(payload.get("probe_mode") or "none").strip() or "none"
+    probe_timeout_value = payload.get("probe_timeout_seconds", payload.get("probe_timeout", 2.0))
+    try:
+        probe_timeout = float(probe_timeout_value)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Provider health probe_timeout_seconds must be a finite non-negative number.") from error
+    if not math.isfinite(probe_timeout) or probe_timeout < 0:
+        raise ValueError("Provider health probe_timeout_seconds must be a finite non-negative number.")
+    return provider_health_report(
+        Path(config_path),
+        probe_mode=probe_mode,
+        probe_timeout_seconds=probe_timeout,
+    )
 
 
 def codex_sessions_payload(limit: int = 20) -> dict[str, object]:

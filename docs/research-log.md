@@ -445,6 +445,7 @@ This file records external papers, frameworks, and product references used while
   - Added HTTP meeting adapters for Anthropic Messages API, Gemini `generateContent`, xAI/OpenAI-compatible chat completions, and local OpenAI-compatible servers such as LM Studio.
   - Added a remote HTTP bridge path so a friend-owned Claude Code session can participate in meeting rounds without raw session import.
   - Added static provider-health checks (`probe_mode: none`) as an operator gate before meetings: config parsing, provider registry availability, auth_ref presence without value disclosure, endpoint requirements, local command availability, duplicate ids, and meeting-only binding validation. This deliberately avoids provider command execution, model generation calls, paid API probes, and remote bridge execution.
+  - Added opt-in local provider-health probes (`probe_mode: local`) for loopback OpenAI-compatible servers. The probe only calls `/models` on localhost/127.0.0.0/8/[::1], rejects userinfo, query strings, fragments, and non-loopback endpoints before network access, does not follow redirects or environment proxies, skips API/CLI/bridge providers, and still avoids prompts, generation, paid API calls, provider CLI execution, and bridge execution.
 
 ## Candidate Memory Layer Translation
 

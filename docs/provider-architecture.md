@@ -218,7 +218,7 @@ Observed limitation: the final moderator synthesis can still fall back to `Undet
 
 ## Next Implementation Slices
 
-1. Add opt-in provider probes for LM Studio/API credentials without starting a full meeting. The first provider-health slice is static and uses `probe_mode: none`.
+1. Add opt-in API credential probes without starting a full meeting. Static provider health (`probe_mode: none`) and local loopback OpenAI-compatible `/models` probes (`probe_mode: local`) are implemented; remote/API probes remain future work and must stay explicit to avoid paid calls.
 2. Add provider-specific evidence provenance for Gemini/Grok web-grounded outputs.
 3. Split meeting adapters from implementation/coding-agent adapters.
 4. Add an importable memory/profile packet schema and memory gate report.

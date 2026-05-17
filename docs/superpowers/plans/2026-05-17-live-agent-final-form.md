@@ -528,6 +528,33 @@ Document that provider health proves local config coherence only. It does not pr
 
 ---
 
+### Task 15: Local OpenAI-Compatible Provider Probe
+
+**Files:**
+- Modify: `agentsassemble/provider_health.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/provider-architecture.md`
+- Modify: `docs/research-log.md`
+- Test: `tests/test_provider_health.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+
+- [x] **Step 1: Add RED coverage for opt-in local probe**
+
+Cover `providers health --probe local --probe-timeout`, GUI payload forwarding, loopback OpenAI-compatible `/models` probing, `probe_mode: none` staying network-free, non-applicable provider kinds being skipped, and failures for non-loopback, malformed, empty, or unreachable model endpoints.
+
+- [x] **Step 2: Implement loopback-only probe mode**
+
+Add `probe_mode: local` while preserving `none` as the default. Only `local_openai_compatible` providers may be probed, and only through loopback `http` `/models` endpoints. Do not follow redirects or environment proxies, call `/chat/completions`, execute CLI providers, contact remote bridges, read secret values, or include endpoint/query/userinfo/requester exception text in the report.
+
+- [x] **Step 3: Document the operator contract**
+
+Document that `--probe local` proves only local OpenAI-compatible model-list reachability. It does not prove generation quality, prompt compliance, billing, remote API access, bridge readiness, or real provider meeting behavior.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

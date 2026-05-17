@@ -1,6 +1,9 @@
 import json
+import math
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,47 +11,49 @@ from agentsassemble.provider_health import provider_health_report
 
 
 class ProviderHealthTests(unittest.TestCase):
+    def write_config(self, temp_dir, data):
+        config_path = Path(temp_dir) / "agents.json"
+        config_path.write_text(json.dumps(data), encoding="utf-8")
+        return config_path
+
     def test_provider_health_reports_ok_without_running_commands_or_network(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = Path(temp_dir) / "agents.json"
-            config_path.write_text(
-                json.dumps(
-                    {
-                        "providers": [
-                            {"id": "mock-provider", "kind": "mock", "display_name": "Mock"},
-                            {
-                                "id": "local-model",
-                                "kind": "local_openai_compatible",
-                                "display_name": "LM Studio",
-                                "endpoint": "http://127.0.0.1:1234/v1",
-                            },
-                            {
-                                "id": "cli-provider",
-                                "kind": "local_cli",
-                                "display_name": "Local CLI",
-                                "command": ["fake-agent", "--json"],
-                            },
-                        ],
-                        "permission_profiles": [
-                            {"id": "meeting", "meeting_read": True, "official_turn": True}
-                        ],
-                        "agent_bindings": [
-                            {
-                                "agent_id": "mock-agent",
-                                "role_id": "lore_lawyer",
-                                "provider_id": "mock-provider",
-                                "permission_profile_id": "meeting",
-                            },
-                            {
-                                "agent_id": "cli-agent",
-                                "role_id": "show_me_the_feats",
-                                "provider_id": "cli-provider",
-                                "permission_profile_id": "meeting",
-                            },
-                        ],
-                    }
-                ),
-                encoding="utf-8",
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {"id": "mock-provider", "kind": "mock", "display_name": "Mock"},
+                        {
+                            "id": "local-model",
+                            "kind": "local_openai_compatible",
+                            "display_name": "LM Studio",
+                            "endpoint": "http://127.0.0.1:1234/v1",
+                        },
+                        {
+                            "id": "cli-provider",
+                            "kind": "local_cli",
+                            "display_name": "Local CLI",
+                            "command": ["fake-agent", "--json"],
+                        },
+                    ],
+                    "permission_profiles": [
+                        {"id": "meeting", "meeting_read": True, "official_turn": True}
+                    ],
+                    "agent_bindings": [
+                        {
+                            "agent_id": "mock-agent",
+                            "role_id": "lore_lawyer",
+                            "provider_id": "mock-provider",
+                            "permission_profile_id": "meeting",
+                        },
+                        {
+                            "agent_id": "cli-agent",
+                            "role_id": "show_me_the_feats",
+                            "provider_id": "cli-provider",
+                            "permission_profile_id": "meeting",
+                        },
+                    ],
+                },
             )
             resolved_commands = []
 
@@ -74,6 +79,512 @@ class ProviderHealthTests(unittest.TestCase):
             providers = {provider["provider_id"]: provider for provider in report["providers"]}
             self.assertEqual(providers["local-model"]["status"], "ok")
             self.assertEqual(providers["cli-provider"]["command_path"], "/usr/local/bin/fake-agent")
+
+    def test_provider_health_probe_none_does_not_call_probe_requester(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "local-model",
+                            "kind": "local_openai_compatible",
+                            "display_name": "LM Studio",
+                            "endpoint": "http://127.0.0.1:1234/v1",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, timeout_seconds):
+                raise AssertionError("probe_mode none must not call the network probe")
+
+            report = provider_health_report(config_path, probe_requester=requester)
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(report["probe_mode"], "none")
+            self.assertNotIn("local_probe", {check["id"] for check in report["providers"][0]["checks"]})
+
+    def test_provider_health_local_probe_checks_loopback_openai_models_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "local-model",
+                            "kind": "local_openai_compatible",
+                            "display_name": "LM Studio",
+                            "endpoint": "http://127.0.0.1:1234/v1",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+            calls = []
+
+            def requester(url, timeout_seconds):
+                calls.append({"url": url, "timeout_seconds": timeout_seconds})
+                return {"data": [{"id": "gemma-local"}]}
+
+            report = provider_health_report(
+                config_path,
+                probe_mode="local",
+                probe_requester=requester,
+                probe_timeout_seconds=0.75,
+            )
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(report["probe_mode"], "local")
+            self.assertEqual(calls, [{"url": "http://127.0.0.1:1234/v1/models", "timeout_seconds": 0.75}])
+            self.assertIn(
+                {
+                    "id": "local_probe",
+                    "status": "ok",
+                    "message": "Local OpenAI-compatible models endpoint is reachable.",
+                    "models": 1,
+                },
+                report["providers"][0]["checks"],
+            )
+
+    def test_provider_health_local_probe_uses_default_openai_endpoint_when_endpoint_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "local-model",
+                            "kind": "local_openai_compatible",
+                            "display_name": "LM Studio",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+            calls = []
+
+            def requester(url, timeout_seconds):
+                calls.append(url)
+                return {"data": [{"id": "local"}]}
+
+            report = provider_health_report(config_path, probe_mode="local", probe_requester=requester)
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(calls, ["http://127.0.0.1:1234/v1/models"])
+
+    def test_provider_health_rejects_invalid_probe_timeout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "local-model",
+                            "kind": "local_openai_compatible",
+                            "display_name": "LM Studio",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            for timeout in [-1.0, math.inf, math.nan, "not-a-number"]:
+                with self.subTest(timeout=timeout):
+                    with self.assertRaisesRegex(ValueError, "probe_timeout_seconds"):
+                        provider_health_report(
+                            config_path,
+                            probe_mode="local",
+                            probe_requester=lambda url, timeout_seconds: {"data": [{"id": "local"}]},
+                            probe_timeout_seconds=timeout,
+                        )
+
+    def test_provider_health_local_probe_normalizes_trailing_slash_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "local-model",
+                            "kind": "local_openai_compatible",
+                            "display_name": "LM Studio",
+                            "endpoint": "http://localhost:1234/v1/",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+            calls = []
+
+            def requester(url, timeout_seconds):
+                calls.append(url)
+                return {"data": [{"id": "local"}]}
+
+            report = provider_health_report(config_path, probe_mode="local", probe_requester=requester)
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(calls, ["http://localhost:1234/v1/models"])
+
+    def test_provider_health_local_probe_allows_loopback_ip_addresses(self):
+        endpoints = [
+            ("http://127.0.0.2:1234/v1", "http://127.0.0.2:1234/v1/models"),
+            ("http://[::1]:1234/v1", "http://[::1]:1234/v1/models"),
+        ]
+        for endpoint, expected_url in endpoints:
+            with self.subTest(endpoint=endpoint):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    config_path = self.write_config(
+                        temp_dir,
+                        {
+                            "providers": [
+                                {
+                                    "id": "local-model",
+                                    "kind": "local_openai_compatible",
+                                    "display_name": "LM Studio",
+                                    "endpoint": endpoint,
+                                }
+                            ],
+                            "permission_profiles": [{"id": "meeting"}],
+                            "agent_bindings": [],
+                        },
+                    )
+                    calls = []
+
+                    def requester(url, timeout_seconds):
+                        calls.append(url)
+                        return {"data": [{"id": "local"}]}
+
+                    report = provider_health_report(config_path, probe_mode="local", probe_requester=requester)
+
+                    self.assertEqual(report["status"], "ok")
+                    self.assertEqual(calls, [expected_url])
+
+    def test_provider_health_local_probe_skips_non_local_probe_provider_kinds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "claude",
+                            "kind": "anthropic",
+                            "display_name": "Claude API",
+                            "auth_ref": "literal:claude-token",
+                        },
+                        {
+                            "id": "bridge",
+                            "kind": "remote_http_bridge",
+                            "display_name": "Friend Bridge",
+                            "endpoint": "http://192.0.2.10:8777",
+                            "auth_ref": "literal:bridge-token",
+                        },
+                        {
+                            "id": "cli",
+                            "kind": "local_cli",
+                            "display_name": "Local CLI",
+                            "command": ["fake-agent"],
+                        },
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+            calls = []
+
+            def requester(url, timeout_seconds):
+                calls.append(url)
+                return {"data": []}
+
+            report = provider_health_report(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/fake-agent",
+                probe_mode="local",
+                probe_requester=requester,
+            )
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(calls, [])
+            providers = {provider["provider_id"]: provider for provider in report["providers"]}
+            for provider_id in ["claude", "bridge", "cli"]:
+                self.assertIn(
+                    {
+                        "id": "local_probe",
+                        "status": "ok",
+                        "message": "Local probe is not applicable for this provider kind.",
+                    },
+                    providers[provider_id]["checks"],
+                )
+
+    def test_provider_health_local_probe_rejects_non_loopback_openai_endpoint_without_calling_it(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "hosted-openai-compatible",
+                            "kind": "local_openai_compatible",
+                            "display_name": "Hosted OpenAI-Compatible",
+                            "endpoint": "https://api.example.test/v1?token=secret",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, timeout_seconds):
+                raise AssertionError("local probe must not call non-loopback endpoints")
+
+            report = provider_health_report(
+                config_path,
+                probe_mode="local",
+                probe_requester=requester,
+            )
+
+            self.assertEqual(report["status"], "failed")
+            report_text = json.dumps(report)
+            self.assertNotIn("secret", report_text)
+            self.assertIn(
+                {
+                    "id": "local_probe",
+                    "status": "failed",
+                    "message": "Local probe only allows loopback HTTP endpoints.",
+                },
+                report["providers"][0]["checks"],
+            )
+
+    def test_provider_health_local_probe_rejects_userinfo_query_and_fragment_without_leaking(self):
+        disallowed_endpoints = [
+            "http://user:super-secret@127.0.0.1:1234/v1",
+            "http://127.0.0.1:1234/v1?token=super-secret",
+            "http://127.0.0.1:1234/v1#super-secret",
+            "https://127.0.0.1:1234/v1",
+            "http://192.168.0.10:1234/v1",
+            "http://0.0.0.0:1234/v1",
+        ]
+        for endpoint in disallowed_endpoints:
+            with self.subTest(endpoint=endpoint):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    config_path = self.write_config(
+                        temp_dir,
+                        {
+                            "providers": [
+                                {
+                                    "id": "hosted-openai-compatible",
+                                    "kind": "local_openai_compatible",
+                                    "display_name": "Hosted OpenAI-Compatible",
+                                    "endpoint": endpoint,
+                                }
+                            ],
+                            "permission_profiles": [{"id": "meeting"}],
+                            "agent_bindings": [],
+                        },
+                    )
+
+                    def requester(url, timeout_seconds):
+                        raise AssertionError("local probe must not call disallowed endpoints")
+
+                    report = provider_health_report(
+                        config_path,
+                        probe_mode="local",
+                        probe_requester=requester,
+                    )
+
+                    self.assertEqual(report["status"], "failed")
+                    self.assertNotIn("super-secret", json.dumps(report))
+                    self.assertIn(
+                        {
+                            "id": "local_probe",
+                            "status": "failed",
+                            "message": "Local probe only allows loopback HTTP endpoints.",
+                        },
+                        report["providers"][0]["checks"],
+                    )
+
+    def test_provider_health_local_probe_reports_unreachable_or_malformed_models_response(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "local-model",
+                            "kind": "local_openai_compatible",
+                            "display_name": "LM Studio",
+                            "endpoint": "http://localhost:1234/v1",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, timeout_seconds):
+                return {"unexpected": []}
+
+            report = provider_health_report(
+                config_path,
+                probe_mode="local",
+                probe_requester=requester,
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertIn(
+                {
+                    "id": "local_probe",
+                    "status": "failed",
+                    "message": "Local OpenAI-compatible models endpoint did not return a model list.",
+                },
+                report["providers"][0]["checks"],
+            )
+
+    def test_provider_health_local_probe_sanitizes_requester_exception_messages(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "local-model",
+                            "kind": "local_openai_compatible",
+                            "display_name": "LM Studio",
+                            "endpoint": "http://127.0.0.1:1234/v1",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, timeout_seconds):
+                raise RuntimeError("connection failed with token super-secret")
+
+            report = provider_health_report(config_path, probe_mode="local", probe_requester=requester)
+
+            self.assertEqual(report["status"], "failed")
+            self.assertNotIn("super-secret", json.dumps(report))
+            self.assertIn(
+                {
+                    "id": "local_probe",
+                    "status": "failed",
+                    "message": "Local OpenAI-compatible models endpoint is unreachable.",
+                },
+                report["providers"][0]["checks"],
+            )
+
+    def test_default_local_probe_requester_does_not_follow_redirects_to_other_paths(self):
+        paths = []
+
+        class RedirectHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                paths.append(self.path)
+                if self.path == "/v1/models":
+                    self.send_response(302)
+                    self.send_header("Location", "/chat/completions")
+                    self.end_headers()
+                    return
+                if self.path == "/chat/completions":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"data":[{"id":"wrong-path"}]}')
+                    return
+                self.send_response(404)
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                config_path = self.write_config(
+                    temp_dir,
+                    {
+                        "providers": [
+                            {
+                                "id": "local-model",
+                                "kind": "local_openai_compatible",
+                                "display_name": "LM Studio",
+                                "endpoint": f"http://127.0.0.1:{server.server_port}/v1",
+                            }
+                        ],
+                        "permission_profiles": [{"id": "meeting"}],
+                        "agent_bindings": [],
+                    },
+                )
+
+                with patch.dict("os.environ", {"NO_PROXY": "*", "no_proxy": "*"}, clear=False):
+                    report = provider_health_report(config_path, probe_mode="local")
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(paths, ["/v1/models"])
+
+    def test_default_local_probe_requester_ignores_environment_proxies(self):
+        proxy_paths = []
+
+        class ProxyHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                proxy_paths.append(self.path)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"data":[{"id":"proxy-model"}]}')
+
+            def log_message(self, format, *args):
+                return
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            proxy = ThreadingHTTPServer(("127.0.0.1", 0), ProxyHandler)
+            thread = threading.Thread(target=proxy.serve_forever, daemon=True)
+            thread.start()
+            try:
+                config_path = self.write_config(
+                    temp_dir,
+                    {
+                        "providers": [
+                            {
+                                "id": "local-model",
+                                "kind": "local_openai_compatible",
+                                "display_name": "LM Studio",
+                                "endpoint": "http://127.0.0.2:9/v1",
+                            }
+                        ],
+                        "permission_profiles": [{"id": "meeting"}],
+                        "agent_bindings": [],
+                    },
+                )
+
+                with patch.dict(
+                    "os.environ",
+                    {
+                        "HTTP_PROXY": f"http://127.0.0.1:{proxy.server_port}",
+                        "http_proxy": f"http://127.0.0.1:{proxy.server_port}",
+                        "NO_PROXY": "",
+                        "no_proxy": "",
+                    },
+                    clear=False,
+                ):
+                    report = provider_health_report(config_path, probe_mode="local")
+            finally:
+                proxy.shutdown()
+                proxy.server_close()
+
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(proxy_paths, [])
 
     def test_provider_health_reports_missing_auth_planned_kinds_bad_commands_and_binding_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:

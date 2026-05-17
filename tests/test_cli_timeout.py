@@ -443,6 +443,10 @@ class CliTimeoutTests(unittest.TestCase):
                 "health",
                 "--config",
                 "configs/http-providers.example.json",
+                "--probe",
+                "local",
+                "--probe-timeout",
+                "0.75",
                 "--json",
             ]
         )
@@ -450,7 +454,46 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.command, "providers")
         self.assertEqual(args.providers_command, "health")
         self.assertEqual(args.config, "configs/http-providers.example.json")
+        self.assertEqual(args.probe_mode, "local")
+        self.assertEqual(args.probe_timeout, 0.75)
         self.assertTrue(args.as_json)
+
+    def test_providers_health_passes_probe_options_to_reporter(self):
+        report = {
+            "status": "ok",
+            "summary": {
+                "providers": 1,
+                "failed_providers": 0,
+                "bindings": 0,
+                "failed_bindings": 0,
+                "checks_failed": 0,
+                "warnings": 0,
+            },
+            "providers": [],
+            "bindings": [],
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli.provider_health_report", return_value=report) as provider_health:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "providers",
+                        "health",
+                        "--config",
+                        "configs/http-providers.example.json",
+                        "--probe",
+                        "local",
+                        "--probe-timeout",
+                        "0.75",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        provider_health.assert_called_once_with(
+            Path("configs/http-providers.example.json"),
+            probe_mode="local",
+            probe_timeout_seconds=0.75,
+        )
 
     def test_providers_health_prints_summary_and_exits_nonzero_when_failed(self):
         report = {
@@ -485,7 +528,11 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(["providers", "health", "--config", "configs/http-providers.example.json"])
 
         self.assertEqual(exit_code, 1)
-        provider_health.assert_called_once_with(Path("configs/http-providers.example.json"))
+        provider_health.assert_called_once_with(
+            Path("configs/http-providers.example.json"),
+            probe_mode="none",
+            probe_timeout_seconds=2.0,
+        )
         output = stdout.getvalue()
         self.assertIn("provider health: failed", output)
         self.assertIn("providers: 2 checked, 1 failed", output)

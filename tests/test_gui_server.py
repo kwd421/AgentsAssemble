@@ -1571,7 +1571,13 @@ class GuiServerTests(unittest.TestCase):
             try:
                 request = Request(
                     f"http://127.0.0.1:{server.server_port}/api/provider-health",
-                    data=json.dumps({"config_path": str(config_path)}).encode("utf-8"),
+                    data=json.dumps(
+                        {
+                            "config_path": str(config_path),
+                            "probe_mode": "local",
+                            "probe_timeout_seconds": 0.75,
+                        }
+                    ).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                     method="POST",
                 )
@@ -1582,6 +1588,7 @@ class GuiServerTests(unittest.TestCase):
                 server.server_close()
 
             self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["probe_mode"], "local")
             self.assertEqual(payload["summary"]["providers"], 1)
             self.assertEqual(payload["providers"][0]["provider_id"], "mock-provider")
 

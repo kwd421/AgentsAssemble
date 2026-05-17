@@ -49,6 +49,17 @@ python3 -m agentsassemble.cli providers health \
 
 The GUI "본회의 승인" panel exposes the same static check as `Provider 점검` through `POST /api/provider-health` when the current meeting was created from an agent runtime config file. Provider health uses `probe_mode: none`: it parses provider configs, permission profiles, and approved bindings; checks registry availability, auth_ref presence, endpoint requirements, local command executable availability, duplicate ids, and meeting-only permission compatibility; and redacts auth values and command arguments. It does not execute provider commands, does not start a meeting, does not call paid model APIs, and does not contact remote bridges. A passing static report means the config is locally coherent, not that account login, billing, model availability, network reachability, or real provider behavior has been proven.
 
+For LM Studio, Ollama, or another loopback OpenAI-compatible server, operators can opt into a local reachability probe:
+
+```bash
+python3 -m agentsassemble.cli providers health \
+  --config configs/http-providers.example.json \
+  --probe local \
+  --probe-timeout 2
+```
+
+`--probe local` only sends `GET /models` to `local_openai_compatible` providers whose endpoint is a loopback `http://localhost`, `http://127.0.0.0/8`, or `http://[::1]` URL. It skips API providers, local CLI providers, Codex providers, and remote bridges without executing them. It never calls `/chat/completions`, never sends prompts, never reads auth values, rejects endpoint query strings or non-loopback hosts before making a request, and does not follow redirects or environment proxy settings. A passing local probe proves the local OpenAI-compatible models endpoint is reachable and returns at least one model; it still does not prove generation quality, prompt compliance, paid API access, or remote bridge readiness.
+
 ## Credential-Free Operator Smoke
 
 After the GUI room is running, use the one-command smoke before touching real providers:

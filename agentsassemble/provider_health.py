@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import json
+import math
 import os
 import shutil
 from collections.abc import Callable
+from http.client import HTTPConnection
+from ipaddress import ip_address
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from agentsassemble.adapters.registry import default_provider_registry, validate_binding
 from agentsassemble.config import (
@@ -19,6 +24,12 @@ AUTH_REQUIRED_PROVIDER_KINDS = {"anthropic", "gemini", "grok"}
 ENDPOINT_REQUIRED_PROVIDER_KINDS = {"remote_http_bridge"}
 LOCAL_COMMAND_PROVIDER_KINDS = {"local_cli"}
 CODEX_COMMAND_PROVIDER_KINDS = {"codex", "codex_live_session"}
+DEFAULT_LOCAL_OPENAI_ENDPOINT = "http://127.0.0.1:1234/v1"
+PROBE_MODES = {"none", "local"}
+LOCAL_PROBE_PROVIDER_KINDS = {"local_openai_compatible"}
+LOOPBACK_HOSTS = {"localhost"}
+
+ProbeRequester = Callable[[str, float], dict[str, object]]
 
 
 def provider_health_report(
@@ -26,10 +37,19 @@ def provider_health_report(
     *,
     command_resolver: Callable[[str], str | None] | None = None,
     probe_mode: str = "none",
+    probe_requester: ProbeRequester | None = None,
+    probe_timeout_seconds: float = 2.0,
 ) -> dict[str, object]:
-    if probe_mode != "none":
-        raise ValueError("Provider health only supports probe_mode='none' in this slice.")
+    if probe_mode not in PROBE_MODES:
+        raise ValueError("Provider health probe_mode must be 'none' or 'local'.")
+    try:
+        probe_timeout = float(probe_timeout_seconds)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Provider health probe_timeout_seconds must be a finite non-negative number.") from error
+    if not math.isfinite(probe_timeout) or probe_timeout < 0:
+        raise ValueError("Provider health probe_timeout_seconds must be a finite non-negative number.")
     resolver = command_resolver or _resolve_command_path
+    requester = probe_requester or _request_probe_json
     try:
         data = load_agent_runtime_config(config_path)
         if not isinstance(data, dict):
@@ -38,7 +58,7 @@ def provider_health_report(
         permissions = permissions_from_config(data)
         bindings = agent_bindings_from_config(data)
     except Exception as error:
-        return _failed_config_report(config_path, str(error))
+        return _failed_config_report(config_path, str(error), probe_mode=probe_mode)
 
     registry = default_provider_registry()
     catalog = {entry["kind"]: entry for entry in registry.catalog()}
@@ -47,7 +67,14 @@ def provider_health_report(
         *_duplicate_checks(data),
     ]
     provider_reports = [
-        _provider_report(provider, registry_catalog=catalog, command_resolver=resolver)
+        _provider_report(
+            provider,
+            registry_catalog=catalog,
+            command_resolver=resolver,
+            probe_mode=probe_mode,
+            probe_requester=requester,
+            probe_timeout_seconds=probe_timeout,
+        )
         for provider in providers.values()
     ]
     provider_reports_by_id = {str(report["provider_id"]): report for report in provider_reports}
@@ -68,11 +95,11 @@ def provider_health_report(
     }
 
 
-def _failed_config_report(config_path: Path, message: str) -> dict[str, object]:
+def _failed_config_report(config_path: Path, message: str, *, probe_mode: str = "none") -> dict[str, object]:
     return {
         "status": "failed",
         "config_path": str(config_path),
-        "probe_mode": "none",
+        "probe_mode": probe_mode,
         "summary": {
             "providers": 0,
             "failed_providers": 0,
@@ -137,6 +164,9 @@ def _provider_report(
     *,
     registry_catalog: dict[str, dict[str, object]],
     command_resolver: Callable[[str], str | None],
+    probe_mode: str,
+    probe_requester: ProbeRequester,
+    probe_timeout_seconds: float,
 ) -> dict[str, object]:
     checks: list[dict[str, object]] = [
         _provider_kind_check(provider, registry_catalog),
@@ -144,6 +174,8 @@ def _provider_report(
         _auth_ref_check(provider),
         _command_check(provider, command_resolver),
     ]
+    if probe_mode == "local":
+        checks.append(_local_probe_check(provider, probe_requester, probe_timeout_seconds))
     status = _status_from_checks(checks)
     command_path = ""
     for check in checks:
@@ -258,6 +290,116 @@ def _command_check(
             return {"id": "command", "status": "ok", "message": "Command found: codex", "path": resolved}
         return {"id": "command", "status": "failed", "message": "Command not found: codex"}
     return {"id": "command", "status": "ok", "message": "Provider kind does not require a local command."}
+
+
+def _local_probe_check(
+    provider: ProviderConfig,
+    requester: ProbeRequester,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    if not isinstance(provider.kind, str):
+        return {"id": "local_probe", "status": "ok", "message": "Local probe skipped until provider kind is valid."}
+    if provider.kind not in LOCAL_PROBE_PROVIDER_KINDS:
+        return {
+            "id": "local_probe",
+            "status": "ok",
+            "message": "Local probe is not applicable for this provider kind.",
+        }
+    if provider.endpoint is not None and not isinstance(provider.endpoint, str):
+        return {"id": "local_probe", "status": "failed", "message": "Endpoint must be a string."}
+    probe_url = _local_openai_models_url(provider.endpoint or DEFAULT_LOCAL_OPENAI_ENDPOINT)
+    if probe_url is None:
+        return {
+            "id": "local_probe",
+            "status": "failed",
+            "message": "Local probe only allows loopback HTTP endpoints.",
+        }
+    try:
+        payload = requester(probe_url, timeout_seconds)
+    except Exception:
+        return {
+            "id": "local_probe",
+            "status": "failed",
+            "message": "Local OpenAI-compatible models endpoint is unreachable.",
+        }
+    models = _model_list_from_probe_payload(payload)
+    if models is None:
+        return {
+            "id": "local_probe",
+            "status": "failed",
+            "message": "Local OpenAI-compatible models endpoint did not return a model list.",
+        }
+    if not models:
+        return {
+            "id": "local_probe",
+            "status": "failed",
+            "message": "Local OpenAI-compatible models endpoint returned no models.",
+            "models": 0,
+        }
+    return {
+        "id": "local_probe",
+        "status": "ok",
+        "message": "Local OpenAI-compatible models endpoint is reachable.",
+        "models": len(models),
+    }
+
+
+def _local_openai_models_url(endpoint: str) -> str | None:
+    parsed = urlsplit(endpoint)
+    if parsed.scheme != "http" or not _is_loopback_host(parsed.hostname):
+        return None
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return None
+    base_path = parsed.path.rstrip("/")
+    models_path = f"{base_path}/models" if base_path else "/models"
+    return urlunsplit((parsed.scheme, parsed.netloc, models_path, "", ""))
+
+
+def _is_loopback_host(hostname: str | None) -> bool:
+    if not hostname:
+        return False
+    if hostname.casefold() in LOOPBACK_HOSTS:
+        return True
+    try:
+        return ip_address(hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _model_list_from_probe_payload(payload: object) -> list[object] | None:
+    if not isinstance(payload, dict):
+        return None
+    data = payload.get("data")
+    if isinstance(data, list):
+        return data
+    models = payload.get("models")
+    if isinstance(models, list):
+        return models
+    return None
+
+
+def _request_probe_json(url: str, timeout_seconds: float) -> dict[str, object]:
+    parsed = urlsplit(url)
+    if parsed.scheme != "http" or not _is_loopback_host(parsed.hostname):
+        raise ValueError("probe URL is not an approved loopback HTTP URL")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("probe URL includes disallowed URL components")
+    if parsed.path.rstrip("/").split("/")[-1] != "models":
+        raise ValueError("probe URL path is not a models endpoint")
+
+    connection = HTTPConnection(parsed.hostname, parsed.port, timeout=timeout_seconds)
+    try:
+        connection.request("GET", parsed.path or "/", headers={"Accept": "application/json"})
+        response = connection.getresponse()
+        data = response.read(1_000_000)
+        if response.status != 200:
+            raise ValueError("probe endpoint returned a non-200 status")
+    finally:
+        connection.close()
+    payload = json.loads(data.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("response JSON is not an object")
+    return payload
 
 
 def _binding_report(
