@@ -185,6 +185,52 @@ class CliTimeoutTests(unittest.TestCase):
             payload={"message": "Gemini 접속 확인", "kind": "message"},
         )
 
+    def test_live_agent_delegate_runs_local_command_and_posts_reply(self):
+        stdout = StringIO()
+        room_payload = {"lobby_events": [{"name": "나", "message": "방 상태 어때?"}]}
+        responses = [
+            {"agent": {"agent_id": "claude-code-live"}},
+            {"agent": {"agent_id": "claude-code-live", "status": "working"}},
+            room_payload,
+            {"event": {"id": "evt1"}},
+            {"agent": {"agent_id": "claude-code-live", "status": "online"}},
+        ]
+        with patch("agentsassemble.cli._request_json", side_effect=responses) as request_json:
+            with patch("agentsassemble.cli._run_delegate_command", return_value="Claude Code Live 응답") as run_delegate:
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "delegate",
+                            "--server",
+                            "http://room.local",
+                            "--agent-id",
+                            "claude-code-live",
+                            "--display-name",
+                            "Claude Code Live",
+                            "--provider-kind",
+                            "claude_code",
+                            "--command",
+                            "claude",
+                            "-p",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(request_json.call_args_list[0].args[0], "http://room.local/api/live-agents")
+        self.assertEqual(
+            request_json.call_args_list[2].args[0],
+            "http://room.local/api/live-agents/claude-code-live/room",
+        )
+        self.assertEqual(
+            request_json.call_args_list[3].kwargs["payload"],
+            {"message": "Claude Code Live 응답", "kind": "message"},
+        )
+        run_delegate.assert_called_once()
+        self.assertEqual(run_delegate.call_args.args[0], ["claude", "-p"])
+        self.assertIn("방 상태 어때?", run_delegate.call_args.args[1])
+        self.assertIn("Posted evt1", stdout.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -106,6 +107,22 @@ def build_parser() -> argparse.ArgumentParser:
     live_room = live_agent_subparsers.add_parser("room", parents=[live_server], help="Read the live room snapshot for an agent.")
     live_room.add_argument("--agent-id", required=True)
 
+    live_delegate = live_agent_subparsers.add_parser(
+        "delegate",
+        parents=[live_server],
+        help="Run a local CLI once using the room snapshot, then post its reply.",
+    )
+    live_delegate.add_argument("--agent-id", required=True)
+    live_delegate.add_argument("--display-name", default="")
+    live_delegate.add_argument("--provider-kind", default="local_cli")
+    live_delegate.add_argument("--connection-kind", choices=["codex_resume", "local_cli", "remote_bridge", "manual"], default="local_cli")
+    live_delegate.add_argument("--session-id", default="")
+    live_delegate.add_argument("--endpoint", default="")
+    live_delegate.add_argument("--meeting-id", default="")
+    live_delegate.add_argument("--engagement-mode", default="mentioned")
+    live_delegate.add_argument("--timeout", type=int, default=120)
+    live_delegate.add_argument("--command", dest="delegate_command", nargs=argparse.REMAINDER, required=True)
+
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
     session_subparsers = sessions.add_subparsers(dest="sessions_command", required=True)
 
@@ -199,10 +216,84 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             response = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
             print(json.dumps(response, ensure_ascii=False, indent=2))
             return 0
-    except (OSError, urllib.error.URLError, json.JSONDecodeError) as error:
+        if args.live_agent_command == "delegate":
+            return _run_live_agent_delegate(args)
+    except (OSError, subprocess.SubprocessError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return 1
+
+
+def _run_live_agent_delegate(args: argparse.Namespace) -> int:
+    payload = {
+        "agent_id": args.agent_id,
+        "display_name": args.display_name,
+        "provider_kind": args.provider_kind,
+        "connection_kind": args.connection_kind,
+        "session_id": args.session_id,
+        "endpoint": args.endpoint,
+        "meeting_id": args.meeting_id,
+        "engagement_mode": args.engagement_mode,
+        "capabilities": ["room_chat", "mentions"],
+    }
+    _request_json(_server_url(args.server, "/api/live-agents"), method="POST", payload=payload)
+    agent_id = urllib.parse.quote(args.agent_id, safe="")
+    _request_json(
+        _server_url(args.server, f"/api/live-agents/{agent_id}/heartbeat"),
+        method="POST",
+        payload={"status": "working"},
+    )
+    room = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
+    reply = _run_delegate_command(args.delegate_command, _delegate_prompt(args, room), timeout_seconds=args.timeout).strip()
+    if not reply:
+        raise ValueError("Delegate command returned an empty reply.")
+    response = _request_json(
+        _server_url(args.server, f"/api/live-agents/{agent_id}/lobby"),
+        method="POST",
+        payload={"message": reply, "kind": "message"},
+    )
+    _request_json(
+        _server_url(args.server, f"/api/live-agents/{agent_id}/heartbeat"),
+        method="POST",
+        payload={"status": "online"},
+    )
+    event = response.get("event", {}) if isinstance(response.get("event"), dict) else {}
+    print(f"Posted {event.get('id') or 'lobby message'}")
+    return 0
+
+
+def _delegate_prompt(args: argparse.Namespace, room: dict[str, object]) -> str:
+    events = room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []
+    lines = [
+        "You are a live AgentCouncil participant connected through a local CLI bridge.",
+        f"Agent id: {args.agent_id}",
+        f"Display name: {args.display_name or args.agent_id}",
+        "Reply with one concise lobby message only.",
+        "",
+        "Recent lobby events:",
+    ]
+    for event in events[-12:]:
+        if not isinstance(event, dict):
+            continue
+        name = str(event.get("name") or "participant")
+        message = str(event.get("message") or "").strip()
+        if message:
+            lines.append(f"- {name}: {message}")
+    return "\n".join(lines).strip() + "\n"
+
+
+def _run_delegate_command(command: list[str], prompt: str, *, timeout_seconds: int) -> str:
+    if not command:
+        raise ValueError("Delegate command is required.")
+    completed = subprocess.run(
+        command,
+        input=prompt,
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds,
+        check=True,
+    )
+    return completed.stdout
 
 
 def _server_url(server: str, path: str) -> str:
