@@ -203,6 +203,7 @@ After restarting the GUI:
 - old `stopped` and `error` records remain listed;
 - previous logs remain inspectable through their `log_path`;
 - the new GUI supervisor does not claim it can stop PIDs it did not launch;
+- restarted resident runners reuse `last_observed_event_id` from their live-agent presence so they do not answer the same lobby event again;
 - existing presence rows in `.agentsassemble/live_agents.json` can remain until heartbeat age makes them `stale`; restarting the GUI does not resume old resident agents except pending auto-restart records, which can start a fresh process after `next_restart_at`.
 
 This slice is not native Claude Code Channels, Gemini SDK sessions, Cursor PTY persistence, or OS-level sandboxing. Those are future backend variants behind the same room and supervisor shape.

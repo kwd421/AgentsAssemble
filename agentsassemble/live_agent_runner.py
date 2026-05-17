@@ -133,7 +133,7 @@ class LiveAgentRunner:
         return 1
 
     def _register(self) -> None:
-        self.request_json(
+        response = self.request_json(
             _server_url(self.config.server, "/api/live-agents"),
             method="POST",
             payload={
@@ -148,6 +148,7 @@ class LiveAgentRunner:
                 "capabilities": ["room_chat", "mentions"],
             },
         )
+        self._restore_observed_cursor(response.get("agent"))
 
     def _heartbeat(self, status: str, **metadata: object) -> None:
         payload = {"status": status, **metadata}
@@ -172,7 +173,19 @@ class LiveAgentRunner:
             self._heartbeat("online", last_observed_event_id=self.last_observed_event_id)
 
     def _room(self) -> dict[str, object]:
-        return self.request_json(_server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/room"))
+        room = self.request_json(_server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/room"))
+        self._restore_observed_cursor(room.get("agent"))
+        return room
+
+    def _restore_observed_cursor(self, agent: object) -> None:
+        if self.last_observed_event_id or not isinstance(agent, dict):
+            return
+        agent_id = str(agent.get("agent_id") or "")
+        if agent_id != self.config.agent_id:
+            return
+        cursor = str(agent.get("last_observed_event_id") or "").strip()
+        if cursor:
+            self.last_observed_event_id = cursor
 
     def _advance_cursor(self, events: list[dict[str, object]]) -> None:
         latest_id = _latest_event_id(events)

@@ -19,8 +19,9 @@ class FakeClock:
 
 
 class FakeRoomClient:
-    def __init__(self, rooms):
+    def __init__(self, rooms, *, register_agent=None):
         self.rooms = list(rooms)
+        self.register_agent = register_agent or {"agent_id": "agent-a", "status": "online"}
         self.calls = []
 
     def __call__(self, url, *, method="GET", payload=None):
@@ -29,6 +30,8 @@ class FakeRoomClient:
             return self.rooms.pop(0) if self.rooms else {"lobby_events": []}
         if url.endswith("/lobby"):
             return {"event": {"id": "reply-id"}}
+        if url.endswith("/live-agents") and method == "POST":
+            return {"agent": dict(self.register_agent)}
         return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
 
 
@@ -94,6 +97,100 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
         lobby_calls = [call for call in client.calls if call[0].endswith("/lobby")]
         self.assertEqual(len(lobby_calls), 1)
+
+    def test_runner_restores_observed_cursor_from_registration_before_replying(self):
+        clock = FakeClock()
+        room = {
+            "lobby_events": [
+                {"id": "evt1", "name": "나", "message": "이미 처리한 말"},
+                {"id": "evt2", "name": "나", "message": "재시작 후 새 말"},
+            ]
+        }
+        client = FakeRoomClient([room], register_agent={"agent_id": "agent-a", "last_observed_event_id": "evt1"})
+        runner = LiveAgentRunner(
+            config(),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "reply after restart",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "evt2")
+        self.assertEqual(runner.last_observed_event_id, "reply-id")
+
+    def test_runner_restores_observed_cursor_from_room_snapshot_before_replying(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "last_observed_event_id": "evt1"},
+            "lobby_events": [
+                {"id": "evt1", "name": "나", "message": "이미 처리한 말"},
+                {"id": "evt2", "name": "나", "message": "room snapshot 뒤 새 말"},
+            ],
+        }
+        client = FakeRoomClient([room])
+        runner = LiveAgentRunner(
+            config(),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "reply after room recovery",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "evt2")
+
+    def test_runner_keeps_local_cursor_when_presence_snapshot_is_stale(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "last_observed_event_id": "evt1"},
+            "lobby_events": [
+                {"id": "evt1", "name": "나", "message": "오래된 말"},
+                {"id": "evt2", "name": "나", "message": "이미 처리한 말"},
+                {"id": "evt3", "name": "나", "message": "새 말"},
+            ],
+        }
+        client = FakeRoomClient([room], register_agent={"agent_id": "agent-a", "last_observed_event_id": "evt1"})
+        runner = LiveAgentRunner(
+            config(),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "reply to new event",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        runner.last_observed_event_id = "evt2"
+
+        self.assertEqual(runner.run(), 1)
+
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "evt3")
+
+    def test_runner_ignores_cursor_snapshot_without_matching_agent_id(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"last_observed_event_id": "evt1"},
+            "lobby_events": [
+                {"id": "evt1", "name": "나", "message": "확실하지 않은 cursor는 무시"},
+                {"id": "evt2", "name": "나", "message": "두 번째 말"},
+            ],
+        }
+        client = FakeRoomClient([room])
+        runner = LiveAgentRunner(
+            config(),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "reply without unsafe cursor",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "evt1")
 
     def test_runner_skips_self_events_and_chain_depth_over_limit(self):
         self_event = {"id": "evt-self", "actor_id": "agent-a", "name": "Agent A", "message": "내 말"}
