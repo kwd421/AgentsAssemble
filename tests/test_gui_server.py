@@ -1053,6 +1053,66 @@ class GuiServerTests(unittest.TestCase):
             self.assertGreaterEqual(listed["agents"][0]["heartbeat_age_seconds"], 0)
             self.assertEqual(listed["agents"][0]["stale_after_seconds"], 180)
 
+    def test_live_agent_engagement_endpoint_updates_policy_without_refreshing_heartbeat(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            registered = connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "engagement_mode": "always",
+                },
+            )
+            original_last_seen = registered["agent"]["last_seen_at"]
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/engagement",
+                    data=json.dumps({"engagement_mode": "watch"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    room = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["agent"]["engagement_mode"], "watch")
+        self.assertEqual(payload["agent"]["last_seen_at"], original_last_seen)
+        self.assertEqual(room["agent"]["engagement_mode"], "watch")
+        self.assertEqual(room["agent"]["last_seen_at"], original_last_seen)
+
+    def test_live_agent_engagement_endpoint_rejects_invalid_policy(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "engagement_mode": "always"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/engagement",
+                    data=json.dumps({"engagement_mode": "shout_forever"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as context:
+                    urlopen(request, timeout=4)
+                context.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(context.exception.code, 400)
+
     def test_live_agent_room_endpoint_returns_lobby_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

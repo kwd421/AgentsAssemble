@@ -4,7 +4,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
+from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 
 
 class LiveAgentPresenceTests(unittest.TestCase):
@@ -169,6 +169,94 @@ class LiveAgentPresenceTests(unittest.TestCase):
             self.assertEqual(agent["session_id"], "gemini-session")
             self.assertEqual(agent["status"], "working")
             self.assertEqual(agent["last_seen_at"], "2026-05-17T12:00:45+00:00")
+
+    def test_connect_live_agent_preserves_existing_engagement_mode_on_reregistration(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "engagement_mode": "always",
+                },
+            )
+
+            updated = update_live_agent_engagement(root, "agent-a", "watch")
+            reregistered = connect_live_agent(root, {"agent_id": "agent-a", "engagement_mode": "always"})
+            fresh = connect_live_agent(root, {"agent_id": "agent-b", "engagement_mode": "shout_forever"})
+
+        self.assertEqual(updated["display_name"], "Agent A")
+        self.assertEqual(updated["provider_kind"], "local_cli")
+        self.assertEqual(updated["connection_kind"], "local_cli")
+        self.assertEqual(updated["engagement_mode"], "watch")
+        self.assertEqual(reregistered["engagement_mode"], "watch")
+        self.assertEqual(fresh["engagement_mode"], "mentioned")
+
+    def test_connect_live_agent_replaces_default_or_invalid_existing_engagement_mode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            heartbeat_live_agent(root, "agent-a")
+            from_default = connect_live_agent(root, {"agent_id": "agent-a", "engagement_mode": "always"})
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-b",
+                                "display_name": "Agent B",
+                                "engagement_mode": "shout_forever",
+                                "created_at": "2026-05-17T12:00:00+00:00",
+                                "updated_at": "2026-05-17T12:00:00+00:00",
+                                "last_seen_at": "2026-05-17T12:00:00+00:00",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            from_invalid = connect_live_agent(root, {"agent_id": "agent-b", "engagement_mode": "human_only"})
+
+        self.assertEqual(from_default["engagement_mode"], "always")
+        self.assertEqual(from_invalid["engagement_mode"], "human_only")
+
+    def test_heartbeat_does_not_clobber_operator_selected_engagement_mode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(root, {"agent_id": "agent-a", "engagement_mode": "always"})
+            update_live_agent_engagement(root, "agent-a", "watch")
+
+            agent = heartbeat_live_agent(root, "agent-a", metadata={"engagement_mode": "always"})
+
+        self.assertEqual(agent["engagement_mode"], "watch")
+
+    def test_update_live_agent_engagement_preserves_heartbeat_freshness(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            started = datetime(2026, 5, 17, 12, 0, tzinfo=UTC)
+            changed = started + timedelta(seconds=45)
+            connect_live_agent(root, {"agent_id": "agent-a", "engagement_mode": "always"}, now=started)
+
+            agent = update_live_agent_engagement(root, "agent-a", "watch", now=changed)
+            visible = read_live_agents(root, now=changed)[0]
+
+        self.assertEqual(agent["engagement_mode"], "watch")
+        self.assertEqual(agent["updated_at"], "2026-05-17T12:00:45+00:00")
+        self.assertEqual(agent["last_seen_at"], "2026-05-17T12:00:00+00:00")
+        self.assertEqual(visible["heartbeat_age_seconds"], 45)
+
+    def test_update_live_agent_engagement_rejects_unknown_agent_or_mode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(root, {"agent_id": "agent-a", "engagement_mode": "always"})
+
+            with self.assertRaisesRegex(ValueError, "Unknown engagement mode"):
+                update_live_agent_engagement(root, "agent-a", "shout_forever")
+            with self.assertRaisesRegex(ValueError, "Live agent missing-agent was not found"):
+                update_live_agent_engagement(root, "missing-agent", "watch")
 
     def test_connect_live_agent_rejects_blank_agent_id(self):
         with tempfile.TemporaryDirectory() as temp_dir:

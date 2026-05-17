@@ -704,6 +704,18 @@
   color: #ffc3c3;
 }
 
+.live-agent-engagement {
+  background: rgba(8, 11, 17, 0.68);
+  border: 1px solid rgba(212, 225, 255, 0.14);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  min-height: 28px;
+  min-width: 0;
+  padding: 0 7px;
+}
+
 .live-agent-offline em {
   color: #ffc3c3;
 }

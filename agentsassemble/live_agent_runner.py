@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
-from agentsassemble.models import ProviderConfig, Role
+from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
 from agentsassemble.remote_bridge_config import (
     remote_bridge_auth_ref_available,
     remote_bridge_auth_ref_value,
@@ -88,7 +88,7 @@ class LiveAgentRunner:
             self.config.display_name,
             self.last_observed_event_id,
             max_chain_depth=self.config.max_chain_depth,
-            engagement_mode=self.config.engagement_mode,
+            engagement_mode=_runtime_engagement_mode(self.config, room),
         )
         if candidate is None:
             self._advance_cursor(events)
@@ -291,6 +291,16 @@ def event_reply_candidate(
             continue
         return event
     return None
+
+
+def _runtime_engagement_mode(config: ResidentAgentConfig, room: dict[str, object]) -> str:
+    agent = room.get("agent")
+    if not isinstance(agent, dict):
+        return config.engagement_mode
+    if str(agent.get("agent_id") or "") != config.agent_id:
+        return config.engagement_mode
+    mode = str(agent.get("engagement_mode") or "").strip()
+    return mode if mode in ENGAGEMENT_MODES else config.engagement_mode
 
 
 def should_reply_to_event(

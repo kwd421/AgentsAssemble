@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.models import ENGAGEMENT_MODES, normalize_engagement_mode
 from agentsassemble.remote_bridge_config import remote_bridge_endpoint_error
 
 LIVE_AGENT_STATE = "live_agents.json"
@@ -57,6 +58,9 @@ def connect_live_agent(
             endpoint_error = remote_bridge_endpoint_error(endpoint)
             if endpoint_error:
                 raise ValueError(endpoint_error)
+        requested_engagement_mode = normalize_engagement_mode(payload.get("engagement_mode"), default="mentioned")
+        operator_engagement_mode = _operator_engagement_mode(existing)
+        effective_engagement_mode = operator_engagement_mode or requested_engagement_mode
         agent = {
             "agent_id": agent_id,
             "display_name": clean_lobby_text(payload.get("display_name"), limit=64)
@@ -67,9 +71,7 @@ def connect_live_agent(
             or "manual",
             "connection_kind": connection_kind,
             "status": _normalize_persisted_status(payload.get("status") or existing.get("status") or "online"),
-            "engagement_mode": clean_lobby_text(payload.get("engagement_mode"), limit=64)
-            or clean_lobby_text(existing.get("engagement_mode"), limit=64)
-            or "mentioned",
+            "engagement_mode": effective_engagement_mode,
             "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128)
             or clean_lobby_text(existing.get("meeting_id"), limit=128),
             "session_id": clean_lobby_text(payload.get("session_id"), limit=128)
@@ -87,9 +89,44 @@ def connect_live_agent(
             "updated_at": timestamp,
             "last_seen_at": timestamp,
         }
+        if operator_engagement_mode:
+            agent["engagement_mode_updated_at"] = clean_lobby_text(existing.get("engagement_mode_updated_at"), limit=64)
         _upsert_agent(agents, agent)
         _write_state(output_root, {"agents": agents})
         return agent
+
+
+def update_live_agent_engagement(
+    output_root: Path,
+    agent_id: str,
+    engagement_mode: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    current_time = now or datetime.now(UTC)
+    timestamp = current_time.isoformat()
+    clean_agent_id = clean_lobby_text(agent_id, limit=64)
+    if not clean_agent_id:
+        raise ValueError("Agent id is required.")
+    clean_mode = clean_lobby_text(engagement_mode, limit=64)
+    if clean_mode not in ENGAGEMENT_MODES:
+        expected = ", ".join(sorted(ENGAGEMENT_MODES))
+        raise ValueError(f"Unknown engagement mode: {clean_mode or '(blank)'}. Expected one of: {expected}.")
+
+    with LIVE_AGENT_STATE_LOCK:
+        state = _read_state(output_root)
+        agents = _agent_entries(state)
+        for index, existing in enumerate(agents):
+            if existing.get("agent_id") != clean_agent_id:
+                continue
+            agent = _without_output_only_freshness(existing)
+            agent["engagement_mode"] = clean_mode
+            agent["engagement_mode_updated_at"] = timestamp
+            agent["updated_at"] = timestamp
+            agents[index] = agent
+            _write_state(output_root, {"agents": agents})
+            return agent
+    raise ValueError(f"Live agent {clean_agent_id} was not found.")
 
 
 def heartbeat_live_agent(
@@ -172,6 +209,14 @@ def _agent_entries(state: dict[str, Any]) -> list[dict[str, object]]:
     if not isinstance(agents, list):
         return []
     return [agent for agent in agents if isinstance(agent, dict)]
+
+
+def _operator_engagement_mode(agent: dict[str, object]) -> str:
+    mode = clean_lobby_text(agent.get("engagement_mode"), limit=64)
+    updated_at = clean_lobby_text(agent.get("engagement_mode_updated_at"), limit=64)
+    if updated_at and mode in ENGAGEMENT_MODES:
+        return mode
+    return ""
 
 
 def _upsert_agent(agents: list[dict[str, object]], agent: dict[str, object]) -> None:

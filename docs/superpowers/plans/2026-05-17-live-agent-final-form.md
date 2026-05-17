@@ -865,6 +865,40 @@ Document that close, reply timeout, and blocked-write timeout all use the same J
 
 ---
 
+### Task 28: Runtime Engagement Policy Control
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `agentsassemble/live_agents.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `agentsassemble/static/lobby.css`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_runner.py`
+- Test: `tests/test_live_agents.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for runtime policy overrides**
+
+Cover a runner whose startup config is active but whose current room presence is `watch`, a runner whose startup config is passive but whose room presence is `always`, and invalid or wrong-agent room presence that must fall back to startup config.
+
+- [x] **Step 2: Add explicit engagement update persistence**
+
+Add `update_live_agent_engagement()` and `POST /api/live-agents/<agent_id>/engagement` so operator policy changes persist with `engagement_mode_updated_at` without refreshing `last_seen_at`. Re-registration and heartbeats preserve the operator-selected engagement mode instead of clobbering it, while placeholder/default or invalid legacy rows can still be replaced by a resident runner's startup mode.
+
+- [x] **Step 3: Wire GUI runtime control**
+
+Add a compact roster selector with all supported modes. The selector posts to the explicit engagement endpoint, labels `always` as loop-prone, and leaves freshness evidence untouched.
+
+- [x] **Step 4: Document operator semantics**
+
+Document valid modes, the engagement API, no heartbeat freshness bump, per-poll runner behavior, and `watch`/`manual` cursor advancement without backlog replay.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

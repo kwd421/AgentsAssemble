@@ -20,7 +20,7 @@ from agentsassemble.codex_sessions import (
 )
 from agentsassemble.config import load_agent_runtime_config, load_council_config, providers_from_config
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
-from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
+from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.meeting import run_demo_meeting
@@ -313,6 +313,11 @@ def live_agents_payload(output_root: Path) -> dict[str, object]:
 
 def connect_live_agent_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
     return {"agent": connect_live_agent(output_root, payload), "agents": read_live_agents(output_root)}
+
+
+def update_live_agent_engagement_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
+    agent = update_live_agent_engagement(output_root, agent_id, str(payload.get("engagement_mode") or ""))
+    return {"agent": agent, "agents": read_live_agents(output_root)}
 
 
 def live_agent_room_payload(output_root: Path, agent_id: str) -> dict[str, object]:
@@ -909,6 +914,24 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json(live_agent)
+                return
+            live_agent_engagement_id = _live_agent_action_path(parsed.path, "engagement")
+            if live_agent_engagement_id is not None:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    engagement = update_live_agent_engagement_payload(output_root, live_agent_engagement_id, payload)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(engagement)
                 return
             if parsed.path == "/api/live-agent-processes/start":
                 length = int(self.headers.get("Content-Length", "0") or "0")

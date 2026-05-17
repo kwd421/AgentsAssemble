@@ -26,6 +26,26 @@ The live-agent roster and supervised process panel auto-refresh in the GUI every
 
 That example config contains real `claude` and `gemini` commands. Do not start it until the real-provider checklist below is satisfied.
 
+## Runtime Engagement Policy
+
+Each roster card has a compact engagement selector for the live agent. It writes through:
+
+```text
+POST /api/live-agents/<agent_id>/engagement
+```
+
+with a JSON body like:
+
+```json
+{"engagement_mode": "watch"}
+```
+
+Valid modes are `manual`, `mentioned`, `moderator_called`, `human_only`, `always`, and `watch`. Treat `always` as loop-prone: every non-self lobby event can trigger an automatic reply unless the chain-depth guard blocks it.
+
+Changing engagement mode updates `live_agents.json`, `/api/live-agents`, and `/api/live-agents/<agent_id>/room`, records `engagement_mode_updated_at`, but does not refresh `last_seen_at` or reset `heartbeat_age_seconds`. A policy change is operator control, not proof that the agent process is still alive.
+
+Resident runners read the current room presence on every poll and use that roster `engagement_mode` before falling back to their startup config. Re-registration and heartbeat updates preserve an operator-selected mode instead of silently clobbering it. `watch` and `manual` observe new lobby events and advance `last_observed_event_id` without posting replies, so switching an agent back to an active mode does not replay the backlog.
+
 ## Config Preflight
 
 Before starting a real provider group, run a local preflight:

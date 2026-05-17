@@ -327,6 +327,106 @@ class LiveAgentRunnerTests(unittest.TestCase):
         ]
         self.assertIn("evt1", observed)
 
+    def test_manual_mode_observes_without_replying_and_advances_cursor(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "side": "mine", "name": "나", "message": "수동 모드야"}]}
+        client = FakeRoomClient([room])
+        command_calls = []
+        runner = LiveAgentRunner(
+            config(engagement_mode="manual"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: command_calls.append(prompt) or "reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        self.assertEqual(command_calls, [])
+        self.assertEqual([call for call in client.calls if call[0].endswith("/lobby")], [])
+        observed = [
+            payload["last_observed_event_id"]
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload.get("last_observed_event_id")
+        ]
+        self.assertIn("evt1", observed)
+
+    def test_runner_uses_room_engagement_mode_to_pause_active_agent(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "watch"},
+            "lobby_events": [{"id": "evt1", "side": "mine", "name": "나", "message": "always config라도 멈춰"}],
+        }
+        client = FakeRoomClient([room])
+        command_calls = []
+        runner = LiveAgentRunner(
+            config(engagement_mode="always"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: command_calls.append(prompt) or "reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        self.assertEqual(command_calls, [])
+        self.assertEqual([call for call in client.calls if call[0].endswith("/lobby")], [])
+        observed = [
+            payload["last_observed_event_id"]
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload.get("last_observed_event_id")
+        ]
+        self.assertIn("evt1", observed)
+
+    def test_runner_uses_room_engagement_mode_to_resume_replying(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "always"},
+            "lobby_events": [{"id": "evt1", "side": "mine", "name": "나", "message": "이름 언급 없이도 답해"}],
+        }
+        client = FakeRoomClient([room])
+        command_calls = []
+        runner = LiveAgentRunner(
+            config(engagement_mode="mentioned"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: command_calls.append(prompt) or "runtime reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        self.assertEqual(len(command_calls), 1)
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "evt1")
+
+    def test_runner_ignores_invalid_or_wrong_agent_runtime_engagement_mode(self):
+        clock = FakeClock()
+        invalid_room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "shout_forever"},
+            "lobby_events": [{"id": "evt1", "side": "mine", "name": "나", "message": "config fallback"}],
+        }
+        wrong_agent_room = {
+            "agent": {"agent_id": "agent-b", "engagement_mode": "always"},
+            "lobby_events": [
+                {"id": "reply-id", "actor_id": "agent-a", "name": "Agent A", "message": "first reply"},
+                {"id": "evt2", "side": "mine", "name": "나", "message": "wrong agent fallback"},
+            ],
+        }
+        client = FakeRoomClient([invalid_room, wrong_agent_room])
+        command_calls = []
+        runner = LiveAgentRunner(
+            config(engagement_mode="always", max_ticks=2),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: command_calls.append(prompt) or "fallback reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 2)
+
+        self.assertEqual(len(command_calls), 2)
+
     def test_human_only_mode_replies_to_humans_and_ignores_agent_chatter(self):
         human_event = {"id": "human", "side": "mine", "name": "나", "message": "사람 질문"}
         other_human_event = {"id": "other-human", "side": "other", "name": "상대", "message": "상대 질문"}

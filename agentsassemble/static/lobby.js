@@ -119,6 +119,9 @@ export function renderLobby(options = {}) {
   lobby.querySelectorAll("[data-live-agent-process-restart]").forEach((button) => {
     button.addEventListener("click", () => restartLiveAgentProcessGroup(button.dataset.liveAgentProcessRestart));
   });
+  lobby.querySelectorAll("[data-live-agent-engagement]").forEach((select) => {
+    select.addEventListener("change", () => updateLiveAgentEngagement(select.dataset.liveAgentEngagement, select.value));
+  });
   lobby.querySelector("#live-agent-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     await sendLiveAgentRegistration(event.currentTarget);
@@ -540,10 +543,27 @@ function renderLiveAgentCard(agent) {
       </div>
       <em>${escapeHtml(liveAgentStatusLabel(status))}</em>
       <small>${escapeHtml(providerKindLabel(agent.provider_kind))} · ${escapeHtml(connectionKindLabel(agent.connection_kind))} · ${escapeHtml(agent.engagement_mode || "mentioned")}</small>
+      <select class="live-agent-engagement" data-live-agent-engagement="${escapeHtml(agent.agent_id || "")}" aria-label="engagement mode">
+        ${renderEngagementModeOptions(agent.engagement_mode)}
+      </select>
       ${runtimeDetails ? `<small class="live-agent-runtime">${escapeHtml(runtimeDetails)}</small>` : ""}
       ${lastError ? `<small class="live-agent-error-detail">${escapeHtml(lastError)}</small>` : ""}
     </article>
   `;
+}
+
+function renderEngagementModeOptions(currentMode) {
+  const current = String(currentMode || "mentioned");
+  return [
+    ["always", "always (loop-prone)"],
+    ["human_only", "human only"],
+    ["mentioned", "mentioned"],
+    ["moderator_called", "moderator called"],
+    ["watch", "watch"],
+    ["manual", "manual"],
+  ]
+    .map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === current ? "selected" : ""}>${escapeHtml(label)}</option>`)
+    .join("");
 }
 
 function liveAgentRuntimeDetails(agent) {
@@ -1095,6 +1115,27 @@ async function sendLiveAgentRegistration(form) {
     state.liveAgentStatus = { message: `${displayName} 접속 등록됨`, tone: "success" };
   } catch {
     state.liveAgentStatus = { message: "에이전트 접속 등록 실패", tone: "error" };
+  }
+  renderLobby({ followLatest: false });
+}
+
+async function updateLiveAgentEngagement(agentId, engagementMode) {
+  if (!agentId || !engagementMode) return;
+  state.liveAgentStatus = { message: `${agentId} 반응 정책 변경 중`, tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson(`/api/live-agents/${encodeURIComponent(agentId)}/engagement`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        engagement_mode: engagementMode,
+      }),
+    });
+    setLiveAgents(payload.agents || []);
+    state.liveAgentsLoaded = true;
+    state.liveAgentStatus = { message: `${agentId} ${engagementMode} 모드`, tone: "success" };
+  } catch (error) {
+    state.liveAgentStatus = { message: `${agentId} 반응 정책 변경 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   }
   renderLobby({ followLatest: false });
 }
