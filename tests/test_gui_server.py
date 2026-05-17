@@ -288,6 +288,15 @@ class GuiServerTests(unittest.TestCase):
                             "connection_kind": "local_cli",
                         }
                     ],
+                    "recent_events": [
+                        {
+                            "event_type": "started",
+                            "timestamp": "2026-05-17T12:00:00+00:00",
+                            "group_id": group_id or "default",
+                            "status": "running",
+                            "pid": 4321,
+                        }
+                    ],
                 }
                 self.groups = [record]
                 return record
@@ -358,8 +367,10 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(started["group"]["status"], "running")
             self.assertEqual(started["group"]["agents"][0]["agent_id"], "local-a")
+            self.assertEqual(started["group"]["recent_events"][0]["event_type"], "started")
             self.assertEqual(listed["groups"][0]["group_id"], "crew")
             self.assertEqual(listed["groups"][0]["agents"][0]["connection_kind"], "local_cli")
+            self.assertEqual(listed["groups"][0]["recent_events"][0]["status"], "running")
             self.assertEqual(listed["groups"][0]["log_tail"], "resident booted")
             self.assertEqual(stopped["group"]["status"], "stopped")
             self.assertEqual(restarted["group"]["status"], "running")

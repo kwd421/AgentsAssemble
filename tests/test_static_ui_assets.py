@@ -153,6 +153,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("async function restartLiveAgentProcessGroup", script)
         self.assertIn("function liveAgentProcessAgentsLabel", script)
         self.assertIn('class="live-agent-process-agents"', script)
+        self.assertIn("function liveAgentProcessEventLabel", script)
+        self.assertIn('class="live-agent-process-event"', script)
         self.assertIn("async function sendLiveAgentRegistration", script)
         self.assertIn("async function loadCodexSessions", script)
         self.assertIn("async function sendCodexSessionInvite", script)
@@ -214,6 +216,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("min-width: 0;", css[css.index(".live-agent-process-options") :])
         self.assertIn("white-space: normal;", css)
         self.assertIn(".live-agent-process-log", css)
+        self.assertIn(".live-agent-process-event", css)
         process_row_text_css = css[css.index(".live-agent-process-row span,") : css.index(".live-agent-process-row button")]
         self.assertIn("overflow-wrap: anywhere;", process_row_text_css)
         self.assertIn("white-space: normal;", process_row_text_css)

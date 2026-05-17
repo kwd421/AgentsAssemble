@@ -15,6 +15,9 @@ from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_runner import ResidentAgentConfig, load_group_configs
 
 
+RECENT_LIFECYCLE_EVENT_LIMIT = 5
+
+
 class LiveAgentProcessSupervisor:
     def __init__(
         self,
@@ -223,6 +226,7 @@ class LiveAgentProcessSupervisor:
         self._processes[clean_group_id] = process
         self._logs[clean_group_id] = log_file
         self._write_records()
+        self._append_lifecycle_event(record, "started")
         return self._record_for_output(record)
 
     def _handle_process_exit(self, group_id: str, *, returncode: object) -> dict[str, object]:
@@ -237,7 +241,20 @@ class LiveAgentProcessSupervisor:
         restart_count = _nonnegative_int(record.get("restart_count"), 0) + 1
         backoff_seconds = _nonnegative_float(record.get("restart_backoff_seconds"), 5.0)
         last_error = f"Exited with return code {returncode}; auto restart {restart_count}/{max_restarts}."
+        transition_record = dict(record)
+        transition_record["status"] = "restarting"
+        transition_record["pid"] = None
+        transition_record["returncode"] = returncode
+        transition_record["stopped_at"] = stopped_at.isoformat()
+        transition_record["last_error"] = last_error
+        transition_record["restart_count"] = restart_count
         if backoff_seconds <= 0:
+            self._append_lifecycle_event(
+                transition_record,
+                "restart_scheduled",
+                timestamp=stopped_at,
+                returncode=returncode,
+            )
             try:
                 return self._start_group_unlocked(
                     config_path=Path(str(record.get("config_path") or "")),
@@ -260,6 +277,7 @@ class LiveAgentProcessSupervisor:
                 )
 
         next_restart_at = stopped_at + timedelta(seconds=backoff_seconds)
+        transition_record["next_restart_at"] = next_restart_at.isoformat()
         record["status"] = "restarting"
         record["pid"] = None
         record["returncode"] = returncode
@@ -268,6 +286,12 @@ class LiveAgentProcessSupervisor:
         record["restart_count"] = restart_count
         record["next_restart_at"] = next_restart_at.isoformat()
         self._write_records()
+        self._append_lifecycle_event(
+            transition_record,
+            "restart_scheduled",
+            timestamp=stopped_at,
+            returncode=returncode,
+        )
         return self._record_for_output(record)
 
     def _start_due_auto_restarts(self) -> None:
@@ -297,6 +321,7 @@ class LiveAgentProcessSupervisor:
                 record["last_error"] = f"{previous_error} Restart failed: {error}".strip()
                 record["next_restart_at"] = ""
                 self._write_records()
+                self._append_lifecycle_event(record, "restart_failed")
 
     def _stop_group_unlocked(self, group_id: str, *, timeout_seconds: float) -> dict[str, object]:
         clean_group_id = _clean_group_id(group_id)
@@ -331,6 +356,7 @@ class LiveAgentProcessSupervisor:
         record["stopped_at"] = self.now_fn().isoformat()
         record["next_restart_at"] = ""
         self._write_records()
+        self._append_lifecycle_event(record, "stopped", timestamp=_parse_datetime(record.get("stopped_at")))
         return self._record_for_output(record)
 
     def _mark_auto_restart_failed(
@@ -353,6 +379,7 @@ class LiveAgentProcessSupervisor:
         self._processes.pop(group_id, None)
         self._close_log(group_id)
         self._write_records()
+        self._append_lifecycle_event(record, "restart_failed", timestamp=stopped_at, returncode=returncode)
         return self._record_for_output(record)
 
     def _mark_stopped(self, group_id: str, *, returncode: object) -> dict[str, object]:
@@ -364,6 +391,12 @@ class LiveAgentProcessSupervisor:
         self._processes.pop(group_id, None)
         self._close_log(group_id)
         self._write_records()
+        self._append_lifecycle_event(
+            record,
+            str(record["status"]),
+            timestamp=_parse_datetime(record.get("stopped_at")),
+            returncode=returncode,
+        )
         return self._record_for_output(record)
 
     def _close_log(self, group_id: str) -> None:
@@ -376,6 +409,9 @@ class LiveAgentProcessSupervisor:
 
     def _state_path(self) -> Path:
         return self.output_root / "live-agent-runs" / "processes.json"
+
+    def _event_path(self) -> Path:
+        return self.output_root / "live-agent-runs" / "events.jsonl"
 
     def _read_records(self) -> dict[str, dict[str, object]]:
         path = self._state_path()
@@ -412,11 +448,17 @@ class LiveAgentProcessSupervisor:
                 record["status"] = "unknown"
                 record["pid"] = None
                 changed = True
+                self._append_lifecycle_event(record, "recovered_unknown")
         return changed
 
     def _record_for_output(self, record: dict[str, object]) -> dict[str, object]:
         visible = dict(record)
         visible["log_tail"] = _read_log_tail(Path(str(record.get("log_path") or "")), self.log_tail_bytes)
+        visible["recent_events"] = _recent_lifecycle_events(
+            self._event_path(),
+            str(record.get("group_id") or ""),
+            RECENT_LIFECYCLE_EVENT_LIMIT,
+        )
         return visible
 
     def _preflight_report_or_raise(self, config_path: Path, *, server: str) -> dict[str, object]:
@@ -424,6 +466,25 @@ class LiveAgentProcessSupervisor:
         if report.get("status") != "ok":
             raise ValueError(_preflight_failure_message(report))
         return report
+
+    def _append_lifecycle_event(
+        self,
+        record: dict[str, object],
+        event_type: str,
+        *,
+        timestamp: datetime | None = None,
+        returncode: object = None,
+    ) -> None:
+        event = _lifecycle_event(
+            record,
+            event_type,
+            timestamp=timestamp or self.now_fn(),
+            returncode=returncode,
+        )
+        path = self._event_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
 
 
 def _clean_group_id(value: str) -> str:
@@ -466,6 +527,73 @@ def _read_log_tail(path: Path, byte_limit: int) -> str:
         size = file.tell()
         file.seek(max(0, size - byte_limit))
         return file.read(byte_limit).decode("utf-8", errors="replace")
+
+
+def _recent_lifecycle_events(path: Path, group_id: str, limit: int) -> list[dict[str, object]]:
+    if limit <= 0 or not group_id or not path.exists() or not path.is_file():
+        return []
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        event = _safe_lifecycle_event(payload)
+        if event and event.get("group_id") == group_id:
+            events.append(event)
+    return events[-limit:]
+
+
+def _lifecycle_event(
+    record: dict[str, object],
+    event_type: str,
+    *,
+    timestamp: datetime,
+    returncode: object = None,
+) -> dict[str, object]:
+    event: dict[str, object] = {
+        "timestamp": timestamp.isoformat(),
+        "group_id": _clean_group_id(str(record.get("group_id") or "")),
+        "event_type": str(event_type or "updated"),
+        "status": str(record.get("status") or "unknown"),
+        "pid": record.get("pid") if isinstance(record.get("pid"), int) else None,
+        "returncode": returncode if isinstance(returncode, int) else _record_returncode(record),
+        "restart_count": _nonnegative_int(record.get("restart_count"), 0),
+        "max_restarts": _nonnegative_int(record.get("max_restarts"), 0),
+    }
+    next_restart_at = str(record.get("next_restart_at") or "")
+    if next_restart_at:
+        event["next_restart_at"] = next_restart_at
+    return event
+
+
+def _safe_lifecycle_event(payload: object) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        return {}
+    group_id = _clean_group_id(str(payload.get("group_id") or ""))
+    event_type = str(payload.get("event_type") or "").strip()
+    if not group_id or not event_type:
+        return {}
+    event: dict[str, object] = {
+        "timestamp": str(payload.get("timestamp") or ""),
+        "group_id": group_id,
+        "event_type": event_type,
+        "status": str(payload.get("status") or "unknown"),
+        "pid": payload.get("pid") if isinstance(payload.get("pid"), int) else None,
+        "returncode": payload.get("returncode") if isinstance(payload.get("returncode"), int) else None,
+        "restart_count": _nonnegative_int(payload.get("restart_count"), 0),
+        "max_restarts": _nonnegative_int(payload.get("max_restarts"), 0),
+    }
+    next_restart_at = str(payload.get("next_restart_at") or "")
+    if next_restart_at:
+        event["next_restart_at"] = next_restart_at
+    return event
+
+
+def _record_returncode(record: dict[str, object]) -> int | None:
+    return record.get("returncode") if isinstance(record.get("returncode"), int) else None
 
 
 def _preflight_failure_message(report: dict[str, object]) -> str:

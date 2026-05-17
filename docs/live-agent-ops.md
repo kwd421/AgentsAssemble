@@ -378,6 +378,7 @@ Default files under `--output-root .agentsassemble`:
 .agentsassemble/live_agents.json
 .agentsassemble/lobby.jsonl
 .agentsassemble/live-agent-runs/processes.json
+.agentsassemble/live-agent-runs/events.jsonl
 .agentsassemble/live-agent-runs/<group_id>.log
 ```
 
@@ -388,6 +389,7 @@ What to check:
 - `.agentsassemble/live-agent-runs/processes.json`: durable group records with `group_id`, `status`, `pid`, `config_path`, `server`, `log_path`, timestamps, `returncode`, `last_error`, and a safe launch-time `agents` manifest.
 - agents manifest entries contain only `agent_id`, `display_name`, `provider_kind`, and `connection_kind`. The manifest does not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
 - auto-restart fields in `processes.json`: `auto_restart`, `restart_count`, `max_restarts`, `restart_backoff_seconds`, and `next_restart_at`.
+- `.agentsassemble/live-agent-runs/events.jsonl`: safe lifecycle event history for supervised groups. It records bounded operator facts such as `started`, `stopped`, `error`, `restart_scheduled`, `restart_failed`, and `recovered_unknown` with `timestamp`, `group_id`, `status`, `pid`, `returncode`, and restart counters. The process API and GUI expose each group's bounded `recent_events` view. Lifecycle events do not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
 - `.agentsassemble/live-agent-runs/<group_id>.log`: stdout/stderr for the supervised `run-group` process. Delegate provider subprocess stdout/stderr is captured by the runner, not streamed directly into this file. The GUI and process API expose only a bounded `log_tail`.
 
 For scriptable monitoring, fetch the combined health summary:

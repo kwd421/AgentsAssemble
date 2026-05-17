@@ -742,6 +742,16 @@ class CliTimeoutTests(unittest.TestCase):
                             "connection_kind": "remote_bridge",
                         },
                     ],
+                    "recent_events": [
+                        {
+                            "event_type": "started",
+                            "timestamp": "2026-05-17T12:00:00+00:00",
+                            "group_id": "crew",
+                            "status": "running",
+                            "pid": 1234,
+                            "restart_count": 1,
+                        }
+                    ],
                 },
                 {"group_id": "stopped-crew", "status": "stopped", "pid": None, "config_path": "fake.json"},
             ]
@@ -758,6 +768,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("pid 1234", output)
         self.assertIn("restarts 1/3", output)
         self.assertIn("agents Local A/local_cli, Friend B/remote_bridge", output)
+        self.assertIn("last event started", output)
         self.assertNotIn("command", output)
         self.assertNotIn("auth", output)
         self.assertIn("stopped-crew: stopped", output)

@@ -486,6 +486,7 @@ function renderLiveAgentProcessCard(group) {
   const canStop = status === "running" || status === "restarting";
   const logTail = group.log_tail == null ? "" : String(group.log_tail);
   const agentLabel = liveAgentProcessAgentsLabel(group);
+  const eventLabel = liveAgentProcessEventLabel(group);
   return `
     <article class="live-agent-process-row live-agent-process-${escapeHtml(status)}">
       <div>
@@ -494,6 +495,7 @@ function renderLiveAgentProcessCard(group) {
         <small>${escapeHtml(group.pid ? `pid ${group.pid}` : "pid 없음")} · ${escapeHtml(group.server || "")}</small>
         <small>${escapeHtml(liveAgentProcessRestartLabel(group))}</small>
         ${agentLabel ? `<small class="live-agent-process-agents">${escapeHtml(agentLabel)}</small>` : ""}
+        ${eventLabel ? `<small class="live-agent-process-event">${escapeHtml(eventLabel)}</small>` : ""}
       </div>
       <em>${escapeHtml(liveAgentProcessStatusLabel(status))}</em>
       ${
@@ -516,6 +518,14 @@ function liveAgentProcessAgentsLabel(group) {
     })
     .filter(Boolean);
   return labels.length ? `agents ${labels.join(", ")}` : "";
+}
+
+function liveAgentProcessEventLabel(group) {
+  const events = Array.isArray(group.recent_events) ? group.recent_events : [];
+  const latest = [...events].reverse().find((event) => event && event.event_type);
+  if (!latest) return "";
+  const timestamp = String(latest.timestamp || "").trim();
+  return timestamp ? `last event ${latest.event_type} · ${timestamp}` : `last event ${latest.event_type}`;
 }
 
 function renderLiveAgentCard(agent) {

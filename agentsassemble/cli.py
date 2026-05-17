@@ -734,7 +734,8 @@ def _format_live_agent_process_group(group: dict[str, object]) -> str:
     max_restarts = group.get("max_restarts", 0)
     config_path = str(group.get("config_path") or "").strip()
     agents = _format_live_agent_process_agents(group.get("agents"))
-    suffix_parts = [part for part in (config_path, agents) if part]
+    last_event = _format_live_agent_process_last_event(group.get("recent_events"))
+    suffix_parts = [part for part in (config_path, agents, last_event) if part]
     suffix = f" {'; '.join(suffix_parts)}" if suffix_parts else ""
     return f"{group_id}: {status} ({pid_text}, {auto_restart}, restarts {restart_count}/{max_restarts}){suffix}"
 
@@ -765,6 +766,18 @@ def _format_live_agent_process_agents(value: object) -> str:
             continue
         labels.append(f"{name}/{connection_kind}" if connection_kind else name)
     return f"agents {', '.join(labels)}" if labels else ""
+
+
+def _format_live_agent_process_last_event(value: object) -> str:
+    if not isinstance(value, list) or not value:
+        return ""
+    for item in reversed(value):
+        if not isinstance(item, dict):
+            continue
+        event_type = str(item.get("event_type") or "").strip()
+        if event_type:
+            return f"last event {event_type}"
+    return ""
 
 
 def _run_live_agent_delegate(args: argparse.Namespace) -> int:

@@ -694,6 +694,34 @@ Return manifest entries through the process API, show them in the CLI process li
 
 ---
 
+### Task 21: Supervised Process Lifecycle Event History
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `agentsassemble/static/lobby.css`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for lifecycle evidence**
+
+Cover start/stop lifecycle events, auto-restart scheduling and relaunch events, stale `running` record recovery to `unknown`, repeated polling without duplicate exit events, output-only `recent_events`, CLI summaries, API payload propagation, GUI rendering hooks, and docs.
+
+- [x] **Step 2: Persist safe JSONL lifecycle history**
+
+Append safe lifecycle events under `live-agent-runs/events.jsonl` while keeping `processes.json` as the latest-state source of truth. Events contain bounded operator facts such as `event_type`, timestamp, group id, status, pid, return code, and restart counters, and do not include command arguments, endpoints, auth refs, command paths, prompts, log tails, or environment-derived values.
+
+- [x] **Step 3: Surface bounded recent history to operators**
+
+Expose each group's bounded `recent_events` through the existing process API responses, show the latest event in CLI process list output, render the latest lifecycle event in GUI process rows, and document the lifecycle history artifact for long-running operations and recovery debugging.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
