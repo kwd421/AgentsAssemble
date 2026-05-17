@@ -695,6 +695,90 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(groups[0]["restart_count"], 0)
         self.assertEqual(len(processes), 1)
 
+    def test_non_finite_restart_backoff_falls_back_to_default(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=lambda command, **kwargs: FakeProcess())
+
+            started = supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=float("inf"),
+            )
+
+        self.assertEqual(started["restart_backoff_seconds"], 5.0)
+
+    def test_persisted_non_finite_restart_backoff_falls_back_to_default(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            (runs_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "stopped",
+                                "pid": None,
+                                "config_path": "configs/live-agents.example.json",
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "2026-05-17T12:01:00+00:00",
+                                "returncode": 0,
+                                "last_error": "",
+                                "restart_backoff_seconds": float("nan"),
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            groups = LiveAgentProcessSupervisor(root).list_groups()
+
+        self.assertEqual(groups[0]["restart_backoff_seconds"], 5.0)
+
+    def test_persisted_non_finite_restart_counts_fall_back_to_default(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            (runs_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "stopped",
+                                "pid": None,
+                                "config_path": "configs/live-agents.example.json",
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "2026-05-17T12:01:00+00:00",
+                                "returncode": 0,
+                                "last_error": "",
+                                "restart_count": float("inf"),
+                                "max_restarts": float("inf"),
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            groups = LiveAgentProcessSupervisor(root).list_groups()
+
+        self.assertEqual(groups[0]["restart_count"], 0)
+        self.assertEqual(groups[0]["max_restarts"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

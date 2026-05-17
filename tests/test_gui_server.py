@@ -358,6 +358,125 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(supervisor.stopped, ["crew"])
             self.assertEqual(supervisor.restarted, ["crew"])
 
+    def test_live_agent_process_start_sanitizes_non_finite_backoff(self):
+        class FakeSupervisor:
+            def __init__(self):
+                self.started = []
+
+            def start_group(
+                self,
+                *,
+                config_path,
+                server,
+                group_id=None,
+                auto_restart=False,
+                max_restarts=0,
+                restart_backoff_seconds=5.0,
+            ):
+                self.started.append(restart_backoff_seconds)
+                return {
+                    "group_id": group_id or "default",
+                    "status": "running",
+                    "pid": 1234,
+                    "config_path": str(config_path),
+                    "server": server,
+                    "restart_backoff_seconds": restart_backoff_seconds,
+                }
+
+            def list_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor = FakeSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/start",
+                    data=json.dumps(
+                        {
+                            "config_path": str(config_path),
+                            "group_id": "crew",
+                            "auto_restart": True,
+                            "max_restarts": 1,
+                            "restart_backoff_seconds": float("inf"),
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["group"]["restart_backoff_seconds"], 5.0)
+            self.assertEqual(supervisor.started, [5.0])
+
+    def test_live_agent_process_start_sanitizes_non_finite_restart_count(self):
+        class FakeSupervisor:
+            def __init__(self):
+                self.started = []
+
+            def start_group(
+                self,
+                *,
+                config_path,
+                server,
+                group_id=None,
+                auto_restart=False,
+                max_restarts=0,
+                restart_backoff_seconds=5.0,
+            ):
+                self.started.append(max_restarts)
+                return {
+                    "group_id": group_id or "default",
+                    "status": "running",
+                    "pid": 1234,
+                    "config_path": str(config_path),
+                    "server": server,
+                    "max_restarts": max_restarts,
+                }
+
+            def list_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor = FakeSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/start",
+                    data=json.dumps(
+                        {
+                            "config_path": str(config_path),
+                            "group_id": "crew",
+                            "auto_restart": True,
+                            "max_restarts": float("inf"),
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["group"]["max_restarts"], 0)
+            self.assertEqual(supervisor.started, [0])
+
     def test_live_agent_health_endpoint_summarizes_agents_and_processes(self):
         class FakeSupervisor:
             def __init__(self):

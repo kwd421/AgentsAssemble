@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import signal
 import subprocess
@@ -430,7 +431,7 @@ def _bool_value(value: object) -> bool:
 def _nonnegative_int(value: object, default: int) -> int:
     try:
         parsed = int(value)
-    except (TypeError, ValueError):
+    except (OverflowError, TypeError, ValueError):
         return default
     return max(0, parsed)
 
@@ -439,6 +440,8 @@ def _nonnegative_float(value: object, default: float) -> float:
     try:
         parsed = float(value)
     except (TypeError, ValueError):
+        return default
+    if not math.isfinite(parsed):
         return default
     return max(0.0, parsed)
 
