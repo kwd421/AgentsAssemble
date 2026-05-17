@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 import threading
@@ -32,6 +33,20 @@ def parse_codex_timeout(value: str) -> int | None:
     if timeout < 0:
         raise argparse.ArgumentTypeError("timeout must be positive, 0, or none")
     return timeout
+
+
+def parse_nonnegative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("value must be non-negative")
+    return parsed
+
+
+def parse_nonnegative_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed < 0:
+        raise argparse.ArgumentTypeError("value must be a finite non-negative number")
+    return parsed
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -159,6 +174,28 @@ def build_parser() -> argparse.ArgumentParser:
     live_group.add_argument("--server", default=None)
     live_group.add_argument("--max-ticks", type=int, default=None)
 
+    live_processes = live_agent_subparsers.add_parser("processes", help="Manage supervised live-agent process groups.")
+    live_process_subparsers = live_processes.add_subparsers(dest="live_agent_process_command", required=True)
+
+    live_process_list = live_process_subparsers.add_parser("list", parents=[live_server], help="List supervised live-agent process groups.")
+    live_process_list.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
+
+    live_process_start = live_process_subparsers.add_parser("start", parents=[live_server], help="Start a supervised live-agent run-group.")
+    live_process_start.add_argument("--config", required=True, help="Resident group config path.")
+    live_process_start.add_argument("--group-id", default="")
+    live_process_start.add_argument("--auto-restart", action="store_true")
+    live_process_start.add_argument("--max-restarts", type=parse_nonnegative_int, default=0)
+    live_process_start.add_argument("--restart-backoff-seconds", type=parse_nonnegative_float, default=5.0)
+    live_process_start.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
+
+    live_process_stop = live_process_subparsers.add_parser("stop", parents=[live_server], help="Stop a supervised live-agent process group.")
+    live_process_stop.add_argument("group_id")
+    live_process_stop.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
+
+    live_process_restart = live_process_subparsers.add_parser("restart", parents=[live_server], help="Restart a supervised live-agent process group.")
+    live_process_restart.add_argument("group_id")
+    live_process_restart.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
+
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
     session_subparsers = sessions.add_subparsers(dest="sessions_command", required=True)
 
@@ -254,6 +291,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return 0
         if args.live_agent_command == "health":
             return _run_live_agent_health(args)
+        if args.live_agent_command == "processes":
+            return _run_live_agent_processes(args)
         if args.live_agent_command == "delegate":
             return _run_live_agent_delegate(args)
         if args.live_agent_command == "run":
@@ -373,6 +412,87 @@ def _attention_summary(items: list[object]) -> str:
     return ", ".join(cleaned) if cleaned else "none"
 
 
+def _run_live_agent_processes(args: argparse.Namespace) -> int:
+    if args.live_agent_process_command == "list":
+        payload = _request_json(_server_url(args.server, "/api/live-agent-processes"))
+        _print_live_agent_process_payload(payload, as_json=args.as_json)
+        return 0
+    if args.live_agent_process_command == "start":
+        if args.auto_restart and args.max_restarts <= 0:
+            raise ValueError("--auto-restart requires --max-restarts greater than 0.")
+        payload = {
+            "config_path": args.config,
+            "server": args.server,
+            "auto_restart": args.auto_restart,
+            "max_restarts": args.max_restarts,
+            "restart_backoff_seconds": args.restart_backoff_seconds,
+        }
+        if args.group_id:
+            payload["group_id"] = args.group_id
+        response = _request_json(
+            _server_url(args.server, "/api/live-agent-processes/start"),
+            method="POST",
+            payload=payload,
+        )
+        _print_live_agent_process_payload(response, as_json=args.as_json, action="start")
+        return 0
+    if args.live_agent_process_command in {"stop", "restart"}:
+        group_id = urllib.parse.quote(args.group_id, safe="")
+        response = _request_json(
+            _server_url(args.server, f"/api/live-agent-processes/{group_id}/{args.live_agent_process_command}"),
+            method="POST",
+            payload={},
+        )
+        _print_live_agent_process_payload(response, as_json=args.as_json, action=args.live_agent_process_command)
+        return 0
+    return 1
+
+
+def _print_live_agent_process_payload(payload: dict[str, object], *, as_json: bool, action: str = "list") -> None:
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    group = payload.get("group") if isinstance(payload.get("group"), dict) else None
+    if group is not None:
+        print(_format_live_agent_process_action(group, action))
+        return
+
+    groups = payload.get("groups") if isinstance(payload.get("groups"), list) else []
+    if not groups:
+        print("no live-agent process groups")
+        return
+    for item in groups:
+        if isinstance(item, dict):
+            print(_format_live_agent_process_group(item))
+
+
+def _format_live_agent_process_group(group: dict[str, object]) -> str:
+    group_id = str(group.get("group_id") or "unknown")
+    status = str(group.get("status") or "unknown")
+    pid = group.get("pid")
+    pid_text = f"pid {pid}" if pid not in (None, "") else "pid -"
+    auto_restart = "auto-restart on" if group.get("auto_restart") else "auto-restart off"
+    restart_count = group.get("restart_count", 0)
+    max_restarts = group.get("max_restarts", 0)
+    config_path = str(group.get("config_path") or "").strip()
+    suffix = f" {config_path}" if config_path else ""
+    return f"{group_id}: {status} ({pid_text}, {auto_restart}, restarts {restart_count}/{max_restarts}){suffix}"
+
+
+def _format_live_agent_process_action(group: dict[str, object], action: str) -> str:
+    group_id = str(group.get("group_id") or "unknown")
+    status = str(group.get("status") or "unknown")
+    pid = group.get("pid")
+    if action == "start":
+        return f"Started {group_id} (pid {pid if pid not in (None, '') else '-'})"
+    if action == "stop":
+        return f"Stopped {group_id} ({status})"
+    if action == "restart":
+        return f"Restarted {group_id} (pid {pid if pid not in (None, '') else '-'})"
+    return _format_live_agent_process_group(group)
+
+
 def _run_live_agent_delegate(args: argparse.Namespace) -> int:
     payload = {
         "agent_id": args.agent_id,
@@ -453,9 +573,25 @@ def _request_json(url: str, *, method: str = "GET", payload: dict[str, object] |
     data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json"} if payload is not None else {}
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(request, timeout=10) as response:
-        loaded = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            loaded = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        raise ValueError(_http_error_message(error)) from error
     return loaded if isinstance(loaded, dict) else {}
+
+
+def _http_error_message(error: urllib.error.HTTPError) -> str:
+    body = error.read().decode("utf-8", errors="replace")
+    if body:
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            payload = {}
+        if isinstance(payload, dict) and payload.get("error"):
+            return str(payload["error"])
+        return body.strip()
+    return str(error)
 
 
 def run_sessions_command(args: argparse.Namespace) -> int:

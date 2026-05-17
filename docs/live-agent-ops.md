@@ -111,6 +111,29 @@ Use the GUI "상주 실행" panel for supervised process records and stop contro
 
 The GUI start button runs the same resident group through the local process supervisor. Group records and log tails remain visible even after the process stops or crashes. Auto restart only applies to a group launched with that option enabled, and it starts a fresh local process rather than attaching to an old PID.
 
+The same supervised start path is available from the CLI:
+
+```bash
+python3 -m agentsassemble.cli live-agent processes start \
+  --server http://127.0.0.1:8765 \
+  --config "$fake_config" \
+  --group-id local-cli-group
+```
+
+For auto restart, pass both `--auto-restart` and a positive `--max-restarts` value:
+
+```bash
+python3 -m agentsassemble.cli live-agent processes start \
+  --server http://127.0.0.1:8765 \
+  --config "$fake_config" \
+  --group-id local-cli-group \
+  --auto-restart \
+  --max-restarts 2 \
+  --restart-backoff-seconds 5
+```
+
+Here `--server` is the GUI API target and the room server URL passed to the supervised `run-group`.
+
 ## Stop Or Restart A Group
 
 Prefer the GUI stop button for a running group. The HTTP stop path is also available:
@@ -131,7 +154,24 @@ curl -X POST \
   http://127.0.0.1:8765/api/live-agent-processes/local-cli-group/restart
 ```
 
-The supervisor only stops group ids it launched in the current GUI process. Historical records from a previous GUI process are shown as `unknown`, `stopped`, or `error`, but are not treated as externally stoppable PIDs. Restarting a historical record starts a fresh local process from the saved config and server instead of attaching to the old PID. A manual restart resets the auto-restart counter for the new run while preserving the configured retry policy.
+The CLI equivalents are:
+
+```bash
+python3 -m agentsassemble.cli live-agent processes list \
+  --server http://127.0.0.1:8765
+
+python3 -m agentsassemble.cli live-agent processes stop local-cli-group \
+  --server http://127.0.0.1:8765
+
+python3 -m agentsassemble.cli live-agent processes restart local-cli-group \
+  --server http://127.0.0.1:8765
+```
+
+Add `--json` to any process CLI command to print the raw HTTP payload.
+
+The process CLI uses exit code `0` for successful supervisor requests, even when a listed group is `stopped`, `error`, or `unknown`. It uses exit code `2` for argument validation, connection failures, invalid JSON, HTTP errors, missing config files, unknown group ids, and refused restarts.
+
+The supervisor only stops group ids it launched in the current GUI process. It does not control arbitrary OS PIDs. Historical records from a previous GUI process are shown as `unknown`, `stopped`, or `error`, but are not treated as externally stoppable PIDs. Restarting a historical record starts a fresh local process from the saved config and server instead of attaching to the old PID. A manual restart resets the auto-restart counter for the new run while preserving the configured retry policy.
 
 ## Inspect Runtime State
 

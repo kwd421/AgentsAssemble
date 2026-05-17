@@ -3,6 +3,7 @@ import json
 import sys
 import tempfile
 import threading
+import urllib.error
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 from io import StringIO
@@ -348,6 +349,339 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertIn("status: degraded", output)
             self.assertIn("agent attention: error-agent", output)
             self.assertIn("process attention: crashed-group", output)
+
+    def test_live_agent_processes_start_parses_supervisor_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "processes",
+                "start",
+                "--server",
+                "http://room.local",
+                "--config",
+                "configs/live-agents.example.json",
+                "--group-id",
+                "crew",
+                "--auto-restart",
+                "--max-restarts",
+                "2",
+                "--restart-backoff-seconds",
+                "1.5",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "processes")
+        self.assertEqual(args.live_agent_process_command, "start")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.config, "configs/live-agents.example.json")
+        self.assertEqual(args.group_id, "crew")
+        self.assertTrue(args.auto_restart)
+        self.assertEqual(args.max_restarts, 2)
+        self.assertEqual(args.restart_backoff_seconds, 1.5)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_processes_list_prints_summary(self):
+        payload = {
+            "groups": [
+                {
+                    "group_id": "crew",
+                    "status": "running",
+                    "pid": 1234,
+                    "auto_restart": True,
+                    "restart_count": 1,
+                    "max_restarts": 3,
+                    "config_path": "configs/live-agents.example.json",
+                },
+                {"group_id": "stopped-crew", "status": "stopped", "pid": None, "config_path": "fake.json"},
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "processes", "list", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-processes")
+        output = stdout.getvalue()
+        self.assertIn("crew: running", output)
+        self.assertIn("pid 1234", output)
+        self.assertIn("restarts 1/3", output)
+        self.assertIn("stopped-crew: stopped", output)
+
+    def test_live_agent_processes_start_posts_supervisor_payload(self):
+        payload = {"group": {"group_id": "crew", "status": "running", "pid": 1234}, "groups": []}
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "processes",
+                        "start",
+                        "--server",
+                        "http://room.local",
+                        "--config",
+                        "configs/live-agents.example.json",
+                        "--group-id",
+                        "crew",
+                        "--auto-restart",
+                        "--max-restarts",
+                        "2",
+                        "--restart-backoff-seconds",
+                        "1.5",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-processes/start",
+            method="POST",
+            payload={
+                "config_path": "configs/live-agents.example.json",
+                "server": "http://room.local",
+                "group_id": "crew",
+                "auto_restart": True,
+                "max_restarts": 2,
+                "restart_backoff_seconds": 1.5,
+            },
+        )
+        self.assertIn("Started crew (pid 1234)", stdout.getvalue())
+
+    def test_live_agent_processes_start_requires_positive_restart_limit_when_enabled(self):
+        stderr = StringIO()
+        with patch("agentsassemble.cli._request_json") as request_json:
+            with patch("sys.stderr", stderr):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "processes",
+                        "start",
+                        "--server",
+                        "http://room.local",
+                        "--config",
+                        "configs/live-agents.example.json",
+                        "--auto-restart",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 2)
+        request_json.assert_not_called()
+        self.assertIn("--auto-restart requires --max-restarts greater than 0", stderr.getvalue())
+
+    def test_live_agent_processes_rejects_invalid_restart_numbers(self):
+        invalid_commands = [
+            [
+                "live-agent",
+                "processes",
+                "start",
+                "--config",
+                "configs/live-agents.example.json",
+                "--max-restarts",
+                "-1",
+            ],
+            [
+                "live-agent",
+                "processes",
+                "start",
+                "--config",
+                "configs/live-agents.example.json",
+                "--restart-backoff-seconds",
+                "-0.1",
+            ],
+            [
+                "live-agent",
+                "processes",
+                "start",
+                "--config",
+                "configs/live-agents.example.json",
+                "--restart-backoff-seconds",
+                "inf",
+            ],
+            [
+                "live-agent",
+                "processes",
+                "start",
+                "--config",
+                "configs/live-agents.example.json",
+                "--restart-backoff-seconds",
+                "nan",
+            ],
+        ]
+
+        with patch("sys.stderr", StringIO()):
+            for command in invalid_commands:
+                with self.subTest(command=command):
+                    with self.assertRaises(SystemExit) as raised:
+                        build_parser().parse_args(command)
+                    self.assertEqual(raised.exception.code, 2)
+
+    def test_live_agent_processes_json_prints_raw_payload(self):
+        payload = {"groups": [{"group_id": "crew", "status": "running"}]}
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "processes", "list", "--server", "http://room.local", "--json"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), payload)
+
+    def test_live_agent_processes_stop_and_restart_quote_group_id(self):
+        stop_payload = {"group": {"group_id": "crew one", "status": "stopped"}}
+        restart_payload = {"group": {"group_id": "crew one", "status": "running", "pid": 5678}}
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=[stop_payload, restart_payload]) as request_json:
+            with patch("sys.stdout", stdout):
+                stop_exit = main(["live-agent", "processes", "stop", "crew one", "--server", "http://room.local"])
+                restart_exit = main(["live-agent", "processes", "restart", "crew one", "--server", "http://room.local"])
+
+        self.assertEqual(stop_exit, 0)
+        self.assertEqual(restart_exit, 0)
+        self.assertEqual(
+            request_json.call_args_list[0].args[0],
+            "http://room.local/api/live-agent-processes/crew%20one/stop",
+        )
+        self.assertEqual(request_json.call_args_list[0].kwargs, {"method": "POST", "payload": {}})
+        self.assertEqual(
+            request_json.call_args_list[1].args[0],
+            "http://room.local/api/live-agent-processes/crew%20one/restart",
+        )
+        self.assertEqual(request_json.call_args_list[1].kwargs, {"method": "POST", "payload": {}})
+        output = stdout.getvalue()
+        self.assertIn("Stopped crew one (stopped)", output)
+        self.assertIn("Restarted crew one (pid 5678)", output)
+
+    def test_live_agent_processes_http_error_body_reaches_stderr(self):
+        class BadRequestHandler:
+            code = 400
+            reason = "Bad Request"
+            headers = {}
+
+            def read(self):
+                return b'{"error": "Live agent config missing.json was not found."}'
+
+            def close(self):
+                return None
+
+        stderr = StringIO()
+        with patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError("url", 400, "Bad Request", {}, BadRequestHandler())):
+            with patch("sys.stderr", stderr):
+                exit_code = main(["live-agent", "processes", "list", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("Live agent config missing.json was not found.", stderr.getvalue())
+
+    def test_live_agent_processes_cli_controls_real_http_supervisor(self):
+        class FakeSupervisor:
+            def __init__(self):
+                self.groups = []
+                self.started = []
+                self.stopped = []
+                self.restarted = []
+
+            def list_groups(self):
+                return self.groups
+
+            def start_group(
+                self,
+                *,
+                config_path,
+                server,
+                group_id=None,
+                auto_restart=False,
+                max_restarts=0,
+                restart_backoff_seconds=5.0,
+            ):
+                self.started.append(
+                    {
+                        "config_path": str(config_path),
+                        "server": server,
+                        "group_id": group_id,
+                        "auto_restart": auto_restart,
+                        "max_restarts": max_restarts,
+                        "restart_backoff_seconds": restart_backoff_seconds,
+                    }
+                )
+                record = {
+                    "group_id": group_id or "live-agents",
+                    "status": "running",
+                    "pid": 1234,
+                    "config_path": str(config_path),
+                    "auto_restart": auto_restart,
+                    "restart_count": 0,
+                    "max_restarts": max_restarts,
+                    "restart_backoff_seconds": restart_backoff_seconds,
+                    "log_tail": "started",
+                }
+                self.groups = [record]
+                return record
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                record = dict(self.groups[0])
+                record["status"] = "stopped"
+                record["pid"] = None
+                self.groups = [record]
+                return record
+
+            def restart_group(self, group_id):
+                self.restarted.append(group_id)
+                record = dict(self.groups[0])
+                record["status"] = "running"
+                record["pid"] = 5678
+                self.groups = [record]
+                return record
+
+            def snapshot_groups(self):
+                return self.groups
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor = FakeSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                with patch("sys.stdout", StringIO()) as stdout:
+                    start_exit = main(
+                        [
+                            "live-agent",
+                            "processes",
+                            "start",
+                            "--server",
+                            server_url,
+                            "--config",
+                            str(config_path),
+                            "--group-id",
+                            "crew",
+                            "--auto-restart",
+                            "--max-restarts",
+                            "2",
+                        ]
+                    )
+                    list_exit = main(["live-agent", "processes", "list", "--server", server_url])
+                    stop_exit = main(["live-agent", "processes", "stop", "crew", "--server", server_url])
+                    restart_exit = main(["live-agent", "processes", "restart", "crew", "--server", server_url])
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual((start_exit, list_exit, stop_exit, restart_exit), (0, 0, 0, 0))
+            self.assertEqual(supervisor.started[0]["group_id"], "crew")
+            self.assertEqual(supervisor.started[0]["server"], server_url)
+            self.assertEqual(supervisor.started[0]["auto_restart"], True)
+            self.assertEqual(supervisor.started[0]["max_restarts"], 2)
+            self.assertEqual(supervisor.stopped, ["crew"])
+            self.assertEqual(supervisor.restarted, ["crew"])
+            output = stdout.getvalue()
+            self.assertIn("crew: running", output)
+            self.assertIn("Started crew (pid 1234)", output)
+            self.assertIn("Stopped crew (stopped)", output)
+            self.assertIn("Restarted crew (pid 5678)", output)
 
     def test_live_agent_delegate_runs_local_command_and_posts_reply(self):
         stdout = StringIO()
