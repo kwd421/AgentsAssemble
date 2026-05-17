@@ -118,6 +118,11 @@ def build_parser() -> argparse.ArgumentParser:
     gui.add_argument("--host", default="127.0.0.1")
     gui.add_argument("--port", type=int, default=8765)
     gui.add_argument("--output-root", default=".agentsassemble")
+    gui.add_argument("--live-agent-config", default="", help="Explicit resident group config to autostart after the GUI binds.")
+    gui.add_argument("--live-agent-group-id", default="", help="Optional group id for GUI startup autostart.")
+    gui.add_argument("--live-agent-auto-restart", action="store_true", help="Enable auto restart for the startup autostart group.")
+    gui.add_argument("--live-agent-max-restarts", type=parse_nonnegative_int, default=0)
+    gui.add_argument("--live-agent-restart-backoff-seconds", type=parse_nonnegative_float, default=5.0)
 
     bridge = subparsers.add_parser("claude-bridge", help="Run a friend-owned Claude Code bridge.")
     bridge.add_argument("--host", default="127.0.0.1")
@@ -324,7 +329,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if args.command == "gui":
-        serve_gui(host=args.host, port=args.port, output_root=Path(args.output_root))
+        serve_gui(
+            host=args.host,
+            port=args.port,
+            output_root=Path(args.output_root),
+            live_agent_config=Path(args.live_agent_config) if args.live_agent_config else None,
+            live_agent_group_id=args.live_agent_group_id,
+            live_agent_auto_restart=args.live_agent_auto_restart,
+            live_agent_max_restarts=args.live_agent_max_restarts,
+            live_agent_restart_backoff_seconds=args.live_agent_restart_backoff_seconds,
+        )
         return 0
     if args.command == "claude-bridge":
         serve_bridge(host=args.host, port=args.port, token=args.token, command=args.bridge_command)

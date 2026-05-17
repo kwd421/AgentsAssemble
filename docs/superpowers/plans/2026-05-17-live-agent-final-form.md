@@ -980,6 +980,31 @@ Document `operations.jsonl`, API and CLI usage, safe redaction limits, and the d
 
 ---
 
+### Task 32: Explicit GUI Startup Autostart For Resident Groups
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for explicit GUI autostart**
+
+Cover new `assemble gui --live-agent-config ...` parser options, the default no-autostart path, bound-server URL handoff for `--port 0`, safe `process.autostart` success history, and failed autostart history that still leaves the GUI serving.
+
+- [x] **Step 2: Wire explicit GUI autostart through the supervisor**
+
+Pass the optional GUI autostart flags into `serve_gui()`, start one supervised group only when a config path is explicitly provided, use the actual bound server URL, and keep startup failures inside a bounded operation record instead of preventing the GUI room from serving.
+
+- [x] **Step 3: Document operator semantics**
+
+Document that GUI startup autostart is explicit, does not start `configs/live-agents.example.json` by default, uses the existing supervised preflight/start path, records `process.autostart`, and preserves GUI availability after autostart refusal or failure.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

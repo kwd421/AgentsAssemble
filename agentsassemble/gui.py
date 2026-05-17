@@ -167,20 +167,94 @@ def _latest_live_mtime(meeting_dir: Path) -> float | None:
     return max(mtimes) if mtimes else None
 
 
-def serve_gui(host: str = "127.0.0.1", port: int = 8765, output_root: Path | None = None) -> None:
+def serve_gui(
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    output_root: Path | None = None,
+    *,
+    live_agent_config: Path | None = None,
+    live_agent_group_id: str = "",
+    live_agent_auto_restart: bool = False,
+    live_agent_max_restarts: int = 0,
+    live_agent_restart_backoff_seconds: float = 5.0,
+) -> None:
     root = output_root or Path(".agentsassemble")
     process_supervisor = LiveAgentProcessSupervisor(root)
     handler = _make_handler(root, process_supervisor=process_supervisor)
     server = ThreadingHTTPServer((host, port), handler)
     try:
         process_supervisor.start_monitor()
-        print(f"AgentsAssemble GUI: http://{host}:{port}")
+        server_url = _local_server_url(server.server_address)
+        if live_agent_config is not None:
+            _autostart_live_agent_group(
+                root,
+                process_supervisor,
+                config_path=live_agent_config,
+                server_url=server_url,
+                group_id=live_agent_group_id,
+                auto_restart=live_agent_auto_restart,
+                max_restarts=live_agent_max_restarts,
+                restart_backoff_seconds=live_agent_restart_backoff_seconds,
+            )
+        print(f"AgentsAssemble GUI: {server_url}")
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping AgentsAssemble GUI")
     finally:
         process_supervisor.close()
         server.server_close()
+
+
+def _autostart_live_agent_group(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    *,
+    config_path: Path,
+    server_url: str,
+    group_id: str = "",
+    auto_restart: bool = False,
+    max_restarts: int = 0,
+    restart_backoff_seconds: float = 5.0,
+) -> None:
+    try:
+        group = process_supervisor.start_group(
+            config_path=config_path,
+            server=server_url,
+            group_id=group_id.strip() or None,
+            auto_restart=auto_restart,
+            max_restarts=max_restarts,
+            restart_backoff_seconds=restart_backoff_seconds,
+        )
+    except Exception as error:
+        record_live_agent_operation(
+            output_root,
+            operation="process.autostart",
+            status="failed",
+            target_id=group_id,
+            error=str(error),
+            details={
+                "group_id": group_id,
+                "auto_restart": bool(auto_restart),
+                "max_restarts": max_restarts,
+                "restart_backoff_seconds": restart_backoff_seconds,
+            },
+        )
+        print("Live-agent autostart failed; inspect recent operations for details.")
+        return
+    record_live_agent_operation(
+        output_root,
+        operation="process.autostart",
+        status="success",
+        target_id=str(group.get("group_id") or group_id),
+        summary="autostarted live-agent process group",
+        details={
+            "group_id": str(group.get("group_id") or group_id),
+            "group_status": str(group.get("status") or ""),
+            "auto_restart": bool(auto_restart),
+            "max_restarts": max_restarts,
+            "restart_backoff_seconds": restart_backoff_seconds,
+        },
+    )
 
 
 def _read_optional(path: Path) -> str:

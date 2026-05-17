@@ -26,6 +26,28 @@ The live-agent roster and supervised process panel auto-refresh in the GUI every
 
 That example config contains real `claude` and `gemini` commands. Do not start it until the real-provider checklist below is satisfied.
 
+## GUI Startup Autostart
+
+GUI startup autostart is explicit. Starting the GUI with only `gui --host ... --port ... --output-root ...` does not autostart `configs/live-agents.example.json` by default.
+
+Use `--live-agent-config` only when you want the GUI server itself to start one supervised resident group after the HTTP server has bound:
+
+```bash
+python3 -m agentsassemble.cli gui \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --output-root .agentsassemble \
+  --live-agent-config /path/to/fake-live-agents.json \
+  --live-agent-group-id boot \
+  --live-agent-auto-restart \
+  --live-agent-max-restarts 3 \
+  --live-agent-restart-backoff-seconds 5
+```
+
+The autostart path uses the same supervisor start and preflight gate as the GUI `시작` button and `live-agent processes start`. It passes the actual bound GUI URL to the resident group, including an OS-selected port when `--port 0` is used.
+
+Startup autostart records a safe `process.autostart` entry in `live-agent-runs/operations.jsonl`. If the config is missing or preflight refuses it, the GUI still serves the room and the failed autostart is visible through recent operations.
+
 ## Runtime Engagement Policy
 
 Each roster card has a compact engagement selector for the live agent. It writes through:

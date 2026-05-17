@@ -104,6 +104,41 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.command, "claude-bridge")
         self.assertEqual(args.bridge_command, "claude")
 
+    def test_gui_accepts_live_agent_autostart_options(self):
+        with patch("agentsassemble.cli.serve_gui") as serve_gui:
+            exit_code = main(
+                [
+                    "gui",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    "0",
+                    "--output-root",
+                    "out",
+                    "--live-agent-config",
+                    "configs/fake-live-agents.json",
+                    "--live-agent-group-id",
+                    "boot",
+                    "--live-agent-auto-restart",
+                    "--live-agent-max-restarts",
+                    "3",
+                    "--live-agent-restart-backoff-seconds",
+                    "1.5",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        serve_gui.assert_called_once()
+        kwargs = serve_gui.call_args.kwargs
+        self.assertEqual(kwargs["host"], "127.0.0.1")
+        self.assertEqual(kwargs["port"], 0)
+        self.assertEqual(kwargs["output_root"], Path("out"))
+        self.assertEqual(kwargs["live_agent_config"], Path("configs/fake-live-agents.json"))
+        self.assertEqual(kwargs["live_agent_group_id"], "boot")
+        self.assertTrue(kwargs["live_agent_auto_restart"])
+        self.assertEqual(kwargs["live_agent_max_restarts"], 3)
+        self.assertEqual(kwargs["live_agent_restart_backoff_seconds"], 1.5)
+
     def test_sessions_list_outputs_codex_session_index_as_json(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             codex_home = Path(temp_dir) / ".codex"

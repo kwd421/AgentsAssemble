@@ -1115,6 +1115,7 @@ class GuiServerTests(unittest.TestCase):
             def __init__(self, address, handler):
                 self.address = address
                 self.handler = handler
+                self.server_address = (address[0], 43210 if address[1] == 0 else address[1])
                 self.closed = False
 
             def serve_forever(self):
@@ -1154,6 +1155,188 @@ class GuiServerTests(unittest.TestCase):
         self.assertTrue(servers[0].closed)
         self.assertTrue(FakeSupervisor.instances[0].monitor_started)
         self.assertTrue(FakeSupervisor.instances[0].closed)
+
+    def test_serve_gui_does_not_autostart_without_explicit_config(self):
+        class FakeServer:
+            def __init__(self, address, handler):
+                self.server_address = (address[0], 43210 if address[1] == 0 else address[1])
+                self.closed = False
+
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+            def server_close(self):
+                self.closed = True
+
+        class FakeSupervisor:
+            instances = []
+
+            def __init__(self, output_root):
+                self.started = []
+                self.closed = False
+                self.instances.append(self)
+
+            def start_monitor(self):
+                return None
+
+            def start_group(self, **kwargs):
+                self.started.append(kwargs)
+                return {"group_id": kwargs.get("group_id") or "group", "status": "running"}
+
+            def close(self):
+                self.closed = True
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            servers = []
+
+            def server_factory(address, handler):
+                server = FakeServer(address, handler)
+                servers.append(server)
+                return server
+
+            with patch("agentsassemble.gui.LiveAgentProcessSupervisor", FakeSupervisor):
+                with patch("agentsassemble.gui.ThreadingHTTPServer", server_factory):
+                    with patch("sys.stdout", StringIO()):
+                        serve_gui(host="127.0.0.1", port=0, output_root=Path(temp_dir))
+
+        self.assertEqual(FakeSupervisor.instances[0].started, [])
+        self.assertTrue(servers[0].closed)
+        self.assertTrue(FakeSupervisor.instances[0].closed)
+
+    def test_serve_gui_autostarts_explicit_live_agent_config_after_server_bind(self):
+        class FakeServer:
+            def __init__(self, address, handler):
+                self.server_address = (address[0], 45678 if address[1] == 0 else address[1])
+                self.closed = False
+
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+            def server_close(self):
+                self.closed = True
+
+        class FakeSupervisor:
+            instances = []
+
+            def __init__(self, output_root):
+                self.output_root = output_root
+                self.started = []
+                self.closed = False
+                self.instances.append(self)
+
+            def start_monitor(self):
+                return None
+
+            def start_group(self, **kwargs):
+                self.started.append(kwargs)
+                return {"group_id": kwargs.get("group_id") or "group", "status": "running"}
+
+            def close(self):
+                self.closed = True
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": []}', encoding="utf-8")
+            servers = []
+
+            def server_factory(address, handler):
+                server = FakeServer(address, handler)
+                servers.append(server)
+                return server
+
+            with patch("agentsassemble.gui.LiveAgentProcessSupervisor", FakeSupervisor):
+                with patch("agentsassemble.gui.ThreadingHTTPServer", server_factory):
+                    with patch("sys.stdout", StringIO()):
+                        serve_gui(
+                            host="127.0.0.1",
+                            port=0,
+                            output_root=root,
+                            live_agent_config=config_path,
+                            live_agent_group_id="boot",
+                            live_agent_auto_restart=True,
+                            live_agent_max_restarts=3,
+                            live_agent_restart_backoff_seconds=1.5,
+                        )
+
+            operations = json.loads((root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+
+        self.assertEqual(len(FakeSupervisor.instances[0].started), 1)
+        started = FakeSupervisor.instances[0].started[0]
+        self.assertEqual(started["config_path"], config_path)
+        self.assertEqual(started["server"], "http://127.0.0.1:45678")
+        self.assertEqual(started["group_id"], "boot")
+        self.assertTrue(started["auto_restart"])
+        self.assertEqual(started["max_restarts"], 3)
+        self.assertEqual(started["restart_backoff_seconds"], 1.5)
+        self.assertEqual(operations["operation"], "process.autostart")
+        self.assertEqual(operations["status"], "success")
+        self.assertEqual(operations["target_id"], "boot")
+        self.assertTrue(servers[0].closed)
+        self.assertTrue(FakeSupervisor.instances[0].closed)
+
+    def test_serve_gui_records_failed_autostart_and_still_serves(self):
+        class FakeServer:
+            def __init__(self, address, handler):
+                self.server_address = (address[0], 45679 if address[1] == 0 else address[1])
+                self.served = False
+                self.closed = False
+
+            def serve_forever(self):
+                self.served = True
+                raise KeyboardInterrupt
+
+            def server_close(self):
+                self.closed = True
+
+        class FakeSupervisor:
+            instances = []
+
+            def __init__(self, output_root):
+                self.closed = False
+                self.instances.append(self)
+
+            def start_monitor(self):
+                return None
+
+            def start_group(self, **kwargs):
+                raise ValueError("Live agent config /Users/me/private/live-agents.json was not found.")
+
+            def close(self):
+                self.closed = True
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "missing-live-agents.json"
+            servers = []
+
+            def server_factory(address, handler):
+                server = FakeServer(address, handler)
+                servers.append(server)
+                return server
+
+            with patch("agentsassemble.gui.LiveAgentProcessSupervisor", FakeSupervisor):
+                with patch("agentsassemble.gui.ThreadingHTTPServer", server_factory):
+                    with patch("sys.stdout", StringIO()):
+                        serve_gui(
+                            host="127.0.0.1",
+                            port=0,
+                            output_root=root,
+                            live_agent_config=config_path,
+                            live_agent_group_id="boot",
+                        )
+
+            operations = json.loads((root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+            persisted = json.dumps(operations, ensure_ascii=False)
+
+        self.assertTrue(servers[0].served)
+        self.assertTrue(servers[0].closed)
+        self.assertTrue(FakeSupervisor.instances[0].closed)
+        self.assertEqual(operations["operation"], "process.autostart")
+        self.assertEqual(operations["status"], "failed")
+        self.assertEqual(operations["target_id"], "boot")
+        self.assertIn("Live agent config", operations["error"])
+        self.assertNotIn("/Users/me/private", persisted)
 
     def test_serve_gui_cleans_up_when_monitor_start_fails(self):
         class FakeServer:
