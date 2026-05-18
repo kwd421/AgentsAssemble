@@ -27,7 +27,7 @@ from agentsassemble.live_agent_operations import append_live_agent_operation, re
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
-from agentsassemble.live_agent_rounds import build_official_round_turns
+from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
 from agentsassemble.live_agent_sessions import start_live_agent_session
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_official_round_smoke, run_live_agent_smoke
 from agentsassemble.live_agent_turns import wait_for_official_turn_reply
@@ -45,6 +45,7 @@ from agentsassemble.meeting_events import (
     read_lobby_events_after,
     read_side_chat_events,
     read_side_chat_events_after,
+    write_live_state,
 )
 from agentsassemble.adapters import default_provider_registry
 from agentsassemble.models import ProviderConfig, Role
@@ -58,6 +59,18 @@ MAX_READINESS_PROBE_AGENTS = 10
 OFFICIAL_ROUND_SMOKE_ERROR = "official round smoke could not be run"
 LIVE_AGENT_TURN_LOCK = threading.Lock()
 MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
+MAX_LIVE_AGENT_ROUND_BATCH = 8
+LIVE_AGENT_ROUND_SCHEDULER_LOCKS: dict[str, threading.RLock] = {}
+LIVE_AGENT_ROUND_SCHEDULER_LOCKS_LOCK = threading.Lock()
+
+
+def _live_agent_round_scheduler_lock(meeting_id: str) -> threading.RLock:
+    with LIVE_AGENT_ROUND_SCHEDULER_LOCKS_LOCK:
+        lock = LIVE_AGENT_ROUND_SCHEDULER_LOCKS.get(meeting_id)
+        if lock is None:
+            lock = threading.RLock()
+            LIVE_AGENT_ROUND_SCHEDULER_LOCKS[meeting_id] = lock
+        return lock
 
 
 def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str, object]]:
@@ -153,7 +166,9 @@ def _load_meeting_record(meeting_dir: Path) -> tuple[dict[str, object], Path, bo
     live_path = meeting_dir / "live_state.json"
     if meeting_path.exists():
         try:
-            return json.loads(meeting_path.read_text(encoding="utf-8")), meeting_path, True
+            meeting = json.loads(meeting_path.read_text(encoding="utf-8"))
+            meeting = _merge_live_progress_from_path(meeting, live_path)
+            return meeting, meeting_path, True
         except json.JSONDecodeError:
             if not live_path.exists():
                 raise
@@ -639,12 +654,25 @@ def live_agent_turn_round_payload(output_root: Path, meeting_id: str, payload: d
     meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
     if not clean_meeting_id or not meeting_dir.exists():
         raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
+    with _live_agent_round_scheduler_lock(clean_meeting_id):
+        return _live_agent_turn_round_payload_locked(output_root, clean_meeting_id, meeting_dir, payload)
+
+
+def _live_agent_turn_round_payload_locked(
+    output_root: Path,
+    clean_meeting_id: str,
+    meeting_dir: Path,
+    payload: dict[str, object],
+) -> dict[str, object]:
     meeting = _read_meeting_record(meeting_dir)
+    round_id = clean_lobby_text(payload.get("round_id"), limit=128)
+    if round_id in completed_official_round_ids(meeting):
+        return _completed_official_round_result(clean_meeting_id, round_id)
     round_turns = build_official_round_turns(
         meeting,
         read_live_agents(output_root),
         meeting_id=clean_meeting_id,
-        round_id=clean_lobby_text(payload.get("round_id"), limit=128),
+        round_id=round_id,
         instruction=payload.get("content") or payload.get("instruction") or payload.get("message"),
         role_ids=_payload_role_ids(payload.get("role_ids")),
         max_turns=MAX_LIVE_AGENT_SEQUENCE_TURNS,
@@ -661,7 +689,185 @@ def live_agent_turn_round_payload(output_root: Path, meeting_id: str, payload: d
     result = dict(sequence)
     result["round_id"] = round_turns["round_id"]
     result["role_ids"] = round_turns["role_ids"]
+    _record_answered_official_round_progress(meeting_dir, result)
     return result
+
+
+def live_agent_turn_rounds_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
+    if not clean_meeting_id or not meeting_dir.exists():
+        raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
+    max_rounds = _payload_bounded_round_count(payload.get("max_rounds"))
+    timeout_seconds = _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0)
+    stop_on_timeout = _payload_bool(payload.get("stop_on_timeout"))
+    with _live_agent_round_scheduler_lock(clean_meeting_id):
+        meeting = _read_meeting_record(meeting_dir)
+        round_ids = remaining_official_round_ids(meeting, max_rounds=max_rounds)
+        return _live_agent_turn_rounds_payload_locked(
+            output_root,
+            clean_meeting_id,
+            round_ids,
+            timeout_seconds=timeout_seconds,
+            stop_on_timeout=stop_on_timeout,
+            max_rounds=max_rounds,
+        )
+
+
+def _live_agent_turn_rounds_payload_locked(
+    output_root: Path,
+    clean_meeting_id: str,
+    round_ids: list[str],
+    *,
+    timeout_seconds: float,
+    stop_on_timeout: bool,
+    max_rounds: int,
+) -> dict[str, object]:
+    results = []
+    stopped = False
+    for index, round_id in enumerate(round_ids):
+        if stopped:
+            results.append(_skipped_round_result(index, round_id, timeout_seconds))
+            continue
+        round_result = live_agent_turn_round_payload(
+            output_root,
+            clean_meeting_id,
+            {
+                "round_id": round_id,
+                "timeout_seconds": timeout_seconds,
+                "stop_on_timeout": stop_on_timeout,
+            },
+        )
+        summary = _live_agent_round_batch_result(index, round_result)
+        results.append(summary)
+        if summary["status"] != "answered" and stop_on_timeout:
+            stopped = True
+    answered_count = sum(1 for result in results if result["status"] == "answered")
+    completed_count = sum(1 for result in results if result["status"] == "complete")
+    timeout_count = sum(1 for result in results if result["status"] == "timeout")
+    skipped_count = sum(1 for result in results if result["status"] == "skipped")
+    stopped_count = sum(1 for result in results if result["status"] == "stopped")
+    return {
+        "status": _live_agent_round_batch_status(answered_count, completed_count, timeout_count, skipped_count, stopped_count, len(results)),
+        "meeting_id": clean_meeting_id,
+        "round_count": len(results),
+        "answered_round_count": answered_count,
+        "completed_round_count": completed_count,
+        "timeout_round_count": timeout_count,
+        "skipped_round_count": skipped_count,
+        "stopped_round_count": stopped_count,
+        "stopped": stopped,
+        "stop_on_timeout": stop_on_timeout,
+        "timeout_seconds": timeout_seconds,
+        "max_rounds": max_rounds,
+        "results": results,
+    }
+
+
+def _record_answered_official_round_progress(meeting_dir: Path, round_result: dict[str, object]) -> None:
+    if round_result.get("status") != "answered":
+        return
+    round_id = clean_lobby_text(round_result.get("round_id"), limit=128)
+    if not round_id:
+        return
+    meeting = _read_meeting_record(meeting_dir)
+    progress = {
+        "id": round_id,
+        "status": "answered",
+        "role_ids": _safe_payload_role_ids(round_result.get("role_ids")),
+        "turn_count": _payload_nonnegative_int(round_result.get("turn_count"), 0),
+        "answered_count": _payload_nonnegative_int(round_result.get("answered_count"), 0),
+        "timeout_count": _payload_nonnegative_int(round_result.get("timeout_count"), 0),
+        "skipped_count": _payload_nonnegative_int(round_result.get("skipped_count"), 0),
+    }
+    updated_rounds = []
+    replaced = False
+    for item in _as_dict_list(meeting.get("debate_rounds")):
+        item_round_id = clean_lobby_text(item.get("id") or item.get("round"), limit=128)
+        if item_round_id == round_id:
+            if not replaced:
+                merged = dict(item)
+                merged.update(progress)
+                updated_rounds.append(merged)
+                replaced = True
+            continue
+        updated_rounds.append(item)
+    if not replaced:
+        updated_rounds.append(progress)
+    meeting["debate_rounds"] = updated_rounds
+    write_live_state(meeting_dir, meeting)
+
+
+def _completed_official_round_result(meeting_id: str, round_id: str) -> dict[str, object]:
+    return {
+        "status": "complete",
+        "meeting_id": meeting_id,
+        "round_id": round_id,
+        "role_ids": [],
+        "turn_count": 0,
+        "answered_count": 0,
+        "timeout_count": 0,
+        "skipped_count": 0,
+        "stopped": False,
+        "stop_on_timeout": False,
+        "timeout_seconds": 0.0,
+        "results": [],
+    }
+
+
+def _payload_bounded_round_count(value: object) -> int:
+    requested = _payload_nonnegative_int(value, MAX_LIVE_AGENT_ROUND_BATCH)
+    if requested <= 0:
+        return MAX_LIVE_AGENT_ROUND_BATCH
+    return min(requested, MAX_LIVE_AGENT_ROUND_BATCH)
+
+
+def _live_agent_round_batch_result(index: int, round_result: dict[str, object]) -> dict[str, object]:
+    return {
+        "index": index,
+        "round_id": clean_lobby_text(round_result.get("round_id"), limit=128),
+        "status": str(round_result.get("status") or "unknown"),
+        "role_ids": _safe_payload_role_ids(round_result.get("role_ids")),
+        "turn_count": _payload_nonnegative_int(round_result.get("turn_count"), 0),
+        "answered_count": _payload_nonnegative_int(round_result.get("answered_count"), 0),
+        "timeout_count": _payload_nonnegative_int(round_result.get("timeout_count"), 0),
+        "skipped_count": _payload_nonnegative_int(round_result.get("skipped_count"), 0),
+    }
+
+
+def _skipped_round_result(index: int, round_id: str, timeout_seconds: float) -> dict[str, object]:
+    return {
+        "index": index,
+        "round_id": clean_lobby_text(round_id, limit=128),
+        "status": "skipped",
+        "role_ids": [],
+        "turn_count": 0,
+        "answered_count": 0,
+        "timeout_count": 0,
+        "skipped_count": 0,
+        "timeout_seconds": timeout_seconds,
+    }
+
+
+def _live_agent_round_batch_status(
+    answered_count: int,
+    completed_count: int,
+    timeout_count: int,
+    skipped_count: int,
+    stopped_count: int,
+    round_count: int,
+) -> str:
+    if round_count == 0:
+        return "complete"
+    if answered_count == round_count:
+        return "answered"
+    if answered_count + completed_count == round_count:
+        return "answered" if answered_count else "complete"
+    if stopped_count or skipped_count:
+        return "stopped"
+    if timeout_count:
+        return "timeout"
+    return "degraded"
 
 
 def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -1248,6 +1454,10 @@ def _meeting_live_agent_turn_sequence_path(path: str) -> str | None:
     return _meeting_live_agent_turn_action_path(path, "sequence")
 
 
+def _meeting_live_agent_turn_rounds_path(path: str) -> str | None:
+    return _meeting_live_agent_turn_action_path(path, "rounds")
+
+
 def _meeting_live_agent_turn_round_path(path: str) -> str | None:
     return _meeting_live_agent_turn_action_path(path, "round")
 
@@ -1287,10 +1497,66 @@ def _resolve_lobby_meeting_dir(output_root: Path, meeting_id: str | None) -> Pat
 def _read_meeting_record(meeting_dir: Path) -> dict[str, object]:
     meeting_path = meeting_dir / "meeting.json"
     live_path = meeting_dir / "live_state.json"
-    source_path = meeting_path if meeting_path.exists() else live_path
-    if not source_path.exists():
+    if meeting_path.exists():
+        meeting = json.loads(meeting_path.read_text(encoding="utf-8"))
+        return _merge_live_progress_from_path(meeting, live_path)
+    if live_path.exists():
+        return json.loads(live_path.read_text(encoding="utf-8"))
+    else:
         raise ValueError("Meeting record is missing.")
-    return json.loads(source_path.read_text(encoding="utf-8"))
+
+
+def _merge_live_progress_from_path(meeting: dict[str, object], live_path: Path) -> dict[str, object]:
+    if not live_path.exists():
+        return meeting
+    try:
+        live_state = json.loads(live_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return meeting
+    if not isinstance(live_state, dict):
+        return meeting
+    return _merge_live_progress_into_meeting_record(meeting, live_state)
+
+
+def _merge_live_progress_into_meeting_record(
+    meeting: dict[str, object],
+    live_state: dict[str, object],
+) -> dict[str, object]:
+    merged = dict(meeting)
+    live_rounds = _as_dict_list(live_state.get("debate_rounds"))
+    if live_rounds:
+        merged["debate_rounds"] = _merge_debate_round_records(_as_dict_list(meeting.get("debate_rounds")), live_rounds)
+    return merged
+
+
+def _merge_debate_round_records(
+    base_rounds: list[dict[str, object]],
+    live_rounds: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    merged_rounds = [dict(item) for item in base_rounds]
+    indexes = {
+        round_id: index
+        for index, item in enumerate(merged_rounds)
+        if (round_id := clean_lobby_text(item.get("id") or item.get("round"), limit=128))
+    }
+    for live_item in live_rounds:
+        round_id = clean_lobby_text(live_item.get("id") or live_item.get("round"), limit=128)
+        if not round_id:
+            continue
+        if round_id in indexes:
+            index = indexes[round_id]
+            base_item = merged_rounds[index]
+            base_status = clean_lobby_text(base_item.get("status"), limit=32)
+            live_status = clean_lobby_text(live_item.get("status"), limit=32)
+            merged_item = dict(base_item)
+            merged_item.update(live_item)
+            if base_status == "answered" and live_status != "answered":
+                merged_item["status"] = "answered"
+            merged_rounds[index] = merged_item
+        else:
+            indexes[round_id] = len(merged_rounds)
+            merged_rounds.append(dict(live_item))
+    return merged_rounds
 
 
 def _select_remote_bridge_binding(
@@ -1791,6 +2057,45 @@ def _turn_round_operation_details(round_result: dict[str, object], meeting_id: s
     return details
 
 
+def _turn_rounds_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:
+    return {
+        "meeting_id": meeting_id,
+        "timeout_seconds": _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0),
+        "stop_on_timeout": _payload_bool(payload.get("stop_on_timeout")),
+        "max_rounds": _payload_bounded_round_count(payload.get("max_rounds")),
+    }
+
+
+def _turn_rounds_operation_details(rounds_result: dict[str, object], meeting_id: str) -> dict[str, object]:
+    results = rounds_result.get("results") if isinstance(rounds_result.get("results"), list) else []
+    round_ids = []
+    statuses = []
+    role_ids = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        if item.get("round_id"):
+            round_ids.append(clean_lobby_text(item.get("round_id"), limit=128))
+        if item.get("status"):
+            statuses.append(clean_lobby_text(item.get("status"), limit=32))
+        role_ids.extend(_safe_payload_role_ids(item.get("role_ids")))
+    return {
+        "meeting_id": meeting_id,
+        "round_count": _payload_nonnegative_int(rounds_result.get("round_count"), 0),
+        "answered_round_count": _payload_nonnegative_int(rounds_result.get("answered_round_count"), 0),
+        "completed_round_count": _payload_nonnegative_int(rounds_result.get("completed_round_count"), 0),
+        "timeout_round_count": _payload_nonnegative_int(rounds_result.get("timeout_round_count"), 0),
+        "skipped_round_count": _payload_nonnegative_int(rounds_result.get("skipped_round_count"), 0),
+        "stopped_round_count": _payload_nonnegative_int(rounds_result.get("stopped_round_count"), 0),
+        "stopped": rounds_result.get("stopped") is True,
+        "round_ids": round_ids,
+        "statuses": statuses,
+        "role_ids": role_ids,
+        "timeout_seconds": _payload_nonnegative_float(rounds_result.get("timeout_seconds"), 0.0),
+        "max_rounds": _payload_nonnegative_int(rounds_result.get("max_rounds"), 0),
+    }
+
+
 def _official_round_smoke_operation_details(smoke: dict[str, object]) -> dict[str, object]:
     return {
         "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
@@ -2116,6 +2421,38 @@ def _make_handler(
                     return
                 self._send_json(live_agent)
                 return
+            turn_rounds_meeting_id = _meeting_live_agent_turn_rounds_path(parsed.path)
+            if turn_rounds_meeting_id is not None:
+                payload = self._operation_json_payload(operation="official_turn.rounds")
+                if payload is None:
+                    return
+                try:
+                    rounds_result = live_agent_turn_rounds_payload(output_root, turn_rounds_meeting_id, payload)
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="official_turn.rounds",
+                        status="failed",
+                        target_id=turn_rounds_meeting_id,
+                        error=str(error),
+                        details=_turn_rounds_request_operation_details(payload, turn_rounds_meeting_id),
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="official_turn.rounds",
+                    status="success" if rounds_result.get("status") in {"answered", "complete"} else "degraded",
+                    target_id=turn_rounds_meeting_id,
+                    summary=(
+                        "completed live-agent remaining official rounds"
+                        if rounds_result.get("status") in {"answered", "complete"}
+                        else "live-agent remaining official rounds had timeouts"
+                    ),
+                    details=_turn_rounds_operation_details(rounds_result, turn_rounds_meeting_id),
+                )
+                self._send_json(rounds_result)
+                return
             turn_round_meeting_id = _meeting_live_agent_turn_round_path(parsed.path)
             if turn_round_meeting_id is not None:
                 payload = self._operation_json_payload(operation="official_turn.round")
@@ -2137,11 +2474,11 @@ def _make_handler(
                 record_live_agent_operation(
                     output_root,
                     operation="official_turn.round",
-                    status="success" if round_result.get("status") == "answered" else "degraded",
+                    status="success" if round_result.get("status") in {"answered", "complete"} else "degraded",
                     target_id=turn_round_meeting_id,
                     summary=(
                         "completed live-agent official round"
-                        if round_result.get("status") == "answered"
+                        if round_result.get("status") in {"answered", "complete"}
                         else "live-agent official round had timeouts"
                     ),
                     details=_turn_round_operation_details(round_result, turn_round_meeting_id),

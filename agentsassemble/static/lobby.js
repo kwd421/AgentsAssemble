@@ -124,6 +124,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-call-round")?.addEventListener("click", async () => {
     await callLiveAgentOfficialRound(lobby);
   });
+  lobby.querySelector("#live-agent-call-remaining-rounds")?.addEventListener("click", async () => {
+    await callLiveAgentRemainingRounds(lobby);
+  });
   lobby.querySelectorAll("[data-live-agent-process-stop]").forEach((button) => {
     button.addEventListener("click", () => stopLiveAgentProcessGroup(button.dataset.liveAgentProcessStop));
   });
@@ -177,6 +180,7 @@ function readLiveAgentProcessDraft(lobby) {
     meetingDefault: form.querySelector("#live-agent-session-meeting-id")?.dataset.defaultValue ?? "",
     roundDefault: form.querySelector("#live-agent-round-id")?.dataset.defaultValue ?? "",
     roundTimeout: form.querySelector("#live-agent-round-timeout")?.value ?? "",
+    roundMaxRounds: form.querySelector("#live-agent-round-max-rounds")?.value ?? "",
     roundStopOnTimeout: Boolean(form.querySelector("#live-agent-round-stop-on-timeout")?.checked),
     autoRestart: Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked),
     officialRoundSmoke: Boolean(form.querySelector("#live-agent-readiness-official-round")?.checked),
@@ -207,6 +211,7 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const connectTimeout = lobby.querySelector("#live-agent-session-connect-timeout");
   const roundId = lobby.querySelector("#live-agent-round-id");
   const roundTimeout = lobby.querySelector("#live-agent-round-timeout");
+  const roundMaxRounds = lobby.querySelector("#live-agent-round-max-rounds");
   const roundStopOnTimeout = lobby.querySelector("#live-agent-round-stop-on-timeout");
   const autoRestart = lobby.querySelector("#live-agent-process-auto-restart");
   const officialRoundSmoke = lobby.querySelector("#live-agent-readiness-official-round");
@@ -221,6 +226,7 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   if (connectTimeout) connectTimeout.value = draft.connectTimeout;
   restoreDefaultedInput(roundId, draft.roundId, draft.roundDefault);
   if (roundTimeout) roundTimeout.value = draft.roundTimeout;
+  if (roundMaxRounds) roundMaxRounds.value = draft.roundMaxRounds;
   if (roundStopOnTimeout) roundStopOnTimeout.checked = draft.roundStopOnTimeout;
   if (autoRestart) autoRestart.checked = draft.autoRestart;
   if (officialRoundSmoke) officialRoundSmoke.checked = draft.officialRoundSmoke;
@@ -466,6 +472,7 @@ function renderLiveAgentProcessControls() {
         <input id="live-agent-session-connect-timeout" type="number" min="0" max="120" step="1" value="5" aria-label="session connect timeout seconds" />
         <input id="live-agent-round-id" maxlength="128" value="${escapeHtml(defaultRoundId)}" data-default-value="${escapeHtml(defaultRoundId)}" aria-label="official round id" />
         <input id="live-agent-round-timeout" type="number" min="0" max="600" step="1" value="30" aria-label="official round timeout seconds" />
+        <input id="live-agent-round-max-rounds" type="number" min="1" max="8" step="1" value="8" aria-label="maximum remaining official rounds" />
         <label class="live-agent-process-options">
           <input id="live-agent-round-stop-on-timeout" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
           <span>timeout stop</span>
@@ -480,6 +487,7 @@ function renderLiveAgentProcessControls() {
         <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
         <button type="button" id="live-agent-session-start" ${processActionsDisabled ? "disabled" : ""}>세션시작</button>
         <button type="button" id="live-agent-call-round" ${processActionsDisabled ? "disabled" : ""}>라운드호출</button>
+        <button type="button" id="live-agent-call-remaining-rounds" ${processActionsDisabled ? "disabled" : ""}>남은라운드</button>
         <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
         <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
         <button type="button" id="live-agent-official-round-smoke" ${processActionsDisabled ? "disabled" : ""}>공식진단</button>
@@ -512,7 +520,12 @@ function defaultOfficialRoundId(meeting) {
     ? meeting.meeting_template.rounds.filter((round) => round?.id)
     : [];
   if (!rounds.length) return "";
-  const completedRoundIds = new Set((meeting?.debate_rounds || []).map((round) => String(round.id || "")).filter(Boolean));
+  const completedRoundIds = new Set(
+    (meeting?.debate_rounds || [])
+      .filter((round) => round?.status === "answered")
+      .map((round) => String(round.id || round.round || ""))
+      .filter(Boolean)
+  );
   const nextRound = rounds.find((round) => !completedRoundIds.has(String(round.id || ""))) || rounds[0];
   return String(nextRound.id || "");
 }
@@ -1377,11 +1390,47 @@ async function callLiveAgentOfficialRound(lobby) {
         stop_on_timeout: stopOnTimeout,
       }),
     });
-    const tone = payload.status === "answered" ? "success" : "error";
+    const tone = payload.status === "answered" || payload.status === "complete" ? "success" : "error";
     state.liveAgentProcessStatus = { message: liveAgentRoundStatusMessage(payload), tone };
     notifyMeetingRefreshRequested(meetingId);
   } catch (error) {
     state.liveAgentProcessStatus = { message: `공식 라운드 호출 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    state.liveAgentRoundCallRunning = false;
+    await loadLiveAgentOperations({ background: true, force: true });
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function callLiveAgentRemainingRounds(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  const meetingId = liveAgentOfficialRoundMeetingId(lobby);
+  if (!meetingId) {
+    state.liveAgentProcessStatus = { message: "남은 공식 라운드 호출 실패: meeting id가 필요합니다", tone: "error" };
+    renderLobby({ followLatest: false });
+    return;
+  }
+  const timeoutSeconds = liveAgentRoundTimeoutSeconds(lobby);
+  const stopOnTimeout = lobby.querySelector("#live-agent-round-stop-on-timeout")?.checked === true;
+  const maxRounds = liveAgentRoundMaxRounds(lobby);
+  state.liveAgentRoundCallRunning = true;
+  state.liveAgentProcessStatus = { message: "남은 공식 라운드 호출 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson(`/api/meetings/${encodeURIComponent(meetingId)}/live-agent-turns/rounds`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        timeout_seconds: timeoutSeconds,
+        stop_on_timeout: stopOnTimeout,
+        max_rounds: maxRounds,
+      }),
+    });
+    const tone = payload.status === "answered" || payload.status === "complete" ? "success" : "error";
+    state.liveAgentProcessStatus = { message: liveAgentRemainingRoundsStatusMessage(payload), tone };
+    notifyMeetingRefreshRequested(meetingId);
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `남은 공식 라운드 호출 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   } finally {
     state.liveAgentRoundCallRunning = false;
     await loadLiveAgentOperations({ background: true, force: true });
@@ -1399,6 +1448,12 @@ function liveAgentRoundTimeoutSeconds(lobby) {
   return Math.min(600, Math.max(0, value));
 }
 
+function liveAgentRoundMaxRounds(lobby) {
+  const value = Number(lobby.querySelector("#live-agent-round-max-rounds")?.value || 8);
+  if (!Number.isFinite(value)) return 8;
+  return Math.min(8, Math.max(1, value));
+}
+
 function liveAgentRoundStatusMessage(payload) {
   const status = payload.status || "unknown";
   const roundId = payload.round_id || "round";
@@ -1406,6 +1461,17 @@ function liveAgentRoundStatusMessage(payload) {
   const timedOut = Math.max(0, Number(payload.timeout_count || 0));
   const skipped = Math.max(0, Number(payload.skipped_count || 0));
   return `공식 라운드 ${status}: ${roundId} · ${answered} answered, ${timedOut} timed out, ${skipped} skipped`;
+}
+
+function liveAgentRemainingRoundsStatusMessage(payload) {
+  const status = payload.status || "unknown";
+  const roundCount = Math.max(0, Number(payload.round_count || 0));
+  const answered = Math.max(0, Number(payload.answered_round_count || 0));
+  const completed = Math.max(0, Number(payload.completed_round_count || 0));
+  const timedOut = Math.max(0, Number(payload.timeout_round_count || 0));
+  const skipped = Math.max(0, Number(payload.skipped_round_count || 0));
+  const completedText = completed ? `, ${completed} already complete` : "";
+  return `남은 공식 라운드 ${status}: ${roundCount} rounds · ${answered} answered${completedText}, ${timedOut} timed out, ${skipped} skipped`;
 }
 
 function liveAgentSessionConnectTimeoutSeconds(lobby) {

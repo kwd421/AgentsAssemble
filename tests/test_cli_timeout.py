@@ -933,6 +933,32 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(args.as_json)
         self.assertEqual(args.instruction, ["Discuss", "this", "round"])
 
+    def test_live_agent_call_remaining_rounds_parser_accepts_bounds(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "call-remaining-rounds",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "m1",
+                "--timeout",
+                "8",
+                "--max-rounds",
+                "2",
+                "--stop-on-timeout",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "call-remaining-rounds")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.meeting_id, "m1")
+        self.assertEqual(args.timeout, 8.0)
+        self.assertEqual(args.max_rounds, 2)
+        self.assertTrue(args.stop_on_timeout)
+        self.assertTrue(args.as_json)
+
     def test_live_agent_call_round_posts_request_and_prints_summary(self):
         response = {
             "status": "answered",
@@ -986,6 +1012,94 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("Official round round_1 answered: 2 answered, 0 timed out, 0 skipped", stdout.getvalue())
         self.assertIn("- agent-b: answered reply-b", stdout.getvalue())
+
+    def test_live_agent_call_remaining_rounds_posts_request_and_prints_summary(self):
+        response = {
+            "status": "answered",
+            "round_count": 1,
+            "answered_round_count": 1,
+            "timeout_round_count": 0,
+            "skipped_round_count": 0,
+            "results": [{"round_id": "round_2", "status": "answered"}],
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "call-remaining-rounds",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--timeout",
+                        "8",
+                        "--max-rounds",
+                        "2",
+                        "--stop-on-timeout",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/meetings/m1/live-agent-turns/rounds",
+            method="POST",
+            payload={
+                "timeout_seconds": 8.0,
+                "stop_on_timeout": True,
+                "max_rounds": 2,
+            },
+            timeout_seconds=198.0,
+        )
+        self.assertIn("Official remaining rounds answered: 1 rounds, 1 answered, 0 already complete, 0 timed out, 0 skipped", stdout.getvalue())
+        self.assertIn("- round_2: answered", stdout.getvalue())
+
+    def test_live_agent_call_remaining_rounds_returns_one_when_partial(self):
+        response = {
+            "status": "stopped",
+            "round_count": 2,
+            "answered_round_count": 0,
+            "timeout_round_count": 1,
+            "skipped_round_count": 1,
+            "results": [{"round_id": "round_1", "status": "timeout"}, {"round_id": "round_2", "status": "skipped"}],
+        }
+        with patch("agentsassemble.cli._request_json", return_value=response):
+            exit_code = main(
+                [
+                    "live-agent",
+                    "call-remaining-rounds",
+                    "--server",
+                    "http://room.local",
+                    "--meeting-id",
+                    "m1",
+                    "--timeout",
+                    "0",
+                ]
+            )
+
+        self.assertEqual(exit_code, 1)
+
+    def test_live_agent_call_remaining_rounds_rejects_more_than_batch_limit(self):
+        stderr = StringIO()
+        with patch("agentsassemble.cli._request_json") as request_json:
+            with patch("sys.stderr", stderr):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "call-remaining-rounds",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--max-rounds",
+                        "9",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 2)
+        request_json.assert_not_called()
+        self.assertIn("--max-rounds supports at most 8", stderr.getvalue())
 
     def test_live_agent_start_meeting_parser_accepts_config_paths(self):
         args = build_parser().parse_args(

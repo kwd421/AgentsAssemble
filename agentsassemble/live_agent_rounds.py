@@ -8,6 +8,34 @@ from agentsassemble.meeting_events import clean_lobby_text
 DEFAULT_MAX_OFFICIAL_ROUND_TURNS = 12
 
 
+def template_round_ids(meeting: dict[str, object]) -> list[str]:
+    template = meeting.get("meeting_template") if isinstance(meeting.get("meeting_template"), dict) else {}
+    return [
+        round_id
+        for item in _dict_items(template.get("rounds"))
+        if (round_id := clean_lobby_text(item.get("id"), limit=128))
+    ]
+
+
+def completed_official_round_ids(meeting: dict[str, object]) -> set[str]:
+    completed = set()
+    for item in _dict_items(meeting.get("debate_rounds")):
+        if clean_lobby_text(item.get("status"), limit=32) != "answered":
+            continue
+        round_id = clean_lobby_text(item.get("id") or item.get("round"), limit=128)
+        if round_id:
+            completed.add(round_id)
+    return completed
+
+
+def remaining_official_round_ids(meeting: dict[str, object], *, max_rounds: int | None = None) -> list[str]:
+    completed = completed_official_round_ids(meeting)
+    remaining = [round_id for round_id in template_round_ids(meeting) if round_id not in completed]
+    if max_rounds is None:
+        return remaining
+    return remaining[: max(0, max_rounds)]
+
+
 def build_official_round_turns(
     meeting: dict[str, object],
     live_agents: list[dict[str, object]],

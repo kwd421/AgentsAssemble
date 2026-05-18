@@ -246,6 +246,17 @@ function installHarness({
         }
       );
     }
+    if (url === "/api/meetings/resident-gui/live-agent-turns/rounds") {
+      return jsonResponse({
+        status: "answered",
+        meeting_id: "resident-gui",
+        round_count: 1,
+        answered_round_count: 1,
+        timeout_round_count: 0,
+        skipped_round_count: 0,
+        results: [{ round_id: "round_2", status: "answered" }],
+      });
+    }
     if (url === "/api/lobby") return jsonResponse({ events: [] });
     if (url === "/api/live-agents") return jsonResponse({ agents: [] });
     if (url === "/api/live-agent-processes") return jsonResponse({ groups: [] });
@@ -278,6 +289,10 @@ function sessionStartRequest(requests) {
 
 function roundRequest(requests) {
   return requests.find((request) => request.url === "/api/meetings/resident-gui/live-agent-turns/round");
+}
+
+function remainingRoundsRequest(requests) {
+  return requests.find((request) => request.url === "/api/meetings/resident-gui/live-agent-turns/rounds");
 }
 
 async function clickReadiness({ officialRoundSmoke, readinessPayload }) {
@@ -437,6 +452,36 @@ test("official round button posts selected meeting round and requests meeting re
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
 });
 
+test("official round button treats duplicate-prevented complete as success", async () => {
+  resetState();
+  const { document, events } = installHarness({
+    roundPayload: {
+      status: "complete",
+      meeting_id: "resident-gui",
+      round_id: "round_1",
+      turn_count: 0,
+      answered_count: 0,
+      timeout_count: 0,
+      skipped_count: 0,
+    },
+  });
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      meeting_template: { rounds: [{ id: "round_1", title: "1라운드" }] },
+      debate_rounds: [{ id: "round_1", status: "answered" }],
+    },
+  };
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+
+  await lobby.querySelector("#live-agent-call-round").click();
+
+  assert.equal(state.liveAgentProcessStatus.tone, "success");
+  assert.equal(state.liveAgentProcessStatus.message, "공식 라운드 complete: round_1 · 0 answered, 0 timed out, 0 skipped");
+  assert.equal(events.at(-1)?.type, "agentsassemble:meeting-refresh-requested");
+});
+
 test("official round button refuses blank round id without posting", async () => {
   resetState();
   const { document, requests } = installHarness();
@@ -524,6 +569,39 @@ test("official round timeout is clamped before posting", async () => {
   assert.equal(roundRequest(requests).jsonBody.timeout_seconds, 600);
 });
 
+test("remaining rounds button posts bounded meeting batch and requests meeting refresh", async () => {
+  resetState();
+  const { document, requests, events } = installHarness();
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      meeting_template: {
+        rounds: [
+          { id: "round_1", title: "1라운드" },
+          { id: "round_2", title: "2라운드" },
+        ],
+      },
+      debate_rounds: [{ id: "round_1" }],
+    },
+  };
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-round-timeout").value = "12";
+  lobby.querySelector("#live-agent-round-max-rounds").value = "2";
+  lobby.querySelector("#live-agent-round-stop-on-timeout").checked = true;
+
+  await lobby.querySelector("#live-agent-call-remaining-rounds").click();
+
+  assert.deepEqual(remainingRoundsRequest(requests).jsonBody, {
+    timeout_seconds: 12,
+    stop_on_timeout: true,
+    max_rounds: 2,
+  });
+  assert.equal(state.liveAgentProcessStatus.message, "남은 공식 라운드 answered: 1 rounds · 1 answered, 0 timed out, 0 skipped");
+  assert.equal(events.at(-1)?.type, "agentsassemble:meeting-refresh-requested");
+  assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+});
+
 test("generated official round defaults refresh when stale draft was only the old default", () => {
   resetState();
   const { document } = installHarness();
@@ -541,13 +619,55 @@ test("generated official round defaults refresh when stale draft was only the ol
           { id: "round_2", title: "2라운드" },
         ],
       },
-      debate_rounds: [{ id: "round_1" }],
+      debate_rounds: [{ id: "round_1", status: "answered" }],
     },
   };
   renderLobby({ followLatest: false });
   lobby = document.querySelector("#lobby");
 
   assert.equal(lobby.querySelector("#live-agent-session-meeting-id").value, "resident-gui");
+  assert.equal(lobby.querySelector("#live-agent-round-id").value, "round_2");
+});
+
+test("generated official round defaults do not skip draft round records", () => {
+  resetState();
+  const { document } = installHarness();
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      meeting_template: {
+        rounds: [
+          { id: "round_1", title: "1라운드" },
+          { id: "round_2", title: "2라운드" },
+        ],
+      },
+      debate_rounds: [{ id: "round_1", status: "draft" }],
+    },
+  };
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+
+  assert.equal(lobby.querySelector("#live-agent-round-id").value, "round_1");
+});
+
+test("generated official round defaults treat round alias as completed", () => {
+  resetState();
+  const { document } = installHarness();
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      meeting_template: {
+        rounds: [
+          { id: "round_1", title: "1라운드" },
+          { id: "round_2", title: "2라운드" },
+        ],
+      },
+      debate_rounds: [{ round: "round_1", status: "answered" }],
+    },
+  };
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+
   assert.equal(lobby.querySelector("#live-agent-round-id").value, "round_2");
 });
 

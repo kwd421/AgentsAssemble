@@ -46,6 +46,7 @@ LIVE_AGENT_DELEGATE_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "rem
 LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES = list(SUPPORTED_RESIDENT_CONNECTION_KINDS)
 MAX_READINESS_PROBE_AGENTS = 10
 MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
+MAX_LIVE_AGENT_ROUND_BATCH = 8
 
 
 def parse_codex_timeout(value: str) -> int | None:
@@ -223,6 +224,17 @@ def build_parser() -> argparse.ArgumentParser:
     live_call_round.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining roles after the first timeout.")
     live_call_round.add_argument("--json", action="store_true", dest="as_json", help="Print the raw round result payload.")
     live_call_round.add_argument("instruction", nargs="*", help="Optional round instruction override.")
+
+    live_call_remaining_rounds = live_agent_subparsers.add_parser(
+        "call-remaining-rounds",
+        parents=[live_server],
+        help="Run remaining official meeting template rounds from bound live agents.",
+    )
+    live_call_remaining_rounds.add_argument("--meeting-id", required=True)
+    live_call_remaining_rounds.add_argument("--timeout", type=parse_nonnegative_float, default=30.0, help="Default seconds to wait per turn.")
+    live_call_remaining_rounds.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
+    live_call_remaining_rounds.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
+    live_call_remaining_rounds.add_argument("--json", action="store_true", dest="as_json", help="Print the raw remaining-round result payload.")
 
     live_start_meeting = live_agent_subparsers.add_parser(
         "start-meeting",
@@ -509,6 +521,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_call_sequence(args)
         if args.live_agent_command == "call-round":
             return _run_live_agent_call_round(args)
+        if args.live_agent_command == "call-remaining-rounds":
+            return _run_live_agent_call_remaining_rounds(args)
         if args.live_agent_command == "start-meeting":
             return _run_live_agent_start_meeting(args)
         if args.live_agent_command == "start-session":
@@ -695,7 +709,45 @@ def _run_live_agent_call_round(args: argparse.Namespace) -> int:
             if not isinstance(result, dict):
                 continue
             print(f"- {result.get('agent_id') or 'unknown'}: {_sequence_result_summary(result)}")
-    return 0 if response.get("status") == "answered" else 1
+    return 0 if response.get("status") in {"answered", "complete"} else 1
+
+
+def _run_live_agent_call_remaining_rounds(args: argparse.Namespace) -> int:
+    meeting_id = urllib.parse.quote(args.meeting_id, safe="")
+    max_rounds = max(1, int(args.max_rounds))
+    if max_rounds > MAX_LIVE_AGENT_ROUND_BATCH:
+        raise ValueError(f"--max-rounds supports at most {MAX_LIVE_AGENT_ROUND_BATCH}.")
+    payload = {
+        "timeout_seconds": float(args.timeout),
+        "stop_on_timeout": bool(args.stop_on_timeout),
+        "max_rounds": max_rounds,
+    }
+    response = _request_json(
+        _server_url(args.server, f"/api/meetings/{meeting_id}/live-agent-turns/rounds"),
+        method="POST",
+        payload=payload,
+        timeout_seconds=_operation_http_timeout(
+            float(args.timeout),
+            windows=max_rounds * MAX_LIVE_AGENT_SEQUENCE_TURNS,
+        ),
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(
+            "Official remaining rounds "
+            f"{response.get('status') or 'unknown'}: "
+            f"{response.get('round_count', 0)} rounds, "
+            f"{response.get('answered_round_count', 0)} answered, "
+            f"{response.get('completed_round_count', 0)} already complete, "
+            f"{response.get('timeout_round_count', 0)} timed out, "
+            f"{response.get('skipped_round_count', 0)} skipped"
+        )
+        for result in response.get("results", []):
+            if not isinstance(result, dict):
+                continue
+            print(f"- {result.get('round_id') or 'unknown'}: {result.get('status') or 'unknown'}")
+    return 0 if response.get("status") in {"answered", "complete"} else 1
 
 
 def _run_live_agent_start_meeting(args: argparse.Namespace) -> int:

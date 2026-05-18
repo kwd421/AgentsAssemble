@@ -272,6 +272,26 @@ Repeat `--role` to override speaker order, for example `--role critic --role arc
 
 In the GUI, the Lobby `상주 실행` panel exposes the same moderator-called path as `라운드호출`. It uses the panel's `meeting id`, `official round id`, timeout, and `timeout stop` fields, posts to `/api/meetings/<meeting_id>/live-agent-turns/round`, reports only answered/timed-out/skipped counts in the status line, and asks the meeting view to refresh after a successful call.
 
+To advance a resident meeting without pressing each round manually, call the bounded remaining-round path:
+
+```text
+POST /api/meetings/<meeting_id>/live-agent-turns/rounds
+```
+
+with:
+
+```json
+{
+  "timeout_seconds": 30,
+  "stop_on_timeout": true,
+  "max_rounds": 8
+}
+```
+
+This path reads the meeting template, skips round ids already recorded in `debate_rounds` with `status: "answered"` using either the `id` or legacy `round` field, runs the remaining template rounds in order through the same single-round primitive, and records answered rounds back into `live_state.json` so future calls and the GUI can advance. If `meeting.json` also exists, live round progress is merged into the read payload without replacing the meeting's roles, template, or provider data. Draft or placeholder round records remain runnable. It is bounded by `max_rounds` and the existing per-turn timeout. The CLI wrapper is `python3 -m agentsassemble.cli live-agent call-remaining-rounds --meeting-id meeting-1 --timeout 30 --max-rounds 8`. The operation ledger records a sanitized `official_turn.rounds` aggregate with round ids, statuses, counts, completed-round counts, and timing only.
+
+The GUI Lobby `상주 실행` panel exposes the same bounded path as `남은라운드`. It uses the panel's `meeting id`, timeout, `max remaining official rounds`, and `timeout stop` fields, then refreshes the selected meeting after the batch returns.
+
 The resident runner answers by posting to:
 
 ```text
