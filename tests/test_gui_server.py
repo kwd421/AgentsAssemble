@@ -2899,6 +2899,181 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(read_live_events(meeting_dir, limit=None), [])
 
+    def test_live_agent_official_turn_round_builds_sequence_from_bindings(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "topic": "runtime",
+                    "live_status": "running",
+                    "roles": [
+                        {"id": "architect", "display_name": "Architect"},
+                        {"id": "critic", "display_name": "Critic"},
+                    ],
+                    "meeting_template": {
+                        "rounds": [
+                            {
+                                "id": "round_1",
+                                "instruction": "Template instruction",
+                                "turn_control": {"selection": "all_roles"},
+                            }
+                        ]
+                    },
+                    "agent_bindings": [
+                        {"role_id": "architect", "agent_id": "agent-a"},
+                        {"role_id": "critic", "agent_id": "agent-b"},
+                    ],
+                    "debate_rounds": [],
+                },
+            )
+            for agent_id, display_name in (("agent-a", "Agent A"), ("agent-b", "Agent B")):
+                connect_live_agent_payload(
+                    root,
+                    {
+                        "agent_id": agent_id,
+                        "display_name": display_name,
+                        "provider_kind": "local_cli",
+                        "connection_kind": "local_cli",
+                        "meeting_id": "m1",
+                        "engagement_mode": "moderator_called",
+                    },
+                )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            errors = []
+            answered_request_ids = set()
+
+            def answer_round_requests():
+                try:
+                    deadline = time.time() + 4
+                    while time.time() < deadline and len(answered_request_ids) < 2:
+                        for event in read_live_events(meeting_dir, limit=None):
+                            if event.get("kind") != "live_agent_turn_request":
+                                continue
+                            if event["id"] in answered_request_ids:
+                                continue
+                            agent_id = event["target_agent_id"]
+                            reply_request = Request(
+                                f"http://127.0.0.1:{server.server_port}/api/live-agents/{agent_id}/official-turn",
+                                data=json.dumps(
+                                    {
+                                        "meeting_id": "m1",
+                                        "source_event_id": event["id"],
+                                        "content": f"{agent_id} round reply",
+                                    }
+                                ).encode("utf-8"),
+                                headers={"Content-Type": "application/json"},
+                                method="POST",
+                            )
+                            with urlopen(reply_request, timeout=4) as response:
+                                response.read()
+                            answered_request_ids.add(event["id"])
+                        time.sleep(0.01)
+                except Exception as error:  # pragma: no cover - failure is asserted below
+                    errors.append(error)
+
+            responder = threading.Thread(target=answer_round_requests, daemon=True)
+            responder.start()
+            try:
+                round_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/live-agent-turns/round",
+                    data=json.dumps(
+                        {
+                            "round_id": "round_1",
+                            "content": "private round instruction",
+                            "timeout_seconds": 2,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(round_request, timeout=6) as response:
+                    round_result = json.loads(response.read().decode("utf-8"))
+                responder.join(timeout=2)
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            if errors:
+                raise errors[0]
+            self.assertEqual(round_result["status"], "answered")
+            self.assertEqual(round_result["round_id"], "round_1")
+            self.assertEqual(round_result["role_ids"], ["architect", "critic"])
+            self.assertEqual([result["agent_id"] for result in round_result["results"]], ["agent-a", "agent-b"])
+            self.assertEqual(round_result["results"][0]["request_event"]["display_name"], "Architect")
+            self.assertEqual(round_result["results"][1]["request_event"]["turn_id"], "round_1:1:critic")
+            transcript = build_meeting_payload(meeting_dir)["artifacts"]["transcript.md"]
+            self.assertIn("agent-a round reply", transcript)
+            self.assertIn("agent-b round reply", transcript)
+            self.assertNotIn("private round instruction", transcript)
+            round_operations = [item for item in operations["operations"] if item["operation"] == "official_turn.round"]
+            self.assertEqual(len(round_operations), 1)
+            self.assertEqual(round_operations[0]["status"], "success")
+            operation_blob = json.dumps(operations["operations"], ensure_ascii=False)
+            self.assertNotIn("private round instruction", operation_blob)
+            self.assertNotIn("agent-a round reply", operation_blob)
+
+    def test_live_agent_official_turn_round_validates_before_append(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "roles": [
+                        {"id": "architect", "display_name": "Architect"},
+                        {"id": "critic", "display_name": "Critic"},
+                    ],
+                    "meeting_template": {
+                        "rounds": [
+                            {
+                                "id": "round_1",
+                                "instruction": "Template instruction",
+                                "turn_control": {"selection": "all_roles"},
+                            }
+                        ]
+                    },
+                    "agent_bindings": [
+                        {"role_id": "architect", "agent_id": "agent-a"},
+                        {"role_id": "critic", "agent_id": "agent-b"},
+                    ],
+                },
+            )
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                round_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/live-agent-turns/round",
+                    data=json.dumps({"round_id": "round_1", "content": "private round instruction"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(round_request, timeout=4)
+                error.exception.close()
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(error.exception.code, 400)
+            self.assertEqual(read_live_events(meeting_dir, limit=None), [])
+            round_operations = [item for item in operations["operations"] if item["operation"] == "official_turn.round"]
+            self.assertEqual(round_operations[0]["status"], "failed")
+            self.assertNotIn("private round instruction", json.dumps(operations["operations"], ensure_ascii=False))
+
     def test_live_agent_official_turn_request_rejects_meeting_id_path_traversal(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

@@ -45,6 +45,7 @@ LIVE_AGENT_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "live_session
 LIVE_AGENT_DELEGATE_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "remote_bridge", "manual"]
 LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES = list(SUPPORTED_RESIDENT_CONNECTION_KINDS)
 MAX_READINESS_PROBE_AGENTS = 10
+MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
 
 
 def parse_codex_timeout(value: str) -> int | None:
@@ -209,6 +210,19 @@ def build_parser() -> argparse.ArgumentParser:
     live_call_sequence.add_argument("--timeout", type=parse_nonnegative_float, default=30.0, help="Default seconds to wait per turn.")
     live_call_sequence.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining turns after the first timeout.")
     live_call_sequence.add_argument("--json", action="store_true", dest="as_json", help="Print the raw sequence result payload.")
+
+    live_call_round = live_agent_subparsers.add_parser(
+        "call-round",
+        parents=[live_server],
+        help="Request an official meeting round from bound live agents.",
+    )
+    live_call_round.add_argument("--meeting-id", required=True)
+    live_call_round.add_argument("--round-id", required=True)
+    live_call_round.add_argument("--role", action="append", default=[], dest="role_ids", help="Limit to a role id; repeat to set order.")
+    live_call_round.add_argument("--timeout", type=parse_nonnegative_float, default=30.0, help="Default seconds to wait per turn.")
+    live_call_round.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining roles after the first timeout.")
+    live_call_round.add_argument("--json", action="store_true", dest="as_json", help="Print the raw round result payload.")
+    live_call_round.add_argument("instruction", nargs="*", help="Optional round instruction override.")
 
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
     live_say.add_argument("--agent-id", required=True)
@@ -452,6 +466,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_call(args)
         if args.live_agent_command == "call-sequence":
             return _run_live_agent_call_sequence(args)
+        if args.live_agent_command == "call-round":
+            return _run_live_agent_call_round(args)
         if args.live_agent_command == "say":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
             response = _request_json(
@@ -588,6 +604,41 @@ def _run_live_agent_call_sequence(args: argparse.Namespace) -> int:
     else:
         print(
             "Official turn sequence "
+            f"{response.get('status') or 'unknown'}: "
+            f"{response.get('answered_count', 0)} answered, "
+            f"{response.get('timeout_count', 0)} timed out, "
+            f"{response.get('skipped_count', 0)} skipped"
+        )
+        for result in response.get("results", []):
+            if not isinstance(result, dict):
+                continue
+            print(f"- {result.get('agent_id') or 'unknown'}: {_sequence_result_summary(result)}")
+    return 0 if response.get("status") == "answered" else 1
+
+
+def _run_live_agent_call_round(args: argparse.Namespace) -> int:
+    meeting_id = urllib.parse.quote(args.meeting_id, safe="")
+    payload = {
+        "round_id": args.round_id,
+        "role_ids": list(args.role_ids or []),
+        "timeout_seconds": float(args.timeout),
+        "stop_on_timeout": bool(args.stop_on_timeout),
+    }
+    instruction = " ".join(args.instruction).strip()
+    if instruction:
+        payload["content"] = instruction
+    turn_windows = len(args.role_ids) if args.role_ids else MAX_LIVE_AGENT_SEQUENCE_TURNS
+    response = _request_json(
+        _server_url(args.server, f"/api/meetings/{meeting_id}/live-agent-turns/round"),
+        method="POST",
+        payload=payload,
+        timeout_seconds=_operation_http_timeout(float(args.timeout), windows=max(1, turn_windows)),
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(
+            f"Official round {response.get('round_id') or args.round_id} "
             f"{response.get('status') or 'unknown'}: "
             f"{response.get('answered_count', 0)} answered, "
             f"{response.get('timeout_count', 0)} timed out, "

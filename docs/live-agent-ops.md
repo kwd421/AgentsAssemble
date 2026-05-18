@@ -183,6 +183,38 @@ python3 -m agentsassemble.cli live-agent call-sequence \
 
 Use `--turns-json` for inline JSON or `--turns-file` for a JSON array. The CLI exits `0` only when the sequence status is `answered`, exits `1` for `timeout` or `stopped`, and exits `2` for transport or validation errors. The sequence endpoint records one sanitized aggregate `official_turn.sequence` operation with ids, counts, statuses, and timing only. The existing `/api/live-agents/<agent_id>/official-turn` reply endpoint still records its normal sanitized `official_turn.reply` entries when residents answer. Neither operation type records turn prompts, reply content, endpoints, config paths, auth refs, command arguments, or logs.
 
+To run a full official round without hand-writing every turn object, call:
+
+```text
+POST /api/meetings/<meeting_id>/live-agent-turns/round
+```
+
+with:
+
+```json
+{
+  "round_id": "round_1",
+  "role_ids": ["architect", "critic"],
+  "content": "Use the round instructions and answer in your assigned role.",
+  "timeout_seconds": 30,
+  "stop_on_timeout": false
+}
+```
+
+The round path reads the meeting record, uses `agent_bindings` as the role-to-agent source of truth, checks current live-agent presence for the same meeting, builds normal sequence turns with `turn_id` values like `round_1:0:architect`, and then delegates to the same request → wait sequence primitive. If `role_ids` is omitted, it uses the matching meeting template round: `selected_roles` uses `speaker_role_ids`, otherwise all meeting roles speak in meeting order. If `content` is omitted, the matching template round instruction is used.
+
+The CLI wrapper is:
+
+```bash
+python3 -m agentsassemble.cli live-agent call-round \
+  --server http://127.0.0.1:8765 \
+  --meeting-id meeting-1 \
+  --round-id round_1 \
+  --timeout 30
+```
+
+Repeat `--role` to override speaker order, for example `--role critic --role architect`. The endpoint records one sanitized `official_turn.round` operation with round id, role ids, request/reply ids, statuses, counts, and timing only; it does not record round instructions, reply content, endpoints, config paths, auth refs, command arguments, or logs.
+
 The resident runner answers by posting to:
 
 ```text

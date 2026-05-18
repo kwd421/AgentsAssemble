@@ -840,6 +840,95 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(args.stop_on_timeout)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_call_round_parser_accepts_role_filters(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "call-round",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "m1",
+                "--round-id",
+                "round_1",
+                "--role",
+                "critic",
+                "--role",
+                "architect",
+                "--timeout",
+                "8",
+                "--stop-on-timeout",
+                "--json",
+                "Discuss",
+                "this",
+                "round",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "call-round")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.meeting_id, "m1")
+        self.assertEqual(args.round_id, "round_1")
+        self.assertEqual(args.role_ids, ["critic", "architect"])
+        self.assertEqual(args.timeout, 8.0)
+        self.assertTrue(args.stop_on_timeout)
+        self.assertTrue(args.as_json)
+        self.assertEqual(args.instruction, ["Discuss", "this", "round"])
+
+    def test_live_agent_call_round_posts_request_and_prints_summary(self):
+        response = {
+            "status": "answered",
+            "round_id": "round_1",
+            "answered_count": 2,
+            "timeout_count": 0,
+            "skipped_count": 0,
+            "results": [
+                {"agent_id": "agent-b", "status": "answered", "reply_event": {"id": "reply-b"}},
+                {"agent_id": "agent-a", "status": "answered", "reply_event": {"id": "reply-a"}},
+            ],
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "call-round",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--round-id",
+                        "round_1",
+                        "--role",
+                        "critic",
+                        "--role",
+                        "architect",
+                        "--timeout",
+                        "8",
+                        "--stop-on-timeout",
+                        "Discuss",
+                        "this",
+                        "round",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/meetings/m1/live-agent-turns/round",
+            method="POST",
+            payload={
+                "round_id": "round_1",
+                "role_ids": ["critic", "architect"],
+                "content": "Discuss this round",
+                "timeout_seconds": 8.0,
+                "stop_on_timeout": True,
+            },
+            timeout_seconds=22.0,
+        )
+        self.assertIn("Official round round_1 answered: 2 answered, 0 timed out, 0 skipped", stdout.getvalue())
+        self.assertIn("- agent-b: answered reply-b", stdout.getvalue())
+
     def test_live_agent_call_sequence_posts_turns_and_prints_summary(self):
         response = {
             "status": "answered",
