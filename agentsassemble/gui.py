@@ -24,6 +24,7 @@ from agentsassemble.config import load_agent_runtime_config, load_council_config
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
+from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_rounds import build_official_round_turns
@@ -437,6 +438,17 @@ def live_agents_payload(output_root: Path) -> dict[str, object]:
 
 def live_agent_operations_payload(output_root: Path, *, limit: int = 50) -> dict[str, object]:
     return {"operations": read_live_agent_operations(output_root, limit=limit)}
+
+
+def live_agent_meeting_start_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
+    council_config_path = str(payload.get("council_config_path") or payload.get("council_config") or "").strip()
+    agent_config_path = str(payload.get("agent_config_path") or payload.get("agent_config") or "").strip()
+    return start_live_agent_meeting(
+        output_root,
+        council_config_path=Path(council_config_path) if council_config_path else None,
+        agent_config_path=Path(agent_config_path) if agent_config_path else None,
+        meeting_id=str(payload.get("meeting_id") or ""),
+    )
 
 
 def connect_live_agent_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
@@ -1945,6 +1957,40 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
+                return
+            if parsed.path == "/api/live-agent-meetings/start":
+                payload = self._operation_json_payload(operation="meeting.start")
+                if payload is None:
+                    return
+                try:
+                    started = live_agent_meeting_start_payload(output_root, payload)
+                except (OSError, ValueError) as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="meeting.start",
+                        status="failed",
+                        target_id=str(payload.get("meeting_id") or ""),
+                        error=str(error),
+                        details={"meeting_id": str(payload.get("meeting_id") or "")},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                meeting = started.get("meeting") if isinstance(started.get("meeting"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="meeting.start",
+                    status="success",
+                    target_id=str(started.get("meeting_id") or payload.get("meeting_id") or ""),
+                    summary="started resident live-agent meeting",
+                    details={
+                        "meeting_id": str(started.get("meeting_id") or ""),
+                        "role_count": len(meeting.get("roles") if isinstance(meeting.get("roles"), list) else []),
+                        "bound_agent_count": len(
+                            meeting.get("agent_bindings") if isinstance(meeting.get("agent_bindings"), list) else []
+                        ),
+                    },
+                )
+                self._send_json(started)
                 return
             if parsed.path == "/api/live-agents":
                 length = int(self.headers.get("Content-Length", "0") or "0")

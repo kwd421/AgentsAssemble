@@ -88,6 +88,30 @@ Changing engagement mode updates `live_agents.json`, `/api/live-agents`, and `/a
 
 Resident runners read the current room presence on every poll and use that roster `engagement_mode` before falling back to their startup config. Re-registration and heartbeat updates preserve an operator-selected mode instead of silently clobbering it. `watch` and `manual` observe new lobby events and advance `last_observed_event_id` without posting replies, so switching an agent back to an active mode does not replay the backlog.
 
+## Start A Resident Meeting
+
+Use `start-meeting` when you want a normal, visible meeting record that is ready for resident live-agent official turns, instead of a diagnostic smoke meeting:
+
+```bash
+python3 -m agentsassemble.cli live-agent start-meeting \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1 \
+  --council-config configs/demo-council.json \
+  --agent-config configs/agents.example.json
+```
+
+The HTTP control-plane path is:
+
+```text
+POST /api/live-agent-meetings/start
+```
+
+with `meeting_id`, `council_config_path`, and `agent_config_path`. The server creates `meetings/<meeting_id>/live_state.json`, writes `agenda.md`, appends a meeting status live event, registers the approved `agent_bindings` as live-agent roster entries attached to that meeting, and pins their engagement mode to `moderator_called` so a later resident runner registration cannot accidentally turn official participants into lobby auto-chat agents. Explicit engagement modes from the runtime config are overridden on this start path because resident meeting participants are official-turn agents.
+
+The created meeting is not diagnostic and appears in `/api/meetings`, `/api/meetings/latest`, and the GUI meeting selector. It does not start provider commands, run research, call paid APIs, or synthesize a decision. Start or restart the resident process group separately, then use `call-round` when the roster is attached and the agents are running.
+
+The operation ledger records a sanitized `meeting.start` entry with meeting id, role count, and bound-agent count only. It does not record config paths, command arguments, endpoints, auth refs, prompts, or provider output.
+
 ## Moderator-Called Official Turns
 
 `moderator_called` is for official meeting turns, not lobby auto-chat. A resident runner in this mode ignores lobby reply policy and waits for a moderator request in the agent's meeting live event stream.
@@ -718,6 +742,8 @@ python3 -m agentsassemble.cli live-agent operations list \
   --limit 20 \
   --json
 ```
+
+The GUI list and the default CLI output include compact safe `details` values, such as readiness result status, reply counts, probe ids, or restart settings. Use `--json` when an operator script needs the full sanitized operation payload.
 
 Use the operation ledger to answer "what control action happened" and the process lifecycle events to answer "what did the supervised process do next." They are deliberately separate surfaces.
 

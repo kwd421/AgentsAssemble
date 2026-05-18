@@ -470,6 +470,43 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("success", stdout.getvalue())
         self.assertIn("crew", stdout.getvalue())
 
+    def test_live_agent_operations_list_includes_safe_details_in_default_output(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "readiness.check",
+                    "status": "degraded",
+                    "target_id": "doctor-smoke",
+                    "summary": "",
+                    "details": {
+                        "result_status": "degraded",
+                        "smoke_reply_count": 3,
+                        "probe_agent_ids": ["agent-a", "agent-b"],
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "operations",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("readiness.check", output)
+        self.assertIn("result_status=degraded", output)
+        self.assertIn("smoke_reply_count=3", output)
+        self.assertIn("probe_agent_ids=agent-a,agent-b", output)
+
     def test_live_agent_engagement_updates_real_http_endpoint_without_refreshing_heartbeat(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
@@ -949,6 +986,68 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("Official round round_1 answered: 2 answered, 0 timed out, 0 skipped", stdout.getvalue())
         self.assertIn("- agent-b: answered reply-b", stdout.getvalue())
+
+    def test_live_agent_start_meeting_parser_accepts_config_paths(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "start-meeting",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "resident-m1",
+                "--council-config",
+                "configs/demo-council.json",
+                "--agent-config",
+                "configs/agents.example.json",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "start-meeting")
+        self.assertEqual(args.meeting_id, "resident-m1")
+        self.assertEqual(args.council_config, "configs/demo-council.json")
+        self.assertEqual(args.agent_config, "configs/agents.example.json")
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_start_meeting_posts_request_and_prints_summary(self):
+        response = {
+            "meeting_id": "resident-m1",
+            "meeting": {
+                "roles": [{"id": "architect"}, {"id": "critic"}],
+                "agent_bindings": [{"agent_id": "agent-a"}, {"agent_id": "agent-b"}],
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "start-meeting",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--council-config",
+                        "configs/demo-council.json",
+                        "--agent-config",
+                        "configs/agents.example.json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-meetings/start",
+            method="POST",
+            payload={
+                "meeting_id": "resident-m1",
+                "council_config_path": "configs/demo-council.json",
+                "agent_config_path": "configs/agents.example.json",
+            },
+        )
+        self.assertIn("Started resident live-agent meeting resident-m1", stdout.getvalue())
+        self.assertIn("2 roles, 2 bound agents", stdout.getvalue())
 
     def test_live_agent_call_sequence_posts_turns_and_prints_summary(self):
         response = {

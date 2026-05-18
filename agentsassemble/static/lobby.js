@@ -554,17 +554,49 @@ function renderLiveAgentOperations() {
 function renderLiveAgentOperation(operation) {
   const status = String(operation.status || "unknown");
   const target = String(operation.target_id || "-");
-  const summary = String(operation.summary || operation.error || "").trim();
+  const summaryParts = [
+    String(operation.summary || operation.error || "").trim(),
+    liveAgentOperationDetailsLabel(operation.details),
+  ].filter(Boolean);
   return `
     <article class="live-agent-operation-row live-agent-operation-${escapeHtml(status)}">
       <div>
         <strong>${escapeHtml(operation.operation || "unknown")}</strong>
         <span>${escapeHtml(target)} · ${escapeHtml(operation.timestamp || "")}</span>
-        ${summary ? `<small>${escapeHtml(summary)}</small>` : ""}
+        ${summaryParts.length ? `<small>${escapeHtml(summaryParts.join(" · "))}</small>` : ""}
       </div>
       <em>${escapeHtml(status)}</em>
     </article>
   `;
+}
+
+function liveAgentOperationDetailsLabel(details) {
+  if (!details || typeof details !== "object" || Array.isArray(details)) return "";
+  return Object.entries(details)
+    .map(([key, value]) => liveAgentOperationDetailLabel(key, value))
+    .filter(Boolean)
+    .slice(0, 6)
+    .join("; ");
+}
+
+function liveAgentOperationDetailLabel(key, value) {
+  const cleanKey = String(key || "").trim();
+  const cleanValue = liveAgentOperationDetailValue(value);
+  return cleanKey && cleanValue ? `${cleanKey}=${cleanValue}` : "";
+}
+
+function liveAgentOperationDetailValue(value) {
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, 10)
+      .map((item) => liveAgentOperationDetailValue(item))
+      .filter(Boolean)
+      .join(",");
+  }
+  return "";
 }
 
 function liveAgentProcessAgentsLabel(group) {

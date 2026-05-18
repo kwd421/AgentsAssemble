@@ -3301,6 +3301,212 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("private round instruction", operation_blob)
             self.assertNotIn("agent-a round reply", operation_blob)
 
+    def test_live_agent_meeting_start_creates_visible_bound_meeting_and_round_control(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            council_config.write_text(
+                json.dumps(
+                    {
+                        "topic": "resident runtime",
+                        "question": "Can resident agents run a real official round?",
+                        "roles": [
+                            {
+                                "id": "architect",
+                                "display_name": "Architect",
+                                "lens": "Architecture",
+                                "research_focus": "system shape",
+                            },
+                            {
+                                "id": "critic",
+                                "display_name": "Critic",
+                                "lens": "Critique",
+                                "research_focus": "risk",
+                            },
+                        ],
+                        "meeting_template": {
+                            "id": "resident-template",
+                            "display_name": "Resident Template",
+                            "rounds": [
+                                {
+                                    "id": "round_1",
+                                    "title": "Resident round",
+                                    "instruction": "Template instruction",
+                                    "turn_control": {"selection": "all_roles"},
+                                }
+                            ],
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            agent_config.write_text(
+                json.dumps(
+                    {
+                        "providers": [
+                            {
+                                "id": "local-cli",
+                                "kind": "local_cli",
+                                "display_name": "Local CLI",
+                                "command": ["fake-agent"],
+                            }
+                        ],
+                        "permission_profiles": [
+                            {
+                                "id": "meeting_readonly",
+                                "meeting_read": True,
+                                "lobby_chat": True,
+                                "official_turn": True,
+                            }
+                        ],
+                        "agent_bindings": [
+                            {
+                                "agent_id": "agent-a",
+                                "role_id": "architect",
+                                "provider_id": "local-cli",
+                                "permission_profile_id": "meeting_readonly",
+                                "engagement_mode": "always",
+                            },
+                            {
+                                "agent_id": "agent-b",
+                                "role_id": "critic",
+                                "provider_id": "local-cli",
+                                "permission_profile_id": "meeting_readonly",
+                                "engagement_mode": "watch",
+                            },
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            meeting_dir = root / "meetings" / "resident-m1"
+            errors = []
+            answered_request_ids = set()
+
+            def answer_round_requests():
+                try:
+                    deadline = time.time() + 4
+                    while time.time() < deadline and len(answered_request_ids) < 2:
+                        if not meeting_dir.exists():
+                            time.sleep(0.01)
+                            continue
+                        for event in read_live_events(meeting_dir, limit=None):
+                            if event.get("kind") != "live_agent_turn_request":
+                                continue
+                            if event["id"] in answered_request_ids:
+                                continue
+                            agent_id = event["target_agent_id"]
+                            reply_request = Request(
+                                f"http://127.0.0.1:{server.server_port}/api/live-agents/{agent_id}/official-turn",
+                                data=json.dumps(
+                                    {
+                                        "meeting_id": "resident-m1",
+                                        "source_event_id": event["id"],
+                                        "content": f"{agent_id} resident reply",
+                                    }
+                                ).encode("utf-8"),
+                                headers={"Content-Type": "application/json"},
+                                method="POST",
+                            )
+                            with urlopen(reply_request, timeout=4) as response:
+                                response.read()
+                            answered_request_ids.add(event["id"])
+                        time.sleep(0.01)
+                except Exception as error:  # pragma: no cover - failure is asserted below
+                    errors.append(error)
+
+            responder = threading.Thread(target=answer_round_requests, daemon=True)
+            responder.start()
+            try:
+                start_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-meetings/start",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "council_config_path": str(council_config),
+                            "agent_config_path": str(agent_config),
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(start_request, timeout=4) as response:
+                    start_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/meetings", timeout=4) as response:
+                    meetings_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents", timeout=4) as response:
+                    agents_payload = json.loads(response.read().decode("utf-8"))
+                round_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/resident-m1/live-agent-turns/round",
+                    data=json.dumps({"round_id": "round_1", "timeout_seconds": 2}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(round_request, timeout=6) as response:
+                    round_result = json.loads(response.read().decode("utf-8"))
+                responder.join(timeout=2)
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            if errors:
+                raise errors[0]
+            self.assertEqual(start_payload["meeting_id"], "resident-m1")
+            self.assertEqual(start_payload["meeting"]["live_status"], "running")
+            self.assertFalse(start_payload["meeting"].get("diagnostic", False))
+            self.assertIn("resident-m1", {meeting["meeting_id"] for meeting in meetings_payload["meetings"]})
+            agents = {agent["agent_id"]: agent for agent in agents_payload["agents"]}
+            binding_modes = {binding["agent_id"]: binding["engagement_mode"] for binding in start_payload["meeting"]["agent_bindings"]}
+            self.assertEqual(binding_modes["agent-a"], "moderator_called")
+            self.assertEqual(binding_modes["agent-b"], "moderator_called")
+            self.assertEqual(agents["agent-a"]["meeting_id"], "resident-m1")
+            self.assertEqual(agents["agent-b"]["meeting_id"], "resident-m1")
+            self.assertEqual(agents["agent-a"]["engagement_mode"], "moderator_called")
+            self.assertEqual(agents["agent-b"]["engagement_mode"], "moderator_called")
+            self.assertEqual(round_result["status"], "answered")
+            self.assertEqual([result["agent_id"] for result in round_result["results"]], ["agent-a", "agent-b"])
+            transcript = build_meeting_payload(meeting_dir)["artifacts"]["transcript.md"]
+            self.assertIn("agent-a resident reply", transcript)
+            self.assertIn("agent-b resident reply", transcript)
+            operation_pairs = [(item["operation"], item["status"], item["target_id"]) for item in operations["operations"]]
+            self.assertIn(("meeting.start", "success", "resident-m1"), operation_pairs)
+            self.assertIn(("official_turn.round", "success", "resident-m1"), operation_pairs)
+            operation_blob = json.dumps(operations["operations"], ensure_ascii=False)
+            self.assertNotIn(str(council_config), operation_blob)
+            self.assertNotIn(str(agent_config), operation_blob)
+            self.assertNotIn("resident reply", operation_blob)
+
+    def test_live_agent_meeting_start_rejects_path_traversal_meeting_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-meetings/start",
+                    data=json.dumps({"meeting_id": "../outside"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=4)
+                self.assertEqual(raised.exception.code, 400)
+                raised.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertFalse((root / "outside").exists())
+
     def test_live_agent_official_turn_round_validates_before_append(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

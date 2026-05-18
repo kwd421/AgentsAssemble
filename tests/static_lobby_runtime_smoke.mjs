@@ -342,3 +342,30 @@ test("process row omits disabled recovery fields", () => {
   assert.doesNotMatch(rowText, /stale watchdog/);
   assert.doesNotMatch(rowText, /next restart/);
 });
+
+test("operation row renders safe details when summary is empty", () => {
+  resetState();
+  const { document } = installHarness();
+  state.liveAgentOperations = [
+    {
+      timestamp: "2026-05-18T01:02:03+00:00",
+      operation: "readiness.check",
+      status: "degraded",
+      target_id: "doctor-smoke",
+      summary: "",
+      details: {
+        result_status: "degraded",
+        smoke_reply_count: 3,
+        probe_agent_ids: ["agent-a", "agent-b"],
+      },
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+
+  const rowText = document.querySelector(".live-agent-operation-row").textContent;
+  assert.match(rowText, /readiness\.check/);
+  assert.match(rowText, /result_status=degraded/);
+  assert.match(rowText, /smoke_reply_count=3/);
+  assert.match(rowText, /probe_agent_ids=agent-a,agent-b/);
+});

@@ -224,6 +224,16 @@ def build_parser() -> argparse.ArgumentParser:
     live_call_round.add_argument("--json", action="store_true", dest="as_json", help="Print the raw round result payload.")
     live_call_round.add_argument("instruction", nargs="*", help="Optional round instruction override.")
 
+    live_start_meeting = live_agent_subparsers.add_parser(
+        "start-meeting",
+        parents=[live_server],
+        help="Create a visible resident live-agent meeting from council and agent configs.",
+    )
+    live_start_meeting.add_argument("--meeting-id", default="", help="Optional explicit meeting id.")
+    live_start_meeting.add_argument("--council-config", default="", help="Council config path; defaults to the demo council.")
+    live_start_meeting.add_argument("--agent-config", default="", help="Agent runtime config with approved resident bindings.")
+    live_start_meeting.add_argument("--json", action="store_true", dest="as_json", help="Print the raw meeting start payload.")
+
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
     live_say.add_argument("--agent-id", required=True)
     live_say.add_argument("message", nargs="+")
@@ -482,6 +492,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_call_sequence(args)
         if args.live_agent_command == "call-round":
             return _run_live_agent_call_round(args)
+        if args.live_agent_command == "start-meeting":
+            return _run_live_agent_start_meeting(args)
         if args.live_agent_command == "say":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
             response = _request_json(
@@ -665,6 +677,31 @@ def _run_live_agent_call_round(args: argparse.Namespace) -> int:
                 continue
             print(f"- {result.get('agent_id') or 'unknown'}: {_sequence_result_summary(result)}")
     return 0 if response.get("status") == "answered" else 1
+
+
+def _run_live_agent_start_meeting(args: argparse.Namespace) -> int:
+    payload = {
+        "meeting_id": str(args.meeting_id or ""),
+        "council_config_path": str(args.council_config or ""),
+        "agent_config_path": str(args.agent_config or ""),
+    }
+    response = _request_json(
+        _server_url(args.server, "/api/live-agent-meetings/start"),
+        method="POST",
+        payload=payload,
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+        return 0
+    meeting = response.get("meeting") if isinstance(response.get("meeting"), dict) else {}
+    roles = meeting.get("roles") if isinstance(meeting.get("roles"), list) else []
+    bindings = meeting.get("agent_bindings") if isinstance(meeting.get("agent_bindings"), list) else []
+    meeting_id = str(response.get("meeting_id") or meeting.get("meeting_id") or "unknown")
+    print(
+        f"Started resident live-agent meeting {meeting_id}: "
+        f"{len(roles)} roles, {len(bindings)} bound agents"
+    )
+    return 0
 
 
 def _load_live_agent_sequence_turns(args: argparse.Namespace) -> list[dict[str, object]]:
@@ -1150,8 +1187,44 @@ def _format_live_agent_operation(operation: dict[str, object]) -> str:
     status = str(operation.get("status") or "unknown")
     target_id = str(operation.get("target_id") or "-")
     summary = str(operation.get("summary") or operation.get("error") or "").strip()
-    suffix = f" · {summary}" if summary else ""
+    details = _format_live_agent_operation_details(operation.get("details"))
+    suffix_parts = [part for part in (summary, details) if part]
+    suffix = f" · {' · '.join(suffix_parts)}" if suffix_parts else ""
     return f"{timestamp} {operation_name} {status} {target_id}{suffix}"
+
+
+def _format_live_agent_operation_details(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    labels = []
+    for key, raw_detail in value.items():
+        clean_key = str(key or "").strip()
+        clean_value = _format_live_agent_operation_detail_value(raw_detail)
+        if clean_key and clean_value:
+            labels.append(f"{clean_key}={clean_value}")
+        if len(labels) >= 6:
+            break
+    return "; ".join(labels)
+
+
+def _format_live_agent_operation_detail_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        items = []
+        for item in value[:10]:
+            if isinstance(item, bool):
+                items.append("true" if item else "false")
+            elif isinstance(item, (int, float)) and not isinstance(item, bool):
+                items.append(str(item))
+            elif isinstance(item, str) and item.strip():
+                items.append(item.strip())
+        return ",".join(items)
+    return ""
 
 
 def _print_live_agent_process_payload(payload: dict[str, object], *, as_json: bool, action: str = "list") -> None:
