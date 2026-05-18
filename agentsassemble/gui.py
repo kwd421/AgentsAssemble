@@ -28,6 +28,7 @@ from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.live_agent_turns import wait_for_official_turn_reply
+from agentsassemble.live_transcript import projected_live_transcript_text
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
 from agentsassemble.meeting_events import (
@@ -102,6 +103,8 @@ def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[s
         name: _read_optional(meeting_dir / name)
         for name in ("agenda.md", "transcript.md", "decision.md", "room-log.md", "meeting.json")
     }
+    if not (meeting_dir / "transcript.md").exists() and not has_final_record:
+        artifacts["transcript.md"] = projected_live_transcript_text(meeting_dir, meeting=meeting)
     tasks = {
         task_path.name: task_path.read_text(encoding="utf-8")
         for task_path in sorted((meeting_dir / "tasks").glob("*.md"))

@@ -1196,6 +1196,35 @@ Record safe result ids, timing, target, role, and turn metadata only. Do not rec
 
 ---
 
+### Task 39: Official Live Transcript Projection
+
+**Files:**
+- Create: `agentsassemble/live_transcript.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_transcript.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for live transcript projection**
+
+Cover official-event-only filtering, exclusion of turn request/control content, full-log projection beyond the default event tail, empty projection without official events, payload fallback when `transcript.md` is missing, and preservation of existing completed transcripts.
+
+- [x] **Step 2: Add a pure projection renderer**
+
+Render transcript text from `live_events.jsonl` using only official transcript events with `official_record: true`, `channel: "official"`, `kind: "message"` or `kind: "synthesis"`, and non-empty content. Preserve safe event metadata and append-order semantics.
+
+- [x] **Step 3: Surface projection through the shared meeting payload**
+
+When `build_meeting_payload()` has no `transcript.md` file for a running or partial live meeting, fill the artifact payload from the projected live transcript. Existing transcript files remain authoritative and are not overwritten.
+
+- [x] **Step 4: Keep the slice artifact-only**
+
+Do not update `decision.md`, Decision Gate, tasks, memory, `meeting.json`, operation history, or physical transcript files in this slice.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -156,6 +156,8 @@ Meeting ids for this path must be single meeting directory names, not paths. Enc
 
 Targeted turn requests are visible only to their target agent through `/api/live-agents/<agent_id>/room` and through the official-turn prompt context. Official reply events remain visible to all meeting participants because they are transcript records.
 
+When a running or partial live meeting has official live events but no physical `transcript.md` yet, `build_meeting_payload()` projects the Archive transcript artifact from the full `live_events.jsonl` log at read time. The projection includes only official transcript events with `official_record: true`, `channel: "official"`, `kind: "message"` or `kind: "synthesis"`, and non-empty content. It preserves safe audit metadata such as event id, created-at, actor id, role id, turn id, turn index, and source event id, while excluding turn request content, status/progress events, lobby, side chat, operation details, prompts, and private targeted control text. Existing `transcript.md` files always win, so completed meeting transcripts written by the normal artifact writer are not overwritten by live projection.
+
 Runner cursors are separated: `last_observed_event_id` tracks lobby events, while `last_observed_live_event_id` tracks meeting live events. This keeps an official turn reply from poisoning later lobby auto-reply state if the operator changes the agent back to `always`, `mentioned`, or `human_only`.
 
 Operation history for `official_turn.call` records safe ids, result status, and timing only. It does not include request text, reply text, prompts, endpoints, config paths, auth refs, command arguments, or log tails.

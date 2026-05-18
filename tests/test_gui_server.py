@@ -89,6 +89,80 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["artifacts"].get("decision.md"), "")
             self.assertEqual(payload["artifacts"].get("transcript.md"), "")
 
+    def test_build_meeting_payload_projects_live_transcript_without_writing_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir) / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "private request text",
+                },
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "m1",
+                    "actor_id": "agent-a",
+                    "display_name": "Agent A",
+                    "source_event_id": "request-1",
+                    "content": "official live reply",
+                },
+            )
+
+            payload = build_meeting_payload(meeting_dir)
+
+            self.assertIn("official live reply", payload["artifacts"]["transcript.md"])
+            self.assertNotIn("private request text", payload["artifacts"]["transcript.md"])
+            self.assertFalse((meeting_dir / "transcript.md").exists())
+
+    def test_build_meeting_payload_preserves_existing_transcript(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir) / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text('{"meeting_id":"m1"}\n', encoding="utf-8")
+            (meeting_dir / "transcript.md").write_text("# Canonical Transcript\n\nKeep me.\n", encoding="utf-8")
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "m1",
+                    "actor_id": "agent-a",
+                    "display_name": "Agent A",
+                    "content": "late official event",
+                },
+            )
+
+            payload = build_meeting_payload(meeting_dir)
+
+            self.assertEqual(payload["artifacts"]["transcript.md"], "# Canonical Transcript\n\nKeep me.\n")
+
+    def test_build_meeting_payload_preserves_existing_empty_transcript(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir) / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            (meeting_dir / "transcript.md").write_text("", encoding="utf-8")
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "m1",
+                    "actor_id": "agent-a",
+                    "display_name": "Agent A",
+                    "content": "official live reply",
+                },
+            )
+
+            payload = build_meeting_payload(meeting_dir)
+
+            self.assertEqual(payload["artifacts"]["transcript.md"], "")
+
     def test_build_meeting_payload_preserves_codex_live_session_binding_metadata(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"
@@ -2434,6 +2508,12 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("private target-B instruction", [event.get("content") for event in replied["live_events"]])
             self.assertEqual(lobby["events"], [])
             self.assertEqual([item["operation"] for item in operations["operations"]], ["official_turn.request", "official_turn.reply"])
+            transcript = build_meeting_payload(meeting_dir)["artifacts"]["transcript.md"]
+            self.assertIn("공식 답변", transcript)
+            self.assertIn(f"- Source event id: {request_event['id']}", transcript)
+            self.assertNotIn("공식 발언 차례", transcript)
+            self.assertNotIn("private target-B instruction", transcript)
+            self.assertFalse((meeting_dir / "transcript.md").exists())
 
     def test_live_agent_official_turn_call_waits_for_verified_reply(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2535,6 +2615,11 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(call_operations[0]["status"], "success")
             self.assertNotIn("공식 발언 차례", json.dumps(call_operations, ensure_ascii=False))
             self.assertNotIn("검증된 공식 답변", json.dumps(call_operations, ensure_ascii=False))
+            transcript = build_meeting_payload(meeting_dir)["artifacts"]["transcript.md"]
+            self.assertIn("검증된 공식 답변", transcript)
+            self.assertIn(f"- Source event id: {called['request_event']['id']}", transcript)
+            self.assertNotIn("공식 발언 차례", transcript)
+            self.assertFalse((meeting_dir / "transcript.md").exists())
 
     def test_live_agent_official_turn_call_timeout_does_not_create_reply(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2650,6 +2735,9 @@ class GuiServerTests(unittest.TestCase):
                 if event.get("kind") == "message" and event.get("source_event_id") == request_event["id"]
             ]
             self.assertEqual(len(official_replies), 1)
+            transcript = build_meeting_payload(meeting_dir)["artifacts"]["transcript.md"]
+            self.assertEqual(transcript.count("첫 공식 답변"), 1)
+            self.assertNotIn("중복 공식 답변", transcript)
 
     def test_live_agent_official_turn_reply_rejects_meeting_the_agent_is_not_attached_to(self):
         with tempfile.TemporaryDirectory() as temp_dir:
