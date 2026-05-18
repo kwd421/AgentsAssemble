@@ -261,6 +261,14 @@ def build_parser() -> argparse.ArgumentParser:
     live_start_session.add_argument("--max-restarts", type=parse_nonnegative_int, default=0)
     live_start_session.add_argument("--restart-backoff-seconds", type=parse_nonnegative_float, default=5.0)
     live_start_session.add_argument("--stale-restart-after-seconds", type=parse_nonnegative_float, default=0.0)
+    live_start_session.add_argument(
+        "--run-remaining-rounds",
+        action="store_true",
+        help="After all bound agents connect, run remaining official template rounds.",
+    )
+    live_start_session.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
+    live_start_session.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
+    live_start_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
     live_start_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session start payload.")
 
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
@@ -780,6 +788,9 @@ def _run_live_agent_start_session(args: argparse.Namespace) -> int:
         raise ValueError("--auto-restart requires --max-restarts greater than 0.")
     if args.stale_restart_after_seconds > 0 and (not args.auto_restart or args.max_restarts <= 0):
         raise ValueError("--stale-restart-after-seconds requires --auto-restart and --max-restarts greater than 0.")
+    max_rounds = max(1, int(args.max_rounds))
+    if args.run_remaining_rounds and max_rounds > MAX_LIVE_AGENT_ROUND_BATCH:
+        raise ValueError(f"--max-rounds supports at most {MAX_LIVE_AGENT_ROUND_BATCH}.")
     payload = {
         "meeting_id": str(args.meeting_id or ""),
         "group_id": str(args.group_id or ""),
@@ -792,17 +803,36 @@ def _run_live_agent_start_session(args: argparse.Namespace) -> int:
         "restart_backoff_seconds": float(args.restart_backoff_seconds),
         "stale_restart_after_seconds": float(args.stale_restart_after_seconds),
     }
+    timeout_seconds = float(args.connect_timeout) + 6.0
+    if args.run_remaining_rounds:
+        payload.update(
+            {
+                "run_remaining_rounds": True,
+                "round_timeout_seconds": float(args.round_timeout),
+                "round_max_rounds": max_rounds,
+                "round_stop_on_timeout": bool(args.stop_on_timeout),
+            }
+        )
+        timeout_seconds = float(args.connect_timeout) + _operation_http_timeout(
+            float(args.round_timeout),
+            windows=max_rounds * MAX_LIVE_AGENT_SEQUENCE_TURNS,
+        )
     response = _request_json(
         _server_url(args.server, "/api/live-agent-sessions/start"),
         method="POST",
         payload=payload,
-        timeout_seconds=float(args.connect_timeout) + 6.0,
+        timeout_seconds=timeout_seconds,
     )
     if args.as_json:
         print(json.dumps(response, ensure_ascii=False, indent=2))
     else:
         print(_format_live_agent_session_start(response))
-    return 0 if response.get("status") == "ready" else 1
+    if response.get("status") != "ready":
+        return 1
+    auto_rounds = response.get("auto_rounds") if isinstance(response.get("auto_rounds"), dict) else None
+    if auto_rounds is None:
+        return 0
+    return 0 if auto_rounds.get("status") in {"answered", "complete"} else 1
 
 
 def _format_live_agent_session_start(response: dict[str, object]) -> str:
@@ -814,6 +844,16 @@ def _format_live_agent_session_start(response: dict[str, object]) -> str:
     connected = connection.get("connected", 0)
     attention = connection.get("attention") if isinstance(connection.get("attention"), list) else []
     suffix = f"; attention {', '.join(str(item) for item in attention)}" if attention else ""
+    auto_rounds = response.get("auto_rounds") if isinstance(response.get("auto_rounds"), dict) else None
+    if auto_rounds is not None:
+        suffix += (
+            f"; rounds {auto_rounds.get('status') or 'unknown'}: "
+            f"{auto_rounds.get('round_count', 0)} rounds, "
+            f"{auto_rounds.get('answered_round_count', 0)} answered, "
+            f"{auto_rounds.get('completed_round_count', 0)} already complete, "
+            f"{auto_rounds.get('timeout_round_count', 0)} timed out, "
+            f"{auto_rounds.get('skipped_round_count', 0)} skipped"
+        )
     return f"Resident session {meeting_id} {status}; group {group_id}; {connected}/{expected} connected{suffix}"
 
 

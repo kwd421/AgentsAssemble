@@ -384,6 +384,14 @@ test("session start button posts matching meeting and resident config payload", 
       group_id: "resident-main",
       connection: { expected: 3, connected: 3, attention: [] },
       process: { status: "running", attention: [] },
+      auto_rounds: {
+        status: "answered",
+        round_count: 2,
+        answered_round_count: 1,
+        completed_round_count: 1,
+        timeout_round_count: 0,
+        skipped_round_count: 0,
+      },
     },
   });
   renderLobby({ followLatest: false });
@@ -398,6 +406,10 @@ test("session start button posts matching meeting and resident config payload", 
   lobby.querySelector("#live-agent-process-max-restarts").value = "4";
   lobby.querySelector("#live-agent-process-restart-backoff").value = "2";
   lobby.querySelector("#live-agent-process-stale-restart-after").value = "300";
+  lobby.querySelector("#live-agent-session-run-remaining-rounds").checked = true;
+  lobby.querySelector("#live-agent-round-timeout").value = "12";
+  lobby.querySelector("#live-agent-round-max-rounds").value = "2";
+  lobby.querySelector("#live-agent-round-stop-on-timeout").checked = true;
 
   await lobby.querySelector("#live-agent-session-start").click();
 
@@ -412,8 +424,15 @@ test("session start button posts matching meeting and resident config payload", 
     max_restarts: 4,
     restart_backoff_seconds: 2,
     stale_restart_after_seconds: 300,
+    run_remaining_rounds: true,
+    round_timeout_seconds: 12,
+    round_max_rounds: 2,
+    round_stop_on_timeout: true,
   });
-  assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 3/3 connected");
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "세션 ready: resident-gui · 3/3 connected · rounds answered: 2 rounds, 1 answered, 1 already complete, 0 timed out, 0 skipped"
+  );
   assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
 });

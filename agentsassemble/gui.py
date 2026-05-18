@@ -479,7 +479,7 @@ def live_agent_session_start_payload(
     live_agent_config_path = str(payload.get("live_agent_config_path") or payload.get("live_agent_config") or "").strip()
     if not live_agent_config_path:
         raise ValueError("Live agent config path is required.")
-    return start_live_agent_session(
+    session = start_live_agent_session(
         output_root,
         process_supervisor,
         server=str(payload.get("server") or default_server),
@@ -494,6 +494,47 @@ def live_agent_session_start_payload(
         restart_backoff_seconds=_payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
         stale_restart_after_seconds=_payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0),
     )
+    if _payload_bool(payload.get("run_remaining_rounds")):
+        auto_rounds_options = _session_auto_rounds_options(payload)
+        if _operation_result_status(session.get("status")) == "ready":
+            session["auto_rounds"] = live_agent_turn_rounds_payload(
+                output_root,
+                str(session.get("meeting_id") or ""),
+                auto_rounds_options,
+            )
+        else:
+            session["auto_rounds"] = _skipped_session_auto_rounds_result(session, auto_rounds_options)
+    return session
+
+
+def _session_auto_rounds_options(payload: dict[str, object]) -> dict[str, object]:
+    return {
+        "timeout_seconds": _payload_nonnegative_float(
+            payload.get("round_timeout_seconds", payload.get("timeout_seconds", payload.get("timeout"))),
+            30.0,
+        ),
+        "max_rounds": _payload_bounded_round_count(payload.get("round_max_rounds", payload.get("max_rounds"))),
+        "stop_on_timeout": _payload_bool(payload.get("round_stop_on_timeout", payload.get("stop_on_timeout"))),
+    }
+
+
+def _skipped_session_auto_rounds_result(session: dict[str, object], options: dict[str, object]) -> dict[str, object]:
+    return {
+        "status": "skipped",
+        "reason": "session_not_ready",
+        "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
+        "round_count": 0,
+        "answered_round_count": 0,
+        "completed_round_count": 0,
+        "timeout_round_count": 0,
+        "skipped_round_count": 0,
+        "stopped_round_count": 0,
+        "stopped": False,
+        "stop_on_timeout": _payload_bool(options.get("stop_on_timeout")),
+        "timeout_seconds": _payload_nonnegative_float(options.get("timeout_seconds"), 0.0),
+        "max_rounds": _payload_bounded_round_count(options.get("max_rounds")),
+        "results": [],
+    }
 
 
 def connect_live_agent_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
@@ -2119,7 +2160,7 @@ def _official_round_smoke_operation_details(smoke: dict[str, object]) -> dict[st
 def _session_start_operation_details(session: dict[str, object]) -> dict[str, object]:
     connection = session.get("connection") if isinstance(session.get("connection"), dict) else {}
     process = session.get("process") if isinstance(session.get("process"), dict) else {}
-    return {
+    details = {
         "result_status": _operation_result_status(session.get("status")),
         "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
         "group_id": clean_lobby_text(session.get("group_id"), limit=128),
@@ -2132,6 +2173,51 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
         "process_agent_ids": _safe_payload_strings(process.get("agent_ids"), limit=64),
         "process_attention": _safe_payload_strings(process.get("attention"), limit=128),
     }
+    auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
+    if auto_rounds is not None:
+        details.update(_session_auto_rounds_operation_details(auto_rounds, str(session.get("meeting_id") or "")))
+    return details
+
+
+def _session_auto_rounds_operation_details(auto_rounds: dict[str, object], meeting_id: str) -> dict[str, object]:
+    rounds_details = _turn_rounds_operation_details(auto_rounds, meeting_id)
+    return {
+        "auto_rounds_status": _operation_result_status(auto_rounds.get("status")),
+        "auto_rounds_reason": clean_lobby_text(auto_rounds.get("reason"), limit=128),
+        "auto_rounds_meeting_id": rounds_details["meeting_id"],
+        "auto_rounds_round_count": rounds_details["round_count"],
+        "auto_rounds_answered_round_count": rounds_details["answered_round_count"],
+        "auto_rounds_completed_round_count": rounds_details["completed_round_count"],
+        "auto_rounds_timeout_round_count": rounds_details["timeout_round_count"],
+        "auto_rounds_skipped_round_count": rounds_details["skipped_round_count"],
+        "auto_rounds_stopped_round_count": rounds_details["stopped_round_count"],
+        "auto_rounds_stopped": rounds_details["stopped"],
+        "auto_rounds_round_ids": rounds_details["round_ids"],
+        "auto_rounds_statuses": rounds_details["statuses"],
+        "auto_rounds_role_ids": rounds_details["role_ids"],
+        "auto_rounds_timeout_seconds": rounds_details["timeout_seconds"],
+        "auto_rounds_max_rounds": rounds_details["max_rounds"],
+    }
+
+
+def _session_start_operation_status(session: dict[str, object]) -> str:
+    if _operation_result_status(session.get("status")) != "ready":
+        return "degraded"
+    auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
+    if auto_rounds is None:
+        return "success"
+    return "success" if _operation_result_status(auto_rounds.get("status")) in {"answered", "complete"} else "degraded"
+
+
+def _session_start_operation_summary(session: dict[str, object]) -> str:
+    if _operation_result_status(session.get("status")) != "ready":
+        return "resident live-agent session is still connecting"
+    auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
+    if auto_rounds is None:
+        return "started resident live-agent session"
+    if _operation_result_status(auto_rounds.get("status")) in {"answered", "complete"}:
+        return "started resident live-agent session and ran remaining rounds"
+    return "started resident live-agent session with degraded remaining rounds"
 
 
 def _session_start_error_message(error: Exception) -> str:
@@ -2355,17 +2441,12 @@ def _make_handler(
                     )
                     self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
                     return
-                result_status = _operation_result_status(session.get("status"))
                 record_live_agent_operation(
                     output_root,
                     operation="session.start",
-                    status="success" if result_status == "ready" else "degraded",
+                    status=_session_start_operation_status(session),
                     target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
-                    summary=(
-                        "started resident live-agent session"
-                        if result_status == "ready"
-                        else "resident live-agent session is still connecting"
-                    ),
+                    summary=_session_start_operation_summary(session),
                     details=_session_start_operation_details(session),
                 )
                 self._send_json(session)

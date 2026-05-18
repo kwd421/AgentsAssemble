@@ -1206,6 +1206,27 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.stale_restart_after_seconds, 30.0)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_start_session_parser_accepts_auto_round_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "start-session",
+                "--live-agent-config",
+                "configs/live-agents.example.json",
+                "--run-remaining-rounds",
+                "--round-timeout",
+                "8",
+                "--max-rounds",
+                "2",
+                "--stop-on-timeout",
+            ]
+        )
+
+        self.assertTrue(args.run_remaining_rounds)
+        self.assertEqual(args.round_timeout, 8.0)
+        self.assertEqual(args.max_rounds, 2)
+        self.assertTrue(args.stop_on_timeout)
+
     def test_live_agent_start_session_posts_request_and_uses_status_exit_codes(self):
         response = {
             "status": "starting",
@@ -1262,6 +1283,134 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("Resident session resident-m1 starting", stdout.getvalue())
         self.assertIn("resident-main", stdout.getvalue())
         self.assertIn("1/2 connected", stdout.getvalue())
+
+    def test_live_agent_start_session_can_run_remaining_rounds_after_ready_connection(self):
+        response = {
+            "status": "ready",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "connection": {
+                "expected": 2,
+                "connected": 2,
+                "attention": [],
+            },
+            "auto_rounds": {
+                "status": "answered",
+                "round_count": 1,
+                "answered_round_count": 1,
+                "completed_round_count": 0,
+                "timeout_round_count": 0,
+                "skipped_round_count": 0,
+                "results": [{"round_id": "round_1", "status": "answered"}],
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "start-session",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                        "--council-config",
+                        "configs/demo-council.json",
+                        "--agent-config",
+                        "configs/agents.example.json",
+                        "--live-agent-config",
+                        "configs/live-agents.example.json",
+                        "--connect-timeout",
+                        "3",
+                        "--run-remaining-rounds",
+                        "--round-timeout",
+                        "8",
+                        "--max-rounds",
+                        "2",
+                        "--stop-on-timeout",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-sessions/start",
+            method="POST",
+            payload={
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "council_config_path": "configs/demo-council.json",
+                "agent_config_path": "configs/agents.example.json",
+                "live_agent_config_path": "configs/live-agents.example.json",
+                "connect_timeout_seconds": 3.0,
+                "auto_restart": False,
+                "max_restarts": 0,
+                "restart_backoff_seconds": 5.0,
+                "stale_restart_after_seconds": 0.0,
+                "run_remaining_rounds": True,
+                "round_timeout_seconds": 8.0,
+                "round_max_rounds": 2,
+                "round_stop_on_timeout": True,
+            },
+            timeout_seconds=201.0,
+        )
+        self.assertIn("Resident session resident-m1 ready", stdout.getvalue())
+        self.assertIn("rounds answered: 1 rounds, 1 answered", stdout.getvalue())
+
+    def test_live_agent_start_session_auto_round_degradation_exits_nonzero(self):
+        response = {
+            "status": "ready",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "connection": {"expected": 1, "connected": 1, "attention": []},
+            "auto_rounds": {
+                "status": "timeout",
+                "round_count": 1,
+                "answered_round_count": 0,
+                "completed_round_count": 0,
+                "timeout_round_count": 1,
+                "skipped_round_count": 0,
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "start-session",
+                        "--server",
+                        "http://room.local",
+                        "--live-agent-config",
+                        "configs/live-agents.example.json",
+                        "--run-remaining-rounds",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("rounds timeout", stdout.getvalue())
+
+    def test_live_agent_start_session_rejects_unbounded_auto_round_batch(self):
+        stderr = StringIO()
+        with patch("agentsassemble.cli._request_json") as request_json:
+            with patch("sys.stderr", stderr):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "start-session",
+                        "--live-agent-config",
+                        "configs/live-agents.example.json",
+                        "--run-remaining-rounds",
+                        "--max-rounds",
+                        "9",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 2)
+        request_json.assert_not_called()
+        self.assertIn("--max-rounds supports at most 8", stderr.getvalue())
 
     def test_live_agent_start_session_cli_redacts_config_load_paths_from_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:

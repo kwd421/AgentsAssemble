@@ -182,6 +182,7 @@ function readLiveAgentProcessDraft(lobby) {
     roundTimeout: form.querySelector("#live-agent-round-timeout")?.value ?? "",
     roundMaxRounds: form.querySelector("#live-agent-round-max-rounds")?.value ?? "",
     roundStopOnTimeout: Boolean(form.querySelector("#live-agent-round-stop-on-timeout")?.checked),
+    sessionRunRemainingRounds: Boolean(form.querySelector("#live-agent-session-run-remaining-rounds")?.checked),
     autoRestart: Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked),
     officialRoundSmoke: Boolean(form.querySelector("#live-agent-readiness-official-round")?.checked),
     maxRestarts: form.querySelector("#live-agent-process-max-restarts")?.value ?? "",
@@ -213,6 +214,7 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const roundTimeout = lobby.querySelector("#live-agent-round-timeout");
   const roundMaxRounds = lobby.querySelector("#live-agent-round-max-rounds");
   const roundStopOnTimeout = lobby.querySelector("#live-agent-round-stop-on-timeout");
+  const sessionRunRemainingRounds = lobby.querySelector("#live-agent-session-run-remaining-rounds");
   const autoRestart = lobby.querySelector("#live-agent-process-auto-restart");
   const officialRoundSmoke = lobby.querySelector("#live-agent-readiness-official-round");
   const maxRestarts = lobby.querySelector("#live-agent-process-max-restarts");
@@ -228,6 +230,7 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   if (roundTimeout) roundTimeout.value = draft.roundTimeout;
   if (roundMaxRounds) roundMaxRounds.value = draft.roundMaxRounds;
   if (roundStopOnTimeout) roundStopOnTimeout.checked = draft.roundStopOnTimeout;
+  if (sessionRunRemainingRounds) sessionRunRemainingRounds.checked = draft.sessionRunRemainingRounds;
   if (autoRestart) autoRestart.checked = draft.autoRestart;
   if (officialRoundSmoke) officialRoundSmoke.checked = draft.officialRoundSmoke;
   if (maxRestarts) maxRestarts.value = draft.maxRestarts;
@@ -476,6 +479,10 @@ function renderLiveAgentProcessControls() {
         <label class="live-agent-process-options">
           <input id="live-agent-round-stop-on-timeout" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
           <span>timeout stop</span>
+        </label>
+        <label class="live-agent-process-options">
+          <input id="live-agent-session-run-remaining-rounds" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+          <span>세션 후 남은라운드</span>
         </label>
         <label class="live-agent-process-options">
           <input id="live-agent-process-auto-restart" type="checkbox" />
@@ -1327,6 +1334,10 @@ async function startLiveAgentSession(lobby) {
   const councilConfigPath = lobby.querySelector("#live-agent-session-council-config")?.value.trim() || "";
   const agentConfigPath = lobby.querySelector("#live-agent-session-agent-config")?.value.trim() || "";
   const connectTimeoutSeconds = liveAgentSessionConnectTimeoutSeconds(lobby);
+  const runRemainingRounds = lobby.querySelector("#live-agent-session-run-remaining-rounds")?.checked === true;
+  const roundTimeoutSeconds = liveAgentRoundTimeoutSeconds(lobby);
+  const roundMaxRounds = liveAgentRoundMaxRounds(lobby);
+  const roundStopOnTimeout = lobby.querySelector("#live-agent-round-stop-on-timeout")?.checked === true;
   const autoRestart = Boolean(lobby.querySelector("#live-agent-process-auto-restart")?.checked);
   const maxRestarts = Math.max(0, Number(lobby.querySelector("#live-agent-process-max-restarts")?.value || 0));
   const restartBackoffSeconds = Math.max(0, Number(lobby.querySelector("#live-agent-process-restart-backoff")?.value || 0));
@@ -1336,26 +1347,32 @@ async function startLiveAgentSession(lobby) {
   state.liveAgentProcessStatus = { message: "상주 세션 시작 중", tone: "info" };
   renderLobby({ followLatest: false });
   try {
+    const requestBody = {
+      meeting_id: meetingId,
+      group_id: groupId,
+      council_config_path: councilConfigPath,
+      agent_config_path: agentConfigPath,
+      live_agent_config_path: liveAgentConfigPath,
+      connect_timeout_seconds: connectTimeoutSeconds,
+      auto_restart: autoRestart,
+      max_restarts: maxRestarts,
+      restart_backoff_seconds: restartBackoffSeconds,
+      stale_restart_after_seconds: staleRestartAfterSeconds,
+    };
+    if (runRemainingRounds) {
+      requestBody.run_remaining_rounds = true;
+      requestBody.round_timeout_seconds = roundTimeoutSeconds;
+      requestBody.round_max_rounds = roundMaxRounds;
+      requestBody.round_stop_on_timeout = roundStopOnTimeout;
+    }
     const payload = await fetchJson("/api/live-agent-sessions/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        meeting_id: meetingId,
-        group_id: groupId,
-        council_config_path: councilConfigPath,
-        agent_config_path: agentConfigPath,
-        live_agent_config_path: liveAgentConfigPath,
-        connect_timeout_seconds: connectTimeoutSeconds,
-        auto_restart: autoRestart,
-        max_restarts: maxRestarts,
-        restart_backoff_seconds: restartBackoffSeconds,
-        stale_restart_after_seconds: staleRestartAfterSeconds,
-      }),
+      body: JSON.stringify(requestBody),
     });
     await refreshLiveAgentRuntimeSurfaces();
     notifyMeetingStarted(payload.meeting_id);
-    const tone = payload.status === "ready" ? "success" : "info";
-    state.liveAgentProcessStatus = { message: liveAgentSessionStatusMessage(payload), tone };
+    state.liveAgentProcessStatus = { message: liveAgentSessionStatusMessage(payload), tone: liveAgentSessionStatusTone(payload) };
   } catch (error) {
     notifyRecoverableSessionMeeting(error);
     state.liveAgentProcessStatus = { message: `상주 세션 시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
@@ -1486,7 +1503,28 @@ function liveAgentSessionStatusMessage(payload) {
   const connection = payload.connection && typeof payload.connection === "object" ? payload.connection : {};
   const expected = Math.max(0, Number(connection.expected || 0));
   const connected = Math.max(0, Number(connection.connected || 0));
-  return `세션 ${status}: ${meetingId} · ${connected}/${expected} connected`;
+  const autoRounds = liveAgentSessionAutoRoundsLabel(payload);
+  return `세션 ${status}: ${meetingId} · ${connected}/${expected} connected${autoRounds ? ` · ${autoRounds}` : ""}`;
+}
+
+function liveAgentSessionStatusTone(payload) {
+  if (payload.status !== "ready") return "info";
+  const autoRounds = payload.auto_rounds && typeof payload.auto_rounds === "object" ? payload.auto_rounds : null;
+  if (!autoRounds) return "success";
+  return autoRounds.status === "answered" || autoRounds.status === "complete" ? "success" : "error";
+}
+
+function liveAgentSessionAutoRoundsLabel(payload) {
+  const autoRounds = payload.auto_rounds && typeof payload.auto_rounds === "object" ? payload.auto_rounds : null;
+  if (!autoRounds) return "";
+  const status = autoRounds.status || "unknown";
+  const roundCount = Math.max(0, Number(autoRounds.round_count || 0));
+  const answered = Math.max(0, Number(autoRounds.answered_round_count || 0));
+  const completed = Math.max(0, Number(autoRounds.completed_round_count || 0));
+  const timedOut = Math.max(0, Number(autoRounds.timeout_round_count || 0));
+  const skipped = Math.max(0, Number(autoRounds.skipped_round_count || 0));
+  const completedText = completed ? `, ${completed} already complete` : "";
+  return `rounds ${status}: ${roundCount} rounds, ${answered} answered${completedText}, ${timedOut} timed out, ${skipped} skipped`;
 }
 
 function notifyRecoverableSessionMeeting(error) {
