@@ -394,6 +394,8 @@ Exit code contract:
 
 The GUI "상주 실행" panel exposes the same readiness path as the `점검` button. Use `진단` for a raw smoke run and `점검` when you want the combined health-plus-smoke answer.
 
+GUI `점검` can include the same official-turn smoke check as `--official-round-smoke`: enable `공식 포함` before pressing `점검`. When unchecked, the GUI keeps the default health-plus-smoke readiness path and does not run the official round smoke.
+
 ## Targeted Resident Reply Probe
 
 Use `live-agent probe` when a resident agent is already registered as live and you want proof that it can observe a new room event and reply through its own runner path:

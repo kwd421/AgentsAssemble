@@ -90,6 +90,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("python3 -m agentsassemble.cli live-agent doctor", doc)
         self.assertIn("--official-round-smoke", doc)
         self.assertIn("official-turn smoke check inside the same readiness payload", doc)
+        self.assertIn("GUI `점검` can include the same official-turn smoke check", doc)
+        self.assertIn("공식 포함", doc)
         self.assertIn("diagnostic official-round smoke meetings", doc)
         self.assertIn("do not appear in `/api/meetings` or `/api/meetings/latest`", doc)
         self.assertIn("--probe-agent", doc)

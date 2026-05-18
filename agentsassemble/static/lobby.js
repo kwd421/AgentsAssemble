@@ -164,6 +164,7 @@ function readLiveAgentProcessDraft(lobby) {
     configPath: form.querySelector("#live-agent-process-config")?.value ?? "",
     groupId: form.querySelector("#live-agent-process-group")?.value ?? "",
     autoRestart: Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked),
+    officialRoundSmoke: Boolean(form.querySelector("#live-agent-readiness-official-round")?.checked),
     maxRestarts: form.querySelector("#live-agent-process-max-restarts")?.value ?? "",
     restartBackoff: form.querySelector("#live-agent-process-restart-backoff")?.value ?? "",
   };
@@ -185,11 +186,13 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const config = lobby.querySelector("#live-agent-process-config");
   const group = lobby.querySelector("#live-agent-process-group");
   const autoRestart = lobby.querySelector("#live-agent-process-auto-restart");
+  const officialRoundSmoke = lobby.querySelector("#live-agent-readiness-official-round");
   const maxRestarts = lobby.querySelector("#live-agent-process-max-restarts");
   const restartBackoff = lobby.querySelector("#live-agent-process-restart-backoff");
   if (config) config.value = draft.configPath;
   if (group) group.value = draft.groupId;
   if (autoRestart) autoRestart.checked = draft.autoRestart;
+  if (officialRoundSmoke) officialRoundSmoke.checked = draft.officialRoundSmoke;
   if (maxRestarts) maxRestarts.value = draft.maxRestarts;
   if (restartBackoff) restartBackoff.value = draft.restartBackoff;
 }
@@ -422,6 +425,10 @@ function renderLiveAgentProcessControls() {
         <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
         <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
         <button type="button" id="live-agent-official-round-smoke" ${processActionsDisabled ? "disabled" : ""}>공식진단</button>
+        <label class="live-agent-process-options">
+          <input id="live-agent-readiness-official-round" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+          <span>공식 포함</span>
+        </label>
         <button type="button" id="live-agent-readiness-check" ${processActionsDisabled ? "disabled" : ""}>점검</button>
         <button type="button" id="live-agent-process-refresh">상태</button>
       </form>
@@ -1086,6 +1093,9 @@ async function runLiveAgentOfficialRoundSmoke(lobby) {
 async function runLiveAgentReadiness(lobby) {
   if (liveAgentProcessActionBusy()) return;
   const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
+  const includeOfficialRound = lobby.querySelector("#live-agent-readiness-official-round")?.checked === true;
+  const requestBody = { group_id: groupId, timeout: 12 };
+  if (includeOfficialRound) requestBody.official_round_smoke = true;
   state.liveAgentReadinessRunning = true;
   state.liveAgentProcessStatus = { message: "상주 readiness 점검 중", tone: "info" };
   renderLobby({ followLatest: false });
@@ -1093,7 +1103,7 @@ async function runLiveAgentReadiness(lobby) {
     const payload = await fetchJson("/api/live-agent-readiness", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ group_id: groupId, timeout: 12 }),
+      body: JSON.stringify(requestBody),
     });
     try {
       const lobbyPayload = await fetchJson("/api/lobby");
