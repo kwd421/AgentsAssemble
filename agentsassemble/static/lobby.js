@@ -1077,11 +1077,8 @@ async function runLiveAgentOfficialRoundSmoke(lobby) {
       body: JSON.stringify({ group_id: groupId, timeout: 12 }),
     });
     await refreshLiveAgentRuntimeSurfaces();
-    const answered = payload.answered_count || 0;
-    const timedOut = payload.timeout_count || 0;
-    const skipped = payload.skipped_count || 0;
     const tone = payload.status === "ok" ? "success" : "error";
-    state.liveAgentProcessStatus = { message: `공식 라운드 smoke ${payload.status || "unknown"} · ${answered} answered, ${timedOut} timed out, ${skipped} skipped`, tone };
+    state.liveAgentProcessStatus = { message: `공식 라운드 smoke ${payload.status || "unknown"} · ${officialRoundSmokeCountsLabel(payload)}`, tone };
   } catch {
     state.liveAgentProcessStatus = { message: "공식 라운드 smoke 진단 실패", tone: "error" };
   } finally {
@@ -1113,13 +1110,27 @@ async function runLiveAgentReadiness(lobby) {
     }
     await refreshLiveAgentRuntimeSurfaces();
     const tone = payload.status === "ready" ? "success" : "error";
-    state.liveAgentProcessStatus = { message: `readiness ${payload.status || "unknown"}`, tone };
+    state.liveAgentProcessStatus = { message: liveAgentReadinessStatusMessage(payload), tone };
   } catch {
     state.liveAgentProcessStatus = { message: "readiness 점검 실패", tone: "error" };
   } finally {
     state.liveAgentReadinessRunning = false;
     renderLobby({ followLatest: false });
   }
+}
+
+function liveAgentReadinessStatusMessage(payload) {
+  const status = payload.status || "unknown";
+  const officialRoundSmoke = payload.official_round_smoke;
+  if (!officialRoundSmoke || typeof officialRoundSmoke !== "object") return `readiness ${status}`;
+  return `readiness ${status} · official ${officialRoundSmokeCountsLabel(officialRoundSmoke)}`;
+}
+
+function officialRoundSmokeCountsLabel(payload) {
+  const answered = payload.answered_count || 0;
+  const timedOut = payload.timeout_count || 0;
+  const skipped = payload.skipped_count || 0;
+  return `${answered} answered, ${timedOut} timed out, ${skipped} skipped`;
 }
 
 async function runLiveAgentPreflight(lobby) {
