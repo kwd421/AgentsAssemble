@@ -23,6 +23,7 @@ export const state = {
   liveAgentProcessStartRunning: false,
   liveAgentPreflightRunning: false,
   liveAgentSmokeRunning: false,
+  liveAgentOfficialRoundSmokeRunning: false,
   liveAgentReadinessRunning: false,
   liveAgentProcessStatus: null,
   codexSessions: [],

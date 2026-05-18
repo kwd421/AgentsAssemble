@@ -105,6 +105,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-process-smoke")?.addEventListener("click", async () => {
     await runLiveAgentSmoke(lobby);
   });
+  lobby.querySelector("#live-agent-official-round-smoke")?.addEventListener("click", async () => {
+    await runLiveAgentOfficialRoundSmoke(lobby);
+  });
   lobby.querySelector("#live-agent-readiness-check")?.addEventListener("click", async () => {
     await runLiveAgentReadiness(lobby);
   });
@@ -418,6 +421,7 @@ function renderLiveAgentProcessControls() {
         <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
         <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
         <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
+        <button type="button" id="live-agent-official-round-smoke" ${processActionsDisabled ? "disabled" : ""}>공식진단</button>
         <button type="button" id="live-agent-readiness-check" ${processActionsDisabled ? "disabled" : ""}>점검</button>
         <button type="button" id="live-agent-process-refresh">상태</button>
       </form>
@@ -435,7 +439,7 @@ function renderLiveAgentProcessControls() {
 }
 
 function liveAgentProcessActionBusy() {
-  return state.liveAgentProcessStartRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentReadinessRunning;
+  return state.liveAgentProcessStartRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentReadinessRunning;
 }
 
 function liveAgentStatusCounts(agents) {
@@ -1049,6 +1053,32 @@ async function runLiveAgentSmoke(lobby) {
     state.liveAgentProcessStatus = { message: "smoke 진단 실패", tone: "error" };
   } finally {
     state.liveAgentSmokeRunning = false;
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function runLiveAgentOfficialRoundSmoke(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
+  state.liveAgentOfficialRoundSmokeRunning = true;
+  state.liveAgentProcessStatus = { message: "공식 라운드 smoke 진단 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-official-round-smoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_id: groupId, timeout: 12 }),
+    });
+    await refreshLiveAgentRuntimeSurfaces();
+    const answered = payload.answered_count || 0;
+    const timedOut = payload.timeout_count || 0;
+    const skipped = payload.skipped_count || 0;
+    const tone = payload.status === "ok" ? "success" : "error";
+    state.liveAgentProcessStatus = { message: `공식 라운드 smoke ${payload.status || "unknown"} · ${answered} answered, ${timedOut} timed out, ${skipped} skipped`, tone };
+  } catch {
+    state.liveAgentProcessStatus = { message: "공식 라운드 smoke 진단 실패", tone: "error" };
+  } finally {
+    state.liveAgentOfficialRoundSmokeRunning = false;
     renderLobby({ followLatest: false });
   }
 }

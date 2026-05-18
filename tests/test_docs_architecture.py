@@ -110,6 +110,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("smoke remote_bridge ok", doc)
         self.assertIn("fake `remote_bridge`", doc)
         self.assertIn("official round smoke", doc)
+        self.assertIn("공식 라운드 smoke", doc)
         self.assertIn("--fail-on-degraded", doc)
         self.assertIn("--json", doc)
         self.assertIn("Exit code contract", doc)
