@@ -27,6 +27,7 @@ from agentsassemble.live_agent_operations import append_live_agent_operation, re
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
+from agentsassemble.live_agent_turns import wait_for_official_turn_reply
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
 from agentsassemble.meeting_events import (
@@ -514,6 +515,33 @@ def live_agent_turn_request_payload(output_root: Path, meeting_id: str, payload:
         },
     )
     return {"agent": agent, "event": event, "live_events": read_live_events(meeting_dir)}
+
+
+def live_agent_turn_call_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
+    turn_request = live_agent_turn_request_payload(output_root, meeting_id, payload)
+    request_event = turn_request.get("event") if isinstance(turn_request.get("event"), dict) else {}
+    agent = turn_request.get("agent") if isinstance(turn_request.get("agent"), dict) else {}
+    clean_meeting_id = clean_lobby_text(request_event.get("meeting_id") or meeting_id, limit=128)
+    meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
+    agent_id = clean_lobby_text(request_event.get("target_agent_id") or payload.get("agent_id"), limit=64)
+    source_event_id = clean_lobby_text(request_event.get("id"), limit=128)
+    if not agent_id or not source_event_id:
+        raise ValueError("Official turn request could not be created.")
+    wait_result = wait_for_official_turn_reply(
+        meeting_dir,
+        agent_id=agent_id,
+        source_event_id=source_event_id,
+        timeout_seconds=_payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0),
+    )
+    return {
+        "status": wait_result["status"],
+        "agent": agent,
+        "request_event": request_event,
+        "reply_event": wait_result["reply_event"],
+        "elapsed_seconds": wait_result["elapsed_seconds"],
+        "timeout_seconds": wait_result["timeout_seconds"],
+        "live_events": _live_events_visible_to_agent(read_live_events(meeting_dir), agent_id),
+    }
 
 
 def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -1047,13 +1075,21 @@ def _live_agent_action_path(path: str, action: str) -> str | None:
 
 
 def _meeting_live_agent_turn_request_path(path: str) -> str | None:
+    return _meeting_live_agent_turn_action_path(path, "request")
+
+
+def _meeting_live_agent_turn_call_path(path: str) -> str | None:
+    return _meeting_live_agent_turn_action_path(path, "call")
+
+
+def _meeting_live_agent_turn_action_path(path: str, action: str) -> str | None:
     parts = path.strip("/").split("/")
     if (
         len(parts) == 5
         and parts[0] == "api"
         and parts[1] == "meetings"
         and parts[3] == "live-agent-turns"
-        and parts[4] == "request"
+        and parts[4] == action
     ):
         return unquote(parts[2])
     return None
@@ -1582,6 +1618,59 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json(live_agent)
+                return
+            turn_call_meeting_id = _meeting_live_agent_turn_call_path(parsed.path)
+            if turn_call_meeting_id is not None:
+                payload = self._operation_json_payload(operation="official_turn.call")
+                if payload is None:
+                    return
+                target_agent_id = str(payload.get("agent_id") or "").strip()
+                try:
+                    turn_call = live_agent_turn_call_payload(output_root, turn_call_meeting_id, payload)
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="official_turn.call",
+                        status="failed",
+                        target_id=target_agent_id,
+                        error=str(error),
+                        details={
+                            "meeting_id": turn_call_meeting_id,
+                            "target_agent_id": target_agent_id,
+                            "role_id": str(payload.get("role_id") or ""),
+                            "turn_id": str(payload.get("turn_id") or ""),
+                            "turn_index": _payload_optional_int(payload.get("turn_index")),
+                            "timeout_seconds": _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0),
+                        },
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                request_event = turn_call.get("request_event") if isinstance(turn_call.get("request_event"), dict) else {}
+                reply_event = turn_call.get("reply_event") if isinstance(turn_call.get("reply_event"), dict) else {}
+                result_status = str(turn_call.get("status") or "unknown")
+                record_live_agent_operation(
+                    output_root,
+                    operation="official_turn.call",
+                    status="success" if result_status == "answered" else "degraded",
+                    target_id=str(request_event.get("target_agent_id") or target_agent_id),
+                    summary=(
+                        "completed live-agent official turn"
+                        if result_status == "answered"
+                        else "timed out waiting for live-agent official turn"
+                    ),
+                    details={
+                        "meeting_id": turn_call_meeting_id,
+                        "target_agent_id": str(request_event.get("target_agent_id") or target_agent_id),
+                        "role_id": str(request_event.get("role_id") or ""),
+                        "turn_id": str(request_event.get("turn_id") or ""),
+                        "turn_index": _payload_optional_int(request_event.get("turn_index")),
+                        "source_event_id": str(request_event.get("id") or ""),
+                        "reply_event_id": str(reply_event.get("id") or ""),
+                        "timeout_seconds": _payload_nonnegative_float(turn_call.get("timeout_seconds"), 30.0),
+                        "elapsed_seconds": _payload_nonnegative_float(turn_call.get("elapsed_seconds"), 0.0),
+                    },
+                )
+                self._send_json(turn_call)
                 return
             turn_request_meeting_id = _meeting_live_agent_turn_request_path(parsed.path)
             if turn_request_meeting_id is not None:

@@ -194,6 +194,8 @@ def build_parser() -> argparse.ArgumentParser:
     live_call.add_argument("--turn-id", default="")
     live_call.add_argument("--turn-index", type=parse_nonnegative_int, default=None)
     live_call.add_argument("--json", action="store_true", dest="as_json", help="Print the raw official turn request payload.")
+    live_call.add_argument("--wait", action="store_true", help="Wait for the verified official reply before returning.")
+    live_call.add_argument("--timeout", type=parse_nonnegative_float, default=30.0, help="Seconds to wait when --wait is set.")
     live_call.add_argument("message", nargs="+")
 
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
@@ -516,6 +518,30 @@ def _run_live_agent_call(args: argparse.Namespace) -> int:
         "turn_id": args.turn_id,
         "turn_index": args.turn_index,
     }
+    if args.wait:
+        payload["timeout_seconds"] = float(args.timeout)
+        response = _request_json(
+            _server_url(args.server, f"/api/meetings/{meeting_id}/live-agent-turns/call"),
+            method="POST",
+            payload=payload,
+            timeout_seconds=_operation_http_timeout(float(args.timeout)),
+        )
+        if args.as_json:
+            print(json.dumps(response, ensure_ascii=False, indent=2))
+        else:
+            request_event = response.get("request_event") if isinstance(response.get("request_event"), dict) else {}
+            reply_event = response.get("reply_event") if isinstance(response.get("reply_event"), dict) else {}
+            if response.get("status") == "answered":
+                print(
+                    f"Answered {reply_event.get('actor_id') or args.agent_id} "
+                    f"official turn {reply_event.get('id') or 'reply'}"
+                )
+            else:
+                print(
+                    f"Timed out waiting for {request_event.get('target_agent_id') or args.agent_id} "
+                    f"official turn {request_event.get('id') or 'request'}"
+                )
+        return 0 if response.get("status") == "answered" else 1
     response = _request_json(
         _server_url(args.server, f"/api/meetings/{meeting_id}/live-agent-turns/request"),
         method="POST",

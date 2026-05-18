@@ -2435,6 +2435,150 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(lobby["events"], [])
             self.assertEqual([item["operation"] for item in operations["operations"]], ["official_turn.request", "official_turn.reply"])
 
+    def test_live_agent_official_turn_call_waits_for_verified_reply(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "m1",
+                    "engagement_mode": "moderator_called",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            errors = []
+
+            def answer_when_called():
+                try:
+                    deadline = time.time() + 2
+                    request_event = None
+                    while time.time() < deadline:
+                        request_event = next(
+                            (
+                                event
+                                for event in read_live_events(meeting_dir, limit=None)
+                                if event.get("kind") == "live_agent_turn_request"
+                                and event.get("target_agent_id") == "agent-a"
+                            ),
+                            None,
+                        )
+                        if request_event is not None:
+                            break
+                        time.sleep(0.01)
+                    self.assertIsNotNone(request_event)
+                    reply_request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/official-turn",
+                        data=json.dumps(
+                            {
+                                "meeting_id": "m1",
+                                "source_event_id": request_event["id"],
+                                "content": "검증된 공식 답변",
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(reply_request, timeout=4) as response:
+                        response.read()
+                except Exception as error:  # pragma: no cover - failure is asserted below
+                    errors.append(error)
+
+            responder = threading.Thread(target=answer_when_called, daemon=True)
+            responder.start()
+            try:
+                call_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/live-agent-turns/call",
+                    data=json.dumps(
+                        {
+                            "agent_id": "agent-a",
+                            "role_id": "architect",
+                            "display_name": "Agent A",
+                            "content": "공식 발언 차례",
+                            "timeout_seconds": 2,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(call_request, timeout=5) as response:
+                    called = json.loads(response.read().decode("utf-8"))
+                responder.join(timeout=2)
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/lobby", timeout=4) as response:
+                    lobby = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            if errors:
+                raise errors[0]
+            self.assertEqual(called["status"], "answered")
+            self.assertEqual(called["request_event"]["kind"], "live_agent_turn_request")
+            self.assertEqual(called["reply_event"]["kind"], "message")
+            self.assertEqual(called["reply_event"]["actor_id"], "agent-a")
+            self.assertEqual(called["reply_event"]["source_event_id"], called["request_event"]["id"])
+            self.assertTrue(called["reply_event"]["official_record"])
+            self.assertEqual(called["reply_event"]["content"], "검증된 공식 답변")
+            self.assertEqual(lobby["events"], [])
+            call_operations = [item for item in operations["operations"] if item["operation"] == "official_turn.call"]
+            self.assertEqual(len(call_operations), 1)
+            self.assertEqual(call_operations[0]["status"], "success")
+            self.assertNotIn("공식 발언 차례", json.dumps(call_operations, ensure_ascii=False))
+            self.assertNotIn("검증된 공식 답변", json.dumps(call_operations, ensure_ascii=False))
+
+    def test_live_agent_official_turn_call_timeout_does_not_create_reply(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                call_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/live-agent-turns/call",
+                    data=json.dumps(
+                        {
+                            "agent_id": "agent-a",
+                            "content": "공식 발언 차례",
+                            "timeout_seconds": 0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(call_request, timeout=4) as response:
+                    called = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(called["status"], "timeout")
+            self.assertIsNone(called["reply_event"])
+            self.assertEqual(called["request_event"]["kind"], "live_agent_turn_request")
+            official_replies = [
+                event
+                for event in read_live_events(meeting_dir, limit=None)
+                if event.get("kind") == "message" and event.get("source_event_id") == called["request_event"]["id"]
+            ]
+            self.assertEqual(official_replies, [])
+            call_operations = [item for item in operations["operations"] if item["operation"] == "official_turn.call"]
+            self.assertEqual(call_operations[0]["status"], "degraded")
+
     def test_live_agent_official_turn_request_rejects_meeting_id_path_traversal(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

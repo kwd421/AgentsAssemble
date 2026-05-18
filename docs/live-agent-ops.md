@@ -124,6 +124,26 @@ python3 -m agentsassemble.cli live-agent call \
 
 The request appends a `live_agent_turn_request` event to `meetings/<meeting_id>/live_events.jsonl`. That request is `channel: "system"` and `official_record: false`; it is a control event, not transcript evidence.
 
+Automation that needs a bounded completion result can call and wait in one step:
+
+```text
+POST /api/meetings/<meeting_id>/live-agent-turns/call
+```
+
+or:
+
+```bash
+python3 -m agentsassemble.cli live-agent call \
+  --server http://127.0.0.1:8765 \
+  --meeting-id meeting-1 \
+  --agent-id claude-code-live \
+  --wait \
+  --timeout 30 \
+  "Give the official architecture recommendation."
+```
+
+The wait path creates the same turn request, then polls the meeting's full `live_events.jsonl` until it finds a verified official reply or reaches the timeout. A reply is accepted only when it is a `kind: "message"` event with `channel: "official"`, `official_record: true`, the requested `actor_id`, and the request event id in `source_event_id`. Lobby messages, wrong-agent replies, wrong-source replies, and generic official messages do not complete the wait. The API returns `status: "answered"` with `request_event`, `reply_event`, timing fields, and visible live events, or `status: "timeout"` with the request event and no fabricated reply. The CLI exits `0` for answered, `1` for timeout, and `2` for transport or validation errors.
+
 The resident runner answers by posting to:
 
 ```text
@@ -137,6 +157,8 @@ Meeting ids for this path must be single meeting directory names, not paths. Enc
 Targeted turn requests are visible only to their target agent through `/api/live-agents/<agent_id>/room` and through the official-turn prompt context. Official reply events remain visible to all meeting participants because they are transcript records.
 
 Runner cursors are separated: `last_observed_event_id` tracks lobby events, while `last_observed_live_event_id` tracks meeting live events. This keeps an official turn reply from poisoning later lobby auto-reply state if the operator changes the agent back to `always`, `mentioned`, or `human_only`.
+
+Operation history for `official_turn.call` records safe ids, result status, and timing only. It does not include request text, reply text, prompts, endpoints, config paths, auth refs, command arguments, or log tails.
 
 ## Config Preflight
 

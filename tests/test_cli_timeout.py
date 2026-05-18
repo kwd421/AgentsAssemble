@@ -673,6 +673,31 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.turn_index, 0)
         self.assertEqual(args.message, ["공식", "발언", "요청"])
         self.assertTrue(args.as_json)
+        self.assertFalse(args.wait)
+        self.assertEqual(args.timeout, 30.0)
+
+    def test_live_agent_call_parses_wait_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "call",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "m1",
+                "--agent-id",
+                "agent-a",
+                "--wait",
+                "--timeout",
+                "8",
+                "공식",
+                "발언",
+                "요청",
+            ]
+        )
+
+        self.assertTrue(args.wait)
+        self.assertEqual(args.timeout, 8.0)
 
     def test_live_agent_call_posts_turn_request_and_prints_summary(self):
         response = {"event": {"id": "turn-request-1", "target_agent_id": "agent-a", "meeting_id": "m1"}}
@@ -711,6 +736,84 @@ class CliTimeoutTests(unittest.TestCase):
             },
         )
         self.assertIn("Called agent-a for official turn turn-request-1", stdout.getvalue())
+
+    def test_live_agent_call_waits_for_answered_turn_and_prints_summary(self):
+        response = {
+            "status": "answered",
+            "request_event": {"id": "turn-request-1", "target_agent_id": "agent-a", "meeting_id": "m1"},
+            "reply_event": {"id": "reply-1", "actor_id": "agent-a"},
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "call",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--agent-id",
+                        "agent-a",
+                        "--role-id",
+                        "architect",
+                        "--wait",
+                        "--timeout",
+                        "8",
+                        "공식",
+                        "발언",
+                        "요청",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/meetings/m1/live-agent-turns/call",
+            method="POST",
+            payload={
+                "agent_id": "agent-a",
+                "role_id": "architect",
+                "display_name": "",
+                "content": "공식 발언 요청",
+                "turn_id": "",
+                "turn_index": None,
+                "timeout_seconds": 8.0,
+            },
+            timeout_seconds=14.0,
+        )
+        self.assertIn("Answered agent-a official turn reply-1", stdout.getvalue())
+
+    def test_live_agent_call_wait_returns_one_on_timeout(self):
+        response = {
+            "status": "timeout",
+            "request_event": {"id": "turn-request-1", "target_agent_id": "agent-a"},
+            "reply_event": None,
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "call",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--agent-id",
+                        "agent-a",
+                        "--wait",
+                        "--timeout",
+                        "0",
+                        "공식",
+                        "발언",
+                        "요청",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("Timed out waiting for agent-a official turn turn-request-1", stdout.getvalue())
 
     def test_live_agent_preflight_parses_operator_options(self):
         args = build_parser().parse_args(

@@ -1165,6 +1165,37 @@ Document the backend API, CLI wrapper, system-vs-official event boundary, id/cur
 
 ---
 
+### Task 38: Official Turn Awaiter
+
+**Files:**
+- Create: `agentsassemble/live_agent_turns.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_turns.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for bounded official turn completion**
+
+Cover exact official reply matching, full live-event log lookup beyond the default tail, timeout without fabricated replies, CLI `--wait`, and the backend `POST /api/meetings/<meeting_id>/live-agent-turns/call` path.
+
+- [x] **Step 2: Add a backend wait primitive**
+
+Read the full `live_events.jsonl` and accept only a `kind: "message"`, `channel: "official"`, `official_record: true` reply whose `actor_id` and `source_event_id` match the requested agent and turn request.
+
+- [x] **Step 3: Expose API and CLI completion semantics**
+
+Keep the existing immediate request path unchanged. Add `live-agent call --wait --timeout N`, return `0` for answered and `1` for timeout, and bound the HTTP client timeout around the requested wait window.
+
+- [x] **Step 4: Preserve operation-history hygiene**
+
+Record safe result ids, timing, target, role, and turn metadata only. Do not record request content, reply content, prompts, endpoints, config paths, auth refs, command arguments, or log tails.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
