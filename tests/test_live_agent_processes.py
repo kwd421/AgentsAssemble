@@ -9,7 +9,9 @@ import time
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
+from agentsassemble.live_agents import heartbeat_live_agent
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor as _LiveAgentProcessSupervisor
 
 
@@ -788,6 +790,515 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(len(record["recent_events"]), 5)
         self.assertEqual(record["recent_events"], events[-5:])
         self.assertEqual([event["event_type"] for event in record["recent_events"]], ["stopped", "started", "stopped", "started", "stopped"])
+
+    def test_recent_lifecycle_events_do_not_load_whole_history_file_at_once(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=7250 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            for _ in range(3):
+                supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew")
+                supervisor.stop_group("crew")
+            original_open = Path.open
+
+            class BoundedReadFile:
+                def __init__(self, wrapped):
+                    self.wrapped = wrapped
+
+                def __enter__(self):
+                    self.wrapped.__enter__()
+                    return self
+
+                def __exit__(self, exc_type, exc, traceback):
+                    return self.wrapped.__exit__(exc_type, exc, traceback)
+
+                def __getattr__(self, name):
+                    return getattr(self.wrapped, name)
+
+                def __iter__(self):
+                    return iter(self.wrapped)
+
+                def read(self, size=-1):
+                    if size is None or size < 0:
+                        raise AssertionError("unbounded lifecycle read")
+                    return self.wrapped.read(size)
+
+            def open_guard(path, *args, **kwargs):
+                mode = str(args[0] if args else kwargs.get("mode", "r"))
+                opened = original_open(path, *args, **kwargs)
+                if path.name == "events.jsonl" and "r" in mode:
+                    return BoundedReadFile(opened)
+                return opened
+
+            with patch.object(Path, "open", open_guard):
+                record = supervisor.list_groups()[0]
+
+        self.assertEqual(len(record["recent_events"]), 5)
+
+    def test_list_groups_reads_lifecycle_history_once_for_all_groups(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=7280 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            for group_id in ("alpha", "beta", "gamma"):
+                supervisor.start_group(config_path=config_path, server="http://room.local", group_id=group_id)
+                supervisor.stop_group(group_id)
+            original_open = Path.open
+            event_open_count = 0
+
+            def open_guard(path, *args, **kwargs):
+                nonlocal event_open_count
+                mode = str(args[0] if args else kwargs.get("mode", "r"))
+                if path.name == "events.jsonl" and "r" in mode:
+                    event_open_count += 1
+                return original_open(path, *args, **kwargs)
+
+            with patch.object(Path, "open", open_guard):
+                groups = supervisor.list_groups()
+
+        self.assertEqual(len(groups), 3)
+        self.assertEqual(event_open_count, 1)
+
+    def test_due_auto_restarts_do_not_rescan_lifecycle_history_per_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=7290 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: current_time["value"],
+            )
+            for group_id in ("alpha", "beta", "gamma"):
+                supervisor.start_group(
+                    config_path=config_path,
+                    server="http://room.local",
+                    group_id=group_id,
+                    auto_restart=True,
+                    max_restarts=1,
+                    restart_backoff_seconds=1,
+                )
+            for process in processes:
+                process.returncode = 2
+            supervisor.list_groups()
+            current_time["value"] += timedelta(seconds=2)
+            original_open = Path.open
+            event_open_count = 0
+
+            def open_guard(path, *args, **kwargs):
+                nonlocal event_open_count
+                mode = str(args[0] if args else kwargs.get("mode", "r"))
+                if path.name == "events.jsonl" and "r" in mode:
+                    event_open_count += 1
+                return original_open(path, *args, **kwargs)
+
+            with patch.object(Path, "open", open_guard):
+                groups = supervisor.list_groups()
+
+        self.assertEqual(len(groups), 3)
+        self.assertEqual(event_open_count, 1)
+
+    def test_stale_watchdog_schedules_auto_restart_for_missing_manifest_agent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=7310 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+            )
+            current_time["value"] += timedelta(seconds=61)
+            groups = supervisor.list_groups()
+            events = _read_lifecycle_events(root)
+
+        self.assertEqual(groups[0]["status"], "restarting")
+        self.assertIsNone(groups[0]["pid"])
+        self.assertEqual(groups[0]["returncode"], -98)
+        self.assertEqual(groups[0]["restart_count"], 1)
+        self.assertEqual(groups[0]["stale_restart_after_seconds"], 60.0)
+        self.assertIn("Stale watchdog", groups[0]["last_error"])
+        self.assertTrue(processes[0].signals)
+        self.assertEqual([event["event_type"] for event in events], ["started", "stale_watchdog", "restart_scheduled"])
+
+    def test_stale_watchdog_waits_until_group_exceeds_threshold(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: FakeProcess(pid=7320),
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+            )
+            current_time["value"] += timedelta(seconds=59)
+            groups = supervisor.list_groups()
+
+        self.assertEqual(groups[0]["status"], "running")
+        self.assertEqual(groups[0]["restart_count"], 0)
+
+    def test_stale_watchdog_does_not_restart_at_exact_threshold(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: FakeProcess(pid=7325),
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+            )
+            current_time["value"] += timedelta(seconds=60)
+            groups = supervisor.list_groups()
+
+        self.assertEqual(groups[0]["status"], "running")
+        self.assertEqual(groups[0]["restart_count"], 0)
+
+    def test_stale_watchdog_schedules_auto_restart_for_stale_manifest_agent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: FakeProcess(pid=7326),
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+            )
+            heartbeat_live_agent(root, "agent-a", status="online", now=current_time["value"])
+            current_time["value"] += timedelta(seconds=61)
+            groups = supervisor.list_groups()
+
+        self.assertEqual(groups[0]["status"], "restarting")
+        self.assertIn("stale manifest agent agent-a", groups[0]["last_error"])
+
+    def test_stale_watchdog_ignores_fresh_manifest_agent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: FakeProcess(pid=7330),
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+            )
+            current_time["value"] += timedelta(seconds=70)
+            heartbeat_live_agent(root, "agent-a", status="working", now=current_time["value"])
+            groups = supervisor.list_groups()
+
+        self.assertEqual(groups[0]["status"], "running")
+        self.assertEqual(groups[0]["restart_count"], 0)
+
+    def test_stale_watchdog_ignores_diagnostic_groups(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: FakeProcess(pid=7332),
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+                diagnostic=True,
+            )
+            current_time["value"] += timedelta(seconds=61)
+            groups = supervisor.list_groups()
+
+        self.assertEqual(groups[0]["status"], "running")
+        self.assertEqual(groups[0]["restart_count"], 0)
+
+    def test_stale_watchdog_skips_corrupt_presence_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            (root / "live_agents.json").write_text("{not valid json", encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: FakeProcess(pid=7335),
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+            )
+            current_time["value"] += timedelta(seconds=61)
+            groups = supervisor.list_groups()
+            events = _read_lifecycle_events(root)
+
+        self.assertEqual(groups[0]["status"], "running")
+        self.assertEqual(groups[0]["restart_count"], 0)
+        self.assertEqual([event["event_type"] for event in events], ["started"])
+
+    def test_stale_watchdog_immediate_backoff_starts_one_fresh_replacement(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=7345 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=2,
+                restart_backoff_seconds=0,
+                stale_restart_after_seconds=60,
+            )
+            current_time["value"] += timedelta(seconds=61)
+            groups = supervisor.list_groups()
+            events = _read_lifecycle_events(root)
+
+        self.assertEqual(groups[0]["status"], "running")
+        self.assertEqual(groups[0]["pid"], 7346)
+        self.assertEqual(groups[0]["restart_count"], 1)
+        self.assertEqual(len(processes), 2)
+        self.assertEqual(
+            [event["event_type"] for event in events],
+            ["started", "stale_watchdog", "restart_scheduled", "started"],
+        )
+
+    def test_stale_watchdog_normalizes_fractional_threshold_to_whole_seconds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=lambda command, **kwargs: FakeProcess())
+            group = supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                stale_restart_after_seconds=60.2,
+            )
+
+        self.assertEqual(group["stale_restart_after_seconds"], 61)
+
+    def test_stale_watchdog_requires_auto_restart_budget(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=lambda command, **kwargs: FakeProcess())
+
+            with self.assertRaisesRegex(ValueError, "stale watchdog requires auto_restart"):
+                supervisor.start_group(
+                    config_path=config_path,
+                    server="http://room.local",
+                    group_id="crew",
+                    stale_restart_after_seconds=60,
+                )
+
+    def test_stale_watchdog_requires_positive_heartbeat_interval(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text(
+                '{"agents": [{"agent_id": "agent-a", "command": ["fake"], "heartbeat_interval": 0}]}',
+                encoding="utf-8",
+            )
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=lambda command, **kwargs: FakeProcess())
+
+            with self.assertRaisesRegex(ValueError, "positive heartbeat_interval"):
+                supervisor.start_group(
+                    config_path=config_path,
+                    server="http://room.local",
+                    group_id="crew",
+                    auto_restart=True,
+                    max_restarts=1,
+                    stale_restart_after_seconds=60,
+                )
+
+    def test_stale_watchdog_requires_threshold_above_runner_heartbeat_window(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text(
+                '{"agents": [{"agent_id": "agent-a", "command": ["fake"], "heartbeat_interval": 30, "poll_interval": 35}]}',
+                encoding="utf-8",
+            )
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=lambda command, **kwargs: FakeProcess())
+
+            with self.assertRaisesRegex(ValueError, "greater than heartbeat_interval \\+ poll_interval"):
+                supervisor.start_group(
+                    config_path=config_path,
+                    server="http://room.local",
+                    group_id="crew",
+                    auto_restart=True,
+                    max_restarts=1,
+                    stale_restart_after_seconds=60,
+                )
+
+    def test_stale_watchdog_stop_failure_does_not_repeat_watchdog_events(self):
+        class StubbornProcess:
+            pid = 7340
+            returncode = None
+
+            def __init__(self):
+                self.signals = []
+                self.terminated = False
+                self.killed = False
+
+            def poll(self):
+                return None
+
+            def send_signal(self, signum):
+                self.signals.append(signum)
+
+            def terminate(self):
+                self.terminated = True
+
+            def kill(self):
+                self.killed = True
+
+            def wait(self, timeout=None):
+                raise subprocess.TimeoutExpired("fake", timeout)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            process = StubbornProcess()
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: process,
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+            )
+            current_time["value"] += timedelta(seconds=61)
+            first_groups = supervisor.list_groups()
+            second_groups = supervisor.list_groups()
+            events = _read_lifecycle_events(root)
+
+        self.assertEqual(first_groups[0]["status"], "error")
+        self.assertEqual(second_groups[0]["status"], "error")
+        self.assertIn("Stale watchdog failed to stop group", first_groups[0]["last_error"])
+        self.assertEqual(
+            [event["event_type"] for event in events],
+            ["started", "stale_watchdog_stop_failed"],
+        )
 
     def test_auto_restart_failure_writes_restart_failed_lifecycle_event(self):
         with tempfile.TemporaryDirectory() as temp_dir:

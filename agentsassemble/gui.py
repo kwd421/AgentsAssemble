@@ -178,6 +178,7 @@ def serve_gui(
     live_agent_auto_restart: bool = False,
     live_agent_max_restarts: int = 0,
     live_agent_restart_backoff_seconds: float = 5.0,
+    live_agent_stale_restart_after_seconds: float = 0.0,
 ) -> None:
     root = output_root or Path(".agentsassemble")
     process_supervisor = LiveAgentProcessSupervisor(root)
@@ -196,6 +197,7 @@ def serve_gui(
                 auto_restart=live_agent_auto_restart,
                 max_restarts=live_agent_max_restarts,
                 restart_backoff_seconds=live_agent_restart_backoff_seconds,
+                stale_restart_after_seconds=live_agent_stale_restart_after_seconds,
             )
         print(f"AgentsAssemble GUI: {server_url}")
         server.serve_forever()
@@ -216,6 +218,7 @@ def _autostart_live_agent_group(
     auto_restart: bool = False,
     max_restarts: int = 0,
     restart_backoff_seconds: float = 5.0,
+    stale_restart_after_seconds: float = 0.0,
 ) -> None:
     try:
         group = process_supervisor.start_group(
@@ -225,6 +228,7 @@ def _autostart_live_agent_group(
             auto_restart=auto_restart,
             max_restarts=max_restarts,
             restart_backoff_seconds=restart_backoff_seconds,
+            stale_restart_after_seconds=stale_restart_after_seconds,
         )
     except Exception as error:
         record_live_agent_operation(
@@ -238,6 +242,7 @@ def _autostart_live_agent_group(
                 "auto_restart": bool(auto_restart),
                 "max_restarts": max_restarts,
                 "restart_backoff_seconds": restart_backoff_seconds,
+                "stale_restart_after_seconds": stale_restart_after_seconds,
             },
         )
         print("Live-agent autostart failed; inspect recent operations for details.")
@@ -254,6 +259,7 @@ def _autostart_live_agent_group(
             "auto_restart": bool(auto_restart),
             "max_restarts": max_restarts,
             "restart_backoff_seconds": restart_backoff_seconds,
+            "stale_restart_after_seconds": stale_restart_after_seconds,
         },
     )
 
@@ -718,6 +724,9 @@ def start_live_agent_process_payload(
         "max_restarts": _payload_nonnegative_int(payload.get("max_restarts"), 0),
         "restart_backoff_seconds": _payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
     }
+    stale_restart_after_seconds = _payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0)
+    if stale_restart_after_seconds > 0:
+        start_kwargs["stale_restart_after_seconds"] = stale_restart_after_seconds
     if _payload_bool(payload.get("diagnostic")):
         start_kwargs["diagnostic"] = True
     group = process_supervisor.start_group(**start_kwargs)
@@ -1230,6 +1239,10 @@ def _make_handler(
                                 payload.get("restart_backoff_seconds"),
                                 5.0,
                             ),
+                            "stale_restart_after_seconds": _payload_nonnegative_float(
+                                payload.get("stale_restart_after_seconds"),
+                                0.0,
+                            ),
                         },
                     )
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
@@ -1249,6 +1262,10 @@ def _make_handler(
                         "restart_backoff_seconds": _payload_nonnegative_float(
                             payload.get("restart_backoff_seconds"),
                             5.0,
+                        ),
+                        "stale_restart_after_seconds": _payload_nonnegative_float(
+                            payload.get("stale_restart_after_seconds"),
+                            0.0,
                         ),
                     },
                 )

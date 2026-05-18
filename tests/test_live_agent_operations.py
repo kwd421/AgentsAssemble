@@ -3,7 +3,9 @@ import tempfile
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
+import agentsassemble.live_agent_operations as live_agent_operations
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
 
 
@@ -113,6 +115,95 @@ class LiveAgentOperationTests(unittest.TestCase):
 
         self.assertEqual([operation["target_id"] for operation in operations], ["agent-1", "agent-2"])
         self.assertEqual([operation["details"]["index"] for operation in operations], [1, 2])
+
+    def test_read_operations_does_not_load_whole_history_file_at_once(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for index in range(5):
+                append_live_agent_operation(
+                    root,
+                    operation="engagement.update",
+                    status="success",
+                    target_id=f"agent-{index}",
+                    details={"index": index},
+                    now=datetime(2026, 5, 18, 1, 2, index, tzinfo=UTC),
+                )
+
+            original_open = Path.open
+
+            class BoundedReadFile:
+                def __init__(self, wrapped):
+                    self.wrapped = wrapped
+
+                def __enter__(self):
+                    self.wrapped.__enter__()
+                    return self
+
+                def __exit__(self, exc_type, exc, traceback):
+                    return self.wrapped.__exit__(exc_type, exc, traceback)
+
+                def __getattr__(self, name):
+                    return getattr(self.wrapped, name)
+
+                def read(self, size=-1):
+                    if size is None or size < 0:
+                        raise AssertionError("unbounded operation read")
+                    return self.wrapped.read(size)
+
+            def open_guard(path, *args, **kwargs):
+                mode = str(args[0] if args else kwargs.get("mode", "r"))
+                opened = original_open(path, *args, **kwargs)
+                if path.name == "operations.jsonl" and "r" in mode:
+                    return BoundedReadFile(opened)
+                return opened
+
+            with patch.object(Path, "open", open_guard):
+                operations = read_live_agent_operations(root, limit=2)
+
+        self.assertEqual([operation["target_id"] for operation in operations], ["agent-3", "agent-4"])
+
+    def test_read_operations_stops_after_recent_tail_records(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "live-agent-runs" / "operations.jsonl"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                json.dumps(
+                    {
+                        "id": "old-sentinel",
+                        "timestamp": "2026-05-18T00:00:00+00:00",
+                        "operation": "explode-old",
+                        "status": "success",
+                        "target_id": "old",
+                        "summary": "",
+                        "details": {},
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            for index in range(4):
+                append_live_agent_operation(
+                    root,
+                    operation="engagement.update",
+                    status="success",
+                    target_id=f"agent-{index}",
+                    details={"index": index},
+                    now=datetime(2026, 5, 18, 1, 2, index, tzinfo=UTC),
+                )
+
+            original_loads = live_agent_operations.json.loads
+
+            def guarded_loads(line):
+                if "explode-old" in line:
+                    raise AssertionError("old operation was parsed")
+                return original_loads(line)
+
+            with patch.object(live_agent_operations.json, "loads", side_effect=guarded_loads):
+                operations = read_live_agent_operations(root, limit=2)
+
+        self.assertEqual([operation["target_id"] for operation in operations], ["agent-2", "agent-3"])
 
     def test_read_operations_ignores_invalid_utf8_file(self):
         with tempfile.TemporaryDirectory() as temp_dir:

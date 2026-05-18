@@ -105,9 +105,10 @@ class LiveAgentRunner:
         self.last_observed_event_id = source_event_id
         self._heartbeat("working", last_observed_event_id=source_event_id)
         try:
-            reply = self.command_runner(
+            reply = self._run_command_with_working_heartbeats(
                 self.config.command,
                 delegate_prompt(self.config, room, candidate),
+                source_event_id=source_event_id,
                 timeout_seconds=self.config.timeout_seconds,
             ).strip()
             if not reply:
@@ -216,6 +217,49 @@ class LiveAgentRunner:
         if self.last_error_at is None or self.config.cooldown <= 0:
             return False
         return (self.now_fn() - self.last_error_at).total_seconds() < self.config.cooldown
+
+    def _run_command_with_working_heartbeats(
+        self,
+        command: list[str],
+        prompt: str,
+        *,
+        source_event_id: str,
+        timeout_seconds: int,
+    ) -> str:
+        heartbeat_stop = threading.Event()
+        heartbeat_thread = self._start_working_heartbeat_loop(source_event_id, heartbeat_stop)
+        try:
+            return self.command_runner(command, prompt, timeout_seconds=timeout_seconds)
+        finally:
+            heartbeat_stop.set()
+            if heartbeat_thread is not None:
+                heartbeat_thread.join()
+
+    def _start_working_heartbeat_loop(
+        self,
+        source_event_id: str,
+        stop_event: threading.Event,
+    ) -> threading.Thread | None:
+        if self.config.heartbeat_interval <= 0:
+            return None
+        interval = max(0.01, self.config.heartbeat_interval)
+
+        def keep_working_fresh() -> None:
+            while not stop_event.wait(interval):
+                if self.stop_event.is_set():
+                    return
+                try:
+                    self._heartbeat("working", last_observed_event_id=source_event_id)
+                except Exception:
+                    return
+
+        thread = threading.Thread(
+            target=keep_working_fresh,
+            daemon=True,
+            name=f"AgentsAssembleWorkingHeartbeat-{self.config.agent_id}",
+        )
+        thread.start()
+        return thread
 
 
 class RemoteBridgeResidentCommandRunner:

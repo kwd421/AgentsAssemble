@@ -11,6 +11,7 @@ OPERATION_TEXT_LIMIT = 500
 OPERATION_FIELD_LIMIT = 128
 DEFAULT_OPERATION_LIMIT = 50
 MAX_OPERATION_LIMIT = 200
+JSONL_TAIL_BLOCK_BYTES = 8192
 
 SENSITIVE_DETAIL_MARKERS = (
     "auth",
@@ -74,7 +75,7 @@ def read_live_agent_operations(output_root: Path, *, limit: int = DEFAULT_OPERAT
         return []
     safe_limit = _operation_limit(limit)
     operations: list[dict[str, object]] = []
-    for line in path.read_bytes().decode("utf-8", errors="ignore").splitlines():
+    for line in _jsonl_tail_lines_newest_first(path):
         if not line.strip():
             continue
         try:
@@ -84,11 +85,36 @@ def read_live_agent_operations(output_root: Path, *, limit: int = DEFAULT_OPERAT
         record = _safe_operation_record(payload)
         if record:
             operations.append(record)
-    return operations[-safe_limit:]
+            if len(operations) >= safe_limit:
+                break
+    operations.reverse()
+    return operations
 
 
 def _operations_path(output_root: Path) -> Path:
     return output_root / "live-agent-runs" / "operations.jsonl"
+
+
+def _jsonl_tail_lines_newest_first(path: Path):
+    with path.open("rb") as file:
+        file.seek(0, 2)
+        position = file.tell()
+        buffer = b""
+        while position > 0:
+            read_size = min(JSONL_TAIL_BLOCK_BYTES, position)
+            position -= read_size
+            file.seek(position)
+            chunk = file.read(read_size)
+            parts = (chunk + buffer).split(b"\n")
+            if position > 0:
+                buffer = parts[0]
+                complete_lines = parts[1:]
+            else:
+                buffer = b""
+                complete_lines = parts
+            for line in reversed(complete_lines):
+                if line.strip():
+                    yield line.decode("utf-8", errors="ignore")
 
 
 def _operation_record(

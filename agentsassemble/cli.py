@@ -123,6 +123,7 @@ def build_parser() -> argparse.ArgumentParser:
     gui.add_argument("--live-agent-auto-restart", action="store_true", help="Enable auto restart for the startup autostart group.")
     gui.add_argument("--live-agent-max-restarts", type=parse_nonnegative_int, default=0)
     gui.add_argument("--live-agent-restart-backoff-seconds", type=parse_nonnegative_float, default=5.0)
+    gui.add_argument("--live-agent-stale-restart-after-seconds", type=parse_nonnegative_float, default=0.0)
 
     bridge = subparsers.add_parser("claude-bridge", help="Run a friend-owned Claude Code bridge.")
     bridge.add_argument("--host", default="127.0.0.1")
@@ -281,6 +282,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_process_start.add_argument("--auto-restart", action="store_true")
     live_process_start.add_argument("--max-restarts", type=parse_nonnegative_int, default=0)
     live_process_start.add_argument("--restart-backoff-seconds", type=parse_nonnegative_float, default=5.0)
+    live_process_start.add_argument("--stale-restart-after-seconds", type=parse_nonnegative_float, default=0.0)
     live_process_start.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
 
     live_process_stop = live_process_subparsers.add_parser("stop", parents=[live_server], help="Stop a supervised live-agent process group.")
@@ -347,6 +349,7 @@ def main(argv: list[str] | None = None) -> int:
             live_agent_auto_restart=args.live_agent_auto_restart,
             live_agent_max_restarts=args.live_agent_max_restarts,
             live_agent_restart_backoff_seconds=args.live_agent_restart_backoff_seconds,
+            live_agent_stale_restart_after_seconds=args.live_agent_stale_restart_after_seconds,
         )
         return 0
     if args.command == "claude-bridge":
@@ -787,6 +790,8 @@ def _run_live_agent_processes(args: argparse.Namespace) -> int:
     if args.live_agent_process_command == "start":
         if args.auto_restart and args.max_restarts <= 0:
             raise ValueError("--auto-restart requires --max-restarts greater than 0.")
+        if args.stale_restart_after_seconds > 0 and (not args.auto_restart or args.max_restarts <= 0):
+            raise ValueError("--stale-restart-after-seconds requires --auto-restart and --max-restarts greater than 0.")
         payload = {
             "config_path": args.config,
             "server": args.server,
@@ -794,6 +799,8 @@ def _run_live_agent_processes(args: argparse.Namespace) -> int:
             "max_restarts": args.max_restarts,
             "restart_backoff_seconds": args.restart_backoff_seconds,
         }
+        if args.stale_restart_after_seconds > 0:
+            payload["stale_restart_after_seconds"] = args.stale_restart_after_seconds
         if args.group_id:
             payload["group_id"] = args.group_id
         response = _request_json(
@@ -877,7 +884,8 @@ def _format_live_agent_process_group(group: dict[str, object]) -> str:
     agents = _format_live_agent_process_agents(group.get("agents"))
     connection = _format_live_agent_process_connection(group.get("agent_connection"))
     last_event = _format_live_agent_process_last_event(group.get("recent_events"))
-    suffix_parts = [part for part in (config_path, agents, connection, last_event) if part]
+    stale_watchdog = _format_live_agent_process_stale_watchdog(group.get("stale_restart_after_seconds"))
+    suffix_parts = [part for part in (config_path, agents, connection, stale_watchdog, last_event) if part]
     suffix = f" {'; '.join(suffix_parts)}" if suffix_parts else ""
     return f"{group_id}: {status} ({pid_text}, {auto_restart}, restarts {restart_count}/{max_restarts}){suffix}"
 
@@ -922,6 +930,15 @@ def _format_live_agent_process_connection(value: object) -> str:
     return f"agents connected {connected}/{expected}{suffix}"
 
 
+def _format_live_agent_process_stale_watchdog(value: object) -> str:
+    seconds = _safe_float(value)
+    if seconds <= 0:
+        return ""
+    if seconds.is_integer():
+        return f"stale watchdog {int(seconds)}s"
+    return f"stale watchdog {seconds:.1f}s"
+
+
 def _format_live_agent_process_connection_attention(value: object) -> str:
     if not isinstance(value, list):
         return ""
@@ -955,6 +972,15 @@ def _safe_int(value: object) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _safe_float(value: object) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _run_live_agent_delegate(args: argparse.Namespace) -> int:

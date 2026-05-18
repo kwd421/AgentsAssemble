@@ -274,6 +274,7 @@ class GuiServerTests(unittest.TestCase):
                 auto_restart=False,
                 max_restarts=0,
                 restart_backoff_seconds=5.0,
+                stale_restart_after_seconds=0.0,
             ):
                 self.started.append(
                     {
@@ -283,6 +284,7 @@ class GuiServerTests(unittest.TestCase):
                         "auto_restart": auto_restart,
                         "max_restarts": max_restarts,
                         "restart_backoff_seconds": restart_backoff_seconds,
+                        "stale_restart_after_seconds": stale_restart_after_seconds,
                     }
                 )
                 record = {
@@ -301,6 +303,7 @@ class GuiServerTests(unittest.TestCase):
                     "restart_count": 0,
                     "max_restarts": max_restarts,
                     "restart_backoff_seconds": restart_backoff_seconds,
+                    "stale_restart_after_seconds": stale_restart_after_seconds,
                     "next_restart_at": "",
                     "agents": [
                         {
@@ -358,6 +361,7 @@ class GuiServerTests(unittest.TestCase):
                             "auto_restart": True,
                             "max_restarts": 2,
                             "restart_backoff_seconds": 1.5,
+                            "stale_restart_after_seconds": 240,
                         }
                     ).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
@@ -407,6 +411,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(supervisor.started[0]["auto_restart"], True)
             self.assertEqual(supervisor.started[0]["max_restarts"], 2)
             self.assertEqual(supervisor.started[0]["restart_backoff_seconds"], 1.5)
+            self.assertEqual(supervisor.started[0]["stale_restart_after_seconds"], 240.0)
             self.assertEqual(supervisor.stopped, ["crew"])
             self.assertEqual(supervisor.restarted, ["crew"])
             self.assertEqual(
@@ -1558,6 +1563,7 @@ class GuiServerTests(unittest.TestCase):
                             live_agent_auto_restart=True,
                             live_agent_max_restarts=3,
                             live_agent_restart_backoff_seconds=1.5,
+                            live_agent_stale_restart_after_seconds=120,
                         )
 
             operations = json.loads((root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8").splitlines()[-1])
@@ -1570,9 +1576,11 @@ class GuiServerTests(unittest.TestCase):
         self.assertTrue(started["auto_restart"])
         self.assertEqual(started["max_restarts"], 3)
         self.assertEqual(started["restart_backoff_seconds"], 1.5)
+        self.assertEqual(started["stale_restart_after_seconds"], 120)
         self.assertEqual(operations["operation"], "process.autostart")
         self.assertEqual(operations["status"], "success")
         self.assertEqual(operations["target_id"], "boot")
+        self.assertEqual(operations["details"]["stale_restart_after_seconds"], 120)
         self.assertTrue(servers[0].closed)
         self.assertTrue(FakeSupervisor.instances[0].closed)
 

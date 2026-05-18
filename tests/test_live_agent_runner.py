@@ -1,6 +1,7 @@
 import json
 import tempfile
 import threading
+import time
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -302,6 +303,99 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(heartbeats[error_index + 1]["status"], "error")
         self.assertEqual(heartbeats[error_index + 1]["last_error"], "boom")
         self.assertEqual(heartbeats[error_index + 1]["last_observed_event_id"], "evt1")
+
+    def test_runner_keeps_working_heartbeat_fresh_during_slow_reply(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "천천히 답해"}]}
+        client = FakeRoomClient([room])
+
+        def slow_command(command, prompt, *, timeout_seconds):
+            del command, prompt, timeout_seconds
+            time.sleep(0.05)
+            return "slow reply"
+
+        runner = LiveAgentRunner(
+            config(heartbeat_interval=0.005),
+            request_json=client,
+            command_runner=slow_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        working_heartbeats = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload["status"] == "working"
+        ]
+        self.assertGreaterEqual(len(working_heartbeats), 2)
+        self.assertEqual({payload["last_observed_event_id"] for payload in working_heartbeats}, {"evt1"})
+
+    def test_runner_waits_for_in_flight_working_heartbeat_before_final_status(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "순서 지켜"}]}
+        call_order = []
+        call_lock = threading.Lock()
+        background_heartbeat_started = threading.Event()
+        release_background_heartbeat = threading.Event()
+        working_heartbeats = 0
+
+        def request_json(url, *, method="GET", payload=None):
+            nonlocal working_heartbeats
+            if url.endswith("/room"):
+                return room
+            if url.endswith("/live-agents") and method == "POST":
+                with call_lock:
+                    call_order.append("register")
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                status = str((payload or {}).get("status") or "")
+                if status == "working":
+                    working_heartbeats += 1
+                    if working_heartbeats == 2:
+                        background_heartbeat_started.set()
+                        release_background_heartbeat.wait(timeout=2)
+                with call_lock:
+                    call_order.append(f"heartbeat:{status}")
+                return {"agent": {"agent_id": "agent-a", "status": status}}
+            if url.endswith("/lobby"):
+                with call_lock:
+                    call_order.append("lobby")
+                return {"event": {"id": "reply-id"}}
+            return {}
+
+        def slow_command(command, prompt, *, timeout_seconds):
+            del command, prompt, timeout_seconds
+            if not background_heartbeat_started.wait(timeout=1):
+                raise AssertionError("background working heartbeat did not start")
+            return "ordered reply"
+
+        runner = LiveAgentRunner(
+            config(heartbeat_interval=0.01),
+            request_json=request_json,
+            command_runner=slow_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        result = {}
+        runner_thread = threading.Thread(target=lambda: result.setdefault("replies", runner.run()))
+
+        runner_thread.start()
+        try:
+            self.assertTrue(background_heartbeat_started.wait(timeout=1))
+            time.sleep(1.1)
+        finally:
+            release_background_heartbeat.set()
+            runner_thread.join(timeout=2)
+
+        self.assertFalse(runner_thread.is_alive())
+        self.assertEqual(result.get("replies"), 1)
+        with call_lock:
+            ordered = list(call_order)
+        last_working_index = max(index for index, item in enumerate(ordered) if item == "heartbeat:working")
+        self.assertLess(last_working_index, ordered.index("lobby"))
+        self.assertLess(ordered.index("lobby"), ordered.index("heartbeat:offline"))
 
     def test_watch_mode_observes_without_replying_and_advances_cursor(self):
         clock = FakeClock()

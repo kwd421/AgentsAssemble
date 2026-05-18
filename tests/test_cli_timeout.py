@@ -124,6 +124,8 @@ class CliTimeoutTests(unittest.TestCase):
                     "3",
                     "--live-agent-restart-backoff-seconds",
                     "1.5",
+                    "--live-agent-stale-restart-after-seconds",
+                    "120",
                 ]
             )
 
@@ -138,6 +140,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(kwargs["live_agent_auto_restart"])
         self.assertEqual(kwargs["live_agent_max_restarts"], 3)
         self.assertEqual(kwargs["live_agent_restart_backoff_seconds"], 1.5)
+        self.assertEqual(kwargs["live_agent_stale_restart_after_seconds"], 120.0)
 
     def test_sessions_list_outputs_codex_session_index_as_json(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1023,6 +1026,8 @@ class CliTimeoutTests(unittest.TestCase):
                 "2",
                 "--restart-backoff-seconds",
                 "1.5",
+                "--stale-restart-after-seconds",
+                "240",
                 "--json",
             ]
         )
@@ -1035,6 +1040,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(args.auto_restart)
         self.assertEqual(args.max_restarts, 2)
         self.assertEqual(args.restart_backoff_seconds, 1.5)
+        self.assertEqual(args.stale_restart_after_seconds, 240.0)
         self.assertTrue(args.as_json)
 
     def test_live_agent_processes_list_prints_summary(self):
@@ -1047,6 +1053,7 @@ class CliTimeoutTests(unittest.TestCase):
                     "auto_restart": True,
                     "restart_count": 1,
                     "max_restarts": 3,
+                    "stale_restart_after_seconds": 240,
                     "config_path": "configs/live-agents.example.json",
                     "agents": [
                         {
@@ -1092,6 +1099,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("crew: running", output)
         self.assertIn("pid 1234", output)
         self.assertIn("restarts 1/3", output)
+        self.assertIn("stale watchdog 240s", output)
         self.assertIn("agents Local A/local_cli, Friend B/remote_bridge", output)
         self.assertIn("agents connected 1/2", output)
         self.assertIn("missing friend-b", output)
@@ -1121,6 +1129,8 @@ class CliTimeoutTests(unittest.TestCase):
                         "2",
                         "--restart-backoff-seconds",
                         "1.5",
+                        "--stale-restart-after-seconds",
+                        "240",
                     ]
                 )
 
@@ -1135,6 +1145,7 @@ class CliTimeoutTests(unittest.TestCase):
                 "auto_restart": True,
                 "max_restarts": 2,
                 "restart_backoff_seconds": 1.5,
+                "stale_restart_after_seconds": 240.0,
             },
         )
         self.assertIn("Started crew (pid 1234)", stdout.getvalue())
@@ -1159,6 +1170,28 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 2)
         request_json.assert_not_called()
         self.assertIn("--auto-restart requires --max-restarts greater than 0", stderr.getvalue())
+
+    def test_live_agent_processes_start_requires_auto_restart_for_stale_watchdog(self):
+        stderr = StringIO()
+        with patch("agentsassemble.cli._request_json") as request_json:
+            with patch("sys.stderr", stderr):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "processes",
+                        "start",
+                        "--server",
+                        "http://room.local",
+                        "--config",
+                        "configs/live-agents.example.json",
+                        "--stale-restart-after-seconds",
+                        "240",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 2)
+        request_json.assert_not_called()
+        self.assertIn("--stale-restart-after-seconds requires --auto-restart", stderr.getvalue())
 
     def test_live_agent_processes_rejects_invalid_restart_numbers(self):
         invalid_commands = [

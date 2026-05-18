@@ -8,15 +8,18 @@ import signal
 import subprocess
 import sys
 import threading
+from collections import deque
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
+from agentsassemble.live_agents import LIVE_AGENT_STATE, read_live_agents
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_runner import ResidentAgentConfig, load_group_configs
 
 
 RECENT_LIFECYCLE_EVENT_LIMIT = 5
+STALE_WATCHDOG_RETURNCODE = -98
 
 
 class LiveAgentProcessSupervisor:
@@ -48,11 +51,11 @@ class LiveAgentProcessSupervisor:
     def list_groups(self) -> list[dict[str, object]]:
         with self._lock:
             self._refresh_running_groups()
-            return [self._record_for_output(record) for record in self._records.values()]
+            return self._records_for_output(self._records.values())
 
     def snapshot_groups(self) -> list[dict[str, object]]:
         with self._lock:
-            return [self._record_for_output(record) for record in self._records.values()]
+            return self._records_for_output(self._records.values())
 
     def start_group(
         self,
@@ -63,6 +66,7 @@ class LiveAgentProcessSupervisor:
         auto_restart: bool = False,
         max_restarts: int = 0,
         restart_backoff_seconds: float = 5.0,
+        stale_restart_after_seconds: float = 0.0,
         diagnostic: bool = False,
     ) -> dict[str, object]:
         with self._lock:
@@ -73,6 +77,7 @@ class LiveAgentProcessSupervisor:
                 auto_restart=auto_restart,
                 max_restarts=max_restarts,
                 restart_backoff_seconds=restart_backoff_seconds,
+                stale_restart_after_seconds=stale_restart_after_seconds,
                 diagnostic=diagnostic,
             )
 
@@ -101,6 +106,7 @@ class LiveAgentProcessSupervisor:
                 auto_restart=_bool_value(record.get("auto_restart")),
                 max_restarts=_nonnegative_int(record.get("max_restarts"), 0),
                 restart_backoff_seconds=_nonnegative_float(record.get("restart_backoff_seconds"), 5.0),
+                stale_restart_after_seconds=_nonnegative_float(record.get("stale_restart_after_seconds"), 0.0),
                 diagnostic=_bool_value(record.get("diagnostic")),
                 last_error=str(record.get("last_error") or ""),
             )
@@ -158,8 +164,9 @@ class LiveAgentProcessSupervisor:
             returncode = _poll_process(process)
             record = self._records.get(group_id)
             if record is not None and record.get("status") == "running" and returncode is not None:
-                self._handle_process_exit(group_id, returncode=returncode)
+                self._handle_process_exit(group_id, returncode=returncode, include_recent_events=False)
         self._start_due_auto_restarts()
+        self._restart_stale_watchdog_groups()
 
     def _start_group_unlocked(
         self,
@@ -170,11 +177,16 @@ class LiveAgentProcessSupervisor:
         auto_restart: bool = False,
         max_restarts: int = 0,
         restart_backoff_seconds: float = 5.0,
+        stale_restart_after_seconds: float = 0.0,
         restart_count: int = 0,
         last_error: str = "",
         diagnostic: bool = False,
+        include_recent_events: bool = True,
     ) -> dict[str, object]:
         clean_group_id = _clean_group_id(group_id or config_path.stem)
+        stale_restart_after = _stale_watchdog_threshold_seconds(stale_restart_after_seconds)
+        if stale_restart_after > 0 and (not auto_restart or _nonnegative_int(max_restarts, 0) <= 0):
+            raise ValueError("stale watchdog requires auto_restart with max_restarts greater than 0.")
         existing = self._records.get(clean_group_id)
         if existing and existing.get("status") == "running":
             process = self._processes.get(clean_group_id)
@@ -183,7 +195,9 @@ class LiveAgentProcessSupervisor:
         if not config_path.exists():
             raise ValueError(f"Live agent config {config_path} was not found.")
         self._preflight_report_or_raise(config_path, server=server)
-        agent_manifest = _safe_agent_manifest(load_group_configs(config_path, server_override=server))
+        group_configs = load_group_configs(config_path, server_override=server)
+        _validate_stale_watchdog_config(stale_restart_after, group_configs)
+        agent_manifest = _safe_agent_manifest(group_configs)
 
         log_path = self._log_path(clean_group_id)
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -227,6 +241,7 @@ class LiveAgentProcessSupervisor:
             "restart_count": _nonnegative_int(restart_count, 0),
             "max_restarts": _nonnegative_int(max_restarts, 0),
             "restart_backoff_seconds": _nonnegative_float(restart_backoff_seconds, 5.0),
+            "stale_restart_after_seconds": stale_restart_after,
             "next_restart_at": "",
             "diagnostic": bool(diagnostic),
             "agents": agent_manifest,
@@ -236,12 +251,18 @@ class LiveAgentProcessSupervisor:
         self._logs[clean_group_id] = log_file
         self._write_records()
         self._append_lifecycle_event(record, "started")
-        return self._record_for_output(record)
+        return self._record_for_output(record) if include_recent_events else dict(record)
 
-    def _handle_process_exit(self, group_id: str, *, returncode: object) -> dict[str, object]:
+    def _handle_process_exit(
+        self,
+        group_id: str,
+        *,
+        returncode: object,
+        include_recent_events: bool = True,
+    ) -> dict[str, object]:
         record = self._records[group_id]
         if not _should_auto_restart(record, returncode):
-            return self._mark_stopped(group_id, returncode=returncode)
+            return self._mark_stopped(group_id, returncode=returncode, include_recent_events=include_recent_events)
 
         self._processes.pop(group_id, None)
         self._close_log(group_id)
@@ -249,7 +270,7 @@ class LiveAgentProcessSupervisor:
         max_restarts = _nonnegative_int(record.get("max_restarts"), 0)
         restart_count = _nonnegative_int(record.get("restart_count"), 0) + 1
         backoff_seconds = _nonnegative_float(record.get("restart_backoff_seconds"), 5.0)
-        last_error = f"Exited with return code {returncode}; auto restart {restart_count}/{max_restarts}."
+        last_error = _auto_restart_last_error(record, returncode, restart_count=restart_count, max_restarts=max_restarts)
         transition_record = dict(record)
         transition_record["status"] = "restarting"
         transition_record["pid"] = None
@@ -272,9 +293,11 @@ class LiveAgentProcessSupervisor:
                     auto_restart=True,
                     max_restarts=max_restarts,
                     restart_backoff_seconds=backoff_seconds,
+                    stale_restart_after_seconds=_nonnegative_float(record.get("stale_restart_after_seconds"), 0.0),
                     restart_count=restart_count,
                     last_error=last_error,
                     diagnostic=_bool_value(record.get("diagnostic")),
+                    include_recent_events=include_recent_events,
                 )
             except Exception as error:
                 return self._mark_auto_restart_failed(
@@ -283,6 +306,7 @@ class LiveAgentProcessSupervisor:
                     restart_count=restart_count,
                     stopped_at=stopped_at,
                     last_error=f"{last_error} Restart failed: {error}",
+                    include_recent_events=include_recent_events,
                 )
 
         next_restart_at = stopped_at + timedelta(seconds=backoff_seconds)
@@ -301,7 +325,7 @@ class LiveAgentProcessSupervisor:
             timestamp=stopped_at,
             returncode=returncode,
         )
-        return self._record_for_output(record)
+        return self._record_for_output(record) if include_recent_events else dict(record)
 
     def _start_due_auto_restarts(self) -> None:
         now = self.now_fn()
@@ -319,9 +343,11 @@ class LiveAgentProcessSupervisor:
                     auto_restart=True,
                     max_restarts=_nonnegative_int(record.get("max_restarts"), 0),
                     restart_backoff_seconds=_nonnegative_float(record.get("restart_backoff_seconds"), 5.0),
+                    stale_restart_after_seconds=_nonnegative_float(record.get("stale_restart_after_seconds"), 0.0),
                     restart_count=_nonnegative_int(record.get("restart_count"), 0),
                     last_error=str(record.get("last_error") or ""),
                     diagnostic=_bool_value(record.get("diagnostic")),
+                    include_recent_events=False,
                 )
             except Exception as error:
                 record["status"] = "error"
@@ -331,6 +357,55 @@ class LiveAgentProcessSupervisor:
                 record["next_restart_at"] = ""
                 self._write_records()
                 self._append_lifecycle_event(record, "restart_failed")
+
+    def _restart_stale_watchdog_groups(self) -> None:
+        if not self._processes:
+            return
+        now = self.now_fn()
+        agents_by_threshold: dict[int, dict[str, dict[str, object]]] = {}
+        for group_id, process in list(self._processes.items()):
+            if _poll_process(process) is not None:
+                continue
+            record = self._records.get(group_id)
+            if not _stale_watchdog_enabled(record):
+                continue
+            threshold_seconds = _stale_watchdog_threshold_seconds(record.get("stale_restart_after_seconds"))
+            agents = agents_by_threshold.get(threshold_seconds)
+            if agents is None:
+                if not _live_agent_presence_file_readable(self.output_root):
+                    return
+                agents = _agents_by_id(
+                    read_live_agents(self.output_root, now=now, stale_after_seconds=threshold_seconds),
+                )
+                agents_by_threshold[threshold_seconds] = agents
+            reason = _stale_watchdog_reason(record, agents, now=now, threshold_seconds=threshold_seconds)
+            if reason:
+                self._restart_stale_watchdog_group(group_id, process, reason=reason)
+
+    def _restart_stale_watchdog_group(self, group_id: str, process: object, *, reason: str) -> None:
+        record = self._records.get(group_id)
+        if record is None:
+            return
+        record["last_error"] = f"Stale watchdog stopped group: {reason}."
+        try:
+            _stop_supervised_process(process, timeout_seconds=5.0)
+        except Exception as error:
+            record["status"] = "error"
+            record["returncode"] = None
+            record["next_restart_at"] = ""
+            record["last_error"] = (
+                f"Stale watchdog failed to stop group: {reason}; {_safe_stop_failure_message(error)}."
+            )
+            self._close_log(group_id)
+            self._write_records()
+            self._append_lifecycle_event(record, "stale_watchdog_stop_failed")
+            return
+        self._append_lifecycle_event(record, "stale_watchdog", returncode=STALE_WATCHDOG_RETURNCODE)
+        self._handle_process_exit(
+            group_id,
+            returncode=STALE_WATCHDOG_RETURNCODE,
+            include_recent_events=False,
+        )
 
     def _stop_group_unlocked(self, group_id: str, *, timeout_seconds: float) -> dict[str, object]:
         clean_group_id = _clean_group_id(group_id)
@@ -367,6 +442,7 @@ class LiveAgentProcessSupervisor:
         restart_count: int,
         stopped_at: datetime,
         last_error: str,
+        include_recent_events: bool = True,
     ) -> dict[str, object]:
         record = self._records[group_id]
         record["status"] = "error"
@@ -380,9 +456,15 @@ class LiveAgentProcessSupervisor:
         self._close_log(group_id)
         self._write_records()
         self._append_lifecycle_event(record, "restart_failed", timestamp=stopped_at, returncode=returncode)
-        return self._record_for_output(record)
+        return self._record_for_output(record) if include_recent_events else dict(record)
 
-    def _mark_stopped(self, group_id: str, *, returncode: object) -> dict[str, object]:
+    def _mark_stopped(
+        self,
+        group_id: str,
+        *,
+        returncode: object,
+        include_recent_events: bool = True,
+    ) -> dict[str, object]:
         record = self._records[group_id]
         record["status"] = "stopped" if returncode in (0, None) else "error"
         record["returncode"] = returncode
@@ -397,7 +479,7 @@ class LiveAgentProcessSupervisor:
             timestamp=_parse_datetime(record.get("stopped_at")),
             returncode=returncode,
         )
-        return self._record_for_output(record)
+        return self._record_for_output(record) if include_recent_events else dict(record)
 
     def _close_log(self, group_id: str) -> None:
         log_file = self._logs.pop(group_id, None)
@@ -451,14 +533,36 @@ class LiveAgentProcessSupervisor:
                 self._append_lifecycle_event(record, "recovered_unknown")
         return changed
 
-    def _record_for_output(self, record: dict[str, object]) -> dict[str, object]:
-        visible = dict(record)
-        visible["log_tail"] = _read_log_tail(Path(str(record.get("log_path") or "")), self.log_tail_bytes)
-        visible["recent_events"] = _recent_lifecycle_events(
+    def _records_for_output(self, records: object) -> list[dict[str, object]]:
+        record_list = [record for record in records if isinstance(record, dict)]
+        recent_events_by_group = _recent_lifecycle_events_by_group(
             self._event_path(),
-            str(record.get("group_id") or ""),
+            [str(record.get("group_id") or "") for record in record_list],
             RECENT_LIFECYCLE_EVENT_LIMIT,
         )
+        return [
+            self._record_for_output(
+                record,
+                recent_events=recent_events_by_group.get(str(record.get("group_id") or ""), []),
+            )
+            for record in record_list
+        ]
+
+    def _record_for_output(
+        self,
+        record: dict[str, object],
+        *,
+        recent_events: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
+        visible = dict(record)
+        visible["log_tail"] = _read_log_tail(Path(str(record.get("log_path") or "")), self.log_tail_bytes)
+        if recent_events is None:
+            recent_events = _recent_lifecycle_events(
+                self._event_path(),
+                str(record.get("group_id") or ""),
+                RECENT_LIFECYCLE_EVENT_LIMIT,
+            )
+        visible["recent_events"] = recent_events
         return visible
 
     def _preflight_report_or_raise(self, config_path: Path, *, server: str) -> dict[str, object]:
@@ -591,6 +695,7 @@ def _process_record(payload: dict[str, object]) -> dict[str, object]:
         "restart_count": _nonnegative_int(payload.get("restart_count"), 0),
         "max_restarts": _nonnegative_int(payload.get("max_restarts"), 0),
         "restart_backoff_seconds": _nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
+        "stale_restart_after_seconds": _nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0),
         "next_restart_at": str(payload.get("next_restart_at") or ""),
         "diagnostic": _bool_value(payload.get("diagnostic")),
         "agents": _safe_agent_manifest(payload.get("agents")),
@@ -608,20 +713,32 @@ def _read_log_tail(path: Path, byte_limit: int) -> str:
 
 
 def _recent_lifecycle_events(path: Path, group_id: str, limit: int) -> list[dict[str, object]]:
-    if limit <= 0 or not group_id or not path.exists() or not path.is_file():
-        return []
-    events = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        event = _safe_lifecycle_event(payload)
-        if event and event.get("group_id") == group_id:
-            events.append(event)
-    return events[-limit:]
+    clean_group_id = _clean_group_id(group_id)
+    return _recent_lifecycle_events_by_group(path, [clean_group_id], limit).get(clean_group_id, [])
+
+
+def _recent_lifecycle_events_by_group(
+    path: Path,
+    group_ids: list[str],
+    limit: int,
+) -> dict[str, list[dict[str, object]]]:
+    clean_group_ids = {_clean_group_id(group_id) for group_id in group_ids if str(group_id).strip()}
+    if limit <= 0 or not clean_group_ids or not path.exists() or not path.is_file():
+        return {}
+    events = {group_id: deque(maxlen=limit) for group_id in clean_group_ids}
+    with path.open("r", encoding="utf-8", errors="ignore") as file:
+        for line in file:
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            event = _safe_lifecycle_event(payload)
+            event_group_id = str(event.get("group_id") or "") if event else ""
+            if event_group_id in events:
+                events[event_group_id].append(event)
+    return {group_id: list(group_events) for group_id, group_events in events.items()}
 
 
 def _lifecycle_event(
@@ -739,6 +856,96 @@ def _should_auto_restart(record: dict[str, object], returncode: object) -> bool:
     return _nonnegative_int(record.get("restart_count"), 0) < _nonnegative_int(record.get("max_restarts"), 0)
 
 
+def _auto_restart_last_error(
+    record: dict[str, object],
+    returncode: object,
+    *,
+    restart_count: int,
+    max_restarts: int,
+) -> str:
+    if returncode == STALE_WATCHDOG_RETURNCODE:
+        base = str(record.get("last_error") or "Stale watchdog stopped group.").strip()
+        return f"{base} Auto restart {restart_count}/{max_restarts}."
+    return f"Exited with return code {returncode}; auto restart {restart_count}/{max_restarts}."
+
+
+def _stale_watchdog_enabled(record: dict[str, object] | None) -> bool:
+    if not isinstance(record, dict):
+        return False
+    if str(record.get("status") or "") != "running":
+        return False
+    if _bool_value(record.get("diagnostic")):
+        return False
+    if not _bool_value(record.get("auto_restart")):
+        return False
+    if _nonnegative_int(record.get("restart_count"), 0) >= _nonnegative_int(record.get("max_restarts"), 0):
+        return False
+    if _nonnegative_float(record.get("stale_restart_after_seconds"), 0.0) <= 0:
+        return False
+    return bool(_safe_agent_manifest(record.get("agents")))
+
+
+def _validate_stale_watchdog_config(threshold_seconds: int, configs: list[ResidentAgentConfig]) -> None:
+    if threshold_seconds <= 0:
+        return
+    for config in configs:
+        heartbeat_interval = float(config.heartbeat_interval)
+        poll_interval = float(config.poll_interval)
+        if not math.isfinite(heartbeat_interval) or heartbeat_interval <= 0:
+            raise ValueError(
+                f"stale watchdog requires positive heartbeat_interval for agent {config.agent_id}."
+            )
+        if not math.isfinite(poll_interval):
+            raise ValueError(
+                f"stale watchdog requires finite poll_interval for agent {config.agent_id}."
+            )
+        if threshold_seconds <= heartbeat_interval + max(0.0, poll_interval):
+            raise ValueError(
+                "stale watchdog threshold must be greater than heartbeat_interval + poll_interval for every agent."
+            )
+
+
+def _live_agent_presence_file_readable(output_root: Path) -> bool:
+    path = output_root / LIVE_AGENT_STATE
+    if not path.exists():
+        return True
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    return isinstance(data, dict)
+
+
+def _safe_stop_failure_message(error: Exception) -> str:
+    if isinstance(error, subprocess.TimeoutExpired):
+        return "stop timed out"
+    return error.__class__.__name__
+
+
+def _agents_by_id(agents: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    return {str(agent.get("agent_id") or ""): agent for agent in agents if str(agent.get("agent_id") or "")}
+
+
+def _stale_watchdog_reason(
+    record: dict[str, object],
+    agents_by_id: dict[str, dict[str, object]],
+    *,
+    now: datetime,
+    threshold_seconds: int,
+) -> str:
+    started_at = _parse_datetime(record.get("started_at"))
+    if started_at is None or (now - started_at).total_seconds() <= threshold_seconds:
+        return ""
+    for manifest_agent in _safe_agent_manifest(record.get("agents")):
+        agent_id = manifest_agent.get("agent_id") or ""
+        agent = agents_by_id.get(agent_id)
+        if agent is None:
+            return f"missing manifest agent {agent_id}"
+        if str(agent.get("status") or "") == "stale":
+            return f"stale manifest agent {agent_id}"
+    return ""
+
+
 def _bool_value(value: object) -> bool:
     if isinstance(value, bool):
         return value
@@ -765,10 +972,17 @@ def _nonnegative_float(value: object, default: float) -> float:
     return max(0.0, parsed)
 
 
+def _stale_watchdog_threshold_seconds(value: object) -> int:
+    return int(math.ceil(_nonnegative_float(value, 0.0)))
+
+
 def _parse_datetime(value: object) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(str(value))
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)

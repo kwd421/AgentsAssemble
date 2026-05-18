@@ -392,9 +392,12 @@ Use the GUI "상주 실행" panel for supervised process records and stop contro
 - auto restart: optional; auto restart is off by default
 - max restarts: bounded retry count written as `max_restarts`
 - restart backoff: seconds between crash detection and relaunch, written as `restart_backoff_seconds`
+- stale watchdog: optional heartbeat timeout written as `stale_restart_after_seconds`; it requires auto restart with a positive restart budget
 - press `시작`
 
 The GUI start button runs the same resident group through the local process supervisor. It preflights the config first, then launches only when the config passes. Group records and log tails remain visible after a launched process stops or crashes. Auto restart only applies to a group launched with that option enabled, and it starts a fresh local process rather than attaching to an old PID.
+
+When the stale watchdog is enabled, the supervisor waits until the launched group has been alive longer than the configured timeout, compares the launch-time agent manifest against current live-agent presence, and stops/restarts the owned group if any manifest agent is missing or stale. The watchdog is opt-in and uses the same bounded auto-restart budget/backoff path as crash recovery, so health and readiness reads stay read-only. To avoid killing a quiet but healthy runner, each agent must have a positive `heartbeat_interval`, and the watchdog threshold must be greater than that agent's `heartbeat_interval + poll_interval`.
 
 The same supervised start path is available from the CLI:
 
@@ -414,10 +417,21 @@ python3 -m agentsassemble.cli live-agent processes start \
   --group-id local-cli-group \
   --auto-restart \
   --max-restarts 2 \
-  --restart-backoff-seconds 5
+  --restart-backoff-seconds 5 \
+  --stale-restart-after-seconds 120
 ```
 
 Here `--server` is the GUI API target and the room server URL passed to the supervised `run-group`.
+
+The GUI autostart path accepts the same watchdog threshold with:
+
+```bash
+python3 -m agentsassemble.cli gui \
+  --live-agent-config "$fake_config" \
+  --live-agent-auto-restart \
+  --live-agent-max-restarts 2 \
+  --live-agent-stale-restart-after-seconds 120
+```
 
 ## Stop Or Restart A Group
 
@@ -479,14 +493,17 @@ What to check:
 
 - `.agentsassemble/live_agents.json`: presence, status, heartbeat metadata, `last_error`, `last_reply_at`, and `last_observed_event_id`.
 - `/api/live-agents`: roster entries add output-only `heartbeat_age_seconds` and `stale_after_seconds` so operators can see why an agent is fresh or stale. These freshness fields are inferred at read time and are not persisted in `live_agents.json`.
+- Slow resident replies keep sending `working` heartbeats while the provider command is still in flight, so a long Claude, Gemini, local CLI, live session, or remote bridge turn does not look stale merely because it is still answering.
 - `.agentsassemble/lobby.jsonl`: human lobby messages and live-agent replies. Live-agent auto replies include `actor_id`, `source_event_id`, `auto_chain_depth`, and the server-issued `live_agent_endpoint` evidence flag when they were posted through the resident live-agent lobby endpoint.
 - `.agentsassemble/live-agent-runs/processes.json`: durable group records with `group_id`, `status`, `pid`, `config_path`, `server`, `log_path`, timestamps, `returncode`, `last_error`, and a safe launch-time `agents` manifest.
 - agents manifest entries contain only `agent_id`, `display_name`, `provider_kind`, and `connection_kind`. The manifest does not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
 - `/api/live-agent-processes`: process rows add output-only `agent_connection` evidence by comparing each group's launch-time manifest with current live-agent presence. This manifest-aware connection evidence reports `expected`, `connected`, and attention entries such as missing, stale, offline, or error agents. It is not persisted into `processes.json`.
-- auto-restart fields in `processes.json`: `auto_restart`, `restart_count`, `max_restarts`, `restart_backoff_seconds`, and `next_restart_at`.
-- `.agentsassemble/live-agent-runs/events.jsonl`: safe lifecycle event history for supervised groups. It records bounded operator facts such as `started`, `stopped`, `error`, `restart_scheduled`, `restart_failed`, and `recovered_unknown` with `timestamp`, `group_id`, `status`, `pid`, `returncode`, and restart counters. The process API and GUI expose each group's bounded `recent_events` view. Lifecycle events do not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
+- auto-restart fields in `processes.json`: `auto_restart`, `restart_count`, `max_restarts`, `restart_backoff_seconds`, `stale_restart_after_seconds`, and `next_restart_at`.
+- `.agentsassemble/live-agent-runs/events.jsonl`: safe lifecycle event history for supervised groups. It records bounded operator facts such as `started`, `stopped`, `error`, `restart_scheduled`, `restart_failed`, `stale_watchdog`, `stale_watchdog_stop_failed`, and `recovered_unknown` with `timestamp`, `group_id`, `status`, `pid`, `returncode`, and restart counters. The process API and GUI expose each group's bounded `recent_events` view. Lifecycle events do not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
 - `.agentsassemble/live-agent-runs/operations.jsonl`: safe control-operation history for API, GUI, and CLI operator actions. It records bounded entries for process start/stop/restart, engagement updates, preflight checks, smoke runs, and readiness checks, including success, degraded, and refused/failed attempts. The operation ledger does not include command arguments, endpoint URLs, auth references, prompts, log tails, config paths, environment-derived values, or provider secrets. Ordinary heartbeat polling and health reads are intentionally not operation records.
 - `.agentsassemble/live-agent-runs/<group_id>.log`: stdout/stderr for the supervised `run-group` process. Delegate provider subprocess stdout/stderr is captured by the runner, not streamed directly into this file. The GUI and process API expose only a bounded `log_tail`.
+
+Recent operation views read from the JSONL tail and stop after the requested result window. Recent lifecycle views scan the history once per process payload and split bounded `recent_events` by group. Long sessions can keep historical JSONL artifacts without forcing the GUI or CLI to load the whole history file at once or rescan lifecycle history once per group.
 
 The recent operation history is available through the GUI "최근 작업" list, through HTTP:
 
