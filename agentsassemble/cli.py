@@ -411,6 +411,10 @@ def build_parser() -> argparse.ArgumentParser:
     live_process_restart.add_argument("group_id")
     live_process_restart.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
 
+    live_process_recover = live_process_subparsers.add_parser("recover", parents=[live_server], help="Recover a historical live-agent process group.")
+    live_process_recover.add_argument("group_id")
+    live_process_recover.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
+
     live_operations = live_agent_subparsers.add_parser("operations", help="Inspect live-agent control operation history.")
     live_operations_subparsers = live_operations.add_subparsers(dest="live_agent_operations_command", required=True)
     live_operations_list = live_operations_subparsers.add_parser(
@@ -1301,7 +1305,7 @@ def _run_live_agent_processes(args: argparse.Namespace) -> int:
         )
         _print_live_agent_process_payload(response, as_json=args.as_json, action="start")
         return 0
-    if args.live_agent_process_command in {"stop", "restart"}:
+    if args.live_agent_process_command in {"stop", "restart", "recover"}:
         group_id = urllib.parse.quote(args.group_id, safe="")
         response = _request_json(
             _server_url(args.server, f"/api/live-agent-processes/{group_id}/{args.live_agent_process_command}"),
@@ -1428,6 +1432,9 @@ def _format_live_agent_process_action(group: dict[str, object], action: str) -> 
         return f"Stopped {group_id} ({status})"
     if action == "restart":
         return f"Restarted {group_id} (pid {pid if pid not in (None, '') else '-'})"
+    if action == "recover":
+        previous_status = str(group.get("recovered_from_status") or "unknown")
+        return f"Recovered {group_id} from {previous_status} (pid {pid if pid not in (None, '') else '-'})"
     return _format_live_agent_process_group(group)
 
 

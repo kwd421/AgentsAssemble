@@ -216,6 +216,12 @@ function installHarness({
     if (url === "/api/live-agent-processes/start") {
       return jsonResponse(processStartPayload || { group: { group_id: "crew", status: "running" }, groups: [] });
     }
+    if (url === "/api/live-agent-processes/crew/recover") {
+      return jsonResponse({
+        group: { group_id: "crew", status: "running", pid: 6789, recovered_from_status: "unknown" },
+        groups: [{ group_id: "crew", status: "running", pid: 6789, recovered_from_status: "unknown" }],
+      });
+    }
     if (url === "/api/live-agent-sessions/start") {
       if (sessionStartResponse) {
         return jsonResponse(sessionStartResponse.payload, {
@@ -786,6 +792,31 @@ test("process row renders recovery watchdog and next restart evidence", () => {
   assert.match(rowText, /auto restart 1\/3/);
   assert.match(rowText, /stale watchdog 240s/);
   assert.match(rowText, /next restart 2026-05-17T12:01:00\+00:00/);
+});
+
+test("process row recover button posts recover endpoint and updates status", async () => {
+  resetState();
+  const { document, requests } = installHarness();
+  state.liveAgentProcesses = [
+    {
+      group_id: "crew",
+      status: "unknown",
+      pid: "",
+      config_path: "configs/live-agents.example.json",
+      server: "http://127.0.0.1:8765",
+      recovered_from_status: "running",
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+
+  await document.querySelector(".live-agent-process-recover").click();
+
+  const recoverRequest = requests.find((request) => request.url === "/api/live-agent-processes/crew/recover");
+  assert.equal(recoverRequest.options.method, "POST");
+  assert.deepEqual(recoverRequest.jsonBody, {});
+  assert.equal(state.liveAgentProcessStatus.message, "crew 복구됨");
+  assert.equal(state.liveAgentProcesses[0].status, "running");
 });
 
 test("process row omits disabled recovery fields", () => {

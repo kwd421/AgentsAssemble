@@ -1354,6 +1354,17 @@ def restart_live_agent_process_payload(
     return _process_payload_with_agent_connection_evidence(response, output_root)
 
 
+def recover_live_agent_process_payload(
+    process_supervisor: LiveAgentProcessSupervisor,
+    group_id: str,
+    *,
+    output_root: Path | None = None,
+) -> dict[str, object]:
+    group = process_supervisor.recover_group(group_id)
+    response = {"group": group, "groups": process_supervisor.list_groups()}
+    return _process_payload_with_agent_connection_evidence(response, output_root)
+
+
 def record_live_agent_operation(
     output_root: Path,
     *,
@@ -3043,6 +3054,40 @@ def _make_handler(
                     },
                 )
                 self._send_json(restarted)
+                return
+            live_agent_process_recover_id = _live_agent_process_action_path(parsed.path, "recover")
+            if live_agent_process_recover_id is not None:
+                try:
+                    recovered = recover_live_agent_process_payload(
+                        live_agent_process_supervisor,
+                        live_agent_process_recover_id,
+                        output_root=output_root,
+                    )
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="process.recover",
+                        status="failed",
+                        target_id=live_agent_process_recover_id,
+                        error=str(error),
+                        details={"group_id": live_agent_process_recover_id},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                group = recovered.get("group") if isinstance(recovered.get("group"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="process.recover",
+                    status="success",
+                    target_id=_operation_group_id({}, group) or live_agent_process_recover_id,
+                    summary="recovered live-agent process group",
+                    details={
+                        "group_id": _operation_group_id({}, group) or live_agent_process_recover_id,
+                        "group_status": str(group.get("status") or ""),
+                        "previous_status": str(group.get("recovered_from_status") or ""),
+                    },
+                )
+                self._send_json(recovered)
                 return
             live_agent_probe_id = _live_agent_action_path(parsed.path, "probe")
             if live_agent_probe_id is not None:

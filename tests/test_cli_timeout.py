@@ -2156,6 +2156,25 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.stale_restart_after_seconds, 240.0)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_processes_recover_parser_accepts_group_id(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "processes",
+                "recover",
+                "crew",
+                "--server",
+                "http://room.local",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "processes")
+        self.assertEqual(args.live_agent_process_command, "recover")
+        self.assertEqual(args.group_id, "crew")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertTrue(args.as_json)
+
     def test_live_agent_processes_list_prints_summary(self):
         payload = {
             "groups": [
@@ -2373,17 +2392,20 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(json.loads(stdout.getvalue()), payload)
 
-    def test_live_agent_processes_stop_and_restart_quote_group_id(self):
+    def test_live_agent_processes_stop_restart_and_recover_quote_group_id(self):
         stop_payload = {"group": {"group_id": "crew one", "status": "stopped"}}
         restart_payload = {"group": {"group_id": "crew one", "status": "running", "pid": 5678}}
+        recover_payload = {"group": {"group_id": "crew one", "status": "running", "pid": 6789, "recovered_from_status": "unknown"}}
         stdout = StringIO()
-        with patch("agentsassemble.cli._request_json", side_effect=[stop_payload, restart_payload]) as request_json:
+        with patch("agentsassemble.cli._request_json", side_effect=[stop_payload, restart_payload, recover_payload]) as request_json:
             with patch("sys.stdout", stdout):
                 stop_exit = main(["live-agent", "processes", "stop", "crew one", "--server", "http://room.local"])
                 restart_exit = main(["live-agent", "processes", "restart", "crew one", "--server", "http://room.local"])
+                recover_exit = main(["live-agent", "processes", "recover", "crew one", "--server", "http://room.local"])
 
         self.assertEqual(stop_exit, 0)
         self.assertEqual(restart_exit, 0)
+        self.assertEqual(recover_exit, 0)
         self.assertEqual(
             request_json.call_args_list[0].args[0],
             "http://room.local/api/live-agent-processes/crew%20one/stop",
@@ -2394,9 +2416,15 @@ class CliTimeoutTests(unittest.TestCase):
             "http://room.local/api/live-agent-processes/crew%20one/restart",
         )
         self.assertEqual(request_json.call_args_list[1].kwargs, {"method": "POST", "payload": {}})
+        self.assertEqual(
+            request_json.call_args_list[2].args[0],
+            "http://room.local/api/live-agent-processes/crew%20one/recover",
+        )
+        self.assertEqual(request_json.call_args_list[2].kwargs, {"method": "POST", "payload": {}})
         output = stdout.getvalue()
         self.assertIn("Stopped crew one (stopped)", output)
         self.assertIn("Restarted crew one (pid 5678)", output)
+        self.assertIn("Recovered crew one from unknown (pid 6789)", output)
 
     def test_live_agent_processes_http_error_body_reaches_stderr(self):
         class BadRequestHandler:

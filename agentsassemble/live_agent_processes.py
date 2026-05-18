@@ -111,6 +111,39 @@ class LiveAgentProcessSupervisor:
                 last_error=str(record.get("last_error") or ""),
             )
 
+    def recover_group(self, group_id: str) -> dict[str, object]:
+        with self._lock:
+            self._refresh_running_groups()
+            clean_group_id = _clean_group_id(group_id)
+            record = self._records.get(clean_group_id)
+            if record is None:
+                raise ValueError(f"Live agent group {clean_group_id} was not found.")
+            process = self._processes.get(clean_group_id)
+            if process is not None and _poll_process(process) is None:
+                raise ValueError(f"Live agent group {clean_group_id} is already running.")
+            previous_status = str(record.get("status") or "unknown")
+            if previous_status == "running":
+                raise ValueError(f"Live agent group {clean_group_id} is already running.")
+            if previous_status not in {"unknown", "error"}:
+                raise ValueError(f"Live agent group {clean_group_id} is {previous_status}; use restart.")
+            config_path = Path(str(record.get("config_path") or ""))
+            server = str(record.get("server") or "")
+            if not server:
+                raise ValueError(f"Live agent group {clean_group_id} has no server to recover.")
+            return self._start_group_unlocked(
+                config_path=config_path,
+                server=server,
+                group_id=clean_group_id,
+                auto_restart=_bool_value(record.get("auto_restart")),
+                max_restarts=_nonnegative_int(record.get("max_restarts"), 0),
+                restart_backoff_seconds=_nonnegative_float(record.get("restart_backoff_seconds"), 5.0),
+                stale_restart_after_seconds=_nonnegative_float(record.get("stale_restart_after_seconds"), 0.0),
+                diagnostic=_bool_value(record.get("diagnostic")),
+                last_error=str(record.get("last_error") or ""),
+                recovered_from_status=previous_status,
+                start_event_type="recovered",
+            )
+
     def start_monitor(self, *, interval_seconds: float = 2.0) -> None:
         interval = max(0.01, _nonnegative_float(interval_seconds, 2.0))
         with self._lock:
@@ -181,6 +214,8 @@ class LiveAgentProcessSupervisor:
         restart_count: int = 0,
         last_error: str = "",
         diagnostic: bool = False,
+        recovered_from_status: str = "",
+        start_event_type: str = "started",
         include_recent_events: bool = True,
     ) -> dict[str, object]:
         clean_group_id = _clean_group_id(group_id or config_path.stem)
@@ -245,12 +280,13 @@ class LiveAgentProcessSupervisor:
             "next_restart_at": "",
             "diagnostic": bool(diagnostic),
             "agents": agent_manifest,
+            "recovered_from_status": str(recovered_from_status or ""),
         }
         self._records[clean_group_id] = record
         self._processes[clean_group_id] = process
         self._logs[clean_group_id] = log_file
         self._write_records()
-        self._append_lifecycle_event(record, "started")
+        self._append_lifecycle_event(record, start_event_type, previous_status=str(recovered_from_status or ""))
         return self._record_for_output(record) if include_recent_events else dict(record)
 
     def _handle_process_exit(
@@ -578,12 +614,14 @@ class LiveAgentProcessSupervisor:
         *,
         timestamp: datetime | None = None,
         returncode: object = None,
+        previous_status: str = "",
     ) -> None:
         event = _lifecycle_event(
             record,
             event_type,
             timestamp=timestamp or self.now_fn(),
             returncode=returncode,
+            previous_status=previous_status,
         )
         path = self._event_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -699,6 +737,7 @@ def _process_record(payload: dict[str, object]) -> dict[str, object]:
         "next_restart_at": str(payload.get("next_restart_at") or ""),
         "diagnostic": _bool_value(payload.get("diagnostic")),
         "agents": _safe_agent_manifest(payload.get("agents")),
+        "recovered_from_status": str(payload.get("recovered_from_status") or ""),
     }
 
 
@@ -747,6 +786,7 @@ def _lifecycle_event(
     *,
     timestamp: datetime,
     returncode: object = None,
+    previous_status: str = "",
 ) -> dict[str, object]:
     event: dict[str, object] = {
         "timestamp": timestamp.isoformat(),
@@ -761,6 +801,8 @@ def _lifecycle_event(
     next_restart_at = str(record.get("next_restart_at") or "")
     if next_restart_at:
         event["next_restart_at"] = next_restart_at
+    if previous_status:
+        event["previous_status"] = str(previous_status)
     return event
 
 
@@ -784,6 +826,9 @@ def _safe_lifecycle_event(payload: object) -> dict[str, object]:
     next_restart_at = str(payload.get("next_restart_at") or "")
     if next_restart_at:
         event["next_restart_at"] = next_restart_at
+    previous_status = str(payload.get("previous_status") or "")
+    if previous_status:
+        event["previous_status"] = previous_status
     return event
 
 

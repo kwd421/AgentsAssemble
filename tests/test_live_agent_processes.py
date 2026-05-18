@@ -1779,6 +1779,131 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(persisted["groups"][0]["agents"], restarted["agents"])
         self.assertEqual(len(launched), 1)
 
+    def test_recover_group_relaunches_unknown_historical_record_with_recovery_evidence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            config_path = root / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": ["fake"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (runs_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "running",
+                                "pid": 1111,
+                                "config_path": str(config_path),
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "",
+                                "returncode": None,
+                                "last_error": "",
+                                "auto_restart": True,
+                                "restart_count": 1,
+                                "max_restarts": 2,
+                                "restart_backoff_seconds": 0,
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            launched = []
+
+            def command_factory(command, **kwargs):
+                launched.append(command)
+                return FakeProcess(pid=6789)
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 2, tzinfo=UTC),
+            )
+
+            recovered = supervisor.recover_group("crew")
+            persisted = json.loads((runs_dir / "processes.json").read_text(encoding="utf-8"))
+            events = _read_lifecycle_events(root)
+
+        self.assertEqual(recovered["status"], "running")
+        self.assertEqual(recovered["pid"], 6789)
+        self.assertEqual(recovered["recovered_from_status"], "unknown")
+        self.assertEqual(recovered["restart_count"], 0)
+        self.assertEqual(recovered["auto_restart"], True)
+        self.assertEqual(recovered["max_restarts"], 2)
+        self.assertEqual(persisted["groups"][0]["recovered_from_status"], "unknown")
+        self.assertEqual([event["event_type"] for event in events], ["recovered_unknown", "recovered"])
+        self.assertEqual(events[-1]["status"], "running")
+        self.assertEqual(events[-1]["previous_status"], "unknown")
+        self.assertEqual(len(launched), 1)
+
+    def test_recover_group_refuses_owned_running_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=lambda command, **kwargs: FakeProcess())
+            supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew")
+
+            with self.assertRaises(ValueError):
+                supervisor.recover_group("crew")
+
+    def test_recover_group_refuses_intentionally_stopped_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            (runs_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "stopped",
+                                "pid": None,
+                                "config_path": str(config_path),
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "2026-05-17T12:01:00+00:00",
+                                "returncode": 0,
+                                "last_error": "",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            launched = []
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: launched.append(command) or FakeProcess(pid=6789),
+            )
+
+            with self.assertRaisesRegex(ValueError, "is stopped; use restart"):
+                supervisor.recover_group("crew")
+
+        self.assertEqual(launched, [])
+
     def test_auto_restart_relaunches_crashed_group_within_limit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

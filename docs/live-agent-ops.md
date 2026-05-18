@@ -669,6 +669,8 @@ The GUI start button runs the same resident group through the local process supe
 
 When the stale watchdog is enabled, the supervisor waits until the launched group has been alive longer than the configured timeout, compares the launch-time agent manifest against current live-agent presence, and stops/restarts the owned group if any manifest agent is missing or stale. The watchdog is opt-in and uses the same bounded auto-restart budget/backoff path as crash recovery, so health and readiness reads stay read-only. To avoid killing a quiet but healthy runner, each agent must have a positive `heartbeat_interval`, and the watchdog threshold must be greater than that agent's `heartbeat_interval + poll_interval`.
 
+If the GUI server restarts while a group record still says `running`, the new supervisor marks that historical record `unknown` because it does not attach to old PIDs. Use the GUI `복구` button or CLI `python3 -m agentsassemble.cli live-agent processes recover <group-id>` to start a fresh supervised process from that record's persisted config/server/options. Recovery is distinct from `restart`: it is intended for `unknown` or `error` records, returns `recovered_from_status`, and records sanitized `process.recover` and lifecycle `recovered` evidence. Those records include safe ids, statuses, restart counts, and previous status only; they do not include config paths, command arguments, endpoints, auth refs, prompts, provider output, replies, or log tails in operation details.
+
 The same supervised start path is available from the CLI:
 
 ```bash

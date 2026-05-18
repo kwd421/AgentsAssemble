@@ -133,6 +133,9 @@ export function renderLobby(options = {}) {
   lobby.querySelectorAll("[data-live-agent-process-restart]").forEach((button) => {
     button.addEventListener("click", () => restartLiveAgentProcessGroup(button.dataset.liveAgentProcessRestart));
   });
+  lobby.querySelectorAll(".live-agent-process-recover").forEach((button) => {
+    button.addEventListener("click", () => recoverLiveAgentProcessGroup(button.dataset.liveAgentProcessRecover));
+  });
   lobby.querySelectorAll("[data-live-agent-engagement]").forEach((select) => {
     select.addEventListener("change", () => updateLiveAgentEngagement(select.dataset.liveAgentEngagement, select.value));
   });
@@ -595,6 +598,7 @@ function renderHealthPill(status, label, count) {
 function renderLiveAgentProcessCard(group) {
   const status = group.status || "unknown";
   const canStop = status === "running" || status === "restarting";
+  const canRecover = status === "unknown" || status === "error";
   const logTail = group.log_tail == null ? "" : String(group.log_tail);
   const agentLabel = liveAgentProcessAgentsLabel(group);
   const connectionLabel = liveAgentProcessConnectionLabel(group);
@@ -614,7 +618,9 @@ function renderLiveAgentProcessCard(group) {
       ${
         canStop
           ? `<button type="button" data-live-agent-process-stop="${escapeHtml(group.group_id || "")}">중지</button>`
-          : `<button type="button" class="live-agent-process-restart" data-live-agent-process-restart="${escapeHtml(group.group_id || "")}">재시작</button>`
+          : canRecover
+            ? `<button type="button" class="live-agent-process-recover" data-live-agent-process-recover="${escapeHtml(group.group_id || "")}">복구</button>`
+            : `<button type="button" class="live-agent-process-restart" data-live-agent-process-restart="${escapeHtml(group.group_id || "")}">재시작</button>`
       }
       ${logTail ? `<pre class="live-agent-process-log">${escapeHtml(logTail)}</pre>` : ""}
     </article>
@@ -1582,6 +1588,26 @@ async function restartLiveAgentProcessGroup(groupId) {
     state.liveAgentProcessStatus = { message: `${groupId} 재시작됨`, tone: "success" };
   } catch (error) {
     state.liveAgentProcessStatus = { message: `${groupId} 재시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  }
+  await loadLiveAgentOperations({ background: true, force: true });
+  renderLobby({ followLatest: false });
+}
+
+async function recoverLiveAgentProcessGroup(groupId) {
+  if (!groupId) return;
+  state.liveAgentProcessStatus = { message: `${groupId} 복구 중`, tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson(`/api/live-agent-processes/${encodeURIComponent(groupId)}/recover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    setLiveAgentProcesses(payload.groups || []);
+    state.liveAgentProcessesLoaded = true;
+    state.liveAgentProcessStatus = { message: `${groupId} 복구됨`, tone: "success" };
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `${groupId} 복구 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   }
   await loadLiveAgentOperations({ background: true, force: true });
   renderLobby({ followLatest: false });

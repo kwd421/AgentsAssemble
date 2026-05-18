@@ -834,6 +834,71 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(operations["operations"][0]["target_id"], "crew")
             self.assertIn("Live agent preflight failed", operations["operations"][0]["error"])
 
+    def test_live_agent_process_recover_records_safe_operation(self):
+        class FakeRecoverySupervisor:
+            def __init__(self):
+                self.recovered = []
+                self.group = {
+                    "group_id": "crew",
+                    "status": "unknown",
+                    "pid": None,
+                    "config_path": "/private/live-agents.json",
+                    "server": "http://secret-room.local",
+                    "auto_restart": True,
+                    "restart_count": 1,
+                    "max_restarts": 3,
+                    "recovered_from_status": "unknown",
+                    "agents": [{"agent_id": "local-a", "display_name": "Local A", "connection_kind": "local_cli"}],
+                }
+
+            def recover_group(self, group_id):
+                self.recovered.append(group_id)
+                recovered = dict(self.group)
+                recovered["status"] = "running"
+                recovered["pid"] = 6789
+                recovered["recent_events"] = [
+                    {"event_type": "recovered", "status": "running", "previous_status": "unknown"}
+                ]
+                self.group = recovered
+                return recovered
+
+            def list_groups(self):
+                return [self.group]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            supervisor = FakeRecoverySupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/crew/recover",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    recovered = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=10",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(supervisor.recovered, ["crew"])
+            self.assertEqual(recovered["group"]["status"], "running")
+            self.assertEqual(recovered["group"]["recovered_from_status"], "unknown")
+            self.assertEqual(operations["operations"][0]["operation"], "process.recover")
+            self.assertEqual(operations["operations"][0]["status"], "success")
+            self.assertEqual(operations["operations"][0]["details"]["previous_status"], "unknown")
+            operation_text = json.dumps(operations, ensure_ascii=False)
+            self.assertNotIn("/private/live-agents.json", operation_text)
+            self.assertNotIn("secret-room.local", operation_text)
+
     def test_live_agent_smoke_endpoint_runs_credential_free_group(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

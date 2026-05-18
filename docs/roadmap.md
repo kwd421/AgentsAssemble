@@ -52,7 +52,7 @@ The near-term product is not a polished chat app. It is a reliable local council
 - Runtime agent config can be loaded from JSON with host-approved providers, permission profiles, agent bindings, and incoming external agent requests. Incoming agents are recorded for audit but only approved bindings execute.
 - Incoming external agents now produce explicit admission decisions in `meeting.json`, separating requested role/provider/permissions from the host-approved binding that actually executes.
 - Remote HTTP bridge providers allow a friend-owned Claude Code session to join a meeting as a read-only participant through an audited `/agentsassemble/run` bridge.
-- The GUI Lobby can start a resident live-agent session, optionally run bounded remaining template rounds after the session is ready, call one moderator-controlled official round, or run bounded remaining template rounds from the same `상주 실행` panel, using the real live-agent official-turn paths and reporting sanitized reply counts.
+- The GUI Lobby can start a resident live-agent session, optionally run bounded remaining template rounds after the session is ready, recover historical resident process groups, call one moderator-controlled official round, or run bounded remaining template rounds from the same `상주 실행` panel, using the real live-agent official-turn paths and reporting sanitized reply counts.
 - Codex multi-role smoke has been exercised through `configs/codex-sessions.example.json`; distinct role sessions were recorded, but synthesis reliability still needs hardening for real provider output.
 
 ## V0 Remaining
