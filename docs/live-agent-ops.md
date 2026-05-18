@@ -335,6 +335,18 @@ python3 -m agentsassemble.cli live-agent doctor \
 
 The doctor calls `POST /api/live-agent-readiness`. The readiness endpoint first records the current `/api/live-agent-health` snapshot, then runs the same credential-free smoke used by `live-agent smoke`. This order is intentional: the smoke leaves offline fake agents and a stopped smoke process record behind, so readiness uses pre-smoke health as the room health proof and treats the smoke result as a separate control-plane proof.
 
+When you also need the moderator-called official-turn path in the same operator answer, opt into the credential-free official round smoke:
+
+```bash
+python3 -m agentsassemble.cli live-agent doctor \
+  --server http://127.0.0.1:8765 \
+  --official-round-smoke
+```
+
+`--official-round-smoke` adds an official-turn smoke check inside the same readiness payload after the regular local CLI, live session, and remote bridge smoke passes. It uses the same fake diagnostic official round as `live-agent official-round-smoke`, does not call real providers, and makes readiness `failed` if the official round smoke is skipped, timed out, fails cleanup, or returns a non-`ok` status. The readiness response and operation history include bounded counts, ids, statuses, and timing only; they omit official prompts, reply text, config paths, endpoint URLs, auth refs, command arguments, tokens, and log tails.
+
+The official round smoke creates diagnostic official-round smoke meetings so the request/reply event evidence remains inspectable by direct meeting id and operation history. Those diagnostic meetings do not appear in `/api/meetings` or `/api/meetings/latest`, so a smoke run cannot replace the operator's latest real meeting in the normal GUI/archive surface.
+
 By default, doctor stays credential-free. Add `--probe-agent <agent_id>` only when you explicitly want opt-in targeted resident probes against already-running agents after smoke passes:
 
 ```bash

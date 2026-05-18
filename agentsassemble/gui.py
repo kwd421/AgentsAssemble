@@ -53,6 +53,7 @@ STALE_RUNNING_SECONDS = 300
 SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
 MAX_READINESS_PROBE_AGENTS = 10
+OFFICIAL_ROUND_SMOKE_ERROR = "official round smoke could not be run"
 LIVE_AGENT_TURN_LOCK = threading.Lock()
 MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
 
@@ -71,6 +72,8 @@ def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str,
         try:
             meeting, source_path, has_final_record = _load_meeting_record(meeting_dir)
         except json.JSONDecodeError:
+            continue
+        if _is_diagnostic_meeting_record(meeting):
             continue
         meeting = _with_inferred_live_status(
             meeting,
@@ -91,6 +94,10 @@ def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str,
             }
         )
     return sorted(meetings, key=lambda item: item["mtime"], reverse=True)
+
+
+def _is_diagnostic_meeting_record(meeting: dict[str, object]) -> bool:
+    return _payload_bool(meeting.get("diagnostic"))
 
 
 def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[str, object]:
@@ -746,6 +753,7 @@ def live_agent_readiness_payload(
     probe_groups = list(probe_plan["probe_groups"])
     probe_timeout = safe_probe_timeout(_payload_nonnegative_float(payload.get("probe_timeout_seconds", payload.get("timeout")), 12.0))
     probe_error = ""
+    official_round_requested = _payload_bool(payload.get("official_round_smoke"))
     if invalid_probe_payload:
         probe_error = "Invalid probe id payload; expected a list of strings."
     elif len(probe_agent_ids) > MAX_READINESS_PROBE_AGENTS:
@@ -761,6 +769,28 @@ def live_agent_readiness_payload(
             }
         )
     checks.append({"id": "smoke", "status": smoke.get("status") or "unknown"})
+    official_round_smoke: dict[str, object] = {}
+    if official_round_requested and smoke.get("status") == "ok":
+        try:
+            official_round_smoke = _safe_readiness_official_round_smoke_result(
+                live_agent_official_round_smoke_payload(output_root, payload, default_server=default_server)
+            )
+        except (LiveAgentSmokeFailed, ValueError, urllib.error.URLError):
+            official_round_smoke = _safe_readiness_official_round_smoke_result(
+                {
+                    "status": "failed",
+                    "group_id": str(payload.get("group_id") or ""),
+                    "error": OFFICIAL_ROUND_SMOKE_ERROR,
+                }
+            )
+        checks.append({"id": "official_round_smoke", "status": official_round_smoke.get("status") or "unknown"})
+    elif official_round_requested:
+        official_round_smoke = {
+            "status": "skipped",
+            "group_id": str(payload.get("group_id") or ""),
+            "reason": "smoke did not pass",
+        }
+        checks.append({"id": "official_round_smoke", "status": "skipped"})
     probes: list[dict[str, object]] = []
     probe_group_failed = any(group.get("status") != "ok" for group in probe_groups)
     if smoke.get("status") == "ok":
@@ -781,6 +811,8 @@ def live_agent_readiness_payload(
             checks.append({"id": f"probe:{agent_id}", "status": safe_probe.get("status") or "unknown"})
     if smoke.get("status") != "ok":
         status = "failed"
+    elif official_round_requested and official_round_smoke.get("status") != "ok":
+        status = "failed"
     elif probe_group_failed:
         status = "failed"
     elif probe_error:
@@ -792,6 +824,8 @@ def live_agent_readiness_payload(
     else:
         status = "ready"
     result = {"status": status, "checks": checks, "health": health, "smoke": smoke}
+    if official_round_smoke:
+        result["official_round_smoke"] = official_round_smoke
     if probe_error:
         result["probe_error"] = probe_error
     if probe_groups:
@@ -1429,6 +1463,33 @@ def _safe_readiness_smoke_result(smoke: dict[str, object]) -> dict[str, object]:
     error = str(smoke.get("error") or "").strip()[:240]
     if error:
         safe["error"] = error
+    return safe
+
+
+def _safe_readiness_official_round_smoke_result(smoke: dict[str, object]) -> dict[str, object]:
+    safe = {
+        "status": str(smoke.get("status") or "unknown"),
+        "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
+        "meeting_id": clean_lobby_text(smoke.get("meeting_id"), limit=128),
+        "round_id": clean_lobby_text(smoke.get("round_id"), limit=128),
+        "agent_ids": _safe_payload_strings(smoke.get("agent_ids"), limit=64),
+        "role_ids": _safe_payload_strings(smoke.get("role_ids"), limit=128),
+        "turn_count": _payload_nonnegative_int(smoke.get("turn_count"), 0),
+        "answered_count": _payload_nonnegative_int(smoke.get("answered_count"), 0),
+        "timeout_count": _payload_nonnegative_int(smoke.get("timeout_count"), 0),
+        "skipped_count": _payload_nonnegative_int(smoke.get("skipped_count"), 0),
+        "stopped": smoke.get("stopped") is True,
+        "timeout_seconds": _payload_nonnegative_float(smoke.get("timeout_seconds"), 0.0),
+        "statuses": _safe_payload_strings(smoke.get("statuses"), limit=32),
+        "request_event_ids": _safe_payload_strings(smoke.get("request_event_ids"), limit=128),
+        "reply_event_ids": _safe_payload_strings(smoke.get("reply_event_ids"), limit=128),
+    }
+    error = str(smoke.get("error") or "").strip()[:240]
+    if error:
+        safe["error"] = OFFICIAL_ROUND_SMOKE_ERROR
+    reason = str(smoke.get("reason") or "").strip()[:128]
+    if reason:
+        safe["reason"] = reason
     return safe
 
 
@@ -2305,6 +2366,11 @@ def _make_handler(
                     return
                 result_status = _operation_result_status(readiness.get("status"))
                 smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), dict) else {}
+                official_round_smoke = (
+                    readiness.get("official_round_smoke")
+                    if isinstance(readiness.get("official_round_smoke"), dict)
+                    else {}
+                )
                 probes = readiness.get("probes") if isinstance(readiness.get("probes"), list) else []
                 probe_groups = readiness.get("probe_groups") if isinstance(readiness.get("probe_groups"), list) else []
                 record_live_agent_operation(
@@ -2324,6 +2390,19 @@ def _make_handler(
                         "probe_error": str(readiness.get("probe_error") or ""),
                         "probe_group_statuses": _probe_group_statuses(probe_groups),
                         "probe_statuses": _probe_statuses(probes),
+                        "official_round_smoke": _operation_result_status(official_round_smoke.get("status")),
+                        "official_round_answered_count": _payload_nonnegative_int(
+                            official_round_smoke.get("answered_count"),
+                            0,
+                        ),
+                        "official_round_timeout_count": _payload_nonnegative_int(
+                            official_round_smoke.get("timeout_count"),
+                            0,
+                        ),
+                        "official_round_skipped_count": _payload_nonnegative_int(
+                            official_round_smoke.get("skipped_count"),
+                            0,
+                        ),
                     },
                 )
                 self._send_json(readiness)

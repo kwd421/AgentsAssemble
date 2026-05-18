@@ -521,6 +521,8 @@ def _write_official_round_smoke_meeting(
             "topic": "Official round live-agent smoke",
             "question": "Can credential-free resident agents answer a moderator-called official round?",
             "live_status": "running",
+            "diagnostic": True,
+            "diagnostic_kind": "official_round_smoke",
             "roles": roles,
             "agent_bindings": [
                 {"role_id": role_ids["local_cli"], "agent_id": agent_ids["local_cli"]},

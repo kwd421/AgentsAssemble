@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -125,6 +126,38 @@ class LiveAgentSmokeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertFalse(result["stopped"])
+
+    def test_official_round_smoke_meeting_is_marked_diagnostic(self):
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            if url.endswith("/api/live-agent-processes/start"):
+                return {"group": {"group_id": "round-diagnostic", "status": "running"}}
+            if url.endswith("/live-agent-turns/round"):
+                return _answered_round_result()
+            if url.endswith("/api/live-agent-processes"):
+                return {"groups": [{"group_id": "round-diagnostic", "status": "running"}]}
+            if url.endswith("/api/live-agent-processes/round-diagnostic/stop"):
+                return {"group": {"group_id": "round-diagnostic", "status": "stopped"}}
+            return {"agent": {"agent_id": "smoke"}}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            run_live_agent_official_round_smoke(
+                output_root=root,
+                server="http://room.local",
+                group_id="round-diagnostic",
+                timeout_seconds=8,
+                request_json=request_json,
+                sleep_fn=lambda seconds: None,
+                temp_dir_factory=lambda: _FixedTemporaryDirectory(Path(temp_dir) / "config"),
+            )
+
+            live_state = (root / "meetings" / "official-round-smoke-round-diagnostic" / "live_state.json").read_text(
+                encoding="utf-8"
+            )
+
+        meeting = json.loads(live_state)
+        self.assertTrue(meeting["diagnostic"])
+        self.assertEqual(meeting["diagnostic_kind"], "official_round_smoke")
 
     def test_official_round_smoke_stops_group_when_round_request_fails(self):
         calls = []

@@ -38,6 +38,7 @@ from agentsassemble.meeting_events import append_live_event, read_live_events, w
 from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
+from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 
 
 def _read_sse_frame(response, timeout: float = 3.0) -> str:
@@ -1103,6 +1104,226 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(readiness_operations[-1]["details"]["probe_agent_ids"], ["agent-a", "agent-b", "agent-missing"])
         self.assertEqual(readiness_operations[-1]["details"]["probe_statuses"], ["agent-a:ok", "agent-b:timeout", "agent-missing:failed"])
         self.assertNotIn("secret readiness reply", json.dumps(readiness_operations, ensure_ascii=False))
+
+    def test_live_agent_readiness_endpoint_runs_opt_in_official_round_smoke(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            smoke_result = {"status": "ok", "group_id": "doctor-smoke", "replies": []}
+            official_result = {
+                "status": "ok",
+                "group_id": "doctor-smoke",
+                "meeting_id": "official-round-smoke-doctor-smoke",
+                "round_id": "official_round_smoke",
+                "agent_ids": ["doctor-smoke-local-cli"],
+                "role_ids": ["smoke_local_cli"],
+                "turn_count": 1,
+                "answered_count": 1,
+                "timeout_count": 0,
+                "skipped_count": 0,
+                "stopped": True,
+                "timeout_seconds": 8.0,
+                "statuses": ["answered"],
+                "request_event_ids": ["request-secret"],
+                "reply_event_ids": ["reply-secret"],
+                "started_group": {"config_path": "/Users/me/private-live-agents.json"},
+                "reply": {"message": "secret official reply"},
+            }
+            try:
+                with (
+                    patch("agentsassemble.gui.run_live_agent_smoke", return_value=smoke_result),
+                    patch("agentsassemble.gui.run_live_agent_official_round_smoke", return_value=official_result) as official_smoke,
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                        data=json.dumps(
+                            {
+                                "group_id": "doctor-smoke",
+                                "timeout": 8,
+                                "official_round_smoke": True,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=12) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(
+            {check["id"]: check["status"] for check in payload["checks"]},
+            {"health": "ok", "smoke": "ok", "official_round_smoke": "ok"},
+        )
+        self.assertEqual(
+            payload["official_round_smoke"],
+            {
+                "status": "ok",
+                "group_id": "doctor-smoke",
+                "meeting_id": "official-round-smoke-doctor-smoke",
+                "round_id": "official_round_smoke",
+                "agent_ids": ["doctor-smoke-local-cli"],
+                "role_ids": ["smoke_local_cli"],
+                "turn_count": 1,
+                "answered_count": 1,
+                "timeout_count": 0,
+                "skipped_count": 0,
+                "stopped": True,
+                "timeout_seconds": 8.0,
+                "statuses": ["answered"],
+                "request_event_ids": ["request-secret"],
+                "reply_event_ids": ["reply-secret"],
+            },
+        )
+        official_smoke.assert_called_once()
+        self.assertEqual(official_smoke.call_args.kwargs["output_root"], root)
+        self.assertEqual(official_smoke.call_args.kwargs["group_id"], "doctor-smoke")
+        self.assertEqual(official_smoke.call_args.kwargs["timeout_seconds"], 8.0)
+        serialized_payload = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("private-live-agents", serialized_payload)
+        self.assertNotIn("secret official reply", serialized_payload)
+        readiness_operations = [
+            operation for operation in operations["operations"] if operation["operation"] == "readiness.check"
+        ]
+        self.assertEqual(readiness_operations[-1]["status"], "success")
+        self.assertEqual(readiness_operations[-1]["details"]["official_round_smoke"], "ok")
+        self.assertEqual(readiness_operations[-1]["details"]["official_round_answered_count"], 1)
+        self.assertNotIn("secret official reply", json.dumps(readiness_operations, ensure_ascii=False))
+
+    def test_live_agent_readiness_endpoint_sanitizes_official_round_smoke_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with (
+                    patch("agentsassemble.gui.run_live_agent_smoke", return_value={"status": "ok", "group_id": "doctor-smoke", "replies": []}),
+                    patch(
+                        "agentsassemble.gui.run_live_agent_official_round_smoke",
+                        side_effect=ValueError("config_path=/Users/me/private-live-agents.json token=SECRET"),
+                    ),
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                        data=json.dumps(
+                            {
+                                "group_id": "doctor-smoke",
+                                "timeout": 8,
+                                "official_round_smoke": True,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=12) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(payload["official_round_smoke"]["status"], "failed")
+        self.assertEqual(payload["official_round_smoke"]["error"], "official round smoke could not be run")
+        serialized_payload = json.dumps(payload, ensure_ascii=False)
+        serialized_operations = json.dumps(operations, ensure_ascii=False)
+        for secret in ("SECRET", "private-live-agents", "/Users/me", "config_path", "token="):
+            self.assertNotIn(secret, serialized_payload)
+            self.assertNotIn(secret, serialized_operations)
+
+    def test_live_agent_readiness_endpoint_sanitizes_official_round_smoke_error_result(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with (
+                    patch("agentsassemble.gui.run_live_agent_smoke", return_value={"status": "ok", "group_id": "doctor-smoke", "replies": []}),
+                    patch(
+                        "agentsassemble.gui.run_live_agent_official_round_smoke",
+                        return_value={
+                            "status": "failed",
+                            "group_id": "doctor-smoke",
+                            "error": "config_path=/Users/me/private-live-agents.json token=SECRET",
+                        },
+                    ),
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                        data=json.dumps(
+                            {
+                                "group_id": "doctor-smoke",
+                                "timeout": 8,
+                                "official_round_smoke": True,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=12) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(payload["official_round_smoke"]["error"], "official round smoke could not be run")
+        serialized_payload = json.dumps(payload, ensure_ascii=False)
+        for secret in ("SECRET", "private-live-agents", "/Users/me", "config_path", "token="):
+            self.assertNotIn(secret, serialized_payload)
+
+    def test_live_agent_readiness_endpoint_skips_official_round_smoke_when_base_smoke_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with (
+                    patch("agentsassemble.gui.run_live_agent_smoke", side_effect=LiveAgentSmokeFailed("Timed out")),
+                    patch("agentsassemble.gui.run_live_agent_official_round_smoke") as official_smoke,
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                        data=json.dumps(
+                            {
+                                "group_id": "doctor-smoke",
+                                "timeout": 8,
+                                "official_round_smoke": True,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=12) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(payload["official_round_smoke"]["status"], "skipped")
+        self.assertEqual(payload["official_round_smoke"]["reason"], "smoke did not pass")
+        official_smoke.assert_not_called()
 
     def test_live_agent_readiness_endpoint_refuses_too_many_targeted_probes(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -4056,6 +4277,63 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(meetings[0]["meeting_id"], second.meeting_id)
             self.assertEqual(meetings[1]["meeting_id"], first.meeting_id)
+
+    def test_diagnostic_meetings_do_not_become_latest_or_listed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            normal_dir = root / "meetings" / "normal-live"
+            normal_dir.mkdir(parents=True)
+            write_live_state(
+                normal_dir,
+                {
+                    "meeting_id": "normal-live",
+                    "topic": "Normal live",
+                    "question": "Visible?",
+                    "roles": [],
+                    "debate_rounds": [],
+                    "moderator_synthesis": {},
+                    "live_status": "running",
+                },
+            )
+            diagnostic_dir = root / "meetings" / "official-round-smoke-diag"
+            diagnostic_dir.mkdir(parents=True)
+            write_live_state(
+                diagnostic_dir,
+                {
+                    "meeting_id": "official-round-smoke-diag",
+                    "topic": "Official round smoke",
+                    "question": "Diagnostic?",
+                    "roles": [],
+                    "debate_rounds": [],
+                    "moderator_synthesis": {},
+                    "live_status": "running",
+                    "diagnostic": True,
+                    "diagnostic_kind": "official_round_smoke",
+                },
+            )
+            newer = time.time() + 10
+            os.utime(diagnostic_dir / "live_state.json", (newer, newer))
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/meetings", timeout=4) as response:
+                    meetings_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/meetings/latest", timeout=4) as response:
+                    latest_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/official-round-smoke-diag",
+                    timeout=4,
+                ) as response:
+                    direct_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual([meeting["meeting_id"] for meeting in meetings_payload["meetings"]], ["normal-live"])
+            self.assertEqual(latest_payload["meeting"]["meeting_id"], "normal-live")
+            self.assertEqual(direct_payload["meeting"]["meeting_id"], "official-round-smoke-diag")
+            self.assertTrue(direct_payload["meeting"]["diagnostic"])
 
     def test_live_meeting_payload_can_load_before_meeting_json_exists(self):
         with tempfile.TemporaryDirectory() as temp_dir:
