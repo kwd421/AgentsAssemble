@@ -84,6 +84,8 @@ def connect_live_agent(
             or clean_lobby_text(existing.get("last_reply_at"), limit=64),
             "last_observed_event_id": clean_lobby_text(payload.get("last_observed_event_id"), limit=128)
             or clean_lobby_text(existing.get("last_observed_event_id"), limit=128),
+            "last_observed_live_event_id": clean_lobby_text(payload.get("last_observed_live_event_id"), limit=128)
+            or clean_lobby_text(existing.get("last_observed_live_event_id"), limit=128),
             "diagnostic": _bool_value(payload.get("diagnostic") if "diagnostic" in payload else existing.get("diagnostic")),
             "created_at": clean_lobby_text(existing.get("created_at"), limit=64) or timestamp,
             "updated_at": timestamp,
@@ -168,12 +170,18 @@ def heartbeat_live_agent(
                 "last_error": "",
                 "last_reply_at": "",
                 "last_observed_event_id": "",
+                "last_observed_live_event_id": "",
                 "diagnostic": _bool_value(metadata.get("diagnostic")),
                 "created_at": timestamp,
                 "updated_at": timestamp,
                 "last_seen_at": timestamp,
             }
-        for key, limit in (("last_error", 500), ("last_reply_at", 64), ("last_observed_event_id", 128)):
+        for key, limit in (
+            ("last_error", 500),
+            ("last_reply_at", 64),
+            ("last_observed_event_id", 128),
+            ("last_observed_live_event_id", 128),
+        ):
             if key in metadata:
                 agent[key] = clean_lobby_text(metadata.get(key), limit=limit)
         if "diagnostic" in metadata:

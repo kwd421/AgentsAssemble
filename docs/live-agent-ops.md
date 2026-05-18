@@ -88,6 +88,56 @@ Changing engagement mode updates `live_agents.json`, `/api/live-agents`, and `/a
 
 Resident runners read the current room presence on every poll and use that roster `engagement_mode` before falling back to their startup config. Re-registration and heartbeat updates preserve an operator-selected mode instead of silently clobbering it. `watch` and `manual` observe new lobby events and advance `last_observed_event_id` without posting replies, so switching an agent back to an active mode does not replay the backlog.
 
+## Moderator-Called Official Turns
+
+`moderator_called` is for official meeting turns, not lobby auto-chat. A resident runner in this mode ignores lobby reply policy and waits for a moderator request in the agent's meeting live event stream.
+
+Request a turn through the API:
+
+```text
+POST /api/meetings/<meeting_id>/live-agent-turns/request
+```
+
+with a JSON body like:
+
+```json
+{
+  "agent_id": "claude-code-live",
+  "role_id": "architect",
+  "display_name": "Claude Code Live",
+  "content": "Give the official architecture recommendation.",
+  "turn_id": "round_1:0:architect",
+  "turn_index": 0
+}
+```
+
+The CLI wrapper is:
+
+```bash
+python3 -m agentsassemble.cli live-agent call \
+  --server http://127.0.0.1:8765 \
+  --meeting-id meeting-1 \
+  --agent-id claude-code-live \
+  --role-id architect \
+  "Give the official architecture recommendation."
+```
+
+The request appends a `live_agent_turn_request` event to `meetings/<meeting_id>/live_events.jsonl`. That request is `channel: "system"` and `official_record: false`; it is a control event, not transcript evidence.
+
+The resident runner answers by posting to:
+
+```text
+POST /api/live-agents/<agent_id>/official-turn
+```
+
+The server validates that the source event exists in the same meeting, is a `live_agent_turn_request`, and targets the path agent id. The reply is appended as a `kind: "message"` live event with `channel: "official"` and `official_record: true`; it does not write to `lobby.jsonl`. The server uses the request/path metadata for `actor_id`, `role_id`, `display_name`, `turn_id`, and `turn_index`, so an agent reply cannot choose a different official identity by changing its payload.
+
+Meeting ids for this path must be single meeting directory names, not paths. Encoded slashes, `..`, nested paths, and backslash-style paths are rejected before resolving under `.agentsassemble/meetings`.
+
+Targeted turn requests are visible only to their target agent through `/api/live-agents/<agent_id>/room` and through the official-turn prompt context. Official reply events remain visible to all meeting participants because they are transcript records.
+
+Runner cursors are separated: `last_observed_event_id` tracks lobby events, while `last_observed_live_event_id` tracks meeting live events. This keeps an official turn reply from poisoning later lobby auto-reply state if the operator changes the agent back to `always`, `mentioned`, or `human_only`.
+
 ## Config Preflight
 
 Before starting a real provider group, run a local preflight:
@@ -521,7 +571,7 @@ What to check:
 - `/api/live-agent-processes`: process rows add output-only `agent_connection` evidence by comparing each group's launch-time manifest with current live-agent presence. This manifest-aware connection evidence reports `expected`, `connected`, and attention entries such as missing, stale, offline, or error agents. It is not persisted into `processes.json`.
 - auto-restart fields in `processes.json`: `auto_restart`, `restart_count`, `max_restarts`, `restart_backoff_seconds`, `stale_restart_after_seconds`, and `next_restart_at`.
 - `.agentsassemble/live-agent-runs/events.jsonl`: safe lifecycle event history for supervised groups. It records bounded operator facts such as `started`, `stopped`, `error`, `restart_scheduled`, `restart_failed`, `stale_watchdog`, `stale_watchdog_stop_failed`, and `recovered_unknown` with `timestamp`, `group_id`, `status`, `pid`, `returncode`, and restart counters. The process API and GUI expose each group's bounded `recent_events` view. Lifecycle events do not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
-- `.agentsassemble/live-agent-runs/operations.jsonl`: safe control-operation history for API, GUI, and CLI operator actions. It records bounded entries for process start/stop/restart, engagement updates, preflight checks, smoke runs, and readiness checks, including success, degraded, and refused/failed attempts. The operation ledger does not include command arguments, endpoint URLs, auth references, prompts, log tails, config paths, environment-derived values, or provider secrets. Ordinary heartbeat polling and health reads are intentionally not operation records.
+- `.agentsassemble/live-agent-runs/operations.jsonl`: safe control-operation history for API, GUI, and CLI operator actions. It records bounded entries for process start/stop/restart, engagement updates, official turn requests/replies, preflight checks, smoke runs, and readiness checks, including success, degraded, and refused/failed attempts. The operation ledger does not include command arguments, endpoint URLs, auth references, prompts, log tails, config paths, environment-derived values, provider secrets, or official turn content. Ordinary heartbeat polling and health reads are intentionally not operation records.
 - `.agentsassemble/live-agent-runs/<group_id>.log`: stdout/stderr for the supervised `run-group` process. Delegate provider subprocess stdout/stderr is captured by the runner, not streamed directly into this file. The GUI and process API expose only a bounded `log_tail`.
 
 Recent operation views read from the JSONL tail and stop after the requested result window. Recent lifecycle views scan the history once per process payload and split bounded `recent_events` by group. Long sessions can keep historical JSONL artifacts without forcing the GUI or CLI to load the whole history file at once or rescan lifecycle history once per group.

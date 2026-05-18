@@ -1133,6 +1133,38 @@ Document `--probe-group` as an explicit real-resident check, explain that it use
 
 ---
 
+### Task 37: Moderator-Called Official Live-Agent Turns
+
+**Files:**
+- Modify: `agentsassemble/meeting_events.py`
+- Modify: `agentsassemble/live_agents.py`
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_runner.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED coverage for official turn request/reply**
+
+Cover `moderator_called` runner behavior, live-room payload `live_events`, `POST /api/meetings/<meeting_id>/live-agent-turns/request`, `POST /api/live-agents/<agent_id>/official-turn`, and `assemble live-agent call`.
+
+- [x] **Step 2: Keep official turns separate from lobby chat**
+
+Append `live_agent_turn_request` as a system/non-official live event, append replies as official `message` live events, and keep both paths out of `lobby.jsonl`.
+
+- [x] **Step 3: Preserve source-event validation and cursor boundaries**
+
+Require the reply source event to exist, be a targeted `live_agent_turn_request`, and match the path agent. Make repeated replies for the same request idempotent, derive official role/turn metadata from the server-side request, and persist `last_observed_live_event_id` separately from lobby `last_observed_event_id`.
+
+- [x] **Step 4: Document operator semantics**
+
+Document the backend API, CLI wrapper, system-vs-official event boundary, id/cursor behavior, and safe operation-history limits.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -13,6 +13,7 @@ from agentsassemble.live_agent_runner import (
     ResidentAgentConfig,
     event_reply_candidate,
     load_group_configs,
+    official_turn_prompt,
 )
 
 
@@ -37,6 +38,8 @@ class FakeRoomClient:
         self.calls.append((url, method, payload))
         if url.endswith("/room"):
             return self.rooms.pop(0) if self.rooms else {"lobby_events": []}
+        if url.endswith("/official-turn"):
+            return {"event": {"id": "official-reply-id"}}
         if url.endswith("/lobby"):
             return {"event": {"id": "reply-id"}}
         if url.endswith("/live-agents") and method == "POST":
@@ -444,6 +447,198 @@ class LiveAgentRunnerTests(unittest.TestCase):
             if url.endswith("/heartbeat") and payload.get("last_observed_event_id")
         ]
         self.assertIn("evt1", observed)
+
+    def test_moderator_called_mode_answers_targeted_official_turn_request_not_lobby(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [{"id": "lobby1", "side": "mine", "name": "나", "message": "로비에서는 부르지 않음"}],
+            "live_events": [
+                {"id": "status1", "kind": "status", "content": "회의 시작"},
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "role_id": "architect",
+                    "display_name": "Agent A",
+                    "content": "공식 의견을 말해줘.",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                    "engagement_mode": "moderator_called",
+                },
+            ],
+        }
+        client = FakeRoomClient([room])
+        prompts = []
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            prompts.append(prompt)
+            return "공식 답변"
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1"),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        self.assertEqual(len(prompts), 1)
+        self.assertIn("official meeting turn", prompts[0])
+        self.assertIn("공식 의견을 말해줘.", prompts[0])
+        official_payloads = [payload for url, method, payload in client.calls if url.endswith("/official-turn")]
+        self.assertEqual(len(official_payloads), 1)
+        self.assertEqual(official_payloads[0]["meeting_id"], "m1")
+        self.assertEqual(official_payloads[0]["source_event_id"], "turn-request-1")
+        self.assertEqual(official_payloads[0]["content"], "공식 답변")
+        self.assertEqual(official_payloads[0]["role_id"], "architect")
+        self.assertEqual(official_payloads[0]["turn_id"], "round_1:0:architect")
+        self.assertEqual(official_payloads[0]["turn_index"], 0)
+        self.assertEqual([call for call in client.calls if call[0].endswith("/lobby")], [])
+        self.assertEqual(runner.last_observed_event_id, "lobby1")
+        self.assertEqual(runner.last_observed_live_event_id, "official-reply-id")
+
+    def test_moderator_called_mode_ignores_untargeted_official_turn_request(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [{"id": "lobby1", "side": "mine", "name": "나", "message": "로비 잡담"}],
+            "live_events": [
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-b",
+                    "content": "다른 에이전트 차례",
+                }
+            ],
+        }
+        client = FakeRoomClient([room])
+        command_calls = []
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: command_calls.append(prompt) or "reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        self.assertEqual(command_calls, [])
+        self.assertEqual([call for call in client.calls if call[0].endswith("/official-turn")], [])
+        self.assertEqual([call for call in client.calls if call[0].endswith("/lobby")], [])
+        observed = [
+            payload["last_observed_live_event_id"]
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload.get("last_observed_live_event_id")
+        ]
+        self.assertIn("turn-request-1", observed)
+
+    def test_moderator_called_mode_persists_lobby_cursor_when_no_live_turn_is_available(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [{"id": "lobby1", "side": "mine", "name": "나", "message": "나중에 반복하지 마"}],
+            "live_events": [],
+        }
+        client = FakeRoomClient([room])
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1", heartbeat_interval=999),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        heartbeats = [payload for url, method, payload in client.calls if url.endswith("/heartbeat")]
+        self.assertEqual(heartbeats[-1]["status"], "offline")
+        self.assertEqual(heartbeats[-1]["last_observed_event_id"], "lobby1")
+
+    def test_official_turn_cursor_does_not_poison_lobby_cursor_when_mode_changes(self):
+        clock = FakeClock()
+        first_room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [{"id": "lobby1", "side": "mine", "name": "나", "message": "이건 공식 턴 전 로비"}],
+            "live_events": [
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "공식 의견",
+                }
+            ],
+        }
+        second_room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "always", "meeting_id": "m1"},
+            "lobby_events": [
+                {"id": "lobby1", "side": "mine", "name": "나", "message": "이건 공식 턴 전 로비"},
+                {"id": "lobby2", "side": "mine", "name": "나", "message": "이제 로비로 답해"},
+            ],
+            "live_events": [
+                {"id": "turn-request-1", "kind": "live_agent_turn_request", "target_agent_id": "agent-a", "content": "공식 의견"},
+                {"id": "official-reply-id", "kind": "message", "source_event_id": "turn-request-1", "actor_id": "agent-a"},
+            ],
+        }
+        client = FakeRoomClient([first_room, second_room])
+        replies = iter(["공식 답변", "로비 답변"])
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1", max_ticks=2),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: next(replies),
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 2)
+
+        official_payloads = [payload for url, method, payload in client.calls if url.endswith("/official-turn")]
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(official_payloads[0]["source_event_id"], "turn-request-1")
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "lobby2")
+
+    def test_official_turn_prompt_omits_other_agents_targeted_request_content(self):
+        room = {
+            "live_events": [
+                {
+                    "id": "target-b",
+                    "kind": "live_agent_turn_request",
+                    "official_record": False,
+                    "target_agent_id": "agent-b",
+                    "audience": "agent:agent-b",
+                    "display_name": "Agent B",
+                    "content": "private target-B instruction",
+                },
+                {
+                    "id": "official",
+                    "kind": "message",
+                    "official_record": True,
+                    "display_name": "Agent B",
+                    "content": "public official statement",
+                },
+                {
+                    "id": "target-a",
+                    "kind": "live_agent_turn_request",
+                    "official_record": False,
+                    "target_agent_id": "agent-a",
+                    "audience": "agent:agent-a",
+                    "display_name": "Agent A",
+                    "content": "agent A private request",
+                },
+            ]
+        }
+
+        prompt = official_turn_prompt(config(agent_id="agent-a", display_name="Agent A"), room, room["live_events"][2])
+
+        self.assertIn("agent A private request", prompt)
+        self.assertIn("public official statement", prompt)
+        self.assertNotIn("private target-B instruction", prompt)
 
     def test_runner_uses_room_engagement_mode_to_pause_active_agent(self):
         clock = FakeClock()

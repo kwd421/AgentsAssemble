@@ -58,6 +58,7 @@ class LiveAgentRunner:
         self.now_fn = now_fn or (lambda: datetime.now(UTC))
         self.stop_event = stop_event or threading.Event()
         self.last_observed_event_id = ""
+        self.last_observed_live_event_id = ""
         self.last_reply_at: datetime | None = None
         self.last_error_at: datetime | None = None
         self.last_error = ""
@@ -76,11 +77,55 @@ class LiveAgentRunner:
                     break
                 self.sleep_fn(self.config.poll_interval)
         finally:
-            self._heartbeat("offline")
+            self._heartbeat("offline", **self._cursor_metadata())
         return replies
 
     def tick(self) -> int:
         room = self._room()
+        engagement_mode = _runtime_engagement_mode(self.config, room)
+        if engagement_mode == "moderator_called":
+            self._observe_lobby_cursor(_lobby_events(room))
+            events = _live_events(room)
+            candidate = official_turn_request_candidate(
+                events,
+                self.config.agent_id,
+                self.last_observed_live_event_id,
+            )
+            if candidate is None:
+                self._advance_live_cursor(events)
+                self._heartbeat_if_due()
+                return 0
+            if self._in_cooldown():
+                self._heartbeat_if_due()
+                return 0
+            if self._in_failure_backoff():
+                self._heartbeat_if_due()
+                return 0
+
+            generated = self._generate_reply(
+                candidate,
+                official_turn_prompt(self.config, room, candidate),
+                cursor_field="last_observed_live_event_id",
+            )
+            if generated is None:
+                return 0
+            source_event_id, reply = generated
+            response = self.request_json(
+                _server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/official-turn"),
+                method="POST",
+                payload={
+                    "meeting_id": _official_turn_meeting_id(self.config, room, candidate),
+                    "source_event_id": source_event_id,
+                    "content": reply,
+                    "role_id": str(candidate.get("role_id") or self.config.agent_id),
+                    "display_name": str(candidate.get("display_name") or self.config.display_name or self.config.agent_id),
+                    "turn_id": str(candidate.get("turn_id") or ""),
+                    "turn_index": _optional_int(candidate.get("turn_index")),
+                },
+            )
+            self._record_reply_success(response.get("event"), cursor_field="last_observed_live_event_id")
+            return 1
+
         events = _lobby_events(room)
         candidate = event_reply_candidate(
             events,
@@ -88,7 +133,7 @@ class LiveAgentRunner:
             self.config.display_name,
             self.last_observed_event_id,
             max_chain_depth=self.config.max_chain_depth,
-            engagement_mode=_runtime_engagement_mode(self.config, room),
+            engagement_mode=engagement_mode,
         )
         if candidate is None:
             self._advance_cursor(events)
@@ -101,25 +146,14 @@ class LiveAgentRunner:
             self._heartbeat_if_due()
             return 0
 
-        source_event_id = str(candidate.get("id") or "")
-        self.last_observed_event_id = source_event_id
-        self._heartbeat("working", last_observed_event_id=source_event_id)
-        try:
-            reply = self._run_command_with_working_heartbeats(
-                self.config.command,
-                delegate_prompt(self.config, room, candidate),
-                source_event_id=source_event_id,
-                timeout_seconds=self.config.timeout_seconds,
-            ).strip()
-            if not reply:
-                raise ValueError("Delegate command returned an empty reply.")
-        except Exception as error:
-            if self.stop_event.is_set():
-                return 0
-            self.last_error = str(error)
-            self.last_error_at = self.now_fn()
-            self._heartbeat("error", last_observed_event_id=source_event_id, last_error=self.last_error)
+        generated = self._generate_reply(
+            candidate,
+            delegate_prompt(self.config, room, candidate),
+            cursor_field="last_observed_event_id",
+        )
+        if generated is None:
             return 0
+        source_event_id, reply = generated
 
         source_depth = _chain_depth(candidate)
         response = self.request_json(
@@ -133,19 +167,51 @@ class LiveAgentRunner:
                 "auto_chain_depth": source_depth + 1,
             },
         )
-        event = response.get("event") if isinstance(response.get("event"), dict) else {}
-        if isinstance(event, dict) and event.get("id"):
-            self.last_observed_event_id = str(event["id"])
+        self._record_reply_success(response.get("event"), cursor_field="last_observed_event_id")
+        return 1
+
+    def _generate_reply(
+        self,
+        candidate: dict[str, object],
+        prompt: str,
+        *,
+        cursor_field: str,
+    ) -> tuple[str, str] | None:
+        source_event_id = str(candidate.get("id") or "")
+        self._set_cursor(cursor_field, source_event_id)
+        self._heartbeat("working", **self._cursor_metadata(cursor_field, source_event_id))
+        try:
+            reply = self._run_command_with_working_heartbeats(
+                self.config.command,
+                prompt,
+                source_event_id=source_event_id,
+                cursor_field=cursor_field,
+                timeout_seconds=self.config.timeout_seconds,
+            ).strip()
+            if not reply:
+                raise ValueError("Delegate command returned an empty reply.")
+        except Exception as error:
+            if self.stop_event.is_set():
+                return None
+            self.last_error = str(error)
+            self.last_error_at = self.now_fn()
+            self._heartbeat("error", last_error=self.last_error, **self._cursor_metadata(cursor_field, source_event_id))
+            return None
+        return source_event_id, reply
+
+    def _record_reply_success(self, event_payload: object, *, cursor_field: str) -> None:
+        event = event_payload if isinstance(event_payload, dict) else {}
+        if event.get("id"):
+            self._set_cursor(cursor_field, str(event["id"]))
         self.last_reply_at = self.now_fn()
         self.last_error_at = None
         self.last_error = ""
         self._heartbeat(
             "online",
-            last_observed_event_id=self.last_observed_event_id,
             last_reply_at=self.last_reply_at.isoformat(),
             last_error="",
+            **self._cursor_metadata(),
         )
-        return 1
 
     def _register(self) -> None:
         response = self.request_json(
@@ -178,14 +244,14 @@ class LiveAgentRunner:
         if self.config.heartbeat_interval <= 0:
             return
         if self.last_heartbeat_at is None:
-            self._heartbeat("online", last_observed_event_id=self.last_observed_event_id)
+            self._heartbeat("online", **self._cursor_metadata())
             return
         elapsed = (self.now_fn() - self.last_heartbeat_at).total_seconds()
         if elapsed >= self.config.heartbeat_interval:
             if self._in_failure_backoff():
-                self._heartbeat("error", last_observed_event_id=self.last_observed_event_id, last_error=self.last_error)
+                self._heartbeat("error", last_error=self.last_error, **self._cursor_metadata())
                 return
-            self._heartbeat("online", last_observed_event_id=self.last_observed_event_id)
+            self._heartbeat("online", **self._cursor_metadata())
 
     def _room(self) -> dict[str, object]:
         room = self.request_json(_server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/room"))
@@ -193,20 +259,54 @@ class LiveAgentRunner:
         return room
 
     def _restore_observed_cursor(self, agent: object) -> None:
-        if self.last_observed_event_id or not isinstance(agent, dict):
+        if not isinstance(agent, dict):
             return
         agent_id = str(agent.get("agent_id") or "")
         if agent_id != self.config.agent_id:
             return
         cursor = str(agent.get("last_observed_event_id") or "").strip()
-        if cursor:
+        if cursor and not self.last_observed_event_id:
             self.last_observed_event_id = cursor
+        live_cursor = str(agent.get("last_observed_live_event_id") or "").strip()
+        if live_cursor and not self.last_observed_live_event_id:
+            self.last_observed_live_event_id = live_cursor
 
     def _advance_cursor(self, events: list[dict[str, object]]) -> None:
         latest_id = _latest_event_id(events)
         if latest_id and latest_id != self.last_observed_event_id:
             self.last_observed_event_id = latest_id
             self._heartbeat("online", last_observed_event_id=latest_id)
+
+    def _observe_lobby_cursor(self, events: list[dict[str, object]]) -> None:
+        latest_id = _latest_event_id(events)
+        if latest_id and latest_id != self.last_observed_event_id:
+            self.last_observed_event_id = latest_id
+
+    def _advance_live_cursor(self, events: list[dict[str, object]]) -> None:
+        latest_id = _latest_event_id(events)
+        if latest_id and latest_id != self.last_observed_live_event_id:
+            self.last_observed_live_event_id = latest_id
+            self._heartbeat("online", **self._cursor_metadata())
+
+    def _set_cursor(self, cursor_field: str, event_id: str) -> None:
+        if cursor_field == "last_observed_live_event_id":
+            self.last_observed_live_event_id = event_id
+            return
+        self.last_observed_event_id = event_id
+
+    def _cursor_metadata(self, cursor_field: str | None = None, event_id: str | None = None) -> dict[str, object]:
+        lobby_cursor = self.last_observed_event_id
+        live_cursor = self.last_observed_live_event_id
+        if cursor_field == "last_observed_event_id" and event_id is not None:
+            lobby_cursor = event_id
+        if cursor_field == "last_observed_live_event_id" and event_id is not None:
+            live_cursor = event_id
+        metadata: dict[str, object] = {}
+        if lobby_cursor:
+            metadata["last_observed_event_id"] = lobby_cursor
+        if live_cursor:
+            metadata["last_observed_live_event_id"] = live_cursor
+        return metadata
 
     def _in_cooldown(self) -> bool:
         if self.last_reply_at is None or self.config.cooldown <= 0:
@@ -224,10 +324,11 @@ class LiveAgentRunner:
         prompt: str,
         *,
         source_event_id: str,
+        cursor_field: str,
         timeout_seconds: int,
     ) -> str:
         heartbeat_stop = threading.Event()
-        heartbeat_thread = self._start_working_heartbeat_loop(source_event_id, heartbeat_stop)
+        heartbeat_thread = self._start_working_heartbeat_loop(source_event_id, heartbeat_stop, cursor_field=cursor_field)
         try:
             return self.command_runner(command, prompt, timeout_seconds=timeout_seconds)
         finally:
@@ -239,6 +340,8 @@ class LiveAgentRunner:
         self,
         source_event_id: str,
         stop_event: threading.Event,
+        *,
+        cursor_field: str,
     ) -> threading.Thread | None:
         if self.config.heartbeat_interval <= 0:
             return None
@@ -249,7 +352,7 @@ class LiveAgentRunner:
                 if self.stop_event.is_set():
                     return
                 try:
-                    self._heartbeat("working", last_observed_event_id=source_event_id)
+                    self._heartbeat("working", **self._cursor_metadata(cursor_field, source_event_id))
                 except Exception:
                     return
 
@@ -337,6 +440,24 @@ def event_reply_candidate(
     return None
 
 
+def official_turn_request_candidate(
+    events: list[dict[str, object]],
+    agent_id: str,
+    last_observed_event_id: str,
+) -> dict[str, object] | None:
+    for event in _events_after(events, last_observed_event_id):
+        if str(event.get("kind") or "") != "live_agent_turn_request":
+            continue
+        if str(event.get("actor_id") or "") == agent_id:
+            continue
+        if str(event.get("target_agent_id") or "") != agent_id:
+            continue
+        if not str(event.get("content") or "").strip():
+            continue
+        return event
+    return None
+
+
 def _runtime_engagement_mode(config: ResidentAgentConfig, room: dict[str, object]) -> str:
     agent = room.get("agent")
     if not isinstance(agent, dict):
@@ -381,6 +502,38 @@ def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source
         message = str(event.get("message") or "").strip()
         if message:
             lines.append(f"- {event.get('name') or 'participant'}: {message}")
+    return "\n".join(lines).strip() + "\n"
+
+
+def official_turn_prompt(config: ResidentAgentConfig, room: dict[str, object], source_event: dict[str, object]) -> str:
+    lines = [
+        "You are a live AgentsAssemble participant called into the official meeting record.",
+        f"Agent id: {config.agent_id}",
+        f"Display name: {config.display_name or config.agent_id}",
+        "Reply with one concise official meeting turn only.",
+        "Do not include lobby chatter, markdown fences, or multiple alternatives.",
+        "",
+        "Moderator request:",
+        f"- {source_event.get('content') or ''}",
+        "",
+        "Recent official meeting events:",
+    ]
+    for event in _live_events(room)[-12:]:
+        if not _live_event_visible_to_agent(event, config.agent_id, source_event):
+            continue
+        content = str(event.get("content") or "").strip()
+        if content:
+            lines.append(f"- {event.get('display_name') or event.get('actor_id') or event.get('kind') or 'participant'}: {content}")
+    recent_lobby = [
+        str(event.get("message") or "").strip()
+        for event in _lobby_events(room)[-6:]
+        if str(event.get("message") or "").strip()
+    ]
+    if recent_lobby:
+        lines.append("")
+        lines.append("Recent lobby context, for awareness only:")
+        for message in recent_lobby:
+            lines.append(f"- {message}")
     return "\n".join(lines).strip() + "\n"
 
 
@@ -480,6 +633,52 @@ def _lobby_events(room: dict[str, object]) -> list[dict[str, object]]:
     if not isinstance(events, list):
         return []
     return [event for event in events if isinstance(event, dict)]
+
+
+def _live_events(room: dict[str, object]) -> list[dict[str, object]]:
+    events = room.get("live_events")
+    if not isinstance(events, list):
+        return []
+    return [event for event in events if isinstance(event, dict)]
+
+
+def _live_event_visible_to_agent(
+    event: dict[str, object],
+    agent_id: str,
+    source_event: dict[str, object],
+) -> bool:
+    if event.get("id") and event.get("id") == source_event.get("id"):
+        return True
+    if event.get("official_record") is True:
+        return True
+    target_agent_id = str(event.get("target_agent_id") or "")
+    if target_agent_id:
+        return target_agent_id == agent_id
+    audience = str(event.get("audience") or "")
+    if audience.startswith("agent:"):
+        return audience == f"agent:{agent_id}"
+    return str(event.get("kind") or "") != "live_agent_turn_request"
+
+
+def _official_turn_meeting_id(
+    config: ResidentAgentConfig,
+    room: dict[str, object],
+    source_event: dict[str, object],
+) -> str:
+    for value in (source_event.get("meeting_id"), room.get("meeting_id"), config.meeting_id):
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _events_after(events: list[dict[str, object]], last_observed_event_id: str) -> list[dict[str, object]]:

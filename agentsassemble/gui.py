@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import math
 import mimetypes
+import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,8 +30,10 @@ from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
 from agentsassemble.meeting_events import (
+    append_live_event,
     append_lobby_event_to_file,
     append_side_chat_event_to_file,
+    clean_lobby_text,
     read_live_events,
     read_live_events_after,
     read_lobby_events,
@@ -46,6 +50,7 @@ STALE_RUNNING_SECONDS = 300
 SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
 MAX_READINESS_PROBE_AGENTS = 10
+LIVE_AGENT_TURN_LOCK = threading.Lock()
 
 
 def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str, object]]:
@@ -432,10 +437,18 @@ def update_live_agent_engagement_payload(output_root: Path, agent_id: str, paylo
 
 def live_agent_room_payload(output_root: Path, agent_id: str) -> dict[str, object]:
     agent = _live_agent_for_id(output_root, agent_id)
+    meeting_id = str(agent.get("meeting_id") or "").strip()
+    live_events = []
+    if meeting_id:
+        meeting_dir = _safe_meeting_dir(output_root, meeting_id)
+        if meeting_dir.exists():
+            live_events = _live_events_visible_to_agent(read_live_events(meeting_dir), agent_id)
     return {
         "agent": agent,
         "agents": read_live_agents(output_root),
         "meetings": list_meetings(output_root),
+        "meeting_id": meeting_id,
+        "live_events": live_events,
         "lobby_events": read_lobby(output_root),
         "side_chat_events": read_side_chat(output_root),
     }
@@ -465,6 +478,102 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
         live_agent_endpoint=True,
     )
     return {"agent": agent, "event": event, "events": read_lobby(output_root)}
+
+
+def live_agent_turn_request_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
+    if not clean_meeting_id or not meeting_dir.exists():
+        raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
+    agent_id = clean_lobby_text(payload.get("agent_id"), limit=64)
+    if not agent_id:
+        raise ValueError("Agent id is required.")
+    agent = _live_agent_for_id(output_root, agent_id)
+    agent_meeting_id = str(agent.get("meeting_id") or "").strip()
+    if agent_meeting_id != clean_meeting_id:
+        raise ValueError(f"Live agent {agent_id} is not attached to meeting {clean_meeting_id}.")
+    content = clean_lobby_text(payload.get("content") or payload.get("message"), limit=4000)
+    if not content:
+        raise ValueError("Official turn request content is required.")
+    role_id = clean_lobby_text(payload.get("role_id"), limit=128) or agent_id
+    display_name = clean_lobby_text(payload.get("display_name"), limit=64) or str(agent.get("display_name") or agent_id)
+    event = append_live_event(
+        meeting_dir,
+        {
+            "kind": "live_agent_turn_request",
+            "meeting_id": clean_meeting_id,
+            "actor_id": "moderator",
+            "target_agent_id": agent_id,
+            "role_id": role_id,
+            "display_name": display_name,
+            "audience": f"agent:{agent_id}",
+            "content": content,
+            "turn_id": clean_lobby_text(payload.get("turn_id"), limit=128),
+            "turn_index": _payload_optional_int(payload.get("turn_index")),
+            "engagement_mode": "moderator_called",
+        },
+    )
+    return {"agent": agent, "event": event, "live_events": read_live_events(meeting_dir)}
+
+
+def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
+    agent = _live_agent_for_id(output_root, agent_id)
+    meeting_id = clean_lobby_text(payload.get("meeting_id") or agent.get("meeting_id"), limit=128)
+    agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
+    if not agent_meeting_id or meeting_id != agent_meeting_id:
+        raise ValueError(f"Live agent {agent_id} is not attached to meeting {meeting_id or '(blank)'}.")
+    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
+    if not meeting_id or not meeting_dir.exists():
+        raise ValueError(f"Meeting {meeting_id or '(blank)'} was not found.")
+    content = clean_lobby_text(payload.get("content") or payload.get("message"), limit=4000)
+    if not content:
+        raise ValueError("Official turn content is required.")
+    source_event_id = clean_lobby_text(payload.get("source_event_id"), limit=128)
+    if not source_event_id:
+        raise ValueError("Official turn source_event_id is required.")
+    with LIVE_AGENT_TURN_LOCK:
+        request_event = _matching_live_agent_turn_request(meeting_dir, agent_id, source_event_id)
+        if request_event is None:
+            raise ValueError("Matching official turn request was not found.")
+        existing_reply = _official_turn_reply_for_request(meeting_dir, agent_id, source_event_id)
+        if existing_reply is not None:
+            event = existing_reply
+        else:
+            role_id = clean_lobby_text(request_event.get("role_id"), limit=128) or agent_id
+            display_name = (
+                clean_lobby_text(request_event.get("display_name"), limit=64)
+                or clean_lobby_text(agent.get("display_name"), limit=64)
+                or agent_id
+            )
+            request_turn_index = request_event.get("turn_index")
+            turn_index = request_turn_index if isinstance(request_turn_index, int) and not isinstance(request_turn_index, bool) else None
+            event = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": meeting_id,
+                    "actor_id": agent_id,
+                    "target_agent_id": agent_id,
+                    "source_event_id": source_event_id,
+                    "role_id": role_id,
+                    "display_name": display_name,
+                    "content": content,
+                    "turn_id": clean_lobby_text(request_event.get("turn_id"), limit=128),
+                    "turn_index": turn_index,
+                    "engagement_mode": "moderator_called",
+                },
+            )
+    updated_agent = heartbeat_live_agent(
+        output_root,
+        agent_id,
+        status="online",
+        metadata={"last_reply_at": datetime.now(UTC).isoformat(), "last_observed_live_event_id": str(event.get("id") or "")},
+    )
+    return {
+        "agent": updated_agent,
+        "event": event,
+        "live_events": _live_events_visible_to_agent(read_live_events(meeting_dir), agent_id),
+    }
 
 
 def live_agent_probe_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -875,9 +984,77 @@ def _live_agent_for_id(output_root: Path, agent_id: str) -> dict[str, object]:
     raise ValueError(f"Live agent {agent_id} was not found.")
 
 
+def _safe_meeting_dir(output_root: Path, meeting_id: str) -> Path:
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    if not clean_meeting_id or clean_meeting_id in {".", ".."}:
+        raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
+    if "/" in clean_meeting_id or "\\" in clean_meeting_id or Path(clean_meeting_id).name != clean_meeting_id:
+        raise ValueError(f"Meeting {clean_meeting_id} was not found.")
+    meetings_root = (output_root / "meetings").resolve()
+    meeting_dir = (meetings_root / clean_meeting_id).resolve()
+    try:
+        meeting_dir.relative_to(meetings_root)
+    except ValueError as error:
+        raise ValueError(f"Meeting {clean_meeting_id} was not found.") from error
+    return meeting_dir
+
+
+def _live_events_visible_to_agent(events: list[dict[str, object]], agent_id: str) -> list[dict[str, object]]:
+    return [event for event in events if _live_event_visible_to_agent(event, agent_id)]
+
+
+def _live_event_visible_to_agent(event: dict[str, object], agent_id: str) -> bool:
+    if event.get("official_record") is True:
+        return True
+    target_agent_id = str(event.get("target_agent_id") or "")
+    if target_agent_id:
+        return target_agent_id == agent_id
+    audience = str(event.get("audience") or "")
+    if audience.startswith("agent:"):
+        return audience == f"agent:{agent_id}"
+    return True
+
+
+def _matching_live_agent_turn_request(meeting_dir: Path, agent_id: str, source_event_id: str) -> dict[str, object] | None:
+    for event in read_live_events(meeting_dir, limit=None):
+        if event.get("id") != source_event_id:
+            continue
+        if event.get("kind") != "live_agent_turn_request":
+            return None
+        if str(event.get("target_agent_id") or "") != agent_id:
+            return None
+        return event
+    return None
+
+
+def _official_turn_reply_for_request(meeting_dir: Path, agent_id: str, source_event_id: str) -> dict[str, object] | None:
+    for event in read_live_events(meeting_dir, limit=None):
+        if event.get("kind") != "message":
+            continue
+        if str(event.get("actor_id") or "") != agent_id:
+            continue
+        if str(event.get("source_event_id") or "") != source_event_id:
+            continue
+        return event
+    return None
+
+
 def _live_agent_action_path(path: str, action: str) -> str | None:
     parts = path.strip("/").split("/")
     if len(parts) == 4 and parts[0] == "api" and parts[1] == "live-agents" and parts[3] == action:
+        return unquote(parts[2])
+    return None
+
+
+def _meeting_live_agent_turn_request_path(path: str) -> str | None:
+    parts = path.strip("/").split("/")
+    if (
+        len(parts) == 5
+        and parts[0] == "api"
+        and parts[1] == "meetings"
+        and parts[3] == "live-agent-turns"
+        and parts[4] == "request"
+    ):
         return unquote(parts[2])
     return None
 
@@ -1214,6 +1391,15 @@ def _payload_nonnegative_float(value: object, default: float) -> float:
     return max(0.0, parsed)
 
 
+def _payload_optional_int(value: object) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _request_json(
     url: str,
     *,
@@ -1396,6 +1582,49 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json(live_agent)
+                return
+            turn_request_meeting_id = _meeting_live_agent_turn_request_path(parsed.path)
+            if turn_request_meeting_id is not None:
+                payload = self._operation_json_payload(operation="official_turn.request")
+                if payload is None:
+                    return
+                target_agent_id = str(payload.get("agent_id") or "").strip()
+                try:
+                    turn_request = live_agent_turn_request_payload(output_root, turn_request_meeting_id, payload)
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="official_turn.request",
+                        status="failed",
+                        target_id=target_agent_id,
+                        error=str(error),
+                        details={
+                            "meeting_id": turn_request_meeting_id,
+                            "target_agent_id": target_agent_id,
+                            "role_id": str(payload.get("role_id") or ""),
+                            "turn_id": str(payload.get("turn_id") or ""),
+                            "turn_index": _payload_optional_int(payload.get("turn_index")),
+                        },
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                event = turn_request.get("event") if isinstance(turn_request.get("event"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="official_turn.request",
+                    status="success",
+                    target_id=str(event.get("target_agent_id") or target_agent_id),
+                    summary="requested live-agent official turn",
+                    details={
+                        "meeting_id": turn_request_meeting_id,
+                        "target_agent_id": str(event.get("target_agent_id") or target_agent_id),
+                        "role_id": str(event.get("role_id") or ""),
+                        "turn_id": str(event.get("turn_id") or ""),
+                        "turn_index": _payload_optional_int(event.get("turn_index")),
+                        "source_event_id": str(event.get("id") or ""),
+                    },
+                )
+                self._send_json(turn_request)
                 return
             live_agent_engagement_id = _live_agent_action_path(parsed.path, "engagement")
             if live_agent_engagement_id is not None:
@@ -1729,6 +1958,50 @@ def _make_handler(
                     },
                 )
                 self._send_json(probe)
+                return
+            live_agent_official_turn_id = _live_agent_action_path(parsed.path, "official-turn")
+            if live_agent_official_turn_id is not None:
+                payload = self._operation_json_payload(
+                    operation="official_turn.reply",
+                    target_id=live_agent_official_turn_id,
+                )
+                if payload is None:
+                    return
+                try:
+                    official_turn = live_agent_official_turn_payload(output_root, live_agent_official_turn_id, payload)
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="official_turn.reply",
+                        status="failed",
+                        target_id=live_agent_official_turn_id,
+                        error=str(error),
+                        details={
+                            "meeting_id": str(payload.get("meeting_id") or ""),
+                            "source_event_id": str(payload.get("source_event_id") or ""),
+                            "role_id": str(payload.get("role_id") or ""),
+                            "turn_id": str(payload.get("turn_id") or ""),
+                            "turn_index": _payload_optional_int(payload.get("turn_index")),
+                        },
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                event = official_turn.get("event") if isinstance(official_turn.get("event"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="official_turn.reply",
+                    status="success",
+                    target_id=live_agent_official_turn_id,
+                    summary="recorded live-agent official turn",
+                    details={
+                        "meeting_id": str(event.get("meeting_id") or payload.get("meeting_id") or ""),
+                        "source_event_id": str(event.get("source_event_id") or ""),
+                        "role_id": str(event.get("role_id") or ""),
+                        "turn_id": str(event.get("turn_id") or ""),
+                        "turn_index": _payload_optional_int(event.get("turn_index")),
+                    },
+                )
+                self._send_json(official_turn)
                 return
             live_agent_heartbeat_id = _live_agent_action_path(parsed.path, "heartbeat")
             if live_agent_heartbeat_id is not None:

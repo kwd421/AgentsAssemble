@@ -182,6 +182,20 @@ def build_parser() -> argparse.ArgumentParser:
     live_engagement.add_argument("--mode", choices=ENGAGEMENT_MODE_CHOICES, required=True, dest="engagement_mode")
     live_engagement.add_argument("--json", action="store_true", dest="as_json", help="Print the raw engagement update payload.")
 
+    live_call = live_agent_subparsers.add_parser(
+        "call",
+        parents=[live_server],
+        help="Request an official meeting turn from a moderator-called live agent.",
+    )
+    live_call.add_argument("--meeting-id", required=True)
+    live_call.add_argument("--agent-id", required=True)
+    live_call.add_argument("--role-id", default="")
+    live_call.add_argument("--display-name", default="")
+    live_call.add_argument("--turn-id", default="")
+    live_call.add_argument("--turn-index", type=parse_nonnegative_int, default=None)
+    live_call.add_argument("--json", action="store_true", dest="as_json", help="Print the raw official turn request payload.")
+    live_call.add_argument("message", nargs="+")
+
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
     live_say.add_argument("--agent-id", required=True)
     live_say.add_argument("message", nargs="+")
@@ -420,6 +434,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return 0
         if args.live_agent_command == "engagement":
             return _run_live_agent_engagement(args)
+        if args.live_agent_command == "call":
+            return _run_live_agent_call(args)
         if args.live_agent_command == "say":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
             response = _request_json(
@@ -487,6 +503,29 @@ def _run_live_agent_engagement(args: argparse.Namespace) -> int:
     else:
         agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
         print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('engagement_mode') or args.engagement_mode}")
+    return 0
+
+
+def _run_live_agent_call(args: argparse.Namespace) -> int:
+    meeting_id = urllib.parse.quote(args.meeting_id, safe="")
+    payload = {
+        "agent_id": args.agent_id,
+        "role_id": args.role_id,
+        "display_name": args.display_name,
+        "content": " ".join(args.message),
+        "turn_id": args.turn_id,
+        "turn_index": args.turn_index,
+    }
+    response = _request_json(
+        _server_url(args.server, f"/api/meetings/{meeting_id}/live-agent-turns/request"),
+        method="POST",
+        payload=payload,
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+        return 0
+    event = response.get("event") if isinstance(response.get("event"), dict) else {}
+    print(f"Called {event.get('target_agent_id') or args.agent_id} for official turn {event.get('id') or 'request'}")
     return 0
 
 
@@ -1300,7 +1339,11 @@ def _request_json(
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             loaded = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
-        raise ValueError(_http_error_message(error)) from error
+        try:
+            message = _http_error_message(error)
+        finally:
+            error.close()
+        raise ValueError(message) from error
     return loaded if isinstance(loaded, dict) else {}
 
 

@@ -20,7 +20,15 @@ MeetingEventKind = Literal[
     "synthesis_completed",
     "artifacts_written",
 ]
-LiveEventKind = Literal["status", "research", "message", "room_chat", "synthesis", "artifact"]
+LiveEventKind = Literal[
+    "status",
+    "research",
+    "message",
+    "room_chat",
+    "synthesis",
+    "artifact",
+    "live_agent_turn_request",
+]
 
 LOBBY_SIDES: set[str] = {"mine", "my-agent", "other", "other-agent"}
 LOBBY_KINDS: set[str] = {"message", "ready", "deploy"}
@@ -197,9 +205,13 @@ def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str
         "id": uuid4().hex[:12],
         "created_at": datetime.now(UTC).isoformat(),
         "kind": kind,
+        "meeting_id": clean_lobby_text(payload.get("meeting_id", ""), limit=128),
         "channel": _live_channel(kind),
         "audience": clean_lobby_text(payload.get("audience", "room"), limit=32) or "room",
         "official_record": kind in OFFICIAL_LIVE_KINDS,
+        "actor_id": clean_lobby_text(payload.get("actor_id", ""), limit=64),
+        "target_agent_id": clean_lobby_text(payload.get("target_agent_id", ""), limit=64),
+        "source_event_id": clean_lobby_text(payload.get("source_event_id", ""), limit=128),
         "role_id": payload.get("role_id"),
         "display_name": payload.get("display_name"),
         "round": payload.get("round"),
@@ -225,7 +237,7 @@ def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str
     return event
 
 
-def read_live_events(meeting_dir: Path, limit: int = 200) -> list[dict[str, object]]:
+def read_live_events(meeting_dir: Path, limit: int | None = 200) -> list[dict[str, object]]:
     path = meeting_dir / "live_events.jsonl"
     if not path.exists():
         return []
@@ -239,7 +251,7 @@ def read_live_events(meeting_dir: Path, limit: int = 200) -> list[dict[str, obje
             continue
         if isinstance(event, dict):
             events.append(event)
-    return events[-limit:]
+    return events if limit is None else events[-limit:]
 
 
 def read_live_events_after(meeting_dir: Path, last_event_id: str | None, limit: int = 200) -> list[dict[str, object]]:

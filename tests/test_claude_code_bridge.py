@@ -57,6 +57,7 @@ class ClaudeCodeBridgeTests(unittest.TestCase):
             with self.assertRaises(HTTPError) as unauthorized:
                 urlopen(health_url, timeout=4)
             self.assertEqual(unauthorized.exception.code, 401)
+            unauthorized.exception.read()
             unauthorized.exception.close()
 
             request = Request(health_url, headers={"Authorization": "Bearer bridge-token"}, method="GET")
@@ -84,6 +85,7 @@ class ClaudeCodeBridgeTests(unittest.TestCase):
             with self.assertRaises(HTTPError) as unauthorized:
                 urlopen(health_url, timeout=4)
             self.assertEqual(unauthorized.exception.code, 401)
+            unauthorized.exception.read()
             unauthorized.exception.close()
         finally:
             server.shutdown()
