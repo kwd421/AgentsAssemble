@@ -1,0 +1,55 @@
+{
+  "providers": [
+    {
+      "id": "resident-local-cli",
+      "kind": "local_cli",
+      "display_name": "Resident Local CLI",
+      "command": ["python3", "-c", "import sys; sys.stdin.read(); print('resident provider ready')"]
+    }
+  ],
+  "permission_profiles": [
+    {
+      "id": "meeting_readonly",
+      "meeting_read": true,
+      "lobby_chat": true,
+      "official_turn": true,
+      "web_search": false,
+      "tool_use": false,
+      "filesystem_read": false,
+      "filesystem_write": false,
+      "git_write": false,
+      "push": false,
+      "secrets": false,
+      "implementation": false
+    }
+  ],
+  "agent_bindings": [
+    {
+      "agent_id": "lore-local",
+      "role_id": "lore_lawyer",
+      "owner_id": "host",
+      "provider_id": "resident-local-cli",
+      "model_id": "local-cli",
+      "permission_profile_id": "meeting_readonly",
+      "join_mode": "fresh"
+    },
+    {
+      "agent_id": "feats-local",
+      "role_id": "show_me_the_feats",
+      "owner_id": "host",
+      "provider_id": "resident-local-cli",
+      "model_id": "local-cli",
+      "permission_profile_id": "meeting_readonly",
+      "join_mode": "fresh"
+    },
+    {
+      "agent_id": "skeptic-local",
+      "role_id": "fanboard_skeptic",
+      "owner_id": "host",
+      "provider_id": "resident-local-cli",
+      "model_id": "local-cli",
+      "permission_profile_id": "meeting_readonly",
+      "join_mode": "fresh"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "server": "http://127.0.0.1:8765",
+  "poll_interval": 2,
+  "heartbeat_interval": 30,
+  "cooldown": 5,
+  "max_chain_depth": 1,
+  "agents": [
+    {
+      "agent_id": "lore-local",
+      "display_name": "Lore Local",
+      "provider_kind": "local_cli",
+      "connection_kind": "local_cli",
+      "engagement_mode": "moderator_called",
+      "command": ["python3", "-c", "import sys; sys.stdin.read(); print('Lore Local resident reply.')"],
+      "timeout_seconds": 30
+    },
+    {
+      "agent_id": "feats-local",
+      "display_name": "Feats Local",
+      "provider_kind": "local_cli",
+      "connection_kind": "local_cli",
+      "engagement_mode": "moderator_called",
+      "command": ["python3", "-c", "import sys; sys.stdin.read(); print('Feats Local resident reply.')"],
+      "timeout_seconds": 30
+    },
+    {
+      "agent_id": "skeptic-local",
+      "display_name": "Skeptic Local",
+      "provider_kind": "local_cli",
+      "connection_kind": "local_cli",
+      "engagement_mode": "moderator_called",
+      "command": ["python3", "-c", "import sys; sys.stdin.read(); print('Skeptic Local resident reply.')"],
+      "timeout_seconds": 30
+    }
+  ]
+}

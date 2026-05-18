@@ -149,6 +149,7 @@ function resetState() {
     liveAgentOperationsLoaded: true,
     liveAgentOperationsLoading: false,
     liveAgentProcessStartRunning: false,
+    liveAgentSessionStartRunning: false,
     liveAgentPreflightRunning: false,
     liveAgentSmokeRunning: false,
     liveAgentOfficialRoundSmokeRunning: false,
@@ -161,8 +162,14 @@ function resetState() {
   });
 }
 
-function installHarness({ readinessPayload, processStartPayload = null } = {}) {
+function installHarness({
+  readinessPayload,
+  processStartPayload = null,
+  sessionStartPayload = null,
+  sessionStartResponse = null,
+} = {}) {
   const requests = [];
+  const events = [];
   const document = new FakeDocument();
   const storage = new Map();
   globalThis.document = document;
@@ -175,6 +182,16 @@ function installHarness({ readinessPayload, processStartPayload = null } = {}) {
     },
   };
   globalThis.requestAnimationFrame = (callback) => callback();
+  globalThis.CustomEvent = class {
+    constructor(type, init = {}) {
+      this.type = type;
+      this.detail = init.detail || {};
+    }
+  };
+  globalThis.dispatchEvent = (event) => {
+    events.push(event);
+    return true;
+  };
   globalThis.fetch = async (url, options = {}) => {
     requests.push({
       url: String(url),
@@ -185,18 +202,36 @@ function installHarness({ readinessPayload, processStartPayload = null } = {}) {
     if (url === "/api/live-agent-processes/start") {
       return jsonResponse(processStartPayload || { group: { group_id: "crew", status: "running" }, groups: [] });
     }
+    if (url === "/api/live-agent-sessions/start") {
+      if (sessionStartResponse) {
+        return jsonResponse(sessionStartResponse.payload, {
+          ok: sessionStartResponse.ok,
+          status: sessionStartResponse.status,
+        });
+      }
+      return jsonResponse(
+        sessionStartPayload || {
+          status: "ready",
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          connection: { expected: 3, connected: 3, attention: [] },
+          process: { status: "running", attention: [] },
+        }
+      );
+    }
     if (url === "/api/lobby") return jsonResponse({ events: [] });
     if (url === "/api/live-agents") return jsonResponse({ agents: [] });
     if (url === "/api/live-agent-processes") return jsonResponse({ groups: [] });
     if (url === "/api/live-agent-operations?limit=20") return jsonResponse({ operations: [] });
     return jsonResponse({});
   };
-  return { document, requests };
+  return { document, requests, events };
 }
 
-function jsonResponse(payload) {
+function jsonResponse(payload, { ok = true, status = 200 } = {}) {
   return {
-    ok: true,
+    ok,
+    status,
     json: async () => payload,
     headers: { get: () => "application/json" },
   };
@@ -208,6 +243,10 @@ function readinessRequest(requests) {
 
 function processStartRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-processes/start");
+}
+
+function sessionStartRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-sessions/start");
 }
 
 async function clickReadiness({ officialRoundSmoke, readinessPayload }) {
@@ -288,6 +327,98 @@ test("process start form preserves and posts stale watchdog seconds", async () =
     restart_backoff_seconds: 1.5,
     stale_restart_after_seconds: 240,
   });
+});
+
+test("session start button posts matching meeting and resident config payload", async () => {
+  resetState();
+  const { document, requests, events } = installHarness({
+    sessionStartPayload: {
+      status: "ready",
+      meeting_id: "resident-gui",
+      group_id: "resident-main",
+      connection: { expected: 3, connected: 3, attention: [] },
+      process: { status: "running", attention: [] },
+    },
+  });
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-meeting-id").value = "resident-gui";
+  lobby.querySelector("#live-agent-session-council-config").value = "configs/demo-council.json";
+  lobby.querySelector("#live-agent-session-agent-config").value = "configs/agents.start-session.example.json";
+  lobby.querySelector("#live-agent-process-config").value = "configs/live-agents.start-session.example.json";
+  lobby.querySelector("#live-agent-process-group").value = "resident-main";
+  lobby.querySelector("#live-agent-session-connect-timeout").value = "7";
+  lobby.querySelector("#live-agent-process-auto-restart").checked = true;
+  lobby.querySelector("#live-agent-process-max-restarts").value = "4";
+  lobby.querySelector("#live-agent-process-restart-backoff").value = "2";
+  lobby.querySelector("#live-agent-process-stale-restart-after").value = "300";
+
+  await lobby.querySelector("#live-agent-session-start").click();
+
+  assert.deepEqual(sessionStartRequest(requests).jsonBody, {
+    meeting_id: "resident-gui",
+    group_id: "resident-main",
+    council_config_path: "configs/demo-council.json",
+    agent_config_path: "configs/agents.start-session.example.json",
+    live_agent_config_path: "configs/live-agents.start-session.example.json",
+    connect_timeout_seconds: 7,
+    auto_restart: true,
+    max_restarts: 4,
+    restart_backoff_seconds: 2,
+    stale_restart_after_seconds: 300,
+  });
+  assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 3/3 connected");
+  assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
+  assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+});
+
+test("session start failure with created meeting still announces the recoverable meeting", async () => {
+  resetState();
+  const { document, requests, events } = installHarness({
+    sessionStartResponse: {
+      ok: false,
+      status: 400,
+      payload: {
+        error: "resident process failed after meeting creation",
+        meeting_id: "recoverable-meeting",
+        recoverable_meeting_id: "recoverable-meeting",
+        details: { meeting_id: "recoverable-meeting", recoverable_meeting_id: "recoverable-meeting" },
+      },
+    },
+  });
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-meeting-id").value = "recoverable-meeting";
+  lobby.querySelector("#live-agent-session-connect-timeout").value = "999";
+
+  await lobby.querySelector("#live-agent-session-start").click();
+
+  assert.equal(sessionStartRequest(requests).jsonBody.connect_timeout_seconds, 120);
+  assert.equal(state.liveAgentProcessStatus.message, "상주 세션 시작 실패: resident process failed after meeting creation");
+  assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
+  assert.equal(events.at(-1)?.detail.meetingId, "recoverable-meeting");
+});
+
+test("session start refusal before meeting creation does not announce requested meeting", async () => {
+  resetState();
+  const { document, events } = installHarness({
+    sessionStartResponse: {
+      ok: false,
+      status: 400,
+      payload: {
+        error: "Live agent preflight failed",
+        details: { requested_meeting_id: "not-created" },
+      },
+    },
+  });
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-meeting-id").value = "not-created";
+
+  await lobby.querySelector("#live-agent-session-start").click();
+
+  assert.equal(state.liveAgentProcessStatus.message, "상주 세션 시작 실패: Live agent preflight failed");
+  assert.equal(events.length, 0);
 });
 
 test("process row renders recovery watchdog and next restart evidence", () => {

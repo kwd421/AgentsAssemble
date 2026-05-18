@@ -118,6 +118,9 @@ export function renderLobby(options = {}) {
     event.preventDefault();
     await startLiveAgentProcessGroup(event.currentTarget);
   });
+  lobby.querySelector("#live-agent-session-start")?.addEventListener("click", async () => {
+    await startLiveAgentSession(lobby);
+  });
   lobby.querySelectorAll("[data-live-agent-process-stop]").forEach((button) => {
     button.addEventListener("click", () => stopLiveAgentProcessGroup(button.dataset.liveAgentProcessStop));
   });
@@ -163,6 +166,10 @@ function readLiveAgentProcessDraft(lobby) {
   return {
     configPath: form.querySelector("#live-agent-process-config")?.value ?? "",
     groupId: form.querySelector("#live-agent-process-group")?.value ?? "",
+    meetingId: form.querySelector("#live-agent-session-meeting-id")?.value ?? "",
+    councilConfig: form.querySelector("#live-agent-session-council-config")?.value ?? "",
+    agentConfig: form.querySelector("#live-agent-session-agent-config")?.value ?? "",
+    connectTimeout: form.querySelector("#live-agent-session-connect-timeout")?.value ?? "",
     autoRestart: Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked),
     officialRoundSmoke: Boolean(form.querySelector("#live-agent-readiness-official-round")?.checked),
     maxRestarts: form.querySelector("#live-agent-process-max-restarts")?.value ?? "",
@@ -186,6 +193,10 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   if (!draft) return;
   const config = lobby.querySelector("#live-agent-process-config");
   const group = lobby.querySelector("#live-agent-process-group");
+  const meetingId = lobby.querySelector("#live-agent-session-meeting-id");
+  const councilConfig = lobby.querySelector("#live-agent-session-council-config");
+  const agentConfig = lobby.querySelector("#live-agent-session-agent-config");
+  const connectTimeout = lobby.querySelector("#live-agent-session-connect-timeout");
   const autoRestart = lobby.querySelector("#live-agent-process-auto-restart");
   const officialRoundSmoke = lobby.querySelector("#live-agent-readiness-official-round");
   const maxRestarts = lobby.querySelector("#live-agent-process-max-restarts");
@@ -193,6 +204,10 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const staleRestartAfter = lobby.querySelector("#live-agent-process-stale-restart-after");
   if (config) config.value = draft.configPath;
   if (group) group.value = draft.groupId;
+  if (meetingId) meetingId.value = draft.meetingId;
+  if (councilConfig) councilConfig.value = draft.councilConfig;
+  if (agentConfig) agentConfig.value = draft.agentConfig;
+  if (connectTimeout) connectTimeout.value = draft.connectTimeout;
   if (autoRestart) autoRestart.checked = draft.autoRestart;
   if (officialRoundSmoke) officialRoundSmoke.checked = draft.officialRoundSmoke;
   if (maxRestarts) maxRestarts.value = draft.maxRestarts;
@@ -416,8 +431,12 @@ function renderLiveAgentProcessControls() {
       </div>
       ${renderProcessGroupHealthStrip(counts)}
       <form id="live-agent-process-form" class="live-agent-process-form">
-        <input id="live-agent-process-config" maxlength="240" value="configs/live-agents.example.json" />
+        <input id="live-agent-process-config" maxlength="240" value="configs/live-agents.start-session.example.json" />
         <input id="live-agent-process-group" maxlength="64" placeholder="group id" />
+        <input id="live-agent-session-meeting-id" maxlength="128" placeholder="meeting id" />
+        <input id="live-agent-session-council-config" maxlength="240" value="configs/demo-council.json" />
+        <input id="live-agent-session-agent-config" maxlength="240" value="configs/agents.start-session.example.json" />
+        <input id="live-agent-session-connect-timeout" type="number" min="0" max="120" step="1" value="5" aria-label="session connect timeout seconds" />
         <label class="live-agent-process-options">
           <input id="live-agent-process-auto-restart" type="checkbox" />
           <span>auto restart</span>
@@ -426,6 +445,7 @@ function renderLiveAgentProcessControls() {
         <input id="live-agent-process-restart-backoff" type="number" min="0" max="3600" step="1" value="5" aria-label="restart backoff seconds" />
         <input id="live-agent-process-stale-restart-after" type="number" min="0" max="86400" step="1" value="0" aria-label="stale restart after seconds" />
         <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
+        <button type="button" id="live-agent-session-start" ${processActionsDisabled ? "disabled" : ""}>세션시작</button>
         <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
         <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
         <button type="button" id="live-agent-official-round-smoke" ${processActionsDisabled ? "disabled" : ""}>공식진단</button>
@@ -450,7 +470,7 @@ function renderLiveAgentProcessControls() {
 }
 
 function liveAgentProcessActionBusy() {
-  return state.liveAgentProcessStartRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentReadinessRunning;
+  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentReadinessRunning;
 }
 
 function liveAgentStatusCounts(agents) {
@@ -1240,6 +1260,81 @@ async function startLiveAgentProcessGroup(form) {
     await loadLiveAgentOperations({ background: true, force: true });
     renderLobby({ followLatest: false });
   }
+}
+
+async function startLiveAgentSession(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  const liveAgentConfigPath = lobby.querySelector("#live-agent-process-config")?.value.trim() || "";
+  const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
+  const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
+  const councilConfigPath = lobby.querySelector("#live-agent-session-council-config")?.value.trim() || "";
+  const agentConfigPath = lobby.querySelector("#live-agent-session-agent-config")?.value.trim() || "";
+  const connectTimeoutSeconds = liveAgentSessionConnectTimeoutSeconds(lobby);
+  const autoRestart = Boolean(lobby.querySelector("#live-agent-process-auto-restart")?.checked);
+  const maxRestarts = Math.max(0, Number(lobby.querySelector("#live-agent-process-max-restarts")?.value || 0));
+  const restartBackoffSeconds = Math.max(0, Number(lobby.querySelector("#live-agent-process-restart-backoff")?.value || 0));
+  const staleRestartAfterSeconds = Math.max(0, Number(lobby.querySelector("#live-agent-process-stale-restart-after")?.value || 0));
+  if (!liveAgentConfigPath) return;
+  state.liveAgentSessionStartRunning = true;
+  state.liveAgentProcessStatus = { message: "상주 세션 시작 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-sessions/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        meeting_id: meetingId,
+        group_id: groupId,
+        council_config_path: councilConfigPath,
+        agent_config_path: agentConfigPath,
+        live_agent_config_path: liveAgentConfigPath,
+        connect_timeout_seconds: connectTimeoutSeconds,
+        auto_restart: autoRestart,
+        max_restarts: maxRestarts,
+        restart_backoff_seconds: restartBackoffSeconds,
+        stale_restart_after_seconds: staleRestartAfterSeconds,
+      }),
+    });
+    await refreshLiveAgentRuntimeSurfaces();
+    notifyMeetingStarted(payload.meeting_id);
+    const tone = payload.status === "ready" ? "success" : "info";
+    state.liveAgentProcessStatus = { message: liveAgentSessionStatusMessage(payload), tone };
+  } catch (error) {
+    notifyRecoverableSessionMeeting(error);
+    state.liveAgentProcessStatus = { message: `상주 세션 시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    state.liveAgentSessionStartRunning = false;
+    await loadLiveAgentOperations({ background: true, force: true });
+    renderLobby({ followLatest: false });
+  }
+}
+
+function liveAgentSessionConnectTimeoutSeconds(lobby) {
+  const value = Number(lobby.querySelector("#live-agent-session-connect-timeout")?.value || 5);
+  if (!Number.isFinite(value)) return 5;
+  return Math.min(120, Math.max(0, value));
+}
+
+function liveAgentSessionStatusMessage(payload) {
+  const status = payload.status || "unknown";
+  const meetingId = payload.meeting_id || "meeting";
+  const connection = payload.connection && typeof payload.connection === "object" ? payload.connection : {};
+  const expected = Math.max(0, Number(connection.expected || 0));
+  const connected = Math.max(0, Number(connection.connected || 0));
+  return `세션 ${status}: ${meetingId} · ${connected}/${expected} connected`;
+}
+
+function notifyRecoverableSessionMeeting(error) {
+  const payload = error?.payload && typeof error.payload === "object" ? error.payload : {};
+  const details = payload.details && typeof payload.details === "object" ? payload.details : {};
+  notifyMeetingStarted(payload.recoverable_meeting_id || details.recoverable_meeting_id);
+}
+
+function notifyMeetingStarted(meetingId) {
+  if (!meetingId || typeof globalThis.dispatchEvent !== "function" || typeof globalThis.CustomEvent !== "function") {
+    return;
+  }
+  globalThis.dispatchEvent(new CustomEvent("agentsassemble:meeting-started", { detail: { meetingId } }));
 }
 
 async function stopLiveAgentProcessGroup(groupId) {

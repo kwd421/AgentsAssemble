@@ -1837,10 +1837,16 @@ def _session_start_error_message(error: Exception) -> str:
 
 
 def _session_start_error_details(payload: dict[str, object], error: Exception) -> dict[str, object]:
-    return {
-        "meeting_id": clean_lobby_text(getattr(error, "meeting_id", "") or payload.get("meeting_id"), limit=128),
-        "group_id": clean_lobby_text(payload.get("group_id"), limit=128),
-    }
+    details = {"group_id": clean_lobby_text(payload.get("group_id"), limit=128)}
+    recoverable_meeting_id = clean_lobby_text(getattr(error, "meeting_id", ""), limit=128)
+    if recoverable_meeting_id:
+        details["meeting_id"] = recoverable_meeting_id
+        details["recoverable_meeting_id"] = recoverable_meeting_id
+        return details
+    requested_meeting_id = clean_lobby_text(payload.get("meeting_id"), limit=128)
+    if requested_meeting_id:
+        details["requested_meeting_id"] = requested_meeting_id
+    return details
 
 
 def _turn_round_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:

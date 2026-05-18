@@ -3706,6 +3706,7 @@ class GuiServerTests(unittest.TestCase):
                 with self.assertRaises(HTTPError) as raised:
                     urlopen(request, timeout=4)
                 body = raised.exception.read().decode("utf-8")
+                error_payload = json.loads(body)
                 raised.exception.close()
             finally:
                 server.shutdown()
@@ -3714,6 +3715,8 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn(str(private_council_config), body)
             self.assertNotIn("private-council", body)
             self.assertIn("details redacted", body)
+            self.assertNotIn("meeting_id", error_payload)
+            self.assertEqual(error_payload["details"]["requested_meeting_id"], "resident-m1")
 
     def test_live_agent_session_start_group_failure_returns_created_meeting_for_recovery(self):
         class FailingSessionSupervisor:
@@ -3814,6 +3817,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, 400)
             self.assertTrue(meeting_id)
             self.assertEqual(error_payload["details"]["meeting_id"], meeting_id)
+            self.assertEqual(error_payload["details"]["recoverable_meeting_id"], meeting_id)
             self.assertTrue((root / "meetings" / meeting_id / "live_state.json").exists())
             session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.start"]
             self.assertEqual(session_operations[-1]["status"], "failed")

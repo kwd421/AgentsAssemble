@@ -21,6 +21,7 @@ export const state = {
   liveAgentOperationsLoaded: false,
   liveAgentOperationsLoading: false,
   liveAgentProcessStartRunning: false,
+  liveAgentSessionStartRunning: false,
   liveAgentPreflightRunning: false,
   liveAgentSmokeRunning: false,
   liveAgentOfficialRoundSmokeRunning: false,
@@ -103,22 +104,33 @@ export function escapeHtml(value) {
 
 export async function fetchJson(url, options) {
   const response = await fetch(url, options);
-  if (!response.ok) throw new Error(await responseErrorMessage(response));
+  if (!response.ok) {
+    const details = await responseErrorDetails(response);
+    const error = new Error(details.message);
+    error.payload = details.payload;
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
 }
 
 async function responseErrorMessage(response) {
+  const details = await responseErrorDetails(response);
+  return details.message;
+}
+
+async function responseErrorDetails(response) {
   const fallback = `Request failed: ${response.status}`;
   try {
     const contentType = response.headers.get("Content-Type") || "";
     if (contentType.includes("application/json")) {
       const payload = await response.json();
-      return String(payload?.error || payload?.message || fallback);
+      return { message: String(payload?.error || payload?.message || fallback), payload };
     }
     const text = (await response.text()).trim();
-    return text || fallback;
+    return { message: text || fallback, payload: null };
   } catch {
-    return fallback;
+    return { message: fallback, payload: null };
   }
 }
 

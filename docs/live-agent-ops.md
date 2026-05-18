@@ -19,12 +19,14 @@ http://127.0.0.1:8765
 The lobby is the public room surface. The "상주 실행" panel can start, refresh, stop, restart, and diagnose local live-agent process groups. The default group config path is:
 
 ```text
-configs/live-agents.example.json
+configs/live-agents.start-session.example.json
 ```
+
+The GUI's `세션시작` button pairs that resident config with `configs/demo-council.json` and `configs/agents.start-session.example.json` so the visible meeting bindings and resident runner manifest match. The `시작` button still starts only the supervised process group from the config input, while `세션시작` creates the visible meeting and starts the matching resident group through `/api/live-agent-sessions/start`.
 
 The live-agent roster and supervised process panel auto-refresh in the GUI every 5 seconds. This keeps stale presence, process crashes, pending auto-restart state, and recovered groups visible during long sessions without relying only on the manual refresh buttons. The GUI server also starts a backend supervisor monitor, so owned process crash detection and due auto-restarts continue without an open browser or `/api/live-agent-processes` polling client. The manual refresh buttons remain useful when you want an immediate read after changing files or process state from another terminal.
 
-That example config contains real `claude` and `gemini` commands. Do not start it until the real-provider checklist below is satisfied.
+The real-provider `configs/live-agents.example.json` contains real `claude` and `gemini` commands. Do not start it until the real-provider checklist below is satisfied.
 
 ## GUI Startup Autostart
 
@@ -98,8 +100,8 @@ python3 -m agentsassemble.cli live-agent start-session \
   --meeting-id resident-1 \
   --group-id resident-main \
   --council-config configs/demo-council.json \
-  --agent-config configs/agents.example.json \
-  --live-agent-config configs/live-agents.example.json \
+  --agent-config configs/agents.start-session.example.json \
+  --live-agent-config configs/live-agents.start-session.example.json \
   --connect-timeout 5
 ```
 
@@ -110,6 +112,8 @@ POST /api/live-agent-sessions/start
 ```
 
 with `meeting_id`, `group_id`, `council_config_path`, `agent_config_path`, `live_agent_config_path`, `connect_timeout_seconds`, and the same `auto_restart`, `max_restarts`, `restart_backoff_seconds`, and `stale_restart_after_seconds` options used by supervised process start. The coordinator preflights the resident group config before creating the meeting, refuses if the resident group manifest does not exactly match the meeting's bound agent ids, and checks direct provider kinds plus compatible resident connection kinds. A meeting provider of `remote_http_bridge` must use a resident `remote_bridge` connection, but the resident `provider_kind` may still name the agent behind that bridge, such as `claude_code`. After those checks, it creates the normal visible resident meeting, starts the supervised group, then waits briefly for bound agents to appear as `online` or `working` and attached to the meeting.
+
+The paired examples `configs/agents.start-session.example.json` and `configs/live-agents.start-session.example.json` are intentionally local fake CLI configs for the demo council. They use the same bound agent ids as `configs/demo-council.json`, keep resident `meeting_id` blank, and are safe for first-pass validation without real Claude, Gemini, Cursor, account login, billing, or bridge setup.
 
 Resident group configs used with `start-session` should either leave each agent's `meeting_id` blank, letting the created roster binding supply it, or match the explicit `--meeting-id`. A resident config that points an agent at a different meeting is refused before state is written, because that runner would otherwise reconnect itself away from the new official meeting.
 

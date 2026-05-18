@@ -306,6 +306,19 @@ textScale?.addEventListener("input", () => {
   applyScaleSettings();
 });
 
+window.addEventListener("agentsassemble:meeting-started", async (event) => {
+  const meetingId = String(event.detail?.meetingId || "");
+  if (!meetingId) return;
+  try {
+    await loadMeetings();
+    meetingSelect.value = meetingId;
+    await loadMeeting(meetingId);
+    showAppStatus("상주 세션 회의 연결됨", "success");
+  } catch {
+    showAppStatus("상주 세션 회의 갱신 대기 중", "info");
+  }
+});
+
 runDemo.addEventListener("click", async () => {
   runDemo.disabled = true;
   runDemo.setAttribute("aria-busy", "true");

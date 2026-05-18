@@ -195,6 +195,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("does not refresh `last_seen_at`", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent start-session", doc)
         self.assertIn("/api/live-agent-sessions/start", doc)
+        self.assertIn("configs/agents.start-session.example.json", doc)
+        self.assertIn("configs/live-agents.start-session.example.json", doc)
         self.assertIn("status: \"ready\"", doc)
         self.assertIn("status: \"starting\"", doc)
         self.assertIn("session.start", doc)

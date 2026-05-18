@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_sessions import start_live_agent_session
 
 
@@ -149,6 +150,49 @@ class LiveAgentSessionStartTests(unittest.TestCase):
 
             self.assertEqual(session["group"]["status"], "running")
             self.assertEqual(session["connection"]["expected"], 1)
+
+    def test_start_session_example_configs_match_demo_council(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            from agentsassemble.live_agents import heartbeat_live_agent
+
+            root = Path(temp_dir)
+
+            class ExampleSupervisor:
+                def start_group(self, **kwargs):
+                    configs = load_group_configs(kwargs["config_path"], server_override=kwargs["server"])
+                    for config in configs:
+                        heartbeat_live_agent(root, config.agent_id, status="online")
+                    return {
+                        "group_id": kwargs.get("group_id") or "resident-main",
+                        "status": "running",
+                        "agents": [
+                            {
+                                "agent_id": config.agent_id,
+                                "display_name": config.display_name,
+                                "provider_kind": config.provider_kind,
+                                "connection_kind": config.connection_kind,
+                            }
+                            for config in configs
+                        ],
+                    }
+
+            session = start_live_agent_session(
+                root,
+                ExampleSupervisor(),
+                server="http://127.0.0.1:8765",
+                council_config_path=Path("configs/demo-council.json"),
+                agent_config_path=Path("configs/agents.start-session.example.json"),
+                live_agent_config_path=Path("configs/live-agents.start-session.example.json"),
+                meeting_id="resident-example",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+                preflight_checker=lambda *args, **kwargs: {"status": "ok"},
+            )
+
+            self.assertEqual(session["status"], "ready")
+            self.assertEqual(session["connection"]["expected"], 3)
+            self.assertEqual(session["connection"]["connected"], 3)
+            self.assertEqual(session["process"]["matched"], 3)
 
     def test_start_session_preflight_failure_reports_agent_level_reason(self):
         with tempfile.TemporaryDirectory() as temp_dir:
