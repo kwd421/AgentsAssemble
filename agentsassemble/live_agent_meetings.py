@@ -118,15 +118,17 @@ def _register_bound_live_agents(
         provider = providers.get(binding.provider_id)
         if provider is None:
             continue
+        connection_kind = _connection_kind_for_provider(provider.kind)
         connect_live_agent(
             output_root,
             {
                 "agent_id": binding.agent_id,
                 "display_name": role.display_name if role is not None else binding.agent_id,
                 "provider_kind": provider.kind,
-                "connection_kind": _connection_kind_for_provider(provider.kind),
+                "connection_kind": connection_kind,
                 "meeting_id": meeting_id,
                 "session_id": binding.session_id or "",
+                "endpoint": (provider.endpoint or "") if connection_kind == "remote_bridge" else "",
                 "engagement_mode": "moderator_called",
                 "status": "offline",
                 "capabilities": ["room_chat", "official_turn"],

@@ -3351,6 +3351,7 @@ class GuiServerTests(unittest.TestCase):
                                 "id": "local-cli",
                                 "kind": "local_cli",
                                 "display_name": "Local CLI",
+                                "endpoint": "https://api.example/run?api_key=SECRET",
                                 "command": ["fake-agent"],
                             }
                         ],
@@ -3472,6 +3473,8 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(agents["agent-b"]["meeting_id"], "resident-m1")
             self.assertEqual(agents["agent-a"]["engagement_mode"], "moderator_called")
             self.assertEqual(agents["agent-b"]["engagement_mode"], "moderator_called")
+            self.assertEqual(agents["agent-a"]["endpoint"], "")
+            self.assertEqual(agents["agent-b"]["endpoint"], "")
             self.assertEqual(round_result["status"], "answered")
             self.assertEqual([result["agent_id"] for result in round_result["results"]], ["agent-a", "agent-b"])
             transcript = build_meeting_payload(meeting_dir)["artifacts"]["transcript.md"]
@@ -3711,6 +3714,111 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn(str(private_council_config), body)
             self.assertNotIn("private-council", body)
             self.assertIn("details redacted", body)
+
+    def test_live_agent_session_start_group_failure_returns_created_meeting_for_recovery(self):
+        class FailingSessionSupervisor:
+            def start_group(self, **kwargs):
+                raise RuntimeError("process launch refused")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            council_config.write_text(
+                json.dumps(
+                    {
+                        "topic": "resident session",
+                        "question": "Can a failed process start leave recoverable meeting evidence?",
+                        "roles": [
+                            {"id": "architect", "display_name": "Architect", "lens": "Architecture", "research_focus": "system"}
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            agent_config.write_text(
+                json.dumps(
+                    {
+                        "providers": [
+                            {
+                                "id": "local-cli",
+                                "kind": "local_cli",
+                                "display_name": "Local CLI",
+                                "command": [sys.executable, "-c", "print('ok')"],
+                            }
+                        ],
+                        "permission_profiles": [
+                            {"id": "meeting_readonly", "meeting_read": True, "lobby_chat": True, "official_turn": True}
+                        ],
+                        "agent_bindings": [
+                            {
+                                "agent_id": "agent-a",
+                                "role_id": "architect",
+                                "provider_id": "local-cli",
+                                "permission_profile_id": "meeting_readonly",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": [sys.executable, "-c", "print('ok')"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FailingSessionSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/start",
+                    data=json.dumps(
+                        {
+                            "group_id": "resident-main",
+                            "council_config_path": str(council_config),
+                            "agent_config_path": str(agent_config),
+                            "live_agent_config_path": str(live_agent_config),
+                            "connect_timeout_seconds": 0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=4)
+                error_payload = json.loads(raised.exception.read().decode("utf-8"))
+                raised.exception.close()
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            meeting_id = error_payload["meeting_id"]
+            self.assertEqual(raised.exception.code, 400)
+            self.assertTrue(meeting_id)
+            self.assertEqual(error_payload["details"]["meeting_id"], meeting_id)
+            self.assertTrue((root / "meetings" / meeting_id / "live_state.json").exists())
+            session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.start"]
+            self.assertEqual(session_operations[-1]["status"], "failed")
+            self.assertEqual(session_operations[-1]["target_id"], meeting_id)
+            self.assertEqual(session_operations[-1]["details"]["meeting_id"], meeting_id)
 
     def test_live_agent_official_turn_round_validates_before_append(self):
         with tempfile.TemporaryDirectory() as temp_dir:

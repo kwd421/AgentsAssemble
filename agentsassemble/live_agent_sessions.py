@@ -11,6 +11,14 @@ from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.meeting_setup import prepare_meeting_setup
 
+SUPPORTED_SESSION_CONNECTION_KINDS = frozenset({"local_cli", "live_session", "remote_bridge"})
+
+
+class LiveAgentSessionStartError(ValueError):
+    def __init__(self, message: str, *, meeting_id: str) -> None:
+        super().__init__(message)
+        self.meeting_id = meeting_id
+
 
 def start_live_agent_session(
     output_root: Path,
@@ -36,19 +44,14 @@ def start_live_agent_session(
     if preflight.get("status") != "ok":
         raise ValueError(_preflight_failure_message(preflight))
 
-    expected_agent_ids = _expected_meeting_agent_ids(
+    expected_agents = _expected_meeting_agents(
         council_config_path=council_config_path,
         agent_config_path=agent_config_path,
     )
+    expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
     resident_configs = load_group_configs(live_agent_config_path, server_override=server)
     _validate_resident_config_meeting_ids(resident_configs, meeting_id=meeting_id)
-    manifest_agent_ids = {config.agent_id for config in resident_configs}
-    missing_agent_ids = [agent_id for agent_id in expected_agent_ids if agent_id not in manifest_agent_ids]
-    if missing_agent_ids:
-        raise ValueError(f"Resident group config does not cover meeting agents: {', '.join(missing_agent_ids)}.")
-    extra_agent_ids = sorted(manifest_agent_ids - set(expected_agent_ids))
-    if extra_agent_ids:
-        raise ValueError(f"Resident group config does not match meeting agents: extra {', '.join(extra_agent_ids)}.")
+    _validate_resident_manifest(resident_configs, expected_agents)
 
     started_meeting = start_live_agent_meeting(
         output_root,
@@ -57,40 +60,101 @@ def start_live_agent_session(
         meeting_id=meeting_id,
     )
     clean_meeting_id = str(started_meeting.get("meeting_id") or "")
-    group = process_supervisor.start_group(
-        config_path=live_agent_config_path,
-        server=server,
-        group_id=group_id.strip() or None,
-        auto_restart=auto_restart,
-        max_restarts=max_restarts,
-        restart_backoff_seconds=restart_backoff_seconds,
-        stale_restart_after_seconds=stale_restart_after_seconds,
-    )
+    try:
+        group = process_supervisor.start_group(
+            config_path=live_agent_config_path,
+            server=server,
+            group_id=group_id.strip() or None,
+            auto_restart=auto_restart,
+            max_restarts=max_restarts,
+            restart_backoff_seconds=restart_backoff_seconds,
+            stale_restart_after_seconds=stale_restart_after_seconds,
+        )
+    except Exception as error:
+        raise LiveAgentSessionStartError(
+            _start_group_failure_message(error),
+            meeting_id=clean_meeting_id,
+        ) from error
+    process = _process_snapshot(group, expected_agent_ids=expected_agent_ids)
     connection = _wait_for_connections(
         output_root,
         meeting_id=clean_meeting_id,
         expected_agent_ids=expected_agent_ids,
         timeout_seconds=connect_timeout_seconds,
     )
-    status = "ready" if connection["connected"] == connection["expected"] else "starting"
+    status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "starting"
     return {
         "status": status,
         "meeting_id": clean_meeting_id,
         "group_id": str(group.get("group_id") if isinstance(group, dict) else group_id or ""),
         "meeting": _safe_meeting_summary(started_meeting.get("meeting")),
         "group": _safe_group_summary(group),
+        "process": process,
         "connection": connection,
     }
 
 
-def _expected_meeting_agent_ids(
+def _expected_meeting_agents(
     *,
     council_config_path: Path | None,
     agent_config_path: Path | None,
-) -> list[str]:
+) -> list[dict[str, str]]:
     config = load_council_config(council_config_path)
     setup = prepare_meeting_setup(config.roles, "mock", None, True, agent_config_path)
-    return [binding.agent_id for binding in setup.agent_bindings]
+    agents = []
+    for binding in setup.agent_bindings:
+        provider = setup.providers.get(binding.provider_id)
+        agents.append(
+            {
+                "agent_id": binding.agent_id,
+                "provider_kind": str(getattr(provider, "kind", "") or ""),
+            }
+        )
+    return agents
+
+
+def _validate_resident_manifest(configs: object, expected_agents: list[dict[str, str]]) -> None:
+    configs_by_id = {str(config.agent_id): config for config in configs}
+    expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
+    manifest_agent_ids = set(configs_by_id)
+    missing_agent_ids = [agent_id for agent_id in expected_agent_ids if agent_id not in manifest_agent_ids]
+    if missing_agent_ids:
+        raise ValueError(f"Resident group config does not cover meeting agents: {', '.join(missing_agent_ids)}.")
+    extra_agent_ids = sorted(manifest_agent_ids - set(expected_agent_ids))
+    if extra_agent_ids:
+        raise ValueError(f"Resident group config does not match meeting agents: extra {', '.join(extra_agent_ids)}.")
+    for expected in expected_agents:
+        agent_id = expected["agent_id"]
+        config = configs_by_id[agent_id]
+        expected_provider_kind = expected["provider_kind"]
+        actual_provider_kind = str(getattr(config, "provider_kind", "") or "")
+        if _requires_resident_provider_kind_match(expected_provider_kind) and actual_provider_kind != expected_provider_kind:
+            raise ValueError(
+                "Resident group config provider_kind mismatch for "
+                f"{agent_id}: expected {expected_provider_kind}, got {actual_provider_kind or 'blank'}."
+            )
+        allowed_connection_kinds = _allowed_resident_connection_kinds(expected_provider_kind)
+        actual_connection_kind = str(getattr(config, "connection_kind", "") or "")
+        if actual_connection_kind not in allowed_connection_kinds:
+            expected_kinds = ", ".join(sorted(allowed_connection_kinds))
+            raise ValueError(
+                "Resident group config connection_kind mismatch for "
+                f"{agent_id}: expected one of {expected_kinds}, got {actual_connection_kind or 'blank'}."
+            )
+
+
+def _allowed_resident_connection_kinds(provider_kind: str) -> frozenset[str]:
+    if provider_kind == "remote_http_bridge":
+        return frozenset({"remote_bridge"})
+    if provider_kind == "codex_live_session":
+        return frozenset({"live_session"})
+    if provider_kind == "local_cli":
+        return frozenset({"local_cli", "live_session"})
+    return SUPPORTED_SESSION_CONNECTION_KINDS
+
+
+def _requires_resident_provider_kind_match(provider_kind: str) -> bool:
+    return provider_kind not in {"remote_http_bridge"}
 
 
 def _validate_resident_config_meeting_ids(configs: object, *, meeting_id: str) -> None:
@@ -153,6 +217,38 @@ def _connection_snapshot(output_root: Path, *, meeting_id: str, expected_agent_i
     }
 
 
+def _process_snapshot(group: object, *, expected_agent_ids: list[str]) -> dict[str, object]:
+    group_payload = group if isinstance(group, dict) else {}
+    status = str(group_payload.get("status") or "unknown")
+    manifest_ids = _process_agent_ids(group_payload.get("agents"))
+    missing_agent_ids = [agent_id for agent_id in expected_agent_ids if agent_id not in manifest_ids]
+    attention = []
+    if status != "running":
+        attention.append(f"group:{status}")
+    attention.extend(f"{agent_id}:not_in_group" for agent_id in missing_agent_ids)
+    return {
+        "ready": not attention,
+        "status": status,
+        "expected": len(expected_agent_ids),
+        "matched": len(expected_agent_ids) - len(missing_agent_ids),
+        "agent_ids": manifest_ids,
+        "attention": attention,
+    }
+
+
+def _process_agent_ids(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    agent_ids = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        agent_id = str(item.get("agent_id") or "").strip()
+        if agent_id:
+            agent_ids.append(agent_id)
+    return agent_ids
+
+
 def _safe_meeting_summary(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         return {}
@@ -207,3 +303,10 @@ def _safe_preflight_message(value: object) -> str:
 
 def _looks_sensitive_preflight_message(message: str) -> bool:
     return "/" in message or "\\" in message or ".json" in message.casefold()
+
+
+def _start_group_failure_message(error: Exception) -> str:
+    message = str(error).replace("\r", " ").replace("\n", " ").strip() or error.__class__.__name__
+    if _looks_sensitive_preflight_message(message):
+        return "Resident process group failed to start: details redacted."
+    return f"Resident process group failed to start: {message[:240]}"

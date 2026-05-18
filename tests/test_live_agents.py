@@ -335,6 +335,31 @@ class LiveAgentPresenceTests(unittest.TestCase):
         self.assertEqual(agent["connection_kind"], "remote_bridge")
         self.assertEqual(agent["endpoint"], "http://friend.local:8777")
 
+    def test_connect_live_agent_clears_existing_endpoint_when_reconnecting_as_local(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "friend-bridge",
+                    "connection_kind": "remote_bridge",
+                    "endpoint": "http://friend.local:8777",
+                },
+            )
+
+            agent = connect_live_agent(
+                root,
+                {
+                    "agent_id": "friend-bridge",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "endpoint": "",
+                },
+            )
+
+        self.assertEqual(agent["connection_kind"], "local_cli")
+        self.assertEqual(agent["endpoint"], "")
+
     def test_connect_live_agent_preserves_diagnostic_flag(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             agent = connect_live_agent(

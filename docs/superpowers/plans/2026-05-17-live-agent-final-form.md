@@ -1284,6 +1284,33 @@ Record one sanitized `session.start` operation with ids, counts, result status, 
 
 ---
 
+### Task 42: Resident Session Start Review Hardening
+
+**Files:**
+- Modify: `agentsassemble/live_agent_sessions.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_sessions.py`
+- Test: `tests/test_gui_server.py`
+
+- [x] **Step 1: Add RED coverage for reviewed risks**
+
+Cover provider-kind mismatch refusal before meeting/process writes, remote-provider connection-kind mismatch refusal, non-running process groups that should not produce `ready`, and post-meeting process launch failure evidence.
+
+- [x] **Step 2: Tighten resident manifest validation**
+
+Require the resident group manifest to match the meeting-bound agent ids and direct provider kinds, and require the resident connection kind to be compatible with the configured provider kind before creating the meeting. For `remote_http_bridge`, validate `remote_bridge` transport compatibility while allowing the resident `provider_kind` to name the bridged agent runtime.
+
+- [x] **Step 3: Tighten readiness evidence**
+
+Return `ready` only when the supervised group reports `running`, its process manifest covers every expected agent, and every expected agent is `online` or `working` for the created meeting. Include sanitized process status and attention in the session payload and operation details.
+
+- [x] **Step 4: Preserve recovery evidence on partial launch failure**
+
+If process launch fails after the visible meeting is created, raise a sanitized session-start error carrying the safe meeting id, and include that id in the failed HTTP response and `session.start` operation so an operator can recover or clean up deliberately.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

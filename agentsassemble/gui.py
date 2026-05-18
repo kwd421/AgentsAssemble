@@ -1813,6 +1813,7 @@ def _official_round_smoke_operation_details(smoke: dict[str, object]) -> dict[st
 
 def _session_start_operation_details(session: dict[str, object]) -> dict[str, object]:
     connection = session.get("connection") if isinstance(session.get("connection"), dict) else {}
+    process = session.get("process") if isinstance(session.get("process"), dict) else {}
     return {
         "result_status": _operation_result_status(session.get("status")),
         "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
@@ -1822,6 +1823,9 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
         "agent_ids": _safe_payload_strings(connection.get("agent_ids"), limit=64),
         "connected_agent_ids": _safe_payload_strings(connection.get("connected_agent_ids"), limit=64),
         "attention": _safe_payload_strings(connection.get("attention"), limit=128),
+        "process_status": clean_lobby_text(process.get("status"), limit=64),
+        "process_agent_ids": _safe_payload_strings(process.get("agent_ids"), limit=64),
+        "process_attention": _safe_payload_strings(process.get("attention"), limit=128),
     }
 
 
@@ -1830,6 +1834,13 @@ def _session_start_error_message(error: Exception) -> str:
     if "/" in message or "\\" in message or ".json" in message.casefold():
         return "Resident live-agent session start failed: details redacted."
     return message[:500] or "Resident live-agent session start failed."
+
+
+def _session_start_error_details(payload: dict[str, object], error: Exception) -> dict[str, object]:
+    return {
+        "meeting_id": clean_lobby_text(getattr(error, "meeting_id", "") or payload.get("meeting_id"), limit=128),
+        "group_id": clean_lobby_text(payload.get("group_id"), limit=128),
+    }
 
 
 def _turn_round_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:
@@ -2022,18 +2033,16 @@ def _make_handler(
                     )
                 except (OSError, ValueError) as error:
                     safe_error = _session_start_error_message(error)
+                    safe_details = _session_start_error_details(payload, error)
                     record_live_agent_operation(
                         output_root,
                         operation="session.start",
                         status="failed",
-                        target_id=str(payload.get("meeting_id") or ""),
+                        target_id=str(safe_details.get("meeting_id") or ""),
                         error=safe_error,
-                        details={
-                            "meeting_id": str(payload.get("meeting_id") or ""),
-                            "group_id": str(payload.get("group_id") or ""),
-                        },
+                        details=safe_details,
                     )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error)
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
                     return
                 result_status = _operation_result_status(session.get("status"))
                 record_live_agent_operation(
@@ -2876,8 +2885,23 @@ def _make_handler(
                 return None
             return payload
 
-        def _send_error(self, status: HTTPStatus, message: str) -> None:
-            data = json.dumps({"error": message}, ensure_ascii=False).encode("utf-8")
+        def _send_error(
+            self,
+            status: HTTPStatus,
+            message: str,
+            *,
+            details: dict[str, object] | None = None,
+        ) -> None:
+            payload: dict[str, object] = {"error": message}
+            if details:
+                payload["details"] = details
+                meeting_id = details.get("meeting_id")
+                if meeting_id:
+                    payload["meeting_id"] = meeting_id
+                group_id = details.get("group_id")
+                if group_id:
+                    payload["group_id"] = group_id
+            data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))

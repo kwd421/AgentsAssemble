@@ -50,10 +50,7 @@ def connect_live_agent(
         agents = _agent_entries(state)
         existing = next((agent for agent in agents if agent.get("agent_id") == agent_id), {})
         connection_kind = _normalize_connection_kind(payload.get("connection_kind") or existing.get("connection_kind"))
-        endpoint = clean_lobby_text(payload.get("endpoint"), limit=240) or clean_lobby_text(
-            existing.get("endpoint"),
-            limit=240,
-        )
+        endpoint = _connection_endpoint(payload, existing, connection_kind)
         if connection_kind == "remote_bridge":
             endpoint_error = remote_bridge_endpoint_error(endpoint)
             if endpoint_error:
@@ -129,6 +126,16 @@ def update_live_agent_engagement(
             _write_state(output_root, {"agents": agents})
             return agent
     raise ValueError(f"Live agent {clean_agent_id} was not found.")
+
+
+def _connection_endpoint(
+    payload: dict[str, object],
+    existing: dict[str, object],
+    connection_kind: str,
+) -> str:
+    if connection_kind != "remote_bridge":
+        return ""
+    return clean_lobby_text(payload.get("endpoint"), limit=240) or clean_lobby_text(existing.get("endpoint"), limit=240)
 
 
 def heartbeat_live_agent(

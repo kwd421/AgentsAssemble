@@ -73,6 +73,83 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(supervisor.started, [])
             self.assertFalse((root / "meetings").exists())
 
+    def test_start_session_refuses_provider_kind_mismatch_before_writing_state(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"], provider_kind="claude_code")
+            live_agent_config = _write_live_agent_config(root, ["agent-a"], provider_kind="local_cli")
+            supervisor = FakeSessionSupervisor(root)
+
+            with self.assertRaises(ValueError) as raised:
+                start_live_agent_session(
+                    root,
+                    supervisor,
+                    server="http://127.0.0.1:8765",
+                    council_config_path=council_config,
+                    agent_config_path=agent_config,
+                    live_agent_config_path=live_agent_config,
+                    meeting_id="resident-m1",
+                    group_id="resident-main",
+                )
+
+            self.assertIn("provider_kind", str(raised.exception))
+            self.assertEqual(supervisor.started, [])
+            self.assertFalse((root / "meetings").exists())
+
+    def test_start_session_refuses_remote_provider_with_local_connection_before_writing_state(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"], provider_kind="remote_http_bridge")
+            live_agent_config = _write_live_agent_config(root, ["agent-a"], provider_kind="remote_http_bridge", connection_kind="local_cli")
+            supervisor = FakeSessionSupervisor(root)
+
+            with self.assertRaises(ValueError) as raised:
+                start_live_agent_session(
+                    root,
+                    supervisor,
+                    server="http://127.0.0.1:8765",
+                    council_config_path=council_config,
+                    agent_config_path=agent_config,
+                    live_agent_config_path=live_agent_config,
+                    meeting_id="resident-m1",
+                    group_id="resident-main",
+                )
+
+            self.assertIn("connection_kind", str(raised.exception))
+            self.assertEqual(supervisor.started, [])
+            self.assertFalse((root / "meetings").exists())
+
+    def test_start_session_allows_remote_bridge_provider_label_behind_bridge_transport(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"], provider_kind="remote_http_bridge")
+            live_agent_config = _write_live_agent_config(
+                root,
+                ["agent-a"],
+                provider_kind="claude_code",
+                connection_kind="remote_bridge",
+                endpoint="http://bridge.local:8777",
+                auth_ref="literal:test-token",
+            )
+
+            session = start_live_agent_session(
+                root,
+                FakeSessionSupervisor(root),
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["group"]["status"], "running")
+            self.assertEqual(session["connection"]["expected"], 1)
+
     def test_start_session_preflight_failure_reports_agent_level_reason(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -284,6 +361,66 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(session["connection"]["attention"], ["agent-a:offline"])
             self.assertTrue((root / "meetings" / "resident-m1" / "live_state.json").exists())
 
+    def test_start_session_returns_starting_when_group_is_not_running_even_if_agents_connected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            from agentsassemble.live_agents import heartbeat_live_agent
+
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+
+            class StoppedSupervisor(FakeSessionSupervisor):
+                def start_group(self, **kwargs):
+                    self.started.append(kwargs)
+                    heartbeat_live_agent(root, "agent-a", status="online")
+                    return {"group_id": "resident-main", "status": "stopped", "agents": [{"agent_id": "agent-a"}]}
+
+            session = start_live_agent_session(
+                root,
+                StoppedSupervisor(root),
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["status"], "starting")
+            self.assertEqual(session["connection"]["connected"], 1)
+            self.assertEqual(session["process"]["status"], "stopped")
+            self.assertIn("group:stopped", session["process"]["attention"])
+
+    def test_start_session_start_group_failure_exposes_created_meeting_for_recovery(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+
+            class FailingSupervisor(FakeSessionSupervisor):
+                def start_group(self, **kwargs):
+                    self.started.append(kwargs)
+                    raise RuntimeError("process launch refused")
+
+            supervisor = FailingSupervisor(root)
+            with self.assertRaises(Exception) as raised:
+                start_live_agent_session(
+                    root,
+                    supervisor,
+                    server="http://127.0.0.1:8765",
+                    council_config_path=council_config,
+                    agent_config_path=agent_config,
+                    live_agent_config_path=live_agent_config,
+                    group_id="resident-main",
+                )
+
+            meeting_id = getattr(raised.exception, "meeting_id", "")
+            self.assertTrue(meeting_id)
+            self.assertTrue((root / "meetings" / meeting_id / "live_state.json").exists())
+
     def test_start_session_refuses_resident_config_for_another_meeting_before_writing_state(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -333,7 +470,7 @@ def _write_council_config(root: Path, role_ids: list[str]) -> Path:
     return path
 
 
-def _write_agent_config(root: Path, agent_ids: list[str]) -> Path:
+def _write_agent_config(root: Path, agent_ids: list[str], *, provider_kind: str = "local_cli") -> Path:
     path = root / "agents.json"
     roles = ["architect", "critic", "tester", "operator"]
     path.write_text(
@@ -342,8 +479,9 @@ def _write_agent_config(root: Path, agent_ids: list[str]) -> Path:
                 "providers": [
                     {
                         "id": "local-cli",
-                        "kind": "local_cli",
+                        "kind": provider_kind,
                         "display_name": "Local CLI",
+                        "endpoint": "http://bridge.local" if provider_kind == "remote_http_bridge" else None,
                         "command": [sys.executable, "-c", "print('ok')"],
                     }
                 ],
@@ -373,7 +511,16 @@ def _write_agent_config(root: Path, agent_ids: list[str]) -> Path:
     return path
 
 
-def _write_live_agent_config(root: Path, agent_ids: list[str], *, meeting_id: str = "") -> Path:
+def _write_live_agent_config(
+    root: Path,
+    agent_ids: list[str],
+    *,
+    meeting_id: str = "",
+    provider_kind: str = "local_cli",
+    connection_kind: str = "local_cli",
+    endpoint: str = "",
+    auth_ref: str = "",
+) -> Path:
     path = root / "live-agents.json"
     path.write_text(
         json.dumps(
@@ -383,8 +530,10 @@ def _write_live_agent_config(root: Path, agent_ids: list[str], *, meeting_id: st
                     {
                         "agent_id": agent_id,
                         "display_name": agent_id,
-                        "provider_kind": "local_cli",
-                        "connection_kind": "local_cli",
+                        "provider_kind": provider_kind,
+                        "connection_kind": connection_kind,
+                        "endpoint": endpoint,
+                        "auth_ref": auth_ref,
                         "meeting_id": meeting_id,
                         "engagement_mode": "moderator_called",
                         "command": [sys.executable, "-c", "print('ok')"],
