@@ -815,6 +815,136 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("Timed out waiting for agent-a official turn turn-request-1", stdout.getvalue())
 
+    def test_live_agent_call_sequence_parses_operator_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "call-sequence",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "m1",
+                "--turns-json",
+                '[{"agent_id":"agent-a","content":"A"},{"agent_id":"agent-b","content":"B"}]',
+                "--timeout",
+                "8",
+                "--stop-on-timeout",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "call-sequence")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.meeting_id, "m1")
+        self.assertEqual(args.timeout, 8.0)
+        self.assertTrue(args.stop_on_timeout)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_call_sequence_posts_turns_and_prints_summary(self):
+        response = {
+            "status": "answered",
+            "answered_count": 2,
+            "timeout_count": 0,
+            "skipped_count": 0,
+            "results": [
+                {"agent_id": "agent-a", "status": "answered", "reply_event": {"id": "reply-a"}},
+                {"agent_id": "agent-b", "status": "answered", "reply_event": {"id": "reply-b"}},
+            ],
+        }
+        stdout = StringIO()
+        turns_json = '[{"agent_id":"agent-a","content":"A"},{"agent_id":"agent-b","content":"B"}]'
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "call-sequence",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--turns-json",
+                        turns_json,
+                        "--timeout",
+                        "8",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/meetings/m1/live-agent-turns/sequence",
+            method="POST",
+            payload={
+                "turns": [{"agent_id": "agent-a", "content": "A"}, {"agent_id": "agent-b", "content": "B"}],
+                "timeout_seconds": 8.0,
+                "stop_on_timeout": False,
+            },
+            timeout_seconds=22.0,
+        )
+        self.assertIn("Official turn sequence answered: 2 answered, 0 timed out, 0 skipped", stdout.getvalue())
+        self.assertIn("- agent-a: answered reply-a", stdout.getvalue())
+
+    def test_live_agent_call_sequence_reads_turns_file(self):
+        response = {"status": "answered", "answered_count": 1, "timeout_count": 0, "skipped_count": 0, "results": []}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            turns_path = Path(temp_dir) / "turns.json"
+            turns_path.write_text('[{"agent_id":"agent-a","content":"A"}]\n', encoding="utf-8")
+            with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "call-sequence",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--turns-file",
+                        str(turns_path),
+                        "--timeout",
+                        "8",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            request_json.call_args.kwargs["payload"]["turns"],
+            [{"agent_id": "agent-a", "content": "A"}],
+        )
+
+    def test_live_agent_call_sequence_returns_one_when_partial(self):
+        response = {
+            "status": "timeout",
+            "answered_count": 1,
+            "timeout_count": 1,
+            "skipped_count": 0,
+            "results": [
+                {"agent_id": "agent-a", "status": "answered", "reply_event": {"id": "reply-a"}},
+                {"agent_id": "agent-b", "status": "timeout", "request_event": {"id": "request-b"}, "reply_event": None},
+            ],
+        }
+        stdout = StringIO()
+        turns_json = '[{"agent_id":"agent-a","content":"A"},{"agent_id":"agent-b","content":"B"}]'
+        with patch("agentsassemble.cli._request_json", return_value=response):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "call-sequence",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--turns-json",
+                        turns_json,
+                        "--timeout",
+                        "8",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("Official turn sequence timeout: 1 answered, 1 timed out, 0 skipped", stdout.getvalue())
+        self.assertIn("- agent-b: timeout request-b", stdout.getvalue())
+
     def test_live_agent_preflight_parses_operator_options(self):
         args = build_parser().parse_args(
             [

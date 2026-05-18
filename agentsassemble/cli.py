@@ -198,6 +198,18 @@ def build_parser() -> argparse.ArgumentParser:
     live_call.add_argument("--timeout", type=parse_nonnegative_float, default=30.0, help="Seconds to wait when --wait is set.")
     live_call.add_argument("message", nargs="+")
 
+    live_call_sequence = live_agent_subparsers.add_parser(
+        "call-sequence",
+        parents=[live_server],
+        help="Request multiple official meeting turns in order and wait for each reply.",
+    )
+    live_call_sequence.add_argument("--meeting-id", required=True)
+    live_call_sequence.add_argument("--turns-json", default="", help="JSON array of official turn request objects.")
+    live_call_sequence.add_argument("--turns-file", default="", help="File containing a JSON array of official turn request objects.")
+    live_call_sequence.add_argument("--timeout", type=parse_nonnegative_float, default=30.0, help="Default seconds to wait per turn.")
+    live_call_sequence.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining turns after the first timeout.")
+    live_call_sequence.add_argument("--json", action="store_true", dest="as_json", help="Print the raw sequence result payload.")
+
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
     live_say.add_argument("--agent-id", required=True)
     live_say.add_argument("message", nargs="+")
@@ -438,6 +450,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_engagement(args)
         if args.live_agent_command == "call":
             return _run_live_agent_call(args)
+        if args.live_agent_command == "call-sequence":
+            return _run_live_agent_call_sequence(args)
         if args.live_agent_command == "say":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
             response = _request_json(
@@ -553,6 +567,67 @@ def _run_live_agent_call(args: argparse.Namespace) -> int:
     event = response.get("event") if isinstance(response.get("event"), dict) else {}
     print(f"Called {event.get('target_agent_id') or args.agent_id} for official turn {event.get('id') or 'request'}")
     return 0
+
+
+def _run_live_agent_call_sequence(args: argparse.Namespace) -> int:
+    meeting_id = urllib.parse.quote(args.meeting_id, safe="")
+    turns = _load_live_agent_sequence_turns(args)
+    payload = {
+        "turns": turns,
+        "timeout_seconds": float(args.timeout),
+        "stop_on_timeout": bool(args.stop_on_timeout),
+    }
+    response = _request_json(
+        _server_url(args.server, f"/api/meetings/{meeting_id}/live-agent-turns/sequence"),
+        method="POST",
+        payload=payload,
+        timeout_seconds=_operation_http_timeout(float(args.timeout), windows=max(1, len(turns))),
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(
+            "Official turn sequence "
+            f"{response.get('status') or 'unknown'}: "
+            f"{response.get('answered_count', 0)} answered, "
+            f"{response.get('timeout_count', 0)} timed out, "
+            f"{response.get('skipped_count', 0)} skipped"
+        )
+        for result in response.get("results", []):
+            if not isinstance(result, dict):
+                continue
+            print(f"- {result.get('agent_id') or 'unknown'}: {_sequence_result_summary(result)}")
+    return 0 if response.get("status") == "answered" else 1
+
+
+def _load_live_agent_sequence_turns(args: argparse.Namespace) -> list[dict[str, object]]:
+    if bool(args.turns_json) == bool(args.turns_file):
+        raise ValueError("Provide exactly one of --turns-json or --turns-file.")
+    text = args.turns_json
+    if args.turns_file:
+        text = Path(args.turns_file).read_text(encoding="utf-8")
+    loaded = json.loads(text)
+    if not isinstance(loaded, list) or not loaded:
+        raise ValueError("Official turn sequence requires a non-empty JSON array.")
+    turns = []
+    for index, item in enumerate(loaded):
+        if not isinstance(item, dict):
+            raise ValueError(f"Official turn sequence item {index} must be an object.")
+        turns.append(item)
+    return turns
+
+
+def _sequence_result_summary(result: dict[str, object]) -> str:
+    status = str(result.get("status") or "unknown")
+    reply_event = result.get("reply_event") if isinstance(result.get("reply_event"), dict) else {}
+    request_event = result.get("request_event") if isinstance(result.get("request_event"), dict) else {}
+    if status == "answered":
+        return f"answered {reply_event.get('id') or 'reply'}"
+    if status == "timeout":
+        return f"timeout {request_event.get('id') or 'request'}"
+    if status == "skipped":
+        return "skipped"
+    return status
 
 
 def _run_live_agent_resident(args: argparse.Namespace) -> int:

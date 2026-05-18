@@ -53,6 +53,7 @@ SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
 MAX_READINESS_PROBE_AGENTS = 10
 LIVE_AGENT_TURN_LOCK = threading.Lock()
+MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
 
 
 def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str, object]]:
@@ -547,6 +548,42 @@ def live_agent_turn_call_payload(output_root: Path, meeting_id: str, payload: di
     }
 
 
+def live_agent_turn_sequence_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
+    turns = _payload_turn_sequence(payload.get("turns"))
+    clean_meeting_id = _validate_live_agent_turn_sequence(output_root, meeting_id, turns)
+    timeout_seconds = _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0)
+    stop_on_timeout = _payload_bool(payload.get("stop_on_timeout"))
+    results = []
+    stopped = False
+    for index, turn in enumerate(turns):
+        turn_payload = dict(turn)
+        turn_payload.setdefault("timeout_seconds", timeout_seconds)
+        if turn_payload.get("turn_index") is None:
+            turn_payload["turn_index"] = index
+        result = live_agent_turn_call_payload(output_root, meeting_id, turn_payload)
+        sequence_result = _live_agent_turn_sequence_result(index, result)
+        results.append(sequence_result)
+        if sequence_result["status"] != "answered" and stop_on_timeout:
+            stopped = True
+            results.extend(_skipped_turn_sequence_results(turns[index + 1 :], start_index=index + 1))
+            break
+    answered_count = sum(1 for result in results if result["status"] == "answered")
+    timeout_count = sum(1 for result in results if result["status"] == "timeout")
+    skipped_count = sum(1 for result in results if result["status"] == "skipped")
+    return {
+        "status": _live_agent_turn_sequence_status(answered_count, timeout_count, skipped_count),
+        "meeting_id": clean_meeting_id,
+        "turn_count": len(turns),
+        "answered_count": answered_count,
+        "timeout_count": timeout_count,
+        "skipped_count": skipped_count,
+        "stopped": stopped,
+        "stop_on_timeout": stop_on_timeout,
+        "timeout_seconds": timeout_seconds,
+        "results": results,
+    }
+
+
 def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
     agent = _live_agent_for_id(output_root, agent_id)
     meeting_id = clean_lobby_text(payload.get("meeting_id") or agent.get("meeting_id"), limit=128)
@@ -598,7 +635,7 @@ def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: 
         output_root,
         agent_id,
         status="online",
-        metadata={"last_reply_at": datetime.now(UTC).isoformat(), "last_observed_live_event_id": str(event.get("id") or "")},
+        metadata={"last_reply_at": datetime.now(UTC).isoformat(), "last_observed_live_event_id": source_event_id},
     )
     return {
         "agent": updated_agent,
@@ -1085,6 +1122,10 @@ def _meeting_live_agent_turn_call_path(path: str) -> str | None:
     return _meeting_live_agent_turn_action_path(path, "call")
 
 
+def _meeting_live_agent_turn_sequence_path(path: str) -> str | None:
+    return _meeting_live_agent_turn_action_path(path, "sequence")
+
+
 def _meeting_live_agent_turn_action_path(path: str, action: str) -> str | None:
     parts = path.strip("/").split("/")
     if (
@@ -1439,6 +1480,118 @@ def _payload_optional_int(value: object) -> int | None:
         return None
 
 
+def _payload_turn_sequence(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list) or not value:
+        raise ValueError("Official turn sequence requires a non-empty turns list.")
+    if len(value) > MAX_LIVE_AGENT_SEQUENCE_TURNS:
+        raise ValueError(f"Official turn sequence supports at most {MAX_LIVE_AGENT_SEQUENCE_TURNS} turns.")
+    turns = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(f"Official turn sequence item {index} must be an object.")
+        turns.append(dict(item))
+    return turns
+
+
+def _payload_turn_count(payload: dict[str, object]) -> int:
+    turns = payload.get("turns")
+    return len(turns) if isinstance(turns, list) else 0
+
+
+def _validate_live_agent_turn_sequence(output_root: Path, meeting_id: str, turns: list[dict[str, object]]) -> str:
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
+    if not clean_meeting_id or not meeting_dir.exists():
+        raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
+    for index, turn in enumerate(turns):
+        agent_id = clean_lobby_text(turn.get("agent_id"), limit=64)
+        if not agent_id:
+            raise ValueError(f"Official turn sequence item {index} requires agent_id.")
+        agent = _live_agent_for_id(output_root, agent_id)
+        agent_meeting_id = str(agent.get("meeting_id") or "").strip()
+        if agent_meeting_id != clean_meeting_id:
+            raise ValueError(f"Live agent {agent_id} is not attached to meeting {clean_meeting_id}.")
+        content = clean_lobby_text(turn.get("content") or turn.get("message"), limit=4000)
+        if not content:
+            raise ValueError(f"Official turn sequence item {index} requires content.")
+    return clean_meeting_id
+
+
+def _live_agent_turn_sequence_result(index: int, result: dict[str, object]) -> dict[str, object]:
+    request_event = result.get("request_event") if isinstance(result.get("request_event"), dict) else {}
+    reply_event = result.get("reply_event") if isinstance(result.get("reply_event"), dict) else None
+    return {
+        "index": index,
+        "agent_id": str(request_event.get("target_agent_id") or ""),
+        "role_id": str(request_event.get("role_id") or ""),
+        "status": str(result.get("status") or "unknown"),
+        "request_event": request_event,
+        "reply_event": reply_event,
+        "elapsed_seconds": _payload_nonnegative_float(result.get("elapsed_seconds"), 0.0),
+        "timeout_seconds": _payload_nonnegative_float(result.get("timeout_seconds"), 0.0),
+    }
+
+
+def _skipped_turn_sequence_results(turns: list[dict[str, object]], *, start_index: int) -> list[dict[str, object]]:
+    skipped = []
+    for offset, turn in enumerate(turns):
+        skipped.append(
+            {
+                "index": start_index + offset,
+                "agent_id": clean_lobby_text(turn.get("agent_id"), limit=64),
+                "role_id": clean_lobby_text(turn.get("role_id"), limit=128),
+                "status": "skipped",
+                "request_event": None,
+                "reply_event": None,
+                "elapsed_seconds": 0.0,
+                "timeout_seconds": _payload_nonnegative_float(turn.get("timeout_seconds", turn.get("timeout")), 0.0),
+            }
+        )
+    return skipped
+
+
+def _live_agent_turn_sequence_status(answered_count: int, timeout_count: int, skipped_count: int) -> str:
+    if timeout_count == 0 and skipped_count == 0:
+        return "answered"
+    if skipped_count:
+        return "stopped"
+    return "timeout"
+
+
+def _turn_sequence_operation_details(sequence: dict[str, object], meeting_id: str) -> dict[str, object]:
+    results = sequence.get("results") if isinstance(sequence.get("results"), list) else []
+    request_event_ids = []
+    reply_event_ids = []
+    agent_ids = []
+    statuses = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        request_event = item.get("request_event") if isinstance(item.get("request_event"), dict) else {}
+        reply_event = item.get("reply_event") if isinstance(item.get("reply_event"), dict) else {}
+        if request_event.get("id"):
+            request_event_ids.append(str(request_event.get("id") or ""))
+        if reply_event.get("id"):
+            reply_event_ids.append(str(reply_event.get("id") or ""))
+        if item.get("agent_id"):
+            agent_ids.append(str(item.get("agent_id") or ""))
+        if item.get("status"):
+            statuses.append(str(item.get("status") or "unknown"))
+    return {
+        "meeting_id": meeting_id,
+        "turn_count": _payload_nonnegative_int(sequence.get("turn_count"), 0),
+        "answered_count": _payload_nonnegative_int(sequence.get("answered_count"), 0),
+        "timeout_count": _payload_nonnegative_int(sequence.get("timeout_count"), 0),
+        "skipped_count": _payload_nonnegative_int(sequence.get("skipped_count"), 0),
+        "stopped": sequence.get("stopped") is True,
+        "agent_ids": agent_ids,
+        "statuses": statuses,
+        "request_event_ids": request_event_ids,
+        "reply_event_ids": reply_event_ids,
+        "timeout_seconds": _payload_nonnegative_float(sequence.get("timeout_seconds"), 0.0),
+    }
+
+
 def _request_json(
     url: str,
     *,
@@ -1621,6 +1774,43 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json(live_agent)
+                return
+            turn_sequence_meeting_id = _meeting_live_agent_turn_sequence_path(parsed.path)
+            if turn_sequence_meeting_id is not None:
+                payload = self._operation_json_payload(operation="official_turn.sequence")
+                if payload is None:
+                    return
+                try:
+                    sequence = live_agent_turn_sequence_payload(output_root, turn_sequence_meeting_id, payload)
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="official_turn.sequence",
+                        status="failed",
+                        target_id=turn_sequence_meeting_id,
+                        error=str(error),
+                        details={
+                            "meeting_id": turn_sequence_meeting_id,
+                            "turn_count": _payload_turn_count(payload),
+                            "timeout_seconds": _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0),
+                            "stop_on_timeout": _payload_bool(payload.get("stop_on_timeout")),
+                        },
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="official_turn.sequence",
+                    status="success" if sequence.get("status") == "answered" else "degraded",
+                    target_id=turn_sequence_meeting_id,
+                    summary=(
+                        "completed live-agent official turn sequence"
+                        if sequence.get("status") == "answered"
+                        else "live-agent official turn sequence had timeouts"
+                    ),
+                    details=_turn_sequence_operation_details(sequence, turn_sequence_meeting_id),
+                )
+                self._send_json(sequence)
                 return
             turn_call_meeting_id = _meeting_live_agent_turn_call_path(parsed.path)
             if turn_call_meeting_id is not None:

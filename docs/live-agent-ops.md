@@ -144,6 +144,45 @@ python3 -m agentsassemble.cli live-agent call \
 
 The wait path creates the same turn request, then polls the meeting's full `live_events.jsonl` until it finds a verified official reply or reaches the timeout. A reply is accepted only when it is a `kind: "message"` event with `channel: "official"`, `official_record: true`, the requested `actor_id`, and the request event id in `source_event_id`. Lobby messages, wrong-agent replies, wrong-source replies, and generic official messages do not complete the wait. The API returns `status: "answered"` with `request_event`, `reply_event`, timing fields, and visible live events, or `status: "timeout"` with the request event and no fabricated reply. The CLI exits `0` for answered, `1` for timeout, and `2` for transport or validation errors.
 
+Automation can call multiple official turns in order through:
+
+```text
+POST /api/meetings/<meeting_id>/live-agent-turns/sequence
+```
+
+with:
+
+```json
+{
+  "timeout_seconds": 30,
+  "stop_on_timeout": false,
+  "turns": [
+    {
+      "agent_id": "claude-code-live",
+      "role_id": "architect",
+      "display_name": "Claude Code Live",
+      "content": "Give the first official turn.",
+      "turn_id": "round_1:0:architect",
+      "turn_index": 0
+    }
+  ]
+}
+```
+
+The sequence path validates the meeting and every listed agent/content before appending the first request, then runs request → bounded wait one turn at a time. Repeated agents are allowed because replies are matched by `source_event_id`. Top-level `status` is `answered` when every turn answered, `timeout` when at least one turn timed out and the sequence continued, or `stopped` when `stop_on_timeout` skipped remaining turns. Per-turn status is `answered`, `timeout`, or `skipped`.
+
+The CLI wrapper is:
+
+```bash
+python3 -m agentsassemble.cli live-agent call-sequence \
+  --server http://127.0.0.1:8765 \
+  --meeting-id meeting-1 \
+  --turns-file turns.json \
+  --timeout 30
+```
+
+Use `--turns-json` for inline JSON or `--turns-file` for a JSON array. The CLI exits `0` only when the sequence status is `answered`, exits `1` for `timeout` or `stopped`, and exits `2` for transport or validation errors. The sequence endpoint records one sanitized aggregate `official_turn.sequence` operation with ids, counts, statuses, and timing only. The existing `/api/live-agents/<agent_id>/official-turn` reply endpoint still records its normal sanitized `official_turn.reply` entries when residents answer. Neither operation type records turn prompts, reply content, endpoints, config paths, auth refs, command arguments, or logs.
+
 The resident runner answers by posting to:
 
 ```text

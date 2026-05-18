@@ -1225,6 +1225,35 @@ Do not update `decision.md`, Decision Gate, tasks, memory, `meeting.json`, opera
 
 ---
 
+### Task 40: Official Turn Sequence Primitive
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for ordered official turn sequences**
+
+Cover the backend sequence endpoint, ordered two-agent success, timeout continuation, stop-on-timeout skipped turns, all-turn validation before the first append, CLI parser, inline JSON/file JSON loading, CLI exit codes, and operation-history privacy.
+
+- [x] **Step 2: Reuse the single-turn request/wait contract**
+
+Add `POST /api/meetings/<meeting_id>/live-agent-turns/sequence` as a server-side loop that validates every requested turn first, then creates one request and waits for its verified official reply before moving to the next turn.
+
+- [x] **Step 3: Expose CLI sequence control**
+
+Add `assemble live-agent call-sequence` with `--turns-json` or `--turns-file`, a per-turn default `--timeout`, `--stop-on-timeout`, JSON output, bounded HTTP timeout, and exit `0` only when every turn answered.
+
+- [x] **Step 4: Preserve artifact and operation boundaries**
+
+Write only the normal live request/reply events, the normal sanitized per-reply `official_turn.reply` entries produced by the reply endpoint, and one sanitized aggregate `official_turn.sequence` operation. Do not write transcript files, decision artifacts, tasks, memory, meeting records, prompts, reply text, endpoints, config paths, auth refs, commands, or logs.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

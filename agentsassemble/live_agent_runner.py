@@ -123,7 +123,11 @@ class LiveAgentRunner:
                     "turn_index": _optional_int(candidate.get("turn_index")),
                 },
             )
-            self._record_reply_success(response.get("event"), cursor_field="last_observed_live_event_id")
+            self._record_reply_success(
+                response.get("event"),
+                cursor_field="last_observed_live_event_id",
+                observed_event_id=source_event_id,
+            )
             return 1
 
         events = _lobby_events(room)
@@ -199,9 +203,17 @@ class LiveAgentRunner:
             return None
         return source_event_id, reply
 
-    def _record_reply_success(self, event_payload: object, *, cursor_field: str) -> None:
+    def _record_reply_success(
+        self,
+        event_payload: object,
+        *,
+        cursor_field: str,
+        observed_event_id: str | None = None,
+    ) -> None:
         event = event_payload if isinstance(event_payload, dict) else {}
-        if event.get("id"):
+        if observed_event_id:
+            self._set_cursor(cursor_field, observed_event_id)
+        elif event.get("id"):
             self._set_cursor(cursor_field, str(event["id"]))
         self.last_reply_at = self.now_fn()
         self.last_error_at = None

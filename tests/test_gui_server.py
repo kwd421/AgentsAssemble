@@ -28,6 +28,7 @@ from agentsassemble.gui import (
     codex_session_invite_payload,
     codex_sessions_payload,
     connect_live_agent_payload,
+    live_agent_turn_sequence_payload,
     live_agent_turn_request_payload,
     live_agents_payload,
     send_lobby_message_to_remote_bridge,
@@ -2505,6 +2506,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(reply_event["display_name"], "Agent A")
             self.assertEqual(reply_event["turn_id"], "round_1:0:architect")
             self.assertEqual(reply_event["engagement_mode"], "moderator_called")
+            self.assertEqual(replied["agent"]["last_observed_live_event_id"], request_event["id"])
             self.assertNotIn("private target-B instruction", [event.get("content") for event in replied["live_events"]])
             self.assertEqual(lobby["events"], [])
             self.assertEqual([item["operation"] for item in operations["operations"]], ["official_turn.request", "official_turn.reply"])
@@ -2663,6 +2665,239 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(official_replies, [])
             call_operations = [item for item in operations["operations"] if item["operation"] == "official_turn.call"]
             self.assertEqual(call_operations[0]["status"], "degraded")
+
+    def test_live_agent_official_turn_sequence_calls_agents_in_order(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            for agent_id, display_name in (("agent-a", "Agent A"), ("agent-b", "Agent B")):
+                connect_live_agent_payload(
+                    root,
+                    {
+                        "agent_id": agent_id,
+                        "display_name": display_name,
+                        "provider_kind": "local_cli",
+                        "connection_kind": "local_cli",
+                        "meeting_id": "m1",
+                        "engagement_mode": "moderator_called",
+                    },
+                )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            errors = []
+            answered_request_ids = set()
+
+            def answer_sequence_requests():
+                try:
+                    deadline = time.time() + 4
+                    while time.time() < deadline and len(answered_request_ids) < 2:
+                        for event in read_live_events(meeting_dir, limit=None):
+                            if event.get("kind") != "live_agent_turn_request":
+                                continue
+                            if event["id"] in answered_request_ids:
+                                continue
+                            agent_id = event["target_agent_id"]
+                            reply_request = Request(
+                                f"http://127.0.0.1:{server.server_port}/api/live-agents/{agent_id}/official-turn",
+                                data=json.dumps(
+                                    {
+                                        "meeting_id": "m1",
+                                        "source_event_id": event["id"],
+                                        "content": f"{agent_id} official reply",
+                                    }
+                                ).encode("utf-8"),
+                                headers={"Content-Type": "application/json"},
+                                method="POST",
+                            )
+                            with urlopen(reply_request, timeout=4) as response:
+                                response.read()
+                            answered_request_ids.add(event["id"])
+                        time.sleep(0.01)
+                except Exception as error:  # pragma: no cover - failure is asserted below
+                    errors.append(error)
+
+            responder = threading.Thread(target=answer_sequence_requests, daemon=True)
+            responder.start()
+            try:
+                sequence_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/live-agent-turns/sequence",
+                    data=json.dumps(
+                        {
+                            "timeout_seconds": 2,
+                            "turns": [
+                                {
+                                    "agent_id": "agent-a",
+                                    "role_id": "architect",
+                                    "display_name": "Agent A",
+                                    "turn_id": "round_1:0:architect",
+                                    "turn_index": 0,
+                                    "content": "private prompt for A",
+                                },
+                                {
+                                    "agent_id": "agent-b",
+                                    "role_id": "critic",
+                                    "display_name": "Agent B",
+                                    "turn_id": "round_1:1:critic",
+                                    "turn_index": 1,
+                                    "content": "private prompt for B",
+                                },
+                            ],
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(sequence_request, timeout=6) as response:
+                    sequence = json.loads(response.read().decode("utf-8"))
+                responder.join(timeout=2)
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            if errors:
+                raise errors[0]
+            self.assertEqual(sequence["status"], "answered")
+            self.assertEqual(sequence["answered_count"], 2)
+            self.assertEqual(sequence["timeout_count"], 0)
+            self.assertEqual(sequence["skipped_count"], 0)
+            self.assertEqual([result["agent_id"] for result in sequence["results"]], ["agent-a", "agent-b"])
+            self.assertEqual([result["status"] for result in sequence["results"]], ["answered", "answered"])
+            self.assertEqual(sequence["results"][0]["reply_event"]["actor_id"], "agent-a")
+            self.assertEqual(sequence["results"][1]["reply_event"]["actor_id"], "agent-b")
+            self.assertEqual(sequence["results"][1]["request_event"]["turn_index"], 1)
+            transcript = build_meeting_payload(meeting_dir)["artifacts"]["transcript.md"]
+            self.assertIn("agent-a official reply", transcript)
+            self.assertIn("agent-b official reply", transcript)
+            self.assertNotIn("private prompt for A", transcript)
+            self.assertNotIn("private prompt for B", transcript)
+            sequence_operations = [item for item in operations["operations"] if item["operation"] == "official_turn.sequence"]
+            self.assertEqual(len(sequence_operations), 1)
+            self.assertEqual(sequence_operations[0]["status"], "success")
+            operation_names = [item["operation"] for item in operations["operations"]]
+            self.assertEqual(operation_names.count("official_turn.reply"), 2)
+            self.assertEqual(operation_names.count("official_turn.sequence"), 1)
+            operation_blob = json.dumps(operations["operations"], ensure_ascii=False)
+            self.assertNotIn("private prompt for A", operation_blob)
+            self.assertNotIn("agent-a official reply", operation_blob)
+
+    def test_live_agent_official_turn_sequence_can_continue_after_timeout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            for agent_id in ("agent-a", "agent-b"):
+                connect_live_agent_payload(root, {"agent_id": agent_id, "display_name": agent_id, "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                sequence_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/live-agent-turns/sequence",
+                    data=json.dumps(
+                        {
+                            "timeout_seconds": 0,
+                            "turns": [
+                                {"agent_id": "agent-a", "content": "first prompt"},
+                                {"agent_id": "agent-b", "content": "second prompt"},
+                            ],
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(sequence_request, timeout=4) as response:
+                    sequence = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(sequence["status"], "timeout")
+            self.assertEqual(sequence["answered_count"], 0)
+            self.assertEqual(sequence["timeout_count"], 2)
+            self.assertEqual(sequence["skipped_count"], 0)
+            self.assertFalse(sequence["stopped"])
+            self.assertEqual([result["agent_id"] for result in sequence["results"]], ["agent-a", "agent-b"])
+            request_events = [
+                event for event in read_live_events(meeting_dir, limit=None) if event.get("kind") == "live_agent_turn_request"
+            ]
+            self.assertEqual([event["target_agent_id"] for event in request_events], ["agent-a", "agent-b"])
+            sequence_operations = [item for item in operations["operations"] if item["operation"] == "official_turn.sequence"]
+            self.assertEqual(sequence_operations[0]["status"], "degraded")
+
+    def test_live_agent_official_turn_sequence_can_stop_after_timeout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            for agent_id in ("agent-a", "agent-b"):
+                connect_live_agent_payload(root, {"agent_id": agent_id, "display_name": agent_id, "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                sequence_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/live-agent-turns/sequence",
+                    data=json.dumps(
+                        {
+                            "timeout_seconds": 0,
+                            "stop_on_timeout": True,
+                            "turns": [
+                                {"agent_id": "agent-a", "content": "first prompt"},
+                                {"agent_id": "agent-b", "content": "second prompt"},
+                            ],
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(sequence_request, timeout=4) as response:
+                    sequence = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(sequence["status"], "stopped")
+            self.assertEqual(sequence["timeout_count"], 1)
+            self.assertEqual(sequence["skipped_count"], 1)
+            self.assertTrue(sequence["stopped"])
+            self.assertEqual([result["agent_id"] for result in sequence["results"]], ["agent-a", "agent-b"])
+            self.assertEqual([result["status"] for result in sequence["results"]], ["timeout", "skipped"])
+            request_events = [
+                event for event in read_live_events(meeting_dir, limit=None) if event.get("kind") == "live_agent_turn_request"
+            ]
+            self.assertEqual([event["target_agent_id"] for event in request_events], ["agent-a"])
+
+    def test_live_agent_official_turn_sequence_validates_all_turns_before_append(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+
+            with self.assertRaises(ValueError):
+                live_agent_turn_sequence_payload(
+                    root,
+                    "m1",
+                    {
+                        "timeout_seconds": 0,
+                        "turns": [
+                            {"agent_id": "agent-a", "content": "valid first prompt"},
+                            {"agent_id": "agent-b", "content": "invalid second prompt"},
+                        ],
+                    },
+                )
+
+            self.assertEqual(read_live_events(meeting_dir, limit=None), [])
 
     def test_live_agent_official_turn_request_rejects_meeting_id_path_traversal(self):
         with tempfile.TemporaryDirectory() as temp_dir:
