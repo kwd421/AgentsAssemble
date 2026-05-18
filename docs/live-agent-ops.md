@@ -303,6 +303,15 @@ For a clean doctor run, start the GUI with a temporary `--output-root` and point
 
 The GUI "상주 실행" panel exposes the same local diagnostic as the `진단` button. It calls `POST /api/live-agent-smoke`, starts the same temporary fake `local_cli`, `live_session`, and fake `remote_bridge` group, verifies the smoke replies by `source_event_id` and live-agent endpoint evidence, then refreshes the lobby, presence roster, and process records. Use it when you want operator-visible evidence without leaving the room UI.
 
+For the moderator-called official-turn path, run the official round smoke:
+
+```bash
+python3 -m agentsassemble.cli live-agent official-round-smoke \
+  --server http://127.0.0.1:8765
+```
+
+That command calls `POST /api/live-agent-official-round-smoke`. The server creates a diagnostic meeting, binds three fake resident agents to its roles, starts the group in `moderator_called` mode, calls the same `/api/meetings/<meeting_id>/live-agent-turns/round` endpoint used by real operator rounds, waits for official replies, and stops the group. It is still credential-free and omits prompt text, reply text, config paths, endpoint URLs, auth refs, command arguments, tokens, and log tails from the smoke response and operation history.
+
 Use `--json` when another script needs machine-readable evidence:
 
 ```bash

@@ -874,6 +874,66 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("agentsassemble-smoke-token", persisted_text)
             self.assertNotIn("auth_ref", persisted_text)
 
+    def test_live_agent_official_round_smoke_endpoint_runs_credential_free_round(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-official-round-smoke",
+                    data=json.dumps({"group_id": "round-smoke", "timeout": 8}).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=45) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["group_id"], "round-smoke")
+            self.assertEqual(payload["round_id"], "official_round_smoke")
+            self.assertEqual(payload["turn_count"], 3)
+            self.assertEqual(payload["answered_count"], 3)
+            self.assertEqual(payload["timeout_count"], 0)
+            self.assertEqual(payload["skipped_count"], 0)
+            self.assertEqual(len(payload["request_event_ids"]), 3)
+            self.assertEqual(len(payload["reply_event_ids"]), 3)
+            meeting_dir = root / "meetings" / payload["meeting_id"]
+            live_events = read_live_events(meeting_dir, limit=None)
+            requests = [event for event in live_events if event.get("kind") == "live_agent_turn_request"]
+            replies = [event for event in live_events if event.get("kind") == "message" and event.get("official_record") is True]
+            self.assertEqual(len(requests), 3)
+            self.assertEqual(len(replies), 3)
+            self.assertEqual({reply["source_event_id"] for reply in replies}, {request["id"] for request in requests})
+            self.assertEqual(read_lobby(root), [])
+            processes = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+            group = next(item for item in processes["groups"] if item["group_id"] == "round-smoke")
+            self.assertEqual(group["status"], "stopped")
+            self.assertIn(("smoke.official_round", "success", "round-smoke"), [
+                (operation["operation"], operation["status"], operation["target_id"])
+                for operation in operations["operations"]
+            ])
+            operation_blob = json.dumps(operations["operations"], ensure_ascii=False)
+            self.assertNotIn("smoke local_cli ok", operation_blob)
+            self.assertNotIn("smoke live_session ok", operation_blob)
+            self.assertNotIn("smoke remote_bridge ok", operation_blob)
+            self.assertNotIn("agentsassemble-smoke-token", operation_blob)
+            self.assertNotIn("auth_ref", operation_blob)
+            self.assertNotIn("config_path", operation_blob)
+            self.assertNotIn("endpoint", operation_blob)
+            self.assertNotIn("log_path", operation_blob)
+            self.assertNotIn("command", operation_blob)
+
     def test_live_agent_readiness_endpoint_uses_pre_smoke_health_and_runs_smoke(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

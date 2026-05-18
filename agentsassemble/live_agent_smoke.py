@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 import tempfile
 import threading
@@ -11,9 +12,13 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from agentsassemble.meeting_events import write_live_state
+
 
 RequestJson = Callable[..., dict[str, object]]
 SMOKE_BRIDGE_TOKEN = "agentsassemble-smoke-token"
+OFFICIAL_ROUND_SMOKE_ROUND_ID = "official_round_smoke"
+SMOKE_GROUP_ID_LIMIT = 48
 
 
 class LiveAgentSmokeFailed(Exception):
@@ -178,6 +183,167 @@ def build_live_agent_smoke_config(
     }
 
 
+def run_live_agent_official_round_smoke(
+    *,
+    output_root: Path,
+    server: str,
+    group_id: str = "",
+    timeout_seconds: float = 12.0,
+    request_json: RequestJson,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    python_executable: str = sys.executable,
+    temp_dir_factory: Callable[[], object] = tempfile.TemporaryDirectory,
+) -> dict[str, object]:
+    clean_group_id = smoke_group_id(group_id or f"round-smoke-{int(time.time() * 1000)}")
+    meeting_id = f"official-round-smoke-{clean_group_id}"
+    agent_ids = {
+        "local_cli": f"{clean_group_id}-local-cli",
+        "live_session": f"{clean_group_id}-live-session",
+        "remote_bridge": f"{clean_group_id}-remote-bridge",
+    }
+    role_ids = {
+        "local_cli": "smoke_local_cli",
+        "live_session": "smoke_live_session",
+        "remote_bridge": "smoke_remote_bridge",
+    }
+    group: dict[str, object] | None = None
+    stopped_group: dict[str, object] = {}
+    with _SmokeRemoteBridgeServer() as bridge:
+        _write_official_round_smoke_meeting(output_root, meeting_id=meeting_id, agent_ids=agent_ids, role_ids=role_ids)
+        seed_official_round_smoke_agents(
+            server,
+            meeting_id=meeting_id,
+            agent_ids=agent_ids,
+            request_json=request_json,
+            bridge_endpoint=bridge["endpoint"],
+        )
+
+        with temp_dir_factory() as temp_dir:
+            config_path = Path(temp_dir).resolve() / "live-agents.json"
+            config = build_live_agent_official_round_smoke_config(
+                server=server,
+                meeting_id=meeting_id,
+                agent_ids=agent_ids,
+                python_executable=python_executable,
+                bridge_endpoint=bridge["endpoint"],
+                bridge_auth_ref=bridge["auth_ref"],
+                timeout_seconds=float(timeout_seconds),
+            )
+            config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+            try:
+                request_json(
+                    _server_url(server, "/api/live-agent-processes/start"),
+                    method="POST",
+                    payload={
+                        "config_path": str(config_path),
+                        "server": server,
+                        "group_id": clean_group_id,
+                        "diagnostic": True,
+                    },
+                )
+                round_result = request_json(
+                    _server_url(
+                        server,
+                        f"/api/meetings/{urllib.parse.quote(meeting_id, safe='')}/live-agent-turns/round",
+                    ),
+                    method="POST",
+                    payload={
+                        "round_id": OFFICIAL_ROUND_SMOKE_ROUND_ID,
+                        "timeout_seconds": float(timeout_seconds),
+                        "stop_on_timeout": False,
+                    },
+                    timeout_seconds=_smoke_operation_http_timeout(float(timeout_seconds), windows=4),
+                )
+            finally:
+                group = find_process_group(request_json(_server_url(server, "/api/live-agent-processes")), clean_group_id)
+                if group is not None and group.get("status") in {"running", "restarting"}:
+                    stop_payload = request_json(
+                        _server_url(server, f"/api/live-agent-processes/{urllib.parse.quote(clean_group_id, safe='')}/stop"),
+                        method="POST",
+                        payload={},
+                    )
+                    stopped_group = stop_payload.get("group") if isinstance(stop_payload.get("group"), dict) else {}
+                elif group is not None:
+                    stopped_group = group
+                sleep_fn(0)
+
+    return _safe_official_round_smoke_result(
+        round_result,
+        group_id=clean_group_id,
+        meeting_id=meeting_id,
+        agent_ids=list(agent_ids.values()),
+        role_ids=list(role_ids.values()),
+        stopped_group=stopped_group,
+        timeout_seconds=float(timeout_seconds),
+    )
+
+
+def build_live_agent_official_round_smoke_config(
+    *,
+    server: str,
+    meeting_id: str,
+    agent_ids: dict[str, str],
+    python_executable: str = sys.executable,
+    bridge_endpoint: str,
+    bridge_auth_ref: str,
+    timeout_seconds: float = 12.0,
+) -> dict[str, object]:
+    config = build_live_agent_smoke_config(
+        server=server,
+        agent_ids=agent_ids,
+        python_executable=python_executable,
+        bridge_endpoint=bridge_endpoint,
+        bridge_auth_ref=bridge_auth_ref,
+    )
+    config["max_ticks"] = _official_round_smoke_max_ticks(
+        timeout_seconds,
+        poll_interval=float(config.get("poll_interval") or 0.05),
+    )
+    for agent in config["agents"]:
+        if not isinstance(agent, dict):
+            continue
+        agent["engagement_mode"] = "moderator_called"
+        agent["meeting_id"] = meeting_id
+    return config
+
+
+def seed_official_round_smoke_agents(
+    server: str,
+    *,
+    meeting_id: str,
+    agent_ids: dict[str, str],
+    request_json: RequestJson,
+    bridge_endpoint: str = "",
+) -> None:
+    specs = [
+        (agent_ids["local_cli"], "Smoke Local CLI", "local_cli", "local_cli"),
+        (agent_ids["live_session"], "Smoke Live Session", "local_cli", "live_session"),
+        (agent_ids["remote_bridge"], "Smoke Remote Bridge", "remote_http_bridge", "remote_bridge"),
+    ]
+    for agent_id, display_name, provider_kind, connection_kind in specs:
+        request_json(
+            _server_url(server, "/api/live-agents"),
+            method="POST",
+            payload={
+                "agent_id": agent_id,
+                "display_name": display_name,
+                "provider_kind": provider_kind,
+                "connection_kind": connection_kind,
+                "session_id": "",
+                "endpoint": bridge_endpoint if connection_kind == "remote_bridge" else "",
+                "meeting_id": meeting_id,
+                "engagement_mode": "moderator_called",
+                "capabilities": ["room_chat", "mentions", "official_turns"],
+                "diagnostic": True,
+            },
+        )
+        request_json(
+            _server_url(server, f"/api/live-agents/{urllib.parse.quote(agent_id, safe='')}/heartbeat"),
+            method="POST",
+            payload={"status": "online", "diagnostic": True},
+        )
+
+
 def seed_smoke_agent_cursors(
     server: str,
     *,
@@ -268,7 +434,9 @@ def find_process_group(payload: dict[str, object], group_id: str) -> dict[str, o
 
 def smoke_group_id(value: object) -> str:
     cleaned = "".join(char if _is_ascii_group_id_char(char) else "-" for char in str(value or "").strip()).strip(".-")
-    return cleaned or f"smoke-{int(time.time() * 1000)}"
+    if not cleaned:
+        cleaned = f"smoke-{int(time.time() * 1000)}"
+    return cleaned[:SMOKE_GROUP_ID_LIMIT].strip(".-") or f"smoke-{int(time.time() * 1000)}"
 
 
 def _matching_smoke_replies(
@@ -315,6 +483,126 @@ def _latest_lobby_event_id(payload: dict[str, object]) -> str:
 def _event_id(payload: dict[str, object]) -> str:
     event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
     return str(event.get("id") or "") if isinstance(event, dict) else ""
+
+
+def _write_official_round_smoke_meeting(
+    output_root: Path,
+    *,
+    meeting_id: str,
+    agent_ids: dict[str, str],
+    role_ids: dict[str, str],
+) -> None:
+    meeting_dir = output_root / "meetings" / meeting_id
+    meeting_dir.mkdir(parents=True, exist_ok=True)
+    roles = [
+        {
+            "id": role_ids["local_cli"],
+            "display_name": "Smoke Local CLI",
+            "lens": "Credential-free local CLI official turn smoke.",
+            "research_focus": "Verify official round dispatch through local_cli.",
+        },
+        {
+            "id": role_ids["live_session"],
+            "display_name": "Smoke Live Session",
+            "lens": "Credential-free JSONL live session official turn smoke.",
+            "research_focus": "Verify official round dispatch through live_session.",
+        },
+        {
+            "id": role_ids["remote_bridge"],
+            "display_name": "Smoke Remote Bridge",
+            "lens": "Credential-free loopback remote bridge official turn smoke.",
+            "research_focus": "Verify official round dispatch through remote_bridge.",
+        },
+    ]
+    write_live_state(
+        meeting_dir,
+        {
+            "meeting_id": meeting_id,
+            "topic": "Official round live-agent smoke",
+            "question": "Can credential-free resident agents answer a moderator-called official round?",
+            "live_status": "running",
+            "roles": roles,
+            "agent_bindings": [
+                {"role_id": role_ids["local_cli"], "agent_id": agent_ids["local_cli"]},
+                {"role_id": role_ids["live_session"], "agent_id": agent_ids["live_session"]},
+                {"role_id": role_ids["remote_bridge"], "agent_id": agent_ids["remote_bridge"]},
+            ],
+            "meeting_template": {
+                "rounds": [
+                    {
+                        "id": OFFICIAL_ROUND_SMOKE_ROUND_ID,
+                        "title": "Official Round Smoke",
+                        "instruction": "Return one concise credential-free smoke reply.",
+                        "turn_control": {"selection": "all_roles"},
+                    }
+                ]
+            },
+            "debate_rounds": [],
+        },
+    )
+
+
+def _safe_official_round_smoke_result(
+    round_result: dict[str, object],
+    *,
+    group_id: str,
+    meeting_id: str,
+    agent_ids: list[str],
+    role_ids: list[str],
+    stopped_group: dict[str, object],
+    timeout_seconds: float,
+) -> dict[str, object]:
+    results = round_result.get("results") if isinstance(round_result.get("results"), list) else []
+    request_event_ids = []
+    reply_event_ids = []
+    statuses = []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        statuses.append(str(result.get("status") or "unknown"))
+        request_event = result.get("request_event") if isinstance(result.get("request_event"), dict) else {}
+        reply_event = result.get("reply_event") if isinstance(result.get("reply_event"), dict) else {}
+        if request_event.get("id"):
+            request_event_ids.append(str(request_event.get("id") or ""))
+        if reply_event.get("id"):
+            reply_event_ids.append(str(reply_event.get("id") or ""))
+    stopped = stopped_group.get("status") == "stopped"
+    return {
+        "status": "ok" if round_result.get("status") == "answered" and stopped else "failed",
+        "group_id": group_id,
+        "meeting_id": meeting_id,
+        "round_id": str(round_result.get("round_id") or OFFICIAL_ROUND_SMOKE_ROUND_ID),
+        "agent_ids": agent_ids,
+        "role_ids": role_ids,
+        "turn_count": _nonnegative_int(round_result.get("turn_count")),
+        "answered_count": _nonnegative_int(round_result.get("answered_count")),
+        "timeout_count": _nonnegative_int(round_result.get("timeout_count")),
+        "skipped_count": _nonnegative_int(round_result.get("skipped_count")),
+        "stopped": stopped,
+        "stopped_group_status": str(stopped_group.get("status") or ""),
+        "timeout_seconds": max(0.0, float(timeout_seconds)),
+        "statuses": statuses,
+        "request_event_ids": request_event_ids,
+        "reply_event_ids": reply_event_ids,
+    }
+
+
+def _nonnegative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _official_round_smoke_max_ticks(timeout_seconds: float, *, poll_interval: float) -> int:
+    interval = max(0.01, float(poll_interval))
+    return math.ceil(_smoke_operation_http_timeout(timeout_seconds, windows=4) / interval) + 20
+
+
+def _smoke_operation_http_timeout(wait_seconds: float, *, windows: int = 1) -> float:
+    return max(10.0, float(wait_seconds) * max(1, int(windows)) + 6.0)
 
 
 def _is_ascii_group_id_char(char: str) -> bool:

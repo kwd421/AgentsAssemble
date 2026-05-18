@@ -608,6 +608,27 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.timeout, 8.0)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_official_round_smoke_parses_operator_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "official-round-smoke",
+                "--server",
+                "http://room.local",
+                "--group-id",
+                "round-smoke",
+                "--timeout",
+                "8",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "official-round-smoke")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.group_id, "round-smoke")
+        self.assertEqual(args.timeout, 8.0)
+        self.assertTrue(args.as_json)
+
     def test_live_agent_doctor_parses_operator_options(self):
         args = build_parser().parse_args(
             [
@@ -1325,6 +1346,43 @@ class CliTimeoutTests(unittest.TestCase):
             payload={"group_id": "operator-smoke", "timeout": 12.0},
             timeout_seconds=18.0,
         )
+
+    def test_live_agent_official_round_smoke_posts_endpoint_and_prints_summary(self):
+        payload = {
+            "status": "ok",
+            "group_id": "round-smoke",
+            "meeting_id": "official-round-smoke-round-smoke",
+            "round_id": "official_round_smoke",
+            "turn_count": 3,
+            "answered_count": 3,
+            "timeout_count": 0,
+            "skipped_count": 0,
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "official-round-smoke",
+                        "--server",
+                        "http://room.local",
+                        "--group-id",
+                        "round-smoke",
+                        "--timeout",
+                        "8",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-official-round-smoke",
+            method="POST",
+            payload={"group_id": "round-smoke", "timeout": 8.0},
+            timeout_seconds=38.0,
+        )
+        self.assertIn("official round smoke ok: round-smoke", stdout.getvalue())
+        self.assertIn("3 answered, 0 timed out, 0 skipped", stdout.getvalue())
 
     def test_live_agent_doctor_json_exits_one_when_not_ready(self):
         payload = {

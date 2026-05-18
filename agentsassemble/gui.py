@@ -27,7 +27,7 @@ from agentsassemble.live_agent_operations import append_live_agent_operation, re
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_rounds import build_official_round_turns
-from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
+from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_official_round_smoke, run_live_agent_smoke
 from agentsassemble.live_agent_turns import wait_for_official_turn_reply
 from agentsassemble.live_transcript import projected_live_transcript_text
 from agentsassemble.meeting import run_demo_meeting
@@ -703,6 +703,21 @@ def live_agent_preflight_payload(payload: dict[str, object], *, default_server: 
 
 def live_agent_smoke_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
     return run_live_agent_smoke(
+        server=default_server,
+        group_id=str(payload.get("group_id") or ""),
+        timeout_seconds=_payload_nonnegative_float(payload.get("timeout"), 12.0),
+        request_json=_request_json,
+    )
+
+
+def live_agent_official_round_smoke_payload(
+    output_root: Path,
+    payload: dict[str, object],
+    *,
+    default_server: str,
+) -> dict[str, object]:
+    return run_live_agent_official_round_smoke(
+        output_root=output_root,
         server=default_server,
         group_id=str(payload.get("group_id") or ""),
         timeout_seconds=_payload_nonnegative_float(payload.get("timeout"), 12.0),
@@ -1559,6 +1574,19 @@ def _safe_payload_role_ids(value: object) -> list[str]:
     return role_ids
 
 
+def _safe_payload_strings(value: object, *, limit: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    strings = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        text = clean_lobby_text(item, limit=limit)
+        if text:
+            strings.append(text)
+    return strings
+
+
 def _validate_live_agent_turn_sequence(output_root: Path, meeting_id: str, turns: list[dict[str, object]]) -> str:
     clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
     meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
@@ -1660,6 +1688,26 @@ def _turn_round_operation_details(round_result: dict[str, object], meeting_id: s
     return details
 
 
+def _official_round_smoke_operation_details(smoke: dict[str, object]) -> dict[str, object]:
+    return {
+        "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
+        "result_status": _operation_result_status(smoke.get("status")),
+        "meeting_id": clean_lobby_text(smoke.get("meeting_id"), limit=128),
+        "round_id": clean_lobby_text(smoke.get("round_id"), limit=128),
+        "agent_ids": _safe_payload_strings(smoke.get("agent_ids"), limit=64),
+        "role_ids": _safe_payload_strings(smoke.get("role_ids"), limit=128),
+        "turn_count": _payload_nonnegative_int(smoke.get("turn_count"), 0),
+        "answered_count": _payload_nonnegative_int(smoke.get("answered_count"), 0),
+        "timeout_count": _payload_nonnegative_int(smoke.get("timeout_count"), 0),
+        "skipped_count": _payload_nonnegative_int(smoke.get("skipped_count"), 0),
+        "stopped": smoke.get("stopped") is True,
+        "timeout_seconds": _payload_nonnegative_float(smoke.get("timeout_seconds"), 0.0),
+        "statuses": _safe_payload_strings(smoke.get("statuses"), limit=32),
+        "request_event_ids": _safe_payload_strings(smoke.get("request_event_ids"), limit=128),
+        "reply_event_ids": _safe_payload_strings(smoke.get("reply_event_ids"), limit=128),
+    }
+
+
 def _turn_round_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:
     return {
         "meeting_id": meeting_id,
@@ -1675,6 +1723,7 @@ def _request_json(
     *,
     method: str = "GET",
     payload: dict[str, object] | None = None,
+    timeout_seconds: float = 15.0,
 ) -> dict[str, object]:
     data = None
     headers = {}
@@ -1682,7 +1731,7 @@ def _request_json(
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -2197,6 +2246,38 @@ def _make_handler(
                     target_id=str(smoke.get("group_id") or payload.get("group_id") or ""),
                     summary="ran credential-free live-agent smoke",
                     details={"group_id": str(smoke.get("group_id") or ""), "result_status": result_status},
+                )
+                self._send_json(smoke)
+                return
+            if parsed.path == "/api/live-agent-official-round-smoke":
+                payload = self._operation_json_payload(operation="smoke.official_round")
+                if payload is None:
+                    return
+                try:
+                    smoke = live_agent_official_round_smoke_payload(
+                        output_root,
+                        payload,
+                        default_server=self._local_server_url(),
+                    )
+                except (LiveAgentSmokeFailed, ValueError, urllib.error.URLError) as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="smoke.official_round",
+                        status="failed",
+                        target_id=str(payload.get("group_id") or ""),
+                        error=str(error),
+                        details={"group_id": str(payload.get("group_id") or "")},
+                    )
+                    self._send_error(HTTPStatus.BAD_GATEWAY, str(error))
+                    return
+                result_status = _operation_result_status(smoke.get("status"))
+                record_live_agent_operation(
+                    output_root,
+                    operation="smoke.official_round",
+                    status=_operation_success_for_result(result_status, success_values={"ok"}),
+                    target_id=str(smoke.get("group_id") or payload.get("group_id") or ""),
+                    summary="ran credential-free official round smoke",
+                    details=_official_round_smoke_operation_details(smoke),
                 )
                 self._send_json(smoke)
                 return

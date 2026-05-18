@@ -256,6 +256,15 @@ def build_parser() -> argparse.ArgumentParser:
     live_smoke.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait for fake agent replies.")
     live_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable smoke result.")
 
+    live_official_round_smoke = live_agent_subparsers.add_parser(
+        "official-round-smoke",
+        parents=[live_server],
+        help="Run credential-free fake agents through a moderator-called official round.",
+    )
+    live_official_round_smoke.add_argument("--group-id", default="", help="Optional supervised process group id for the smoke run.")
+    live_official_round_smoke.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait per fake official turn.")
+    live_official_round_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable smoke result.")
+
     live_doctor = live_agent_subparsers.add_parser(
         "doctor",
         parents=[live_server],
@@ -489,6 +498,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_preflight(args)
         if args.live_agent_command == "smoke":
             return _run_live_agent_smoke(args)
+        if args.live_agent_command == "official-round-smoke":
+            return _run_live_agent_official_round_smoke(args)
         if args.live_agent_command == "doctor":
             return _run_live_agent_doctor(args)
         if args.live_agent_command == "probe":
@@ -832,6 +843,26 @@ def _run_live_agent_smoke(args: argparse.Namespace) -> int:
         for reply in result["replies"]:
             print(f"- {reply['actor_id']}: {reply['message']}")
     return 0
+
+
+def _run_live_agent_official_round_smoke(args: argparse.Namespace) -> int:
+    result = _request_json(
+        _server_url(args.server, "/api/live-agent-official-round-smoke"),
+        method="POST",
+        payload={"group_id": args.group_id, "timeout": float(args.timeout)},
+        timeout_seconds=_operation_http_timeout(float(args.timeout), windows=4),
+    )
+    if args.as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(
+            f"official round smoke {result.get('status') or 'unknown'}: "
+            f"{result.get('group_id') or args.group_id or 'smoke'} "
+            f"({result.get('answered_count', 0)} answered, "
+            f"{result.get('timeout_count', 0)} timed out, "
+            f"{result.get('skipped_count', 0)} skipped)"
+        )
+    return 0 if result.get("status") == "ok" else 1
 
 
 def _run_live_agent_doctor(args: argparse.Namespace) -> int:
