@@ -623,6 +623,8 @@ class CliTimeoutTests(unittest.TestCase):
                 "agent-a",
                 "--probe-agent",
                 "agent-b",
+                "--probe-group",
+                "resident-main",
                 "--json",
             ]
         )
@@ -632,6 +634,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.group_id, "doctor-smoke")
         self.assertEqual(args.timeout, 8.0)
         self.assertEqual(args.probe_agent_ids, ["agent-a", "agent-b"])
+        self.assertEqual(args.probe_group_ids, ["resident-main"])
         self.assertTrue(args.as_json)
 
     def test_live_agent_preflight_parses_operator_options(self):
@@ -840,6 +843,65 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("health: ok", output)
         self.assertIn("smoke: ok doctor-smoke", output)
         self.assertIn("probes: agent-a ok", output)
+
+    def test_live_agent_doctor_posts_probe_group_request_with_conservative_timeout(self):
+        payload = {
+            "status": "ready",
+            "checks": [{"id": "health", "status": "ok"}, {"id": "smoke", "status": "ok"}],
+            "health": {"status": "ok", "agents": {"attention": []}, "processes": {"attention": []}},
+            "smoke": {"status": "ok", "group_id": "doctor-smoke", "replies": []},
+            "probe_groups": [{"status": "ok", "group_id": "resident-main", "agent_ids": ["agent-a", "agent-b"]}],
+            "probes": [
+                {"status": "ok", "agent_id": "agent-a", "reply_event_id": "reply-a"},
+                {"status": "ok", "agent_id": "agent-b", "reply_event_id": "reply-b"},
+            ],
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "doctor",
+                        "--server",
+                        "http://room.local",
+                        "--group-id",
+                        "doctor-smoke",
+                        "--timeout",
+                        "8",
+                        "--probe-group",
+                        "resident-main",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-readiness",
+            method="POST",
+            payload={"group_id": "doctor-smoke", "timeout": 8.0, "probe_group_ids": ["resident-main"]},
+            timeout_seconds=94.0,
+        )
+        self.assertIn("probes: agent-a ok, agent-b ok", stdout.getvalue())
+
+    def test_live_agent_doctor_prints_probe_group_refusal_reason(self):
+        payload = {
+            "status": "failed",
+            "checks": [
+                {"id": "health", "status": "degraded"},
+                {"id": "smoke", "status": "ok"},
+                {"id": "probe_group:stopped-group", "status": "failed"},
+            ],
+            "health": {"status": "degraded", "agents": {"attention": []}, "processes": {"attention": ["stopped-group"]}},
+            "smoke": {"status": "ok", "group_id": "doctor-smoke"},
+            "probe_groups": [{"status": "failed", "group_id": "stopped-group", "reason": "group is not running"}],
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "doctor", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("probe groups: stopped-group failed (group is not running)", stdout.getvalue())
 
     def test_live_agent_smoke_uses_http_timeout_longer_than_smoke_window(self):
         payload = {"status": "ok", "group_id": "operator-smoke", "replies": []}

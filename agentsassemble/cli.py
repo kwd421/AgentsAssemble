@@ -228,6 +228,13 @@ def build_parser() -> argparse.ArgumentParser:
         dest="probe_agent_ids",
         help="Opt-in resident agent id to probe after credential-free smoke passes; may be repeated.",
     )
+    live_doctor.add_argument(
+        "--probe-group",
+        action="append",
+        default=[],
+        dest="probe_group_ids",
+        help="Opt-in supervised process group id whose launch-time manifest agents should be probed; may be repeated.",
+    )
     live_doctor.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable readiness result.")
 
     live_probe = live_agent_subparsers.add_parser(
@@ -640,11 +647,14 @@ def _run_live_agent_doctor(args: argparse.Namespace) -> int:
     payload = {"group_id": args.group_id, "timeout": float(args.timeout)}
     if args.probe_agent_ids:
         payload["probe_agent_ids"] = list(args.probe_agent_ids)
+    if args.probe_group_ids:
+        payload["probe_group_ids"] = list(args.probe_group_ids)
+    probe_windows = MAX_READINESS_PROBE_AGENTS if args.probe_group_ids else min(len(args.probe_agent_ids), MAX_READINESS_PROBE_AGENTS)
     payload = _request_json(
         _server_url(args.server, "/api/live-agent-readiness"),
         method="POST",
         payload=payload,
-        timeout_seconds=_operation_http_timeout(float(args.timeout), windows=1 + min(len(args.probe_agent_ids), MAX_READINESS_PROBE_AGENTS)),
+        timeout_seconds=_operation_http_timeout(float(args.timeout), windows=1 + probe_windows),
     )
     if args.as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -741,6 +751,9 @@ def _format_live_agent_readiness(payload: dict[str, object]) -> str:
     probes = payload.get("probes") if isinstance(payload.get("probes"), list) else []
     if probes:
         lines.append(f"probes: {_readiness_probe_summary(probes)}")
+    probe_groups = payload.get("probe_groups") if isinstance(payload.get("probe_groups"), list) else []
+    if probe_groups:
+        lines.append(f"probe groups: {_readiness_probe_group_summary(probe_groups)}")
     if payload.get("probe_error"):
         lines.append(f"probe error: {payload.get('probe_error')}")
     if smoke.get("error"):
@@ -772,6 +785,21 @@ def _readiness_probe_summary(probes: list[object]) -> str:
         agent_id = str(probe.get("agent_id") or "unknown")
         status = str(probe.get("status") or "unknown")
         labels.append(f"{agent_id} {status}")
+    return ", ".join(labels) if labels else "none"
+
+
+def _readiness_probe_group_summary(probe_groups: list[object]) -> str:
+    labels = []
+    for group in probe_groups:
+        if not isinstance(group, dict):
+            continue
+        group_id = str(group.get("group_id") or "unknown")
+        status = str(group.get("status") or "unknown")
+        reason = str(group.get("reason") or "")
+        label = f"{group_id} {status}"
+        if reason:
+            label = f"{label} ({reason})"
+        labels.append(label)
     return ", ".join(labels) if labels else "none"
 
 

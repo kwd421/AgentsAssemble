@@ -1105,6 +1105,34 @@ Document that `live-agent smoke`, GUI `진단`, and `live-agent doctor` now cove
 
 ---
 
+### Task 36: Manifest-Backed Readiness Group Probes
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for group-level readiness probes**
+
+Cover `live-agent doctor --probe-group`, readiness payload `probe_group_ids`, group manifest expansion, explicit-agent/group-agent de-duping, invalid group refusal, and over-cap refusal without running partial real-provider probes.
+
+- [x] **Step 2: Expand groups from the supervisor manifest**
+
+Resolve requested groups from the supervisor snapshot's safe launch-time `agents` manifest, require groups to be currently `running`, and merge manifest agent ids with explicit `probe_agent_ids` before reusing the existing targeted probe path.
+
+- [x] **Step 3: Preserve bounded operator evidence**
+
+Return bounded `probe_groups`, `effective_probe_agent_ids`, and per-agent probe statuses. Record safe operation details containing group ids, effective agent ids, group statuses, and probe statuses only; do not record config paths, endpoints, auth refs, prompts, log tails, or reply text.
+
+- [x] **Step 4: Document side-effect and manifest semantics**
+
+Document `--probe-group` as an explicit real-resident check, explain that it uses launch-time manifest evidence rather than rereading edited config files, and preserve the 10-agent cap after explicit and group-expanded ids are merged.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

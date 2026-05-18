@@ -188,7 +188,17 @@ python3 -m agentsassemble.cli live-agent doctor \
   --probe-agent gemini-cli
 ```
 
-These probes use the same `POST /api/live-agents/<agent_id>/probe` path described below. They can make a real resident runner call its configured local CLI, JSONL session, or remote bridge, so treat them as real-provider checks rather than credential-free smoke. A single readiness request accepts up to 10 targeted probe agents; requests above that limit are refused as `failed` instead of silently probing a subset. The readiness payload includes bounded probe statuses and event ids, but omits probe and reply message text from readiness operation history.
+To probe every agent from a supervised process group, use the group's launch-time manifest:
+
+```bash
+python3 -m agentsassemble.cli live-agent doctor \
+  --server http://127.0.0.1:8765 \
+  --probe-group resident-main
+```
+
+`--probe-group` expands the requested group from `/api/live-agent-processes` safe manifest entries, then de-dupes those agent ids with any explicit `--probe-agent` values. The manifest is launch-time evidence from the config the supervisor started with; it does not reread an edited config file. Missing groups, stopped groups, manifestless groups, and requests that expand above the probe cap are refused as `failed` instead of silently probing a subset.
+
+These probes use the same `POST /api/live-agents/<agent_id>/probe` path described below. They can make a real resident runner call its configured local CLI, JSONL session, or remote bridge, so treat them as real-provider checks rather than credential-free smoke. A single readiness request accepts up to 10 targeted probe agents after explicit and group-expanded ids are merged; requests above that limit are refused as `failed` instead of silently probing a subset. The readiness payload includes bounded smoke, probe group, probe status, count, and event id evidence, but omits reply message text, config paths, endpoint URLs, log paths, auth refs, prompts, and log tails from both the readiness response and readiness operation history.
 
 Smoke-created fake agents and process groups are marked `diagnostic`. They remain visible in `.agentsassemble/live_agents.json` and `.agentsassemble/live-agent-runs/processes.json` for operator inspection, but `/api/live-agent-health` ignores diagnostic records so a successful doctor run does not contaminate later health checks or repeated readiness checks. Legacy smoke artifacts from before the `diagnostic` flag are also ignored when their preserved agent identity matches the built-in `Smoke Local CLI` or `Smoke Live Session` diagnostic agents.
 
