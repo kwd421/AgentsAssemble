@@ -34,6 +34,8 @@ class LiveAgentOperationTests(unittest.TestCase):
                     "header_value": "auth: Bearer abc123XYZ",
                     "auto_restart": True,
                     "max_restarts": 2,
+                    "probe_agent_ids": ["agent-a", "agent-b"],
+                    "probe_statuses": ["agent-a:ok", "agent-b:timeout"],
                     "server": "http://127.0.0.1:8765",
                     "config_path": "/Users/me/secret/live-agents.json",
                     "auth_ref": "env:SECRET_TOKEN",
@@ -73,6 +75,8 @@ class LiveAgentOperationTests(unittest.TestCase):
         self.assertNotIn("abc123XYZ", str(operations[0]["details"].get("header_value", "")))
         self.assertTrue(operations[0]["details"]["auto_restart"])
         self.assertEqual(operations[0]["details"]["max_restarts"], 2)
+        self.assertEqual(operations[0]["details"]["probe_agent_ids"], ["agent-a", "agent-b"])
+        self.assertEqual(operations[0]["details"]["probe_statuses"], ["agent-a:ok", "agent-b:timeout"])
         self.assertNotIn("server", operations[0]["details"])
         self.assertNotIn("config_path", operations[0]["details"])
         self.assertNotIn("auth_ref", operations[0]["details"])

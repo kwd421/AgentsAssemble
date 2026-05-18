@@ -885,6 +885,139 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(readiness_operations[-1]["status"], "degraded")
             self.assertEqual(readiness_operations[-1]["details"]["result_status"], "degraded")
 
+    def test_live_agent_readiness_endpoint_runs_opt_in_targeted_probes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            smoke_result = {"status": "ok", "group_id": "doctor-smoke", "replies": []}
+            probe_results = [
+                {
+                    "status": "ok",
+                    "agent_id": "agent-a",
+                    "source_event_id": "probe-source-a",
+                    "reply_event_id": "reply-a",
+                    "reply": {"message": "secret readiness reply"},
+                },
+                {
+                    "status": "timeout",
+                    "agent_id": "agent-b",
+                    "source_event_id": "probe-source-b",
+                },
+                ValueError("Live agent agent-missing was not found at /Users/me/private.json env:SECRET_TOKEN."),
+            ]
+            try:
+                with (
+                    patch("agentsassemble.gui.run_live_agent_smoke", return_value=smoke_result),
+                    patch("agentsassemble.gui.run_live_agent_probe", side_effect=probe_results) as probe,
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                        data=json.dumps(
+                            {
+                                "group_id": "doctor-smoke",
+                                "timeout": 8,
+                                "probe_agent_ids": ["agent-a", "agent-b", "agent-missing"],
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=12) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(
+            {check["id"]: check["status"] for check in payload["checks"]},
+            {
+                "health": "ok",
+                "smoke": "ok",
+                "probe:agent-a": "ok",
+                "probe:agent-b": "timeout",
+                "probe:agent-missing": "failed",
+            },
+        )
+        self.assertEqual(payload["probes"][0], {"status": "ok", "agent_id": "agent-a", "source_event_id": "probe-source-a", "reply_event_id": "reply-a"})
+        self.assertEqual(payload["probes"][1], {"status": "timeout", "agent_id": "agent-b", "source_event_id": "probe-source-b"})
+        self.assertEqual(
+            payload["probes"][2],
+            {"status": "failed", "agent_id": "agent-missing", "reason": "probe could not be run"},
+        )
+        serialized_payload = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("secret readiness reply", serialized_payload)
+        self.assertNotIn("SECRET_TOKEN", serialized_payload)
+        self.assertNotIn("/Users/me/private.json", serialized_payload)
+        self.assertEqual([call.args[:2] for call in probe.call_args_list], [(root, "agent-a"), (root, "agent-b"), (root, "agent-missing")])
+        self.assertEqual({call.kwargs["timeout_seconds"] for call in probe.call_args_list}, {8.0})
+        readiness_operations = [
+            operation for operation in operations["operations"] if operation["operation"] == "readiness.check"
+        ]
+        self.assertEqual(readiness_operations[-1]["status"], "failed")
+        self.assertEqual(readiness_operations[-1]["details"]["result_status"], "failed")
+        self.assertEqual(readiness_operations[-1]["details"]["probe_agent_ids"], ["agent-a", "agent-b", "agent-missing"])
+        self.assertEqual(readiness_operations[-1]["details"]["probe_statuses"], ["agent-a:ok", "agent-b:timeout", "agent-missing:failed"])
+        self.assertNotIn("secret readiness reply", json.dumps(readiness_operations, ensure_ascii=False))
+
+    def test_live_agent_readiness_endpoint_refuses_too_many_targeted_probes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            agent_ids = [f"agent-{index}" for index in range(11)]
+            try:
+                with (
+                    patch("agentsassemble.gui.run_live_agent_smoke", return_value={"status": "ok", "group_id": "doctor-smoke", "replies": []}),
+                    patch("agentsassemble.gui.run_live_agent_probe") as probe,
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                        data=json.dumps(
+                            {
+                                "group_id": "doctor-smoke",
+                                "timeout": 8,
+                                "probe_agent_ids": agent_ids,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=12) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(payload["probe_error"], "Too many probe agents requested; maximum is 10.")
+        self.assertEqual(
+            {check["id"]: check["status"] for check in payload["checks"]},
+            {"health": "ok", "smoke": "ok", "probe_request_limit": "failed"},
+        )
+        probe.assert_not_called()
+        readiness_operations = [
+            operation for operation in operations["operations"] if operation["operation"] == "readiness.check"
+        ]
+        self.assertEqual(readiness_operations[-1]["status"], "failed")
+        self.assertEqual(readiness_operations[-1]["details"]["probe_agent_ids"], agent_ids)
+        self.assertEqual(readiness_operations[-1]["details"]["probe_error"], "Too many probe agents requested; maximum is 10.")
+
     def test_live_agent_preflight_endpoint_checks_config_without_starting_processes(self):
         class FakeSupervisor:
             def __init__(self):

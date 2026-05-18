@@ -266,6 +266,18 @@ def _safe_detail_value(value: object) -> object | None:
         return value if math.isfinite(value) else None
     if isinstance(value, str):
         return _safe_public_field(value, limit=OPERATION_TEXT_LIMIT)
+    if isinstance(value, list):
+        safe_items = []
+        for item in value[:20]:
+            if isinstance(item, str):
+                safe_items.append(_safe_public_field(item, limit=OPERATION_FIELD_LIMIT))
+            elif isinstance(item, int) and not isinstance(item, bool):
+                safe_items.append(item)
+            elif isinstance(item, float) and math.isfinite(item):
+                safe_items.append(item)
+            elif isinstance(item, bool):
+                safe_items.append(item)
+        return safe_items
     return None
 
 

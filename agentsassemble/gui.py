@@ -45,6 +45,7 @@ TABS = ["lobby", "live", "board", "archive"]
 STALE_RUNNING_SECONDS = 300
 SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
+MAX_READINESS_PROBE_AGENTS = 10
 
 
 def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str, object]]:
@@ -510,6 +511,11 @@ def live_agent_readiness_payload(
 ) -> dict[str, object]:
     health = live_agent_health_payload(output_root, process_supervisor)
     checks = [{"id": "health", "status": health.get("status") or "unknown"}]
+    probe_agent_ids = _payload_probe_agent_ids(payload.get("probe_agent_ids"))
+    probe_timeout = safe_probe_timeout(_payload_nonnegative_float(payload.get("probe_timeout_seconds", payload.get("timeout")), 12.0))
+    probe_error = ""
+    if len(probe_agent_ids) > MAX_READINESS_PROBE_AGENTS:
+        probe_error = f"Too many probe agents requested; maximum is {MAX_READINESS_PROBE_AGENTS}."
     try:
         smoke = live_agent_smoke_payload(payload, default_server=default_server)
     except LiveAgentSmokeFailed as error:
@@ -519,13 +525,34 @@ def live_agent_readiness_payload(
             "error": str(error),
         }
     checks.append({"id": "smoke", "status": smoke.get("status") or "unknown"})
+    probes: list[dict[str, object]] = []
+    if smoke.get("status") == "ok" and probe_error:
+        checks.append({"id": "probe_request_limit", "status": "failed"})
+    elif smoke.get("status") == "ok":
+        for agent_id in probe_agent_ids:
+            try:
+                probe = run_live_agent_probe(output_root, agent_id, timeout_seconds=probe_timeout)
+            except ValueError:
+                probe = {"status": "failed", "agent_id": agent_id, "reason": "probe could not be run"}
+            safe_probe = _safe_readiness_probe_result(probe)
+            probes.append(safe_probe)
+            checks.append({"id": f"probe:{agent_id}", "status": safe_probe.get("status") or "unknown"})
     if smoke.get("status") != "ok":
+        status = "failed"
+    elif probe_error:
+        status = "failed"
+    elif any(probe.get("status") != "ok" for probe in probes):
         status = "failed"
     elif health.get("status") != "ok":
         status = "degraded"
     else:
         status = "ready"
-    return {"status": status, "checks": checks, "health": health, "smoke": smoke}
+    result = {"status": status, "checks": checks, "health": health, "smoke": smoke}
+    if probe_error:
+        result["probe_error"] = probe_error
+    if probes:
+        result["probes"] = probes
+    return result
 
 
 def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentProcessSupervisor) -> dict[str, object]:
@@ -968,6 +995,45 @@ def _operation_success_for_result(value: object, *, success_values: set[str]) ->
     return "success" if _operation_result_status(value) in success_values else "failed"
 
 
+def _payload_probe_agent_ids(value: object) -> list[str]:
+    raw_items = value if isinstance(value, list) else []
+    agent_ids = []
+    seen = set()
+    for item in raw_items:
+        agent_id = str(item or "").strip()[:64]
+        if not agent_id or agent_id in seen:
+            continue
+        seen.add(agent_id)
+        agent_ids.append(agent_id)
+    return agent_ids
+
+
+def _safe_readiness_probe_result(probe: dict[str, object]) -> dict[str, object]:
+    safe = {
+        "status": str(probe.get("status") or "unknown"),
+        "agent_id": str(probe.get("agent_id") or ""),
+    }
+    for key in ("agent_status", "reason", "source_event_id", "reply_event_id"):
+        value = str(probe.get(key) or "")
+        if value:
+            safe[key] = value[:128]
+    return safe
+
+
+def _probe_statuses(probes: object) -> list[str]:
+    if not isinstance(probes, list):
+        return []
+    statuses = []
+    for probe in probes:
+        if not isinstance(probe, dict):
+            continue
+        agent_id = str(probe.get("agent_id") or "").strip()
+        status = str(probe.get("status") or "unknown").strip() or "unknown"
+        if agent_id:
+            statuses.append(f"{agent_id}:{status}")
+    return statuses
+
+
 def _payload_bool(value: object) -> bool:
     if isinstance(value, bool):
         return value
@@ -1383,6 +1449,7 @@ def _make_handler(
                     return
                 result_status = _operation_result_status(readiness.get("status"))
                 smoke = readiness.get("smoke") if isinstance(readiness.get("smoke"), dict) else {}
+                probes = readiness.get("probes") if isinstance(readiness.get("probes"), list) else []
                 record_live_agent_operation(
                     output_root,
                     operation="readiness.check",
@@ -1394,6 +1461,9 @@ def _make_handler(
                     details={
                         "group_id": str(smoke.get("group_id") or payload.get("group_id") or ""),
                         "result_status": result_status,
+                        "probe_agent_ids": _payload_probe_agent_ids(payload.get("probe_agent_ids")),
+                        "probe_error": str(readiness.get("probe_error") or ""),
+                        "probe_statuses": _probe_statuses(probes),
                     },
                 )
                 self._send_json(readiness)

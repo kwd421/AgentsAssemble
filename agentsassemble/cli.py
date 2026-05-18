@@ -44,6 +44,7 @@ from agentsassemble.provider_health import provider_health_report
 LIVE_AGENT_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "live_session", "remote_bridge", "manual"]
 LIVE_AGENT_DELEGATE_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "remote_bridge", "manual"]
 LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES = list(SUPPORTED_RESIDENT_CONNECTION_KINDS)
+MAX_READINESS_PROBE_AGENTS = 10
 
 
 def parse_codex_timeout(value: str) -> int | None:
@@ -220,6 +221,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_doctor.add_argument("--group-id", default="", help="Optional supervised process group id for the smoke check.")
     live_doctor.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait for fake agent replies.")
+    live_doctor.add_argument(
+        "--probe-agent",
+        action="append",
+        default=[],
+        dest="probe_agent_ids",
+        help="Opt-in resident agent id to probe after credential-free smoke passes; may be repeated.",
+    )
     live_doctor.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable readiness result.")
 
     live_probe = live_agent_subparsers.add_parser(
@@ -614,6 +622,7 @@ def _run_live_agent_smoke(args: argparse.Namespace) -> int:
             _server_url(args.server, "/api/live-agent-smoke"),
             method="POST",
             payload={"group_id": args.group_id, "timeout": float(args.timeout)},
+            timeout_seconds=_operation_http_timeout(float(args.timeout)),
         )
     except (LiveAgentSmokeFailed, ValueError) as error:
         print(f"smoke failed: {error}", file=sys.stderr)
@@ -628,10 +637,14 @@ def _run_live_agent_smoke(args: argparse.Namespace) -> int:
 
 
 def _run_live_agent_doctor(args: argparse.Namespace) -> int:
+    payload = {"group_id": args.group_id, "timeout": float(args.timeout)}
+    if args.probe_agent_ids:
+        payload["probe_agent_ids"] = list(args.probe_agent_ids)
     payload = _request_json(
         _server_url(args.server, "/api/live-agent-readiness"),
         method="POST",
-        payload={"group_id": args.group_id, "timeout": float(args.timeout)},
+        payload=payload,
+        timeout_seconds=_operation_http_timeout(float(args.timeout), windows=1 + min(len(args.probe_agent_ids), MAX_READINESS_PROBE_AGENTS)),
     )
     if args.as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -725,6 +738,11 @@ def _format_live_agent_readiness(payload: dict[str, object]) -> str:
         f"agent attention: {_attention_summary(agent_attention)}",
         f"process attention: {_attention_summary(process_attention)}",
     ]
+    probes = payload.get("probes") if isinstance(payload.get("probes"), list) else []
+    if probes:
+        lines.append(f"probes: {_readiness_probe_summary(probes)}")
+    if payload.get("probe_error"):
+        lines.append(f"probe error: {payload.get('probe_error')}")
     if smoke.get("error"):
         lines.append(f"smoke error: {smoke.get('error')}")
     return "\n".join(lines)
@@ -744,6 +762,17 @@ def _format_live_agent_probe(payload: dict[str, object]) -> str:
     if payload.get("reason"):
         lines.append(f"reason: {payload.get('reason')}")
     return "\n".join(lines)
+
+
+def _readiness_probe_summary(probes: list[object]) -> str:
+    labels = []
+    for probe in probes:
+        if not isinstance(probe, dict):
+            continue
+        agent_id = str(probe.get("agent_id") or "unknown")
+        status = str(probe.get("status") or "unknown")
+        labels.append(f"{agent_id} {status}")
+    return ", ".join(labels) if labels else "none"
 
 
 def _format_live_agent_health(payload: dict[str, object]) -> str:
@@ -1223,6 +1252,10 @@ def _server_url(server: str, path: str) -> str:
 
 def _probe_http_timeout(probe_timeout_seconds: float) -> float:
     return max(10.0, float(probe_timeout_seconds) + 2.0)
+
+
+def _operation_http_timeout(wait_seconds: float, *, windows: int = 1) -> float:
+    return max(10.0, float(wait_seconds) * max(1, int(windows)) + 6.0)
 
 
 def _request_json(

@@ -179,13 +179,24 @@ python3 -m agentsassemble.cli live-agent doctor \
 
 The doctor calls `POST /api/live-agent-readiness`. The readiness endpoint first records the current `/api/live-agent-health` snapshot, then runs the same credential-free smoke used by `live-agent smoke`. This order is intentional: the smoke leaves offline fake agents and a stopped smoke process record behind, so readiness uses pre-smoke health as the room health proof and treats the smoke result as a separate control-plane proof.
 
+By default, doctor stays credential-free. Add `--probe-agent <agent_id>` only when you explicitly want opt-in targeted resident probes against already-running agents after smoke passes:
+
+```bash
+python3 -m agentsassemble.cli live-agent doctor \
+  --server http://127.0.0.1:8765 \
+  --probe-agent claude-code-live \
+  --probe-agent gemini-cli
+```
+
+These probes use the same `POST /api/live-agents/<agent_id>/probe` path described below. They can make a real resident runner call its configured local CLI, JSONL session, or remote bridge, so treat them as real-provider checks rather than credential-free smoke. A single readiness request accepts up to 10 targeted probe agents; requests above that limit are refused as `failed` instead of silently probing a subset. The readiness payload includes bounded probe statuses and event ids, but omits probe and reply message text from readiness operation history.
+
 Smoke-created fake agents and process groups are marked `diagnostic`. They remain visible in `.agentsassemble/live_agents.json` and `.agentsassemble/live-agent-runs/processes.json` for operator inspection, but `/api/live-agent-health` ignores diagnostic records so a successful doctor run does not contaminate later health checks or repeated readiness checks. Legacy smoke artifacts from before the `diagnostic` flag are also ignored when their preserved agent identity matches the built-in `Smoke Local CLI` or `Smoke Live Session` diagnostic agents.
 
 Status meanings:
 
-- `ready`: pre-smoke health is `ok`, and the fake `local_cli`, `live_session`, plus `remote_bridge` smoke passed.
-- `degraded`: smoke passed, but pre-smoke health already had agent or process attention.
-- `failed`: the room was reached, but the smoke check did not pass.
+- `ready`: pre-smoke health is `ok`, the fake `local_cli`, `live_session`, plus `remote_bridge` smoke passed, and every requested targeted probe replied.
+- `degraded`: smoke passed and every requested targeted probe replied, but pre-smoke health already had agent or process attention.
+- `failed`: the room was reached, but the smoke check did not pass or a requested targeted probe was skipped, timed out, or failed.
 
 For scripts:
 
