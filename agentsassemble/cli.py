@@ -1186,7 +1186,8 @@ def _format_live_agent_process_group(group: dict[str, object]) -> str:
     connection = _format_live_agent_process_connection(group.get("agent_connection"))
     last_event = _format_live_agent_process_last_event(group.get("recent_events"))
     stale_watchdog = _format_live_agent_process_stale_watchdog(group.get("stale_restart_after_seconds"))
-    suffix_parts = [part for part in (config_path, agents, connection, stale_watchdog, last_event) if part]
+    next_restart = _format_live_agent_process_next_restart(group.get("next_restart_at"))
+    suffix_parts = [part for part in (config_path, agents, connection, stale_watchdog, next_restart, last_event) if part]
     suffix = f" {'; '.join(suffix_parts)}" if suffix_parts else ""
     return f"{group_id}: {status} ({pid_text}, {auto_restart}, restarts {restart_count}/{max_restarts}){suffix}"
 
@@ -1238,6 +1239,11 @@ def _format_live_agent_process_stale_watchdog(value: object) -> str:
     if seconds.is_integer():
         return f"stale watchdog {int(seconds)}s"
     return f"stale watchdog {seconds:.1f}s"
+
+
+def _format_live_agent_process_next_restart(value: object) -> str:
+    timestamp = str(value or "").strip()
+    return f"next restart {timestamp}" if timestamp else ""
 
 
 def _format_live_agent_process_connection_attention(value: object) -> str:

@@ -1653,6 +1653,7 @@ class CliTimeoutTests(unittest.TestCase):
                     "restart_count": 1,
                     "max_restarts": 3,
                     "stale_restart_after_seconds": 240,
+                    "next_restart_at": "2026-05-17T12:01:00+00:00",
                     "config_path": "configs/live-agents.example.json",
                     "agents": [
                         {
@@ -1684,7 +1685,13 @@ class CliTimeoutTests(unittest.TestCase):
                         "attention": [{"agent_id": "friend-b", "status": "missing"}],
                     },
                 },
-                {"group_id": "stopped-crew", "status": "stopped", "pid": None, "config_path": "fake.json"},
+                {
+                    "group_id": "stopped-crew",
+                    "status": "stopped",
+                    "pid": None,
+                    "config_path": "fake.json",
+                    "next_restart_at": "",
+                },
             ]
         }
         stdout = StringIO()
@@ -1699,13 +1706,16 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("pid 1234", output)
         self.assertIn("restarts 1/3", output)
         self.assertIn("stale watchdog 240s", output)
+        self.assertIn("next restart 2026-05-17T12:01:00+00:00", output)
         self.assertIn("agents Local A/local_cli, Friend B/remote_bridge", output)
         self.assertIn("agents connected 1/2", output)
         self.assertIn("missing friend-b", output)
         self.assertIn("last event started", output)
         self.assertNotIn("command", output)
         self.assertNotIn("auth", output)
-        self.assertIn("stopped-crew: stopped", output)
+        stopped_line = next(line for line in output.splitlines() if line.startswith("stopped-crew:"))
+        self.assertIn("stopped-crew: stopped", stopped_line)
+        self.assertNotIn("next restart", stopped_line)
 
     def test_live_agent_processes_start_posts_supervisor_payload(self):
         payload = {"group": {"group_id": "crew", "status": "running", "pid": 1234}, "groups": []}
