@@ -52,6 +52,12 @@ class FakeElement {
       await listener({ currentTarget: this, preventDefault() {} });
     }
   }
+
+  async submit() {
+    for (const listener of this.listeners.get("submit") || []) {
+      await listener({ currentTarget: this, preventDefault() {} });
+    }
+  }
 }
 
 class FakeDocument {
@@ -155,7 +161,7 @@ function resetState() {
   });
 }
 
-function installHarness({ readinessPayload }) {
+function installHarness({ readinessPayload, processStartPayload = null } = {}) {
   const requests = [];
   const document = new FakeDocument();
   const storage = new Map();
@@ -176,6 +182,9 @@ function installHarness({ readinessPayload }) {
       jsonBody: options.body ? JSON.parse(options.body) : null,
     });
     if (url === "/api/live-agent-readiness") return jsonResponse(readinessPayload);
+    if (url === "/api/live-agent-processes/start") {
+      return jsonResponse(processStartPayload || { group: { group_id: "crew", status: "running" }, groups: [] });
+    }
     if (url === "/api/lobby") return jsonResponse({ events: [] });
     if (url === "/api/live-agents") return jsonResponse({ agents: [] });
     if (url === "/api/live-agent-processes") return jsonResponse({ groups: [] });
@@ -195,6 +204,10 @@ function jsonResponse(payload) {
 
 function readinessRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-readiness");
+}
+
+function processStartRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-processes/start");
 }
 
 async function clickReadiness({ officialRoundSmoke, readinessPayload }) {
@@ -247,4 +260,32 @@ test("readiness button sends official round smoke and reports the official count
     document.querySelector(".live-agent-status").textContent,
     "readiness ready · official 2 answered, 1 timed out, 0 skipped"
   );
+});
+
+test("process start form preserves and posts stale watchdog seconds", async () => {
+  resetState();
+  const { document, requests } = installHarness();
+  renderLobby({ followLatest: false });
+  let lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-process-config").value = "configs/live-agents.example.json";
+  lobby.querySelector("#live-agent-process-group").value = "crew";
+  lobby.querySelector("#live-agent-process-auto-restart").checked = true;
+  lobby.querySelector("#live-agent-process-max-restarts").value = "2";
+  lobby.querySelector("#live-agent-process-restart-backoff").value = "1.5";
+  lobby.querySelector("#live-agent-process-stale-restart-after").value = "240";
+
+  renderLobby({ followLatest: false });
+  lobby = document.querySelector("#lobby");
+  assert.equal(lobby.querySelector("#live-agent-process-stale-restart-after").value, "240");
+
+  await lobby.querySelector("#live-agent-process-form").submit();
+
+  assert.deepEqual(processStartRequest(requests).jsonBody, {
+    config_path: "configs/live-agents.example.json",
+    group_id: "crew",
+    auto_restart: true,
+    max_restarts: 2,
+    restart_backoff_seconds: 1.5,
+    stale_restart_after_seconds: 240,
+  });
 });

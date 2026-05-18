@@ -7,9 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class StaticLobbyRuntimeTests(unittest.TestCase):
-    def test_live_agent_readiness_button_posts_runtime_request_body(self):
+    def test_lobby_live_agent_controls_use_runtime_request_bodies(self):
         result = subprocess.run(
-            ["node", "--test", "tests/static_lobby_readiness_smoke.mjs"],
+            ["node", "--test", "tests/static_lobby_runtime_smoke.mjs"],
             cwd=ROOT,
             text=True,
             capture_output=True,

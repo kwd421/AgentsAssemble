@@ -167,6 +167,7 @@ function readLiveAgentProcessDraft(lobby) {
     officialRoundSmoke: Boolean(form.querySelector("#live-agent-readiness-official-round")?.checked),
     maxRestarts: form.querySelector("#live-agent-process-max-restarts")?.value ?? "",
     restartBackoff: form.querySelector("#live-agent-process-restart-backoff")?.value ?? "",
+    staleRestartAfter: form.querySelector("#live-agent-process-stale-restart-after")?.value ?? "",
   };
 }
 
@@ -189,12 +190,14 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const officialRoundSmoke = lobby.querySelector("#live-agent-readiness-official-round");
   const maxRestarts = lobby.querySelector("#live-agent-process-max-restarts");
   const restartBackoff = lobby.querySelector("#live-agent-process-restart-backoff");
+  const staleRestartAfter = lobby.querySelector("#live-agent-process-stale-restart-after");
   if (config) config.value = draft.configPath;
   if (group) group.value = draft.groupId;
   if (autoRestart) autoRestart.checked = draft.autoRestart;
   if (officialRoundSmoke) officialRoundSmoke.checked = draft.officialRoundSmoke;
   if (maxRestarts) maxRestarts.value = draft.maxRestarts;
   if (restartBackoff) restartBackoff.value = draft.restartBackoff;
+  if (staleRestartAfter) staleRestartAfter.value = draft.staleRestartAfter;
 }
 
 function restoreLiveAgentRegistrationDraft(lobby, draft) {
@@ -421,6 +424,7 @@ function renderLiveAgentProcessControls() {
         </label>
         <input id="live-agent-process-max-restarts" type="number" min="0" max="99" value="3" aria-label="max restarts" />
         <input id="live-agent-process-restart-backoff" type="number" min="0" max="3600" step="1" value="5" aria-label="restart backoff seconds" />
+        <input id="live-agent-process-stale-restart-after" type="number" min="0" max="86400" step="1" value="0" aria-label="stale restart after seconds" />
         <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
         <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
         <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
@@ -1165,6 +1169,7 @@ async function startLiveAgentProcessGroup(form) {
   const autoRestart = Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked);
   const maxRestarts = Math.max(0, Number(form.querySelector("#live-agent-process-max-restarts")?.value || 0));
   const restartBackoffSeconds = Math.max(0, Number(form.querySelector("#live-agent-process-restart-backoff")?.value || 0));
+  const staleRestartAfterSeconds = Math.max(0, Number(form.querySelector("#live-agent-process-stale-restart-after")?.value || 0));
   if (!configPath) return;
   state.liveAgentProcessStartRunning = true;
   state.liveAgentProcessStatus = { message: "상주 그룹 시작 중", tone: "info" };
@@ -1179,6 +1184,7 @@ async function startLiveAgentProcessGroup(form) {
         auto_restart: autoRestart,
         max_restarts: maxRestarts,
         restart_backoff_seconds: restartBackoffSeconds,
+        stale_restart_after_seconds: staleRestartAfterSeconds,
       }),
     });
     setLiveAgentProcesses(payload.groups || []);
