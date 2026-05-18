@@ -289,3 +289,56 @@ test("process start form preserves and posts stale watchdog seconds", async () =
     stale_restart_after_seconds: 240,
   });
 });
+
+test("process row renders recovery watchdog and next restart evidence", () => {
+  resetState();
+  const { document } = installHarness();
+  state.liveAgentProcesses = [
+    {
+      group_id: "crew",
+      status: "restarting",
+      pid: "",
+      config_path: "configs/live-agents.example.json",
+      server: "http://127.0.0.1:8765",
+      auto_restart: true,
+      restart_count: 1,
+      max_restarts: 3,
+      restart_backoff_seconds: 5,
+      stale_restart_after_seconds: 240,
+      next_restart_at: "2026-05-17T12:01:00+00:00",
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+
+  const rowText = document.querySelector(".live-agent-process-row").textContent;
+  assert.match(rowText, /auto restart 1\/3/);
+  assert.match(rowText, /stale watchdog 240s/);
+  assert.match(rowText, /next restart 2026-05-17T12:01:00\+00:00/);
+});
+
+test("process row omits disabled recovery fields", () => {
+  resetState();
+  const { document } = installHarness();
+  state.liveAgentProcesses = [
+    {
+      group_id: "crew",
+      status: "running",
+      pid: 1234,
+      config_path: "configs/live-agents.example.json",
+      server: "http://127.0.0.1:8765",
+      auto_restart: true,
+      restart_count: 0,
+      max_restarts: 3,
+      restart_backoff_seconds: 5,
+      stale_restart_after_seconds: 0,
+      next_restart_at: "",
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+
+  const rowText = document.querySelector(".live-agent-process-row").textContent;
+  assert.doesNotMatch(rowText, /stale watchdog/);
+  assert.doesNotMatch(rowText, /next restart/);
+});

@@ -799,7 +799,18 @@ function liveAgentProcessRestartLabel(group) {
   const count = group.restart_count ?? 0;
   const max = group.max_restarts ?? 0;
   const backoff = group.restart_backoff_seconds ?? 0;
-  return `auto restart ${count}/${max} · backoff ${backoff}s`;
+  const parts = [`auto restart ${count}/${max}`, `backoff ${backoff}s`];
+  const staleWatchdog = liveAgentProcessStaleWatchdogLabel(group.stale_restart_after_seconds);
+  const nextRestart = String(group.next_restart_at || "").trim();
+  if (staleWatchdog) parts.push(staleWatchdog);
+  if (nextRestart) parts.push(`next restart ${nextRestart}`);
+  return parts.join(" · ");
+}
+
+function liveAgentProcessStaleWatchdogLabel(value) {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
+  return Number.isInteger(seconds) ? `stale watchdog ${seconds}s` : `stale watchdog ${seconds.toFixed(1)}s`;
 }
 
 function providerKindLabel(kind) {

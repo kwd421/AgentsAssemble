@@ -172,6 +172,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function liveAgentProcessConnectionLabel", script)
         self.assertIn('class="live-agent-process-connection"', script)
         self.assertIn("group.agent_connection", script)
+        self.assertIn("function liveAgentProcessStaleWatchdogLabel", script)
+        self.assertIn('parts.push(`next restart ${nextRestart}`)', script)
         self.assertIn("function liveAgentProcessEventLabel", script)
         self.assertIn('class="live-agent-process-event"', script)
         self.assertIn("async function sendLiveAgentRegistration", script)
