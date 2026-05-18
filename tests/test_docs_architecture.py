@@ -34,6 +34,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Room Event Log", doc)
         self.assertIn("live_session adapter", doc)
         self.assertIn("Decision Gate", doc)
+        self.assertIn("call a moderator-controlled official round", doc)
 
     def test_live_room_references_preserve_council_boundary(self):
         live_model = (ROOT / "docs" / "live-session-room-model.md").read_text(encoding="utf-8")
@@ -211,6 +212,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("call-round", doc)
         self.assertIn("--turns-file", doc)
         self.assertIn("--round-id", doc)
+        self.assertIn("Lobby `상주 실행` panel", doc)
+        self.assertIn("`라운드호출`", doc)
         self.assertIn("official_turn.sequence", doc)
         self.assertIn("official_turn.round", doc)
         self.assertIn("stop_on_timeout", doc)

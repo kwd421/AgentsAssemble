@@ -13,7 +13,7 @@ class FakeElement {
     this.value = attributes.value || "";
     this.checked = Boolean(attributes.checked);
     this.disabled = Boolean(attributes.disabled);
-    this.dataset = {};
+    this.dataset = datasetFromAttributes(attributes);
     this.textContent = "";
     this.scrollTop = 0;
     this.scrollHeight = 100;
@@ -116,6 +116,18 @@ function parseAttributes(rawAttributes) {
   return attributes;
 }
 
+function datasetFromAttributes(attributes) {
+  const dataset = {};
+  for (const [name, value] of Object.entries(attributes)) {
+    if (!name.startsWith("data-")) continue;
+    const key = name
+      .slice(5)
+      .replaceAll(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+    dataset[key] = String(value);
+  }
+  return dataset;
+}
+
 function unescapeHtml(value) {
   return value
     .replaceAll("&amp;", "&")
@@ -154,6 +166,7 @@ function resetState() {
     liveAgentSmokeRunning: false,
     liveAgentOfficialRoundSmokeRunning: false,
     liveAgentReadinessRunning: false,
+    liveAgentRoundCallRunning: false,
     liveAgentProcessStatus: null,
     codexSessions: [],
     codexSessionsLoaded: true,
@@ -167,6 +180,7 @@ function installHarness({
   processStartPayload = null,
   sessionStartPayload = null,
   sessionStartResponse = null,
+  roundPayload = null,
 } = {}) {
   const requests = [];
   const events = [];
@@ -219,6 +233,19 @@ function installHarness({
         }
       );
     }
+    if (url === "/api/meetings/resident-gui/live-agent-turns/round") {
+      return jsonResponse(
+        roundPayload || {
+          status: "answered",
+          meeting_id: "resident-gui",
+          round_id: "round_1",
+          turn_count: 3,
+          answered_count: 3,
+          timeout_count: 0,
+          skipped_count: 0,
+        }
+      );
+    }
     if (url === "/api/lobby") return jsonResponse({ events: [] });
     if (url === "/api/live-agents") return jsonResponse({ agents: [] });
     if (url === "/api/live-agent-processes") return jsonResponse({ groups: [] });
@@ -247,6 +274,10 @@ function processStartRequest(requests) {
 
 function sessionStartRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-sessions/start");
+}
+
+function roundRequest(requests) {
+  return requests.find((request) => request.url === "/api/meetings/resident-gui/live-agent-turns/round");
 }
 
 async function clickReadiness({ officialRoundSmoke, readinessPayload }) {
@@ -370,6 +401,176 @@ test("session start button posts matching meeting and resident config payload", 
   assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 3/3 connected");
   assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+});
+
+test("official round button posts selected meeting round and requests meeting refresh", async () => {
+  resetState();
+  const { document, requests, events } = installHarness();
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      meeting_template: {
+        rounds: [
+          { id: "round_1", title: "1라운드" },
+          { id: "round_2", title: "2라운드" },
+        ],
+      },
+      debate_rounds: [],
+    },
+  };
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  assert.equal(lobby.querySelector("#live-agent-session-meeting-id").value, "resident-gui");
+  assert.equal(lobby.querySelector("#live-agent-round-id").value, "round_1");
+  lobby.querySelector("#live-agent-round-timeout").value = "12";
+  lobby.querySelector("#live-agent-round-stop-on-timeout").checked = true;
+
+  await lobby.querySelector("#live-agent-call-round").click();
+
+  assert.deepEqual(roundRequest(requests).jsonBody, {
+    round_id: "round_1",
+    timeout_seconds: 12,
+    stop_on_timeout: true,
+  });
+  assert.equal(state.liveAgentProcessStatus.message, "공식 라운드 answered: round_1 · 3 answered, 0 timed out, 0 skipped");
+  assert.equal(events.at(-1)?.type, "agentsassemble:meeting-refresh-requested");
+  assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+});
+
+test("official round button refuses blank round id without posting", async () => {
+  resetState();
+  const { document, requests } = installHarness();
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      meeting_template: { rounds: [{ id: "round_1", title: "1라운드" }] },
+      debate_rounds: [],
+    },
+  };
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-round-id").value = "";
+
+  await lobby.querySelector("#live-agent-call-round").click();
+
+  assert.equal(roundRequest(requests), undefined);
+  assert.equal(state.liveAgentProcessStatus.message, "공식 라운드 호출 실패: meeting id와 round id가 필요합니다");
+});
+
+test("official round button preserves a cleared round id across re-render", async () => {
+  resetState();
+  const { document, requests } = installHarness();
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      meeting_template: { rounds: [{ id: "round_1", title: "1라운드" }] },
+      debate_rounds: [],
+    },
+  };
+  renderLobby({ followLatest: false });
+  let lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-round-id").value = "";
+
+  renderLobby({ followLatest: false });
+  lobby = document.querySelector("#lobby");
+  assert.equal(lobby.querySelector("#live-agent-round-id").value, "");
+
+  await lobby.querySelector("#live-agent-call-round").click();
+
+  assert.equal(roundRequest(requests), undefined);
+  assert.equal(state.liveAgentProcessStatus.message, "공식 라운드 호출 실패: meeting id와 round id가 필요합니다");
+});
+
+test("official round button refuses a cleared meeting id without falling back", async () => {
+  resetState();
+  const { document, requests } = installHarness();
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      meeting_template: { rounds: [{ id: "round_1", title: "1라운드" }] },
+      debate_rounds: [],
+    },
+  };
+  renderLobby({ followLatest: false });
+  let lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-meeting-id").value = "";
+
+  renderLobby({ followLatest: false });
+  lobby = document.querySelector("#lobby");
+  assert.equal(lobby.querySelector("#live-agent-session-meeting-id").value, "");
+
+  await lobby.querySelector("#live-agent-call-round").click();
+
+  assert.equal(roundRequest(requests), undefined);
+  assert.equal(state.liveAgentProcessStatus.message, "공식 라운드 호출 실패: meeting id와 round id가 필요합니다");
+});
+
+test("official round timeout is clamped before posting", async () => {
+  resetState();
+  const { document, requests } = installHarness();
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      meeting_template: { rounds: [{ id: "round_1", title: "1라운드" }] },
+      debate_rounds: [],
+    },
+  };
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-round-timeout").value = "999";
+
+  await lobby.querySelector("#live-agent-call-round").click();
+
+  assert.equal(roundRequest(requests).jsonBody.timeout_seconds, 600);
+});
+
+test("generated official round defaults refresh when stale draft was only the old default", () => {
+  resetState();
+  const { document } = installHarness();
+  renderLobby({ followLatest: false });
+  let lobby = document.querySelector("#lobby");
+  assert.equal(lobby.querySelector("#live-agent-session-meeting-id").value, "");
+  assert.equal(lobby.querySelector("#live-agent-round-id").value, "round_1");
+
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      meeting_template: {
+        rounds: [
+          { id: "round_1", title: "1라운드" },
+          { id: "round_2", title: "2라운드" },
+        ],
+      },
+      debate_rounds: [{ id: "round_1" }],
+    },
+  };
+  renderLobby({ followLatest: false });
+  lobby = document.querySelector("#lobby");
+
+  assert.equal(lobby.querySelector("#live-agent-session-meeting-id").value, "resident-gui");
+  assert.equal(lobby.querySelector("#live-agent-round-id").value, "round_2");
+});
+
+test("generated official round defaults do not replace explicit operator values", () => {
+  resetState();
+  const { document } = installHarness();
+  renderLobby({ followLatest: false });
+  let lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-meeting-id").value = "typed-meeting";
+  lobby.querySelector("#live-agent-round-id").value = "typed-round";
+
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      meeting_template: { rounds: [{ id: "round_2", title: "2라운드" }] },
+      debate_rounds: [],
+    },
+  };
+  renderLobby({ followLatest: false });
+  lobby = document.querySelector("#lobby");
+
+  assert.equal(lobby.querySelector("#live-agent-session-meeting-id").value, "typed-meeting");
+  assert.equal(lobby.querySelector("#live-agent-round-id").value, "typed-round");
 });
 
 test("session start failure with created meeting still announces the recoverable meeting", async () => {

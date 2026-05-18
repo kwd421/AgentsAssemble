@@ -121,6 +121,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-session-start")?.addEventListener("click", async () => {
     await startLiveAgentSession(lobby);
   });
+  lobby.querySelector("#live-agent-call-round")?.addEventListener("click", async () => {
+    await callLiveAgentOfficialRound(lobby);
+  });
   lobby.querySelectorAll("[data-live-agent-process-stop]").forEach((button) => {
     button.addEventListener("click", () => stopLiveAgentProcessGroup(button.dataset.liveAgentProcessStop));
   });
@@ -170,6 +173,11 @@ function readLiveAgentProcessDraft(lobby) {
     councilConfig: form.querySelector("#live-agent-session-council-config")?.value ?? "",
     agentConfig: form.querySelector("#live-agent-session-agent-config")?.value ?? "",
     connectTimeout: form.querySelector("#live-agent-session-connect-timeout")?.value ?? "",
+    roundId: form.querySelector("#live-agent-round-id")?.value ?? "",
+    meetingDefault: form.querySelector("#live-agent-session-meeting-id")?.dataset.defaultValue ?? "",
+    roundDefault: form.querySelector("#live-agent-round-id")?.dataset.defaultValue ?? "",
+    roundTimeout: form.querySelector("#live-agent-round-timeout")?.value ?? "",
+    roundStopOnTimeout: Boolean(form.querySelector("#live-agent-round-stop-on-timeout")?.checked),
     autoRestart: Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked),
     officialRoundSmoke: Boolean(form.querySelector("#live-agent-readiness-official-round")?.checked),
     maxRestarts: form.querySelector("#live-agent-process-max-restarts")?.value ?? "",
@@ -197,6 +205,9 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const councilConfig = lobby.querySelector("#live-agent-session-council-config");
   const agentConfig = lobby.querySelector("#live-agent-session-agent-config");
   const connectTimeout = lobby.querySelector("#live-agent-session-connect-timeout");
+  const roundId = lobby.querySelector("#live-agent-round-id");
+  const roundTimeout = lobby.querySelector("#live-agent-round-timeout");
+  const roundStopOnTimeout = lobby.querySelector("#live-agent-round-stop-on-timeout");
   const autoRestart = lobby.querySelector("#live-agent-process-auto-restart");
   const officialRoundSmoke = lobby.querySelector("#live-agent-readiness-official-round");
   const maxRestarts = lobby.querySelector("#live-agent-process-max-restarts");
@@ -204,15 +215,28 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const staleRestartAfter = lobby.querySelector("#live-agent-process-stale-restart-after");
   if (config) config.value = draft.configPath;
   if (group) group.value = draft.groupId;
-  if (meetingId) meetingId.value = draft.meetingId;
+  restoreDefaultedInput(meetingId, draft.meetingId, draft.meetingDefault);
   if (councilConfig) councilConfig.value = draft.councilConfig;
   if (agentConfig) agentConfig.value = draft.agentConfig;
   if (connectTimeout) connectTimeout.value = draft.connectTimeout;
+  restoreDefaultedInput(roundId, draft.roundId, draft.roundDefault);
+  if (roundTimeout) roundTimeout.value = draft.roundTimeout;
+  if (roundStopOnTimeout) roundStopOnTimeout.checked = draft.roundStopOnTimeout;
   if (autoRestart) autoRestart.checked = draft.autoRestart;
   if (officialRoundSmoke) officialRoundSmoke.checked = draft.officialRoundSmoke;
   if (maxRestarts) maxRestarts.value = draft.maxRestarts;
   if (restartBackoff) restartBackoff.value = draft.restartBackoff;
   if (staleRestartAfter) staleRestartAfter.value = draft.staleRestartAfter;
+}
+
+function restoreDefaultedInput(input, draftValue, previousDefault) {
+  if (!input) return;
+  const nextDefault = input.dataset.defaultValue || "";
+  if (draftValue === previousDefault) {
+    input.value = nextDefault;
+    return;
+  }
+  input.value = draftValue;
 }
 
 function restoreLiveAgentRegistrationDraft(lobby, draft) {
@@ -423,6 +447,9 @@ function renderLiveAgentProcessControls() {
   const counts = processGroupStatusCounts(groups);
   const status = state.liveAgentProcessStatus;
   const processActionsDisabled = state.liveAgentProcessesLoading || liveAgentProcessActionBusy();
+  const currentMeeting = state.payload?.meeting || {};
+  const defaultMeetingId = currentMeeting.meeting_id || "";
+  const defaultRoundId = defaultOfficialRoundId(currentMeeting) || "round_1";
   return `
     <section class="live-agent-processes" aria-label="상주 실행">
       <div class="roster-head">
@@ -433,10 +460,16 @@ function renderLiveAgentProcessControls() {
       <form id="live-agent-process-form" class="live-agent-process-form">
         <input id="live-agent-process-config" maxlength="240" value="configs/live-agents.start-session.example.json" />
         <input id="live-agent-process-group" maxlength="64" placeholder="group id" />
-        <input id="live-agent-session-meeting-id" maxlength="128" placeholder="meeting id" />
+        <input id="live-agent-session-meeting-id" maxlength="128" placeholder="meeting id" value="${escapeHtml(defaultMeetingId)}" data-default-value="${escapeHtml(defaultMeetingId)}" />
         <input id="live-agent-session-council-config" maxlength="240" value="configs/demo-council.json" />
         <input id="live-agent-session-agent-config" maxlength="240" value="configs/agents.start-session.example.json" />
         <input id="live-agent-session-connect-timeout" type="number" min="0" max="120" step="1" value="5" aria-label="session connect timeout seconds" />
+        <input id="live-agent-round-id" maxlength="128" value="${escapeHtml(defaultRoundId)}" data-default-value="${escapeHtml(defaultRoundId)}" aria-label="official round id" />
+        <input id="live-agent-round-timeout" type="number" min="0" max="600" step="1" value="30" aria-label="official round timeout seconds" />
+        <label class="live-agent-process-options">
+          <input id="live-agent-round-stop-on-timeout" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+          <span>timeout stop</span>
+        </label>
         <label class="live-agent-process-options">
           <input id="live-agent-process-auto-restart" type="checkbox" />
           <span>auto restart</span>
@@ -446,6 +479,7 @@ function renderLiveAgentProcessControls() {
         <input id="live-agent-process-stale-restart-after" type="number" min="0" max="86400" step="1" value="0" aria-label="stale restart after seconds" />
         <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
         <button type="button" id="live-agent-session-start" ${processActionsDisabled ? "disabled" : ""}>세션시작</button>
+        <button type="button" id="live-agent-call-round" ${processActionsDisabled ? "disabled" : ""}>라운드호출</button>
         <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
         <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
         <button type="button" id="live-agent-official-round-smoke" ${processActionsDisabled ? "disabled" : ""}>공식진단</button>
@@ -470,7 +504,17 @@ function renderLiveAgentProcessControls() {
 }
 
 function liveAgentProcessActionBusy() {
-  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentReadinessRunning;
+  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentReadinessRunning;
+}
+
+function defaultOfficialRoundId(meeting) {
+  const rounds = Array.isArray(meeting?.meeting_template?.rounds)
+    ? meeting.meeting_template.rounds.filter((round) => round?.id)
+    : [];
+  if (!rounds.length) return "";
+  const completedRoundIds = new Set((meeting?.debate_rounds || []).map((round) => String(round.id || "")).filter(Boolean));
+  const nextRound = rounds.find((round) => !completedRoundIds.has(String(round.id || ""))) || rounds[0];
+  return String(nextRound.id || "");
 }
 
 function liveAgentStatusCounts(agents) {
@@ -1309,6 +1353,61 @@ async function startLiveAgentSession(lobby) {
   }
 }
 
+async function callLiveAgentOfficialRound(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  const meetingId = liveAgentOfficialRoundMeetingId(lobby);
+  const roundId = lobby.querySelector("#live-agent-round-id")?.value.trim() || "";
+  if (!meetingId || !roundId) {
+    state.liveAgentProcessStatus = { message: "공식 라운드 호출 실패: meeting id와 round id가 필요합니다", tone: "error" };
+    renderLobby({ followLatest: false });
+    return;
+  }
+  const timeoutSeconds = liveAgentRoundTimeoutSeconds(lobby);
+  const stopOnTimeout = lobby.querySelector("#live-agent-round-stop-on-timeout")?.checked === true;
+  state.liveAgentRoundCallRunning = true;
+  state.liveAgentProcessStatus = { message: "공식 라운드 호출 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson(`/api/meetings/${encodeURIComponent(meetingId)}/live-agent-turns/round`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        round_id: roundId,
+        timeout_seconds: timeoutSeconds,
+        stop_on_timeout: stopOnTimeout,
+      }),
+    });
+    const tone = payload.status === "answered" ? "success" : "error";
+    state.liveAgentProcessStatus = { message: liveAgentRoundStatusMessage(payload), tone };
+    notifyMeetingRefreshRequested(meetingId);
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `공식 라운드 호출 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    state.liveAgentRoundCallRunning = false;
+    await loadLiveAgentOperations({ background: true, force: true });
+    renderLobby({ followLatest: false });
+  }
+}
+
+function liveAgentOfficialRoundMeetingId(lobby) {
+  return lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
+}
+
+function liveAgentRoundTimeoutSeconds(lobby) {
+  const value = Number(lobby.querySelector("#live-agent-round-timeout")?.value || 30);
+  if (!Number.isFinite(value)) return 30;
+  return Math.min(600, Math.max(0, value));
+}
+
+function liveAgentRoundStatusMessage(payload) {
+  const status = payload.status || "unknown";
+  const roundId = payload.round_id || "round";
+  const answered = Math.max(0, Number(payload.answered_count || 0));
+  const timedOut = Math.max(0, Number(payload.timeout_count || 0));
+  const skipped = Math.max(0, Number(payload.skipped_count || 0));
+  return `공식 라운드 ${status}: ${roundId} · ${answered} answered, ${timedOut} timed out, ${skipped} skipped`;
+}
+
 function liveAgentSessionConnectTimeoutSeconds(lobby) {
   const value = Number(lobby.querySelector("#live-agent-session-connect-timeout")?.value || 5);
   if (!Number.isFinite(value)) return 5;
@@ -1335,6 +1434,13 @@ function notifyMeetingStarted(meetingId) {
     return;
   }
   globalThis.dispatchEvent(new CustomEvent("agentsassemble:meeting-started", { detail: { meetingId } }));
+}
+
+function notifyMeetingRefreshRequested(meetingId) {
+  if (!meetingId || typeof globalThis.dispatchEvent !== "function" || typeof globalThis.CustomEvent !== "function") {
+    return;
+  }
+  globalThis.dispatchEvent(new CustomEvent("agentsassemble:meeting-refresh-requested", { detail: { meetingId } }));
 }
 
 async function stopLiveAgentProcessGroup(groupId) {

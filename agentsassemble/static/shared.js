@@ -27,6 +27,7 @@ export const state = {
   liveAgentOfficialRoundSmokeRunning: false,
   liveAgentReadinessRunning: false,
   liveAgentProcessStatus: null,
+  liveAgentRoundCallRunning: false,
   codexSessions: [],
   codexSessionsLoaded: false,
   codexSessionsLoading: false,

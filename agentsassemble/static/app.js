@@ -310,14 +310,29 @@ window.addEventListener("agentsassemble:meeting-started", async (event) => {
   const meetingId = String(event.detail?.meetingId || "");
   if (!meetingId) return;
   try {
-    await loadMeetings();
-    meetingSelect.value = meetingId;
-    await loadMeeting(meetingId);
+    await selectAndLoadMeeting(meetingId);
     showAppStatus("상주 세션 회의 연결됨", "success");
   } catch {
     showAppStatus("상주 세션 회의 갱신 대기 중", "info");
   }
 });
+
+window.addEventListener("agentsassemble:meeting-refresh-requested", async (event) => {
+  const meetingId = String(event.detail?.meetingId || "");
+  if (!meetingId) return;
+  try {
+    await selectAndLoadMeeting(meetingId);
+    showAppStatus("회의 갱신 완료", "success");
+  } catch {
+    showAppStatus("회의 갱신 대기 중", "info");
+  }
+});
+
+async function selectAndLoadMeeting(meetingId) {
+  await loadMeetings();
+  meetingSelect.value = meetingId;
+  await loadMeeting(meetingId);
+}
 
 runDemo.addEventListener("click", async () => {
   runDemo.disabled = true;
