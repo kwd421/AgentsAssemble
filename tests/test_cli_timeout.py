@@ -1049,6 +1049,158 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("Started resident live-agent meeting resident-m1", stdout.getvalue())
         self.assertIn("2 roles, 2 bound agents", stdout.getvalue())
 
+    def test_live_agent_start_session_parser_accepts_configs_and_restart_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "start-session",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "resident-m1",
+                "--group-id",
+                "resident-main",
+                "--council-config",
+                "configs/demo-council.json",
+                "--agent-config",
+                "configs/agents.example.json",
+                "--live-agent-config",
+                "configs/live-agents.example.json",
+                "--connect-timeout",
+                "3",
+                "--auto-restart",
+                "--max-restarts",
+                "2",
+                "--restart-backoff-seconds",
+                "1",
+                "--stale-restart-after-seconds",
+                "30",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "start-session")
+        self.assertEqual(args.meeting_id, "resident-m1")
+        self.assertEqual(args.group_id, "resident-main")
+        self.assertEqual(args.council_config, "configs/demo-council.json")
+        self.assertEqual(args.agent_config, "configs/agents.example.json")
+        self.assertEqual(args.live_agent_config, "configs/live-agents.example.json")
+        self.assertEqual(args.connect_timeout, 3.0)
+        self.assertTrue(args.auto_restart)
+        self.assertEqual(args.max_restarts, 2)
+        self.assertEqual(args.restart_backoff_seconds, 1.0)
+        self.assertEqual(args.stale_restart_after_seconds, 30.0)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_start_session_posts_request_and_uses_status_exit_codes(self):
+        response = {
+            "status": "starting",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "connection": {
+                "expected": 2,
+                "connected": 1,
+                "attention": ["agent-b:offline"],
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "start-session",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                        "--council-config",
+                        "configs/demo-council.json",
+                        "--agent-config",
+                        "configs/agents.example.json",
+                        "--live-agent-config",
+                        "configs/live-agents.example.json",
+                        "--connect-timeout",
+                        "3",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-sessions/start",
+            method="POST",
+            payload={
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "council_config_path": "configs/demo-council.json",
+                "agent_config_path": "configs/agents.example.json",
+                "live_agent_config_path": "configs/live-agents.example.json",
+                "connect_timeout_seconds": 3.0,
+                "auto_restart": False,
+                "max_restarts": 0,
+                "restart_backoff_seconds": 5.0,
+                "stale_restart_after_seconds": 0.0,
+            },
+            timeout_seconds=9.0,
+        )
+        self.assertIn("Resident session resident-m1 starting", stdout.getvalue())
+        self.assertIn("resident-main", stdout.getvalue())
+        self.assertIn("1/2 connected", stdout.getvalue())
+
+    def test_live_agent_start_session_cli_redacts_config_load_paths_from_errors(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            live_agent_config = root / "live-agents.json"
+            private_council_config = root / "private-council.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": [sys.executable, "-c", "print('ok')"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            root.mkdir(exist_ok=True)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            stderr = StringIO()
+            try:
+                with patch("sys.stderr", stderr):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "start-session",
+                            "--server",
+                            f"http://127.0.0.1:{server.server_port}",
+                            "--meeting-id",
+                            "resident-m1",
+                            "--council-config",
+                            str(private_council_config),
+                            "--live-agent-config",
+                            str(live_agent_config),
+                        ]
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(exit_code, 2)
+        self.assertNotIn(str(private_council_config), stderr.getvalue())
+        self.assertNotIn("private-council", stderr.getvalue())
+        self.assertIn("details redacted", stderr.getvalue())
+
     def test_live_agent_call_sequence_posts_turns_and_prints_summary(self):
         response = {
             "status": "answered",

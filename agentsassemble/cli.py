@@ -234,6 +234,23 @@ def build_parser() -> argparse.ArgumentParser:
     live_start_meeting.add_argument("--agent-config", default="", help="Agent runtime config with approved resident bindings.")
     live_start_meeting.add_argument("--json", action="store_true", dest="as_json", help="Print the raw meeting start payload.")
 
+    live_start_session = live_agent_subparsers.add_parser(
+        "start-session",
+        parents=[live_server],
+        help="Create a resident meeting and start its supervised live-agent group.",
+    )
+    live_start_session.add_argument("--meeting-id", default="", help="Optional explicit meeting id.")
+    live_start_session.add_argument("--group-id", default="", help="Optional supervised process group id.")
+    live_start_session.add_argument("--council-config", default="", help="Council config path; defaults to the demo council.")
+    live_start_session.add_argument("--agent-config", default="", help="Agent runtime config with approved resident bindings.")
+    live_start_session.add_argument("--live-agent-config", required=True, help="Resident live-agent run-group config path.")
+    live_start_session.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0, help="Seconds to wait for bound agents to connect.")
+    live_start_session.add_argument("--auto-restart", action="store_true")
+    live_start_session.add_argument("--max-restarts", type=parse_nonnegative_int, default=0)
+    live_start_session.add_argument("--restart-backoff-seconds", type=parse_nonnegative_float, default=5.0)
+    live_start_session.add_argument("--stale-restart-after-seconds", type=parse_nonnegative_float, default=0.0)
+    live_start_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session start payload.")
+
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
     live_say.add_argument("--agent-id", required=True)
     live_say.add_argument("message", nargs="+")
@@ -494,6 +511,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_call_round(args)
         if args.live_agent_command == "start-meeting":
             return _run_live_agent_start_meeting(args)
+        if args.live_agent_command == "start-session":
+            return _run_live_agent_start_session(args)
         if args.live_agent_command == "say":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
             response = _request_json(
@@ -702,6 +721,48 @@ def _run_live_agent_start_meeting(args: argparse.Namespace) -> int:
         f"{len(roles)} roles, {len(bindings)} bound agents"
     )
     return 0
+
+
+def _run_live_agent_start_session(args: argparse.Namespace) -> int:
+    if args.auto_restart and args.max_restarts <= 0:
+        raise ValueError("--auto-restart requires --max-restarts greater than 0.")
+    if args.stale_restart_after_seconds > 0 and (not args.auto_restart or args.max_restarts <= 0):
+        raise ValueError("--stale-restart-after-seconds requires --auto-restart and --max-restarts greater than 0.")
+    payload = {
+        "meeting_id": str(args.meeting_id or ""),
+        "group_id": str(args.group_id or ""),
+        "council_config_path": str(args.council_config or ""),
+        "agent_config_path": str(args.agent_config or ""),
+        "live_agent_config_path": str(args.live_agent_config or ""),
+        "connect_timeout_seconds": float(args.connect_timeout),
+        "auto_restart": bool(args.auto_restart),
+        "max_restarts": int(args.max_restarts),
+        "restart_backoff_seconds": float(args.restart_backoff_seconds),
+        "stale_restart_after_seconds": float(args.stale_restart_after_seconds),
+    }
+    response = _request_json(
+        _server_url(args.server, "/api/live-agent-sessions/start"),
+        method="POST",
+        payload=payload,
+        timeout_seconds=float(args.connect_timeout) + 6.0,
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_session_start(response))
+    return 0 if response.get("status") == "ready" else 1
+
+
+def _format_live_agent_session_start(response: dict[str, object]) -> str:
+    status = str(response.get("status") or "unknown")
+    meeting_id = str(response.get("meeting_id") or "unknown")
+    group_id = str(response.get("group_id") or "unknown")
+    connection = response.get("connection") if isinstance(response.get("connection"), dict) else {}
+    expected = connection.get("expected", 0)
+    connected = connection.get("connected", 0)
+    attention = connection.get("attention") if isinstance(connection.get("attention"), list) else []
+    suffix = f"; attention {', '.join(str(item) for item in attention)}" if attention else ""
+    return f"Resident session {meeting_id} {status}; group {group_id}; {connected}/{expected} connected{suffix}"
 
 
 def _load_live_agent_sequence_turns(args: argparse.Namespace) -> list[dict[str, object]]:

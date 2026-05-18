@@ -90,6 +90,33 @@ Resident runners read the current room presence on every poll and use that roste
 
 ## Start A Resident Meeting
 
+Use `start-session` when you want the operator path that creates the visible resident meeting and starts its supervised resident group in one bounded operation:
+
+```bash
+python3 -m agentsassemble.cli live-agent start-session \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1 \
+  --group-id resident-main \
+  --council-config configs/demo-council.json \
+  --agent-config configs/agents.example.json \
+  --live-agent-config configs/live-agents.example.json \
+  --connect-timeout 5
+```
+
+The HTTP control-plane path is:
+
+```text
+POST /api/live-agent-sessions/start
+```
+
+with `meeting_id`, `group_id`, `council_config_path`, `agent_config_path`, `live_agent_config_path`, `connect_timeout_seconds`, and the same `auto_restart`, `max_restarts`, `restart_backoff_seconds`, and `stale_restart_after_seconds` options used by supervised process start. The coordinator preflights the resident group config before creating the meeting, refuses if the resident group manifest does not exactly match the meeting's bound agent ids, creates the normal visible resident meeting, starts the supervised group, then waits briefly for bound agents to appear as `online` or `working` and attached to the meeting.
+
+Resident group configs used with `start-session` should either leave each agent's `meeting_id` blank, letting the created roster binding supply it, or match the explicit `--meeting-id`. A resident config that points an agent at a different meeting is refused before state is written, because that runner would otherwise reconnect itself away from the new official meeting.
+
+The response reports `status: "ready"` when every expected agent is connected, or `status: "starting"` when the group launched but at least one agent has not connected before the bounded wait ends. CLI exit code is `0` for `ready`, `1` for `starting`, and `2` for refused, HTTP, or argument errors. This path does not run official turns, smoke probes, model calls, remote bridge `/agentsassemble/run`, decisions, or transcript finalization. Partial meeting and process state remains visible for recovery instead of being deleted.
+
+The operation ledger records one sanitized `session.start` entry with result status, meeting id, group id, expected/connected counts, safe agent ids, and connection attention only. It does not record config paths, command arguments, endpoints, auth refs, prompts, log tails, provider output, or official turn content.
+
 Use `start-meeting` when you want a normal, visible meeting record that is ready for resident live-agent official turns, instead of a diagnostic smoke meeting:
 
 ```bash
@@ -108,7 +135,7 @@ POST /api/live-agent-meetings/start
 
 with `meeting_id`, `council_config_path`, and `agent_config_path`. The server creates `meetings/<meeting_id>/live_state.json`, writes `agenda.md`, appends a meeting status live event, registers the approved `agent_bindings` as live-agent roster entries attached to that meeting, and pins their engagement mode to `moderator_called` so a later resident runner registration cannot accidentally turn official participants into lobby auto-chat agents. Explicit engagement modes from the runtime config are overridden on this start path because resident meeting participants are official-turn agents.
 
-The created meeting is not diagnostic and appears in `/api/meetings`, `/api/meetings/latest`, and the GUI meeting selector. It does not start provider commands, run research, call paid APIs, or synthesize a decision. Start or restart the resident process group separately, then use `call-round` when the roster is attached and the agents are running.
+The created meeting is not diagnostic and appears in `/api/meetings`, `/api/meetings/latest`, and the GUI meeting selector. It does not start provider commands, run research, call paid APIs, or synthesize a decision. Start or restart the resident process group separately, or use `start-session` when you want the meeting and group start composed for you, then use `call-round` when the roster is attached and the agents are running.
 
 The operation ledger records a sanitized `meeting.start` entry with meeting id, role count, and bound-agent count only. It does not record config paths, command arguments, endpoints, auth refs, prompts, or provider output.
 

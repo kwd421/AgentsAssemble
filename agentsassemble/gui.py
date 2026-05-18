@@ -28,6 +28,7 @@ from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_rounds import build_official_round_turns
+from agentsassemble.live_agent_sessions import start_live_agent_session
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_official_round_smoke, run_live_agent_smoke
 from agentsassemble.live_agent_turns import wait_for_official_turn_reply
 from agentsassemble.live_transcript import projected_live_transcript_text
@@ -448,6 +449,35 @@ def live_agent_meeting_start_payload(output_root: Path, payload: dict[str, objec
         council_config_path=Path(council_config_path) if council_config_path else None,
         agent_config_path=Path(agent_config_path) if agent_config_path else None,
         meeting_id=str(payload.get("meeting_id") or ""),
+    )
+
+
+def live_agent_session_start_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+    *,
+    default_server: str,
+) -> dict[str, object]:
+    council_config_path = str(payload.get("council_config_path") or payload.get("council_config") or "").strip()
+    agent_config_path = str(payload.get("agent_config_path") or payload.get("agent_config") or "").strip()
+    live_agent_config_path = str(payload.get("live_agent_config_path") or payload.get("live_agent_config") or "").strip()
+    if not live_agent_config_path:
+        raise ValueError("Live agent config path is required.")
+    return start_live_agent_session(
+        output_root,
+        process_supervisor,
+        server=str(payload.get("server") or default_server),
+        council_config_path=Path(council_config_path) if council_config_path else None,
+        agent_config_path=Path(agent_config_path) if agent_config_path else None,
+        live_agent_config_path=Path(live_agent_config_path),
+        meeting_id=str(payload.get("meeting_id") or ""),
+        group_id=str(payload.get("group_id") or ""),
+        connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
+        auto_restart=_payload_bool(payload.get("auto_restart")),
+        max_restarts=_payload_nonnegative_int(payload.get("max_restarts"), 0),
+        restart_backoff_seconds=_payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
+        stale_restart_after_seconds=_payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0),
     )
 
 
@@ -1781,6 +1811,27 @@ def _official_round_smoke_operation_details(smoke: dict[str, object]) -> dict[st
     }
 
 
+def _session_start_operation_details(session: dict[str, object]) -> dict[str, object]:
+    connection = session.get("connection") if isinstance(session.get("connection"), dict) else {}
+    return {
+        "result_status": _operation_result_status(session.get("status")),
+        "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
+        "group_id": clean_lobby_text(session.get("group_id"), limit=128),
+        "expected_agent_count": _payload_nonnegative_int(connection.get("expected"), 0),
+        "connected_agent_count": _payload_nonnegative_int(connection.get("connected"), 0),
+        "agent_ids": _safe_payload_strings(connection.get("agent_ids"), limit=64),
+        "connected_agent_ids": _safe_payload_strings(connection.get("connected_agent_ids"), limit=64),
+        "attention": _safe_payload_strings(connection.get("attention"), limit=128),
+    }
+
+
+def _session_start_error_message(error: Exception) -> str:
+    message = str(error).replace("\r", " ").replace("\n", " ").strip()
+    if "/" in message or "\\" in message or ".json" in message.casefold():
+        return "Resident live-agent session start failed: details redacted."
+    return message[:500] or "Resident live-agent session start failed."
+
+
 def _turn_round_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:
     return {
         "meeting_id": meeting_id,
@@ -1957,6 +2008,47 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
+                return
+            if parsed.path == "/api/live-agent-sessions/start":
+                payload = self._operation_json_payload(operation="session.start")
+                if payload is None:
+                    return
+                try:
+                    session = live_agent_session_start_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                        default_server=self._request_server_url(),
+                    )
+                except (OSError, ValueError) as error:
+                    safe_error = _session_start_error_message(error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.start",
+                        status="failed",
+                        target_id=str(payload.get("meeting_id") or ""),
+                        error=safe_error,
+                        details={
+                            "meeting_id": str(payload.get("meeting_id") or ""),
+                            "group_id": str(payload.get("group_id") or ""),
+                        },
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error)
+                    return
+                result_status = _operation_result_status(session.get("status"))
+                record_live_agent_operation(
+                    output_root,
+                    operation="session.start",
+                    status="success" if result_status == "ready" else "degraded",
+                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
+                    summary=(
+                        "started resident live-agent session"
+                        if result_status == "ready"
+                        else "resident live-agent session is still connecting"
+                    ),
+                    details=_session_start_operation_details(session),
+                )
+                self._send_json(session)
                 return
             if parsed.path == "/api/live-agent-meetings/start":
                 payload = self._operation_json_payload(operation="meeting.start")

@@ -1254,6 +1254,36 @@ Write only the normal live request/reply events, the normal sanitized per-reply 
 
 ---
 
+### Task 41: Resident Session Start Coordinator
+
+**Files:**
+- Create: `agentsassemble/live_agent_sessions.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_sessions.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for safe session composition**
+
+Cover manifest/binding mismatch refusal before meeting or process records are written, API success with a fake supervisor, `starting` status when bound agents have not connected yet, CLI parser/payload/exit semantics, and sanitized operation history.
+
+- [x] **Step 2: Add a backend coordinator**
+
+Compose the existing preflight gate, resident meeting creation, supervised process start, and read-only presence evidence in `start_live_agent_session()`. Preflight and resident manifest coverage checks run before meeting creation; partial meeting/process state remains visible after later launch or connection delays.
+
+- [x] **Step 3: Expose API and CLI controls**
+
+Add `POST /api/live-agent-sessions/start` and `assemble live-agent start-session`. Return `ready` when every bound agent is `online` or `working` for the created meeting, otherwise return `starting`; the CLI exits `0` for `ready`, `1` for `starting`, and `2` for refused/transport/argument failures.
+
+- [x] **Step 4: Preserve privacy and non-goals**
+
+Record one sanitized `session.start` operation with ids, counts, result status, and safe connection attention only. Do not record config paths, command arguments, endpoints, auth refs, prompts, logs, provider output, or official turn content. Do not run official turns, smoke probes, model calls, remote bridge `/agentsassemble/run`, decisions, or transcript finalization.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
