@@ -3337,6 +3337,48 @@ Document that restart, recovery, and auto-restart relaunches require persisted s
 
 ---
 
+### Task 92: Health Explains Restart-Failed Missing Launch Evidence
+
+**Goal:** Let operators see why an auto-restart reached `restart_failed` when persisted launch evidence is missing, without exposing config paths, server URLs, commands, or provider output.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED health coverage for restart-failed launch evidence**
+
+Cover error process groups whose latest lifecycle evidence is `restart_failed` and whose `last_error` says the relaunch is missing persisted config or server evidence for the same safe group id. `/api/live-agent-health` must expose only compact constants such as `missing launch config` and `missing launch server`, prefer current `restart_failed` launch evidence over older watchdog context, and drop stale, wrong-group, non-error, or suspicious restart-failure errors that contain path-like evidence.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_gui_server.GuiServerTests.test_live_agent_health_endpoint_summarizes_agents_and_processes
+```
+
+Expected: fail before implementation because health only reports stale-watchdog process reasons.
+
+- [x] **Step 2: Recognize only safe restart-failed launch reasons**
+
+At the shared health reason decision point, keep the stale-watchdog sanitizer unchanged and add `restart_failed` handling that derives only the two safe operator constants from bounded `last_error` text when the current process row is still in `error` and the generated failure text names the same safe group id. Do not echo group ids, config paths, server values, command paths, URLs, env markers, provider output, or arbitrary lifecycle strings.
+
+- [x] **Step 3: Cover CLI health output**
+
+Extend text-output coverage so the existing `process reasons:` summary includes `restart_failed missing launch config` when the health payload carries that sanitized reason.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_health_prints_summary
+```
+
+- [x] **Step 4: Document the expanded health reason contract**
+
+Update operator docs to state that health/doctor can expose safe stale-watchdog reasons and safe restart-failed missing launch config/server reasons, while suspicious values are dropped.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

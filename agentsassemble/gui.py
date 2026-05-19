@@ -81,8 +81,13 @@ MAX_LIVE_AGENT_ROUND_BATCH = 8
 LIVE_AGENT_ROUND_SCHEDULER_LOCKS: dict[str, threading.RLock] = {}
 LIVE_AGENT_ROUND_SCHEDULER_LOCKS_LOCK = threading.Lock()
 HEALTH_WATCHDOG_REASON_EVENT_TYPES = {"stale_watchdog", "stale_watchdog_stop_failed"}
+HEALTH_RESTART_FAILED_REASON_EVENT_TYPE = "restart_failed"
 SAFE_HEALTH_WATCHDOG_REASON_PATTERN = re.compile(
     r"^(?:(?:missing|stale|offline|error) manifest agent|wrong meeting manifest agent) [A-Za-z0-9_.-]{1,64}$"
+)
+SAFE_HEALTH_RESTART_FAILED_GROUP_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+SAFE_HEALTH_RESTART_FAILED_ERROR_PATTERN = re.compile(
+    r"Restart failed: Live agent group ([A-Za-z0-9_.-]{1,64}) has no (config|server) to (?:restart|recover)\."
 )
 
 
@@ -1678,13 +1683,22 @@ def _live_agent_process_health_summary(
 
 def _live_agent_process_health_reason(group: dict[str, object]) -> dict[str, str]:
     events = group.get("recent_events") if isinstance(group.get("recent_events"), list) else []
+    group_id = str(group.get("group_id") or "").strip()
+    status = str(group.get("status") or "").strip()
+    seen_newer_event = False
     for event in reversed(events):
         if not isinstance(event, dict):
             continue
         event_type = str(event.get("event_type") or "").strip()
-        if event_type not in HEALTH_WATCHDOG_REASON_EVENT_TYPES:
+        if event_type in HEALTH_WATCHDOG_REASON_EVENT_TYPES:
+            reason = _safe_health_watchdog_reason(event.get("reason"))
+        elif event_type == HEALTH_RESTART_FAILED_REASON_EVENT_TYPE:
+            if seen_newer_event or status != "error":
+                continue
+            reason = _safe_health_restart_failed_reason(group.get("last_error"), group_id=group_id)
+        else:
+            seen_newer_event = True
             continue
-        reason = _safe_health_watchdog_reason(event.get("reason"))
         if reason:
             return {"event_type": event_type, "reason": reason}
     return {}
@@ -1700,6 +1714,37 @@ def _safe_health_watchdog_reason(value: object) -> str:
 def _looks_sensitive_health_watchdog_reason(reason: str) -> bool:
     lowered = reason.casefold()
     return "/" in reason or "\\" in reason or ".json" in lowered or "env:" in lowered
+
+
+def _safe_health_restart_failed_reason(value: object, *, group_id: str) -> str:
+    if not SAFE_HEALTH_RESTART_FAILED_GROUP_ID_PATTERN.fullmatch(group_id):
+        return ""
+    error = clean_lobby_text(value, limit=240)
+    if not error or _looks_sensitive_health_restart_failed_error(error):
+        return ""
+    match = SAFE_HEALTH_RESTART_FAILED_ERROR_PATTERN.search(error)
+    if not match or match.group(1) != group_id:
+        return ""
+    missing_kind = match.group(2)
+    if missing_kind == "config":
+        return "missing launch config"
+    if missing_kind == "server":
+        return "missing launch server"
+    return ""
+
+
+def _looks_sensitive_health_restart_failed_error(error: str) -> bool:
+    lowered = error.casefold()
+    secret_word = re.search(r"\b(auth|credential|password|secret|token)\b", lowered)
+    return (
+        bool(secret_word)
+        or bool(re.search(r"(^|[\s:=])/", error))
+        or "\\" in error
+        or "://" in error
+        or "--" in error
+        or ".json" in lowered
+        or "env:" in lowered
+    )
 
 
 def _live_agent_connection_health_summary(

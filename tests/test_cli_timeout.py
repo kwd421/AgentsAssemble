@@ -1227,7 +1227,11 @@ class CliTimeoutTests(unittest.TestCase):
                     "crashed-group": {
                         "event_type": "stale_watchdog",
                         "reason": "missing manifest agent agent-a",
-                    }
+                    },
+                    "missing-config-group": {
+                        "event_type": "restart_failed",
+                        "reason": "missing launch config",
+                    },
                 },
             },
             "connections": {
@@ -1256,7 +1260,13 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("agent attention: error-agent, offline-agent", output)
         self.assertIn("processes: 1 running / 7 total", output)
         self.assertIn("process attention: crashed-group, orphan-group", output)
-        self.assertIn("process reasons: crashed-group stale_watchdog missing manifest agent agent-a", output)
+        self.assertIn(
+            (
+                "process reasons: crashed-group stale_watchdog missing manifest agent agent-a, "
+                "missing-config-group restart_failed missing launch config"
+            ),
+            output,
+        )
         self.assertIn("connections: 1 connected / 2 expected", output)
         self.assertIn("connection attention: crew:friend-b:missing", output)
         self.assertIn("sessions: 1 ready / 2 total", output)

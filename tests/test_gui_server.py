@@ -2583,6 +2583,34 @@ class GuiServerTests(unittest.TestCase):
                             },
                         ],
                     },
+                    {
+                        "group_id": "missing-config-group",
+                        "status": "error",
+                        "last_error": (
+                            "Exited with return code 2; auto restart 1/1. "
+                            "Restart failed: Live agent group missing-config-group has no config to restart."
+                        ),
+                        "recent_events": [{"event_type": "restart_failed"}],
+                    },
+                    {
+                        "group_id": "missing-server-group",
+                        "status": "error",
+                        "last_error": (
+                            "Exited with return code 2; auto restart 1/1. "
+                            "Restart failed: Live agent group missing-server-group has no server to restart."
+                        ),
+                        "recent_events": [{"event_type": "restart_failed"}],
+                    },
+                    {
+                        "group_id": "suspicious-restart-group",
+                        "status": "error",
+                        "last_error": (
+                            "Exited with return code 2; auto restart 1/1. "
+                            "Restart failed: Live agent group suspicious-restart-group has no config to restart. "
+                            "/private/token/live-agents.json"
+                        ),
+                        "recent_events": [{"event_type": "restart_failed"}],
+                    },
                     {"group_id": "crashed-group", "status": "error"},
                     {"group_id": "orphan-group", "status": "unknown"},
                     {"group_id": "stopped-group", "status": "stopped"},
@@ -2655,10 +2683,10 @@ class GuiServerTests(unittest.TestCase):
             )
             self.assertEqual(payload["processes"]["counts"]["running"], 2)
             self.assertEqual(payload["processes"]["counts"]["restarting"], 1)
-            self.assertEqual(payload["processes"]["counts"]["error"], 2)
+            self.assertEqual(payload["processes"]["counts"]["error"], 5)
             self.assertEqual(payload["processes"]["counts"]["unknown"], 2)
             self.assertEqual(payload["processes"]["counts"]["stopped"], 1)
-            self.assertEqual(payload["processes"]["total"], 8)
+            self.assertEqual(payload["processes"]["total"], 11)
             self.assertEqual(
                 payload["processes"]["meeting_ids"],
                 {"running-group": "resident-m1", "restart-group": "resident-m2"},
@@ -2667,20 +2695,97 @@ class GuiServerTests(unittest.TestCase):
                 payload["processes"]["attention"],
                 [
                     "restart-group",
+                    "missing-config-group",
+                    "missing-server-group",
+                    "suspicious-restart-group",
                     "crashed-group",
                     "orphan-group",
                     "stopped-group",
-                    "missing-process-group-id-7",
+                    "missing-process-group-id-10",
                     "odd-group",
                 ],
             )
             self.assertEqual(
                 payload["processes"]["reasons"],
-                {"restart-group": {"event_type": "stale_watchdog", "reason": "missing manifest agent agent-a"}},
+                {
+                    "restart-group": {"event_type": "stale_watchdog", "reason": "missing manifest agent agent-a"},
+                    "missing-config-group": {"event_type": "restart_failed", "reason": "missing launch config"},
+                    "missing-server-group": {"event_type": "restart_failed", "reason": "missing launch server"},
+                },
             )
             self.assertNotIn("SECRET_TOKEN", json.dumps(payload, ensure_ascii=False))
             self.assertNotIn("live-agents.json", json.dumps(payload, ensure_ascii=False))
+            self.assertNotIn("private/token", json.dumps(payload, ensure_ascii=False))
             self.assertFalse(supervisor.list_called)
+
+    def test_live_agent_health_endpoint_reports_only_current_restart_failed_launch_reason(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "current-failure",
+                        "status": "error",
+                        "last_error": (
+                            "Exited with return code 2; auto restart 1/1. "
+                            "Restart failed: Live agent group current-failure has no server to restart."
+                        ),
+                        "recent_events": [
+                            {"event_type": "stale_watchdog", "reason": "missing manifest agent agent-a"},
+                            {"event_type": "restart_failed"},
+                        ],
+                    },
+                    {
+                        "group_id": "resolved-failure",
+                        "status": "error",
+                        "last_error": (
+                            "Exited with return code 2; auto restart 1/1. "
+                            "Restart failed: Live agent group resolved-failure has no config to restart."
+                        ),
+                        "recent_events": [
+                            {"event_type": "restart_failed"},
+                            {"event_type": "started"},
+                        ],
+                    },
+                    {
+                        "group_id": "wrong-id-failure",
+                        "status": "error",
+                        "last_error": (
+                            "Exited with return code 2; auto restart 1/1. "
+                            "Restart failed: Live agent group other-group has no config to restart."
+                        ),
+                        "recent_events": [{"event_type": "restart_failed"}],
+                    },
+                    {
+                        "group_id": "running-failure",
+                        "status": "running",
+                        "last_error": (
+                            "Exited with return code 2; auto restart 1/1. "
+                            "Restart failed: Live agent group running-failure has no config to restart."
+                        ),
+                        "recent_events": [{"event_type": "restart_failed"}],
+                    },
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(json.dumps({"agents": []}), encoding="utf-8")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(
+                payload["processes"]["reasons"],
+                {"current-failure": {"event_type": "restart_failed", "reason": "missing launch server"}},
+            )
 
     def test_live_agent_processes_payload_includes_output_only_agent_connection_evidence(self):
         class FakeSupervisor:
