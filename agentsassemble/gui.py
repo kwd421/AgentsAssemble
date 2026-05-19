@@ -3206,6 +3206,61 @@ def _session_stop_error_message(error: Exception) -> str:
     return _session_error_message(error, action="stop")
 
 
+def _process_start_error_message(error: Exception) -> str:
+    return _process_control_error_message(error, action="start")
+
+
+def _process_stop_error_message(error: Exception) -> str:
+    return _process_control_error_message(error, action="stop")
+
+
+def _process_restart_error_message(error: Exception) -> str:
+    return _process_control_error_message(error, action="restart")
+
+
+def _process_recover_error_message(error: Exception) -> str:
+    return _process_control_error_message(error, action="recover")
+
+
+def _process_stop_running_error_message(error: Exception) -> str:
+    return _process_control_error_message(error, action="stop running groups")
+
+
+def _process_control_error_message(error: Exception, *, action: str) -> str:
+    message = str(error).replace("\r", " ").replace("\n", " ").strip()
+    fallback = f"Resident process group failed to {action}."
+    if _looks_sensitive_process_control_error(message):
+        return f"Resident process group failed to {action}: details redacted."
+    return message[:500] or fallback
+
+
+def _looks_sensitive_process_control_error(message: str) -> bool:
+    lowered = message.casefold()
+    markers = (
+        "authorization",
+        "bearer ",
+        "secret",
+        "token",
+        "api-key",
+        "apikey",
+        "x-api-key",
+        "password",
+        "http://",
+        "https://",
+        "env:",
+        ".json",
+        ".env",
+        ".toml",
+    )
+    if any(marker in lowered for marker in markers):
+        return True
+    if "\\" in message or "--" in message:
+        return True
+    if re.search(r"(^|[\s=])(?:/|~/|\./|\.\./)\S+", message):
+        return True
+    return bool(re.search(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)", message))
+
+
 def _session_error_message(error: Exception, *, action: str) -> str:
     message = str(error).replace("\r", " ").replace("\n", " ").strip()
     fallback = f"Resident live-agent session {action} failed."
@@ -3986,7 +4041,11 @@ def _make_handler(
                             ),
                         },
                     )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    self._send_error(
+                        HTTPStatus.BAD_REQUEST,
+                        _process_start_error_message(error),
+                        details={"group_id": _operation_group_id(payload)},
+                    )
                     return
                 group = started.get("group") if isinstance(started.get("group"), dict) else {}
                 record_live_agent_operation(
@@ -4029,7 +4088,7 @@ def _make_handler(
                         target_id="running-groups",
                         error=str(error),
                     )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    self._send_error(HTTPStatus.BAD_REQUEST, _process_stop_running_error_message(error))
                     return
                 result = stopped.get("result") if isinstance(stopped.get("result"), dict) else {}
                 record_live_agent_operation(
@@ -4310,7 +4369,11 @@ def _make_handler(
                         error=str(error),
                         details={"group_id": live_agent_process_stop_id},
                     )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    self._send_error(
+                        HTTPStatus.BAD_REQUEST,
+                        _process_stop_error_message(error),
+                        details={"group_id": live_agent_process_stop_id},
+                    )
                     return
                 group = stopped.get("group") if isinstance(stopped.get("group"), dict) else {}
                 record_live_agent_operation(
@@ -4344,7 +4407,11 @@ def _make_handler(
                         error=str(error),
                         details={"group_id": live_agent_process_restart_id},
                     )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    self._send_error(
+                        HTTPStatus.BAD_REQUEST,
+                        _process_restart_error_message(error),
+                        details={"group_id": live_agent_process_restart_id},
+                    )
                     return
                 group = restarted.get("group") if isinstance(restarted.get("group"), dict) else {}
                 record_live_agent_operation(
@@ -4377,7 +4444,11 @@ def _make_handler(
                         error=str(error),
                         details={"group_id": live_agent_process_recover_id},
                     )
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    self._send_error(
+                        HTTPStatus.BAD_REQUEST,
+                        _process_recover_error_message(error),
+                        details={"group_id": live_agent_process_recover_id},
+                    )
                     return
                 group = recovered.get("group") if isinstance(recovered.get("group"), dict) else {}
                 record_live_agent_operation(

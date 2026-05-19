@@ -879,6 +879,223 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("bad-agent command", operations["operations"][0]["error"])
             self.assertNotIn("definitely-missing-agentsassemble-cli", json.dumps(operations, ensure_ascii=False))
 
+    def test_live_agent_process_start_redacts_sensitive_error_body(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            missing_config = root / "private" / "live-agents.secret.json"
+            supervisor = LiveAgentProcessSupervisor(root)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/start",
+                    data=json.dumps({"config_path": str(missing_config), "group_id": "crew"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urlopen(request, timeout=4)
+                except HTTPError as error:
+                    error_code = error.code
+                    body = json.loads(error.read().decode("utf-8"))
+                    error.close()
+                else:
+                    self.fail("missing config should return HTTP 400")
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+                supervisor.close()
+
+            response_text = json.dumps(body, ensure_ascii=False)
+            operation_text = json.dumps(operations, ensure_ascii=False)
+            self.assertEqual(error_code, 400)
+            self.assertEqual(body["error"], "Resident process group failed to start: details redacted.")
+            self.assertNotIn("live-agents.secret.json", response_text)
+            self.assertNotIn(str(missing_config), response_text)
+            self.assertNotIn("live-agents.secret.json", operation_text)
+            self.assertNotIn(str(missing_config), operation_text)
+
+    def test_live_agent_process_restart_redacts_sensitive_error_body(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            missing_config = root / "private" / "live-agents.secret.json"
+            state_dir = root / "live-agent-runs"
+            state_dir.mkdir(parents=True)
+            (state_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "error",
+                                "pid": None,
+                                "meeting_id": "",
+                                "config_path": str(missing_config),
+                                "server": "http://room.local",
+                                "log_path": "",
+                                "started_at": "",
+                                "stopped_at": "",
+                                "returncode": 2,
+                                "last_error": "",
+                                "auto_restart": False,
+                                "restart_count": 0,
+                                "max_restarts": 0,
+                                "restart_backoff_seconds": 5,
+                                "stale_restart_after_seconds": 0,
+                                "next_restart_at": "",
+                                "diagnostic": False,
+                                "agents": [],
+                                "recovered_from_status": "",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            supervisor = LiveAgentProcessSupervisor(root)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/crew/restart",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urlopen(request, timeout=4)
+                except HTTPError as error:
+                    error_code = error.code
+                    body = json.loads(error.read().decode("utf-8"))
+                    error.close()
+                else:
+                    self.fail("missing persisted config should return HTTP 400")
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+                supervisor.close()
+
+            response_text = json.dumps(body, ensure_ascii=False)
+            operation_text = json.dumps(operations, ensure_ascii=False)
+            self.assertEqual(error_code, 400)
+            self.assertEqual(body["error"], "Resident process group failed to restart: details redacted.")
+            self.assertEqual(body["group_id"], "crew")
+            self.assertNotIn("live-agents.secret.json", response_text)
+            self.assertNotIn(str(missing_config), response_text)
+            self.assertNotIn("live-agents.secret.json", operation_text)
+            self.assertNotIn(str(missing_config), operation_text)
+
+    def test_live_agent_process_recover_redacts_sensitive_error_body(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            missing_config = root / "private" / "live-agents.secret.json"
+            state_dir = root / "live-agent-runs"
+            state_dir.mkdir(parents=True)
+            (state_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "error",
+                                "pid": None,
+                                "meeting_id": "",
+                                "config_path": str(missing_config),
+                                "server": "http://room.local",
+                                "log_path": "",
+                                "started_at": "",
+                                "stopped_at": "",
+                                "returncode": 2,
+                                "last_error": "",
+                                "auto_restart": False,
+                                "restart_count": 0,
+                                "max_restarts": 0,
+                                "restart_backoff_seconds": 5,
+                                "stale_restart_after_seconds": 0,
+                                "next_restart_at": "",
+                                "diagnostic": False,
+                                "agents": [],
+                                "recovered_from_status": "",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            supervisor = LiveAgentProcessSupervisor(root)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/crew/recover",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urlopen(request, timeout=4)
+                except HTTPError as error:
+                    error_code = error.code
+                    body = json.loads(error.read().decode("utf-8"))
+                    error.close()
+                else:
+                    self.fail("missing persisted config should return HTTP 400")
+            finally:
+                server.shutdown()
+                server.server_close()
+                supervisor.close()
+
+            response_text = json.dumps(body, ensure_ascii=False)
+            self.assertEqual(error_code, 400)
+            self.assertEqual(body["error"], "Resident process group failed to recover: details redacted.")
+            self.assertEqual(body["group_id"], "crew")
+            self.assertNotIn("live-agents.secret.json", response_text)
+            self.assertNotIn(str(missing_config), response_text)
+
+    def test_live_agent_process_stop_keeps_safe_not_found_error_body(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            supervisor = LiveAgentProcessSupervisor(root)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/missing-group/stop",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                try:
+                    urlopen(request, timeout=4)
+                except HTTPError as error:
+                    error_code = error.code
+                    body = json.loads(error.read().decode("utf-8"))
+                    error.close()
+                else:
+                    self.fail("missing group should return HTTP 400")
+            finally:
+                server.shutdown()
+                server.server_close()
+                supervisor.close()
+
+            self.assertEqual(error_code, 400)
+            self.assertEqual(body["error"], "Live agent group missing-group was not found.")
+            self.assertEqual(body["group_id"], "missing-group")
+
     def test_live_agent_process_start_records_invalid_json_operation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

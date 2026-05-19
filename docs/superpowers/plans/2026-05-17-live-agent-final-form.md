@@ -3607,6 +3607,49 @@ Document that process rows redact suspicious `last_error` text on output and tha
 
 ---
 
+### Task 98: Redact Process Control Error Responses
+
+**Goal:** Keep browser-visible process control failures useful without echoing config paths, endpoints, tokens, command options, env refs, or secret-looking values in API error bodies.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_gui_server.py`
+
+- [x] **Step 1: Add RED coverage for start error body redaction**
+
+Cover `POST /api/live-agent-processes/start` with a missing config path whose filename and directory are sensitive. The HTTP 400 JSON body and operation history must not include the path or config filename, while the response still names the process start failure class.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_gui_server.GuiServerTests.test_live_agent_process_start_redacts_sensitive_error_body
+```
+
+Expected: fail before implementation because the endpoint sends `str(error)` directly.
+
+- [x] **Step 2: Add RED coverage for restart error body redaction**
+
+Cover `POST /api/live-agent-processes/<group_id>/restart` where the persisted config path no longer exists. The HTTP 400 JSON body and operation history must not include the persisted path or config filename, and the body should still expose the safe group id.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_gui_server.GuiServerTests.test_live_agent_process_restart_redacts_sensitive_error_body
+```
+
+Expected: fail before implementation because the endpoint sends `str(error)` directly.
+
+- [x] **Step 3: Sanitize process-control error responses**
+
+Add a process-control error formatter for start, stop, restart, recover, and stop-running. Redact suspicious path/endpoint/token/config/option/env details, preserve safe short messages, and pass safe group ids through the existing `_send_error(..., details=...)` surface.
+
+- [x] **Step 4: Document browser-visible process errors**
+
+Document that process-control API/GUI error bodies are sanitized separately from operation history and process records.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
