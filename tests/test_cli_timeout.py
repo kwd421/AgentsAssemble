@@ -3866,7 +3866,16 @@ class CliTimeoutTests(unittest.TestCase):
 
     def test_live_agent_delegate_runs_local_command_and_posts_reply(self):
         stdout = StringIO()
-        room_payload = {"lobby_events": [{"name": "나", "message": "방 상태 어때?"}]}
+        room_payload = {
+            "lobby_events": [
+                {
+                    "id": "evt-human",
+                    "name": "나",
+                    "message": "방 상태 어때?",
+                    "auto_chain_depth": 2,
+                }
+            ]
+        }
         responses = [
             {"agent": {"agent_id": "claude-code-live"}},
             {"agent": {"agent_id": "claude-code-live", "status": "working"}},
@@ -3903,7 +3912,12 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertEqual(
             request_json.call_args_list[3].kwargs["payload"],
-            {"message": "Claude Code Live 응답", "kind": "message"},
+            {
+                "message": "Claude Code Live 응답",
+                "kind": "message",
+                "source_event_id": "evt-human",
+                "auto_chain_depth": 3,
+            },
         )
         run_delegate.assert_called_once()
         self.assertEqual(run_delegate.call_args.args[0], ["claude", "-p"])
@@ -3911,6 +3925,105 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("AgentsAssemble", run_delegate.call_args.args[1])
         self.assertNotIn("AgentCouncil", run_delegate.call_args.args[1])
         self.assertIn("Posted evt1", stdout.getvalue())
+
+    def test_live_agent_delegate_does_not_link_reply_to_self_event(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {"agent_id": "claude-code-live", "last_observed_event_id": "evt-human"},
+            "lobby_events": [
+                {"id": "evt-human", "name": "나", "message": "방 상태 어때?"},
+                {
+                    "id": "evt-self",
+                    "name": "Claude Code Live",
+                    "actor_id": "claude-code-live",
+                    "message": "이미 답한 내용",
+                    "auto_chain_depth": 1,
+                },
+            ]
+        }
+        responses = [
+            {"agent": {"agent_id": "claude-code-live"}},
+            {"agent": {"agent_id": "claude-code-live", "status": "working"}},
+            room_payload,
+            {"event": {"id": "evt2"}},
+            {"agent": {"agent_id": "claude-code-live", "status": "online"}},
+        ]
+        with patch("agentsassemble.cli._request_json", side_effect=responses) as request_json:
+            with patch("agentsassemble.cli._run_delegate_command", return_value="Claude Code Live 응답"):
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "delegate",
+                            "--server",
+                            "http://room.local",
+                            "--agent-id",
+                            "claude-code-live",
+                            "--display-name",
+                            "Claude Code Live",
+                            "--provider-kind",
+                            "claude_code",
+                            "--command",
+                            "claude",
+                            "-p",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            request_json.call_args_list[3].kwargs["payload"],
+            {"message": "Claude Code Live 응답", "kind": "message"},
+        )
+        self.assertIn("Posted evt2", stdout.getvalue())
+
+    def test_live_agent_delegate_links_reply_to_unobserved_event_after_cursor(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {"agent_id": "claude-code-live", "last_observed_event_id": "evt-old"},
+            "lobby_events": [
+                {"id": "evt-old", "name": "나", "message": "이전 질문", "auto_chain_depth": 0},
+                {"id": "evt-new", "name": "나", "message": "새 질문", "auto_chain_depth": 1},
+            ],
+        }
+        responses = [
+            {"agent": {"agent_id": "claude-code-live"}},
+            {"agent": {"agent_id": "claude-code-live", "status": "working"}},
+            room_payload,
+            {"event": {"id": "reply-new"}},
+            {"agent": {"agent_id": "claude-code-live", "status": "online"}},
+        ]
+        with patch("agentsassemble.cli._request_json", side_effect=responses) as request_json:
+            with patch("agentsassemble.cli._run_delegate_command", return_value="새 질문 응답"):
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "delegate",
+                            "--server",
+                            "http://room.local",
+                            "--agent-id",
+                            "claude-code-live",
+                            "--display-name",
+                            "Claude Code Live",
+                            "--provider-kind",
+                            "claude_code",
+                            "--command",
+                            "claude",
+                            "-p",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            request_json.call_args_list[3].kwargs["payload"],
+            {
+                "message": "새 질문 응답",
+                "kind": "message",
+                "source_event_id": "evt-new",
+                "auto_chain_depth": 2,
+            },
+        )
+        self.assertIn("Posted reply-new", stdout.getvalue())
 
     def test_live_agent_run_accepts_remote_bridge_without_local_command(self):
         args = build_parser().parse_args(

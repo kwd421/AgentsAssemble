@@ -2278,10 +2278,15 @@ def _run_live_agent_delegate(args: argparse.Namespace) -> int:
     reply = _run_delegate_command(args.delegate_command, _delegate_prompt(args, room), timeout_seconds=args.timeout).strip()
     if not reply:
         raise ValueError("Delegate command returned an empty reply.")
+    lobby_payload = {"message": reply, "kind": "message"}
+    source_event = _delegate_source_event(args, room)
+    if source_event is not None:
+        lobby_payload["source_event_id"] = str(source_event.get("id") or "")
+        lobby_payload["auto_chain_depth"] = _delegate_chain_depth(source_event) + 1
     response = _request_json(
         _server_url(args.server, f"/api/live-agents/{agent_id}/lobby"),
         method="POST",
-        payload={"message": reply, "kind": "message"},
+        payload=lobby_payload,
     )
     _request_json(
         _server_url(args.server, f"/api/live-agents/{agent_id}/heartbeat"),
@@ -2473,6 +2478,53 @@ def _delegate_prompt(args: argparse.Namespace, room: dict[str, object]) -> str:
         if message:
             lines.append(f"- {name}: {message}")
     return "\n".join(lines).strip() + "\n"
+
+
+def _delegate_source_event(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object] | None:
+    events = room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []
+    for event in reversed(_delegate_unobserved_events(args, room, events)):
+        if not isinstance(event, dict):
+            continue
+        if not str(event.get("id") or "").strip():
+            continue
+        if not str(event.get("message") or "").strip():
+            continue
+        if _delegate_self_event(args, event):
+            continue
+        return event
+    return None
+
+
+def _delegate_unobserved_events(
+    args: argparse.Namespace,
+    room: dict[str, object],
+    events: list[object],
+) -> list[object]:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    if str(agent.get("agent_id") or "") != args.agent_id:
+        return events
+    cursor = str(agent.get("last_observed_event_id") or "").strip()
+    if not cursor:
+        return events
+    for index, event in enumerate(events):
+        if isinstance(event, dict) and str(event.get("id") or "") == cursor:
+            return events[index + 1 :]
+    return events
+
+
+def _delegate_self_event(args: argparse.Namespace, event: dict[str, object]) -> bool:
+    actor_id = str(event.get("actor_id") or "")
+    if actor_id and actor_id == args.agent_id:
+        return True
+    display_name = str(args.display_name or args.agent_id or "")
+    return bool(display_name) and str(event.get("name") or "") == display_name
+
+
+def _delegate_chain_depth(event: dict[str, object]) -> int:
+    value = event.get("auto_chain_depth")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(0, value)
+    return 0
 
 
 def _run_delegate_command(command: list[str], prompt: str, *, timeout_seconds: int) -> str:
