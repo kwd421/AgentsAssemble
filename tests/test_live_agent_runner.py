@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 import threading
 import time
@@ -1189,6 +1190,33 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertIn("019e3038-39cc-76a2-a746-5ba8c0f3b408", calls[1]["command"])
         self.assertNotIn("--cd", calls[1]["command"])
         self.assertEqual(calls[1]["kwargs"]["input"], "second prompt")
+
+    def test_codex_resident_command_runner_uses_only_configured_executable_token(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            calls = []
+
+            def fake_run(command, **kwargs):
+                calls.append({"command": command, "kwargs": kwargs})
+                output_path = Path(command[command.index("--output-last-message") + 1])
+                output_path.write_text("reply", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+            runner = CodexResidentCommandRunner(
+                config(
+                    provider_kind="codex_live_session",
+                    connection_kind="live_session",
+                    command=["codex", "--dangerously-bypass-approvals-and-sandbox"],
+                ),
+                command_runner=fake_run,
+                cwd=Path(temp_dir),
+            )
+            try:
+                self.assertEqual(runner(["ignored"], "prompt", timeout_seconds=30), "reply")
+            finally:
+                runner.close()
+
+        self.assertEqual(calls[0]["command"][:5], ["codex", "exec", "--sandbox", "read-only", "--ignore-rules"])
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", calls[0]["command"])
 
     def test_remote_bridge_resident_command_runner_sanitizes_auth_failures(self):
         def requester(url, headers, payload, timeout_seconds):

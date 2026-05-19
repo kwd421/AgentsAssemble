@@ -133,6 +133,32 @@ def _preflight_agent(
     }
 
 
+def resident_config_setup_error(
+    config: ResidentAgentConfig,
+    *,
+    command_resolver: Callable[[str], str | None] | None = None,
+    codex_capability_checker: Callable[[list[str]], dict[str, str]] | None = None,
+    codex_command_runner: Callable[..., Any] | None = None,
+) -> str:
+    resolver = command_resolver or _resolve_command_path
+    codex_checker = codex_capability_checker or (
+        lambda command: _codex_exec_safety_flags_check(command, command_runner=codex_command_runner)
+    )
+    if config.connection_kind == "remote_bridge":
+        return ""
+    command_check = _command_check(config.command, resolver)
+    if command_check["status"] != "ok":
+        return str(command_check.get("message") or "Command is not executable.")
+    if config.provider_kind == "codex_live_session" and config.connection_kind == "live_session":
+        codex_command_check = _codex_command_check(config.command)
+        if codex_command_check["status"] != "ok":
+            return str(codex_command_check.get("message") or "Codex command is not valid.")
+        capability_check = codex_checker(_resolved_command(config.command, command_check.get("path", "")))
+        if capability_check["status"] != "ok":
+            return str(capability_check.get("message") or "Codex command is not ready.")
+    return ""
+
+
 def _load_preflight_configs(path: Path, *, server_override: str | None = None) -> list[ResidentAgentConfig]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -231,6 +257,12 @@ def _command_check(command: list[str], command_resolver: Callable[[str], str | N
 
 def _codex_command_check(command: list[str]) -> dict[str, str]:
     executable = str(command[0] if command else "").strip()
+    if len(command) != 1:
+        return {
+            "id": "codex_command",
+            "status": "failed",
+            "message": "codex_live_session command must contain only the codex executable.",
+        }
     if Path(executable).name in {"codex", "codex.exe"}:
         return {
             "id": "codex_command",
@@ -295,17 +327,6 @@ def _codex_exec_safety_flags_check(
         "status": "failed",
         "message": "Codex command does not accept required live-session safety flags.",
     }
-
-
-def resident_command_executable_error(
-    command: list[str],
-    *,
-    command_resolver: Callable[[str], str | None] | None = None,
-) -> str:
-    check = _command_check(command, command_resolver or _resolve_command_path)
-    if check.get("status") == "ok":
-        return ""
-    return str(check.get("message") or "Command is not executable.")
 
 
 def _remote_bridge_endpoint_check(endpoint: str) -> dict[str, str]:

@@ -25,7 +25,7 @@ from agentsassemble.codex_sessions import (
 )
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
-from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_command_executable_error
+from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
@@ -1435,7 +1435,7 @@ def _resident_config_setup_error(config: ResidentAgentConfig) -> str:
         probe_runner = _command_runner_for_config(config)
         _close_command_runner(probe_runner)
         return ""
-    return resident_command_executable_error(config.command)
+    return resident_config_setup_error(config)
 
 
 def _run_live_agent_health(args: argparse.Namespace) -> int:

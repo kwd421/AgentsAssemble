@@ -5,10 +5,50 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.live_agent_preflight import preflight_live_agent_config
+from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
+from agentsassemble.live_agent_runner import ResidentAgentConfig
 
 
 class LiveAgentPreflightTests(unittest.TestCase):
+    def resident_config(self, **overrides):
+        data = {
+            "server": "http://room.local",
+            "agent_id": "codex-live",
+            "display_name": "Codex Live",
+            "provider_kind": "codex_live_session",
+            "connection_kind": "live_session",
+            "session_id": "",
+            "endpoint": "",
+            "auth_ref": "",
+            "meeting_id": "",
+            "engagement_mode": "always",
+            "command": ["codex"],
+            "timeout_seconds": 30,
+            "poll_interval": 0,
+            "heartbeat_interval": 30,
+            "cooldown": 0,
+            "max_chain_depth": 1,
+            "max_ticks": 1,
+        }
+        data.update(overrides)
+        return ResidentAgentConfig(**data)
+
+    def test_resident_setup_error_checks_codex_live_session_safety_flags(self):
+        errors = []
+
+        error = resident_config_setup_error(
+            self.resident_config(),
+            command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+            codex_capability_checker=lambda command: errors.append(command) or {
+                "id": "codex_exec_safety_flags",
+                "status": "failed",
+                "message": "Codex command does not accept required live-session safety flags.",
+            },
+        )
+
+        self.assertEqual(error, "Codex command does not accept required live-session safety flags.")
+        self.assertEqual(errors, [["/usr/local/bin/codex"]])
+
     def test_codex_live_agent_example_preflights_with_fake_codex_resolver(self):
         config_path = Path("configs/live-agents.codex-session.example.json")
 
@@ -475,6 +515,48 @@ class LiveAgentPreflightTests(unittest.TestCase):
                     "id": "codex_command",
                     "status": "failed",
                     "message": "codex_live_session command executable must be named codex.",
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_preflight_rejects_codex_live_session_with_global_codex_arguments_before_probe(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "codex-live",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "live_session",
+                                "command": ["codex", "--dangerously-bypass-approvals-and-sandbox"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            probed_commands = []
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+                codex_capability_checker=lambda command: probed_commands.append(command) or {
+                    "id": "codex_exec_safety_flags",
+                    "status": "ok",
+                    "message": "Codex exec read-only safety flags are available.",
+                },
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            self.assertEqual(probed_commands, [])
+            self.assertIn(
+                {
+                    "id": "codex_command",
+                    "status": "failed",
+                    "message": "codex_live_session command must contain only the codex executable.",
                 },
                 report["agents"][0]["checks"],
             )

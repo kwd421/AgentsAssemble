@@ -4845,6 +4845,47 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("agent-session", stderr.getvalue())
         self.assertIn("Command not found", stderr.getvalue())
 
+    def test_live_agent_run_rejects_codex_safety_probe_failure_before_registration(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            return {"agent": {"agent_id": "codex-live", "status": "online"}, "lobby_events": []}
+
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli._request_json", side_effect=request_json),
+            patch(
+                "agentsassemble.cli.resident_config_setup_error",
+                return_value="Codex command does not accept required live-session safety flags.",
+            ),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(
+                [
+                    "live-agent",
+                    "run",
+                    "--server",
+                    "http://room.local",
+                    "--agent-id",
+                    "codex-live",
+                    "--provider-kind",
+                    "codex_live_session",
+                    "--connection-kind",
+                    "live_session",
+                    "--poll-interval",
+                    "0",
+                    "--max-ticks",
+                    "1",
+                ]
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(calls, [])
+        self.assertIn("codex-live", stderr.getvalue())
+        self.assertIn("required live-session safety flags", stderr.getvalue())
+
     def test_live_agent_run_restores_persisted_cursor_over_http(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
@@ -5064,6 +5105,57 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("missing-local", stderr.getvalue())
         self.assertIn("missing-live-session", stderr.getvalue())
         self.assertIn("Command not found", stderr.getvalue())
+        self.assertNotIn("Resident group stopped", stdout.getvalue())
+
+    def test_live_agent_run_group_rejects_codex_safety_probe_failure_before_launch(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="codex-live",
+                display_name="Codex Live",
+                provider_kind="codex_live_session",
+                connection_kind="live_session",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["codex"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=1,
+            )
+        ]
+        constructed = []
+
+        class RecordingRunner:
+            def __init__(self, *args, **kwargs):
+                constructed.append((args, kwargs))
+
+            def run(self):
+                return 0
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch(
+                "agentsassemble.cli.resident_config_setup_error",
+                return_value="Codex command does not accept required live-session safety flags.",
+            ),
+            patch("agentsassemble.cli.LiveAgentRunner", RecordingRunner),
+            patch("sys.stdout", stdout),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(constructed, [])
+        self.assertIn("codex-live", stderr.getvalue())
+        self.assertIn("required live-session safety flags", stderr.getvalue())
         self.assertNotIn("Resident group stopped", stdout.getvalue())
 
     def test_live_agent_run_group_rejects_duplicate_agent_ids_before_launch(self):
@@ -5478,7 +5570,7 @@ class CliTimeoutTests(unittest.TestCase):
         stderr = StringIO()
         with (
             patch("agentsassemble.cli.load_group_configs", return_value=configs),
-            patch("agentsassemble.cli.resident_command_executable_error", return_value=""),
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
             patch("agentsassemble.cli.LiveAgentRunner", ShutdownAwareRunner),
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", stderr),
@@ -5570,7 +5662,7 @@ class CliTimeoutTests(unittest.TestCase):
         stderr = StringIO()
         with (
             patch("agentsassemble.cli.load_group_configs", return_value=configs),
-            patch("agentsassemble.cli.resident_command_executable_error", return_value=""),
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
             patch("agentsassemble.cli._command_runner_for_config", side_effect=command_runner_for_config),
             patch("agentsassemble.cli.LiveAgentRunner", BlockingSiblingRunner),
             patch("sys.stdout", StringIO()),

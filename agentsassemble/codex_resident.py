@@ -70,7 +70,8 @@ class CodexResidentCommandRunner:
         self._output_dir.cleanup()
 
     def _build_command(self, output_path: Path) -> list[str]:
-        base_command = list(self.config.command or ["codex"])
+        configured_command = list(self.config.command or ["codex"])
+        base_command = [configured_command[0]]
         exec_prefix = codex_exec_prefix(base_command)
         if self.session_id:
             return [
