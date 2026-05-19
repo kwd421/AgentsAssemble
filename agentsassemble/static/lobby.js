@@ -980,6 +980,7 @@ function liveAgentRuntimeDetails(agent) {
   if (heartbeatAge) details.push(heartbeatAge);
   if (agent.last_reply_at) details.push(`reply ${agent.last_reply_at}`);
   if (agent.last_observed_event_id) details.push(`cursor ${shortSessionId(agent.last_observed_event_id)}`);
+  if (agent.last_observed_live_event_id) details.push(`official cursor ${shortSessionId(agent.last_observed_live_event_id)}`);
   return details.join(" · ");
 }
 

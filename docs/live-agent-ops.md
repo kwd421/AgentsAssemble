@@ -928,7 +928,7 @@ Default files under `--output-root .agentsassemble`:
 What to check:
 
 - `.agentsassemble/live_agents.json`: presence, status, heartbeat metadata, `last_error`, `last_reply_at`, `last_observed_event_id`, and `last_observed_live_event_id`.
-- `/api/live-agents`: roster entries add output-only `heartbeat_age_seconds` and `stale_after_seconds` so operators can see why an agent is fresh or stale. These freshness fields are inferred at read time and are not persisted in `live_agents.json`.
+- `/api/live-agents`: roster entries add output-only `heartbeat_age_seconds` and `stale_after_seconds` so operators can see why an agent is fresh or stale. These freshness fields are inferred at read time and are not persisted in `live_agents.json`. The GUI live-agent card shows both the lobby `cursor` from `last_observed_event_id` and the `official cursor` from `last_observed_live_event_id`, so external/manual agents can prove which room event and official meeting event they last observed.
 - Slow resident replies keep sending `working` heartbeats while the provider command is still in flight, so a long Claude, Gemini, local CLI, live session, or remote bridge turn does not look stale merely because it is still answering.
 - `.agentsassemble/lobby.jsonl`: human lobby messages and live-agent replies. Live-agent auto replies include `actor_id`, `source_event_id`, `auto_chain_depth`, and the server-issued `live_agent_endpoint` evidence flag when they were posted through the resident live-agent lobby endpoint.
 - `.agentsassemble/live-agent-runs/processes.json`: durable group records with `group_id`, `status`, `pid`, `config_path`, `server`, `log_path`, timestamps, `returncode`, `last_error`, and a safe launch-time `agents` manifest.

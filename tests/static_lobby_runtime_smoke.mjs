@@ -1100,6 +1100,29 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.equal(health.attributes["data-tone"], "warning");
 });
 
+test("live-agent roster renders lobby and official cursors separately", () => {
+  resetState();
+  const { document } = installHarness({});
+  state.liveAgents = [
+    {
+      agent_id: "agent-a",
+      display_name: "Agent A",
+      provider_kind: "manual",
+      connection_kind: "manual",
+      status: "online",
+      engagement_mode: "moderator_called",
+      last_observed_event_id: "lobby-evt1",
+      last_observed_live_event_id: "live-evt1",
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+
+  const runtime = document.querySelector(".live-agent-runtime");
+  assert.match(runtime.textContent, /cursor lobby-evt1/);
+  assert.match(runtime.textContent, /official cursor live-evt1/);
+});
+
 test("runtime health load failure renders unknown snapshot without crashing", async () => {
   resetState();
   const { document } = installHarness({
