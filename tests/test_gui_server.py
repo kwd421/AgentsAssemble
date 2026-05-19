@@ -2560,7 +2560,25 @@ class GuiServerTests(unittest.TestCase):
                 return [
                     {"group_id": "running-group", "status": "running", "meeting_id": "resident-m1"},
                     {"group_id": "unsafe-owner", "status": "running", "meeting_id": "../secret"},
-                    {"group_id": "restart-group", "status": "restarting", "meeting_id": "resident-m2"},
+                    {
+                        "group_id": "restart-group",
+                        "status": "restarting",
+                        "meeting_id": "resident-m2",
+                        "recent_events": [
+                            {
+                                "event_type": "stale_watchdog",
+                                "reason": "missing manifest agent agent-a",
+                            },
+                            {
+                                "event_type": "stale_watchdog",
+                                "reason": "missing manifest agent live-agents.json",
+                            },
+                            {
+                                "event_type": "restart_scheduled",
+                                "reason": "env:SECRET_TOKEN",
+                            },
+                        ],
+                    },
                     {"group_id": "crashed-group", "status": "error"},
                     {"group_id": "orphan-group", "status": "unknown"},
                     {"group_id": "stopped-group", "status": "stopped"},
@@ -2652,6 +2670,12 @@ class GuiServerTests(unittest.TestCase):
                     "odd-group",
                 ],
             )
+            self.assertEqual(
+                payload["processes"]["reasons"],
+                {"restart-group": {"event_type": "stale_watchdog", "reason": "missing manifest agent agent-a"}},
+            )
+            self.assertNotIn("SECRET_TOKEN", json.dumps(payload, ensure_ascii=False))
+            self.assertNotIn("live-agents.json", json.dumps(payload, ensure_ascii=False))
             self.assertFalse(supervisor.list_called)
 
     def test_live_agent_processes_payload_includes_output_only_agent_connection_evidence(self):

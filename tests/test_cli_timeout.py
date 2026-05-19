@@ -629,6 +629,12 @@ class CliTimeoutTests(unittest.TestCase):
                 "total": 7,
                 "counts": {"running": 1, "restarting": 1, "error": 2, "unknown": 2, "stopped": 1},
                 "attention": ["crashed-group", "orphan-group"],
+                "reasons": {
+                    "crashed-group": {
+                        "event_type": "stale_watchdog",
+                        "reason": "missing manifest agent agent-a",
+                    }
+                },
             },
             "connections": {
                 "expected": 2,
@@ -650,6 +656,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("agent attention: error-agent, offline-agent", output)
         self.assertIn("processes: 1 running / 7 total", output)
         self.assertIn("process attention: crashed-group, orphan-group", output)
+        self.assertIn("process reasons: crashed-group stale_watchdog missing manifest agent agent-a", output)
         self.assertIn("connections: 1 connected / 2 expected", output)
         self.assertIn("connection attention: crew:friend-b:missing", output)
 
@@ -2369,7 +2376,19 @@ class CliTimeoutTests(unittest.TestCase):
         payload = {
             "status": "ready",
             "checks": [{"id": "health", "status": "ok"}, {"id": "smoke", "status": "ok"}],
-            "health": {"status": "ok", "agents": {"attention": []}, "processes": {"attention": []}},
+            "health": {
+                "status": "ok",
+                "agents": {"attention": []},
+                "processes": {
+                    "attention": [],
+                    "reasons": {
+                        "restart-group": {
+                            "event_type": "stale_watchdog",
+                            "reason": "missing manifest agent agent-a",
+                        }
+                    },
+                },
+            },
             "smoke": {"status": "ok", "group_id": "doctor-smoke", "replies": []},
             "probes": [{"status": "ok", "agent_id": "agent-a", "reply_event_id": "reply-a"}],
         }
@@ -2402,6 +2421,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("readiness: ready", output)
         self.assertIn("health: ok", output)
         self.assertIn("smoke: ok doctor-smoke", output)
+        self.assertIn("process reasons: restart-group stale_watchdog missing manifest agent agent-a", output)
         self.assertIn("probes: agent-a ok", output)
 
     def test_live_agent_doctor_posts_probe_group_request_with_conservative_timeout(self):

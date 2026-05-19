@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import mimetypes
+import re
 import threading
 import time
 import urllib.error
@@ -77,6 +78,10 @@ MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
 MAX_LIVE_AGENT_ROUND_BATCH = 8
 LIVE_AGENT_ROUND_SCHEDULER_LOCKS: dict[str, threading.RLock] = {}
 LIVE_AGENT_ROUND_SCHEDULER_LOCKS_LOCK = threading.Lock()
+HEALTH_WATCHDOG_REASON_EVENT_TYPES = {"stale_watchdog", "stale_watchdog_stop_failed"}
+SAFE_HEALTH_WATCHDOG_REASON_PATTERN = re.compile(
+    r"^(?:(?:missing|stale|offline|error) manifest agent|wrong meeting manifest agent) [A-Za-z0-9_.-]{1,64}$"
+)
 
 
 def _live_agent_round_scheduler_lock(meeting_id: str) -> threading.RLock:
@@ -1349,6 +1354,7 @@ def _live_agent_process_health_summary(
     counts = {"running": 0, "restarting": 0, "error": 0, "unknown": 0, "stopped": 0}
     attention = []
     meeting_ids = {}
+    reasons = {}
     for index, group in enumerate(groups, start=1):
         raw_status = str(group.get("status") or "unknown")
         status = raw_status if raw_status in counts else "unknown"
@@ -1359,7 +1365,36 @@ def _live_agent_process_health_summary(
             meeting_ids[group_id] = meeting_id
         if status in {"restarting", "error", "unknown", "stopped"}:
             attention.append(group_id)
-    return {"total": len(groups), "counts": counts, "attention": attention, "meeting_ids": meeting_ids}
+            reason = _live_agent_process_health_reason(group)
+            if reason:
+                reasons[group_id] = reason
+    return {"total": len(groups), "counts": counts, "attention": attention, "meeting_ids": meeting_ids, "reasons": reasons}
+
+
+def _live_agent_process_health_reason(group: dict[str, object]) -> dict[str, str]:
+    events = group.get("recent_events") if isinstance(group.get("recent_events"), list) else []
+    for event in reversed(events):
+        if not isinstance(event, dict):
+            continue
+        event_type = str(event.get("event_type") or "").strip()
+        if event_type not in HEALTH_WATCHDOG_REASON_EVENT_TYPES:
+            continue
+        reason = _safe_health_watchdog_reason(event.get("reason"))
+        if reason:
+            return {"event_type": event_type, "reason": reason}
+    return {}
+
+
+def _safe_health_watchdog_reason(value: object) -> str:
+    reason = clean_lobby_text(value, limit=160)
+    if not reason or _looks_sensitive_health_watchdog_reason(reason):
+        return ""
+    return reason if SAFE_HEALTH_WATCHDOG_REASON_PATTERN.fullmatch(reason) else ""
+
+
+def _looks_sensitive_health_watchdog_reason(reason: str) -> bool:
+    lowered = reason.casefold()
+    return "/" in reason or "\\" in reason or ".json" in lowered or "env:" in lowered
 
 
 def _live_agent_connection_health_summary(

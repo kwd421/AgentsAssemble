@@ -1576,6 +1576,7 @@ def _format_live_agent_readiness(payload: dict[str, object]) -> str:
     processes = health.get("processes") if isinstance(health.get("processes"), dict) else {}
     agent_attention = agents.get("attention") if isinstance(agents.get("attention"), list) else []
     process_attention = processes.get("attention") if isinstance(processes.get("attention"), list) else []
+    process_reasons = _process_reason_summary(processes.get("reasons"))
     smoke_suffix = str(smoke.get("group_id") or "").strip()
     smoke_label = f"{smoke.get('status') or 'unknown'} {smoke_suffix}".strip()
     lines = [
@@ -1585,6 +1586,8 @@ def _format_live_agent_readiness(payload: dict[str, object]) -> str:
         f"agent attention: {_attention_summary(agent_attention)}",
         f"process attention: {_attention_summary(process_attention)}",
     ]
+    if process_reasons:
+        lines.append(f"process reasons: {process_reasons}")
     probes = payload.get("probes") if isinstance(payload.get("probes"), list) else []
     if probes:
         lines.append(f"probes: {_readiness_probe_summary(probes)}")
@@ -1682,32 +1685,58 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
     process_counts = processes.get("counts") if isinstance(processes.get("counts"), dict) else {}
     agent_attention = agents.get("attention") if isinstance(agents.get("attention"), list) else []
     process_attention = processes.get("attention") if isinstance(processes.get("attention"), list) else []
+    process_reasons = _process_reason_summary(processes.get("reasons"))
     connection_attention = connections.get("attention") if isinstance(connections.get("attention"), list) else []
-    return "\n".join(
+    lines = [
+        f"status: {payload.get('status') or 'unknown'}",
+        (
+            f"agents: {agents.get('live', 0)} live / {agents.get('total', 0)} total "
+            f"(online {agent_counts.get('online', 0)}, working {agent_counts.get('working', 0)}, "
+            f"error {agent_counts.get('error', 0)}, stale {agent_counts.get('stale', 0)}, "
+            f"offline {agent_counts.get('offline', 0)})"
+        ),
+        f"agent attention: {_attention_summary(agent_attention)}",
+        (
+            f"processes: {process_counts.get('running', 0)} running / {processes.get('total', 0)} total "
+            f"(restarting {process_counts.get('restarting', 0)}, error {process_counts.get('error', 0)}, "
+            f"unknown {process_counts.get('unknown', 0)}, stopped {process_counts.get('stopped', 0)})"
+        ),
+        f"process attention: {_attention_summary(process_attention)}",
+    ]
+    if process_reasons:
+        lines.append(f"process reasons: {process_reasons}")
+    lines.extend(
         [
-            f"status: {payload.get('status') or 'unknown'}",
-            (
-                f"agents: {agents.get('live', 0)} live / {agents.get('total', 0)} total "
-                f"(online {agent_counts.get('online', 0)}, working {agent_counts.get('working', 0)}, "
-                f"error {agent_counts.get('error', 0)}, stale {agent_counts.get('stale', 0)}, "
-                f"offline {agent_counts.get('offline', 0)})"
-            ),
-            f"agent attention: {_attention_summary(agent_attention)}",
-            (
-                f"processes: {process_counts.get('running', 0)} running / {processes.get('total', 0)} total "
-                f"(restarting {process_counts.get('restarting', 0)}, error {process_counts.get('error', 0)}, "
-                f"unknown {process_counts.get('unknown', 0)}, stopped {process_counts.get('stopped', 0)})"
-            ),
-            f"process attention: {_attention_summary(process_attention)}",
             f"connections: {connections.get('connected', 0)} connected / {connections.get('expected', 0)} expected",
             f"connection attention: {_attention_summary(connection_attention)}",
         ]
     )
+    return "\n".join(lines)
 
 
 def _attention_summary(items: list[object]) -> str:
     cleaned = [str(item) for item in items if str(item)]
     return ", ".join(cleaned) if cleaned else "none"
+
+
+def _process_reason_summary(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    labels = []
+    for group_id, reason_payload in value.items():
+        clean_group_id = str(group_id or "").strip()
+        if not clean_group_id:
+            continue
+        if isinstance(reason_payload, dict):
+            event_type = str(reason_payload.get("event_type") or "").strip()
+            reason = str(reason_payload.get("reason") or "").strip()
+        else:
+            event_type = ""
+            reason = str(reason_payload or "").strip()
+        if not reason:
+            continue
+        labels.append(" ".join(part for part in (clean_group_id, event_type, reason) if part))
+    return ", ".join(labels)
 
 
 def _run_live_agent_processes(args: argparse.Namespace) -> int:

@@ -2102,6 +2102,44 @@ Document that both CLI process lists and GUI process rows expose the latest sani
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 64: Health And Doctor Lifecycle Reason Summary
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED coverage for health reason evidence**
+
+Extend live-agent health endpoint coverage so a non-diagnostic restarting process group with bounded `recent_events` exposes a safe `processes.reasons` entry for the latest sanitized stale-watchdog reason, while a suspicious non-watchdog reason value is not leaked. Extend CLI health and doctor text-output coverage so compact operator summaries include a `process reasons:` line when that map is present.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_gui_server.GuiServerTests.test_live_agent_health_endpoint_summarizes_agents_and_processes \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_health_prints_summary \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_doctor_posts_readiness_request_and_prints_summary
+```
+
+Expected: fail before implementation because health only reports process attention ids and the CLI summaries do not render process reasons.
+
+- [x] **Step 2: Add sanitized health reason summaries**
+
+Add a `processes.reasons` map keyed by safe process group id. Include only stale-watchdog event types and only the same bounded reason grammar used by lifecycle sanitization, so health/readiness can explain degraded process attention without echoing command paths, env markers, config paths, provider output, or arbitrary fake supervisor text.
+
+Run the Step 1 command plus `python3 -m compileall -q agentsassemble`.
+Expected: pass.
+
+- [x] **Step 3: Document health and doctor reason output**
+
+Document that `/api/live-agent-health`, `live-agent health`, and `live-agent doctor` expose safe process watchdog reasons in compact summaries without requiring raw lifecycle JSON.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification
