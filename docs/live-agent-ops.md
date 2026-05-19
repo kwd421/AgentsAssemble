@@ -799,7 +799,7 @@ for line in sys.stdin:
 
 Expected result: the first eligible lobby event gets `Fake JSONL state 1`. A later eligible lobby event in the same bounded run gets `Fake JSONL state 2`, proving the same process stayed alive. This is a JSONL bridge for local subprocesses, not a native Claude, Gemini, or Cursor PTY protocol.
 
-If the JSONL subprocess exits, times out, stops reading stdin, or returns invalid protocol output, the resident runner records an `error` heartbeat with `last_error`, closes that subprocess, and starts a fresh subprocess for the next eligible event after the normal cooldown gate.
+If the JSONL subprocess exits, times out, stops reading stdin, or returns invalid protocol output, the resident runner records an `error` heartbeat with `last_error`, closes that subprocess, and starts a fresh subprocess for the next eligible event after the normal cooldown gate. Safe short stderr tails can appear in that operator error, but stderr containing auth markers, tokens, endpoints, config paths, option strings, or path-like values is replaced with `stderr tail redacted.` before it can reach presence or GUI surfaces.
 
 ## Remote Bridge Resident Smoke
 

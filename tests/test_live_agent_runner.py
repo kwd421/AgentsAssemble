@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -18,6 +19,7 @@ from agentsassemble.live_agent_runner import (
     official_turn_prompt,
     official_turn_request_candidate,
 )
+from agentsassemble.live_session_transport import JsonlLiveSession
 
 
 class FakeClock:
@@ -2281,6 +2283,56 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertIn("Remote bridge command failed with return code 1", error_heartbeats[-1]["last_error"])
         self.assertNotIn("secret-token", error_heartbeats[-1]["last_error"])
         self.assertNotIn("friend.local", error_heartbeats[-1]["last_error"])
+
+    def test_runner_records_jsonl_live_session_failure_without_sensitive_stderr(self):
+        clock = FakeClock()
+        client = FakeRoomClient(
+            [{"lobby_events": [{"id": "evt1", "name": "나", "message": "JSONL 세션 응답해줘"}]}]
+        )
+
+        class JsonlCommandRunner:
+            def __init__(self):
+                self.session = None
+
+            def __call__(self, command, prompt, *, timeout_seconds):
+                del prompt
+                self.session = JsonlLiveSession(command)
+                try:
+                    return self.session.ask("prompt", timeout_seconds=timeout_seconds)
+                except Exception:
+                    self.session.close()
+                    raise
+
+        script = "\n".join(
+            [
+                "import sys",
+                "print('token=secret-token http://friend.local/private/live-agents.json', file=sys.stderr, flush=True)",
+                "sys.exit(7)",
+            ]
+        )
+        runner = LiveAgentRunner(
+            config(
+                provider_kind="jsonl",
+                connection_kind="live_session",
+                command=[sys.executable, "-u", "-c", script],
+            ),
+            request_json=client,
+            command_runner=JsonlCommandRunner(),
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        error_heartbeats = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload and payload.get("status") == "error"
+        ]
+        self.assertIn("stderr tail redacted", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("secret-token", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("friend.local", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("live-agents.json", error_heartbeats[-1]["last_error"])
 
     def test_runner_heartbeats_updated_command_runner_session_id_after_reply(self):
         clock = FakeClock()

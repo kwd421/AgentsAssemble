@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import selectors
 import signal
 import subprocess
@@ -180,7 +181,8 @@ class JsonlLiveSession:
         message = f"Live session closed stdout with return code {returncode}."
         stderr_tail = self.stderr_tail.strip()
         if stderr_tail:
-            message = f"{message} stderr tail: {stderr_tail}"
+            safe_stderr_tail = _stderr_tail_for_error(stderr_tail)
+            message = f"{message} {safe_stderr_tail}"
         return RuntimeError(message)
 
     def _ensure_running(self) -> None:
@@ -344,3 +346,36 @@ def _message_from_jsonl(line: bytes, *, expected_request_id: str) -> str:
     if not isinstance(message, str):
         raise ValueError("Live session JSONL reply requires a string message field.")
     return message
+
+
+def _stderr_tail_for_error(stderr_tail: str) -> str:
+    if _looks_sensitive_stderr_tail(stderr_tail):
+        return "stderr tail redacted."
+    return f"stderr tail: {stderr_tail}"
+
+
+def _looks_sensitive_stderr_tail(stderr_tail: str) -> bool:
+    lowered = stderr_tail.casefold()
+    markers = (
+        "authorization",
+        "bearer ",
+        "credential",
+        "password",
+        "secret",
+        "token",
+        "api-key",
+        "apikey",
+        "x-api-key",
+        "http://",
+        "https://",
+        "env:",
+        ".json",
+        ".env",
+    )
+    if any(marker in lowered for marker in markers):
+        return True
+    if "\\" in stderr_tail or "/" in stderr_tail or "--" in stderr_tail:
+        return True
+    if re.search(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)", stderr_tail):
+        return True
+    return False

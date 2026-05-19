@@ -278,6 +278,54 @@ class JsonlLiveSessionTests(unittest.TestCase):
 
         self.assertLessEqual(len(session.stderr_tail), 120)
 
+    def test_jsonl_session_redacts_sensitive_stderr_tail_from_errors(self):
+        sensitive_tails = [
+            "safe setup line\ntoken=secret-token http://friend.local/private/live-agents.json",
+            "Authorization: Bearer bridge-token",
+            "password=hunter2",
+            "env:API_KEY",
+            "$API_KEY",
+            "${API_KEY}",
+            "dotenv file .env",
+            "loading configs/live-agents.toml",
+            "C:\\Users\\friend\\live-agents.toml",
+            "--api-key secret-token",
+        ]
+        for stderr_tail in sensitive_tails:
+            with self.subTest(stderr_tail=stderr_tail):
+                script = "\n".join(
+                    [
+                        "import sys",
+                        f"print({stderr_tail!r}, file=sys.stderr, flush=True)",
+                        "sys.exit(7)",
+                    ]
+                )
+                session = JsonlLiveSession([sys.executable, "-u", "-c", script], stderr_tail_limit=400)
+                try:
+                    with self.assertRaisesRegex(RuntimeError, "stderr tail redacted") as caught:
+                        session.ask("prompt", timeout_seconds=2)
+                finally:
+                    session.close()
+
+                error_text = str(caught.exception)
+                self.assertNotIn(stderr_tail, error_text)
+                self.assertNotIn("safe setup line", error_text)
+
+    def test_jsonl_session_keeps_safe_stderr_tail_in_errors(self):
+        script = "\n".join(
+            [
+                "import sys",
+                "print('model warming failed', file=sys.stderr, flush=True)",
+                "sys.exit(8)",
+            ]
+        )
+        session = JsonlLiveSession([sys.executable, "-u", "-c", script], stderr_tail_limit=400)
+        try:
+            with self.assertRaisesRegex(RuntimeError, "stderr tail: model warming failed"):
+                session.ask("prompt", timeout_seconds=2)
+        finally:
+            session.close()
+
 
 if __name__ == "__main__":
     unittest.main()

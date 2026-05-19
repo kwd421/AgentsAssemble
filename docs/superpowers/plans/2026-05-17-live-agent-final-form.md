@@ -3379,6 +3379,58 @@ Update operator docs to state that health/doctor can expose safe stale-watchdog 
 
 ---
 
+### Task 93: Redact Sensitive JSONL Live-Session Stderr
+
+**Goal:** Keep long-running JSONL `live_session` subprocess failures useful for operators without copying stderr secrets, endpoints, config paths, or command options into `last_error`.
+
+**Files:**
+- Modify: `agentsassemble/live_session_transport.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_runner.py`
+- Test: `tests/test_live_session_transport.py`
+
+- [x] **Step 1: Add RED coverage for sensitive stderr tail redaction**
+
+Cover a JSONL subprocess that writes a safe setup line plus token, endpoint, and config-path evidence to stderr before exiting. The raised error must include `stderr tail redacted.` and must not include the token, host, or config filename.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_session_transport.JsonlLiveSessionTests.test_jsonl_session_redacts_sensitive_stderr_tail_from_errors
+```
+
+Expected: fail before implementation because `_process_closed_error()` includes the raw stderr tail.
+
+- [x] **Step 2: Preserve safe bounded stderr tails**
+
+Cover a safe short stderr tail such as `model warming failed` so benign operator clues remain visible.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_session_transport.JsonlLiveSessionTests.test_jsonl_session_keeps_safe_stderr_tail_in_errors
+```
+
+- [x] **Step 3: Sanitize at the transport error boundary**
+
+At the single `_process_closed_error()` boundary, replace suspicious stderr tails with `stderr tail redacted.` before constructing the exception message. Keep the stored `stderr_tail` property unchanged for in-process diagnostics, but never copy suspicious tails into the raised error string that resident runners persist as `last_error`.
+
+- [x] **Step 4: Cover resident runner `last_error`**
+
+Cover a live-session runner command failure that originates from a JSONL subprocess with sensitive stderr. The runner must write an `error` heartbeat whose `last_error` includes `stderr tail redacted.` but not the token, host, or config filename.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_records_jsonl_live_session_failure_without_sensitive_stderr
+```
+
+- [x] **Step 5: Document live-session stderr redaction**
+
+Document that JSONL live-session subprocess errors may expose safe short stderr tails, while stderr with auth markers, endpoints, config paths, command options, or path-like values is redacted before presence/GUI surfaces.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
