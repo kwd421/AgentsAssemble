@@ -3108,6 +3108,49 @@ Use the existing safe heartbeat path for the post-success `online` heartbeat so 
 
 ---
 
+### Task 87: Provider Error Heartbeats Are Best-Effort
+
+**Goal:** Keep handled provider command failures inside the resident runner's normal cooldown/backoff path even when the error heartbeat write itself fails.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_runner.py`
+
+- [x] **Step 1: Add RED coverage for provider error heartbeat masking**
+
+Cover a provider command failure where the attempted `status: "error"` heartbeat also fails. The runner must return the handled reply count, preserve local `last_error` and `last_error_at`, and still attempt the final offline heartbeat instead of crashing on the heartbeat write.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_command_failure_when_error_heartbeat_fails
+```
+
+Expected: fail before implementation because the strict error heartbeat masks the handled provider command failure.
+
+- [x] **Step 2: Retry error evidence during backoff**
+
+Cover a bounded two-tick run where the first provider error heartbeat fails. The next periodic heartbeat during the failure backoff should retry `status: "error"` with the same `last_error` and observed cursor.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_retries_command_error_heartbeat_during_failure_backoff
+```
+
+Expected: fail before implementation because the first failed error heartbeat stops the run.
+
+- [x] **Step 3: Make provider error heartbeat best-effort**
+
+Use the safe heartbeat path for provider-command error heartbeats while preserving runner-local `last_error`, `last_error_at`, transient-room error state, and cursor metadata.
+
+- [x] **Step 4: Document best-effort provider error evidence**
+
+Document that provider-command error presence writes are best-effort, local backoff state remains active, and periodic heartbeats retry the same error evidence.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -234,7 +234,11 @@ class LiveAgentRunner:
             self.transient_room_error_active = False
             self.last_error = str(error)
             self.last_error_at = self.now_fn()
-            self._heartbeat("error", last_error=self.last_error, **self._cursor_metadata(cursor_field, source_event_id))
+            self._heartbeat_due_safely(
+                "error",
+                last_error=self.last_error,
+                **self._cursor_metadata(cursor_field, source_event_id),
+            )
             return None
         return source_event_id, reply
 

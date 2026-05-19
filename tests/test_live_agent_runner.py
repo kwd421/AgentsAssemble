@@ -271,6 +271,90 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(error_payloads[0]["last_error"], "boom")
         self.assertEqual(error_payloads[0]["last_observed_event_id"], "evt1")
 
+    def test_runner_does_not_mask_command_failure_when_error_heartbeat_fails(self):
+        clock = FakeClock()
+        calls = []
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "provider 실패를 유지해"}]}
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/room"):
+                return room
+            if url.endswith("/heartbeat"):
+                if (payload or {}).get("status") == "error":
+                    raise ConnectionError("error heartbeat failed")
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            return {}
+
+        def fail_command(command, prompt, *, timeout_seconds):
+            del command, prompt, timeout_seconds
+            raise RuntimeError("provider boom")
+
+        runner = LiveAgentRunner(
+            config(),
+            request_json=request_json,
+            command_runner=fail_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        try:
+            replies = runner.run()
+        except Exception as error:  # pragma: no cover - assertion path for clearer RED output
+            self.fail(f"error heartbeat failure masked the provider command error: {error}")
+        self.assertEqual(replies, 0)
+        self.assertEqual(runner.last_error, "provider boom")
+        self.assertIsNotNone(runner.last_error_at)
+        heartbeat_payloads = [payload for url, method, payload in calls if url.endswith("/heartbeat")]
+        self.assertEqual(heartbeat_payloads[-1]["status"], "offline")
+
+    def test_runner_retries_command_error_heartbeat_during_failure_backoff(self):
+        clock = FakeClock()
+        calls = []
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "provider 실패 후 대기"}]}
+        failed_error_heartbeat = False
+
+        def request_json(url, *, method="GET", payload=None):
+            nonlocal failed_error_heartbeat
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/room"):
+                return room
+            if url.endswith("/heartbeat"):
+                if (payload or {}).get("status") == "error" and not failed_error_heartbeat:
+                    failed_error_heartbeat = True
+                    raise ConnectionError("first error heartbeat failed")
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            return {}
+
+        def fail_command(command, prompt, *, timeout_seconds):
+            del command, prompt, timeout_seconds
+            raise RuntimeError("provider boom")
+
+        runner = LiveAgentRunner(
+            config(max_ticks=2, poll_interval=2.0, heartbeat_interval=1.0, cooldown=5.0),
+            request_json=request_json,
+            command_runner=fail_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        try:
+            replies = runner.run()
+        except Exception as error:  # pragma: no cover - assertion path for clearer RED output
+            self.fail(f"error heartbeat failure stopped failure-backoff retry evidence: {error}")
+        self.assertEqual(replies, 0)
+
+        error_payloads = [
+            payload for url, method, payload in calls if url.endswith("/heartbeat") and payload["status"] == "error"
+        ]
+        self.assertEqual(len(error_payloads), 2)
+        self.assertEqual(error_payloads[-1]["last_error"], "provider boom")
+        self.assertEqual(error_payloads[-1]["last_observed_event_id"], "evt1")
+
     def test_runner_does_not_record_error_when_command_fails_after_stop(self):
         clock = FakeClock()
         stop_event = threading.Event()
