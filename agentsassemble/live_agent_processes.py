@@ -141,9 +141,7 @@ class LiveAgentProcessSupervisor:
             if process is not None and _poll_process(process) is None:
                 raise ValueError(f"Live agent group {clean_group_id} is already running.")
             config_path = _persisted_config_path_or_raise(record, clean_group_id, action="restart")
-            server = str(record.get("server") or "")
-            if not server:
-                raise ValueError(f"Live agent group {clean_group_id} has no server to restart.")
+            server = _persisted_server_or_raise(record, clean_group_id, action="restart")
             return self._start_group_unlocked(
                 config_path=config_path,
                 server=server,
@@ -173,9 +171,7 @@ class LiveAgentProcessSupervisor:
             if previous_status not in {"unknown", "error"}:
                 raise ValueError(f"Live agent group {clean_group_id} is {previous_status}; use restart.")
             config_path = _persisted_config_path_or_raise(record, clean_group_id, action="recover")
-            server = str(record.get("server") or "")
-            if not server:
-                raise ValueError(f"Live agent group {clean_group_id} has no server to recover.")
+            server = _persisted_server_or_raise(record, clean_group_id, action="recover")
             return self._start_group_unlocked(
                 config_path=config_path,
                 server=server,
@@ -379,7 +375,7 @@ class LiveAgentProcessSupervisor:
             try:
                 return self._start_group_unlocked(
                     config_path=_persisted_config_path_or_raise(record, group_id, action="restart"),
-                    server=str(record.get("server") or ""),
+                    server=_persisted_server_or_raise(record, group_id, action="restart"),
                     group_id=group_id,
                     meeting_id=str(record.get("meeting_id") or ""),
                     auto_restart=True,
@@ -433,7 +429,7 @@ class LiveAgentProcessSupervisor:
             try:
                 self._start_group_unlocked(
                     config_path=_persisted_config_path_or_raise(record, group_id, action="restart"),
-                    server=str(record.get("server") or ""),
+                    server=_persisted_server_or_raise(record, group_id, action="restart"),
                     group_id=group_id,
                     meeting_id=str(record.get("meeting_id") or ""),
                     auto_restart=True,
@@ -824,6 +820,13 @@ def _persisted_config_path_or_raise(record: dict[str, object], group_id: str, *,
     if not raw_path:
         raise ValueError(f"Live agent group {group_id} has no config to {action}.")
     return Path(raw_path)
+
+
+def _persisted_server_or_raise(record: dict[str, object], group_id: str, *, action: str) -> str:
+    server = str(record.get("server") or "").strip()
+    if not server:
+        raise ValueError(f"Live agent group {group_id} has no server to {action}.")
+    return server
 
 
 def _clean_group_id(value: str) -> str:

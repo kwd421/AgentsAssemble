@@ -3280,6 +3280,63 @@ Document that auto-restart relaunches also refuse blank persisted launch config 
 
 ---
 
+### Task 91: Process Relaunches Refuse Blank Server
+
+**Goal:** Keep direct restart/recovery and immediate/delayed auto-restart from relaunching a resident group without persisted server evidence for the target room.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+
+- [x] **Step 1: Add RED coverage for direct restart blank server**
+
+Cover a stopped historical process record with a valid `config_path` but whitespace-only `server`. `restart_group()` must raise a clear missing-server error before preflight, process launch, or lifecycle event writes.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_restart_group_refuses_blank_persisted_server_before_preflight
+```
+
+Expected: fail before implementation because whitespace-only server currently reaches the relaunch path.
+
+- [x] **Step 2: Add RED coverage for direct recovery blank server**
+
+Cover an error historical process record with a valid `config_path` but whitespace-only `server`. `recover_group()` must raise a clear missing-server error before preflight, process launch, or lifecycle event writes.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_recover_group_refuses_blank_persisted_server_before_preflight
+```
+
+Expected: fail before implementation because whitespace-only server currently reaches the relaunch path.
+
+- [x] **Step 3: Add RED coverage for auto-restart blank server**
+
+Cover immediate and delayed auto-restart relaunches with blank persisted `server`. The supervisor must mark the group `error`, write `restart_failed`, avoid preflight/relaunch, and preserve sanitized lifecycle evidence.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_immediate_auto_restart_refuses_blank_persisted_server_before_preflight \
+  tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_delayed_auto_restart_refuses_blank_persisted_server_before_preflight
+```
+
+Expected: fail before implementation because auto-restart can relaunch with a blank or whitespace server value.
+
+- [x] **Step 4: Share the persisted server guard**
+
+Normalize persisted `server` at every process relaunch boundary and refuse blank values before preflight or process launch.
+
+- [x] **Step 5: Document missing server launch evidence**
+
+Document that restart, recovery, and auto-restart relaunches require persisted server evidence for the target room.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

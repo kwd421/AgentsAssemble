@@ -2729,6 +2729,57 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             self.assertEqual(state_path.read_text(encoding="utf-8"), original_state)
             self.assertFalse((runs_dir / "events.jsonl").exists())
 
+    def test_restart_group_refuses_blank_persisted_server_before_preflight(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            state_path = runs_dir / "processes.json"
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "stopped",
+                                "pid": None,
+                                "config_path": str(config_path),
+                                "server": "   ",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "2026-05-17T12:01:00+00:00",
+                                "returncode": 0,
+                                "last_error": "",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            original_state = state_path.read_text(encoding="utf-8")
+            preflights = []
+            launches = []
+
+            def preflight_checker(path, *, server_override=None):
+                preflights.append((path, server_override))
+                return {"status": "ok", "checks": [], "agents": []}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: launches.append(command) or FakeProcess(pid=6789),
+                preflight_checker=preflight_checker,
+            )
+
+            with self.assertRaisesRegex(ValueError, "has no server to restart"):
+                supervisor.restart_group("crew")
+
+            self.assertEqual(preflights, [])
+            self.assertEqual(launches, [])
+            self.assertEqual(state_path.read_text(encoding="utf-8"), original_state)
+            self.assertFalse((runs_dir / "events.jsonl").exists())
+
     def test_recover_group_relaunches_unknown_historical_record_with_recovery_evidence(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -2846,6 +2897,57 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(ValueError, "has no config to recover"):
+                supervisor.recover_group("crew")
+
+            self.assertEqual(preflights, [])
+            self.assertEqual(launches, [])
+            self.assertEqual(state_path.read_text(encoding="utf-8"), original_state)
+            self.assertFalse((runs_dir / "events.jsonl").exists())
+
+    def test_recover_group_refuses_blank_persisted_server_before_preflight(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            state_path = runs_dir / "processes.json"
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "error",
+                                "pid": None,
+                                "config_path": str(config_path),
+                                "server": "   ",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "2026-05-17T12:01:00+00:00",
+                                "returncode": 1,
+                                "last_error": "old crash",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            original_state = state_path.read_text(encoding="utf-8")
+            preflights = []
+            launches = []
+
+            def preflight_checker(path, *, server_override=None):
+                preflights.append((path, server_override))
+                return {"status": "ok", "checks": [], "agents": []}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: launches.append(command) or FakeProcess(pid=6789),
+                preflight_checker=preflight_checker,
+            )
+
+            with self.assertRaisesRegex(ValueError, "has no server to recover"):
                 supervisor.recover_group("crew")
 
             self.assertEqual(preflights, [])
@@ -3298,6 +3400,123 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(persisted["groups"][0]["restart_count"], 1)
         self.assertEqual(persisted["groups"][0]["next_restart_at"], "")
         self.assertIn("has no config to restart", persisted["groups"][0]["last_error"])
+        self.assertEqual([event["event_type"] for event in events], ["started", "restart_scheduled", "restart_failed"])
+        self.assertEqual(events[-1]["status"], "error")
+        self.assertEqual(events[-1]["restart_count"], 1)
+        self.assertNotIn("http://room.local", events_text)
+        self.assertNotIn(str(config_path), events_text)
+
+    def test_immediate_auto_restart_refuses_blank_persisted_server_before_preflight(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            preflights = []
+            processes = []
+
+            def preflight_checker(path, *, server_override=None):
+                preflights.append((path, server_override))
+                return {"status": "ok", "checks": [], "agents": []}
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=8800 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                preflight_checker=preflight_checker,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=0,
+            )
+            preflights.clear()
+            supervisor._records["crew"]["server"] = ""
+            processes[0].returncode = 2
+
+            groups = supervisor.list_groups()
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+            events = _read_lifecycle_events(root)
+            events_text = json.dumps(events, ensure_ascii=False)
+
+        self.assertEqual(len(processes), 1)
+        self.assertEqual(preflights, [])
+        self.assertEqual(groups[0]["status"], "error")
+        self.assertIsNone(groups[0]["pid"])
+        self.assertEqual(groups[0]["restart_count"], 1)
+        self.assertIn("has no server to restart", groups[0]["last_error"])
+        self.assertEqual(persisted["groups"][0]["status"], "error")
+        self.assertEqual(persisted["groups"][0]["restart_count"], 1)
+        self.assertEqual(persisted["groups"][0]["next_restart_at"], "")
+        self.assertIn("has no server to restart", persisted["groups"][0]["last_error"])
+        self.assertEqual([event["event_type"] for event in events], ["started", "restart_scheduled", "restart_failed"])
+        self.assertEqual(events[-1]["status"], "error")
+        self.assertEqual(events[-1]["restart_count"], 1)
+        self.assertNotIn("http://room.local", events_text)
+        self.assertNotIn(str(config_path), events_text)
+
+    def test_delayed_auto_restart_refuses_blank_persisted_server_before_preflight(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            preflights = []
+            processes = []
+
+            def preflight_checker(path, *, server_override=None):
+                preflights.append((path, server_override))
+                return {"status": "ok", "checks": [], "agents": []}
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=8900 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                preflight_checker=preflight_checker,
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+            )
+            preflights.clear()
+            supervisor._records["crew"]["server"] = "   "
+            processes[0].returncode = 2
+            waiting = supervisor.list_groups()
+            current_time["value"] += timedelta(seconds=11)
+
+            groups = supervisor.list_groups()
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+            events = _read_lifecycle_events(root)
+            events_text = json.dumps(events, ensure_ascii=False)
+
+        self.assertEqual(waiting[0]["status"], "restarting")
+        self.assertEqual(len(processes), 1)
+        self.assertEqual(preflights, [])
+        self.assertEqual(groups[0]["status"], "error")
+        self.assertIsNone(groups[0]["pid"])
+        self.assertEqual(groups[0]["restart_count"], 1)
+        self.assertEqual(groups[0]["next_restart_at"], "")
+        self.assertIn("has no server to restart", groups[0]["last_error"])
+        self.assertEqual(persisted["groups"][0]["status"], "error")
+        self.assertEqual(persisted["groups"][0]["restart_count"], 1)
+        self.assertEqual(persisted["groups"][0]["next_restart_at"], "")
+        self.assertIn("has no server to restart", persisted["groups"][0]["last_error"])
         self.assertEqual([event["event_type"] for event in events], ["started", "restart_scheduled", "restart_failed"])
         self.assertEqual(events[-1]["status"], "error")
         self.assertEqual(events[-1]["restart_count"], 1)
