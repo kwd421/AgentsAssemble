@@ -1072,10 +1072,22 @@ python3 -m agentsassemble.cli live-agent health \
 
 Add `--json` when another script needs the raw response instead of the compact operator summary.
 
+Use `live-agent health --wait-ok` when automation needs a bounded room-level readiness gate after starting, restarting, recovering, or otherwise changing resident process state:
+
+```bash
+python3 -m agentsassemble.cli live-agent health \
+  --server http://127.0.0.1:8765 \
+  --wait-ok \
+  --timeout 30 \
+  --poll-interval 2
+```
+
+The wait path polls the read-only `/api/live-agent-health` snapshot until the room reports `status: "ok"` or the timeout is reached. It prints the final health summary, exits `0` when the room becomes ok, and exits `1` on timeout with the last observed health summary. Each poll is bounded by the remaining timeout. It does not mutate process state, run smoke probes, start auto-restarts, stop groups, append operation records, or call providers.
+
 Exit code contract:
 
 - `0`: health was fetched and either reported `ok`, or reported `degraded` without `--fail-on-degraded`.
-- `1`: health reached the server but reported non-`ok` while `--fail-on-degraded` was set.
+- `1`: health reached the server but reported non-`ok` while `--fail-on-degraded` was set, or `--wait-ok` timed out before health became `ok`.
 - `2`: the CLI could not fetch or parse the health response, or the command arguments were invalid.
 
 The response reports overall `status` as `ok` or `degraded`, plus `agents.counts`, `agents.attention`, `processes.counts`, `processes.attention`, safe `processes.reasons`, manifest-aware `connections` evidence, and meeting-owned session readiness in `sessions.items`. Each session item is read-only and includes safe `meeting_id`, `group_id`, `status`, `process_status`, expected/connected counts, ownership attention, process attention, connection attention, and combined attention. Health marks a session `ready` only when the stored meeting exists, the process group is `running`, the process manifest matches that meeting's bound agents, every bound agent has fresh `online` or `working` presence for the same meeting, and no other non-diagnostic `running` or `restarting` group owns that same meeting. Duplicate active meeting ownership degrades each active session item with `meeting:duplicate_active_group`, so an old shadow process cannot look ready beside the real resident group. Missing or malformed meetings degrade that session instead of failing the health read, and the payload does not echo config paths, command arguments, endpoint URLs, auth refs, prompts, log tails, provider output, or replies. A non-diagnostic process group that is restarting, error, unknown, or stopped can include a compact sanitized watchdog reason such as `stale_watchdog missing manifest agent agent-a` in `processes.reasons` and the matching session item, so `live-agent health` and `live-agent doctor` explain high-level process attention without opening lifecycle JSON. Suspicious or non-watchdog reason strings are dropped from health. A non-diagnostic running process group with manifest agents that are missing, attached to a different meeting, not reconnected after the group start, stale, offline, or error adds `connection attention` and degrades health. Diagnostic smoke groups are ignored so repeated doctor checks do not contaminate readiness.

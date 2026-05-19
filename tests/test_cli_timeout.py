@@ -946,6 +946,24 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(args.as_json)
         self.assertTrue(args.fail_on_degraded)
 
+    def test_live_agent_health_parses_wait_ok_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "health",
+                "--wait-ok",
+                "--timeout",
+                "3",
+                "--poll-interval",
+                "0.5",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "health")
+        self.assertTrue(args.wait_ok)
+        self.assertEqual(args.timeout, 3.0)
+        self.assertEqual(args.poll_interval, 0.5)
+
     def test_live_agent_health_prints_summary(self):
         payload = {
             "status": "degraded",
@@ -1017,6 +1035,103 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("status: ok", stdout.getvalue())
+
+    def test_live_agent_health_wait_ok_polls_until_ok(self):
+        payloads = [
+            {"status": "degraded", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}},
+            {"status": "ok", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}},
+        ]
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=payloads) as request_json:
+            with patch("agentsassemble.cli.time.sleep") as sleep:
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "health",
+                            "--server",
+                            "http://room.local",
+                            "--wait-ok",
+                            "--timeout",
+                            "3",
+                            "--poll-interval",
+                            "0.1",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(request_json.call_count, 2)
+        self.assertEqual(request_json.call_args_list[-1].args, ("http://room.local/api/live-agent-health",))
+        self.assertIn("timeout_seconds", request_json.call_args_list[-1].kwargs)
+        self.assertEqual(sleep.call_count, 1)
+        self.assertIn("status: ok", stdout.getvalue())
+        self.assertNotIn("status: degraded", stdout.getvalue())
+
+    def test_live_agent_health_wait_ok_times_out_with_last_summary(self):
+        payload = {
+            "status": "degraded",
+            "agents": {"counts": {}, "attention": ["agent-a"]},
+            "processes": {"counts": {}, "attention": []},
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("agentsassemble.cli.time.monotonic", side_effect=[0.0, 0.0, 1.1, 1.1]):
+                with patch("agentsassemble.cli.time.sleep") as sleep:
+                    with patch("sys.stdout", stdout):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "health",
+                                "--server",
+                                "http://room.local",
+                                "--wait-ok",
+                                "--timeout",
+                                "1",
+                                "--poll-interval",
+                                "0.1",
+                            ]
+                        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(request_json.call_count, 1)
+        self.assertEqual(sleep.call_count, 0)
+        output = stdout.getvalue()
+        self.assertIn("status: degraded", output)
+        self.assertIn("agent attention: agent-a", output)
+
+    def test_live_agent_health_wait_ok_reports_poll_timeout_with_last_summary(self):
+        payload = {
+            "status": "degraded",
+            "agents": {"counts": {}, "attention": ["agent-a"]},
+            "processes": {"counts": {}, "attention": []},
+        }
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=[payload, TimeoutError("timed out")]) as request_json:
+            with patch("agentsassemble.cli.time.sleep") as sleep:
+                with patch("sys.stdout", stdout):
+                    with patch("sys.stderr", stderr):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "health",
+                                "--server",
+                                "http://room.local",
+                                "--wait-ok",
+                                "--timeout",
+                                "3",
+                                "--poll-interval",
+                                "0.1",
+                            ]
+                        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(request_json.call_count, 2)
+        self.assertEqual(sleep.call_count, 1)
+        self.assertEqual(stderr.getvalue(), "")
+        output = stdout.getvalue()
+        self.assertIn("status: degraded", output)
+        self.assertIn("agent attention: agent-a", output)
 
     def test_live_agent_smoke_parses_operator_options(self):
         args = build_parser().parse_args(

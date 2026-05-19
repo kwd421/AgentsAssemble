@@ -426,6 +426,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Exit 1 when the health status is not ok.",
     )
+    live_health.add_argument(
+        "--wait-ok",
+        action="store_true",
+        help="Poll until health reports ok or the timeout is reached.",
+    )
+    live_health.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
+    live_health.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
 
     live_preflight = live_agent_subparsers.add_parser(
         "preflight",
@@ -1460,12 +1467,52 @@ def _resident_config_setup_error(config: ResidentAgentConfig) -> str:
 
 
 def _run_live_agent_health(args: argparse.Namespace) -> int:
+    if args.wait_ok:
+        return _run_live_agent_health_wait(args)
     payload = _request_json(_server_url(args.server, "/api/live-agent-health"))
-    if args.as_json:
+    _print_live_agent_health_payload(payload, as_json=args.as_json)
+    return 1 if args.fail_on_degraded and payload.get("status") != "ok" else 0
+
+
+def _run_live_agent_health_wait(args: argparse.Namespace) -> int:
+    timeout_seconds = float(args.timeout)
+    poll_interval = max(0.01, float(args.poll_interval))
+    deadline = time.monotonic() + timeout_seconds
+    attempts = 0
+    last_payload: dict[str, object] | None = None
+    while True:
+        now = time.monotonic()
+        if attempts > 0 and now >= deadline:
+            if last_payload is not None:
+                _print_live_agent_health_payload(last_payload, as_json=args.as_json)
+            return 1
+        remaining_before_poll = max(0.01, deadline - now)
+        attempts += 1
+        try:
+            payload = _request_json(
+                _server_url(args.server, "/api/live-agent-health"),
+                timeout_seconds=remaining_before_poll,
+            )
+        except (TimeoutError, urllib.error.URLError) as error:
+            if not _is_live_agent_wait_timeout(error):
+                raise
+            if last_payload is not None:
+                _print_live_agent_health_payload(last_payload, as_json=args.as_json)
+            return 1
+        last_payload = payload
+        if payload.get("status") == "ok":
+            _print_live_agent_health_payload(payload, as_json=args.as_json)
+            return 0
+        remaining_after_poll = max(0.0, deadline - time.monotonic())
+        if remaining_after_poll > 0:
+            time.sleep(min(poll_interval, remaining_after_poll))
+
+
+def _print_live_agent_health_payload(payload: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print(_format_live_agent_health(payload))
-    return 1 if args.fail_on_degraded and payload.get("status") != "ok" else 0
 
 
 def _run_live_agent_preflight(args: argparse.Namespace) -> int:
@@ -2180,6 +2227,10 @@ def _find_live_agent_process_group(payload: dict[str, object], group_id: str) ->
 
 
 def _is_live_agent_process_wait_timeout(error: BaseException) -> bool:
+    return _is_live_agent_wait_timeout(error)
+
+
+def _is_live_agent_wait_timeout(error: BaseException) -> bool:
     if isinstance(error, TimeoutError):
         return True
     if isinstance(error, urllib.error.URLError):
