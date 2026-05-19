@@ -2911,6 +2911,48 @@ Document that healthy recovered room snapshots clear only transient room errors 
 
 ---
 
+### Task 83: Resume Starts Pending Restarting Session Groups
+
+**Goal:** Preserve the operator policy that `resume-session` can immediately start a supervised group whose current record is `restarting`, because that state represents a pending supervisor restart/backoff record rather than proof of a live process.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_sessions.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_sessions.py`
+
+- [x] **Step 1: Add coverage for restarting resume semantics**
+
+Cover an existing meeting whose matching process group is `restarting`. `resume_live_agent_session()` should validate the supplied config against that meeting and call `start_group()` so the operator can bring a pending restart/backoff record back immediately.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_sessions.LiveAgentSessionStartTests.test_resume_session_starts_restarting_group_from_validated_config
+```
+
+Expected: pass with the existing resume policy; this task records the behavior after a review of a failed alternative that treated `restarting` like `running`.
+
+- [x] **Step 2: Keep running-only reuse**
+
+Keep `_resume_process_group()` reusing only `running` groups. Missing, stopped, restarting, unknown, and error records start from the supplied, just-validated config.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_sessions.LiveAgentSessionStartTests.test_resume_session_starts_restarting_group_from_validated_config \
+  tests.test_live_agent_sessions.LiveAgentSessionStartTests.test_resume_session_reuses_running_group_for_existing_meeting_without_recreating_it \
+  tests.test_live_agent_sessions.LiveAgentSessionEnsureActionTests.test_session_ensure_action_uses_one_policy_for_cli_and_api_surfaces
+```
+
+Expected: pass.
+
+- [x] **Step 3: Document restart/backoff resume semantics**
+
+Document that `resume-session` treats `restarting` as a pending restart/backoff record and may start it immediately through the validated config.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -1010,6 +1010,64 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(session["group_id"], "resident-main")
             self.assertEqual(supervisor.started, [])
 
+    def test_resume_session_starts_restarting_group_from_validated_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartingSupervisor:
+                def __init__(self) -> None:
+                    self.started = []
+
+                def list_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "restarting",
+                            "agents": [{"agent_id": "agent-a", "provider_kind": "local_cli", "connection_kind": "local_cli"}],
+                        }
+                    ]
+
+                def start_group(self, **kwargs):
+                    self.started.append(kwargs)
+                    heartbeat_live_agent(root, "agent-a", status="online")
+                    return {
+                        "group_id": kwargs.get("group_id") or "resident-main",
+                        "status": "running",
+                        "meeting_id": kwargs.get("meeting_id"),
+                        "agents": [{"agent_id": "agent-a", "provider_kind": "local_cli", "connection_kind": "local_cli"}],
+                    }
+
+            supervisor = RestartingSupervisor()
+
+            session = resume_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+                preflight_checker=lambda *args, **kwargs: {"status": "ok"},
+            )
+
+            self.assertEqual(session["status"], "ready")
+            self.assertEqual(session["group_id"], "resident-main")
+            self.assertEqual(session["process"]["status"], "running")
+            self.assertEqual(session["connection"]["connected"], 1)
+            self.assertEqual(supervisor.started[0]["config_path"], live_agent_config)
+            self.assertEqual(supervisor.started[0]["group_id"], "resident-main")
+            self.assertEqual(supervisor.started[0]["meeting_id"], "resident-m1")
+
     def test_resume_session_starts_missing_group_without_marking_roster_online(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
