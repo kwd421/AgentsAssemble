@@ -101,6 +101,44 @@ class LiveAgentSessionReadinessSummaryTests(unittest.TestCase):
         self.assertEqual(items_by_group["resident-shadow"]["ownership_attention"], ["meeting:duplicate_active_group"])
         self.assertEqual(items_by_group["resident-stopped"]["ownership_attention"], [])
 
+    def test_session_summary_ignores_diagnostic_groups_for_duplicate_ownership(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            summary = live_agent_session_readiness_summary(
+                root,
+                [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    },
+                    {
+                        "group_id": "resident-diagnostic",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "diagnostic": True,
+                        "agents": [{"agent_id": "agent-a"}],
+                    },
+                ],
+            )
+
+        self.assertEqual(summary["ready"], 1)
+        self.assertEqual(summary["degraded"], 0)
+        self.assertEqual(summary["attention"], [])
+        self.assertEqual([item["group_id"] for item in summary["items"]], ["resident-main"])
+        self.assertEqual(summary["items"][0]["ownership_attention"], [])
+
     def test_check_session_degrades_duplicate_active_meeting_group(self):
         class DuplicateSupervisor:
             def snapshot_groups(self):

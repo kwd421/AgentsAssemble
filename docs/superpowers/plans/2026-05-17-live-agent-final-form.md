@@ -2715,6 +2715,43 @@ Expected: pass.
 
 ---
 
+### Task 79: Diagnostic Session Health Isolation
+
+**Goal:** Keep credential-free diagnostic smoke groups from making a real resident session look duplicated or degraded in the shared meeting-owned readiness summary.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_sessions.py`
+- Test: `tests/test_live_agent_sessions.py`
+
+- [x] **Step 1: Add RED coverage for diagnostic duplicate isolation**
+
+Cover `live_agent_session_readiness_summary()` with one real running group and one `diagnostic: true` running group for the same meeting. The real group must remain the only readiness item, stay ready, and have no `meeting:duplicate_active_group` ownership attention.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_sessions.LiveAgentSessionReadinessSummaryTests.test_session_summary_ignores_diagnostic_groups_for_duplicate_ownership
+```
+
+Expected: fail before implementation because diagnostic groups are included in the duplicate active owner pass.
+
+- [x] **Step 2: Exclude diagnostic groups from session readiness summaries**
+
+Skip diagnostic process groups before building meeting-owned session readiness items. This matches the existing targeted ownership check and keeps session smoke artifacts from contaminating health and readiness evidence.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_sessions.LiveAgentSessionReadinessSummaryTests.test_session_summary_ignores_diagnostic_groups_for_duplicate_ownership \
+  tests.test_live_agent_sessions.LiveAgentSessionReadinessSummaryTests.test_session_summary_degrades_duplicate_active_meeting_groups \
+  tests.test_live_agent_sessions.LiveAgentSessionReadinessSummaryTests.test_check_session_degrades_duplicate_active_meeting_group
+```
+
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

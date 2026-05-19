@@ -286,6 +286,8 @@ def check_live_agent_session(
 def live_agent_session_readiness_summary(output_root: Path, groups: list[dict[str, object]]) -> dict[str, object]:
     items = []
     for group in groups:
+        if _session_group_is_diagnostic(group):
+            continue
         meeting_id = _safe_optional_meeting_id(group.get("meeting_id"))
         if not meeting_id:
             continue
