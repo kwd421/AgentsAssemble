@@ -660,6 +660,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Exit 1 when any returned live-agent operation is not successful.",
     )
+    live_operations_wait = live_operations_subparsers.add_parser(
+        "wait",
+        parents=[live_server],
+        help="Wait for a matching live-agent control operation to appear.",
+    )
+    live_operations_wait.add_argument("--operation", required=True, help="Operation name to wait for.")
+    live_operations_wait.add_argument("--target-id", default="", help="Optional operation target id filter.")
+    live_operations_wait.add_argument("--status", default="", help="Optional operation status filter.")
+    live_operations_wait.add_argument("--after-id", default="", help="Ignore operations up to and including this operation id.")
+    live_operations_wait.add_argument("--limit", type=parse_positive_int, default=50)
+    live_operations_wait.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
+    live_operations_wait.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_operations_wait.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable wait result.")
 
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
     session_subparsers = sessions.add_subparsers(dest="sessions_command", required=True)
@@ -2084,7 +2097,176 @@ def _run_live_agent_operations(args: argparse.Namespace) -> int:
         if args.fail_on_attention and _live_agent_operations_payload_needs_attention(payload):
             return 1
         return 0
+    if args.live_agent_operations_command == "wait":
+        return _run_live_agent_operations_wait(args)
     return 1
+
+
+def _run_live_agent_operations_wait(args: argparse.Namespace) -> int:
+    timeout_seconds = float(args.timeout)
+    poll_interval = max(0.01, float(args.poll_interval))
+    deadline = time.monotonic() + timeout_seconds
+    attempts = 0
+    last_payload: dict[str, object] | None = None
+    after_id_seen = not bool(args.after_id)
+    ignored_operation_ids: set[str] = set()
+    while True:
+        now = time.monotonic()
+        if attempts > 0 and now >= deadline:
+            _print_live_agent_operations_wait_result(
+                _live_agent_operations_wait_result("timeout", args, timeout_seconds, attempts, None, last_payload),
+                as_json=args.as_json,
+            )
+            return 1
+        remaining_before_poll = max(0.01, deadline - now)
+        attempts += 1
+        try:
+            payload = _request_json(
+                _server_url(args.server, f"/api/live-agent-operations?limit={args.limit}"),
+                timeout_seconds=remaining_before_poll,
+            )
+        except (TimeoutError, urllib.error.URLError) as error:
+            if not _is_live_agent_wait_timeout(error):
+                raise
+            _print_live_agent_operations_wait_result(
+                _live_agent_operations_wait_result(
+                    "timeout",
+                    args,
+                    timeout_seconds,
+                    attempts,
+                    None,
+                    last_payload,
+                    error=str(error) or error.__class__.__name__,
+                ),
+                as_json=args.as_json,
+            )
+            return 1
+        last_payload = payload
+        after_id_in_payload = bool(args.after_id) and _live_agent_operation_id_present(payload, args.after_id)
+        if not after_id_seen and not after_id_in_payload:
+            operation = None
+        else:
+            operation = _find_live_agent_operation(
+                payload,
+                args.operation,
+                args.target_id,
+                args.status,
+                args.after_id if after_id_in_payload else "",
+                ignored_operation_ids=ignored_operation_ids,
+            )
+        if after_id_in_payload:
+            after_id_seen = True
+            ignored_operation_ids.update(_live_agent_operation_ids_through(payload, args.after_id))
+        if operation is not None:
+            _print_live_agent_operations_wait_result(
+                _live_agent_operations_wait_result("observed", args, timeout_seconds, attempts, operation, payload),
+                as_json=args.as_json,
+            )
+            return 0
+        remaining_after_poll = max(0.0, deadline - time.monotonic())
+        if remaining_after_poll > 0:
+            time.sleep(min(poll_interval, remaining_after_poll))
+
+
+def _live_agent_operations_wait_result(
+    status: str,
+    args: argparse.Namespace,
+    timeout_seconds: float,
+    attempts: int,
+    operation: dict[str, object] | None,
+    payload: dict[str, object] | None,
+    *,
+    error: str = "",
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "status": status,
+        "operation_name": args.operation,
+        "target_id": args.target_id,
+        "operation_status": args.status,
+        "after_id": args.after_id,
+        "timeout_seconds": timeout_seconds,
+        "attempts": attempts,
+        "operation": operation,
+    }
+    if status == "timeout":
+        result["operations"] = payload.get("operations") if isinstance(payload, dict) and isinstance(payload.get("operations"), list) else []
+    if error:
+        result["error"] = error
+    return result
+
+
+def _find_live_agent_operation(
+    payload: dict[str, object],
+    operation_name: str,
+    target_id: str = "",
+    status: str = "",
+    after_id: str = "",
+    ignored_operation_ids: set[str] | None = None,
+) -> dict[str, object] | None:
+    operations = payload.get("operations") if isinstance(payload.get("operations"), list) else []
+    start_index = 0
+    if after_id:
+        for index, item in enumerate(operations):
+            if isinstance(item, dict) and str(item.get("id") or "") == after_id:
+                start_index = index + 1
+                break
+        else:
+            return None
+    for item in operations[start_index:]:
+        if not isinstance(item, dict):
+            continue
+        if ignored_operation_ids and str(item.get("id") or "") in ignored_operation_ids:
+            continue
+        if str(item.get("operation") or "") != operation_name:
+            continue
+        if target_id and str(item.get("target_id") or "") != target_id:
+            continue
+        if status and str(item.get("status") or "") != status:
+            continue
+        return item
+    return None
+
+
+def _live_agent_operation_id_present(payload: dict[str, object], operation_id: str) -> bool:
+    operations = payload.get("operations") if isinstance(payload.get("operations"), list) else []
+    return any(isinstance(item, dict) and str(item.get("id") or "") == operation_id for item in operations)
+
+
+def _live_agent_operation_ids_through(payload: dict[str, object], operation_id: str) -> set[str]:
+    operations = payload.get("operations") if isinstance(payload.get("operations"), list) else []
+    operation_ids: set[str] = set()
+    for item in operations:
+        if not isinstance(item, dict):
+            continue
+        item_id = str(item.get("id") or "")
+        if item_id:
+            operation_ids.add(item_id)
+        if item_id == operation_id:
+            break
+    return operation_ids
+
+
+def _print_live_agent_operations_wait_result(result: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    if result.get("status") == "observed":
+        operation = result.get("operation") if isinstance(result.get("operation"), dict) else {}
+        print(f"Observed live-agent operation: {_format_live_agent_operation(operation)}")
+        return
+    parts = [str(result.get("operation_name") or "unknown")]
+    if result.get("target_id"):
+        parts.append(f"target {result.get('target_id')}")
+    if result.get("operation_status"):
+        parts.append(f"status {result.get('operation_status')}")
+    if result.get("after_id"):
+        parts.append(f"after {result.get('after_id')}")
+    timeout_seconds = _safe_float(result.get("timeout_seconds"))
+    print(f"Timed out waiting for live-agent operation {' '.join(parts)} after {timeout_seconds:.1f}s")
+    operations = result.get("operations") if isinstance(result.get("operations"), list) else []
+    last_operation = next((item for item in reversed(operations) if isinstance(item, dict)), None)
+    if last_operation is not None:
+        print(f"last operation: {_format_live_agent_operation(last_operation)}")
 
 
 def _print_live_agent_operations_payload(payload: dict[str, object], *, as_json: bool) -> None:

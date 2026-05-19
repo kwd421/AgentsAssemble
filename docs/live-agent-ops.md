@@ -1054,6 +1054,21 @@ The GUI list and the default CLI output include compact safe `details` values, s
 
 For scriptable operation-history gates, use `live-agent operations list --fail-on-attention`. The command still prints the normal operation summary first, then exits `1` when any returned operation status is not `success`, such as `failed`, `degraded`, or `unknown`. Without that flag, listing operations exits `0` whenever the history was fetched successfully.
 
+Use `live-agent operations wait` when automation needs to observe a specific control operation after launching an action from another surface:
+
+```bash
+python3 -m agentsassemble.cli live-agent operations wait \
+  --server http://127.0.0.1:8765 \
+  --operation session.start \
+  --target-id resident-1 \
+  --status success \
+  --after-id previous-operation-id \
+  --timeout 30 \
+  --poll-interval 2
+```
+
+The wait path polls `/api/live-agent-operations?limit=N` until a matching operation appears or the timeout is reached. `--operation` is required; `--target-id`, `--status`, and `--after-id` are optional filters. When `--after-id` is supplied, operations up to and including that id are ignored, so an old matching success cannot satisfy a new wait. The command exits `0` when a match is observed and exits `1` on timeout with the last observed operation summary. It exits `2` for non-timeout transport, parsing, validation, or HTTP errors. Use `--json` when another agent or monitor needs the machine-readable `status`, filter fields, `timeout_seconds`, `attempts`, matched `operation`, and timeout `operations` tail.
+
 Use the operation ledger to answer "what control action happened" and the process lifecycle events to answer "what did the supervised process do next." They are deliberately separate surfaces.
 
 For scriptable monitoring, fetch the combined health summary:
