@@ -2954,6 +2954,7 @@ class CliTimeoutTests(unittest.TestCase):
             "group_id": "resident-main",
             "process": {"status": "stopped", "attention": ["group:stopped"]},
             "connection": {"expected": 2, "connected": 1, "attention": ["agent-b:offline"]},
+            "ownership": {"attention": ["meeting:duplicate_active_group"]},
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=response):
@@ -2988,6 +2989,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(strict_exit, 1)
         self.assertIn("agent-b:offline", stdout.getvalue())
         self.assertIn("group:stopped", stdout.getvalue())
+        self.assertIn("meeting:duplicate_active_group", stdout.getvalue())
 
     def test_live_agent_session_readiness_parser_accepts_meeting_group_and_fail_flag(self):
         args = build_parser().parse_args(
@@ -3050,6 +3052,7 @@ class CliTimeoutTests(unittest.TestCase):
             "group_id": "resident-main",
             "process": {"status": "stopped", "attention": ["group:stopped"]},
             "connection": {"expected": 2, "connected": 1, "attention": ["agent-b:offline"]},
+            "ownership": {"attention": ["meeting:duplicate_active_group"]},
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=response):
@@ -3071,6 +3074,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("agent-b:offline", stdout.getvalue())
         self.assertIn("group:stopped", stdout.getvalue())
+        self.assertIn("meeting:duplicate_active_group", stdout.getvalue())
 
     def test_live_agent_restart_session_parser_accepts_meeting_group_and_timeout(self):
         args = build_parser().parse_args(

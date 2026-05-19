@@ -3008,6 +3008,43 @@ Expected: fail before the fix, pass after the wait fallback is downgraded.
 
 ---
 
+### Task 85: Check-Session Prints Ownership Attention
+
+**Goal:** Make compact `check-session` and `session-readiness` output explain duplicate active meeting ownership the same way `start-session --wait-ready` already does.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED coverage for ownership attention in read-only checks**
+
+Cover degraded `check-session` and `session-readiness` responses where connection and process evidence are present and ownership reports `meeting:duplicate_active_group`. The compact CLI output must include that ownership attention.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_check_session_fail_on_degraded_returns_failure \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_session_readiness_fail_on_degraded_returns_failure
+```
+
+Expected: fail before implementation because `_format_live_agent_session_check()` only prints connection and process attention.
+
+- [x] **Step 2: Reuse the shared session attention formatter**
+
+Change `_format_live_agent_session_check()` to use `_live_agent_session_attention()` so compact output includes de-duplicated connection, process, and ownership attention.
+
+Run the same targeted tests.
+
+Expected: pass.
+
+- [x] **Step 3: Document ownership attention on check/readiness**
+
+Update the operator docs so `check-session` and `session-readiness` explicitly list ownership attention and duplicate active group ownership.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
