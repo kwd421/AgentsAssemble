@@ -115,6 +115,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("resolved Codex CLI accepts the resident safety flags", doc)
         self.assertIn("before any supervised process, resident registration, or worker thread is launched", doc)
         self.assertIn("configs/live-agents.codex-session.example.json", doc)
+        self.assertIn("python3 -m agentsassemble.cli sessions invite", doc)
         self.assertIn("codex exec resume", doc)
         self.assertIn("codex_session.invite", doc)
         self.assertIn("failed invite attempts", doc)

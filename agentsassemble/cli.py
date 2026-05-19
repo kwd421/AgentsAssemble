@@ -760,7 +760,10 @@ def build_parser() -> argparse.ArgumentParser:
     session_invite = session_subparsers.add_parser("invite", help="Bind a Codex CLI session to a meeting role.")
     session_invite.add_argument("session_id")
     session_invite.add_argument("--role", required=True, dest="role_id")
+    session_invite.add_argument("--server", default="", help="Room server URL; when set, record the invite through the GUI control plane.")
+    session_invite.add_argument("--meeting-id", default="", help="Meeting id for server-side role validation.")
     session_invite.add_argument("--output", default=str(DEFAULT_INVITE_CONFIG_PATH))
+    session_invite.add_argument("--json", action="store_true", dest="as_json")
 
     return parser
 
@@ -3648,6 +3651,22 @@ def run_sessions_command(args: argparse.Namespace) -> int:
         return 0
     if args.sessions_command == "invite":
         try:
+            if args.server:
+                response = _request_json(
+                    _server_url(args.server, "/api/codex-sessions/invite"),
+                    method="POST",
+                    payload={
+                        "session_id": args.session_id,
+                        "role_id": args.role_id,
+                        "meeting_id": args.meeting_id,
+                    },
+                )
+                if args.as_json:
+                    print(json.dumps(response, ensure_ascii=False, indent=2))
+                else:
+                    binding = response.get("binding") if isinstance(response.get("binding"), dict) else {}
+                    print(f"Invited {binding.get('role_id') or args.role_id} as {binding.get('agent_id') or 'Codex live session'}")
+                return 0
             role_ids = [role.id for role in load_council_config().roles]
             output_path = Path(args.output)
             config = build_codex_live_invite_config(
@@ -3657,7 +3676,7 @@ def run_sessions_command(args: argparse.Namespace) -> int:
                 existing=read_agent_config(output_path),
             )
             write_agent_config(output_path, config)
-        except ValueError as error:
+        except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
         print(f"Wrote {output_path}")

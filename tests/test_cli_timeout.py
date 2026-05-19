@@ -194,6 +194,87 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual(bindings["show_me_the_feats"]["join_mode"], "fresh")
             self.assertEqual(bindings["fanboard_skeptic"]["join_mode"], "fresh")
 
+    def test_sessions_invite_can_post_through_room_server(self):
+        response = {
+            "binding": {
+                "role_id": "lore_lawyer",
+                "agent_id": "codex-live-lore-lawyer",
+                "join_mode": "current_session",
+                "provider_id": "codex-live",
+            }
+        }
+        stdout = StringIO()
+
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "sessions",
+                        "invite",
+                        "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                        "--role",
+                        "lore_lawyer",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/codex-sessions/invite",
+            method="POST",
+            payload={
+                "session_id": "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                "role_id": "lore_lawyer",
+                "meeting_id": "resident-m1",
+            },
+        )
+        self.assertEqual(json.loads(stdout.getvalue()), response)
+
+    def test_sessions_invite_server_compact_output_uses_real_response_binding(self):
+        response = {"binding": {"role_id": "lore_lawyer", "agent_id": "codex-live-lore-lawyer"}}
+        stdout = StringIO()
+
+        with patch("agentsassemble.cli._request_json", return_value=response):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "sessions",
+                        "invite",
+                        "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                        "--role",
+                        "lore_lawyer",
+                        "--server",
+                        "http://room.local",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Invited lore_lawyer as codex-live-lore-lawyer", stdout.getvalue())
+
+    def test_sessions_invite_server_transport_error_returns_cli_error(self):
+        stderr = StringIO()
+
+        with patch("agentsassemble.cli._request_json", side_effect=urllib.error.URLError("down")):
+            with patch("sys.stderr", stderr):
+                exit_code = main(
+                    [
+                        "sessions",
+                        "invite",
+                        "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                        "--role",
+                        "lore_lawyer",
+                        "--server",
+                        "http://room.local",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("error:", stderr.getvalue())
+
     def test_live_agent_register_posts_connection_payload(self):
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value={"agent": {"agent_id": "claude-code-live"}}) as request_json:

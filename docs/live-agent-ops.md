@@ -119,6 +119,18 @@ POST /api/codex-sessions/invite
 
 The endpoint writes `.agentsassemble/codex-live-session.local.json` with a `codex_live_session` provider binding for the selected role. It also records sanitized successful and failed invite attempts as `codex_session.invite` operations, so another operator or automation can verify what happened from `/api/live-agent-operations`. Successful records include the safe role id, generated agent id, join mode, and provider id. Failed records include only the safe role id and a generic invite failure. The operation record does not include the Codex session id, local config path, command arguments, auth refs, prompts, provider output, or log tails.
 
+The same operation-recorded invite path is available from the CLI when the GUI room is running:
+
+```bash
+python3 -m agentsassemble.cli sessions invite 019e3038-39cc-76a2-a746-5ba8c0f3b408 \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1 \
+  --role lore_lawyer \
+  --json
+```
+
+Without `--server`, `sessions invite` keeps its local file mode and writes only the selected `--output` config.
+
 External or manually driven agents can also post a linked lobby reply through the live-agent endpoint:
 
 ```bash
