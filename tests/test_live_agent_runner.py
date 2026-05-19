@@ -1308,6 +1308,101 @@ class LiveAgentRunnerTests(unittest.TestCase):
         ]
         self.assertEqual(reply_heartbeats[-1]["session_id"], "019e3038-39cc-76a2-a746-5ba8c0f3b408")
 
+    def test_runner_restores_command_runner_session_id_from_registration_response(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "재시작 후 이어서 답해줘"}]}
+        client = FakeRoomClient(
+            [room],
+            register_agent={
+                "agent_id": "agent-a",
+                "status": "online",
+                "session_id": "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+            },
+        )
+
+        class SessionCommandRunner:
+            def __init__(self):
+                self.session_id = ""
+                self.seen_session_ids = []
+
+            def __call__(self, command, prompt, *, timeout_seconds):
+                del command, prompt, timeout_seconds
+                self.seen_session_ids.append(self.session_id)
+                return "Codex resumed reply"
+
+        command_runner = SessionCommandRunner()
+        runner = LiveAgentRunner(
+            config(
+                provider_kind="codex_live_session",
+                connection_kind="live_session",
+                session_id="   ",
+                command=["codex"],
+            ),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        self.assertEqual(command_runner.seen_session_ids, ["019e3038-39cc-76a2-a746-5ba8c0f3b408"])
+        register_payloads = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/live-agents") and method == "POST"
+        ]
+        self.assertEqual(register_payloads[0]["session_id"], "")
+
+    def test_runner_restores_codex_resident_session_id_before_first_command(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "Codex 세션 이어서 답해줘"}]}
+        client = FakeRoomClient(
+            [room],
+            register_agent={
+                "agent_id": "agent-a",
+                "status": "online",
+                "session_id": "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            calls = []
+
+            class Completed:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            def command_runner(command, **kwargs):
+                calls.append({"command": command, "kwargs": kwargs})
+                output_path = Path(command[command.index("--output-last-message") + 1])
+                output_path.write_text("Codex resumed reply", encoding="utf-8")
+                return Completed()
+
+            codex_runner = CodexResidentCommandRunner(
+                config(provider_kind="codex_live_session", connection_kind="live_session", command=["codex"]),
+                command_runner=command_runner,
+                cwd=Path(temp_dir),
+            )
+            runner = LiveAgentRunner(
+                config(provider_kind="codex_live_session", connection_kind="live_session", command=["codex"]),
+                request_json=client,
+                command_runner=codex_runner,
+                sleep_fn=clock.sleep,
+                now_fn=clock,
+            )
+            try:
+                replies = runner.run()
+            finally:
+                codex_runner.close()
+
+        self.assertEqual(replies, 1)
+        self.assertEqual(calls[0]["command"][:3], ["codex", "exec", "resume"])
+        self.assertIn("019e3038-39cc-76a2-a746-5ba8c0f3b408", calls[0]["command"])
+        self.assertNotIn("--cd", calls[0]["command"])
+        self.assertIn("Codex 세션 이어서 답해줘", calls[0]["kwargs"]["input"])
+
     def test_remote_bridge_resident_command_runner_rejects_redacted_env_auth_value(self):
         with patch.dict("os.environ", {"BRIDGE_TOKEN": "<redacted>"}, clear=False):
             with self.assertRaisesRegex(ValueError, "available auth_ref"):

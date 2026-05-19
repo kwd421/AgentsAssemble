@@ -242,7 +242,7 @@ class LiveAgentRunner:
                 "capabilities": ["room_chat", "mentions"],
             },
         )
-        self._restore_observed_cursor(response.get("agent"))
+        self._restore_agent_snapshot(response.get("agent"))
 
     def _heartbeat(self, status: str, **metadata: object) -> None:
         payload = {"status": status, **metadata}
@@ -258,7 +258,7 @@ class LiveAgentRunner:
 
     def _current_session_id(self) -> str:
         runner_session_id = str(getattr(self.command_runner, "session_id", "") or "").strip()
-        return runner_session_id or self.config.session_id
+        return runner_session_id or str(self.config.session_id or "").strip()
 
     def _heartbeat_final_offline(self) -> None:
         try:
@@ -281,8 +281,12 @@ class LiveAgentRunner:
 
     def _room(self) -> dict[str, object]:
         room = self.request_json(_server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/room"))
-        self._restore_observed_cursor(room.get("agent"))
+        self._restore_agent_snapshot(room.get("agent"))
         return room
+
+    def _restore_agent_snapshot(self, agent: object) -> None:
+        self._restore_observed_cursor(agent)
+        self._restore_command_runner_session_id(agent)
 
     def _restore_observed_cursor(self, agent: object) -> None:
         if not isinstance(agent, dict):
@@ -296,6 +300,18 @@ class LiveAgentRunner:
         live_cursor = str(agent.get("last_observed_live_event_id") or "").strip()
         if live_cursor and not self.last_observed_live_event_id:
             self.last_observed_live_event_id = live_cursor
+
+    def _restore_command_runner_session_id(self, agent: object) -> None:
+        if not isinstance(agent, dict):
+            return
+        agent_id = str(agent.get("agent_id") or "")
+        if agent_id != self.config.agent_id:
+            return
+        if self._current_session_id():
+            return
+        session_id = str(agent.get("session_id") or "").strip()
+        if session_id and hasattr(self.command_runner, "session_id"):
+            setattr(self.command_runner, "session_id", session_id)
 
     def _advance_cursor(self, events: list[dict[str, object]]) -> None:
         latest_id = _latest_event_id(events)

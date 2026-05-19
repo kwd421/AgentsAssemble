@@ -721,6 +721,8 @@ This connection kind is for `live-agent run` and `live-agent run-group`. The one
 
 `provider_kind: "codex_live_session"` is a provider-specific resident behind the same `live_session` compatibility gate, but it does not speak the JSONL protocol below. The runner calls Codex CLI directly with `codex exec --output-last-message ... -` for a fresh session and `codex exec resume --output-last-message ... <session_id> -` after a session id is known. It preserves the configured or extracted session id inside the resident runner so later lobby events continue the same Codex CLI history. This is not native Codex/Claude channel injection, a PTY attachment, or sandboxed filesystem/git isolation.
 
+When a Codex resident extracts a new session id, later heartbeats store it on the live-agent roster. If that resident process is restarted or recovered from a config that does not include a `session_id`, the fresh runner reads the existing roster entry during registration and seeds the Codex command runner before the next provider call, so it can resume the same Codex CLI session instead of starting over.
+
 Protocol:
 
 - request JSONL: `{"request_id": "...", "prompt": "..."}`
