@@ -6918,6 +6918,97 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(session_operations[-1]["status"], "success")
             self.assertEqual(session_operations[-1]["details"]["ensure_action"], "none")
 
+    def test_live_agent_session_ensure_ready_noop_can_probe_and_run_remaining_rounds(self):
+        class EnsureSessionSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+            def list_groups(self):
+                return self.snapshot_groups()
+
+            def start_group(self, **kwargs):
+                raise AssertionError("ready ensure with post-ready checks must not start a group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            auto_rounds = {
+                "status": "answered",
+                "meeting_id": "resident-m1",
+                "round_count": 1,
+                "answered_round_count": 1,
+                "completed_round_count": 0,
+                "timeout_round_count": 0,
+                "skipped_round_count": 0,
+                "stopped_round_count": 0,
+                "stopped": False,
+                "results": [{"round_id": "round_1", "status": "answered"}],
+            }
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=EnsureSessionSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with (
+                    patch(
+                        "agentsassemble.gui.run_live_agent_probe",
+                        return_value={"status": "ok", "agent_id": "agent-a", "source_event_id": "probe-1", "reply_event_id": "reply-1"},
+                    ) as run_probe,
+                    patch("agentsassemble.gui.live_agent_turn_rounds_payload", return_value=auto_rounds) as rounds_payload,
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/ensure",
+                        data=json.dumps(
+                            {
+                                "meeting_id": "resident-m1",
+                                "group_id": "resident-main",
+                                "live_agent_config_path": str(live_agent_config),
+                                "probe_bound_agents": True,
+                                "probe_timeout_seconds": 0.5,
+                                "run_remaining_rounds": True,
+                                "round_timeout_seconds": 2,
+                                "round_max_rounds": 1,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=4) as response:
+                        session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        run_probe.assert_called_once_with(root, "agent-a", timeout_seconds=0.5)
+        rounds_payload.assert_called_once()
+        self.assertEqual(session_payload["status"], "ready")
+        self.assertEqual(session_payload["action"], "none")
+        self.assertEqual(session_payload["reply_probe"]["status"], "ok")
+        self.assertEqual(session_payload["auto_rounds"]["status"], "answered")
+        session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.ensure"]
+        self.assertEqual(session_operations[-1]["status"], "success")
+        self.assertEqual(session_operations[-1]["details"]["ensure_action"], "none")
+        self.assertEqual(session_operations[-1]["details"]["reply_probe_status"], "ok")
+        self.assertEqual(session_operations[-1]["details"]["auto_rounds_status"], "answered")
+
     def test_live_agent_session_ensure_resumes_existing_meeting_when_group_is_missing(self):
         class EnsureSessionSupervisor:
             def __init__(self, output_root: Path) -> None:

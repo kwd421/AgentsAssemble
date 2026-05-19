@@ -297,7 +297,7 @@ The GUI and HTTP API expose the same one-shot policy through:
 POST /api/live-agent-sessions/ensure
 ```
 
-The server records exactly one sanitized `session.ensure` operation for the API call. Its details include the safe `ensure_action` value (`none`, `start`, `resume`, `restart`, or `recover`) plus the same bounded readiness counts and attention fields as other session controls. Internal readiness reads stay read-only and do not append `session.check` operation records.
+The server records exactly one sanitized `session.ensure` operation for the API call. Its details include the safe `ensure_action` value (`none`, `start`, `resume`, `restart`, or `recover`) plus the same bounded readiness counts and attention fields as other session controls. When the chosen action is `none`, the server still runs requested `probe_bound_agents` and `run_remaining_rounds` post-ready checks without starting, resuming, restarting, or recovering the process group. Internal readiness reads stay read-only and do not append `session.check` operation records.
 
 Use `stop-session` when the visible resident meeting already exists and you want one operator action to stop the supervised group and make the roster evidence immediately show that the bound agents are no longer live:
 

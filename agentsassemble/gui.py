@@ -566,7 +566,7 @@ def live_agent_session_ensure_payload(
     current = _live_agent_session_optional_readiness_payload(output_root, process_supervisor, payload)
     action = session_ensure_action(current)
     if action == "none":
-        session = current if isinstance(current, dict) else {}
+        session = _attach_session_auto_rounds_if_requested(output_root, dict(current) if isinstance(current, dict) else {}, payload)
     elif action == "start":
         session = live_agent_session_start_payload(
             output_root,

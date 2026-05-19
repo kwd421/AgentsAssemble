@@ -2578,6 +2578,50 @@ Expected: pass.
 
 ---
 
+### Task 76: Ensure Ready No-op Post-ready Checks
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for ready no-op checks**
+
+Cover `POST /api/live-agent-sessions/ensure` when the target is already `ready`, the selected action is `none`, and the payload requests `probe_bound_agents` plus `run_remaining_rounds`. The endpoint must not call `start_group`, but it must run the bound-agent probe, run remaining rounds, include `reply_probe` and `auto_rounds` in the response, and record those sanitized fields on the single `session.ensure` operation.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_gui_server.GuiServerTests.test_live_agent_session_ensure_ready_noop_can_probe_and_run_remaining_rounds
+```
+
+Expected: fail before implementation because the ready no-op path returns the readiness snapshot without post-ready checks.
+
+- [x] **Step 2: Reuse session post-processing for action `none`**
+
+When `session_ensure_action()` returns `none`, pass the ready readiness snapshot through `_attach_session_auto_rounds_if_requested()` before the final read-only readiness copy, so requested probes and remaining rounds behave like the other session entrypoints while preserving the no process-mutation guarantee.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_gui_server.GuiServerTests.test_live_agent_session_ensure_ready_noop_can_probe_and_run_remaining_rounds \
+  tests.test_gui_server.GuiServerTests.test_live_agent_session_ensure_returns_ready_without_mutating_ready_session
+```
+
+Expected: pass.
+
+- [x] **Step 3: Document the no-op post-ready behavior**
+
+Document that API/GUI `세션보장` still runs requested post-ready checks when the chosen action is `none`, while internal readiness reads remain operation-history neutral.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
