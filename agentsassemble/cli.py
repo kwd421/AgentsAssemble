@@ -428,6 +428,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also run the credential-free moderator-called official round smoke inside readiness.",
     )
+    live_doctor.add_argument(
+        "--session-smoke",
+        action="store_true",
+        help="Also run the full credential-free resident session smoke inside readiness.",
+    )
     live_doctor.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable readiness result.")
 
     live_probe = live_agent_subparsers.add_parser(
@@ -1362,17 +1367,22 @@ def _run_live_agent_doctor(args: argparse.Namespace) -> int:
     payload = {"group_id": args.group_id, "timeout": float(args.timeout)}
     if args.official_round_smoke:
         payload["official_round_smoke"] = True
+    if args.session_smoke:
+        payload["session_smoke"] = True
     if args.probe_agent_ids:
         payload["probe_agent_ids"] = list(args.probe_agent_ids)
     if args.probe_group_ids:
         payload["probe_group_ids"] = list(args.probe_group_ids)
     probe_windows = MAX_READINESS_PROBE_AGENTS if args.probe_group_ids else min(len(args.probe_agent_ids), MAX_READINESS_PROBE_AGENTS)
     official_round_windows = 4 if args.official_round_smoke else 0
+    timeout_seconds = _operation_http_timeout(float(args.timeout), windows=1 + official_round_windows + probe_windows)
+    if args.session_smoke:
+        timeout_seconds += _session_smoke_http_timeout(float(args.timeout))
     payload = _request_json(
         _server_url(args.server, "/api/live-agent-readiness"),
         method="POST",
         payload=payload,
-        timeout_seconds=_operation_http_timeout(float(args.timeout), windows=1 + official_round_windows + probe_windows),
+        timeout_seconds=timeout_seconds,
     )
     if args.as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -1472,6 +1482,9 @@ def _format_live_agent_readiness(payload: dict[str, object]) -> str:
         lines.append(f"probes: {_readiness_probe_summary(probes)}")
     if official_round_smoke:
         lines.append(f"official round smoke: {_official_round_smoke_summary(official_round_smoke)}")
+    session_smoke = payload.get("session_smoke") if isinstance(payload.get("session_smoke"), dict) else {}
+    if session_smoke:
+        lines.append(f"session smoke: {_session_smoke_summary(session_smoke)}")
     probe_groups = payload.get("probe_groups") if isinstance(payload.get("probe_groups"), list) else []
     if probe_groups:
         lines.append(f"probe groups: {_readiness_probe_group_summary(probe_groups)}")
@@ -1532,6 +1545,18 @@ def _official_round_smoke_summary(smoke: dict[str, object]) -> str:
         f"{smoke.get('answered_count', 0)} answered, "
         f"{smoke.get('timeout_count', 0)} timed out, "
         f"{smoke.get('skipped_count', 0)} skipped)"
+    )
+
+
+def _session_smoke_summary(smoke: dict[str, object]) -> str:
+    group_id = str(smoke.get("group_id") or "").strip()
+    label = f"{smoke.get('status') or 'unknown'} {group_id}".strip()
+    lobby_probe_count = max(1, int(smoke.get("lobby_probe_count") or 1))
+    expected_total = int(smoke.get("expected_reply_count") or 0) * lobby_probe_count
+    return (
+        f"{label} ("
+        f"{smoke.get('reply_count', 0)}/{expected_total} replies, "
+        f"post-recover {smoke.get('post_recover_reply_count', 0)}/{expected_total})"
     )
 
 

@@ -69,6 +69,7 @@ SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
 MAX_READINESS_PROBE_AGENTS = 10
 OFFICIAL_ROUND_SMOKE_ERROR = "official round smoke could not be run"
+SESSION_SMOKE_ERROR = "session smoke could not be run"
 LIVE_AGENT_TURN_LOCK = threading.Lock()
 MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
 MAX_LIVE_AGENT_ROUND_BATCH = 8
@@ -1175,6 +1176,7 @@ def live_agent_readiness_payload(
     probe_timeout = safe_probe_timeout(_payload_nonnegative_float(payload.get("probe_timeout_seconds", payload.get("timeout")), 12.0))
     probe_error = ""
     official_round_requested = _payload_bool(payload.get("official_round_smoke"))
+    session_smoke_requested = _payload_bool(payload.get("session_smoke"))
     if invalid_probe_payload:
         probe_error = "Invalid probe id payload; expected a list of strings."
     elif len(probe_agent_ids) > MAX_READINESS_PROBE_AGENTS:
@@ -1212,6 +1214,33 @@ def live_agent_readiness_payload(
             "reason": "smoke did not pass",
         }
         checks.append({"id": "official_round_smoke", "status": "skipped"})
+    session_smoke: dict[str, object] = {}
+    if session_smoke_requested and smoke.get("status") == "ok":
+        try:
+            session_smoke = _safe_readiness_session_smoke_result(
+                live_agent_session_smoke_payload(
+                    output_root,
+                    {
+                        "timeout": _payload_nonnegative_float(payload.get("timeout"), 12.0),
+                        "lobby_probe_count": _payload_nonnegative_int(payload.get("session_smoke_lobby_probe_count"), 1),
+                    },
+                    default_server=default_server,
+                )
+            )
+        except (LiveAgentSmokeFailed, ValueError, urllib.error.URLError):
+            session_smoke = _safe_readiness_session_smoke_result(
+                {
+                    "status": "failed",
+                    "error": SESSION_SMOKE_ERROR,
+                }
+            )
+        checks.append({"id": "session_smoke", "status": session_smoke.get("status") or "unknown"})
+    elif session_smoke_requested:
+        session_smoke = {
+            "status": "skipped",
+            "reason": "smoke did not pass",
+        }
+        checks.append({"id": "session_smoke", "status": "skipped"})
     probes: list[dict[str, object]] = []
     probe_group_failed = any(group.get("status") != "ok" for group in probe_groups)
     if smoke.get("status") == "ok":
@@ -1234,6 +1263,8 @@ def live_agent_readiness_payload(
         status = "failed"
     elif official_round_requested and official_round_smoke.get("status") != "ok":
         status = "failed"
+    elif session_smoke_requested and session_smoke.get("status") != "ok":
+        status = "failed"
     elif probe_group_failed:
         status = "failed"
     elif probe_error:
@@ -1247,6 +1278,8 @@ def live_agent_readiness_payload(
     result = {"status": status, "checks": checks, "health": health, "smoke": smoke}
     if official_round_smoke:
         result["official_round_smoke"] = official_round_smoke
+    if session_smoke:
+        result["session_smoke"] = session_smoke
     if probe_error:
         result["probe_error"] = probe_error
     if probe_groups:
@@ -1998,6 +2031,35 @@ def _safe_readiness_official_round_smoke_result(smoke: dict[str, object]) -> dic
     if error:
         safe["error"] = OFFICIAL_ROUND_SMOKE_ERROR
     reason = str(smoke.get("reason") or "").strip()[:128]
+    if reason:
+        safe["reason"] = reason
+    return safe
+
+
+def _safe_readiness_session_smoke_result(smoke: dict[str, object]) -> dict[str, object]:
+    safe = {
+        "status": str(smoke.get("status") or "unknown"),
+        "meeting_id": clean_lobby_text(smoke.get("meeting_id"), limit=128),
+        "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
+        "agent_ids": _safe_payload_strings(smoke.get("agent_ids"), limit=64),
+        "rounds_status": _operation_result_status(smoke.get("rounds_status")),
+        "answered_round_count": _payload_nonnegative_int(smoke.get("answered_round_count"), 0),
+        "lobby_probe_count": _payload_nonnegative_int(smoke.get("lobby_probe_count"), 1),
+        "expected_reply_count": _payload_nonnegative_int(smoke.get("expected_reply_count"), 0),
+        "reply_count": _payload_nonnegative_int(smoke.get("reply_count"), 0),
+        "post_restart_reply_count": _payload_nonnegative_int(smoke.get("post_restart_reply_count"), 0),
+        "post_recover_reply_count": _payload_nonnegative_int(smoke.get("post_recover_reply_count"), 0),
+        "start_status": _operation_result_status(smoke.get("start_status")),
+        "check_status": _operation_result_status(smoke.get("check_status")),
+        "resume_status": _operation_result_status(smoke.get("resume_status")),
+        "restart_status": _operation_result_status(smoke.get("restart_status")),
+        "recover_status": _operation_result_status(smoke.get("recover_status")),
+        "stop_status": _operation_result_status(smoke.get("stop_status")),
+    }
+    error = str(smoke.get("error") or "").strip()
+    if error:
+        safe["error"] = SESSION_SMOKE_ERROR
+    reason = clean_lobby_text(smoke.get("reason"), limit=128)
     if reason:
         safe["reason"] = reason
     return safe
@@ -3441,6 +3503,7 @@ def _make_handler(
                     if isinstance(readiness.get("official_round_smoke"), dict)
                     else {}
                 )
+                session_smoke = readiness.get("session_smoke") if isinstance(readiness.get("session_smoke"), dict) else {}
                 probes = readiness.get("probes") if isinstance(readiness.get("probes"), list) else []
                 probe_groups = readiness.get("probe_groups") if isinstance(readiness.get("probe_groups"), list) else []
                 record_live_agent_operation(
@@ -3473,6 +3536,17 @@ def _make_handler(
                             official_round_smoke.get("skipped_count"),
                             0,
                         ),
+                        "session_smoke": _operation_result_status(session_smoke.get("status")),
+                        "session_smoke_reply_count": _payload_nonnegative_int(session_smoke.get("reply_count"), 0),
+                        "session_smoke_post_restart_reply_count": _payload_nonnegative_int(
+                            session_smoke.get("post_restart_reply_count"),
+                            0,
+                        ),
+                        "session_smoke_post_recover_reply_count": _payload_nonnegative_int(
+                            session_smoke.get("post_recover_reply_count"),
+                            0,
+                        ),
+                        "session_smoke_recover_status": _operation_result_status(session_smoke.get("recover_status")),
                     },
                 )
                 self._send_json(readiness)

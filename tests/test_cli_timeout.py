@@ -714,6 +714,7 @@ class CliTimeoutTests(unittest.TestCase):
                 "agent-b",
                 "--probe-group",
                 "resident-main",
+                "--session-smoke",
                 "--json",
             ]
         )
@@ -724,6 +725,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.timeout, 8.0)
         self.assertEqual(args.probe_agent_ids, ["agent-a", "agent-b"])
         self.assertEqual(args.probe_group_ids, ["resident-main"])
+        self.assertTrue(args.session_smoke)
         self.assertTrue(args.as_json)
 
     def test_live_agent_call_parses_operator_options(self):
@@ -2423,6 +2425,120 @@ class CliTimeoutTests(unittest.TestCase):
         output = stdout.getvalue()
         self.assertIn("readiness: ready", output)
         self.assertIn("official round smoke: ok doctor-smoke (3 answered, 0 timed out, 0 skipped)", output)
+
+    def test_live_agent_doctor_can_request_session_smoke(self):
+        payload = {
+            "status": "ready",
+            "checks": [
+                {"id": "health", "status": "ok"},
+                {"id": "smoke", "status": "ok"},
+                {"id": "session_smoke", "status": "ok"},
+            ],
+            "health": {"status": "ok", "agents": {"attention": []}, "processes": {"attention": []}},
+            "smoke": {"status": "ok", "group_id": "doctor-smoke"},
+            "session_smoke": {
+                "status": "ok",
+                "group_id": "session-smoke",
+                "meeting_id": "session-smoke",
+                "expected_reply_count": 3,
+                "lobby_probe_count": 1,
+                "reply_count": 3,
+                "post_restart_reply_count": 3,
+                "post_recover_reply_count": 3,
+                "recover_status": "ready",
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "doctor",
+                        "--server",
+                        "http://room.local",
+                        "--group-id",
+                        "doctor-smoke",
+                        "--timeout",
+                        "8",
+                        "--session-smoke",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-readiness",
+            method="POST",
+            payload={"group_id": "doctor-smoke", "timeout": 8.0, "session_smoke": True},
+            timeout_seconds=170.0,
+        )
+        output = stdout.getvalue()
+        self.assertIn("readiness: ready", output)
+        self.assertIn("session smoke: ok session-smoke (3/3 replies, post-recover 3/3)", output)
+
+    def test_live_agent_doctor_can_request_official_round_and_session_smoke(self):
+        payload = {
+            "status": "ready",
+            "checks": [
+                {"id": "health", "status": "ok"},
+                {"id": "smoke", "status": "ok"},
+                {"id": "official_round_smoke", "status": "ok"},
+                {"id": "session_smoke", "status": "ok"},
+            ],
+            "health": {"status": "ok", "agents": {"attention": []}, "processes": {"attention": []}},
+            "smoke": {"status": "ok", "group_id": "doctor-smoke"},
+            "official_round_smoke": {
+                "status": "ok",
+                "group_id": "doctor-smoke",
+                "answered_count": 3,
+                "timeout_count": 0,
+                "skipped_count": 0,
+            },
+            "session_smoke": {
+                "status": "ok",
+                "group_id": "session-smoke",
+                "meeting_id": "session-smoke",
+                "expected_reply_count": 3,
+                "lobby_probe_count": 1,
+                "reply_count": 3,
+                "post_restart_reply_count": 3,
+                "post_recover_reply_count": 3,
+                "recover_status": "ready",
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "doctor",
+                        "--server",
+                        "http://room.local",
+                        "--group-id",
+                        "doctor-smoke",
+                        "--timeout",
+                        "8",
+                        "--official-round-smoke",
+                        "--session-smoke",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-readiness",
+            method="POST",
+            payload={
+                "group_id": "doctor-smoke",
+                "timeout": 8.0,
+                "official_round_smoke": True,
+                "session_smoke": True,
+            },
+            timeout_seconds=202.0,
+        )
+        output = stdout.getvalue()
+        self.assertIn("official round smoke: ok doctor-smoke (3 answered, 0 timed out, 0 skipped)", output)
+        self.assertIn("session smoke: ok session-smoke (3/3 replies, post-recover 3/3)", output)
 
     def test_live_agent_doctor_prints_probe_group_refusal_reason(self):
         payload = {

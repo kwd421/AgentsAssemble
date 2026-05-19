@@ -556,6 +556,16 @@ python3 -m agentsassemble.cli live-agent doctor \
 
 The official round smoke creates diagnostic official-round smoke meetings so the request/reply event evidence remains inspectable by direct meeting id and operation history. Those diagnostic meetings do not appear in `/api/meetings` or `/api/meetings/latest`, so a smoke run cannot replace the operator's latest real meeting in the normal GUI/archive surface.
 
+When you need the strongest credential-free resident session proof in the same operator answer, opt into the full session smoke:
+
+```bash
+python3 -m agentsassemble.cli live-agent doctor \
+  --server http://127.0.0.1:8765 \
+  --session-smoke
+```
+
+`--session-smoke` runs the full `live-agent session-smoke` path inside readiness after the regular local CLI, live session, and remote bridge smoke passes. It creates a fresh diagnostic resident session instead of reusing the doctor's smoke group id, verifies start-session, one official round, check-session, resume-session, restart-session, recover-session, stop-session, and pre-restart/post-restart/post-recover lobby replies. The readiness response and `readiness.check` operation history expose only safe session smoke counts and statuses such as reply counts, post-recover reply count, and recover status. They omit source event ids, reply arrays, reply text, temporary config paths, endpoint URLs, auth refs, command arguments, provider output, tokens, and log tails. If the base smoke fails, session smoke is reported as `skipped` and is not run.
+
 By default, doctor stays credential-free. Add `--probe-agent <agent_id>` only when you explicitly want opt-in targeted resident probes against already-running agents after smoke passes:
 
 ```bash
@@ -582,8 +592,8 @@ Smoke-created fake agents and process groups are marked `diagnostic`. They remai
 Status meanings:
 
 - `ready`: pre-smoke health is `ok`, the fake `local_cli`, `live_session`, plus `remote_bridge` smoke passed, and every requested targeted probe replied.
-- `degraded`: smoke passed and every requested targeted probe replied, but pre-smoke health already had agent or process attention.
-- `failed`: the room was reached, but the smoke check did not pass or a requested targeted probe was skipped, timed out, or failed.
+- `degraded`: smoke passed, every requested official/session smoke and targeted probe replied, but pre-smoke health already had agent or process attention.
+- `failed`: the room was reached, but the base smoke check did not pass, requested official/session smoke was skipped, timed out, or failed, or a requested targeted probe was skipped, timed out, or failed.
 
 For scripts:
 
@@ -604,6 +614,8 @@ Exit code contract:
 The GUI "상주 실행" panel exposes the same readiness path as the `점검` button. Use `진단` for a raw smoke run and `점검` when you want the combined health-plus-smoke answer.
 
 GUI `점검` can include the same official-turn smoke check as `--official-round-smoke`: enable `공식 포함` before pressing `점검`. When unchecked, the GUI keeps the default health-plus-smoke readiness path and does not run the official round smoke. Use `라운드호출` only after a real meeting and resident roster are ready; it calls the real meeting round endpoint rather than the credential-free smoke endpoint.
+
+GUI `점검` can also include the full session smoke check as `--session-smoke`: enable `세션 포함` before pressing `점검`. This is intentionally separate from the standalone `세션진단` button; the checkbox folds the same strong diagnostic into the combined readiness answer, while `세션진단` runs the session smoke as its own operation.
 
 ## Targeted Resident Reply Probe
 

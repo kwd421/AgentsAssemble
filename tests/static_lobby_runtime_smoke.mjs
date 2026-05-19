@@ -468,13 +468,14 @@ function remainingRoundsRequest(requests) {
   return requests.find((request) => request.url === "/api/meetings/resident-gui/live-agent-turns/rounds");
 }
 
-async function clickReadiness({ officialRoundSmoke, readinessPayload }) {
+async function clickReadiness({ officialRoundSmoke, sessionSmoke = false, readinessPayload }) {
   resetState();
   const { document, requests } = installHarness({ readinessPayload });
   renderLobby({ followLatest: false });
   const lobby = document.querySelector("#lobby");
   lobby.querySelector("#live-agent-process-group").value = "doctor-smoke";
   lobby.querySelector("#live-agent-readiness-official-round").checked = officialRoundSmoke;
+  lobby.querySelector("#live-agent-readiness-session-smoke").checked = sessionSmoke;
   await lobby.querySelector("#live-agent-readiness-check").click();
   return { document, requests };
 }
@@ -488,6 +489,7 @@ test("readiness button omits official round smoke when the checkbox is unchecked
   const request = readinessRequest(requests);
   assert.deepEqual(request.jsonBody, { group_id: "doctor-smoke", timeout: 12 });
   assert.equal(Object.hasOwn(request.jsonBody, "official_round_smoke"), false);
+  assert.equal(Object.hasOwn(request.jsonBody, "session_smoke"), false);
 });
 
 test("readiness button sends official round smoke and reports the official counts when checked", async () => {
@@ -517,6 +519,109 @@ test("readiness button sends official round smoke and reports the official count
   assert.equal(
     document.querySelector(".live-agent-status").textContent,
     "readiness ready · official 2 answered, 1 timed out, 0 skipped"
+  );
+});
+
+test("readiness button sends session smoke and reports the session counts when checked", async () => {
+  const { requests } = await clickReadiness({
+    officialRoundSmoke: false,
+    sessionSmoke: true,
+    readinessPayload: {
+      status: "ready",
+      session_smoke: {
+        status: "ok",
+        group_id: "session-smoke",
+        expected_reply_count: 3,
+        lobby_probe_count: 1,
+        reply_count: 3,
+        post_recover_reply_count: 3,
+      },
+    },
+  });
+
+  const request = readinessRequest(requests);
+  assert.deepEqual(request.jsonBody, {
+    group_id: "doctor-smoke",
+    timeout: 12,
+    session_smoke: true,
+  });
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "readiness ready · session 3/3 replies, post-recover 3/3"
+  );
+});
+
+test("readiness status shows skipped session smoke reason", async () => {
+  await clickReadiness({
+    officialRoundSmoke: false,
+    sessionSmoke: true,
+    readinessPayload: {
+      status: "failed",
+      session_smoke: {
+        status: "skipped",
+        reason: "smoke did not pass",
+      },
+    },
+  });
+
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "readiness failed · session skipped: smoke did not pass"
+  );
+});
+
+test("readiness status shows failed session smoke error", async () => {
+  await clickReadiness({
+    officialRoundSmoke: false,
+    sessionSmoke: true,
+    readinessPayload: {
+      status: "failed",
+      session_smoke: {
+        status: "failed",
+        error: "session smoke could not be run",
+      },
+    },
+  });
+
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "readiness failed · session failed: session smoke could not be run"
+  );
+});
+
+test("readiness status can show official and session smoke evidence together", async () => {
+  const { requests } = await clickReadiness({
+    officialRoundSmoke: true,
+    sessionSmoke: true,
+    readinessPayload: {
+      status: "ready",
+      official_round_smoke: {
+        status: "ok",
+        answered_count: 2,
+        timeout_count: 0,
+        skipped_count: 0,
+      },
+      session_smoke: {
+        status: "ok",
+        group_id: "session-smoke",
+        expected_reply_count: 3,
+        lobby_probe_count: 1,
+        reply_count: 3,
+        post_recover_reply_count: 3,
+      },
+    },
+  });
+
+  const request = readinessRequest(requests);
+  assert.deepEqual(request.jsonBody, {
+    group_id: "doctor-smoke",
+    timeout: 12,
+    official_round_smoke: true,
+    session_smoke: true,
+  });
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "readiness ready · official 2 answered, 0 timed out, 0 skipped · session 3/3 replies, post-recover 3/3"
   );
 });
 

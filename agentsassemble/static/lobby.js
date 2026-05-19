@@ -211,6 +211,7 @@ function readLiveAgentProcessDraft(lobby) {
     sessionRunRemainingRounds: Boolean(form.querySelector("#live-agent-session-run-remaining-rounds")?.checked),
     autoRestart: Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked),
     officialRoundSmoke: Boolean(form.querySelector("#live-agent-readiness-official-round")?.checked),
+    sessionSmoke: Boolean(form.querySelector("#live-agent-readiness-session-smoke")?.checked),
     maxRestarts: form.querySelector("#live-agent-process-max-restarts")?.value ?? "",
     restartBackoff: form.querySelector("#live-agent-process-restart-backoff")?.value ?? "",
     staleRestartAfter: form.querySelector("#live-agent-process-stale-restart-after")?.value ?? "",
@@ -243,6 +244,7 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const sessionRunRemainingRounds = lobby.querySelector("#live-agent-session-run-remaining-rounds");
   const autoRestart = lobby.querySelector("#live-agent-process-auto-restart");
   const officialRoundSmoke = lobby.querySelector("#live-agent-readiness-official-round");
+  const sessionSmoke = lobby.querySelector("#live-agent-readiness-session-smoke");
   const maxRestarts = lobby.querySelector("#live-agent-process-max-restarts");
   const restartBackoff = lobby.querySelector("#live-agent-process-restart-backoff");
   const staleRestartAfter = lobby.querySelector("#live-agent-process-stale-restart-after");
@@ -259,6 +261,7 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   if (sessionRunRemainingRounds) sessionRunRemainingRounds.checked = draft.sessionRunRemainingRounds;
   if (autoRestart) autoRestart.checked = draft.autoRestart;
   if (officialRoundSmoke) officialRoundSmoke.checked = draft.officialRoundSmoke;
+  if (sessionSmoke) sessionSmoke.checked = draft.sessionSmoke;
   if (maxRestarts) maxRestarts.value = draft.maxRestarts;
   if (restartBackoff) restartBackoff.value = draft.restartBackoff;
   if (staleRestartAfter) staleRestartAfter.value = draft.staleRestartAfter;
@@ -534,6 +537,10 @@ function renderLiveAgentProcessControls() {
         <label class="live-agent-process-options">
           <input id="live-agent-readiness-official-round" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
           <span>공식 포함</span>
+        </label>
+        <label class="live-agent-process-options">
+          <input id="live-agent-readiness-session-smoke" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+          <span>세션 포함</span>
         </label>
         <button type="button" id="live-agent-readiness-check" ${processActionsDisabled ? "disabled" : ""}>점검</button>
         <button type="button" id="live-agent-process-refresh">상태</button>
@@ -1359,8 +1366,10 @@ async function runLiveAgentReadiness(lobby) {
   if (liveAgentProcessActionBusy()) return;
   const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
   const includeOfficialRound = lobby.querySelector("#live-agent-readiness-official-round")?.checked === true;
+  const includeSessionSmoke = lobby.querySelector("#live-agent-readiness-session-smoke")?.checked === true;
   const requestBody = { group_id: groupId, timeout: 12 };
   if (includeOfficialRound) requestBody.official_round_smoke = true;
+  if (includeSessionSmoke) requestBody.session_smoke = true;
   state.liveAgentReadinessRunning = true;
   state.liveAgentProcessStatus = { message: "상주 readiness 점검 중", tone: "info" };
   renderLobby({ followLatest: false });
@@ -1390,8 +1399,15 @@ async function runLiveAgentReadiness(lobby) {
 function liveAgentReadinessStatusMessage(payload) {
   const status = payload.status || "unknown";
   const officialRoundSmoke = payload.official_round_smoke;
-  if (!officialRoundSmoke || typeof officialRoundSmoke !== "object") return `readiness ${status}`;
-  return `readiness ${status} · official ${officialRoundSmokeCountsLabel(officialRoundSmoke)}`;
+  const sessionSmoke = payload.session_smoke;
+  const parts = [];
+  if (officialRoundSmoke && typeof officialRoundSmoke === "object") {
+    parts.push(`official ${officialRoundSmokeCountsLabel(officialRoundSmoke)}`);
+  }
+  if (sessionSmoke && typeof sessionSmoke === "object") {
+    parts.push(`session ${sessionSmokeStatusLabel(sessionSmoke)}`);
+  }
+  return [`readiness ${status}`, ...parts].join(" · ");
 }
 
 function officialRoundSmokeCountsLabel(payload) {
@@ -1399,6 +1415,20 @@ function officialRoundSmokeCountsLabel(payload) {
   const timedOut = payload.timeout_count || 0;
   const skipped = payload.skipped_count || 0;
   return `${answered} answered, ${timedOut} timed out, ${skipped} skipped`;
+}
+
+function sessionSmokeStatusLabel(payload) {
+  const status = payload.status || "unknown";
+  if (status !== "ok") {
+    const reason = payload.reason || payload.error || "";
+    return reason ? `${status}: ${reason}` : status;
+  }
+  const expectedReplies = Math.max(0, Number(payload.expected_reply_count || 0));
+  const lobbyProbeCount = Math.max(1, Number(payload.lobby_probe_count || 1));
+  const expectedReplyTotal = expectedReplies * lobbyProbeCount;
+  const replies = Math.max(0, Number(payload.reply_count || 0));
+  const postRecoverReplies = Math.max(0, Number(payload.post_recover_reply_count || 0));
+  return `${replies}/${expectedReplyTotal} replies, post-recover ${postRecoverReplies}/${expectedReplyTotal}`;
 }
 
 function liveAgentSessionSmokeStatusMessage(payload) {
