@@ -742,6 +742,59 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("soak_reply_count=6", output)
         self.assertIn("soak_check_statuses=ready,ready", output)
 
+    def test_live_agent_operations_list_prioritizes_session_control_probe_and_auto_rounds(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "session.restart",
+                    "status": "degraded",
+                    "target_id": "council-session",
+                    "summary": "",
+                    "details": {
+                        "result_status": "degraded",
+                        "meeting_id": "main-room",
+                        "group_id": "council",
+                        "expected_agent_count": 3,
+                        "connected_agent_count": 2,
+                        "agent_ids": ["agent-a", "agent-b", "agent-c"],
+                        "connected_agent_ids": ["agent-a", "agent-b"],
+                        "reply_probe_status": "failed",
+                        "reply_probe_statuses": ["agent-a:ok", "agent-b:timeout"],
+                        "auto_rounds_status": "skipped",
+                        "auto_rounds_reason": "probe_not_ready",
+                        "auto_rounds_round_count": 2,
+                        "auto_rounds_answered_round_count": 1,
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "operations",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("session.restart", output)
+        self.assertIn("result_status=degraded", output)
+        self.assertIn("connected_agent_count=2", output)
+        self.assertIn("reply_probe_status=failed", output)
+        self.assertIn("reply_probe_statuses=agent-a:ok,agent-b:timeout", output)
+        self.assertIn("auto_rounds_status=skipped", output)
+        self.assertIn("auto_rounds_reason=probe_not_ready", output)
+        self.assertIn("auto_rounds_round_count=2", output)
+        self.assertIn("auto_rounds_answered_round_count=1", output)
+        self.assertNotIn("agent_ids=agent-a,agent-b,agent-c", output)
+
     def test_live_agent_engagement_updates_real_http_endpoint_without_refreshing_heartbeat(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

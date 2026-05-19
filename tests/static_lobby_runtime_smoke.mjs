@@ -1890,3 +1890,46 @@ test("operation row prioritizes session smoke soak evidence", () => {
   assert.match(rowText, /soak_reply_count=6/);
   assert.match(rowText, /soak_check_statuses=ready,ready/);
 });
+
+test("operation row prioritizes session control probe and auto rounds", () => {
+  resetState();
+  const { document } = installHarness();
+  state.liveAgentOperations = [
+    {
+      timestamp: "2026-05-18T01:02:03+00:00",
+      operation: "session.restart",
+      status: "degraded",
+      target_id: "council-session",
+      summary: "",
+      details: {
+        result_status: "degraded",
+        meeting_id: "main-room",
+        group_id: "council",
+        expected_agent_count: 3,
+        connected_agent_count: 2,
+        agent_ids: ["agent-a", "agent-b", "agent-c"],
+        connected_agent_ids: ["agent-a", "agent-b"],
+        reply_probe_status: "failed",
+        reply_probe_statuses: ["agent-a:ok", "agent-b:timeout"],
+        auto_rounds_status: "skipped",
+        auto_rounds_reason: "probe_not_ready",
+        auto_rounds_round_count: 2,
+        auto_rounds_answered_round_count: 1,
+      },
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+
+  const rowText = document.querySelector(".live-agent-operation-row").textContent;
+  assert.match(rowText, /session\.restart/);
+  assert.match(rowText, /result_status=degraded/);
+  assert.match(rowText, /connected_agent_count=2/);
+  assert.match(rowText, /reply_probe_status=failed/);
+  assert.match(rowText, /reply_probe_statuses=agent-a:ok,agent-b:timeout/);
+  assert.match(rowText, /auto_rounds_status=skipped/);
+  assert.match(rowText, /auto_rounds_reason=probe_not_ready/);
+  assert.match(rowText, /auto_rounds_round_count=2/);
+  assert.match(rowText, /auto_rounds_answered_round_count=1/);
+  assert.doesNotMatch(rowText, /agent_ids=agent-a,agent-b,agent-c/);
+});

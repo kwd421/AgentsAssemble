@@ -1945,12 +1945,13 @@ def _format_live_agent_operation_details(value: object, *, operation_name: str =
     if not isinstance(value, dict):
         return ""
     labels = []
+    detail_limit = _live_agent_operation_detail_limit(operation_name)
     for key, raw_detail in _ordered_live_agent_operation_details(value, operation_name=operation_name):
         clean_key = str(key or "").strip()
         clean_value = _format_live_agent_operation_detail_value(raw_detail)
         if clean_key and clean_value:
             labels.append(f"{clean_key}={clean_value}")
-        if len(labels) >= 7:
+        if len(labels) >= detail_limit:
             break
     return "; ".join(labels)
 
@@ -1993,7 +1994,24 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
             "session_smoke_soak_check_statuses",
             "probe_statuses",
         ]
+    if operation_name in {"session.start", "session.resume", "session.restart", "session.recover"}:
+        return [
+            "result_status",
+            "connected_agent_count",
+            "reply_probe_status",
+            "reply_probe_statuses",
+            "auto_rounds_status",
+            "auto_rounds_reason",
+            "auto_rounds_answered_round_count",
+            "auto_rounds_round_count",
+        ]
     return []
+
+
+def _live_agent_operation_detail_limit(operation_name: str) -> int:
+    if operation_name in {"session.start", "session.resume", "session.restart", "session.recover"}:
+        return 8
+    return 7
 
 
 def _format_live_agent_operation_detail_value(value: object) -> str:

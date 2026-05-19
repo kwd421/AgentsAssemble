@@ -781,7 +781,7 @@ function liveAgentOperationDetailsLabel(details, operationName = "") {
   return orderedLiveAgentOperationDetails(details, operationName)
     .map(([key, value]) => liveAgentOperationDetailLabel(key, value))
     .filter(Boolean)
-    .slice(0, 7)
+    .slice(0, liveAgentOperationDetailLimit(operationName))
     .join("; ");
 }
 
@@ -824,7 +824,24 @@ function liveAgentOperationDetailPriority(operationName = "") {
       "probe_statuses",
     ];
   }
+  if (["session.start", "session.resume", "session.restart", "session.recover"].includes(operationName)) {
+    return [
+      "result_status",
+      "connected_agent_count",
+      "reply_probe_status",
+      "reply_probe_statuses",
+      "auto_rounds_status",
+      "auto_rounds_reason",
+      "auto_rounds_answered_round_count",
+      "auto_rounds_round_count",
+    ];
+  }
   return [];
+}
+
+function liveAgentOperationDetailLimit(operationName = "") {
+  if (["session.start", "session.resume", "session.restart", "session.recover"].includes(operationName)) return 8;
+  return 7;
 }
 
 function liveAgentOperationDetailLabel(key, value) {
