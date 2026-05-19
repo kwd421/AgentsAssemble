@@ -1291,13 +1291,15 @@ def _run_live_agent_official_round_smoke(args: argparse.Namespace) -> int:
 
 
 def _format_live_agent_session_smoke(result: dict[str, object]) -> str:
+    expected_replies = result.get("expected_reply_count", 0)
     return (
         f"resident session smoke {result.get('status') or 'unknown'}: "
         f"{result.get('meeting_id') or 'session-smoke'} "
         f"group {result.get('group_id') or 'session-smoke'}; "
         f"rounds {result.get('rounds_status') or 'unknown'} "
         f"({result.get('answered_round_count', 0)} answered); "
-        f"{result.get('reply_count', 0)}/{result.get('expected_reply_count', 0)} replies; "
+        f"{result.get('reply_count', 0)}/{expected_replies} replies; "
+        f"post-restart {result.get('post_restart_reply_count', 0)}/{expected_replies} replies; "
         f"start {result.get('start_status') or 'unknown'}, "
         f"check {result.get('check_status') or 'unknown'}, "
         f"resume {result.get('resume_status') or 'unknown'}, "
@@ -2020,6 +2022,7 @@ def _session_smoke_http_timeout(wait_seconds: float) -> float:
         + 10.0
         + _operation_http_timeout(timeout)
         + _operation_http_timeout(timeout)
+        + timeout
         + 20.0
     )
 

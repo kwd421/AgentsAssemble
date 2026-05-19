@@ -960,10 +960,29 @@ class GuiServerTests(unittest.TestCase):
             "skipped_round_count": 0,
             "expected_reply_count": 3,
             "reply_count": 3,
+            "post_restart_source_event_id": "post-restart-secret",
+            "post_restart_reply_count": 3,
             "replies": [
                 {"id": "reply-local", "actor_id": "session-smoke-local-cli", "source_event_id": "probe-secret"},
                 {"id": "reply-session", "actor_id": "session-smoke-live-session", "source_event_id": "probe-secret"},
                 {"id": "reply-bridge", "actor_id": "session-smoke-remote-bridge", "source_event_id": "probe-secret"},
+            ],
+            "post_restart_replies": [
+                {
+                    "id": "reply-post-local",
+                    "actor_id": "session-smoke-local-cli",
+                    "source_event_id": "post-restart-secret",
+                },
+                {
+                    "id": "reply-post-session",
+                    "actor_id": "session-smoke-live-session",
+                    "source_event_id": "post-restart-secret",
+                },
+                {
+                    "id": "reply-post-bridge",
+                    "actor_id": "session-smoke-remote-bridge",
+                    "source_event_id": "post-restart-secret",
+                },
             ],
             "start_status": "ready",
             "check_status": "ready",
@@ -1012,12 +1031,17 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(session_operations[-1]["details"]["rounds_status"], "answered")
         self.assertEqual(session_operations[-1]["details"]["answered_round_count"], 1)
         self.assertEqual(session_operations[-1]["details"]["reply_count"], 3)
+        self.assertEqual(session_operations[-1]["details"]["post_restart_reply_count"], 3)
         self.assertEqual(session_operations[-1]["details"]["resume_status"], "ready")
         operation_blob = json.dumps(session_operations, ensure_ascii=False)
         self.assertNotIn("probe-secret", operation_blob)
+        self.assertNotIn("post-restart-secret", operation_blob)
         self.assertNotIn("reply-local", operation_blob)
         self.assertNotIn("reply-session", operation_blob)
         self.assertNotIn("reply-bridge", operation_blob)
+        self.assertNotIn("reply-post-local", operation_blob)
+        self.assertNotIn("reply-post-session", operation_blob)
+        self.assertNotIn("reply-post-bridge", operation_blob)
 
     def test_live_agent_session_smoke_endpoint_records_safe_failure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1090,8 +1114,13 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["answered_round_count"], 1)
             self.assertEqual(payload["expected_reply_count"], 3)
             self.assertEqual(payload["reply_count"], 3)
+            self.assertEqual(payload["post_restart_reply_count"], 3)
+            self.assertNotEqual(payload["post_restart_source_event_id"], payload["source_event_id"])
             self.assertEqual({reply["actor_id"] for reply in payload["replies"]}, set(payload["agent_ids"]))
+            self.assertEqual({reply["actor_id"] for reply in payload["post_restart_replies"]}, set(payload["agent_ids"]))
+            self.assertEqual({reply["source_event_id"] for reply in payload["post_restart_replies"]}, {payload["post_restart_source_event_id"]})
             self.assertFalse(any("message" in reply for reply in payload["replies"]))
+            self.assertFalse(any("message" in reply for reply in payload["post_restart_replies"]))
             meeting_dir = root / "meetings" / payload["meeting_id"]
             meeting = json.loads((meeting_dir / "live_state.json").read_text(encoding="utf-8"))
             self.assertTrue(meeting["diagnostic"])
@@ -1100,7 +1129,15 @@ class GuiServerTests(unittest.TestCase):
             official_replies = [event for event in live_events if event.get("kind") == "message" and event.get("official_record") is True]
             self.assertEqual(len(official_replies), 3)
             lobby_replies = [event for event in read_lobby(root) if event.get("actor_id") in payload["agent_ids"]]
-            self.assertEqual(len(lobby_replies), 3)
+            self.assertEqual(len(lobby_replies), 6)
+            self.assertEqual(
+                len([event for event in lobby_replies if event.get("source_event_id") == payload["source_event_id"]]),
+                3,
+            )
+            self.assertEqual(
+                len([event for event in lobby_replies if event.get("source_event_id") == payload["post_restart_source_event_id"]]),
+                3,
+            )
             agents = read_live_agents(root)
             self.assertEqual({agent["diagnostic"] for agent in agents if agent["agent_id"] in payload["agent_ids"]}, {True})
             processes = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))

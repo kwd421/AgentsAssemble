@@ -315,7 +315,9 @@ def run_live_agent_session_smoke(
     restart_result: dict[str, object] = {}
     stop_result: dict[str, object] = {}
     replies: list[dict[str, object]] = []
+    post_restart_replies: list[dict[str, object]] = []
     probe_event_id = ""
+    post_restart_probe_event_id = ""
     with _SmokeRemoteBridgeServer(response_message=expected_messages[agent_ids["remote_bridge"]]) as bridge:
         with temp_dir_factory() as temp_dir:
             temp_root = Path(temp_dir).resolve()
@@ -420,6 +422,24 @@ def run_live_agent_session_smoke(
                 )
                 if restart_result.get("status") != "ready":
                     raise LiveAgentSmokeFailed("Session smoke restart did not become ready.")
+                post_restart_probe_response = request_json(
+                    _server_url(server, "/api/lobby"),
+                    method="POST",
+                    payload={
+                        "name": "AgentsAssemble Session Smoke",
+                        "side": "mine",
+                        "message": f"live-agent session-smoke restart {clean_group_id} {int(time.time() * 1000)}",
+                    },
+                )
+                post_restart_probe_event_id = _event_id(post_restart_probe_response)
+                post_restart_replies = wait_for_smoke_replies(
+                    server,
+                    expected_messages=expected_messages,
+                    source_event_id=post_restart_probe_event_id,
+                    request_json=request_json,
+                    sleep_fn=sleep_fn,
+                    timeout_seconds=float(timeout_seconds),
+                )
             finally:
                 try:
                     stop_result = request_json(
@@ -441,12 +461,22 @@ def run_live_agent_session_smoke(
         }
         for reply in replies
     ]
+    safe_post_restart_replies = [
+        {
+            "id": str(reply.get("id") or ""),
+            "actor_id": str(reply.get("actor_id") or ""),
+            "source_event_id": str(reply.get("source_event_id") or ""),
+            "live_agent_endpoint": reply.get("live_agent_endpoint") is True,
+        }
+        for reply in post_restart_replies
+    ]
     return {
         "status": "ok" if stop_result.get("status") == "stopped" else "failed",
         "meeting_id": clean_meeting_id,
         "group_id": clean_group_id,
         "agent_ids": list(agent_ids.values()),
         "source_event_id": probe_event_id,
+        "post_restart_source_event_id": post_restart_probe_event_id,
         "rounds_status": str(rounds_result.get("status") or ""),
         "round_count": _nonnegative_int(rounds_result.get("round_count")),
         "answered_round_count": _nonnegative_int(rounds_result.get("answered_round_count")),
@@ -456,7 +486,9 @@ def run_live_agent_session_smoke(
         "stopped_round_count": _nonnegative_int(rounds_result.get("stopped_round_count")),
         "expected_reply_count": len(expected_messages),
         "reply_count": len(safe_replies),
+        "post_restart_reply_count": len(safe_post_restart_replies),
         "replies": safe_replies,
+        "post_restart_replies": safe_post_restart_replies,
         "start_status": str(start_result.get("status") or ""),
         "check_status": str(check_result.get("status") or ""),
         "resume_status": str(resume_result.get("status") or ""),

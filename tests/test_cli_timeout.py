@@ -2414,6 +2414,7 @@ class CliTimeoutTests(unittest.TestCase):
             "answered_round_count": 1,
             "expected_reply_count": 3,
             "reply_count": 3,
+            "post_restart_reply_count": 3,
             "start_status": "ready",
             "check_status": "ready",
             "resume_status": "ready",
@@ -2443,12 +2444,13 @@ class CliTimeoutTests(unittest.TestCase):
             "http://room.local/api/live-agent-session-smoke",
             method="POST",
             payload={"group_id": "session-smoke", "meeting_id": "session-smoke-meeting", "timeout": 8.0},
-            timeout_seconds=118.0,
+            timeout_seconds=126.0,
         )
         output = stdout.getvalue()
         self.assertIn("resident session smoke ok: session-smoke-meeting", output)
         self.assertIn("rounds answered (1 answered)", output)
         self.assertIn("3/3 replies", output)
+        self.assertIn("post-restart 3/3 replies", output)
         self.assertIn("start ready, check ready, resume ready, restart ready, stop stopped", output)
 
     def test_live_agent_session_smoke_returns_failure_for_non_ok_status(self):
@@ -2460,6 +2462,7 @@ class CliTimeoutTests(unittest.TestCase):
             "answered_round_count": 1,
             "expected_reply_count": 3,
             "reply_count": 1,
+            "post_restart_reply_count": 0,
             "start_status": "ready",
             "check_status": "ready",
             "resume_status": "",
