@@ -16,6 +16,7 @@ from typing import Callable
 from agentsassemble.live_agents import LIVE_AGENT_STATE, read_live_agents
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_runner import ResidentAgentConfig, load_group_configs
+from agentsassemble.meeting_events import clean_lobby_text
 
 
 RECENT_LIFECYCLE_EVENT_LIMIT = 5
@@ -63,6 +64,7 @@ class LiveAgentProcessSupervisor:
         config_path: Path,
         server: str,
         group_id: str | None = None,
+        meeting_id: str = "",
         auto_restart: bool = False,
         max_restarts: int = 0,
         restart_backoff_seconds: float = 5.0,
@@ -74,6 +76,7 @@ class LiveAgentProcessSupervisor:
                 config_path=config_path,
                 server=server,
                 group_id=group_id,
+                meeting_id=meeting_id,
                 auto_restart=auto_restart,
                 max_restarts=max_restarts,
                 restart_backoff_seconds=restart_backoff_seconds,
@@ -103,6 +106,7 @@ class LiveAgentProcessSupervisor:
                 config_path=config_path,
                 server=server,
                 group_id=clean_group_id,
+                meeting_id=str(record.get("meeting_id") or ""),
                 auto_restart=_bool_value(record.get("auto_restart")),
                 max_restarts=_nonnegative_int(record.get("max_restarts"), 0),
                 restart_backoff_seconds=_nonnegative_float(record.get("restart_backoff_seconds"), 5.0),
@@ -134,6 +138,7 @@ class LiveAgentProcessSupervisor:
                 config_path=config_path,
                 server=server,
                 group_id=clean_group_id,
+                meeting_id=str(record.get("meeting_id") or ""),
                 auto_restart=_bool_value(record.get("auto_restart")),
                 max_restarts=_nonnegative_int(record.get("max_restarts"), 0),
                 restart_backoff_seconds=_nonnegative_float(record.get("restart_backoff_seconds"), 5.0),
@@ -207,6 +212,7 @@ class LiveAgentProcessSupervisor:
         config_path: Path,
         server: str,
         group_id: str | None = None,
+        meeting_id: str = "",
         auto_restart: bool = False,
         max_restarts: int = 0,
         restart_backoff_seconds: float = 5.0,
@@ -219,6 +225,7 @@ class LiveAgentProcessSupervisor:
         include_recent_events: bool = True,
     ) -> dict[str, object]:
         clean_group_id = _clean_group_id(group_id or config_path.stem)
+        clean_meeting_id = _clean_meeting_id(meeting_id)
         stale_restart_after = _stale_watchdog_threshold_seconds(stale_restart_after_seconds)
         if stale_restart_after > 0 and (not auto_restart or _nonnegative_int(max_restarts, 0) <= 0):
             raise ValueError("stale watchdog requires auto_restart with max_restarts greater than 0.")
@@ -265,6 +272,7 @@ class LiveAgentProcessSupervisor:
             "group_id": clean_group_id,
             "status": "running",
             "pid": getattr(process, "pid", None),
+            "meeting_id": clean_meeting_id,
             "config_path": str(config_path),
             "server": server,
             "log_path": str(log_path),
@@ -326,6 +334,7 @@ class LiveAgentProcessSupervisor:
                     config_path=Path(str(record.get("config_path") or "")),
                     server=str(record.get("server") or ""),
                     group_id=group_id,
+                    meeting_id=str(record.get("meeting_id") or ""),
                     auto_restart=True,
                     max_restarts=max_restarts,
                     restart_backoff_seconds=backoff_seconds,
@@ -376,6 +385,7 @@ class LiveAgentProcessSupervisor:
                     config_path=Path(str(record.get("config_path") or "")),
                     server=str(record.get("server") or ""),
                     group_id=group_id,
+                    meeting_id=str(record.get("meeting_id") or ""),
                     auto_restart=True,
                     max_restarts=_nonnegative_int(record.get("max_restarts"), 0),
                     restart_backoff_seconds=_nonnegative_float(record.get("restart_backoff_seconds"), 5.0),
@@ -638,6 +648,15 @@ def _clean_group_id(value: str) -> str:
     return clean_live_agent_group_id(value)
 
 
+def _clean_meeting_id(value: object) -> str:
+    cleaned = clean_lobby_text(value, limit=128)
+    if not cleaned or cleaned in {".", ".."}:
+        return ""
+    if "/" in cleaned or "\\" in cleaned or Path(cleaned).name != cleaned:
+        return ""
+    return cleaned
+
+
 def _poll_process(process: object) -> object:
     poll = getattr(process, "poll")
     return poll()
@@ -726,6 +745,7 @@ def _process_record(payload: dict[str, object]) -> dict[str, object]:
         "group_id": _clean_group_id(str(payload.get("group_id") or "")),
         "status": str(payload.get("status") or "unknown"),
         "pid": payload.get("pid") if isinstance(payload.get("pid"), int) else None,
+        "meeting_id": _clean_meeting_id(payload.get("meeting_id")),
         "config_path": str(payload.get("config_path") or ""),
         "server": str(payload.get("server") or ""),
         "log_path": str(payload.get("log_path") or ""),
@@ -805,6 +825,9 @@ def _lifecycle_event(
     next_restart_at = str(record.get("next_restart_at") or "")
     if next_restart_at:
         event["next_restart_at"] = next_restart_at
+    meeting_id = _clean_meeting_id(record.get("meeting_id"))
+    if meeting_id:
+        event["meeting_id"] = meeting_id
     if previous_status:
         event["previous_status"] = str(previous_status)
     return event
@@ -830,6 +853,9 @@ def _safe_lifecycle_event(payload: object) -> dict[str, object]:
     next_restart_at = str(payload.get("next_restart_at") or "")
     if next_restart_at:
         event["next_restart_at"] = next_restart_at
+    meeting_id = _clean_meeting_id(payload.get("meeting_id"))
+    if meeting_id:
+        event["meeting_id"] = meeting_id
     previous_status = str(payload.get("previous_status") or "")
     if previous_status:
         event["previous_status"] = previous_status

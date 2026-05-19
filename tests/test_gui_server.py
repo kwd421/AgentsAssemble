@@ -1982,8 +1982,9 @@ class GuiServerTests(unittest.TestCase):
 
             def snapshot_groups(self):
                 return [
-                    {"group_id": "running-group", "status": "running"},
-                    {"group_id": "restart-group", "status": "restarting"},
+                    {"group_id": "running-group", "status": "running", "meeting_id": "resident-m1"},
+                    {"group_id": "unsafe-owner", "status": "running", "meeting_id": "../secret"},
+                    {"group_id": "restart-group", "status": "restarting", "meeting_id": "resident-m2"},
                     {"group_id": "crashed-group", "status": "error"},
                     {"group_id": "orphan-group", "status": "unknown"},
                     {"group_id": "stopped-group", "status": "stopped"},
@@ -2054,12 +2055,16 @@ class GuiServerTests(unittest.TestCase):
                 payload["agents"]["attention"],
                 ["error-agent", "offline-agent", "missing-agent-id-5", "odd-agent"],
             )
-            self.assertEqual(payload["processes"]["counts"]["running"], 1)
+            self.assertEqual(payload["processes"]["counts"]["running"], 2)
             self.assertEqual(payload["processes"]["counts"]["restarting"], 1)
             self.assertEqual(payload["processes"]["counts"]["error"], 2)
             self.assertEqual(payload["processes"]["counts"]["unknown"], 2)
             self.assertEqual(payload["processes"]["counts"]["stopped"], 1)
-            self.assertEqual(payload["processes"]["total"], 7)
+            self.assertEqual(payload["processes"]["total"], 8)
+            self.assertEqual(
+                payload["processes"]["meeting_ids"],
+                {"running-group": "resident-m1", "restart-group": "resident-m2"},
+            )
             self.assertEqual(
                 payload["processes"]["attention"],
                 [
@@ -2067,7 +2072,7 @@ class GuiServerTests(unittest.TestCase):
                     "crashed-group",
                     "orphan-group",
                     "stopped-group",
-                    "missing-process-group-id-6",
+                    "missing-process-group-id-7",
                     "odd-group",
                 ],
             )

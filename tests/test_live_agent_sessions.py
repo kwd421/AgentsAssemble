@@ -246,9 +246,50 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             )
 
             self.assertEqual(session["status"], "ready")
+            self.assertEqual(supervisor.started[0]["meeting_id"], "resident-diagnostic")
             self.assertTrue(supervisor.started[0]["diagnostic"])
             agents = read_live_agents(root)
             self.assertEqual({agent["agent_id"]: agent["diagnostic"] for agent in agents}, {"agent-a": True})
+
+    def test_start_session_omits_unsafe_process_meeting_identity_from_summary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+
+            class UnsafeSummarySupervisor:
+                def start_group(self, **kwargs):
+                    heartbeat_live_agent(root, "agent-a", status="online")
+                    return {
+                        "group_id": kwargs.get("group_id") or "resident-main",
+                        "status": "running",
+                        "meeting_id": "../secret-meeting",
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                            }
+                        ],
+                    }
+
+            session = start_live_agent_session(
+                root,
+                UnsafeSummarySupervisor(),
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["status"], "ready")
+            self.assertNotIn("meeting_id", session["group"])
+            self.assertNotIn("../secret-meeting", json.dumps(session, ensure_ascii=False))
 
     def test_start_session_preflight_failure_reports_agent_level_reason(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -691,6 +732,7 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(session["connection"]["attention"], ["agent-a:offline"])
             self.assertEqual(supervisor.started[0]["config_path"], live_agent_config)
             self.assertEqual(supervisor.started[0]["group_id"], "resident-main")
+            self.assertEqual(supervisor.started[0]["meeting_id"], "resident-m1")
             agents = read_live_agents(root)
             self.assertEqual(len(agents), 1)
             self.assertEqual(agents[0]["agent_id"], "agent-a")

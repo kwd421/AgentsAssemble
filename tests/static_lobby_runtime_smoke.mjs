@@ -1278,6 +1278,7 @@ test("process row renders recovery watchdog and next restart evidence", () => {
       group_id: "crew",
       status: "restarting",
       pid: "",
+      meeting_id: "resident-gui",
       config_path: "configs/live-agents.example.json",
       server: "http://127.0.0.1:8765",
       auto_restart: true,
@@ -1292,6 +1293,7 @@ test("process row renders recovery watchdog and next restart evidence", () => {
   renderLobby({ followLatest: false });
 
   const rowText = document.querySelector(".live-agent-process-row").textContent;
+  assert.match(rowText, /meeting resident-gui/);
   assert.match(rowText, /auto restart 1\/3/);
   assert.match(rowText, /stale watchdog 240s/);
   assert.match(rowText, /next restart 2026-05-17T12:01:00\+00:00/);

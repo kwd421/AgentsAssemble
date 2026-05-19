@@ -1276,13 +1276,18 @@ def _live_agent_process_health_summary(
     groups = [group for group in groups if not _is_diagnostic_process_group(group, diagnostic_group_ids)]
     counts = {"running": 0, "restarting": 0, "error": 0, "unknown": 0, "stopped": 0}
     attention = []
+    meeting_ids = {}
     for index, group in enumerate(groups, start=1):
         raw_status = str(group.get("status") or "unknown")
         status = raw_status if raw_status in counts else "unknown"
         counts[status] += 1
+        group_id = str(group.get("group_id") or f"missing-process-group-id-{index}")
+        meeting_id = _safe_process_meeting_id(group.get("meeting_id"))
+        if group_id and meeting_id:
+            meeting_ids[group_id] = meeting_id
         if status in {"restarting", "error", "unknown", "stopped"}:
-            attention.append(str(group.get("group_id") or f"missing-process-group-id-{index}"))
-    return {"total": len(groups), "counts": counts, "attention": attention}
+            attention.append(group_id)
+    return {"total": len(groups), "counts": counts, "attention": attention, "meeting_ids": meeting_ids}
 
 
 def _live_agent_connection_health_summary(
@@ -1310,6 +1315,15 @@ def _live_agent_connection_health_summary(
             status = str(item.get("status") or "unknown")
             attention.append(f"{group_id}:{agent_id}:{status}")
     return {"expected": expected, "connected": connected, "attention": attention}
+
+
+def _safe_process_meeting_id(value: object) -> str:
+    meeting_id = clean_lobby_text(value, limit=128)
+    if not meeting_id or meeting_id in {".", ".."}:
+        return ""
+    if "/" in meeting_id or "\\" in meeting_id or Path(meeting_id).name != meeting_id:
+        return ""
+    return meeting_id
 
 
 def _groups_with_agent_connection_evidence(

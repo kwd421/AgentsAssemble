@@ -668,12 +668,14 @@ function renderLiveAgentProcessCard(group) {
   const agentLabel = liveAgentProcessAgentsLabel(group);
   const connectionLabel = liveAgentProcessConnectionLabel(group);
   const eventLabel = liveAgentProcessEventLabel(group);
+  const meetingLabel = liveAgentProcessMeetingLabel(group);
   return `
     <article class="live-agent-process-row live-agent-process-${escapeHtml(status)}">
       <div>
         <strong>${escapeHtml(group.group_id || "live-agents")}</strong>
         <span>${escapeHtml(group.config_path || "")}</span>
         <small>${escapeHtml(group.pid ? `pid ${group.pid}` : "pid 없음")} · ${escapeHtml(group.server || "")}</small>
+        ${meetingLabel ? `<small class="live-agent-process-meeting">${escapeHtml(meetingLabel)}</small>` : ""}
         <small>${escapeHtml(liveAgentProcessRestartLabel(group))}</small>
         ${agentLabel ? `<small class="live-agent-process-agents">${escapeHtml(agentLabel)}</small>` : ""}
         ${connectionLabel ? `<small class="live-agent-process-connection">${escapeHtml(connectionLabel)}</small>` : ""}
@@ -795,6 +797,11 @@ function liveAgentProcessEventLabel(group) {
   if (!latest) return "";
   const timestamp = String(latest.timestamp || "").trim();
   return timestamp ? `last event ${latest.event_type} · ${timestamp}` : `last event ${latest.event_type}`;
+}
+
+function liveAgentProcessMeetingLabel(group) {
+  const meetingId = String(group.meeting_id || "").trim();
+  return meetingId ? `meeting ${meetingId}` : "";
 }
 
 function renderLiveAgentCard(agent) {

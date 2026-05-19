@@ -83,6 +83,7 @@ def start_live_agent_session(
             config_path=live_agent_config_path,
             server=server,
             group_id=group_id.strip() or None,
+            meeting_id=clean_meeting_id,
             auto_restart=auto_restart,
             max_restarts=max_restarts,
             restart_backoff_seconds=restart_backoff_seconds,
@@ -156,6 +157,7 @@ def resume_live_agent_session(
         live_agent_config_path=live_agent_config_path,
         server=server,
         group_id=group_id.strip() or live_agent_config_path.stem,
+        meeting_id=clean_meeting_id,
         auto_restart=auto_restart,
         max_restarts=max_restarts,
         restart_backoff_seconds=restart_backoff_seconds,
@@ -576,6 +578,7 @@ def _resume_process_group(
     live_agent_config_path: Path,
     server: str,
     group_id: str,
+    meeting_id: str,
     auto_restart: bool,
     max_restarts: int,
     restart_backoff_seconds: float,
@@ -590,6 +593,7 @@ def _resume_process_group(
         config_path=live_agent_config_path,
         server=server,
         group_id=clean_group_id,
+        meeting_id=meeting_id,
         auto_restart=auto_restart,
         max_restarts=max_restarts,
         restart_backoff_seconds=restart_backoff_seconds,
@@ -803,10 +807,23 @@ def _safe_meeting_summary(value: object) -> dict[str, object]:
 def _safe_group_summary(value: object) -> dict[str, object]:
     if not isinstance(value, dict):
         return {}
-    return {
+    summary = {
         "group_id": str(value.get("group_id") or ""),
         "status": str(value.get("status") or ""),
     }
+    meeting_id = _safe_optional_meeting_id(value.get("meeting_id"))
+    if meeting_id:
+        summary["meeting_id"] = meeting_id
+    return summary
+
+
+def _safe_optional_meeting_id(value: object) -> str:
+    meeting_id = clean_lobby_text(value, limit=128)
+    if not meeting_id or meeting_id in {".", ".."}:
+        return ""
+    if "/" in meeting_id or "\\" in meeting_id or Path(meeting_id).name != meeting_id:
+        return ""
+    return meeting_id
 
 
 def _preflight_failure_message(report: dict[str, object]) -> str:

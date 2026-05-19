@@ -138,6 +138,101 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
             self.assertTrue(persisted["groups"][0]["diagnostic"])
 
+    def test_start_group_persists_meeting_identity_and_restart_preserves_it(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=4400 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+
+            started = supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                meeting_id="resident-m1",
+            )
+            supervisor.stop_group("crew")
+            reloaded = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            restarted = reloaded.restart_group("crew")
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(started["meeting_id"], "resident-m1")
+        self.assertEqual(restarted["meeting_id"], "resident-m1")
+        self.assertEqual(persisted["groups"][0]["meeting_id"], "resident-m1")
+
+    def test_recover_group_preserves_meeting_identity_from_persisted_record(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=4450 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                meeting_id="resident-m1",
+            )
+            reloaded = LiveAgentProcessSupervisor(root, command_factory=command_factory)
+
+            recovered = reloaded.recover_group("crew")
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(recovered["status"], "running")
+        self.assertEqual(recovered["meeting_id"], "resident-m1")
+        self.assertEqual(persisted["groups"][0]["meeting_id"], "resident-m1")
+
+    def test_delayed_auto_restart_preserves_meeting_identity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=4460 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                meeting_id="resident-m1",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+            )
+            processes[0].returncode = 2
+
+            scheduled = supervisor.list_groups()[0]
+            current_time["value"] += timedelta(seconds=11)
+            restarted = supervisor.list_groups()[0]
+
+        self.assertEqual(scheduled["status"], "restarting")
+        self.assertEqual(scheduled["meeting_id"], "resident-m1")
+        self.assertEqual(restarted["status"], "running")
+        self.assertEqual(restarted["meeting_id"], "resident-m1")
+
     def test_start_group_persists_safe_agent_manifest_from_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -944,6 +1039,7 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
                 config_path=config_path,
                 server="http://room.local",
                 group_id="crew",
+                meeting_id="resident-m1",
                 auto_restart=True,
                 max_restarts=1,
                 restart_backoff_seconds=10,
@@ -957,6 +1053,7 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertIsNone(groups[0]["pid"])
         self.assertEqual(groups[0]["returncode"], -98)
         self.assertEqual(groups[0]["restart_count"], 1)
+        self.assertEqual(groups[0]["meeting_id"], "resident-m1")
         self.assertEqual(groups[0]["stale_restart_after_seconds"], 60.0)
         self.assertIn("Stale watchdog", groups[0]["last_error"])
         self.assertTrue(processes[0].signals)
