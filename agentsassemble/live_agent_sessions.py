@@ -247,6 +247,7 @@ def check_live_agent_session(
     *,
     meeting_id: str,
     group_id: str,
+    groups: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     clean_meeting_id = _clean_existing_meeting_id(meeting_id)
     if not str(group_id or "").strip():
@@ -256,7 +257,7 @@ def check_live_agent_session(
     meeting = _read_existing_meeting(meeting_dir)
     expected_agents = _expected_agents_from_meeting(meeting)
     expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
-    groups = _snapshot_process_groups(process_supervisor)
+    groups = _snapshot_process_groups(process_supervisor) if groups is None else _process_group_list(groups)
     group = _find_group_in_list(groups, clean_group_id)
     process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=clean_meeting_id)
     connection = _connection_snapshot(
@@ -1008,6 +1009,10 @@ def _snapshot_process_groups(process_supervisor: object) -> list[dict[str, objec
     if not hasattr(process_supervisor, "snapshot_groups"):
         return []
     groups = process_supervisor.snapshot_groups()
+    return _process_group_list(groups)
+
+
+def _process_group_list(groups: object) -> list[dict[str, object]]:
     return [group for group in groups if isinstance(group, dict)] if isinstance(groups, list) else []
 
 

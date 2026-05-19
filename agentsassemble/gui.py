@@ -651,7 +651,7 @@ def live_agent_session_check_payload(
     group_id = str(payload.get("group_id") or "").strip()
     if not group_id:
         raise ValueError("Live agent group id is required.")
-    return check_live_agent_session(
+    return _session_check_payload_with_process_reason(
         output_root,
         process_supervisor,
         meeting_id=str(payload.get("meeting_id") or ""),
@@ -668,12 +668,56 @@ def live_agent_session_readiness_payload(
 ) -> dict[str, object]:
     if not str(group_id or "").strip():
         raise ValueError("Live agent group id is required.")
-    return check_live_agent_session(
+    return _session_check_payload_with_process_reason(
         output_root,
         process_supervisor,
         meeting_id=str(meeting_id or ""),
         group_id=str(group_id or ""),
     )
+
+
+def _session_check_payload_with_process_reason(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    *,
+    meeting_id: str,
+    group_id: str,
+) -> dict[str, object]:
+    groups = _session_process_groups_snapshot(process_supervisor)
+    session = check_live_agent_session(
+        output_root,
+        process_supervisor,
+        meeting_id=meeting_id,
+        group_id=group_id,
+        groups=groups,
+    )
+    group_id = str(session.get("group_id") or "").strip()
+    if not group_id or "process_reason" in session:
+        return session
+    group = _find_session_process_group(groups, group_id)
+    reason = _live_agent_process_health_reason(group) if group else {}
+    if not reason:
+        return session
+    return {**session, "process_reason": reason}
+
+
+def _session_process_groups_snapshot(
+    process_supervisor: LiveAgentProcessSupervisor,
+) -> list[dict[str, object]]:
+    if not hasattr(process_supervisor, "snapshot_groups"):
+        return []
+    groups = process_supervisor.snapshot_groups()
+    return [group for group in groups if isinstance(group, dict)] if isinstance(groups, list) else []
+
+
+def _find_session_process_group(
+    groups: list[dict[str, object]],
+    group_id: str,
+) -> dict[str, object]:
+    for group in groups:
+        if str(group.get("group_id") or "") == group_id:
+            return group
+    return {}
 
 
 def live_agent_session_restart_payload(

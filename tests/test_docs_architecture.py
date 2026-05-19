@@ -213,6 +213,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("default CLI process list and GUI process rows show the latest lifecycle offline summary", doc)
         self.assertIn("recovered_unknown", doc)
         self.assertIn("orphan running record marked unknown", doc)
+        self.assertIn("targeted `session-readiness` and `check-session` responses", doc)
         self.assertIn("recent_events", doc)
         self.assertIn("live-agent heartbeat", doc)
         self.assertIn("heartbeat_age_seconds", doc)

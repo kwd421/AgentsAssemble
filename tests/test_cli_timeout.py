@@ -2970,6 +2970,10 @@ class CliTimeoutTests(unittest.TestCase):
             "process": {"status": "stopped", "attention": ["group:stopped"]},
             "connection": {"expected": 2, "connected": 1, "attention": ["agent-b:offline"]},
             "ownership": {"attention": ["meeting:duplicate_active_group"]},
+            "process_reason": {
+                "event_type": "recovered_unknown",
+                "reason": "orphan running record marked unknown",
+            },
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=response):
@@ -3068,6 +3072,10 @@ class CliTimeoutTests(unittest.TestCase):
             "process": {"status": "stopped", "attention": ["group:stopped"]},
             "connection": {"expected": 2, "connected": 1, "attention": ["agent-b:offline"]},
             "ownership": {"attention": ["meeting:duplicate_active_group"]},
+            "process_reason": {
+                "event_type": "recovered_unknown",
+                "reason": "orphan running record marked unknown",
+            },
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=response):
@@ -3090,6 +3098,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("agent-b:offline", stdout.getvalue())
         self.assertIn("group:stopped", stdout.getvalue())
         self.assertIn("meeting:duplicate_active_group", stdout.getvalue())
+        self.assertIn("reason recovered_unknown orphan running record marked unknown", stdout.getvalue())
 
     def test_live_agent_restart_session_parser_accepts_meeting_group_and_timeout(self):
         args = build_parser().parse_args(

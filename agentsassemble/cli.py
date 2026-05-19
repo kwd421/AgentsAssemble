@@ -1619,6 +1619,12 @@ def _format_live_agent_session_check(response: dict[str, object]) -> str:
     process_status = str(process.get("status") or "unknown")
     attention = _live_agent_session_attention(response)
     suffix = f"; attention {', '.join(str(item) for item in attention)}" if attention else ""
+    process_reason = response.get("process_reason") if isinstance(response.get("process_reason"), dict) else {}
+    if process_reason:
+        suffix += (
+            f"; reason {process_reason.get('event_type') or 'unknown'} "
+            f"{process_reason.get('reason') or 'unknown'}"
+        )
     return f"Resident session {meeting_id} {status}; group {group_id}; {connected}/{expected} connected; process {process_status}{suffix}"
 
 
