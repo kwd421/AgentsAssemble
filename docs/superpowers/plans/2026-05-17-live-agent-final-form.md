@@ -2808,6 +2808,52 @@ Document that only post-start read-only room snapshot failures are treated as re
 
 ---
 
+### Task 81: Recovered Room Reads Stay Responsive
+
+**Goal:** Keep provider-command cooldown separate from transient room snapshot read failures, so a recovered room read can answer a new eligible event immediately.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_runner.py`
+
+- [x] **Step 1: Add RED coverage for no room-failure backoff**
+
+Cover a bounded resident run with `cooldown` set high enough to expose accidental failure backoff. The first room snapshot succeeds, the second room read fails transiently, and the third room snapshot contains a new lobby event. The runner must answer that event immediately instead of treating the read failure like a provider command failure.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_replies_immediately_after_transient_room_failure_recovery \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_backs_off_after_command_failure_before_next_reply
+```
+
+Expected: fail before implementation because the transient room failure path sets `last_error_at`, which activates command-failure cooldown.
+
+- [x] **Step 2: Separate room read errors from command failure backoff**
+
+Keep `last_error` and the best-effort `error` heartbeat for operator evidence, but do not set `last_error_at` for post-start room snapshot read failures. Provider command failures continue to set `last_error_at` and use the existing cooldown gate.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_replies_immediately_after_transient_room_failure_recovery \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_survives_transient_room_failure_after_initial_snapshot \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_survives_transient_room_failure_when_error_heartbeat_fails \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_backs_off_after_command_failure_before_next_reply \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_keeps_error_status_on_periodic_heartbeat_during_failure_backoff
+```
+
+Expected: pass.
+
+- [x] **Step 3: Document room read recovery responsiveness**
+
+Document that recovered room reads do not inherit provider-command cooldown, so a new eligible event can still receive an immediate reply.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

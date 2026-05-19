@@ -458,6 +458,42 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(len(error_heartbeat_attempts), 1)
         self.assertEqual(lobby_payloads[0]["source_event_id"], "evt1")
 
+    def test_runner_replies_immediately_after_transient_room_failure_recovery(self):
+        clock = FakeClock()
+        calls = []
+        room_reads = 0
+
+        def request_json(url, *, method="GET", payload=None):
+            nonlocal room_reads
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            if url.endswith("/room"):
+                room_reads += 1
+                if room_reads == 1:
+                    return {"lobby_events": []}
+                if room_reads == 2:
+                    raise ConnectionError("transient room read failed")
+                return {"lobby_events": [{"id": "evt1", "name": "나", "message": "바로 대답해"}]}
+            if url.endswith("/lobby"):
+                return {"event": {"id": "reply-id"}}
+            return {}
+
+        runner = LiveAgentRunner(
+            config(max_ticks=3, poll_interval=1.0, cooldown=30.0),
+            request_json=request_json,
+            command_runner=lambda command, prompt, *, timeout_seconds: "no room backoff",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        lobby_payloads = [payload for url, method, payload in calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "evt1")
+
     def test_runner_does_not_mask_lobby_post_failure_when_final_offline_heartbeat_fails(self):
         clock = FakeClock()
         calls = []

@@ -92,7 +92,6 @@ class LiveAgentRunner:
             if not self.seen_room_snapshot or self.stop_event.is_set():
                 raise
             self.last_error = str(error)
-            self.last_error_at = self.now_fn()
             self._heartbeat_due_safely("error", last_error=self.last_error, **self._cursor_metadata())
             return 0
         engagement_mode = _runtime_engagement_mode(self.config, room)
