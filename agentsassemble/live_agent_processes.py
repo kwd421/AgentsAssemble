@@ -410,7 +410,7 @@ class LiveAgentProcessSupervisor:
                     returncode=returncode,
                     restart_count=restart_count,
                     stopped_at=stopped_at,
-                    last_error=f"{last_error} Restart failed: {error}",
+                    last_error=_append_process_error(last_error, _safe_restart_failure_message(error)),
                     include_recent_events=include_recent_events,
                 )
 
@@ -461,8 +461,10 @@ class LiveAgentProcessSupervisor:
             except Exception as error:
                 record["status"] = "error"
                 record["pid"] = None
-                previous_error = str(record.get("last_error") or "")
-                record["last_error"] = f"{previous_error} Restart failed: {error}".strip()
+                record["last_error"] = _append_process_error(
+                    record.get("last_error"),
+                    _safe_restart_failure_message(error),
+                )
                 record["next_restart_at"] = ""
                 offline = self._mark_manifest_agents_offline(record)
                 self._write_records()
@@ -685,6 +687,7 @@ class LiveAgentProcessSupervisor:
         offline: dict[str, object] | None = None,
     ) -> dict[str, object]:
         visible = dict(record)
+        visible["last_error"] = _safe_process_last_error(record.get("last_error"))
         visible["log_tail"] = _safe_log_tail_for_output(
             _read_log_tail(Path(str(record.get("log_path") or "")), self.log_tail_bytes)
         )
@@ -1014,6 +1017,42 @@ def _looks_sensitive_log_tail(log_tail: str) -> bool:
     if "/" in log_tail or "\\" in log_tail or "--" in log_tail:
         return True
     return bool(re.search(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)", log_tail))
+
+
+def _safe_process_last_error(value: object) -> str:
+    return _safe_process_text(value, redacted_label="process error details redacted.")
+
+
+def _safe_restart_failure_message(error: Exception) -> str:
+    message = _safe_process_text(error, redacted_label="process error details redacted.")
+    if not message:
+        message = error.__class__.__name__
+    return f"Restart failed: {message}"
+
+
+def _append_process_error(previous: object, suffix: str) -> str:
+    safe_previous = _safe_process_last_error(previous)
+    safe_suffix = _safe_process_text(suffix, redacted_label="process error details redacted.")
+    parts = [part for part in (safe_previous, safe_suffix) if part]
+    return " ".join(parts)
+
+
+def _safe_process_text(value: object, *, redacted_label: str) -> str:
+    text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+    if not text:
+        return ""
+    return redacted_label if _looks_sensitive_process_text(text) else text
+
+
+def _looks_sensitive_process_text(text: str) -> bool:
+    lowered = text.casefold()
+    if any(marker in lowered for marker in SENSITIVE_LOG_TAIL_MARKERS):
+        return True
+    if "\\" in text or "--" in text:
+        return True
+    if re.search(r"(^|[\s=])(?:/|~/|\./|\.\./)\S+", text):
+        return True
+    return bool(re.search(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)", text))
 
 
 def _recent_lifecycle_events(path: Path, group_id: str, limit: int) -> list[dict[str, object]]:

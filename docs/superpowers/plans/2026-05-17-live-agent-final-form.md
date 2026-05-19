@@ -3564,6 +3564,49 @@ Document that transient room-read and reply-post heartbeat `last_error` values a
 
 ---
 
+### Task 97: Redact Process Restart Failure Errors
+
+**Goal:** Keep process restart-failure evidence useful in process list/API/GUI output without copying sensitive preflight or launch exception text into `last_error`.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+
+- [x] **Step 1: Add RED coverage for sensitive auto-restart failure text**
+
+Cover an immediate auto-restart where relaunch preflight fails with a URL, config filename, command option, and token in the failure message. The process row and newly persisted restart-failed record must use a compact redacted restart-failure label and must not keep the sensitive substrings.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_auto_restart_failed_preflight_redacts_sensitive_last_error
+```
+
+Expected: fail before implementation because the auto-restart failure path appends `str(error)` to `last_error`.
+
+- [x] **Step 2: Add RED coverage for legacy sensitive process last_error output**
+
+Cover a historical process record whose stored `last_error` already contains a path and token. `list_groups()` must redact the output-only value without rewriting unrelated persisted state.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_list_groups_redacts_legacy_sensitive_last_error_without_persisting_output_field
+```
+
+Expected: fail before implementation because `_record_for_output()` copies stored `last_error` directly.
+
+- [x] **Step 3: Sanitize restart-failure and process output errors**
+
+At the auto-restart failure boundaries, append only a sanitized restart-failure message to `last_error`. At process output readback, sanitize stored `last_error` before adding API/GUI/CLI-only fields. Keep safe short preflight messages visible.
+
+- [x] **Step 4: Document process last_error redaction**
+
+Document that process rows redact suspicious `last_error` text on output and that new restart-failed records store compact redacted messages for sensitive relaunch exceptions.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

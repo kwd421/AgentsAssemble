@@ -520,6 +520,206 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertIn("Live agent preflight failed", groups[0]["last_error"])
         self.assertIn("bad-agent command", groups[0]["last_error"])
 
+    def test_auto_restart_failed_preflight_redacts_sensitive_last_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            reports = {"current": {"status": "ok", "checks": [], "agents": []}}
+            processes = []
+
+            def preflight_checker(path, *, server_override=None):
+                return reports["current"]
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=6200 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                preflight_checker=preflight_checker,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=0,
+            )
+            reports["current"] = {
+                "status": "failed",
+                "checks": [
+                    {
+                        "id": "config",
+                        "status": "failed",
+                        "message": "failed /private/live-agents.json --token secret-token http://room.local",
+                    }
+                ],
+                "agents": [],
+            }
+            processes[0].returncode = 2
+
+            groups = supervisor.list_groups()
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+            lifecycle_text = (root / "live-agent-runs" / "events.jsonl").read_text(encoding="utf-8")
+
+        self.assertEqual(groups[0]["status"], "error")
+        self.assertIn("Restart failed: process error details redacted.", groups[0]["last_error"])
+        self.assertNotIn("secret-token", groups[0]["last_error"])
+        self.assertNotIn("live-agents.json", groups[0]["last_error"])
+        self.assertNotIn("secret-token", persisted["groups"][0]["last_error"])
+        self.assertNotIn("live-agents.json", persisted["groups"][0]["last_error"])
+        self.assertNotIn("secret-token", lifecycle_text)
+        self.assertNotIn("live-agents.json", lifecycle_text)
+
+    def test_delayed_auto_restart_failed_preflight_redacts_sensitive_last_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            reports = {"current": {"status": "ok", "checks": [], "agents": []}}
+            processes = []
+
+            def preflight_checker(path, *, server_override=None):
+                return reports["current"]
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=6300 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                preflight_checker=preflight_checker,
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+            )
+            processes[0].returncode = 2
+            supervisor.list_groups()
+            reports["current"] = {
+                "status": "failed",
+                "checks": [
+                    {
+                        "id": "config",
+                        "status": "failed",
+                        "message": "failed /private/live-agents.json --token secret-token http://room.local",
+                    }
+                ],
+                "agents": [],
+            }
+            current_time["value"] += timedelta(seconds=11)
+
+            groups = supervisor.list_groups()
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(groups[0]["status"], "error")
+        self.assertIn("Restart failed: process error details redacted.", groups[0]["last_error"])
+        self.assertNotIn("secret-token", groups[0]["last_error"])
+        self.assertNotIn("live-agents.json", groups[0]["last_error"])
+        self.assertNotIn("secret-token", persisted["groups"][0]["last_error"])
+        self.assertNotIn("live-agents.json", persisted["groups"][0]["last_error"])
+
+    def test_auto_restart_launch_exception_redacts_sensitive_last_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            launches = 0
+            processes = []
+
+            def command_factory(command, **kwargs):
+                nonlocal launches
+                launches += 1
+                if launches == 1:
+                    process = FakeProcess(pid=6400)
+                    processes.append(process)
+                    return process
+                raise RuntimeError("launch failed /private/live-agents.json --token secret-token http://room.local")
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=0,
+            )
+            processes[0].returncode = 2
+
+            groups = supervisor.list_groups()
+            persisted = json.loads((root / "live-agent-runs" / "processes.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(groups[0]["status"], "error")
+        self.assertIn("Restart failed: process error details redacted.", groups[0]["last_error"])
+        self.assertNotIn("secret-token", groups[0]["last_error"])
+        self.assertNotIn("live-agents.json", groups[0]["last_error"])
+        self.assertNotIn("secret-token", persisted["groups"][0]["last_error"])
+        self.assertNotIn("live-agents.json", persisted["groups"][0]["last_error"])
+
+    def test_list_groups_redacts_legacy_sensitive_last_error_without_persisting_output_field(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            state_dir = root / "live-agent-runs"
+            state_dir.mkdir(parents=True)
+            state_path = state_dir / "processes.json"
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "error",
+                                "pid": None,
+                                "meeting_id": "",
+                                "config_path": "",
+                                "server": "",
+                                "log_path": "",
+                                "started_at": "",
+                                "stopped_at": "",
+                                "returncode": 2,
+                                "last_error": "failed /private/live-agents.json token=secret-token",
+                                "auto_restart": False,
+                                "restart_count": 0,
+                                "max_restarts": 0,
+                                "restart_backoff_seconds": 5,
+                                "stale_restart_after_seconds": 0,
+                                "next_restart_at": "",
+                                "diagnostic": False,
+                                "agents": [],
+                                "recovered_from_status": "",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            groups = LiveAgentProcessSupervisor(root).list_groups()
+            persisted = json.loads(state_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(groups[0]["last_error"], "process error details redacted.")
+        self.assertNotIn("secret-token", groups[0]["last_error"])
+        self.assertNotIn("live-agents.json", groups[0]["last_error"])
+        self.assertIn("secret-token", persisted["groups"][0]["last_error"])
+
     def test_delayed_auto_restart_failed_preflight_marks_error_without_relaunching_process(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
