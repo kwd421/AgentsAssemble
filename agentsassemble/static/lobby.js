@@ -132,6 +132,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-session-restart")?.addEventListener("click", async () => {
     await restartLiveAgentSession(lobby);
   });
+  lobby.querySelector("#live-agent-session-recover")?.addEventListener("click", async () => {
+    await recoverLiveAgentSession(lobby);
+  });
   lobby.querySelector("#live-agent-session-check")?.addEventListener("click", async () => {
     await checkLiveAgentSession(lobby);
   });
@@ -519,6 +522,7 @@ function renderLiveAgentProcessControls() {
         <button type="button" id="live-agent-session-start" ${processActionsDisabled ? "disabled" : ""}>세션시작</button>
         <button type="button" id="live-agent-session-resume" ${processActionsDisabled ? "disabled" : ""}>세션재개</button>
         <button type="button" id="live-agent-session-restart" ${processActionsDisabled ? "disabled" : ""}>세션재시작</button>
+        <button type="button" id="live-agent-session-recover" ${processActionsDisabled ? "disabled" : ""}>세션복구</button>
         <button type="button" id="live-agent-session-check" ${processActionsDisabled ? "disabled" : ""}>세션점검</button>
         <button type="button" id="live-agent-session-stop" ${processActionsDisabled ? "disabled" : ""}>세션중지</button>
         <button type="button" id="live-agent-call-round" ${processActionsDisabled ? "disabled" : ""}>라운드호출</button>
@@ -548,7 +552,7 @@ function renderLiveAgentProcessControls() {
 }
 
 function liveAgentProcessActionBusy() {
-  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || Boolean(state.liveAgentProcessRowActionRunning);
+  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || Boolean(state.liveAgentProcessRowActionRunning);
 }
 
 function defaultOfficialRoundId(meeting) {
@@ -1531,6 +1535,36 @@ async function restartLiveAgentSession(lobby) {
     state.liveAgentProcessStatus = { message: `상주 세션 재시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   } finally {
     state.liveAgentSessionRestartRunning = false;
+    await loadLiveAgentOperations({ background: true, force: true });
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function recoverLiveAgentSession(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
+  const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
+  if (!meetingId || !groupId) return;
+  state.liveAgentSessionRecoverRunning = true;
+  state.liveAgentProcessStatus = { message: "상주 세션 복구 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-sessions/recover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        meeting_id: meetingId,
+        group_id: groupId,
+        connect_timeout_seconds: liveAgentSessionConnectTimeoutSeconds(lobby),
+      }),
+    });
+    await refreshLiveAgentRuntimeSurfaces();
+    notifyMeetingStarted(payload.meeting_id);
+    state.liveAgentProcessStatus = { message: liveAgentSessionStatusMessage(payload), tone: liveAgentSessionStatusTone(payload) };
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `상주 세션 복구 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    state.liveAgentSessionRecoverRunning = false;
     await loadLiveAgentOperations({ background: true, force: true });
     renderLobby({ followLatest: false });
   }

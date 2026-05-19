@@ -35,6 +35,12 @@ class LiveAgentSessionRestartError(ValueError):
         self.meeting_id = meeting_id
 
 
+class LiveAgentSessionRecoverError(ValueError):
+    def __init__(self, message: str, *, meeting_id: str) -> None:
+        super().__init__(message)
+        self.meeting_id = meeting_id
+
+
 def start_live_agent_session(
     output_root: Path,
     process_supervisor: object,
@@ -269,6 +275,61 @@ def restart_live_agent_session(
     except Exception as error:
         raise LiveAgentSessionRestartError(
             _restart_group_failure_message(error, group_id=clean_group_id),
+            meeting_id=clean_meeting_id,
+        ) from error
+    process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=clean_meeting_id)
+    connection = _wait_for_connections(
+        output_root,
+        meeting_id=clean_meeting_id,
+        expected_agent_ids=expected_agent_ids,
+        timeout_seconds=connect_timeout_seconds,
+    )
+    status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "starting"
+    return {
+        "status": status,
+        "meeting_id": clean_meeting_id,
+        "group_id": str(group.get("group_id") if isinstance(group, dict) else clean_group_id),
+        "meeting": _safe_meeting_summary(meeting),
+        "group": _safe_group_summary(group),
+        "process": process,
+        "offline": offline,
+        "connection": connection,
+    }
+
+
+def recover_live_agent_session(
+    output_root: Path,
+    process_supervisor: object,
+    *,
+    meeting_id: str,
+    group_id: str,
+    connect_timeout_seconds: float = 5.0,
+) -> dict[str, object]:
+    clean_meeting_id = _clean_existing_meeting_id(meeting_id)
+    if not str(group_id or "").strip():
+        raise ValueError("Live agent group id is required.")
+    clean_group_id = clean_live_agent_group_id(group_id)
+    meeting_dir = _existing_meeting_dir(output_root, clean_meeting_id)
+    meeting = _read_existing_meeting(meeting_dir)
+    expected_agents = _expected_agents_from_meeting(meeting)
+    expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
+    _validate_recover_group_matches_meeting(
+        process_supervisor,
+        clean_group_id,
+        expected_agent_ids,
+        meeting_id=clean_meeting_id,
+    )
+    offline = _mark_bound_agents_offline(
+        output_root,
+        meeting,
+        meeting_id=clean_meeting_id,
+        expected_agent_ids=expected_agent_ids,
+    )
+    try:
+        group = process_supervisor.recover_group(clean_group_id)
+    except Exception as error:
+        raise LiveAgentSessionRecoverError(
+            _recover_group_failure_message(error, group_id=clean_group_id),
             meeting_id=clean_meeting_id,
         ) from error
     process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=clean_meeting_id)
@@ -761,13 +822,60 @@ def _validate_restart_group_matches_meeting(
     *,
     meeting_id: str,
 ) -> dict[str, object]:
+    return _validate_process_group_manifest_matches_meeting(
+        process_supervisor,
+        group_id,
+        expected_agent_ids,
+        meeting_id=meeting_id,
+        action="restart",
+    )
+
+
+def _validate_recover_group_matches_meeting(
+    process_supervisor: object,
+    group_id: str,
+    expected_agent_ids: list[str],
+    *,
+    meeting_id: str,
+) -> dict[str, object]:
+    group = _validate_process_group_manifest_matches_meeting(
+        process_supervisor,
+        group_id,
+        expected_agent_ids,
+        meeting_id=meeting_id,
+        action="recover",
+    )
+    status = str(group.get("status") or "unknown") if isinstance(group, dict) else "unknown"
+    if status == "running":
+        raise ValueError(f"Live agent group {group_id} is already running.")
+    if status not in {"unknown", "error"}:
+        raise ValueError(f"Live agent group {group_id} is {status}; use restart.")
+    if isinstance(group, dict) and "server" in group and not str(group.get("server") or "").strip():
+        raise ValueError(f"Live agent group {group_id} has no server to recover.")
+    if isinstance(group, dict) and "config_path" in group:
+        config_path = str(group.get("config_path") or "").strip()
+        if not config_path:
+            raise ValueError(f"Live agent group {group_id} has no config to recover.")
+        if not Path(config_path).exists():
+            raise ValueError(f"Live agent group {group_id} has no recoverable config.")
+    return group
+
+
+def _validate_process_group_manifest_matches_meeting(
+    process_supervisor: object,
+    group_id: str,
+    expected_agent_ids: list[str],
+    *,
+    meeting_id: str,
+    action: str,
+) -> dict[str, object]:
     group = _snapshot_process_group(process_supervisor, group_id)
     if not group:
         raise ValueError(f"Live agent group {group_id} was not found.")
-    _validate_process_group_owner(group, group_id, meeting_id, action="restart")
+    _validate_process_group_owner(group, group_id, meeting_id, action=action)
     manifest_agent_ids = _process_agent_ids(group.get("agents"))
     if not manifest_agent_ids:
-        raise ValueError(f"Live agent group {group_id} has no agent manifest; refusing session restart.")
+        raise ValueError(f"Live agent group {group_id} has no agent manifest; refusing session {action}.")
     duplicate_agent_ids = _duplicate_agent_ids(manifest_agent_ids)
     if duplicate_agent_ids:
         raise ValueError(
@@ -947,3 +1055,11 @@ def _restart_group_failure_message(error: Exception, *, group_id: str) -> str:
     if message == expected_not_found:
         return message
     return "Resident process group failed to restart: details redacted."
+
+
+def _recover_group_failure_message(error: Exception, *, group_id: str) -> str:
+    message = str(error).replace("\r", " ").replace("\n", " ").strip()
+    expected_not_found = f"Live agent group {group_id} was not found."
+    if message == expected_not_found:
+        return message
+    return "Resident process group failed to recover: details redacted."

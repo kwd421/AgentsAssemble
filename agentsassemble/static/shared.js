@@ -26,6 +26,7 @@ export const state = {
   liveAgentProcessStartRunning: false,
   liveAgentSessionStartRunning: false,
   liveAgentSessionRestartRunning: false,
+  liveAgentSessionRecoverRunning: false,
   liveAgentSessionCheckRunning: false,
   liveAgentSessionStopRunning: false,
   liveAgentPreflightRunning: false,

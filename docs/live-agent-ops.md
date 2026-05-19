@@ -22,13 +22,13 @@ The lobby is the public room surface. The "상주 실행" panel can start, refre
 configs/live-agents.start-session.example.json
 ```
 
-The GUI's `세션시작` button pairs that resident config with `configs/demo-council.json` and `configs/agents.start-session.example.json` so the visible meeting bindings and resident runner manifest match. The `시작` button still starts only the supervised process group from the config input, while `세션시작` creates the visible meeting and starts the matching resident group through `/api/live-agent-sessions/start`. `세션재개` reconnects an existing meeting to its supervised group, `세션재시작` restarts that meeting-aware group and waits for fresh presence, `세션점검` records a meeting-scoped readiness snapshot, and `세션중지` stops that meeting-aware group and updates bound roster evidence through `/api/live-agent-sessions/stop`.
+The GUI's `세션시작` button pairs that resident config with `configs/demo-council.json` and `configs/agents.start-session.example.json` so the visible meeting bindings and resident runner manifest match. The `시작` button still starts only the supervised process group from the config input, while `세션시작` creates the visible meeting and starts the matching resident group through `/api/live-agent-sessions/start`. `세션재개` reconnects an existing meeting to its supervised group, `세션재시작` restarts that meeting-aware group and waits for fresh presence, `세션복구` recovers an `unknown` or `error` historical group for the same meeting without requiring the config path again, `세션점검` records a meeting-scoped readiness snapshot, and `세션중지` stops that meeting-aware group and updates bound roster evidence through `/api/live-agent-sessions/stop`.
 
 The live-agent roster and supervised process panel auto-refresh in the GUI every 5 seconds. This keeps stale presence, process crashes, pending auto-restart state, and recovered groups visible during long sessions without relying only on the manual refresh buttons. The GUI server also starts a backend supervisor monitor, so owned process crash detection and due auto-restarts continue without an open browser or `/api/live-agent-processes` polling client. The manual refresh buttons remain useful when you want an immediate read after changing files or process state from another terminal.
 
 Session-owned supervised groups persist the safe `meeting_id` in `live-agent-runs/processes.json`. That meeting ownership is preserved through manual restart, recovery, delayed auto-restart, and stale-watchdog restart, and is visible through `/api/live-agent-processes`, `/api/live-agent-health` as `processes.meeting_ids`, and the GUI process row as `meeting <id>`. This is operator evidence only; it does not store command arguments, endpoint URLs, auth refs, prompts, replies, log tails, or provider output.
 
-Session controls also enforce that ownership. `start-session` with an explicit meeting id, `resume-session`, `restart-session`, and `stop-session` refuse to reuse or mutate an existing process group that already belongs to a different meeting. `check-session` stays read-only and reports `degraded` with `group:wrong_meeting` instead of treating that group as ready. A non-empty but unsafe stored owner id is treated as a different meeting without echoing the unsafe value.
+Session controls also enforce that ownership. `start-session` with an explicit meeting id, `resume-session`, `restart-session`, `recover-session`, and `stop-session` refuse to reuse or mutate an existing process group that already belongs to a different meeting. `check-session` stays read-only and reports `degraded` with `group:wrong_meeting` instead of treating that group as ready. A non-empty but unsafe stored owner id is treated as a different meeting without echoing the unsafe value.
 
 The real-provider `configs/live-agents.example.json` contains real `claude` and `gemini` commands. Do not start it until the real-provider checklist below is satisfied.
 
@@ -173,6 +173,30 @@ The response reports `status: "ready"` only when the restarted process is `runni
 CLI exit code is `0` for `ready`, `1` for `starting`, and `2` for refused, HTTP, or argument errors. This path does not run official turns, smoke probes, model calls, remote bridge `/agentsassemble/run`, decisions, or transcript finalization.
 
 The operation ledger records one sanitized `session.restart` entry with result status, meeting id, group id, expected/connected counts, process status, safe agent ids, and attention fields. It does not record config paths, command arguments, endpoint URLs, auth refs, prompts, log tails, provider output, replies, or official turn content.
+
+Use `recover-session` when the visible resident meeting already exists and the matching supervised group is historical, `unknown`, or `error`, and you want to relaunch it from its persisted process record instead of supplying a config path again:
+
+```bash
+python3 -m agentsassemble.cli live-agent recover-session \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1 \
+  --group-id resident-main \
+  --connect-timeout 5
+```
+
+The HTTP control-plane path is:
+
+```text
+POST /api/live-agent-sessions/recover
+```
+
+with `meeting_id`, `group_id`, and `connect_timeout_seconds` only. `meeting_id` must name an existing meeting and `group_id` must name an existing supervised process group with a persisted manifest. Recovery validates the stored meeting owner and the current process manifest against the meeting's bound agent ids before touching roster state. It refuses `running` groups with an already-running error, refuses other non-recoverable states such as `stopped` with a `use restart` message, and only then clears that meeting's bound roster rows to `offline` before calling the process supervisor's recover path.
+
+The response reports `status: "ready"` only when the recovered process is `running`, its returned manifest matches every expected agent without extras or duplicates, and every expected agent reports fresh `online` or `working` presence for that same meeting after the stale-presence reset. It reports `status: "starting"` when the process recovered but the returned process manifest or fresh presence evidence is still incomplete before the bounded wait ends. Like restart, a roster row for the same `agent_id` that is currently attached to another meeting is left untouched and reported as `agent_id:wrong_meeting`.
+
+CLI exit code is `0` for `ready`, `1` for `starting`, and `2` for refused, HTTP, or argument errors. This path does not run official turns, smoke probes, model calls, remote bridge `/agentsassemble/run`, decisions, or transcript finalization.
+
+The operation ledger records one sanitized `session.recover` entry with result status, meeting id, group id, expected/connected counts, offline reset counts, process status, safe agent ids, and attention fields. It does not record config paths, command arguments, endpoint URLs, auth refs, prompts, log tails, provider output, replies, or official turn content. Use process-level `live-agent processes recover <group_id>` only when you intentionally want a process control action without the meeting-aware roster reset and readiness proof.
 
 Use `check-session` when a resident meeting already exists and you want a meeting-scoped proof of current readiness without starting, stopping, probing, running official rounds, or calling providers:
 

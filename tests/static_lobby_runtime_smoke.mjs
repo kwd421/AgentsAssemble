@@ -185,6 +185,7 @@ function resetState() {
     liveAgentProcessStartRunning: false,
     liveAgentSessionStartRunning: false,
     liveAgentSessionRestartRunning: false,
+    liveAgentSessionRecoverRunning: false,
     liveAgentSessionCheckRunning: false,
     liveAgentSessionStopRunning: false,
     liveAgentPreflightRunning: false,
@@ -210,6 +211,7 @@ function installHarness({
   sessionStartPayload = null,
   sessionResumePayload = null,
   sessionRestartPayload = null,
+  sessionRecoverPayload = null,
   sessionStopPayload = null,
   sessionCheckPayload = null,
   sessionSmokePayload = null,
@@ -321,6 +323,18 @@ function installHarness({
         }
       );
     }
+    if (url === "/api/live-agent-sessions/recover") {
+      return jsonResponse(
+        sessionRecoverPayload || {
+          status: "ready",
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          connection: { expected: 3, connected: 3, attention: [] },
+          offline: { expected: 3, offline: 3, attention: [] },
+          process: { status: "running", attention: [] },
+        }
+      );
+    }
     if (url === "/api/live-agent-sessions/stop") {
       return jsonResponse(
         sessionStopPayload || {
@@ -425,6 +439,10 @@ function sessionResumeRequest(requests) {
 
 function sessionRestartRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-sessions/restart");
+}
+
+function sessionRecoverRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-sessions/recover");
 }
 
 function sessionStopRequest(requests) {
@@ -667,6 +685,47 @@ test("session restart button posts existing meeting group and timeout payload", 
   await lobby.querySelector("#live-agent-session-restart").click();
 
   assert.deepEqual(sessionRestartRequest(requests).jsonBody, {
+    meeting_id: "resident-gui",
+    group_id: "resident-main",
+    connect_timeout_seconds: 7,
+  });
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "세션 ready: resident-gui · 3/3 connected"
+  );
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-processes"),
+    true
+  );
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agents"),
+    true
+  );
+  assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
+  assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+});
+
+test("session recover button posts existing meeting group and timeout payload", async () => {
+  resetState();
+  const { document, requests, events } = installHarness({
+    sessionRecoverPayload: {
+      status: "ready",
+      meeting_id: "resident-gui",
+      group_id: "resident-main",
+      connection: { expected: 3, connected: 3, attention: [] },
+      offline: { expected: 3, offline: 3, attention: [] },
+      process: { status: "running", attention: [] },
+    },
+  });
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-meeting-id").value = "resident-gui";
+  lobby.querySelector("#live-agent-process-group").value = "resident-main";
+  lobby.querySelector("#live-agent-session-connect-timeout").value = "7";
+
+  await lobby.querySelector("#live-agent-session-recover").click();
+
+  assert.deepEqual(sessionRecoverRequest(requests).jsonBody, {
     meeting_id: "resident-gui",
     group_id: "resident-main",
     connect_timeout_seconds: 7,

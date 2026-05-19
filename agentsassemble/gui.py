@@ -30,6 +30,7 @@ from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_tim
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
 from agentsassemble.live_agent_sessions import (
     check_live_agent_session,
+    recover_live_agent_session,
     restart_live_agent_session,
     resume_live_agent_session,
     start_live_agent_session,
@@ -580,6 +581,23 @@ def live_agent_session_restart_payload(
     if not group_id:
         raise ValueError("Live agent group id is required.")
     return restart_live_agent_session(
+        output_root,
+        process_supervisor,
+        meeting_id=str(payload.get("meeting_id") or ""),
+        group_id=group_id,
+        connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
+    )
+
+
+def live_agent_session_recover_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    group_id = str(payload.get("group_id") or "").strip()
+    if not group_id:
+        raise ValueError("Live agent group id is required.")
+    return recover_live_agent_session(
         output_root,
         process_supervisor,
         meeting_id=str(payload.get("meeting_id") or ""),
@@ -2334,6 +2352,7 @@ def _session_smoke_error_details(payload: dict[str, object]) -> dict[str, object
 def _session_start_operation_details(session: dict[str, object]) -> dict[str, object]:
     connection = session.get("connection") if isinstance(session.get("connection"), dict) else {}
     process = session.get("process") if isinstance(session.get("process"), dict) else {}
+    offline = session.get("offline") if isinstance(session.get("offline"), dict) else {}
     details = {
         "result_status": _operation_result_status(session.get("status")),
         "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
@@ -2347,6 +2366,14 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
         "process_agent_ids": _safe_payload_strings(process.get("agent_ids"), limit=64),
         "process_attention": _safe_payload_strings(process.get("attention"), limit=128),
     }
+    if offline:
+        details.update(
+            {
+                "offline_agent_count": _payload_nonnegative_int(offline.get("offline"), 0),
+                "offline_agent_ids": _safe_payload_strings(offline.get("offline_agent_ids"), limit=64),
+                "offline_attention": _safe_payload_strings(offline.get("attention"), limit=128),
+            }
+        )
     auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
     if auto_rounds is not None:
         details.update(_session_auto_rounds_operation_details(auto_rounds, str(session.get("meeting_id") or "")))
@@ -2453,6 +2480,12 @@ def _session_restart_operation_summary(session: dict[str, object]) -> str:
     return "resident live-agent session is still reconnecting after restart"
 
 
+def _session_recover_operation_summary(session: dict[str, object]) -> str:
+    if _operation_result_status(session.get("status")) == "ready":
+        return "recovered resident live-agent session"
+    return "resident live-agent session is still reconnecting after recovery"
+
+
 def _session_start_error_message(error: Exception) -> str:
     return _session_error_message(error, action="start")
 
@@ -2463,6 +2496,10 @@ def _session_resume_error_message(error: Exception) -> str:
 
 def _session_restart_error_message(error: Exception) -> str:
     return _session_error_message(error, action="restart")
+
+
+def _session_recover_error_message(error: Exception) -> str:
+    return _session_error_message(error, action="recover")
 
 
 def _session_check_error_message(error: Exception) -> str:
@@ -2806,6 +2843,39 @@ def _make_handler(
                     status=_session_start_operation_status(session),
                     target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
                     summary=_session_restart_operation_summary(session),
+                    details=_session_start_operation_details(session),
+                )
+                self._send_json(session)
+                return
+            if parsed.path == "/api/live-agent-sessions/recover":
+                payload = self._operation_json_payload(operation="session.recover")
+                if payload is None:
+                    return
+                try:
+                    session = live_agent_session_recover_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                    )
+                except (OSError, ValueError) as error:
+                    safe_error = _session_recover_error_message(error)
+                    safe_details = _session_start_error_details(payload, error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.recover",
+                        status="failed",
+                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
+                        error=safe_error,
+                        details=safe_details,
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="session.recover",
+                    status=_session_start_operation_status(session),
+                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
+                    summary=_session_recover_operation_summary(session),
                     details=_session_start_operation_details(session),
                 )
                 self._send_json(session)

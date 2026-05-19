@@ -8,6 +8,7 @@ from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_sessions import (
     check_live_agent_session,
+    recover_live_agent_session,
     resume_live_agent_session,
     restart_live_agent_session,
     start_live_agent_session,
@@ -1740,6 +1741,306 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             session = restart_live_agent_session(
                 root,
                 RestartSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["status"], "starting")
+            self.assertEqual(session["offline"]["attention"], ["agent-a:wrong_meeting"])
+            self.assertEqual(session["connection"]["attention"], ["agent-a:wrong_meeting"])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["meeting_id"], "other-meeting")
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_recover_session_waits_for_fresh_presence_after_clearing_stale_roster(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RecoverSupervisor:
+                def __init__(self) -> None:
+                    self.recovered = []
+
+                def snapshot_groups(self):
+                    return [{"group_id": "resident-main", "status": "unknown", "agents": [{"agent_id": "agent-a"}]}]
+
+                def recover_group(self, group_id):
+                    self.recovered.append(group_id)
+                    agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+                    if agents["agent-a"]["status"] != "offline":
+                        raise AssertionError("recover must clear stale presence before starting the group again")
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = RecoverSupervisor()
+
+            session = recover_live_agent_session(
+                root,
+                supervisor,
+                meeting_id="resident-m1",
+                group_id="resident main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(supervisor.recovered, ["resident-main"])
+            self.assertEqual(session["status"], "starting")
+            self.assertEqual(session["offline"]["offline"], 1)
+            self.assertEqual(session["connection"]["attention"], ["agent-a:offline"])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "offline")
+
+    def test_recover_session_reports_ready_only_after_recovered_agents_heartbeat(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect", "critic"])
+            agent_config = _write_agent_config(root, ["agent-a", "agent-b"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            heartbeat_live_agent(root, "agent-b", status="working")
+
+            class RecoverSupervisor:
+                def __init__(self) -> None:
+                    self.recovered = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "unknown",
+                            "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-b"}],
+                        }
+                    ]
+
+                def recover_group(self, group_id):
+                    self.recovered.append(group_id)
+                    agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+                    if agents["agent-a"]["status"] != "offline" or agents["agent-b"]["status"] != "offline":
+                        raise AssertionError("recover must clear stale presence before starting the group again")
+                    heartbeat_live_agent(root, "agent-a", status="online")
+                    heartbeat_live_agent(root, "agent-b", status="working")
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-b"}]}
+
+            supervisor = RecoverSupervisor()
+
+            session = recover_live_agent_session(
+                root,
+                supervisor,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(supervisor.recovered, ["resident-main"])
+            self.assertEqual(session["status"], "ready")
+            self.assertEqual(session["offline"]["offline"], 2)
+            self.assertEqual(session["connection"]["connected"], 2)
+
+    def test_recover_session_refuses_manifest_mismatch_before_recovery(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect", "critic"])
+            agent_config = _write_agent_config(root, ["agent-a", "agent-b"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RecoverSupervisor:
+                def __init__(self) -> None:
+                    self.recovered = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "unknown",
+                            "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-x"}],
+                        }
+                    ]
+
+                def recover_group(self, group_id):
+                    self.recovered.append(group_id)
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = RecoverSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                recover_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("does not match meeting agents", str(raised.exception))
+            self.assertEqual(supervisor.recovered, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_recover_session_refuses_running_group_before_clearing_stale_roster(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RecoverSupervisor:
+                def __init__(self) -> None:
+                    self.recovered = []
+
+                def snapshot_groups(self):
+                    return [{"group_id": "resident-main", "status": "running", "agents": [{"agent_id": "agent-a"}]}]
+
+                def recover_group(self, group_id):
+                    self.recovered.append(group_id)
+                    raise AssertionError("running group must be refused before recover")
+
+            supervisor = RecoverSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                recover_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("already running", str(raised.exception))
+            self.assertEqual(supervisor.recovered, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_recover_session_refuses_group_without_server_before_clearing_stale_roster(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RecoverSupervisor:
+                def __init__(self) -> None:
+                    self.recovered = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "unknown",
+                            "server": "",
+                            "config_path": "configs/live-agents.example.json",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def recover_group(self, group_id):
+                    self.recovered.append(group_id)
+                    raise AssertionError("missing server must be refused before recover")
+
+            supervisor = RecoverSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                recover_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("has no server to recover", str(raised.exception))
+            self.assertEqual(supervisor.recovered, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_recover_session_refuses_missing_config_before_clearing_stale_roster(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RecoverSupervisor:
+                def __init__(self) -> None:
+                    self.recovered = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "unknown",
+                            "server": "http://127.0.0.1:8765",
+                            "config_path": str(root / "missing-live-agents.json"),
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def recover_group(self, group_id):
+                    self.recovered.append(group_id)
+                    raise AssertionError("missing config must be refused before recover")
+
+            supervisor = RecoverSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                recover_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("has no recoverable config", str(raised.exception))
+            self.assertEqual(supervisor.recovered, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_recover_session_leaves_wrong_meeting_roster_row_untouched(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "other-meeting",
+                    "engagement_mode": "moderator_called",
+                    "status": "online",
+                    "capabilities": ["room_chat", "official_turn"],
+                },
+            )
+
+            class RecoverSupervisor:
+                def snapshot_groups(self):
+                    return [{"group_id": "resident-main", "status": "unknown", "agents": [{"agent_id": "agent-a"}]}]
+
+                def recover_group(self, group_id):
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+            session = recover_live_agent_session(
+                root,
+                RecoverSupervisor(),
                 meeting_id="resident-m1",
                 group_id="resident-main",
                 connect_timeout_seconds=0,

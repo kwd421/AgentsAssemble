@@ -311,6 +311,16 @@ def build_parser() -> argparse.ArgumentParser:
     live_restart_session.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0, help="Seconds to wait for bound agents to reconnect.")
     live_restart_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session restart payload.")
 
+    live_recover_session = live_agent_subparsers.add_parser(
+        "recover-session",
+        parents=[live_server],
+        help="Recover an existing resident meeting's historical supervised live-agent group.",
+    )
+    live_recover_session.add_argument("--meeting-id", required=True, help="Existing resident meeting id to recover.")
+    live_recover_session.add_argument("--group-id", required=True, help="Supervised process group id to recover.")
+    live_recover_session.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0, help="Seconds to wait for recovered agents to reconnect.")
+    live_recover_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session recover payload.")
+
     live_check_session = live_agent_subparsers.add_parser(
         "check-session",
         parents=[live_server],
@@ -623,6 +633,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_resume_session(args)
         if args.live_agent_command == "restart-session":
             return _run_live_agent_restart_session(args)
+        if args.live_agent_command == "recover-session":
+            return _run_live_agent_recover_session(args)
         if args.live_agent_command == "check-session":
             return _run_live_agent_check_session(args)
         if args.live_agent_command == "stop-session":
@@ -999,6 +1011,24 @@ def _run_live_agent_stop_session(args: argparse.Namespace) -> int:
 def _run_live_agent_restart_session(args: argparse.Namespace) -> int:
     response = _request_json(
         _server_url(args.server, "/api/live-agent-sessions/restart"),
+        method="POST",
+        payload={
+            "meeting_id": str(args.meeting_id or ""),
+            "group_id": str(args.group_id or ""),
+            "connect_timeout_seconds": float(args.connect_timeout),
+        },
+        timeout_seconds=float(args.connect_timeout) + 6.0,
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_session_start(response))
+    return 0 if response.get("status") == "ready" else 1
+
+
+def _run_live_agent_recover_session(args: argparse.Namespace) -> int:
+    response = _request_json(
+        _server_url(args.server, "/api/live-agent-sessions/recover"),
         method="POST",
         payload={
             "meeting_id": str(args.meeting_id or ""),
