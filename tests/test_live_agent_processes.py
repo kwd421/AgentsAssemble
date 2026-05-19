@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent
+from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor as _LiveAgentProcessSupervisor
 
 
@@ -597,6 +597,88 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             self.assertEqual(record["status"], "stopped")
             self.assertEqual(record["returncode"], 0)
             self.assertEqual(supervisor.list_groups()[0]["status"], "stopped")
+
+    def test_stop_group_marks_matching_manifest_agents_offline(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            process = FakeProcess(pid=9876)
+            now = datetime(2026, 5, 17, 12, 0, tzinfo=UTC)
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: process,
+                now_fn=lambda: now,
+            )
+            config_path = root / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {"agent_id": "agent-a", "display_name": "Agent A", "command": ["fake"]},
+                            {"agent_id": "agent-b", "display_name": "Agent B", "command": ["fake"]},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew", meeting_id="meeting-1")
+            connect_live_agent(root, {"agent_id": "agent-a", "meeting_id": "meeting-1", "status": "online"}, now=now)
+            connect_live_agent(root, {"agent_id": "agent-b", "meeting_id": "meeting-1", "status": "working"}, now=now)
+
+            supervisor.stop_group("crew")
+            agents = {str(agent["agent_id"]): agent for agent in read_live_agents(root, now=now)}
+
+        self.assertEqual(agents["agent-a"]["status"], "offline")
+        self.assertEqual(agents["agent-b"]["status"], "offline")
+
+    def test_stop_group_does_not_offline_manifest_agent_from_another_meeting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            process = FakeProcess(pid=9876)
+            now = datetime(2026, 5, 17, 12, 0, tzinfo=UTC)
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: process,
+                now_fn=lambda: now,
+            )
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew", meeting_id="meeting-1")
+            connect_live_agent(root, {"agent_id": "agent-a", "meeting_id": "meeting-2", "status": "online"}, now=now)
+
+            supervisor.stop_group("crew")
+            agents = {str(agent["agent_id"]): agent for agent in read_live_agents(root, now=now)}
+
+        self.assertEqual(agents["agent-a"]["status"], "online")
+        self.assertEqual(agents["agent-a"]["meeting_id"], "meeting-2")
+
+    def test_stop_group_does_not_offline_agent_still_owned_by_another_running_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            processes = []
+            now = datetime(2026, 5, 17, 12, 0, tzinfo=UTC)
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=9800 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: now,
+            )
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew-a")
+            supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew-b")
+            connect_live_agent(root, {"agent_id": "agent-a", "status": "online"}, now=now)
+
+            supervisor.stop_group("crew-a")
+            agents = {str(agent["agent_id"]): agent for agent in read_live_agents(root, now=now)}
+
+        self.assertEqual(agents["agent-a"]["status"], "online")
+        self.assertEqual(supervisor.list_groups()[0]["status"], "stopped")
+        self.assertEqual(supervisor.list_groups()[1]["status"], "running")
 
     def test_stop_running_groups_stops_owned_running_and_pending_restart_groups(self):
         with tempfile.TemporaryDirectory() as temp_dir:

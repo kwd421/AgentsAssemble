@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
-from agentsassemble.live_agents import LIVE_AGENT_STATE, read_live_agents
+from agentsassemble.live_agents import LIVE_AGENT_STATE, heartbeat_live_agent, read_live_agents
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_runner import ResidentAgentConfig, load_group_configs
 from agentsassemble.meeting_events import clean_lobby_text
@@ -356,6 +356,7 @@ class LiveAgentProcessSupervisor:
         transition_record["stopped_at"] = stopped_at.isoformat()
         transition_record["last_error"] = last_error
         transition_record["restart_count"] = restart_count
+        self._mark_manifest_agents_offline(record)
         if backoff_seconds <= 0:
             self._append_lifecycle_event(
                 transition_record,
@@ -510,6 +511,7 @@ class LiveAgentProcessSupervisor:
         record["pid"] = None
         record["stopped_at"] = self.now_fn().isoformat()
         record["next_restart_at"] = ""
+        self._mark_manifest_agents_offline(record)
         self._write_records()
         self._append_lifecycle_event(record, "stopped", timestamp=_parse_datetime(record.get("stopped_at")))
         return self._record_for_output(record)
@@ -534,6 +536,7 @@ class LiveAgentProcessSupervisor:
         record["next_restart_at"] = ""
         self._processes.pop(group_id, None)
         self._close_log(group_id)
+        self._mark_manifest_agents_offline(record)
         self._write_records()
         self._append_lifecycle_event(record, "restart_failed", timestamp=stopped_at, returncode=returncode)
         return self._record_for_output(record) if include_recent_events else dict(record)
@@ -552,6 +555,7 @@ class LiveAgentProcessSupervisor:
         record["next_restart_at"] = ""
         self._processes.pop(group_id, None)
         self._close_log(group_id)
+        self._mark_manifest_agents_offline(record)
         self._write_records()
         self._append_lifecycle_event(
             record,
@@ -644,6 +648,35 @@ class LiveAgentProcessSupervisor:
             )
         visible["recent_events"] = recent_events
         return visible
+
+    def _mark_manifest_agents_offline(self, record: dict[str, object]) -> None:
+        agent_ids = _manifest_agent_ids(record.get("agents"))
+        if not agent_ids:
+            return
+        meeting_id = str(record.get("meeting_id") or "")
+        agents_by_id = _agents_by_id(read_live_agents(self.output_root, now=self.now_fn()))
+        for agent_id in agent_ids:
+            existing = agents_by_id.get(agent_id)
+            if existing is None:
+                continue
+            if str(existing.get("meeting_id") or "") != meeting_id:
+                continue
+            if self._agent_expected_by_other_active_group(record, agent_id):
+                continue
+            heartbeat_live_agent(self.output_root, agent_id, status="offline", now=self.now_fn())
+
+    def _agent_expected_by_other_active_group(self, stopped_record: dict[str, object], agent_id: str) -> bool:
+        group_id = str(stopped_record.get("group_id") or "")
+        for other in self._records.values():
+            if str(other.get("group_id") or "") == group_id:
+                continue
+            if str(other.get("status") or "") not in {"running", "restarting"}:
+                continue
+            if str(other.get("meeting_id") or "") != str(stopped_record.get("meeting_id") or ""):
+                continue
+            if agent_id in _manifest_agent_ids(other.get("agents")):
+                return True
+        return False
 
     def _preflight_report_or_raise(self, config_path: Path, *, server: str) -> dict[str, object]:
         report = self.preflight_checker(config_path, server_override=server)
@@ -955,6 +988,22 @@ def _safe_agent_manifest(value: object) -> list[dict[str, str]]:
             }
         )
     return agents
+
+
+def _manifest_agent_ids(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    agent_ids = []
+    seen = set()
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        agent_id = str(item.get("agent_id") or "").strip()
+        if not agent_id or agent_id in seen:
+            continue
+        agent_ids.append(agent_id)
+        seen.add(agent_id)
+    return agent_ids
 
 
 def _should_auto_restart(record: dict[str, object], returncode: object) -> bool:

@@ -862,6 +862,8 @@ curl -X POST \
   http://127.0.0.1:8765/api/live-agent-processes/local-cli-group/stop
 ```
 
+After a successful process stop, the supervisor reconciles existing live-agent presence rows for that group's launch-time manifest and marks matching agents `offline` immediately. This prevents a killed or interrupted resident process from looking `online` until heartbeat staleness expires. The reconciliation is conservative: it does not create new presence rows, does not touch agents currently attached to another meeting, and does not mark an agent offline while another running or restarting group with the same meeting id still expects that agent.
+
 Use the GUI restart button on a stopped, crashed, or recovered group to relaunch it from the persisted `config_path` and `server`. Restart also reruns preflight before launching, so a config or environment that became invalid while the group was down is refused synchronously. The HTTP restart path is:
 
 ```bash

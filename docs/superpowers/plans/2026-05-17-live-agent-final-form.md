@@ -1491,6 +1491,42 @@ Expected: pass.
 
 ---
 
+### Task 47: Reconcile Presence On Process Stop
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for process-stop presence reconciliation**
+
+Cover a stopped supervised group whose launch-time manifest agents have existing `online` or `working` presence rows. After `stop_group()`, matching rows for the same meeting should be `offline` immediately. Also cover two safety guards: a same agent id attached to another meeting remains untouched, and an agent still expected by another running group for the same meeting remains online.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stop_group_marks_matching_manifest_agents_offline tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stop_group_does_not_offline_manifest_agent_from_another_meeting tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stop_group_does_not_offline_agent_still_owned_by_another_running_group
+```
+
+Expected: fail before implementation because process stop updates `processes.json` but leaves matching presence rows `online` or `working`.
+
+- [x] **Step 2: Mark safe manifest presence rows offline on process exit/stop**
+
+When a supervised group is stopped, errors without auto-restart, fails auto-restart, or has a pending restart canceled, mark existing manifest agents `offline` only when their current presence row belongs to the same meeting and no other running or restarting group for that meeting still expects that agent. Do not create missing presence rows or mutate wrong-meeting rows.
+
+Run the Step 1 command and `python3 -m unittest tests.test_live_agent_processes`.
+Expected: pass.
+
+- [x] **Step 3: Document stop-time roster reconciliation**
+
+Document that process stop now reconciles existing manifest presence rows immediately, while preserving wrong-meeting and still-owned-by-another-running-group safety boundaries.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
