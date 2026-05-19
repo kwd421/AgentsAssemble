@@ -1821,6 +1821,39 @@ Document that process rows use bounded lifecycle tail scanning; quiet groups wit
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 56: Bounded Room Event JSONL Reads
+
+**Files:**
+- Modify: `agentsassemble/meeting_events.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_meeting_events.py`
+
+- [x] **Step 1: Add RED coverage for bounded room reads**
+
+Cover limited lobby, side-chat, and live-event readers with large JSONL histories whose requested events are in the tail. The tests forbid `Path.read_text()` on those JSONL files and count binary bytes read with a small tail block size, so the limited readers must not load the whole event file.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_meeting_events
+```
+
+Expected: fail before implementation because the limited room readers load whole JSONL files with `read_text().splitlines()` before slicing the recent window.
+
+- [x] **Step 2: Read default limited room views from the JSONL tail**
+
+Use a shared newest-first JSONL tail iterator for limited lobby, side-chat, and meeting live-event reads. Stop as soon as enough valid events have been collected, return them in chronological order, keep corrupt-line tolerance, and preserve full live-event reads through `read_live_events(..., limit=None)` for archive/transcript paths.
+
+Run the Step 1 command plus room endpoint/read-after coverage.
+Expected: pass.
+
+- [x] **Step 3: Document room polling limits**
+
+Document that resident polling and GUI refresh use bounded room-event tail reads for default limited snapshots, while explicit full live-event reads remain available for complete meeting-history reconstruction.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

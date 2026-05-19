@@ -34,6 +34,7 @@ LOBBY_SIDES: set[str] = {"mine", "my-agent", "other", "other-agent"}
 LOBBY_KINDS: set[str] = {"message", "ready", "deploy"}
 LOBBY_CHANNELS: set[str] = {"lobby", "side_chat"}
 OFFICIAL_LIVE_KINDS: set[str] = {"message", "synthesis"}
+JSONL_TAIL_BLOCK_BYTES = 8192
 
 
 @dataclass(frozen=True)
@@ -149,27 +150,13 @@ class MeetingEventLog:
 def read_lobby_events(path: Path, limit: int = 80) -> list[dict[str, object]]:
     if not path.exists():
         return []
-    entries = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        event = LobbyEvent.from_json_line(line)
-        if event is not None:
-            entries.append(event.to_dict())
-    return entries[-limit:]
+    return _read_lobby_event_tail(path, limit=limit, default_channel="lobby")
 
 
 def read_side_chat_events(path: Path, limit: int = 120) -> list[dict[str, object]]:
     if not path.exists():
         return []
-    entries = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        event = LobbyEvent.from_json_line(line, default_channel="side_chat")
-        if event is not None:
-            entries.append(event.to_dict())
-    return entries[-limit:]
+    return _read_lobby_event_tail(path, limit=limit, default_channel="side_chat")
 
 
 def read_lobby_events_after(path: Path, last_event_id: str | None, limit: int = 80) -> list[dict[str, object]]:
@@ -241,6 +228,8 @@ def read_live_events(meeting_dir: Path, limit: int | None = 200) -> list[dict[st
     path = meeting_dir / "live_events.jsonl"
     if not path.exists():
         return []
+    if limit is not None:
+        return _read_live_event_tail(path, limit=limit)
     events = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -251,11 +240,70 @@ def read_live_events(meeting_dir: Path, limit: int | None = 200) -> list[dict[st
             continue
         if isinstance(event, dict):
             events.append(event)
-    return events if limit is None else events[-limit:]
+    return events
 
 
 def read_live_events_after(meeting_dir: Path, last_event_id: str | None, limit: int = 200) -> list[dict[str, object]]:
     return _events_after_id(read_live_events(meeting_dir, limit=limit), last_event_id)
+
+
+def _read_lobby_event_tail(
+    path: Path,
+    *,
+    limit: int,
+    default_channel: Literal["lobby", "side_chat"],
+) -> list[dict[str, object]]:
+    if limit <= 0:
+        return []
+    entries: list[dict[str, object]] = []
+    for line in _jsonl_tail_lines_newest_first(path):
+        event = LobbyEvent.from_json_line(line, default_channel=default_channel)
+        if event is None:
+            continue
+        entries.append(event.to_dict())
+        if len(entries) >= limit:
+            break
+    entries.reverse()
+    return entries
+
+
+def _read_live_event_tail(path: Path, *, limit: int) -> list[dict[str, object]]:
+    if limit <= 0:
+        return []
+    events: list[dict[str, object]] = []
+    for line in _jsonl_tail_lines_newest_first(path):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+            if len(events) >= limit:
+                break
+    events.reverse()
+    return events
+
+
+def _jsonl_tail_lines_newest_first(path: Path):
+    with path.open("rb") as file:
+        file.seek(0, 2)
+        position = file.tell()
+        buffer = b""
+        while position > 0:
+            read_size = min(JSONL_TAIL_BLOCK_BYTES, position)
+            position -= read_size
+            file.seek(position)
+            chunk = file.read(read_size)
+            parts = (chunk + buffer).split(b"\n")
+            if position > 0:
+                buffer = parts[0]
+                complete_lines = parts[1:]
+            else:
+                buffer = b""
+                complete_lines = parts
+            for line in reversed(complete_lines):
+                if line.strip():
+                    yield line.decode("utf-8", errors="ignore")
 
 
 def write_live_state(meeting_dir: Path, payload: dict[str, object]) -> None:
