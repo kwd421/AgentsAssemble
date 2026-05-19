@@ -8,7 +8,6 @@ import signal
 import subprocess
 import sys
 import threading
-from collections import deque
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Callable
@@ -962,20 +961,25 @@ def _recent_lifecycle_events_by_group(
     clean_group_ids = {_clean_group_id(group_id) for group_id in group_ids if str(group_id).strip()}
     if limit <= 0 or not clean_group_ids or not path.exists() or not path.is_file():
         return {}
-    events = {group_id: deque(maxlen=limit) for group_id in clean_group_ids}
-    with path.open("r", encoding="utf-8", errors="ignore") as file:
-        for line in file:
-            if not line.strip():
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            event = _safe_lifecycle_event(payload)
-            event_group_id = str(event.get("group_id") or "") if event else ""
-            if event_group_id in events:
-                events[event_group_id].append(event)
-    return {group_id: list(group_events) for group_id, group_events in events.items()}
+    events: dict[str, list[dict[str, object]]] = {group_id: [] for group_id in clean_group_ids}
+    scanned_event_count = 0
+    for line in _jsonl_tail_lines_newest_first(path):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        event = _safe_lifecycle_event(payload)
+        if not event:
+            continue
+        scanned_event_count += 1
+        event_group_id = str(event.get("group_id") or "")
+        if event_group_id in events and len(events[event_group_id]) < limit:
+            events[event_group_id].append(event)
+            if all(len(group_events) >= limit for group_events in events.values()):
+                break
+        if scanned_event_count >= DEFAULT_PROCESS_EVENT_SCAN_LIMIT:
+            break
+    return {group_id: list(reversed(group_events)) for group_id, group_events in events.items()}
 
 
 def _jsonl_tail_lines_newest_first(path: Path):

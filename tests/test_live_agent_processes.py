@@ -1167,6 +1167,72 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
 
         self.assertEqual(len(record["recent_events"]), 5)
 
+    def test_recent_lifecycle_events_are_read_from_tail_without_iterating_old_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir(parents=True)
+            (runs_dir / "processes.json").write_text(
+                json.dumps({"groups": [{"group_id": "crew", "status": "stopped", "pid": None}]}),
+                encoding="utf-8",
+            )
+            older_events = [
+                {
+                    "timestamp": f"2026-05-17T11:{index:02d}:00+00:00",
+                    "group_id": "archive",
+                    "event_type": "started",
+                    "status": "stopped",
+                }
+                for index in range(30)
+            ]
+            recent_events = [
+                {
+                    "timestamp": f"2026-05-17T12:0{index}:00+00:00",
+                    "group_id": "crew",
+                    "event_type": "started" if index % 2 == 0 else "stopped",
+                    "status": "stopped",
+                    "pid": 9000 + index,
+                    "returncode": None,
+                    "restart_count": 0,
+                    "max_restarts": 0,
+                }
+                for index in range(5)
+            ]
+            (runs_dir / "events.jsonl").write_text(
+                "\n".join(json.dumps(event, ensure_ascii=False) for event in [*older_events, *recent_events]) + "\n",
+                encoding="utf-8",
+            )
+            original_open = Path.open
+
+            class NoTextIterationFile:
+                def __init__(self, wrapped):
+                    self.wrapped = wrapped
+
+                def __enter__(self):
+                    self.wrapped.__enter__()
+                    return self
+
+                def __exit__(self, exc_type, exc, traceback):
+                    return self.wrapped.__exit__(exc_type, exc, traceback)
+
+                def __getattr__(self, name):
+                    return getattr(self.wrapped, name)
+
+                def __iter__(self):
+                    raise AssertionError("process rows must not iterate lifecycle history from the beginning")
+
+            def open_guard(path, *args, **kwargs):
+                mode = str(args[0] if args else kwargs.get("mode", "r"))
+                opened = original_open(path, *args, **kwargs)
+                if path.name == "events.jsonl" and "r" in mode and "b" not in mode:
+                    return NoTextIterationFile(opened)
+                return opened
+
+            with patch.object(Path, "open", open_guard):
+                groups = LiveAgentProcessSupervisor(root).list_groups()
+
+        self.assertEqual(groups[0]["recent_events"], recent_events)
+
     def test_read_live_agent_process_events_returns_recent_safe_events(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

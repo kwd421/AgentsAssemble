@@ -1788,6 +1788,39 @@ Document that direct resident CLI starts refuse missing local/live-session execu
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 55: Bounded Process Row Lifecycle Scan
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+
+- [x] **Step 1: Add RED coverage for full-history row scans**
+
+Cover `list_groups()` process rows with a lifecycle history whose relevant events are in the JSONL tail and older unrelated events are at the beginning. The test forbids text iteration over `events.jsonl`, so process rows must not scan lifecycle history from the start of the file just to build compact `recent_events`.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_recent_lifecycle_events_are_read_from_tail_without_iterating_old_history
+```
+
+Expected: fail before implementation because `_recent_lifecycle_events_by_group()` iterates `events.jsonl` in text mode from the beginning.
+
+- [x] **Step 2: Reuse bounded tail scanning for process rows**
+
+Collect process-row `recent_events` newest-first from `_jsonl_tail_lines_newest_first()`, sanitize events before counting them toward the scan budget, stop when every requested group has its row limit or the default scan budget is exhausted, and return each group's compact list in chronological order.
+
+Run the Step 1 command plus existing recent lifecycle row tests.
+Expected: pass.
+
+- [x] **Step 3: Document compact row history limits**
+
+Document that process rows use bounded lifecycle tail scanning; quiet groups with only older events may need the scriptable `live-agent processes events --group-id ... --scan-limit ...` path for deeper history.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification
