@@ -47,6 +47,14 @@ class FakeRoomClient:
         return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
 
 
+class FinalOfflineFailureClient(FakeRoomClient):
+    def __call__(self, url, *, method="GET", payload=None):
+        if url.endswith("/heartbeat") and (payload or {}).get("status") == "offline":
+            self.calls.append((url, method, payload))
+            raise ConnectionError("room server unavailable during shutdown")
+        return super().__call__(url, method=method, payload=payload)
+
+
 def config(**overrides):
     values = {
         "server": "http://room.local",
@@ -253,6 +261,110 @@ class LiveAgentRunnerTests(unittest.TestCase):
         heartbeat_payloads = [payload for url, method, payload in client.calls if url.endswith("/heartbeat")]
         self.assertNotIn("error", [payload["status"] for payload in heartbeat_payloads])
         self.assertEqual(heartbeat_payloads[-1]["status"], "offline")
+
+    def test_runner_does_not_mask_success_when_final_offline_heartbeat_fails(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "답하고 종료"}]}
+        client = FinalOfflineFailureClient([room])
+        runner = LiveAgentRunner(
+            config(),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "reply before shutdown",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        heartbeat_statuses = [
+            payload["status"] for url, method, payload in client.calls if url.endswith("/heartbeat")
+        ]
+        self.assertEqual(heartbeat_statuses[-1], "offline")
+
+    def test_runner_does_not_mask_command_error_when_final_offline_heartbeat_fails(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "실패 후 종료"}]}
+        client = FinalOfflineFailureClient([room])
+
+        def fail_command(command, prompt, *, timeout_seconds):
+            raise RuntimeError("provider boom")
+
+        runner = LiveAgentRunner(
+            config(),
+            request_json=client,
+            command_runner=fail_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        heartbeat_payloads = [payload for url, method, payload in client.calls if url.endswith("/heartbeat")]
+        self.assertEqual([payload["status"] for payload in heartbeat_payloads[-2:]], ["error", "offline"])
+        self.assertEqual(heartbeat_payloads[-2]["last_error"], "provider boom")
+
+    def test_runner_does_not_mask_room_failure_when_final_offline_heartbeat_fails(self):
+        clock = FakeClock()
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                if (payload or {}).get("status") == "offline":
+                    raise ConnectionError("room server unavailable during shutdown")
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            if url.endswith("/room"):
+                raise RuntimeError("room read failed")
+            return {}
+
+        runner = LiveAgentRunner(
+            config(),
+            request_json=request_json,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "room read failed"):
+            runner.run()
+
+        heartbeat_statuses = [payload["status"] for url, method, payload in calls if url.endswith("/heartbeat")]
+        self.assertEqual(heartbeat_statuses[-1], "offline")
+
+    def test_runner_does_not_mask_lobby_post_failure_when_final_offline_heartbeat_fails(self):
+        clock = FakeClock()
+        calls = []
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "답변 게시 실패"}]}
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                if (payload or {}).get("status") == "offline":
+                    raise ConnectionError("room server unavailable during shutdown")
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            if url.endswith("/room"):
+                return room
+            if url.endswith("/lobby"):
+                raise RuntimeError("lobby post failed")
+            return {}
+
+        runner = LiveAgentRunner(
+            config(),
+            request_json=request_json,
+            command_runner=lambda command, prompt, *, timeout_seconds: "reply that cannot post",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "lobby post failed"):
+            runner.run()
+
+        heartbeat_statuses = [payload["status"] for url, method, payload in calls if url.endswith("/heartbeat")]
+        self.assertEqual(heartbeat_statuses[-1], "offline")
 
     def test_runner_backs_off_after_command_failure_before_next_reply(self):
         clock = FakeClock()

@@ -1721,6 +1721,39 @@ Document that `truncated: true` means the scan budget was exhausted and older ma
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 53: Best-Effort Final Offline Heartbeat
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_runner.py`
+
+- [x] **Step 1: Add RED coverage for shutdown heartbeat masking**
+
+Cover bounded resident runs where the final `offline` heartbeat fails because the room server is unavailable during shutdown. The runner must preserve a successful reply count, preserve an already handled provider command error, and avoid masking an active room/reply failure with the shutdown heartbeat failure.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_success_when_final_offline_heartbeat_fails tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_command_error_when_final_offline_heartbeat_fails tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_room_failure_when_final_offline_heartbeat_fails tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_lobby_post_failure_when_final_offline_heartbeat_fails
+```
+
+Expected: fail before implementation because `LiveAgentRunner.run()` sends the final `offline` heartbeat directly from `finally`.
+
+- [x] **Step 2: Make only the final offline heartbeat best-effort**
+
+Wrap the final `offline` heartbeat in a narrow helper that suppresses shutdown-time heartbeat failures. Keep registration, working, error, and periodic heartbeat failures visible so real room/server failures during active work are not hidden.
+
+Run the Step 1 command.
+Expected: pass.
+
+- [x] **Step 3: Document shutdown semantics**
+
+Document that a failed final offline heartbeat does not turn a completed bounded run or handled command error into a provider failure, and that operators should still use presence, process rows, and logs together for shutdown evidence.
+
+Run: `python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_success_when_final_offline_heartbeat_fails tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_command_error_when_final_offline_heartbeat_fails tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_room_failure_when_final_offline_heartbeat_fails tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_lobby_post_failure_when_final_offline_heartbeat_fails`
+Expected: pass.
+
 ---
 
 ## Full Verification

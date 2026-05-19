@@ -77,7 +77,7 @@ class LiveAgentRunner:
                     break
                 self.sleep_fn(self.config.poll_interval)
         finally:
-            self._heartbeat("offline", **self._cursor_metadata())
+            self._heartbeat_final_offline()
         return replies
 
     def tick(self) -> int:
@@ -251,6 +251,12 @@ class LiveAgentRunner:
             payload=payload,
         )
         self.last_heartbeat_at = self.now_fn()
+
+    def _heartbeat_final_offline(self) -> None:
+        try:
+            self._heartbeat("offline", **self._cursor_metadata())
+        except Exception:
+            return
 
     def _heartbeat_if_due(self) -> None:
         if self.config.heartbeat_interval <= 0:

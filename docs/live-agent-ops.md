@@ -1065,7 +1065,7 @@ python3 -m agentsassemble.cli live-agent run-group \
   --max-ticks 2
 ```
 
-Provider command failures are recorded on the live-agent presence as `last_error`. During the failed tick the presence can report `error`; after a bounded run exits or a group is stopped, the final heartbeat can report `offline` while preserving `last_error`. The process row can still be `stopped` with return code `0` when the resident runner handled the delegate error internally. Use `live_agents.json`, `processes.json`, and the bounded `log_tail` together rather than trusting one field alone.
+Provider command failures are recorded on the live-agent presence as `last_error`. During the failed tick the presence can report `error`; after a bounded run exits or a group is stopped, the final heartbeat can report `offline` while preserving `last_error`. The final offline heartbeat is best-effort: if the room server is already unavailable during shutdown, the runner keeps the completed reply count or handled command-error result instead of converting shutdown into a provider failure. The process row can still be `stopped` with return code `0` when the resident runner handled the delegate error internally. Use `live_agents.json`, `processes.json`, and the bounded `log_tail` together rather than trusting one field alone.
 
 ## Recovery Expectations
 
