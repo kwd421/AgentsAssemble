@@ -1927,6 +1927,42 @@ Document that `not_reconnected` means a presence row predates the supervised pro
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 59: Session Connection Freshness Evidence
+
+**Files:**
+- Modify: `agentsassemble/live_agent_sessions.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_sessions.py`
+
+- [x] **Step 1: Add RED coverage for pre-start session presence reuse**
+
+Cover `start-session`, reused-running `resume-session`, and `check-session` with a running process group whose expected agent reports `online` or `working` presence for the right meeting, but whose `last_seen_at` predates the process group's `started_at`. Session readiness must not count that stale row as connected.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_sessions.LiveAgentSessionStartTests.test_start_session_requires_presence_after_process_start \
+  tests.test_live_agent_sessions.LiveAgentSessionStartTests.test_resume_session_requires_presence_after_reused_process_start \
+  tests.test_live_agent_sessions.LiveAgentSessionStartTests.test_check_session_requires_presence_after_process_start
+```
+
+Expected: fail before implementation because session connection snapshots only check current status and meeting id.
+
+- [x] **Step 2: Share freshness proof across session connection snapshots**
+
+Pass the current process group into the shared session connection snapshot used by `start`, `resume`, `restart`, `recover`, and read-only `check`. Parse public ISO timestamps from `started_at` and `last_seen_at`; when both are comparable and the heartbeat is older than the process start, report `agent_id:not_reconnected` and leave the agent out of the connected count. Preserve legacy behavior when either timestamp is missing or unparsable.
+
+Run the Step 1 command plus `python3 -m unittest tests.test_live_agent_sessions`.
+Expected: pass.
+
+- [x] **Step 3: Document session freshness semantics**
+
+Document that session start/resume/check readiness uses the same fresh-heartbeat evidence as process connection views, so a pre-start `online`/`working` row cannot prove a fresh resident process attached.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

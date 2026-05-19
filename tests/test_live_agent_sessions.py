@@ -2,6 +2,7 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
@@ -504,6 +505,45 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(session["connection"]["attention"], ["agent-a:offline"])
             self.assertTrue((root / "meetings" / "resident-m1" / "live_state.json").exists())
 
+    def test_start_session_requires_presence_after_process_start(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+
+            class FreshStartSupervisor(FakeSessionSupervisor):
+                def start_group(self, **kwargs):
+                    self.started.append(kwargs)
+                    heartbeat_live_agent(
+                        root,
+                        "agent-a",
+                        status="online",
+                        now=datetime(2999, 1, 1, 0, 0, tzinfo=UTC),
+                    )
+                    return {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "started_at": "2999-01-01T00:01:00+00:00",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+
+            session = start_live_agent_session(
+                root,
+                FreshStartSupervisor(root),
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["status"], "starting")
+            self.assertEqual(session["connection"]["connected"], 0)
+            self.assertEqual(session["connection"]["attention"], ["agent-a:not_reconnected"])
+
     def test_start_session_returns_starting_when_group_is_not_running_even_if_agents_connected(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             from agentsassemble.live_agents import heartbeat_live_agent
@@ -675,6 +715,61 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(supervisor.started, [])
             meeting = json.loads((root / "meetings" / "resident-m1" / "live_state.json").read_text(encoding="utf-8"))
             self.assertEqual(meeting["meeting_id"], "resident-m1")
+
+    def test_resume_session_requires_presence_after_reused_process_start(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(
+                root,
+                "agent-a",
+                status="online",
+                now=datetime(2999, 1, 1, 0, 0, tzinfo=UTC),
+            )
+
+            class RunningSupervisor:
+                def __init__(self) -> None:
+                    self.started = []
+
+                def list_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "started_at": "2999-01-01T00:01:00+00:00",
+                            "agents": [{"agent_id": "agent-a", "provider_kind": "local_cli", "connection_kind": "local_cli"}],
+                        }
+                    ]
+
+                def start_group(self, **kwargs):
+                    self.started.append(kwargs)
+                    raise AssertionError("resume must reuse the running group")
+
+            supervisor = RunningSupervisor()
+
+            session = resume_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+                preflight_checker=lambda *args, **kwargs: {"status": "ok"},
+            )
+
+            self.assertEqual(session["status"], "starting")
+            self.assertEqual(session["connection"]["connected"], 0)
+            self.assertEqual(session["connection"]["attention"], ["agent-a:not_reconnected"])
+            self.assertEqual(supervisor.started, [])
 
     def test_resume_session_reuses_running_group_with_normalized_group_id(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2113,6 +2208,48 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             serialized = json.dumps(session, ensure_ascii=False)
             self.assertNotIn("secret-live-agents", serialized)
             self.assertNotIn("secret provider output", serialized)
+
+    def test_check_session_requires_presence_after_process_start(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(
+                root,
+                "agent-a",
+                status="working",
+                now=datetime(2999, 1, 1, 0, 0, tzinfo=UTC),
+            )
+            before_roster = (root / "live_agents.json").read_text(encoding="utf-8")
+
+            class CheckSupervisor:
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "started_at": "2999-01-01T00:01:00+00:00",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+            session = check_live_agent_session(
+                root,
+                CheckSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            self.assertEqual(session["status"], "degraded")
+            self.assertEqual(session["connection"]["connected"], 0)
+            self.assertEqual(session["connection"]["attention"], ["agent-a:not_reconnected"])
+            self.assertEqual((root / "live_agents.json").read_text(encoding="utf-8"), before_roster)
 
     def test_check_session_uses_read_only_process_snapshot_when_available(self):
         with tempfile.TemporaryDirectory() as temp_dir:

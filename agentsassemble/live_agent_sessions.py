@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from agentsassemble.config import load_council_config
@@ -114,6 +115,7 @@ def start_live_agent_session(
         output_root,
         meeting_id=clean_meeting_id,
         expected_agent_ids=expected_agent_ids,
+        process_group=group,
         timeout_seconds=connect_timeout_seconds,
     )
     status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "starting"
@@ -189,6 +191,7 @@ def resume_live_agent_session(
         output_root,
         meeting_id=clean_meeting_id,
         expected_agent_ids=expected_agent_ids,
+        process_group=group,
         timeout_seconds=connect_timeout_seconds,
     )
     status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "starting"
@@ -220,7 +223,12 @@ def check_live_agent_session(
     expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
     group = _snapshot_process_group(process_supervisor, clean_group_id)
     process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=clean_meeting_id)
-    connection = _connection_snapshot(output_root, meeting_id=clean_meeting_id, expected_agent_ids=expected_agent_ids)
+    connection = _connection_snapshot(
+        output_root,
+        meeting_id=clean_meeting_id,
+        expected_agent_ids=expected_agent_ids,
+        process_group=group,
+    )
     status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "degraded"
     return {
         "status": status,
@@ -282,6 +290,7 @@ def restart_live_agent_session(
         output_root,
         meeting_id=clean_meeting_id,
         expected_agent_ids=expected_agent_ids,
+        process_group=group,
         timeout_seconds=connect_timeout_seconds,
     )
     status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "starting"
@@ -337,6 +346,7 @@ def recover_live_agent_session(
         output_root,
         meeting_id=clean_meeting_id,
         expected_agent_ids=expected_agent_ids,
+        process_group=group,
         timeout_seconds=connect_timeout_seconds,
     )
     status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "starting"
@@ -748,19 +758,32 @@ def _wait_for_connections(
     *,
     meeting_id: str,
     expected_agent_ids: list[str],
+    process_group: object = None,
     timeout_seconds: float,
 ) -> dict[str, object]:
     timeout = max(0.0, float(timeout_seconds))
     deadline = time.monotonic() + timeout
     while True:
-        connection = _connection_snapshot(output_root, meeting_id=meeting_id, expected_agent_ids=expected_agent_ids)
+        connection = _connection_snapshot(
+            output_root,
+            meeting_id=meeting_id,
+            expected_agent_ids=expected_agent_ids,
+            process_group=process_group,
+        )
         if connection["connected"] == connection["expected"] or time.monotonic() >= deadline:
             return connection
         time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
 
 
-def _connection_snapshot(output_root: Path, *, meeting_id: str, expected_agent_ids: list[str]) -> dict[str, object]:
+def _connection_snapshot(
+    output_root: Path,
+    *,
+    meeting_id: str,
+    expected_agent_ids: list[str],
+    process_group: object = None,
+) -> dict[str, object]:
     agents = {str(agent.get("agent_id") or ""): agent for agent in read_live_agents(output_root)}
+    group_payload = process_group if isinstance(process_group, dict) else {}
     connected_agent_ids = []
     attention = []
     for agent_id in expected_agent_ids:
@@ -773,6 +796,9 @@ def _connection_snapshot(output_root: Path, *, meeting_id: str, expected_agent_i
         if agent_meeting_id != meeting_id:
             attention.append(f"{agent_id}:wrong_meeting")
             continue
+        if _agent_last_seen_before_process_start(agent, group_payload):
+            attention.append(f"{agent_id}:not_reconnected")
+            continue
         if status in {"online", "working"}:
             connected_agent_ids.append(agent_id)
         else:
@@ -784,6 +810,26 @@ def _connection_snapshot(output_root: Path, *, meeting_id: str, expected_agent_i
         "connected_agent_ids": connected_agent_ids,
         "attention": attention,
     }
+
+
+def _agent_last_seen_before_process_start(agent: dict[str, object], group: dict[str, object]) -> bool:
+    group_started_at = _parse_public_timestamp(group.get("started_at"))
+    agent_last_seen_at = _parse_public_timestamp(agent.get("last_seen_at"))
+    if group_started_at is None or agent_last_seen_at is None:
+        return False
+    return agent_last_seen_at < group_started_at
+
+
+def _parse_public_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _validate_stop_group_matches_meeting(
