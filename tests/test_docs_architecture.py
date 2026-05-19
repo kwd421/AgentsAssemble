@@ -199,6 +199,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("--status error", doc)
         self.assertIn("--last-error", doc)
         self.assertIn("--last-observed-live-event-id", doc)
+        self.assertIn("persisted heartbeat acknowledgement", doc)
         self.assertIn("the final heartbeat can report `offline` while preserving `last_error`", doc)
         self.assertIn("reuse `last_observed_event_id`", doc)
         self.assertIn("does not resume old resident agents except pending auto-restart records", doc)

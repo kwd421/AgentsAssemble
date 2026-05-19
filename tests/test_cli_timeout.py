@@ -314,6 +314,50 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("claude-code-live: error", stdout.getvalue())
 
+    def test_live_agent_heartbeat_json_prints_cursor_metadata(self):
+        stdout = StringIO()
+        response = {
+            "agent": {
+                "agent_id": "claude-code-live",
+                "status": "online",
+                "last_observed_event_id": "evt1",
+                "last_observed_live_event_id": "live-evt1",
+            }
+        }
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "heartbeat",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-code-live",
+                        "--status",
+                        "online",
+                        "--last-observed-event-id",
+                        "evt1",
+                        "--last-observed-live-event-id",
+                        "live-evt1",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents/claude-code-live/heartbeat",
+            method="POST",
+            payload={
+                "status": "online",
+                "last_observed_event_id": "evt1",
+                "last_observed_live_event_id": "live-evt1",
+            },
+        )
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["agent"]["last_observed_event_id"], "evt1")
+        self.assertEqual(payload["agent"]["last_observed_live_event_id"], "live-evt1")
+
     def test_live_agent_heartbeat_can_clear_stale_error_metadata(self):
         with patch(
             "agentsassemble.cli._request_json",

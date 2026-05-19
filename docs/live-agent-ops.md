@@ -1036,10 +1036,11 @@ python3 -m agentsassemble.cli live-agent heartbeat \
   --last-error "delegate command failed" \
   --last-observed-event-id evt1 \
   --last-observed-live-event-id live_evt1 \
-  --last-reply-at 2026-05-17T12:00:00+00:00
+  --last-reply-at 2026-05-17T12:00:00+00:00 \
+  --json
 ```
 
-That command writes the same `last_error`, `last_observed_event_id`, and `last_reply_at` fields used by resident runners, so non-runner agents can stay visible in the roster without inventing a separate status path.
+That command writes the same `last_error`, `last_observed_event_id`, `last_observed_live_event_id`, and `last_reply_at` fields used by resident runners, so non-runner agents can stay visible in the roster without inventing a separate status path. Use `--json` when an external agent wrapper needs to verify the persisted heartbeat acknowledgement, including both cursor fields, instead of parsing the compact `agent-id: status` line.
 
 ## Claude And Gemini CLI Smoke
 

@@ -206,6 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_heartbeat.add_argument("--last-reply-at", default=None)
     live_heartbeat.add_argument("--last-observed-event-id", default=None)
     live_heartbeat.add_argument("--last-observed-live-event-id", default=None)
+    live_heartbeat.add_argument("--json", action="store_true", dest="as_json", help="Print the raw heartbeat response.")
 
     live_engagement = live_agent_subparsers.add_parser("engagement", parents=[live_server], help="Update a live agent engagement mode.")
     live_engagement.add_argument("--agent-id", required=True)
@@ -682,7 +683,10 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
                 payload=_heartbeat_payload(args),
             )
             agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
-            print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('status') or args.status}")
+            if args.as_json:
+                print(json.dumps(response, ensure_ascii=False, indent=2))
+            else:
+                print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('status') or args.status}")
             return 0
         if args.live_agent_command == "engagement":
             return _run_live_agent_engagement(args)
