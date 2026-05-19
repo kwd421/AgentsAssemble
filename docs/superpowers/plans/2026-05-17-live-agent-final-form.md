@@ -3519,6 +3519,51 @@ Document that resident subprocess failures do not copy command args, stdout, or 
 
 ---
 
+### Task 96: Redact Runner Room/Post Failure Heartbeats
+
+**Goal:** Keep transient room-read and reply-post failure evidence useful in presence without copying URLs, config paths, tokens, or command-like details into `last_error`.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_runner.py`
+
+- [x] **Step 1: Add RED coverage for sensitive transient room reads**
+
+Cover a bounded resident run where the first `/room` snapshot succeeds, then a later read-only `/room` request fails with a URL, config filename, and token. The runner must keep polling, send an `error` heartbeat with `Resident room read error details redacted.`, and keep the same sanitized value in runner-local `last_error`.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_redacts_sensitive_transient_room_failure_error
+```
+
+Expected: fail before implementation because the transient room failure path copies `str(error)` into presence.
+
+- [x] **Step 2: Add RED coverage for sensitive reply-post failures**
+
+Cover lobby and official-turn post failures after the provider command returns a reply. The runner must preserve the original raised post exception for the supervisor, but the attempted `error` heartbeat and runner-local `last_error` must use `Resident reply post error details redacted.` and keep the relevant observed cursor.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_redacts_sensitive_lobby_post_failure_heartbeat \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_redacts_sensitive_official_turn_post_failure_heartbeat
+```
+
+Expected: fail before implementation because reply post failures copy `str(error)` into presence.
+
+- [x] **Step 3: Sanitize room/post errors at runner boundaries**
+
+At the post-start room read recovery path and the reply-post error-recording path, pass the exception through the resident surface sanitizer before assigning `last_error` or sending heartbeat evidence. Keep safe short messages visible, keep first room read failures strict, and keep reply-post exceptions re-raised unchanged.
+
+- [x] **Step 4: Document sanitized runner boundary errors**
+
+Document that transient room-read and reply-post heartbeat `last_error` values are sanitized before presence, while raw local exceptions/log files are not promised to be scrubbed by this runner boundary.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

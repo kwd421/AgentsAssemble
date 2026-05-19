@@ -708,6 +708,43 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(len(command_calls), 1)
         self.assertEqual(lobby_payloads[0]["source_event_id"], "evt1")
 
+    def test_runner_redacts_sensitive_transient_room_failure_error(self):
+        clock = FakeClock()
+        calls = []
+        room_reads = 0
+
+        def request_json(url, *, method="GET", payload=None):
+            nonlocal room_reads
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            if url.endswith("/room"):
+                room_reads += 1
+                if room_reads == 1:
+                    return {"lobby_events": []}
+                raise ConnectionError("room read failed for http://room.local/private/live-agents.json token=secret-token")
+            return {}
+
+        runner = LiveAgentRunner(
+            config(max_ticks=2, cooldown=0.0),
+            request_json=request_json,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        error_payloads = [
+            payload for url, method, payload in calls if url.endswith("/heartbeat") and payload["status"] == "error"
+        ]
+        self.assertEqual(error_payloads[-1]["last_error"], "Resident room read error details redacted.")
+        self.assertEqual(runner.last_error, "Resident room read error details redacted.")
+        self.assertNotIn("secret-token", error_payloads[-1]["last_error"])
+        self.assertNotIn("live-agents.json", error_payloads[-1]["last_error"])
+
     def test_runner_survives_transient_room_failure_when_error_heartbeat_fails(self):
         clock = FakeClock()
         calls = []
@@ -910,6 +947,42 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(error_heartbeats[-1]["last_observed_event_id"], "evt1")
         self.assertEqual(heartbeat_statuses[-1], "offline")
 
+    def test_runner_redacts_sensitive_lobby_post_failure_heartbeat(self):
+        clock = FakeClock()
+        calls = []
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "게시 실패를 남겨줘"}]}
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            if url.endswith("/room"):
+                return room
+            if url.endswith("/lobby"):
+                raise RuntimeError("lobby post failed for /private/live-agents.json token=secret-token")
+            return {}
+
+        runner = LiveAgentRunner(
+            config(),
+            request_json=request_json,
+            command_runner=lambda command, prompt, *, timeout_seconds: "reply that cannot post",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "lobby post failed"):
+            runner.run()
+
+        error_heartbeats = [
+            payload for url, method, payload in calls if url.endswith("/heartbeat") and payload["status"] == "error"
+        ]
+        self.assertEqual(error_heartbeats[-1]["last_error"], "Resident reply post error details redacted.")
+        self.assertEqual(runner.last_error, "Resident reply post error details redacted.")
+        self.assertNotIn("secret-token", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("live-agents.json", error_heartbeats[-1]["last_error"])
+
     def test_runner_records_official_turn_post_failure_before_raising(self):
         clock = FakeClock()
         calls = []
@@ -956,6 +1029,55 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertTrue(error_heartbeats)
         self.assertEqual(error_heartbeats[-1]["last_error"], "official turn post failed")
         self.assertEqual(error_heartbeats[-1]["last_observed_live_event_id"], "turn-request-1")
+
+    def test_runner_redacts_sensitive_official_turn_post_failure_heartbeat(self):
+        clock = FakeClock()
+        calls = []
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [],
+            "live_events": [
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "민감한 공식 게시 실패를 남겨줘",
+                }
+            ],
+        }
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            if url.endswith("/room"):
+                return room
+            if url.endswith("/official-turn"):
+                raise RuntimeError("official turn post failed for /private/live-agents.json token=secret-token")
+            return {}
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1"),
+            request_json=request_json,
+            command_runner=lambda command, prompt, *, timeout_seconds: "공식 답변",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "official turn post failed"):
+            runner.run()
+
+        error_heartbeats = [
+            payload for url, method, payload in calls if url.endswith("/heartbeat") and payload["status"] == "error"
+        ]
+        self.assertEqual(error_heartbeats[-1]["last_error"], "Resident reply post error details redacted.")
+        self.assertEqual(error_heartbeats[-1]["last_observed_live_event_id"], "turn-request-1")
+        self.assertEqual(runner.last_error, "Resident reply post error details redacted.")
+        self.assertNotIn("secret-token", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("live-agents.json", error_heartbeats[-1]["last_error"])
 
     def test_runner_does_not_mask_lobby_post_failure_when_error_heartbeat_fails(self):
         clock = FakeClock()

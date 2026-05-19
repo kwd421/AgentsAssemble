@@ -93,7 +93,7 @@ class LiveAgentRunner:
         except Exception as error:
             if not self.seen_room_snapshot or self.stop_event.is_set():
                 raise
-            self.last_error = str(error)
+            self.last_error = _safe_room_read_error(error)
             self.transient_room_error_active = True
             self._heartbeat_due_safely("error", last_error=self.last_error, **self._cursor_metadata())
             return 0
@@ -276,7 +276,7 @@ class LiveAgentRunner:
         if self.stop_event.is_set():
             return
         self.transient_room_error_active = False
-        self.last_error = str(error)
+        self.last_error = _safe_reply_post_error(error)
         self.last_error_at = self.now_fn()
         self._heartbeat_due_safely(
             "error",
@@ -995,6 +995,29 @@ def _safe_provider_command_error(error: Exception) -> str:
     if not text:
         return "Resident command failed."
     return "Resident command error details redacted." if _looks_sensitive_error(text) else text
+
+
+def _safe_room_read_error(error: Exception) -> str:
+    return _safe_resident_surface_error(
+        error,
+        fallback_label="Resident room read failed.",
+        redacted_label="Resident room read error details redacted.",
+    )
+
+
+def _safe_reply_post_error(error: Exception) -> str:
+    return _safe_resident_surface_error(
+        error,
+        fallback_label="Resident reply post failed.",
+        redacted_label="Resident reply post error details redacted.",
+    )
+
+
+def _safe_resident_surface_error(error: Exception, *, fallback_label: str, redacted_label: str) -> str:
+    text = str(error).strip()
+    if not text:
+        return fallback_label
+    return redacted_label if _looks_sensitive_error(text) else text
 
 
 def resident_connection_kind_error() -> str:
