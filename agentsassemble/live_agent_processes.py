@@ -140,7 +140,7 @@ class LiveAgentProcessSupervisor:
             process = self._processes.get(clean_group_id)
             if process is not None and _poll_process(process) is None:
                 raise ValueError(f"Live agent group {clean_group_id} is already running.")
-            config_path = Path(str(record.get("config_path") or ""))
+            config_path = _persisted_config_path_or_raise(record, clean_group_id, action="restart")
             server = str(record.get("server") or "")
             if not server:
                 raise ValueError(f"Live agent group {clean_group_id} has no server to restart.")
@@ -172,7 +172,7 @@ class LiveAgentProcessSupervisor:
                 raise ValueError(f"Live agent group {clean_group_id} is already running.")
             if previous_status not in {"unknown", "error"}:
                 raise ValueError(f"Live agent group {clean_group_id} is {previous_status}; use restart.")
-            config_path = Path(str(record.get("config_path") or ""))
+            config_path = _persisted_config_path_or_raise(record, clean_group_id, action="recover")
             server = str(record.get("server") or "")
             if not server:
                 raise ValueError(f"Live agent group {clean_group_id} has no server to recover.")
@@ -817,6 +817,13 @@ def read_live_agent_process_event_history(
 def clean_live_agent_group_id(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value or "").strip()).strip(".-")
     return cleaned or "live-agents"
+
+
+def _persisted_config_path_or_raise(record: dict[str, object], group_id: str, *, action: str) -> Path:
+    raw_path = str(record.get("config_path") or "").strip()
+    if not raw_path:
+        raise ValueError(f"Live agent group {group_id} has no config to {action}.")
+    return Path(raw_path)
 
 
 def _clean_group_id(value: str) -> str:

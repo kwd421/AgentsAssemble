@@ -3194,6 +3194,49 @@ Document that `working` is operator evidence after event selection, not a readin
 
 ---
 
+### Task 89: Process Restart And Recovery Refuse Blank Launch Config
+
+**Goal:** Keep direct low-level process restart/recovery controls from treating a blank persisted `config_path` as the current directory.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+
+- [x] **Step 1: Add RED coverage for blank restart config**
+
+Cover a stopped historical process record with a server but blank `config_path`. `restart_group()` must raise a clear missing-config error before preflight, process launch, or lifecycle event writes.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_restart_group_refuses_blank_persisted_config_before_preflight
+```
+
+Expected: fail before implementation because `Path("")` is treated as the current directory and reaches the preflight/load path.
+
+- [x] **Step 2: Add RED coverage for blank recovery config**
+
+Cover an error historical process record with whitespace-only `config_path`. `recover_group()` must raise a clear missing-config error before preflight, process launch, or lifecycle event writes.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_recover_group_refuses_blank_persisted_config_before_preflight
+```
+
+Expected: fail before implementation because whitespace reaches the generic file-not-found path.
+
+- [x] **Step 3: Guard persisted process launch config**
+
+Normalize persisted `config_path` at the direct restart/recover boundary and refuse blank values before calling the shared start/preflight path.
+
+- [x] **Step 4: Document the direct process control error boundary**
+
+Document that direct restart/recovery controls refuse blank persisted launch config before preflight or process launch.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

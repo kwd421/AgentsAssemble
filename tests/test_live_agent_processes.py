@@ -2680,6 +2680,55 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(persisted["groups"][0]["agents"], restarted["agents"])
         self.assertEqual(len(launched), 1)
 
+    def test_restart_group_refuses_blank_persisted_config_before_preflight(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            state_path = runs_dir / "processes.json"
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "stopped",
+                                "pid": None,
+                                "config_path": "",
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "2026-05-17T12:01:00+00:00",
+                                "returncode": 0,
+                                "last_error": "",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            original_state = state_path.read_text(encoding="utf-8")
+            preflights = []
+            launches = []
+
+            def preflight_checker(path, *, server_override=None):
+                preflights.append((path, server_override))
+                return {"status": "ok", "checks": [], "agents": []}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: launches.append(command) or FakeProcess(pid=6789),
+                preflight_checker=preflight_checker,
+            )
+
+            with self.assertRaisesRegex(ValueError, "has no config to restart"):
+                supervisor.restart_group("crew")
+
+            self.assertEqual(preflights, [])
+            self.assertEqual(launches, [])
+            self.assertEqual(state_path.read_text(encoding="utf-8"), original_state)
+            self.assertFalse((runs_dir / "events.jsonl").exists())
+
     def test_recover_group_relaunches_unknown_historical_record_with_recovery_evidence(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -2754,6 +2803,55 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(events[-1]["status"], "running")
         self.assertEqual(events[-1]["previous_status"], "unknown")
         self.assertEqual(len(launched), 1)
+
+    def test_recover_group_refuses_blank_persisted_config_before_preflight(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            state_path = runs_dir / "processes.json"
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "error",
+                                "pid": None,
+                                "config_path": "   ",
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "2026-05-17T12:01:00+00:00",
+                                "returncode": 1,
+                                "last_error": "old crash",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            original_state = state_path.read_text(encoding="utf-8")
+            preflights = []
+            launches = []
+
+            def preflight_checker(path, *, server_override=None):
+                preflights.append((path, server_override))
+                return {"status": "ok", "checks": [], "agents": []}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: launches.append(command) or FakeProcess(pid=6789),
+                preflight_checker=preflight_checker,
+            )
+
+            with self.assertRaisesRegex(ValueError, "has no config to recover"):
+                supervisor.recover_group("crew")
+
+            self.assertEqual(preflights, [])
+            self.assertEqual(launches, [])
+            self.assertEqual(state_path.read_text(encoding="utf-8"), original_state)
+            self.assertFalse((runs_dir / "events.jsonl").exists())
 
     def test_recover_group_refuses_owned_running_group(self):
         with tempfile.TemporaryDirectory() as temp_dir:
