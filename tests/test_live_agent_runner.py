@@ -1099,6 +1099,37 @@ class LiveAgentRunnerTests(unittest.TestCase):
         ]
         self.assertEqual(len(online_heartbeats), 2)
 
+    def test_idle_runner_survives_transient_periodic_heartbeat_failure(self):
+        clock = FakeClock()
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/room"):
+                return {"lobby_events": []}
+            if url.endswith("/heartbeat"):
+                if (payload or {}).get("status") == "online" and len(
+                    [call for call in calls if call[0].endswith("/heartbeat") and (call[2] or {}).get("status") == "online"]
+                ) == 2:
+                    raise ConnectionError("transient heartbeat failure")
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            return {}
+
+        runner = LiveAgentRunner(
+            config(max_ticks=2, poll_interval=11.0, heartbeat_interval=10.0),
+            request_json=request_json,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        heartbeat_statuses = [payload["status"] for url, method, payload in calls if url.endswith("/heartbeat")]
+        self.assertEqual(heartbeat_statuses, ["online", "online", "offline"])
+
     def test_group_config_preserves_zero_overrides(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "live-agents.json"

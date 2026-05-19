@@ -273,14 +273,20 @@ class LiveAgentRunner:
         if self.config.heartbeat_interval <= 0:
             return
         if self.last_heartbeat_at is None:
-            self._heartbeat("online", **self._cursor_metadata())
+            self._heartbeat_due_safely("online", **self._cursor_metadata())
             return
         elapsed = (self.now_fn() - self.last_heartbeat_at).total_seconds()
         if elapsed >= self.config.heartbeat_interval:
             if self._in_failure_backoff():
-                self._heartbeat("error", last_error=self.last_error, **self._cursor_metadata())
+                self._heartbeat_due_safely("error", last_error=self.last_error, **self._cursor_metadata())
                 return
-            self._heartbeat("online", **self._cursor_metadata())
+            self._heartbeat_due_safely("online", **self._cursor_metadata())
+
+    def _heartbeat_due_safely(self, status: str, **metadata: object) -> None:
+        try:
+            self._heartbeat(status, **metadata)
+        except Exception:
+            return
 
     def _room(self) -> dict[str, object]:
         room = self.request_json(_server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/room"))
