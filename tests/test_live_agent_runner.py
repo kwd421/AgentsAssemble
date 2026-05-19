@@ -1204,6 +1204,41 @@ class LiveAgentRunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Live agent command entries must be strings."):
                 load_group_configs(path)
 
+    def test_group_config_rejects_non_finite_timing_values(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "poll_interval": float("nan"),
+                        "agents": [
+                            {"agent_id": "agent-a", "command": ["python3"]},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "Live agent poll_interval must be a finite non-negative number."):
+                load_group_configs(path)
+
+    def test_group_config_rejects_negative_agent_timing_values(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {"agent_id": "agent-a", "command": ["python3"], "cooldown": -1},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "Live agent cooldown must be a finite non-negative number."):
+                load_group_configs(path)
+
     def test_group_config_preserves_live_session_connection_kind(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "live-agents.json"

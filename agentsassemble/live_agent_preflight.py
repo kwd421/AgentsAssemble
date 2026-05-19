@@ -18,6 +18,7 @@ from agentsassemble.live_agent_runner import (
     ResidentAgentConfig,
     SUPPORTED_RESIDENT_CONNECTION_KINDS,
     live_agent_command_parts,
+    live_agent_nonnegative_float,
     resident_connection_kind_error,
 )
 from agentsassemble.remote_bridge_config import remote_bridge_auth_ref_available, remote_bridge_endpoint_error
@@ -166,9 +167,9 @@ def _load_preflight_configs(path: Path, *, server_override: str | None = None) -
         raise ValueError("Live agent group config must be a JSON object.")
     server = str(server_override or data.get("server") or "http://127.0.0.1:8765")
     defaults = {
-        "poll_interval": float(data.get("poll_interval", 2.0)),
-        "heartbeat_interval": float(data.get("heartbeat_interval", 30.0)),
-        "cooldown": float(data.get("cooldown", 5.0)),
+        "poll_interval": live_agent_nonnegative_float(data.get("poll_interval"), 2.0, "poll_interval"),
+        "heartbeat_interval": live_agent_nonnegative_float(data.get("heartbeat_interval"), 30.0, "heartbeat_interval"),
+        "cooldown": live_agent_nonnegative_float(data.get("cooldown"), 5.0, "cooldown"),
         "max_chain_depth": int(data.get("max_chain_depth", 1)),
         "max_ticks": int(data.get("max_ticks", 0)),
     }
@@ -210,9 +211,13 @@ def _preflight_config_from_mapping(
         engagement_mode=str(data.get("engagement_mode") or "mentioned"),
         command=command_parts,
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),
-        poll_interval=float(_value_or_default(data.get("poll_interval"), defaults["poll_interval"])),
-        heartbeat_interval=float(_value_or_default(data.get("heartbeat_interval"), defaults["heartbeat_interval"])),
-        cooldown=float(data.get("cooldown") if data.get("cooldown") is not None else defaults["cooldown"]),
+        poll_interval=live_agent_nonnegative_float(data.get("poll_interval"), defaults["poll_interval"], "poll_interval"),
+        heartbeat_interval=live_agent_nonnegative_float(
+            data.get("heartbeat_interval"),
+            defaults["heartbeat_interval"],
+            "heartbeat_interval",
+        ),
+        cooldown=live_agent_nonnegative_float(data.get("cooldown"), defaults["cooldown"], "cooldown"),
         max_chain_depth=int(_value_or_default(data.get("max_chain_depth"), defaults["max_chain_depth"])),
         max_ticks=int(data.get("max_ticks") if data.get("max_ticks") is not None else defaults["max_ticks"]),
     )

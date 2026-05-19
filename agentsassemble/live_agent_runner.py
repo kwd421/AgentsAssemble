@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import threading
 from dataclasses import dataclass
@@ -608,9 +609,9 @@ def load_group_configs(
         raise ValueError("Live agent group config must be a JSON object.")
     server = str(server_override or data.get("server") or "http://127.0.0.1:8765")
     defaults = {
-        "poll_interval": float(data.get("poll_interval", 2.0)),
-        "heartbeat_interval": float(data.get("heartbeat_interval", 30.0)),
-        "cooldown": float(data.get("cooldown", 5.0)),
+        "poll_interval": live_agent_nonnegative_float(data.get("poll_interval"), 2.0, "poll_interval"),
+        "heartbeat_interval": live_agent_nonnegative_float(data.get("heartbeat_interval"), 30.0, "heartbeat_interval"),
+        "cooldown": live_agent_nonnegative_float(data.get("cooldown"), 5.0, "cooldown"),
         "max_chain_depth": int(data.get("max_chain_depth", 1)),
         "max_ticks": int(data.get("max_ticks", 0)),
     }
@@ -686,9 +687,13 @@ def _config_from_mapping(
         engagement_mode=str(data.get("engagement_mode") or "mentioned"),
         command=command_parts,
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),
-        poll_interval=float(_value_or_default(data.get("poll_interval"), defaults["poll_interval"])),
-        heartbeat_interval=float(_value_or_default(data.get("heartbeat_interval"), defaults["heartbeat_interval"])),
-        cooldown=float(data.get("cooldown") if data.get("cooldown") is not None else defaults["cooldown"]),
+        poll_interval=live_agent_nonnegative_float(data.get("poll_interval"), defaults["poll_interval"], "poll_interval"),
+        heartbeat_interval=live_agent_nonnegative_float(
+            data.get("heartbeat_interval"),
+            defaults["heartbeat_interval"],
+            "heartbeat_interval",
+        ),
+        cooldown=live_agent_nonnegative_float(data.get("cooldown"), defaults["cooldown"], "cooldown"),
         max_chain_depth=int(_value_or_default(data.get("max_chain_depth"), defaults["max_chain_depth"])),
         max_ticks=int(data.get("max_ticks") if data.get("max_ticks") is not None else defaults["max_ticks"]),
     )
@@ -702,6 +707,19 @@ def live_agent_command_parts(value: object) -> list[str]:
     if not all(isinstance(part, str) for part in value):
         raise ValueError("Live agent command entries must be strings.")
     return list(value)
+
+
+def live_agent_nonnegative_float(value: object, default: int | float, field_name: str) -> float:
+    raw_value = default if value is None else value
+    if isinstance(raw_value, bool):
+        raise ValueError(f"Live agent {field_name} must be a finite non-negative number.")
+    try:
+        parsed = float(raw_value)
+    except (TypeError, ValueError):
+        raise ValueError(f"Live agent {field_name} must be a finite non-negative number.") from None
+    if not math.isfinite(parsed) or parsed < 0:
+        raise ValueError(f"Live agent {field_name} must be a finite non-negative number.")
+    return parsed
 
 
 def _lobby_events(room: dict[str, object]) -> list[dict[str, object]]:
