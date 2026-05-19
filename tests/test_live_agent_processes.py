@@ -2326,6 +2326,37 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(recovered["crashed"]["recent_events"], [])
         self.assertEqual(persisted_by_id["crashed"]["pid"], 3333)
 
+    def test_persisted_invalid_process_status_is_reported_unknown(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            (runs_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "running/../../secret",
+                                "pid": 4444,
+                                "config_path": "configs/live-agents.example.json",
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "",
+                                "returncode": None,
+                                "last_error": "",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            group = LiveAgentProcessSupervisor(root).snapshot_groups()[0]
+
+        self.assertEqual(group["status"], "unknown")
+
     def test_list_groups_includes_bounded_log_tail_without_persisting_it(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -31,6 +31,7 @@ SAFE_WATCHDOG_REASON_PATTERN = re.compile(
     r"^(?:(?:missing|stale|offline|error) manifest agent|wrong meeting manifest agent) [A-Za-z0-9_.-]{1,64}$"
 )
 WATCHDOG_REASON_EVENT_TYPES = {"stale_watchdog", "stale_watchdog_stop_failed"}
+PROCESS_RECORD_STATUSES = {"running", "restarting", "stopped", "error", "unknown"}
 
 
 class LiveAgentProcessSupervisor:
@@ -922,7 +923,7 @@ def _stop_signal(name: str) -> int | None:
 def _process_record(payload: dict[str, object]) -> dict[str, object]:
     return {
         "group_id": _clean_group_id(str(payload.get("group_id") or "")),
-        "status": str(payload.get("status") or "unknown"),
+        "status": _process_record_status(payload.get("status")),
         "pid": payload.get("pid") if isinstance(payload.get("pid"), int) else None,
         "meeting_id": _clean_meeting_id(payload.get("meeting_id")),
         "config_path": str(payload.get("config_path") or ""),
@@ -942,6 +943,11 @@ def _process_record(payload: dict[str, object]) -> dict[str, object]:
         "agents": _safe_agent_manifest(payload.get("agents")),
         "recovered_from_status": str(payload.get("recovered_from_status") or ""),
     }
+
+
+def _process_record_status(value: object) -> str:
+    status = str(value or "unknown").strip()
+    return status if status in PROCESS_RECORD_STATUSES else "unknown"
 
 
 def _read_log_tail(path: Path, byte_limit: int) -> str:
