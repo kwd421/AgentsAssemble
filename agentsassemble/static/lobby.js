@@ -123,6 +123,9 @@ export function renderLobby(options = {}) {
     event.preventDefault();
     await startLiveAgentProcessGroup(event.currentTarget);
   });
+  lobby.querySelector("#live-agent-process-stop-running")?.addEventListener("click", async () => {
+    await stopRunningLiveAgentProcessGroups();
+  });
   lobby.querySelector("#live-agent-session-start")?.addEventListener("click", async () => {
     await startLiveAgentSession(lobby);
   });
@@ -528,6 +531,7 @@ function renderLiveAgentProcessControls() {
         <input id="live-agent-process-restart-backoff" type="number" min="0" max="3600" step="1" value="5" aria-label="restart backoff seconds" />
         <input id="live-agent-process-stale-restart-after" type="number" min="0" max="86400" step="1" value="0" aria-label="stale restart after seconds" />
         <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
+        <button type="button" id="live-agent-process-stop-running" ${processActionsDisabled ? "disabled" : ""}>실행중지</button>
         <button type="button" id="live-agent-session-start" ${processActionsDisabled ? "disabled" : ""}>세션시작</button>
         <button type="button" id="live-agent-session-resume" ${processActionsDisabled ? "disabled" : ""}>세션재개</button>
         <button type="button" id="live-agent-session-restart" ${processActionsDisabled ? "disabled" : ""}>세션재시작</button>
@@ -567,7 +571,7 @@ function renderLiveAgentProcessControls() {
 }
 
 function liveAgentProcessActionBusy() {
-  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || Boolean(state.liveAgentProcessRowActionRunning);
+  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || Boolean(state.liveAgentProcessRowActionRunning) || state.liveAgentProcessBulkStopRunning;
 }
 
 function defaultOfficialRoundId(meeting) {
@@ -1734,6 +1738,34 @@ async function stopLiveAgentSession(lobby) {
   } finally {
     state.liveAgentSessionStopRunning = false;
     await loadLiveAgentOperations({ background: true, force: true });
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function stopRunningLiveAgentProcessGroups() {
+  if (liveAgentProcessActionBusy()) return;
+  state.liveAgentProcessBulkStopRunning = true;
+  state.liveAgentProcessStatus = { message: "실행 중인 상주 그룹 중지 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-processes/stop-running", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    setLiveAgentProcesses(payload.groups || []);
+    state.liveAgentProcessesLoaded = true;
+    const result = payload.result && typeof payload.result === "object" ? payload.result : {};
+    const stopped = Math.max(0, Number(result.stopped_count || 0));
+    const failed = Math.max(0, Number(result.failed_count || 0));
+    const skipped = Math.max(0, Number(result.skipped_count || 0));
+    const suffix = `${failed ? ` · failed ${failed}` : ""}${skipped ? ` · skipped ${skipped}` : ""}`;
+    state.liveAgentProcessStatus = { message: `실행 그룹 ${stopped}개 중지됨${suffix}`, tone: failed ? "error" : "success" };
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `실행 그룹 중지 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    await loadLiveAgentOperations({ background: true, force: true });
+    state.liveAgentProcessBulkStopRunning = false;
     renderLobby({ followLatest: false });
   }
 }

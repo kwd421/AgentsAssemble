@@ -884,6 +884,20 @@ python3 -m agentsassemble.cli live-agent processes restart local-cli-group \
   --server http://127.0.0.1:8765
 ```
 
+When the room has more than one resident group, use the GUI `실행중지` button or the bulk CLI/API path to stop every currently running group and cancel pending auto-restarts in one operator action. This does not attempt to signal historical `unknown`, `error`, or already `stopped` records that the current supervisor does not own.
+
+```bash
+python3 -m agentsassemble.cli live-agent processes stop-running \
+  --server http://127.0.0.1:8765
+
+curl -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{}' \
+  http://127.0.0.1:8765/api/live-agent-processes/stop-running
+```
+
+The bulk stop response reports `stopped_count`, `failed_count`, `skipped_count`, and the corresponding safe group records. The operation ledger records `process.stop_running` with counts and safe group ids only; it does not record config paths, server URLs, commands, auth refs, log tails, prompts, or provider output.
+
 Add `--json` to any process CLI command to print the raw HTTP payload.
 
 The process CLI uses exit code `0` for successful supervisor requests, even when a listed group is `stopped`, `error`, or `unknown`. It uses exit code `2` for argument validation, connection failures, invalid JSON, HTTP errors, missing config files, unknown group ids, and refused restarts.

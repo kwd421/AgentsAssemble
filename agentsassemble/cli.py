@@ -548,6 +548,13 @@ def build_parser() -> argparse.ArgumentParser:
     live_process_stop.add_argument("group_id")
     live_process_stop.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
 
+    live_process_stop_running = live_process_subparsers.add_parser(
+        "stop-running",
+        parents=[live_server],
+        help="Stop every currently running or restarting supervised live-agent process group.",
+    )
+    live_process_stop_running.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
+
     live_process_restart = live_process_subparsers.add_parser("restart", parents=[live_server], help="Restart a supervised live-agent process group.")
     live_process_restart.add_argument("group_id")
     live_process_restart.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
@@ -1706,6 +1713,14 @@ def _run_live_agent_processes(args: argparse.Namespace) -> int:
         )
         _print_live_agent_process_payload(response, as_json=args.as_json, action=args.live_agent_process_command)
         return 0
+    if args.live_agent_process_command == "stop-running":
+        response = _request_json(
+            _server_url(args.server, "/api/live-agent-processes/stop-running"),
+            method="POST",
+            payload={},
+        )
+        _print_live_agent_process_payload(response, as_json=args.as_json, action="stop-running")
+        return 0
     return 1
 
 
@@ -1819,6 +1834,10 @@ def _print_live_agent_process_payload(payload: dict[str, object], *, as_json: bo
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
+    if action == "stop-running":
+        print(_format_live_agent_process_bulk_stop(payload))
+        return
+
     group = payload.get("group") if isinstance(payload.get("group"), dict) else None
     if group is not None:
         print(_format_live_agent_process_action(group, action))
@@ -1831,6 +1850,20 @@ def _print_live_agent_process_payload(payload: dict[str, object], *, as_json: bo
     for item in groups:
         if isinstance(item, dict):
             print(_format_live_agent_process_group(item))
+
+
+def _format_live_agent_process_bulk_stop(payload: dict[str, object]) -> str:
+    result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    stopped_count = _safe_int(result.get("stopped_count"))
+    failed_count = _safe_int(result.get("failed_count"))
+    skipped_count = _safe_int(result.get("skipped_count"))
+    summary = f"Stopped {stopped_count} live-agent process groups"
+    details = []
+    if failed_count:
+        details.append(f"failed {failed_count}")
+    if skipped_count:
+        details.append(f"skipped {skipped_count}")
+    return f"{summary} ({', '.join(details)})" if details else summary
 
 
 def _format_live_agent_process_group(group: dict[str, object]) -> str:

@@ -88,6 +88,37 @@ class LiveAgentProcessSupervisor:
         with self._lock:
             return self._stop_group_unlocked(group_id, timeout_seconds=timeout_seconds)
 
+    def stop_running_groups(self, *, timeout_seconds: float = 5.0) -> dict[str, object]:
+        with self._lock:
+            self._refresh_running_process_exits()
+            stopped: list[dict[str, object]] = []
+            failed: list[dict[str, object]] = []
+            skipped: list[dict[str, object]] = []
+            for group_id, record in list(self._records.items()):
+                status = str(record.get("status") or "")
+                process = self._processes.get(group_id)
+                if status == "restarting" or (status == "running" and process is not None):
+                    try:
+                        stopped.append(self._stop_group_unlocked(group_id, timeout_seconds=timeout_seconds))
+                    except Exception as error:
+                        failed.append(
+                            {
+                                "group_id": group_id,
+                                "status": status,
+                                "error": _safe_stop_failure_message(error),
+                            }
+                        )
+                    continue
+                skipped.append(self._record_for_output(record))
+            return {
+                "stopped_count": len(stopped),
+                "failed_count": len(failed),
+                "skipped_count": len(skipped),
+                "stopped": stopped,
+                "failed": failed,
+                "skipped": skipped,
+            }
+
     def restart_group(self, group_id: str) -> dict[str, object]:
         with self._lock:
             self._refresh_running_groups()
@@ -198,13 +229,16 @@ class LiveAgentProcessSupervisor:
                 self._refresh_running_groups()
 
     def _refresh_running_groups(self) -> None:
+        self._refresh_running_process_exits()
+        self._start_due_auto_restarts()
+        self._restart_stale_watchdog_groups()
+
+    def _refresh_running_process_exits(self) -> None:
         for group_id, process in list(self._processes.items()):
             returncode = _poll_process(process)
             record = self._records.get(group_id)
             if record is not None and record.get("status") == "running" and returncode is not None:
                 self._handle_process_exit(group_id, returncode=returncode, include_recent_events=False)
-        self._start_due_auto_restarts()
-        self._restart_stale_watchdog_groups()
 
     def _start_group_unlocked(
         self,

@@ -508,6 +508,75 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn(str(config_path), operation_text)
             self.assertNotIn(f"http://127.0.0.1:{server.server_port}", operation_text)
 
+    def test_live_agent_process_stop_running_endpoint_records_sanitized_operation(self):
+        class FakeSupervisor:
+            def __init__(self):
+                self.groups = [
+                    {"group_id": "crew-a", "status": "running", "pid": 1111, "config_path": "/tmp/secret-a.json"},
+                    {"group_id": "crew-b", "status": "restarting", "pid": None, "config_path": "/tmp/secret-b.json"},
+                    {"group_id": "old-crew", "status": "unknown", "pid": None, "config_path": "/tmp/secret-c.json"},
+                ]
+                self.stopped_running = False
+
+            def list_groups(self):
+                return list(self.groups)
+
+            def stop_running_groups(self):
+                self.stopped_running = True
+                self.groups = [
+                    {"group_id": "crew-a", "status": "stopped", "pid": None, "config_path": "/tmp/secret-a.json"},
+                    {"group_id": "crew-b", "status": "stopped", "pid": None, "config_path": "/tmp/secret-b.json"},
+                    {"group_id": "old-crew", "status": "unknown", "pid": None, "config_path": "/tmp/secret-c.json"},
+                ]
+                return {
+                    "stopped_count": 2,
+                    "failed_count": 0,
+                    "skipped_count": 1,
+                    "stopped": self.groups[:2],
+                    "failed": [],
+                    "skipped": self.groups[2:],
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            supervisor = FakeSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-processes/stop-running",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=10",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertTrue(supervisor.stopped_running)
+            self.assertEqual(payload["result"]["stopped_count"], 2)
+            self.assertEqual([group["status"] for group in payload["groups"]], ["stopped", "stopped", "unknown"])
+            self.assertEqual(
+                [(operation["operation"], operation["status"], operation["target_id"]) for operation in operations["operations"]],
+                [("process.stop_running", "success", "running-groups")],
+            )
+            details = operations["operations"][0]["details"]
+            self.assertEqual(details["stopped_count"], 2)
+            self.assertEqual(details["failed_count"], 0)
+            self.assertEqual(details["skipped_count"], 1)
+            self.assertEqual(details["stopped_group_ids"], ["crew-a", "crew-b"])
+            operation_text = json.dumps(operations, ensure_ascii=False)
+            self.assertNotIn("/tmp/secret-a.json", operation_text)
+            self.assertNotIn("/tmp/secret-b.json", operation_text)
+
     def test_live_agent_process_start_sanitizes_non_finite_backoff(self):
         class FakeSupervisor:
             def __init__(self):

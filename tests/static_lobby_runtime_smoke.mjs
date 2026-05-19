@@ -194,6 +194,7 @@ function resetState() {
     liveAgentSessionSmokeRunning: false,
     liveAgentReadinessRunning: false,
     liveAgentProcessRowActionRunning: "",
+    liveAgentProcessBulkStopRunning: false,
     liveAgentRoundCallRunning: false,
     liveAgentProcessStatus: null,
     codexSessions: [],
@@ -208,6 +209,7 @@ function installHarness({
   healthPayload = null,
   healthResponse = null,
   processStartPayload = null,
+  processStopRunningPayload = null,
   sessionStartPayload = null,
   sessionResumePayload = null,
   sessionRestartPayload = null,
@@ -268,6 +270,14 @@ function installHarness({
     }
     if (url === "/api/live-agent-processes/start") {
       return jsonResponse(processStartPayload || { group: { group_id: "crew", status: "running" }, groups: [] });
+    }
+    if (url === "/api/live-agent-processes/stop-running") {
+      return jsonResponse(
+        processStopRunningPayload || {
+          result: { stopped_count: 2, failed_count: 0, skipped_count: 0, stopped: [], failed: [], skipped: [] },
+          groups: [],
+        }
+      );
     }
     const processActionMatch = String(url).match(/^\/api\/live-agent-processes\/([^/]+)\/(stop|restart|recover)$/);
     if (processActionMatch) {
@@ -1209,6 +1219,33 @@ test("process row action keeps the panel busy while the request is in flight", a
     requests.some((request) => request.url === "/api/live-agent-processes/running-crew/stop"),
     true
   );
+});
+
+test("bulk stop button posts stop-running and updates process status", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    processStopRunningPayload: {
+      result: { stopped_count: 2, failed_count: 0, skipped_count: 1, stopped: [], failed: [], skipped: [] },
+      groups: [
+        { group_id: "crew-a", status: "stopped" },
+        { group_id: "crew-b", status: "stopped" },
+      ],
+    },
+  });
+  state.liveAgentProcesses = [
+    { group_id: "crew-a", status: "running" },
+    { group_id: "crew-b", status: "restarting" },
+  ];
+
+  renderLobby({ followLatest: false });
+  await document.querySelector("#live-agent-process-stop-running").click();
+
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-processes/stop-running"),
+    true
+  );
+  assert.equal(state.liveAgentProcesses[0].status, "stopped");
+  assert.equal(state.liveAgentProcessStatus.message, "실행 그룹 2개 중지됨 · skipped 1");
 });
 
 test("official round button posts selected meeting round and requests meeting refresh", async () => {

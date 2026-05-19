@@ -3025,6 +3025,23 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.server, "http://room.local")
         self.assertTrue(args.as_json)
 
+    def test_live_agent_processes_stop_running_parser_accepts_json(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "processes",
+                "stop-running",
+                "--server",
+                "http://room.local",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "processes")
+        self.assertEqual(args.live_agent_process_command, "stop-running")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertTrue(args.as_json)
+
     def test_live_agent_processes_list_prints_summary(self):
         payload = {
             "groups": [
@@ -3275,6 +3292,35 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("Stopped crew one (stopped)", output)
         self.assertIn("Restarted crew one (pid 5678)", output)
         self.assertIn("Recovered crew one from unknown (pid 6789)", output)
+
+    def test_live_agent_processes_stop_running_posts_bulk_endpoint(self):
+        payload = {
+            "result": {
+                "stopped_count": 2,
+                "failed_count": 0,
+                "skipped_count": 1,
+                "stopped": [
+                    {"group_id": "crew-a", "status": "stopped"},
+                    {"group_id": "crew-b", "status": "stopped"},
+                ],
+                "failed": [],
+                "skipped": [{"group_id": "old-crew", "status": "unknown"}],
+            },
+            "groups": [],
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "processes", "stop-running", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-processes/stop-running",
+            method="POST",
+            payload={},
+        )
+        self.assertIn("Stopped 2 live-agent process groups", stdout.getvalue())
+        self.assertIn("skipped 1", stdout.getvalue())
 
     def test_live_agent_processes_http_error_body_reaches_stderr(self):
         class BadRequestHandler:

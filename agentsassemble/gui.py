@@ -1536,6 +1536,16 @@ def stop_live_agent_process_payload(
     return _process_payload_with_agent_connection_evidence(response, output_root)
 
 
+def stop_running_live_agent_processes_payload(
+    process_supervisor: LiveAgentProcessSupervisor,
+    *,
+    output_root: Path | None = None,
+) -> dict[str, object]:
+    result = process_supervisor.stop_running_groups()
+    response = {"result": result, "groups": process_supervisor.list_groups()}
+    return _process_payload_with_agent_connection_evidence(response, output_root)
+
+
 def restart_live_agent_process_payload(
     process_supervisor: LiveAgentProcessSupervisor,
     group_id: str,
@@ -1897,6 +1907,25 @@ def _operation_group_id(payload: dict[str, object], group: dict[str, object] | N
     if group is not None and group.get("group_id"):
         return str(group["group_id"])
     return str(payload.get("group_id") or "").strip()
+
+
+def _operation_group_ids(records: object) -> list[str]:
+    if not isinstance(records, list):
+        return []
+    group_ids = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        group_id = str(record.get("group_id") or "").strip()
+        if group_id:
+            group_ids.append(group_id)
+    return group_ids
+
+
+def _process_stop_running_operation_status(result: dict[str, object]) -> str:
+    failed_count = _payload_nonnegative_int(result.get("failed_count"), 0)
+    stopped_count = _payload_nonnegative_int(result.get("stopped_count"), 0)
+    return "success" if failed_count == 0 else "degraded" if stopped_count else "failed"
 
 
 def _operation_agent_engagement(output_root: Path, agent_id: str) -> str:
@@ -3355,6 +3384,42 @@ def _make_handler(
                     },
                 )
                 self._send_json(started)
+                return
+            if parsed.path == "/api/live-agent-processes/stop-running":
+                payload = self._operation_json_payload(operation="process.stop_running", target_id="running-groups")
+                if payload is None:
+                    return
+                try:
+                    stopped = stop_running_live_agent_processes_payload(
+                        live_agent_process_supervisor,
+                        output_root=output_root,
+                    )
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="process.stop_running",
+                        status="failed",
+                        target_id="running-groups",
+                        error=str(error),
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                result = stopped.get("result") if isinstance(stopped.get("result"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="process.stop_running",
+                    status=_process_stop_running_operation_status(result),
+                    target_id="running-groups",
+                    summary="stopped running live-agent process groups",
+                    details={
+                        "stopped_count": _payload_nonnegative_int(result.get("stopped_count"), 0),
+                        "failed_count": _payload_nonnegative_int(result.get("failed_count"), 0),
+                        "skipped_count": _payload_nonnegative_int(result.get("skipped_count"), 0),
+                        "stopped_group_ids": _operation_group_ids(result.get("stopped")),
+                        "failed_group_ids": _operation_group_ids(result.get("failed")),
+                    },
+                )
+                self._send_json(stopped)
                 return
             if parsed.path == "/api/live-agent-preflight":
                 payload = self._operation_json_payload(operation="preflight.check")

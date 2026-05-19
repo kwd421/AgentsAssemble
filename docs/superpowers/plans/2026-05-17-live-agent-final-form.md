@@ -1445,6 +1445,52 @@ Expected: pass.
 
 ---
 
+### Task 46: Bulk Stop Running Process Groups
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `agentsassemble/static/shared.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_static_ui_assets.py`
+
+- [x] **Step 1: Add RED coverage for a safe bulk stop path**
+
+Cover the supervisor stopping owned `running` process groups and canceling `restarting` pending auto-restart groups while skipping stopped or historical records. Cover `assemble live-agent processes stop-running`, `POST /api/live-agent-processes/stop-running`, and the GUI `실행중지` button.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stop_running_groups_stops_owned_running_and_pending_restart_groups
+python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_stop_running_parser_accepts_json tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_stop_running_posts_bulk_endpoint
+python3 -m unittest tests.test_gui_server.GuiServerTests.test_live_agent_process_stop_running_endpoint_records_sanitized_operation
+node tests/static_lobby_runtime_smoke.mjs
+```
+
+Expected: fail before implementation because the supervisor method, CLI subcommand, HTTP endpoint, and GUI button do not exist.
+
+- [x] **Step 2: Implement stop-running across supervisor/API/CLI/GUI**
+
+Add `stop_running_groups()` to the local supervisor. It should refresh process state, stop owned running groups, cancel pending `restarting` groups, skip non-running historical records, aggregate failures without aborting the whole operation, and return stopped/failed/skipped counts. Expose the same behavior through `POST /api/live-agent-processes/stop-running`, `assemble live-agent processes stop-running [--json]`, and the GUI `실행중지` button.
+
+Run the Step 1 commands.
+Expected: pass.
+
+- [x] **Step 3: Document bulk stop operator behavior**
+
+Document that bulk stop is for currently running or pending-restart groups, does not signal historical `unknown`/`error`/`stopped` records, and records only sanitized counts and group ids in `process.stop_running`.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

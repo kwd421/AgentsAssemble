@@ -598,6 +598,88 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             self.assertEqual(record["returncode"], 0)
             self.assertEqual(supervisor.list_groups()[0]["status"], "stopped")
 
+    def test_stop_running_groups_stops_owned_running_and_pending_restart_groups(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=9000 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
+            )
+            supervisor.start_group(config_path=config_path, server="http://room.local", group_id="running-a")
+            supervisor.start_group(config_path=config_path, server="http://room.local", group_id="already-stopped")
+            supervisor.stop_group("already-stopped")
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="pending-restart",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=60,
+            )
+            processes[-1].returncode = 7
+            supervisor.list_groups()
+
+            result = supervisor.stop_running_groups()
+            groups = {group["group_id"]: group for group in supervisor.list_groups()}
+
+        self.assertEqual(result["stopped_count"], 2)
+        self.assertEqual(result["failed_count"], 0)
+        self.assertEqual(result["skipped_count"], 1)
+        self.assertEqual([record["group_id"] for record in result["stopped"]], ["running-a", "pending-restart"])
+        self.assertEqual(groups["running-a"]["status"], "stopped")
+        self.assertEqual(groups["pending-restart"]["status"], "stopped")
+        self.assertEqual(groups["pending-restart"]["next_restart_at"], "")
+        self.assertEqual(groups["already-stopped"]["status"], "stopped")
+        self.assertEqual(processes[0].signals, [signal.SIGINT])
+
+    def test_stop_running_groups_cancels_due_restart_without_launching_again(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            processes = []
+
+            def command_factory(command, **kwargs):
+                process = FakeProcess(pid=9100 + len(processes))
+                processes.append(process)
+                return process
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=command_factory,
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="pending-restart",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=1,
+            )
+            processes[0].returncode = 7
+            supervisor.list_groups()
+            current_time["value"] += timedelta(seconds=2)
+
+            result = supervisor.stop_running_groups()
+            groups = {group["group_id"]: group for group in supervisor.list_groups()}
+
+        self.assertEqual(len(processes), 1)
+        self.assertEqual(result["stopped_count"], 1)
+        self.assertEqual(groups["pending-restart"]["status"], "stopped")
+        self.assertEqual(groups["pending-restart"]["next_restart_at"], "")
+
     def test_start_group_refuses_duplicate_running_group(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
