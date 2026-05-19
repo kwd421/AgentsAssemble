@@ -8,6 +8,7 @@ from typing import Any
 
 
 DEFAULT_INVITE_CONFIG_PATH = Path(".agentsassemble") / "codex-live-session.local.json"
+DEFAULT_LIVE_AGENT_CONFIG_PATH = Path(".agentsassemble") / "live-agents.codex-session.local.json"
 CODEX_LIVE_PROVIDER_ID = "codex-live"
 CODEX_LIVE_PERMISSION_ID = "codex_live_meeting_readonly"
 CODEX_LIVE_MODEL_ID = "local-codex-session"
@@ -148,6 +149,44 @@ def build_codex_live_invite_config(
             ordered_role_ids.append(default_role_id)
     config["agent_bindings"] = [bindings_by_role[ordered_role_id] for ordered_role_id in ordered_role_ids]
     return config
+
+
+def build_codex_live_agent_config(
+    invite_config: dict[str, Any],
+    *,
+    server: str,
+    meeting_id: str = "",
+    engagement_mode: str = "always",
+) -> dict[str, Any]:
+    agents: list[dict[str, Any]] = []
+    for binding in _dict_list(invite_config.get("agent_bindings")):
+        if binding.get("provider_id") != CODEX_LIVE_PROVIDER_ID:
+            continue
+        agent_id = _string_field(binding.get("agent_id")).strip()
+        if not agent_id:
+            raise ValueError("Codex live binding requires agent_id.")
+        agents.append(
+            {
+                "agent_id": agent_id,
+                "display_name": _string_field(binding.get("display_name")).strip() or agent_id,
+                "provider_kind": "codex_live_session",
+                "connection_kind": "live_session",
+                "session_id": _string_field(binding.get("session_id")).strip(),
+                "meeting_id": meeting_id,
+                "engagement_mode": engagement_mode,
+                "timeout_seconds": int(CODEX_LIVE_PROVIDER["timeout_seconds"]),
+            }
+        )
+    if not agents:
+        raise ValueError("No Codex live bindings found.")
+    return {
+        "server": server,
+        "poll_interval": 2,
+        "heartbeat_interval": 30,
+        "cooldown": 5,
+        "max_chain_depth": 1,
+        "agents": agents,
+    }
 
 
 def read_agent_config(path: Path | str) -> dict[str, Any]:

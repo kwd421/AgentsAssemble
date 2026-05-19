@@ -18,6 +18,8 @@ from agentsassemble.bridges.claude_code_bridge import serve_bridge
 from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.codex_sessions import (
     DEFAULT_INVITE_CONFIG_PATH,
+    DEFAULT_LIVE_AGENT_CONFIG_PATH,
+    build_codex_live_agent_config,
     build_codex_live_invite_config,
     list_codex_sessions,
     read_agent_config,
@@ -764,6 +766,17 @@ def build_parser() -> argparse.ArgumentParser:
     session_invite.add_argument("--meeting-id", default="", help="Meeting id for server-side role validation.")
     session_invite.add_argument("--output", default=str(DEFAULT_INVITE_CONFIG_PATH))
     session_invite.add_argument("--json", action="store_true", dest="as_json")
+
+    session_live_agent_config = session_subparsers.add_parser(
+        "live-agent-config",
+        help="Build a resident live-agent run-group config from a Codex invite config.",
+    )
+    session_live_agent_config.add_argument("--input", default=str(DEFAULT_INVITE_CONFIG_PATH), dest="input_path")
+    session_live_agent_config.add_argument("--output", default=str(DEFAULT_LIVE_AGENT_CONFIG_PATH))
+    session_live_agent_config.add_argument("--server", default="http://127.0.0.1:8765")
+    session_live_agent_config.add_argument("--meeting-id", default="")
+    session_live_agent_config.add_argument("--engagement-mode", default="always")
+    session_live_agent_config.add_argument("--json", action="store_true", dest="as_json")
 
     return parser
 
@@ -3680,6 +3693,24 @@ def run_sessions_command(args: argparse.Namespace) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 2
         print(f"Wrote {output_path}")
+        return 0
+    if args.sessions_command == "live-agent-config":
+        try:
+            output_path = Path(args.output)
+            config = build_codex_live_agent_config(
+                read_agent_config(args.input_path),
+                server=args.server,
+                meeting_id=args.meeting_id,
+                engagement_mode=args.engagement_mode,
+            )
+            write_agent_config(output_path, config)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        if args.as_json:
+            print(json.dumps({"output": str(output_path), "config": config}, ensure_ascii=False, indent=2))
+        else:
+            print(f"Wrote {output_path}")
         return 0
     return 1
 

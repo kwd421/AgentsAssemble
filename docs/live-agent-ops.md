@@ -131,6 +131,20 @@ python3 -m agentsassemble.cli sessions invite 019e3038-39cc-76a2-a746-5ba8c0f3b4
 
 Without `--server`, `sessions invite` keeps its local file mode and writes only the selected `--output` config.
 
+Convert the invite config into a resident `run-group` config before starting the invited Codex live sessions:
+
+```bash
+python3 -m agentsassemble.cli sessions live-agent-config \
+  --input .agentsassemble/codex-live-session.local.json \
+  --output .agentsassemble/live-agents.codex-session.local.json \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1 \
+  --engagement-mode moderator_called \
+  --json
+```
+
+The generated resident config uses `provider_kind: "codex_live_session"` and `connection_kind: "live_session"` for each Codex binding, preserves configured session ids, and omits command arguments so the resident runner applies its default safe Codex command shape. This conversion writes a local config only; it does not start resident sessions, execute Codex, or append operation records.
+
 External or manually driven agents can also post a linked lobby reply through the live-agent endpoint:
 
 ```bash

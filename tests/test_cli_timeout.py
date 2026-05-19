@@ -275,6 +275,59 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 2)
         self.assertIn("error:", stderr.getvalue())
 
+    def test_sessions_live_agent_config_writes_resident_config_from_invite_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            invite_path = root / "codex-live-session.local.json"
+            output_path = root / "live-agents.codex-session.local.json"
+            invite_path.write_text(
+                json.dumps(
+                    {
+                        "agent_bindings": [
+                            {
+                                "agent_id": "codex-live-lore",
+                                "role_id": "lore_lawyer",
+                                "provider_id": "codex-live",
+                                "join_mode": "current_session",
+                                "session_id": "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "sessions",
+                        "live-agent-config",
+                        "--input",
+                        str(invite_path),
+                        "--output",
+                        str(output_path),
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--engagement-mode",
+                        "moderator_called",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(output_path.exists())
+            written = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(written["server"], "http://room.local")
+            self.assertEqual(written["agents"][0]["agent_id"], "codex-live-lore")
+            self.assertEqual(written["agents"][0]["provider_kind"], "codex_live_session")
+            self.assertEqual(written["agents"][0]["connection_kind"], "live_session")
+            self.assertEqual(written["agents"][0]["meeting_id"], "resident-m1")
+            self.assertEqual(written["agents"][0]["engagement_mode"], "moderator_called")
+            self.assertEqual(json.loads(stdout.getvalue())["output"], str(output_path))
+
     def test_live_agent_register_posts_connection_payload(self):
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value={"agent": {"agent_id": "claude-code-live"}}) as request_json:
