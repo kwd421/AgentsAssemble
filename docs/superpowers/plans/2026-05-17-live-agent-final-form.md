@@ -2293,6 +2293,46 @@ Expected: pass.
 
 ---
 
+### Task 70: Scriptable Process Lifecycle Event Wait
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for lifecycle event waiting**
+
+Cover `live-agent processes wait-event` parser options, bounded polling of `/api/live-agent-process-events`, matching by `event_type`, optional group id, optional status, and `--after-timestamp`, plus timeout output with the last observed lifecycle event.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_wait_event_parses_filters_and_wait_options \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_wait_event_observes_matching_event_after_timestamp \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_wait_event_times_out_with_last_event
+```
+
+Expected: fail before implementation because the `wait-event` process subcommand does not exist.
+
+- [x] **Step 2: Implement the CLI wait loop on the existing lifecycle API**
+
+Reuse the sanitized lifecycle event history endpoint instead of adding a second backend path. Poll with the remaining deadline as the HTTP timeout, include `limit`, optional `scan_limit`, and optional `group_id` in the query, ignore events at or before `--after-timestamp`, and return exit `0` for observed and `1` for timeout.
+
+Run the Step 1 command.
+Expected: pass.
+
+- [x] **Step 3: Document lifecycle event wait semantics**
+
+Document `processes wait-event` as the scriptable gate for crash, stale-watchdog, restart, stop, and recovery lifecycle evidence. Keep it distinct from `processes wait` readiness and `operations wait` control-operation history.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

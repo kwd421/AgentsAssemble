@@ -4734,6 +4734,158 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("no live-agent process events", output)
         self.assertIn("searched recent 3 lifecycle events; older matches may exist", output)
 
+    def test_live_agent_processes_wait_event_parses_filters_and_wait_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "processes",
+                "wait-event",
+                "--server",
+                "http://room.local",
+                "--group-id",
+                "crew one",
+                "--event-type",
+                "restart_scheduled",
+                "--status",
+                "restarting",
+                "--after-timestamp",
+                "2026-05-17T12:00:00+00:00",
+                "--limit",
+                "5",
+                "--scan-limit",
+                "20",
+                "--timeout",
+                "3",
+                "--poll-interval",
+                "0.5",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "processes")
+        self.assertEqual(args.live_agent_process_command, "wait-event")
+        self.assertEqual(args.group_id, "crew one")
+        self.assertEqual(args.event_type, "restart_scheduled")
+        self.assertEqual(args.status, "restarting")
+        self.assertEqual(args.after_timestamp, "2026-05-17T12:00:00+00:00")
+        self.assertEqual(args.limit, 5)
+        self.assertEqual(args.scan_limit, 20)
+        self.assertEqual(args.timeout, 3.0)
+        self.assertEqual(args.poll_interval, 0.5)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_processes_wait_event_observes_matching_event_after_timestamp(self):
+        payloads = [
+            {
+                "events": [
+                    {
+                        "timestamp": "2026-05-17T12:00:00+00:00",
+                        "group_id": "crew-one",
+                        "event_type": "restart_scheduled",
+                        "status": "restarting",
+                    }
+                ],
+                "truncated": False,
+            },
+            {
+                "events": [
+                    {
+                        "timestamp": "2026-05-17T12:01:00+00:00",
+                        "group_id": "crew-one",
+                        "event_type": "restart_scheduled",
+                        "status": "restarting",
+                        "restart_count": 1,
+                        "max_restarts": 2,
+                    }
+                ],
+                "truncated": False,
+            },
+        ]
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=payloads) as request_json:
+            with patch("agentsassemble.cli.time.sleep") as sleep:
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "processes",
+                            "wait-event",
+                            "--server",
+                            "http://room.local",
+                            "--group-id",
+                            "crew one",
+                            "--event-type",
+                            "restart_scheduled",
+                            "--status",
+                            "restarting",
+                            "--after-timestamp",
+                            "2026-05-17T12:00:00+00:00",
+                            "--limit",
+                            "5",
+                            "--scan-limit",
+                            "20",
+                            "--timeout",
+                            "3",
+                            "--poll-interval",
+                            "0.1",
+                            "--json",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(request_json.call_count, 2)
+        self.assertEqual(
+            request_json.call_args_list[-1].args,
+            ("http://room.local/api/live-agent-process-events?limit=5&scan_limit=20&group_id=crew+one",),
+        )
+        self.assertIn("timeout_seconds", request_json.call_args_list[-1].kwargs)
+        self.assertEqual(sleep.call_count, 1)
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(result["status"], "observed")
+        self.assertEqual(result["event"]["timestamp"], "2026-05-17T12:01:00+00:00")
+
+    def test_live_agent_processes_wait_event_times_out_with_last_event(self):
+        payload = {
+            "events": [
+                {
+                    "timestamp": "2026-05-17T12:00:00+00:00",
+                    "group_id": "crew one",
+                    "event_type": "started",
+                    "status": "running",
+                }
+            ],
+            "truncated": False,
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("agentsassemble.cli.time.monotonic", side_effect=[0.0, 0.0, 1.1, 1.1]):
+                with patch("agentsassemble.cli.time.sleep") as sleep:
+                    with patch("sys.stdout", stdout):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "processes",
+                                "wait-event",
+                                "--server",
+                                "http://room.local",
+                                "--group-id",
+                                "crew one",
+                                "--event-type",
+                                "restart_scheduled",
+                                "--timeout",
+                                "1",
+                                "--poll-interval",
+                                "0.1",
+                            ]
+                        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(request_json.call_count, 1)
+        self.assertEqual(sleep.call_count, 0)
+        output = stdout.getvalue()
+        self.assertIn("Timed out waiting for live-agent process event restart_scheduled", output)
+        self.assertIn("last event: 2026-05-17T12:00:00+00:00 crew one started running", output)
+
     def test_live_agent_processes_stop_restart_and_recover_quote_group_id(self):
         stop_payload = {
             "group": {

@@ -26,6 +26,7 @@ from agentsassemble.codex_sessions import (
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
+from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
@@ -611,6 +612,21 @@ def build_parser() -> argparse.ArgumentParser:
     live_process_events.add_argument("--scan-limit", type=parse_positive_int, default=None)
     live_process_events.add_argument("--group-id", default="")
     live_process_events.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON event payload.")
+
+    live_process_wait_event = live_process_subparsers.add_parser(
+        "wait-event",
+        parents=[live_server],
+        help="Wait for a matching supervised process lifecycle event.",
+    )
+    live_process_wait_event.add_argument("--event-type", required=True, help="Lifecycle event type to wait for.")
+    live_process_wait_event.add_argument("--group-id", default="", help="Optional process group id filter.")
+    live_process_wait_event.add_argument("--status", default="", help="Optional event status filter.")
+    live_process_wait_event.add_argument("--after-timestamp", default="", help="Ignore events at or before this timestamp.")
+    live_process_wait_event.add_argument("--limit", type=parse_positive_int, default=50)
+    live_process_wait_event.add_argument("--scan-limit", type=parse_positive_int, default=None)
+    live_process_wait_event.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
+    live_process_wait_event.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_process_wait_event.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable wait result.")
 
     live_process_start = live_process_subparsers.add_parser("start", parents=[live_server], help="Start a supervised live-agent run-group.")
     live_process_start.add_argument("--config", required=True, help="Resident group config path.")
@@ -1984,6 +2000,8 @@ def _run_live_agent_processes(args: argparse.Namespace) -> int:
         payload = _request_json(_server_url(args.server, f"/api/live-agent-process-events?{query}"))
         _print_live_agent_process_events_payload(payload, as_json=args.as_json)
         return 0
+    if args.live_agent_process_command == "wait-event":
+        return _run_live_agent_process_event_wait(args)
     if args.live_agent_process_command == "wait":
         return _run_live_agent_process_wait(args)
     if args.live_agent_process_command == "start":
@@ -2088,6 +2106,137 @@ def _run_live_agent_process_wait(args: argparse.Namespace) -> int:
         remaining_after_poll = max(0.0, deadline - time.monotonic())
         if remaining_after_poll > 0:
             time.sleep(min(poll_interval, remaining_after_poll))
+
+
+def _run_live_agent_process_event_wait(args: argparse.Namespace) -> int:
+    timeout_seconds = float(args.timeout)
+    poll_interval = max(0.01, float(args.poll_interval))
+    deadline = time.monotonic() + timeout_seconds
+    attempts = 0
+    last_payload: dict[str, object] | None = None
+    last_event: dict[str, object] | None = None
+    while True:
+        now = time.monotonic()
+        if attempts > 0 and now >= deadline:
+            _print_live_agent_process_event_wait_result(
+                _live_agent_process_event_wait_result("timeout", args, timeout_seconds, attempts, last_event, last_payload),
+                as_json=args.as_json,
+            )
+            return 1
+        remaining_before_poll = max(0.01, deadline - now)
+        attempts += 1
+        try:
+            payload = _request_json(
+                _server_url(args.server, _live_agent_process_event_wait_path(args)),
+                timeout_seconds=remaining_before_poll,
+            )
+        except (TimeoutError, urllib.error.URLError) as error:
+            if not _is_live_agent_process_wait_timeout(error):
+                raise
+            _print_live_agent_process_event_wait_result(
+                _live_agent_process_event_wait_result(
+                    "timeout",
+                    args,
+                    timeout_seconds,
+                    attempts,
+                    last_event,
+                    last_payload,
+                    error=str(error) or error.__class__.__name__,
+                ),
+                as_json=args.as_json,
+            )
+            return 1
+        last_payload = payload
+        payload_last_event = _last_live_agent_process_event(payload)
+        if payload_last_event is not None:
+            last_event = payload_last_event
+        event = _find_live_agent_process_event(
+            payload,
+            args.event_type,
+            group_id=args.group_id,
+            status=args.status,
+            after_timestamp=args.after_timestamp,
+        )
+        if event is not None:
+            _print_live_agent_process_event_wait_result(
+                _live_agent_process_event_wait_result("observed", args, timeout_seconds, attempts, event, payload),
+                as_json=args.as_json,
+            )
+            return 0
+        remaining_after_poll = max(0.0, deadline - time.monotonic())
+        if remaining_after_poll > 0:
+            time.sleep(min(poll_interval, remaining_after_poll))
+
+
+def _live_agent_process_event_wait_path(args: argparse.Namespace) -> str:
+    params: dict[str, object] = {"limit": args.limit}
+    if args.scan_limit is not None:
+        params["scan_limit"] = args.scan_limit
+    if args.group_id:
+        params["group_id"] = args.group_id
+    return f"/api/live-agent-process-events?{urllib.parse.urlencode(params)}"
+
+
+def _find_live_agent_process_event(
+    payload: dict[str, object],
+    event_type: str,
+    *,
+    group_id: str = "",
+    status: str = "",
+    after_timestamp: str = "",
+) -> dict[str, object] | None:
+    events = payload.get("events") if isinstance(payload.get("events"), list) else []
+    for item in events:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("event_type") or "") != event_type:
+            continue
+        if group_id and str(item.get("group_id") or "") != clean_live_agent_group_id(group_id):
+            continue
+        if status and str(item.get("status") or "") != status:
+            continue
+        timestamp = str(item.get("timestamp") or "")
+        if after_timestamp and timestamp <= after_timestamp:
+            continue
+        return item
+    return None
+
+
+def _last_live_agent_process_event(payload: dict[str, object] | None) -> dict[str, object] | None:
+    events = payload.get("events") if isinstance(payload, dict) and isinstance(payload.get("events"), list) else []
+    for item in reversed(events):
+        if isinstance(item, dict):
+            return item
+    return None
+
+
+def _live_agent_process_event_wait_result(
+    status: str,
+    args: argparse.Namespace,
+    timeout_seconds: float,
+    attempts: int,
+    event: dict[str, object] | None,
+    payload: dict[str, object] | None,
+    *,
+    error: str = "",
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "status": status,
+        "event_type": args.event_type,
+        "group_id": args.group_id,
+        "event_status": args.status,
+        "after_timestamp": args.after_timestamp,
+        "timeout_seconds": timeout_seconds,
+        "attempts": attempts,
+        "event": event,
+    }
+    if status == "timeout" and isinstance(payload, dict):
+        result["truncated"] = payload.get("truncated") is True
+        if isinstance(payload.get("events"), list):
+            result["events"] = payload.get("events")
+    if error:
+        result["error"] = error
+    return result
 
 
 def _run_live_agent_operations(args: argparse.Namespace) -> int:
@@ -2481,6 +2630,30 @@ def _print_live_agent_process_wait_result(result: dict[str, object], *, as_json:
         print(f"Process group {group_id} not ready after {timeout_seconds:.1f}s: group not found")
         return
     print(f"Process group {group_id} not ready after {timeout_seconds:.1f}s: {_format_live_agent_process_group(group)}")
+
+
+def _print_live_agent_process_event_wait_result(result: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    event = result.get("event") if isinstance(result.get("event"), dict) else None
+    if result.get("status") == "observed":
+        suffix = f": {_format_live_agent_process_event(event)}" if event is not None else ""
+        print(f"Observed live-agent process event{suffix}")
+        return
+    parts = [str(result.get("event_type") or "unknown")]
+    if result.get("group_id"):
+        parts.append(f"group {result.get('group_id')}")
+    if result.get("event_status"):
+        parts.append(f"status {result.get('event_status')}")
+    if result.get("after_timestamp"):
+        parts.append(f"after {result.get('after_timestamp')}")
+    timeout_seconds = _safe_float(result.get("timeout_seconds"))
+    print(f"Timed out waiting for live-agent process event {' '.join(parts)} after {timeout_seconds:.1f}s")
+    if event is not None:
+        print(f"last event: {_format_live_agent_process_event(event)}")
+    if result.get("truncated") is True:
+        print("searched bounded lifecycle history; older matches may exist")
 
 
 def _print_live_agent_process_events_payload(payload: dict[str, object], *, as_json: bool) -> None:
