@@ -2768,6 +2768,73 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(operations["operations"][0]["status"], "success")
             self.assertEqual(operations["operations"][0]["details"]["result_status"], "ok")
 
+    def test_live_agent_preflight_endpoint_redacts_sensitive_config_failure_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            missing_config = root / "private" / "live-agents.secret.json"
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-preflight",
+                    data=json.dumps({"config_path": str(missing_config)}).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "failed")
+            self.assertEqual(payload["config_path"], "[redacted]")
+            self.assertEqual(payload["checks"][0]["message"], "Config load failed: details redacted.")
+            serialized_payload = json.dumps(payload, ensure_ascii=False)
+            serialized_operations = json.dumps(operations, ensure_ascii=False)
+            self.assertNotIn(str(missing_config), serialized_payload)
+            self.assertNotIn("live-agents.secret.json", serialized_payload)
+            self.assertNotIn(str(missing_config), serialized_operations)
+            self.assertNotIn("live-agents.secret.json", serialized_operations)
+
+    def test_live_agent_preflight_endpoint_redacts_malformed_config_failure_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            config_path = root / "live-agents.json"
+            config_path.write_text("{", encoding="utf-8")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-preflight",
+                    data=json.dumps({"config_path": str(config_path)}).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "failed")
+            self.assertEqual(payload["config_path"], "[redacted]")
+            self.assertEqual(payload["checks"][0]["message"], "Config load failed: details redacted.")
+            serialized_payload = json.dumps(payload, ensure_ascii=False)
+            self.assertNotIn(str(config_path), serialized_payload)
+            self.assertNotIn("Expecting", serialized_payload)
+            self.assertNotIn("line 1", serialized_payload)
+            self.assertNotIn("char 0", serialized_payload)
+
     def test_live_agent_health_endpoint_summarizes_agents_and_processes(self):
         class FakeSupervisor:
             def __init__(self):
@@ -9288,6 +9355,63 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["probe_mode"], "local")
             self.assertEqual(payload["summary"]["providers"], 1)
             self.assertEqual(payload["providers"][0]["provider_id"], "mock-provider")
+
+    def test_provider_health_endpoint_redacts_sensitive_config_failure_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            missing_config = root / "private" / "agents.secret.json"
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/provider-health",
+                    data=json.dumps({"config_path": str(missing_config)}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "failed")
+            self.assertEqual(payload["config_path"], "[redacted]")
+            self.assertEqual(payload["checks"][0]["message"], "Config load failed: details redacted.")
+            serialized_payload = json.dumps(payload, ensure_ascii=False)
+            self.assertNotIn(str(missing_config), serialized_payload)
+            self.assertNotIn("agents.secret.json", serialized_payload)
+
+    def test_provider_health_endpoint_redacts_malformed_config_failure_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "agents.json"
+            config_path.write_text("{", encoding="utf-8")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/provider-health",
+                    data=json.dumps({"config_path": str(config_path)}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "failed")
+            self.assertEqual(payload["config_path"], "[redacted]")
+            self.assertEqual(payload["checks"][0]["message"], "Config load failed: details redacted.")
+            serialized_payload = json.dumps(payload, ensure_ascii=False)
+            self.assertNotIn(str(config_path), serialized_payload)
+            self.assertNotIn("Expecting", serialized_payload)
+            self.assertNotIn("line 1", serialized_payload)
+            self.assertNotIn("char 0", serialized_payload)
 
     def test_provider_health_endpoint_forwards_bridge_probe_options(self):
         with tempfile.TemporaryDirectory() as temp_dir:

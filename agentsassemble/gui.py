@@ -3226,6 +3226,55 @@ def _process_stop_running_error_message(error: Exception) -> str:
     return _process_control_error_message(error, action="stop running groups")
 
 
+def _safe_diagnostic_report_payload(report: dict[str, object]) -> dict[str, object]:
+    safe = dict(report)
+    has_failed_config_load = _diagnostic_report_has_failed_config_load(safe)
+    if has_failed_config_load or _diagnostic_report_exposes_sensitive_config_path(safe):
+        safe["config_path"] = "[redacted]"
+    checks = safe.get("checks")
+    if isinstance(checks, list):
+        safe["checks"] = [
+            _safe_diagnostic_check_payload(check, redact_config_load=has_failed_config_load)
+            for check in checks
+        ]
+    return safe
+
+
+def _diagnostic_report_has_failed_config_load(report: dict[str, object]) -> bool:
+    checks = report.get("checks")
+    if not isinstance(checks, list):
+        return False
+    return any(
+        isinstance(check, dict) and check.get("id") == "config_load" and check.get("status") == "failed"
+        for check in checks
+    )
+
+
+def _diagnostic_report_exposes_sensitive_config_path(report: dict[str, object]) -> bool:
+    if report.get("status") != "failed":
+        return False
+    config_path = str(report.get("config_path") or "")
+    return bool(config_path and _looks_sensitive_operator_diagnostic_text(config_path))
+
+
+def _safe_diagnostic_check_payload(check: object, *, redact_config_load: bool) -> object:
+    if not isinstance(check, dict):
+        return check
+    safe = dict(check)
+    message = str(safe.get("message") or "")
+    if (
+        redact_config_load
+        and safe.get("id") == "config_load"
+        and safe.get("status") == "failed"
+    ) or _looks_sensitive_operator_diagnostic_text(message):
+        safe["message"] = "Config load failed: details redacted."
+    return safe
+
+
+def _looks_sensitive_operator_diagnostic_text(message: str) -> bool:
+    return _looks_sensitive_process_control_error(message)
+
+
 def _process_control_error_message(error: Exception, *, action: str) -> str:
     message = str(error).replace("\r", " ").replace("\n", " ").strip()
     fallback = f"Resident process group failed to {action}."
@@ -4140,7 +4189,7 @@ def _make_handler(
                         else 0,
                     },
                 )
-                self._send_json(preflight)
+                self._send_json(_safe_diagnostic_report_payload(preflight))
                 return
             if parsed.path == "/api/provider-health":
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -4153,7 +4202,7 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
                     return
                 try:
-                    self._send_json(provider_health_payload(payload))
+                    self._send_json(_safe_diagnostic_report_payload(provider_health_payload(payload)))
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                 return
