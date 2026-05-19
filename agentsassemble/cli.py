@@ -582,6 +582,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     live_process_list = live_process_subparsers.add_parser("list", parents=[live_server], help="List supervised live-agent process groups.")
     live_process_list.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
+    live_process_list.add_argument(
+        "--fail-on-attention",
+        action="store_true",
+        help="Exit 1 when any process group needs operator attention.",
+    )
 
     live_process_events = live_process_subparsers.add_parser(
         "events",
@@ -1860,6 +1865,8 @@ def _run_live_agent_processes(args: argparse.Namespace) -> int:
     if args.live_agent_process_command == "list":
         payload = _request_json(_server_url(args.server, "/api/live-agent-processes"))
         _print_live_agent_process_payload(payload, as_json=args.as_json)
+        if args.fail_on_attention and _live_agent_process_payload_needs_attention(payload):
+            return 1
         return 0
     if args.live_agent_process_command == "events":
         params = {"limit": args.limit}
@@ -2061,6 +2068,23 @@ def _print_live_agent_process_payload(payload: dict[str, object], *, as_json: bo
     for item in groups:
         if isinstance(item, dict):
             print(_format_live_agent_process_group(item))
+
+
+def _live_agent_process_payload_needs_attention(payload: dict[str, object]) -> bool:
+    groups = payload.get("groups") if isinstance(payload.get("groups"), list) else []
+    for item in groups:
+        if isinstance(item, dict) and _live_agent_process_group_needs_attention(item):
+            return True
+    return False
+
+
+def _live_agent_process_group_needs_attention(group: dict[str, object]) -> bool:
+    status = str(group.get("status") or "").strip()
+    if status in {"error", "unknown", "restarting"}:
+        return True
+    connection = group.get("agent_connection") if isinstance(group.get("agent_connection"), dict) else {}
+    attention = connection.get("attention") if isinstance(connection, dict) else []
+    return isinstance(attention, list) and bool(attention)
 
 
 def _print_live_agent_process_events_payload(payload: dict[str, object], *, as_json: bool) -> None:

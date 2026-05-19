@@ -3588,6 +3588,54 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("stopped-crew: stopped", stopped_line)
         self.assertNotIn("next restart", stopped_line)
 
+    def test_live_agent_processes_list_fail_on_attention_exits_one_after_printing_summary(self):
+        payload = {
+            "groups": [
+                {
+                    "group_id": "crew",
+                    "status": "running",
+                    "pid": 1234,
+                    "agent_connection": {
+                        "expected": 2,
+                        "connected": 1,
+                        "attention": [{"agent_id": "agent-b", "status": "missing"}],
+                    },
+                },
+                {
+                    "group_id": "crashed-crew",
+                    "status": "error",
+                    "pid": None,
+                },
+                {
+                    "group_id": "stopped-crew",
+                    "status": "stopped",
+                    "pid": None,
+                },
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "processes",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--fail-on-attention",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-processes")
+        output = stdout.getvalue()
+        self.assertIn("crew: running", output)
+        self.assertIn("agents connected 1/2", output)
+        self.assertIn("missing agent-b", output)
+        self.assertIn("crashed-crew: error", output)
+        self.assertIn("stopped-crew: stopped", output)
+
     def test_live_agent_processes_start_posts_supervisor_payload(self):
         payload = {"group": {"group_id": "crew", "status": "running", "pid": 1234}, "groups": []}
         stdout = StringIO()
