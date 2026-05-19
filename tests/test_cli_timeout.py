@@ -3636,6 +3636,237 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("crashed-crew: error", output)
         self.assertIn("stopped-crew: stopped", output)
 
+    def test_live_agent_processes_wait_polls_until_group_is_ready(self):
+        payloads = [
+            {"groups": []},
+            {
+                "groups": [
+                    {
+                        "group_id": "crew",
+                        "status": "running",
+                        "pid": 1234,
+                        "agent_connection": {
+                            "expected": 2,
+                            "connected": 1,
+                            "attention": [{"agent_id": "agent-b", "status": "missing"}],
+                        },
+                    }
+                ]
+            },
+            {
+                "groups": [
+                    {
+                        "group_id": "crew",
+                        "status": "running",
+                        "pid": 1234,
+                        "agent_connection": {"expected": 2, "connected": 2, "attention": []},
+                    }
+                ]
+            },
+        ]
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=payloads) as request_json:
+            with patch("agentsassemble.cli.time.sleep") as sleep:
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "processes",
+                            "wait",
+                            "crew",
+                            "--server",
+                            "http://room.local",
+                            "--timeout",
+                            "2",
+                            "--poll-interval",
+                            "0.1",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(request_json.call_count, 3)
+        self.assertEqual(request_json.call_args_list[-1].args, ("http://room.local/api/live-agent-processes",))
+        self.assertIn("timeout_seconds", request_json.call_args_list[-1].kwargs)
+        self.assertEqual(sleep.call_count, 2)
+        output = stdout.getvalue()
+        self.assertIn("Process group crew ready", output)
+        self.assertIn("agents connected 2/2", output)
+
+    def test_live_agent_processes_wait_times_out_with_last_observed_status(self):
+        payload = {
+            "groups": [
+                {
+                    "group_id": "crew",
+                    "status": "running",
+                    "pid": 1234,
+                    "agent_connection": {
+                        "expected": 2,
+                        "connected": 1,
+                        "attention": [{"agent_id": "agent-b", "status": "missing"}],
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("agentsassemble.cli.time.monotonic", side_effect=[0.0, 0.0, 0.9, 1.1]):
+                with patch("agentsassemble.cli.time.sleep") as sleep:
+                    with patch("sys.stdout", stdout):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "processes",
+                                "wait",
+                                "crew",
+                                "--server",
+                                "http://room.local",
+                                "--timeout",
+                                "1",
+                                "--poll-interval",
+                                "0.1",
+                            ]
+                        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(request_json.call_count, 1)
+        self.assertEqual(sleep.call_count, 1)
+        self.assertAlmostEqual(sleep.call_args.args[0], 0.1)
+        output = stdout.getvalue()
+        self.assertIn("Process group crew not ready after 1.0s", output)
+        self.assertIn("agents connected 1/2", output)
+        self.assertIn("missing agent-b", output)
+
+    def test_live_agent_processes_wait_bounds_each_poll_request_to_remaining_timeout(self):
+        payload = {
+            "groups": [
+                {
+                    "group_id": "crew",
+                    "status": "running",
+                    "pid": 1234,
+                    "agent_connection": {"expected": 1, "connected": 1, "attention": []},
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("agentsassemble.cli.time.monotonic", side_effect=[10.0, 10.0]):
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "processes",
+                            "wait",
+                            "crew",
+                            "--server",
+                            "http://room.local",
+                            "--timeout",
+                            "3",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-processes", timeout_seconds=3.0)
+
+    def test_live_agent_processes_wait_sleeps_only_remaining_time_after_slow_poll(self):
+        payload = {
+            "groups": [
+                {
+                    "group_id": "crew",
+                    "status": "running",
+                    "pid": 1234,
+                    "agent_connection": {
+                        "expected": 2,
+                        "connected": 1,
+                        "attention": [{"agent_id": "agent-b", "status": "missing"}],
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("agentsassemble.cli.time.monotonic", side_effect=[0.0, 0.0, 0.9, 1.1]):
+                with patch("agentsassemble.cli.time.sleep") as sleep:
+                    with patch("sys.stdout", stdout):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "processes",
+                                "wait",
+                                "crew",
+                                "--server",
+                                "http://room.local",
+                                "--timeout",
+                                "1",
+                                "--poll-interval",
+                                "1",
+                            ]
+                        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(sleep.call_count, 1)
+        self.assertAlmostEqual(sleep.call_args.args[0], 0.1)
+
+    def test_live_agent_processes_wait_reports_poll_timeout_as_wait_timeout_json(self):
+        stdout = StringIO()
+        stderr = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=TimeoutError("timed out")):
+            with patch("agentsassemble.cli.time.monotonic", side_effect=[10.0, 10.0]):
+                with patch("sys.stdout", stdout):
+                    with patch("sys.stderr", stderr):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "processes",
+                                "wait",
+                                "crew",
+                                "--server",
+                                "http://room.local",
+                                "--timeout",
+                                "3",
+                                "--json",
+                            ]
+                        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(stderr.getvalue(), "")
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "timeout")
+        self.assertEqual(payload["group_id"], "crew")
+        self.assertEqual(payload["attempts"], 1)
+        self.assertIsNone(payload["group"])
+        self.assertEqual(payload["error"], "timed out")
+
+    def test_live_agent_processes_wait_reports_wrapped_url_timeout_as_wait_timeout_json(self):
+        stdout = StringIO()
+        stderr = StringIO()
+        timeout_error = cli_module.urllib.error.URLError(TimeoutError("timed out"))
+        with patch("agentsassemble.cli._request_json", side_effect=timeout_error):
+            with patch("agentsassemble.cli.time.monotonic", side_effect=[10.0, 10.0]):
+                with patch("sys.stdout", stdout):
+                    with patch("sys.stderr", stderr):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "processes",
+                                "wait",
+                                "crew",
+                                "--server",
+                                "http://room.local",
+                                "--timeout",
+                                "3",
+                                "--json",
+                            ]
+                        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(stderr.getvalue(), "")
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "timeout")
+        self.assertEqual(payload["group_id"], "crew")
+        self.assertEqual(payload["attempts"], 1)
+        self.assertIsNone(payload["group"])
+        self.assertEqual(payload["error"], "<urlopen error timed out>")
+
     def test_live_agent_processes_start_posts_supervisor_payload(self):
         payload = {"group": {"group_id": "crew", "status": "running", "pid": 1234}, "groups": []}
         stdout = StringIO()

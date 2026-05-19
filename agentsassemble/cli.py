@@ -626,6 +626,12 @@ def build_parser() -> argparse.ArgumentParser:
     live_process_recover.add_argument("group_id")
     live_process_recover.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
 
+    live_process_wait = live_process_subparsers.add_parser("wait", parents=[live_server], help="Wait for a process group to become ready.")
+    live_process_wait.add_argument("group_id")
+    live_process_wait.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
+    live_process_wait.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_process_wait.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON wait result.")
+
     live_operations = live_agent_subparsers.add_parser("operations", help="Inspect live-agent control operation history.")
     live_operations_subparsers = live_operations.add_subparsers(dest="live_agent_operations_command", required=True)
     live_operations_list = live_operations_subparsers.add_parser(
@@ -1878,6 +1884,8 @@ def _run_live_agent_processes(args: argparse.Namespace) -> int:
         payload = _request_json(_server_url(args.server, f"/api/live-agent-process-events?{query}"))
         _print_live_agent_process_events_payload(payload, as_json=args.as_json)
         return 0
+    if args.live_agent_process_command == "wait":
+        return _run_live_agent_process_wait(args)
     if args.live_agent_process_command == "start":
         if args.auto_restart and args.max_restarts <= 0:
             raise ValueError("--auto-restart requires --max-restarts greater than 0.")
@@ -1919,6 +1927,67 @@ def _run_live_agent_processes(args: argparse.Namespace) -> int:
         _print_live_agent_process_payload(response, as_json=args.as_json, action="stop-running")
         return 0
     return 1
+
+
+def _run_live_agent_process_wait(args: argparse.Namespace) -> int:
+    timeout_seconds = float(args.timeout)
+    poll_interval = max(0.01, float(args.poll_interval))
+    deadline = time.monotonic() + timeout_seconds
+    attempts = 0
+    last_group: dict[str, object] | None = None
+    while True:
+        now = time.monotonic()
+        if attempts > 0 and now >= deadline:
+            _print_live_agent_process_wait_result(
+                {
+                    "status": "timeout",
+                    "group_id": args.group_id,
+                    "timeout_seconds": timeout_seconds,
+                    "attempts": attempts,
+                    "group": last_group,
+                },
+                as_json=args.as_json,
+            )
+            return 1
+        remaining_before_poll = max(0.01, deadline - now)
+        attempts += 1
+        try:
+            payload = _request_json(
+                _server_url(args.server, "/api/live-agent-processes"),
+                timeout_seconds=remaining_before_poll,
+            )
+        except (TimeoutError, urllib.error.URLError) as error:
+            if not _is_live_agent_process_wait_timeout(error):
+                raise
+            _print_live_agent_process_wait_result(
+                {
+                    "status": "timeout",
+                    "group_id": args.group_id,
+                    "timeout_seconds": timeout_seconds,
+                    "attempts": attempts,
+                    "group": last_group,
+                    "error": str(error) or error.__class__.__name__,
+                },
+                as_json=args.as_json,
+            )
+            return 1
+        group = _find_live_agent_process_group(payload, args.group_id)
+        last_group = group
+        if group is not None and _live_agent_process_group_ready(group):
+            _print_live_agent_process_wait_result(
+                {
+                    "status": "ready",
+                    "group_id": args.group_id,
+                    "timeout_seconds": timeout_seconds,
+                    "attempts": attempts,
+                    "group": group,
+                },
+                as_json=args.as_json,
+            )
+            return 0
+        remaining_after_poll = max(0.0, deadline - time.monotonic())
+        if remaining_after_poll > 0:
+            time.sleep(min(poll_interval, remaining_after_poll))
 
 
 def _run_live_agent_operations(args: argparse.Namespace) -> int:
@@ -2085,6 +2154,50 @@ def _live_agent_process_group_needs_attention(group: dict[str, object]) -> bool:
     connection = group.get("agent_connection") if isinstance(group.get("agent_connection"), dict) else {}
     attention = connection.get("attention") if isinstance(connection, dict) else []
     return isinstance(attention, list) and bool(attention)
+
+
+def _find_live_agent_process_group(payload: dict[str, object], group_id: str) -> dict[str, object] | None:
+    groups = payload.get("groups") if isinstance(payload.get("groups"), list) else []
+    for item in groups:
+        if isinstance(item, dict) and str(item.get("group_id") or "") == group_id:
+            return item
+    return None
+
+
+def _is_live_agent_process_wait_timeout(error: BaseException) -> bool:
+    if isinstance(error, TimeoutError):
+        return True
+    if isinstance(error, urllib.error.URLError):
+        return isinstance(getattr(error, "reason", None), TimeoutError)
+    return False
+
+
+def _live_agent_process_group_ready(group: dict[str, object]) -> bool:
+    if str(group.get("status") or "").strip() != "running":
+        return False
+    if _live_agent_process_group_needs_attention(group):
+        return False
+    connection = group.get("agent_connection") if isinstance(group.get("agent_connection"), dict) else {}
+    expected = _safe_int(connection.get("expected")) if isinstance(connection, dict) else 0
+    connected = _safe_int(connection.get("connected")) if isinstance(connection, dict) else 0
+    return expected <= 0 or connected >= expected
+
+
+def _print_live_agent_process_wait_result(result: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    group_id = str(result.get("group_id") or "unknown")
+    timeout_seconds = _safe_float(result.get("timeout_seconds"))
+    group = result.get("group") if isinstance(result.get("group"), dict) else None
+    if result.get("status") == "ready":
+        suffix = f": {_format_live_agent_process_group(group)}" if group is not None else ""
+        print(f"Process group {group_id} ready{suffix}")
+        return
+    if group is None:
+        print(f"Process group {group_id} not ready after {timeout_seconds:.1f}s: group not found")
+        return
+    print(f"Process group {group_id} not ready after {timeout_seconds:.1f}s: {_format_live_agent_process_group(group)}")
 
 
 def _print_live_agent_process_events_payload(payload: dict[str, object], *, as_json: bool) -> None:
