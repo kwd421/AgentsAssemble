@@ -569,6 +569,22 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.limit, 3)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_operations_list_parses_fail_on_attention(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "operations",
+                "list",
+                "--server",
+                "http://room.local",
+                "--fail-on-attention",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "operations")
+        self.assertEqual(args.live_agent_operations_command, "list")
+        self.assertTrue(args.fail_on_attention)
+
     def test_live_agent_operations_list_rejects_zero_limit(self):
         with patch("sys.stderr", StringIO()):
             with self.assertRaises(SystemExit):
@@ -617,6 +633,81 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("process.start", stdout.getvalue())
         self.assertIn("success", stdout.getvalue())
         self.assertIn("crew", stdout.getvalue())
+
+    def test_live_agent_operations_list_fail_on_attention_exits_one_after_printing_summary(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "process.start",
+                    "status": "success",
+                    "target_id": "crew",
+                    "summary": "started live-agent process group",
+                    "details": {},
+                },
+                {
+                    "timestamp": "2026-05-18T01:02:04+00:00",
+                    "operation": "session.restart",
+                    "status": "degraded",
+                    "target_id": "crew",
+                    "summary": "",
+                    "details": {"result_status": "degraded", "reply_probe_status": "failed"},
+                },
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "operations",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--limit",
+                        "2",
+                        "--fail-on-attention",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-operations?limit=2")
+        output = stdout.getvalue()
+        self.assertIn("process.start", output)
+        self.assertIn("session.restart", output)
+        self.assertIn("degraded", output)
+        self.assertIn("reply_probe_status=failed", output)
+
+    def test_live_agent_operations_list_fail_on_attention_allows_successful_rows(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "readiness.check",
+                    "status": "success",
+                    "target_id": "doctor-smoke",
+                    "summary": "",
+                    "details": {"result_status": "ready"},
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "operations",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--fail-on-attention",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("readiness.check", stdout.getvalue())
 
     def test_live_agent_operations_list_includes_safe_details_in_default_output(self):
         payload = {

@@ -240,6 +240,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("operations.jsonl", doc)
         self.assertIn("/api/live-agent-operations", doc)
         self.assertIn("assemble live-agent operations list", doc)
+        self.assertIn("live-agent operations list --fail-on-attention", doc)
         self.assertIn("Recent operation views read from the JSONL tail", doc)
         self.assertIn("prioritize high-signal liveness evidence", doc)
         self.assertIn("session-smoke soak cycle/reply counts", doc)

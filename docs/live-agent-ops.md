@@ -1052,6 +1052,8 @@ python3 -m agentsassemble.cli live-agent operations list \
 
 The GUI list and the default CLI output include compact safe `details` values, such as readiness result status, reply counts, probe ids, or restart settings. For `session.smoke` and `readiness.check`, those compact details prioritize high-signal liveness evidence such as reply counts, post-restart and post-recover counts, session-smoke soak cycle/reply counts, and soak check statuses before lower-value identifiers. For `session.start`, `session.resume`, `session.restart`, and `session.recover`, the compact rows prioritize connected-agent counts, bound-agent reply probe status, and optional auto-round status/reason/counts before lower-value identifiers, so long-session proof remains visible in the recent operation rows. Use `--json` when an operator script needs the full sanitized operation payload.
 
+For scriptable operation-history gates, use `live-agent operations list --fail-on-attention`. The command still prints the normal operation summary first, then exits `1` when any returned operation status is not `success`, such as `failed`, `degraded`, or `unknown`. Without that flag, listing operations exits `0` whenever the history was fetched successfully.
+
 Use the operation ledger to answer "what control action happened" and the process lifecycle events to answer "what did the supervised process do next." They are deliberately separate surfaces.
 
 For scriptable monitoring, fetch the combined health summary:

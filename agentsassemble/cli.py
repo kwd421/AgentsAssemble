@@ -641,6 +641,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_operations_list.add_argument("--limit", type=parse_positive_int, default=50)
     live_operations_list.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON operation payload.")
+    live_operations_list.add_argument(
+        "--fail-on-attention",
+        action="store_true",
+        help="Exit 1 when any returned live-agent operation is not successful.",
+    )
 
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
     session_subparsers = sessions.add_subparsers(dest="sessions_command", required=True)
@@ -1994,6 +1999,8 @@ def _run_live_agent_operations(args: argparse.Namespace) -> int:
     if args.live_agent_operations_command == "list":
         payload = _request_json(_server_url(args.server, f"/api/live-agent-operations?limit={args.limit}"))
         _print_live_agent_operations_payload(payload, as_json=args.as_json)
+        if args.fail_on_attention and _live_agent_operations_payload_needs_attention(payload):
+            return 1
         return 0
     return 1
 
@@ -2021,6 +2028,14 @@ def _format_live_agent_operation(operation: dict[str, object]) -> str:
     suffix_parts = [part for part in (summary, details) if part]
     suffix = f" · {' · '.join(suffix_parts)}" if suffix_parts else ""
     return f"{timestamp} {operation_name} {status} {target_id}{suffix}"
+
+
+def _live_agent_operations_payload_needs_attention(payload: dict[str, object]) -> bool:
+    operations = payload.get("operations") if isinstance(payload.get("operations"), list) else []
+    for item in operations:
+        if isinstance(item, dict) and str(item.get("status") or "").strip() != "success":
+            return True
+    return False
 
 
 def _format_live_agent_operation_details(value: object, *, operation_name: str = "") -> str:
