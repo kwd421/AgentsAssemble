@@ -5323,6 +5323,130 @@ class GuiServerTests(unittest.TestCase):
             session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.check"]
             self.assertEqual(session_operations[-1]["status"], "failed")
 
+    def test_live_agent_session_restart_returns_ready_snapshot_and_records_safe_operation(self):
+        class RestartSessionSupervisor:
+            def __init__(self, root: Path) -> None:
+                self.root = root
+                self.stopped = []
+                self.restarted = []
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "config_path": "/private/live-agents.json",
+                        "log_tail": "secret provider output",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                return {"group_id": group_id, "status": "stopped", "agents": [{"agent_id": "agent-a"}]}
+
+            def restart_group(self, group_id):
+                self.restarted.append(group_id)
+                agents = {agent["agent_id"]: agent for agent in read_live_agents(self.root)}
+                if agents["agent-a"]["status"] != "offline":
+                    raise AssertionError("restart must clear stale presence before starting the group again")
+                heartbeat_live_agent(self.root, "agent-a", status="online")
+                return {
+                    "group_id": group_id,
+                    "status": "running",
+                    "config_path": "/private/live-agents.json",
+                    "log_tail": "secret provider output",
+                    "agents": [{"agent_id": "agent-a"}],
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            supervisor = RestartSessionSupervisor(root)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/restart",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident main",
+                            "connect_timeout_seconds": 0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(supervisor.stopped, ["resident-main"])
+            self.assertEqual(supervisor.restarted, ["resident-main"])
+            self.assertEqual(session_payload["status"], "ready")
+            self.assertEqual(session_payload["group_id"], "resident-main")
+            self.assertEqual(session_payload["connection"]["connected"], 1)
+            session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.restart"]
+            self.assertEqual(session_operations[-1]["status"], "success")
+            self.assertEqual(session_operations[-1]["target_id"], "resident-m1")
+            self.assertEqual(session_operations[-1]["details"]["connected_agent_count"], 1)
+            operation_blob = json.dumps(session_operations, ensure_ascii=False)
+            self.assertNotIn("/private/live-agents.json", operation_blob)
+            self.assertNotIn("secret provider output", operation_blob)
+
+    def test_live_agent_session_restart_missing_meeting_returns_safe_error(self):
+        class RestartSessionSupervisor:
+            def snapshot_groups(self):
+                return [{"group_id": "resident-main", "status": "running", "agents": [{"agent_id": "agent-a"}]}]
+
+            def restart_group(self, group_id):
+                raise AssertionError("missing meeting must be refused before restart")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=RestartSessionSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/restart",
+                    data=json.dumps({"meeting_id": "missing-meeting", "group_id": "resident-main"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=4)
+                body = raised.exception.read().decode("utf-8")
+                error_payload = json.loads(body)
+                raised.exception.close()
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertIn("Meeting missing-meeting was not found", body)
+            self.assertEqual(error_payload["details"]["requested_meeting_id"], "missing-meeting")
+            self.assertEqual(error_payload["details"]["group_id"], "resident-main")
+            session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.restart"]
+            self.assertEqual(session_operations[-1]["status"], "failed")
+
     def test_live_agent_official_turn_round_validates_before_append(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -9,6 +9,7 @@ from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_sessions import (
     check_live_agent_session,
     resume_live_agent_session,
+    restart_live_agent_session,
     start_live_agent_session,
     stop_live_agent_session,
 )
@@ -1028,6 +1029,370 @@ class LiveAgentSessionStartTests(unittest.TestCase):
 
             self.assertEqual(supervisor.stopped, ["resident-main"])
             agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_restart_session_stops_running_group_and_waits_for_fresh_presence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect", "critic"])
+            agent_config = _write_agent_config(root, ["agent-a", "agent-b"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            heartbeat_live_agent(root, "agent-b", status="working")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+                    self.restarted = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-b"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    return {"group_id": group_id, "status": "stopped", "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-b"}]}
+
+                def restart_group(self, group_id):
+                    self.restarted.append(group_id)
+                    agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+                    if agents["agent-a"]["status"] != "offline" or agents["agent-b"]["status"] != "offline":
+                        raise AssertionError("restart must clear stale presence before starting the group again")
+                    heartbeat_live_agent(root, "agent-a", status="online")
+                    heartbeat_live_agent(root, "agent-b", status="working")
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-b"}]}
+
+            supervisor = RestartSupervisor()
+
+            session = restart_live_agent_session(
+                root,
+                supervisor,
+                meeting_id="resident-m1",
+                group_id="resident main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["status"], "ready")
+            self.assertEqual(session["meeting_id"], "resident-m1")
+            self.assertEqual(session["group_id"], "resident-main")
+            self.assertEqual(supervisor.stopped, ["resident-main"])
+            self.assertEqual(supervisor.restarted, ["resident-main"])
+            self.assertEqual(session["offline"]["offline"], 2)
+            self.assertEqual(session["connection"]["connected"], 2)
+            self.assertTrue((root / "meetings" / "resident-m1" / "live_state.json").exists())
+
+    def test_restart_session_stops_restarting_group_before_clearing_presence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+                    self.restarted = []
+
+                def snapshot_groups(self):
+                    return [{"group_id": "resident-main", "status": "restarting", "agents": [{"agent_id": "agent-a"}]}]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+                    if agents["agent-a"]["status"] != "online":
+                        raise AssertionError("pending restart must be stopped before stale presence is cleared")
+                    return {"group_id": group_id, "status": "stopped", "agents": [{"agent_id": "agent-a"}]}
+
+                def restart_group(self, group_id):
+                    self.restarted.append(group_id)
+                    agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+                    if agents["agent-a"]["status"] != "offline":
+                        raise AssertionError("presence should be cleared before starting the group again")
+                    heartbeat_live_agent(root, "agent-a", status="online")
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = RestartSupervisor()
+
+            session = restart_live_agent_session(
+                root,
+                supervisor,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["status"], "ready")
+            self.assertEqual(supervisor.stopped, ["resident-main"])
+            self.assertEqual(supervisor.restarted, ["resident-main"])
+
+    def test_restart_session_revalidates_restarted_manifest_before_ready(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def snapshot_groups(self):
+                    return [{"group_id": "resident-main", "status": "stopped", "agents": [{"agent_id": "agent-a"}]}]
+
+                def restart_group(self, group_id):
+                    heartbeat_live_agent(root, "agent-a", status="online")
+                    return {
+                        "group_id": group_id,
+                        "status": "running",
+                        "agents": [
+                            {"agent_id": "agent-a"},
+                            {"agent_id": "agent-a"},
+                            {"agent_id": "agent-extra"},
+                        ],
+                    }
+
+            session = restart_live_agent_session(
+                root,
+                RestartSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["status"], "starting")
+            self.assertFalse(session["process"]["ready"])
+            self.assertIn("agent-a:duplicate_in_group", session["process"]["attention"])
+            self.assertIn("agent-extra:extra_in_group", session["process"]["attention"])
+            self.assertEqual(session["connection"]["connected"], 1)
+
+    def test_restart_session_uses_read_only_process_snapshot_before_mutation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.snapshot_calls = 0
+
+                def snapshot_groups(self):
+                    self.snapshot_calls += 1
+                    return [{"group_id": "resident-main", "status": "stopped", "agents": [{"agent_id": "agent-a"}]}]
+
+                def list_groups(self):
+                    raise AssertionError("restart prevalidation must not use mutating list_groups when snapshot_groups is available")
+
+                def restart_group(self, group_id):
+                    heartbeat_live_agent(root, "agent-a", status="online")
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = RestartSupervisor()
+
+            session = restart_live_agent_session(
+                root,
+                supervisor,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["status"], "ready")
+            self.assertEqual(supervisor.snapshot_calls, 1)
+
+    def test_restart_session_reports_starting_without_fresh_presence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def snapshot_groups(self):
+                    return [{"group_id": "resident-main", "status": "stopped", "agents": [{"agent_id": "agent-a"}]}]
+
+                def stop_group(self, group_id):
+                    raise AssertionError("stopped group should not be stopped before restart")
+
+                def restart_group(self, group_id):
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+            session = restart_live_agent_session(
+                root,
+                RestartSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["status"], "starting")
+            self.assertEqual(session["offline"]["offline"], 1)
+            self.assertEqual(session["connection"]["attention"], ["agent-a:offline"])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "offline")
+
+    def test_restart_session_refuses_manifest_mismatch_before_restart(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect", "critic"])
+            agent_config = _write_agent_config(root, ["agent-a", "agent-b"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+                    self.restarted = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-x"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    return {"group_id": group_id, "status": "stopped", "agents": [{"agent_id": "agent-a"}]}
+
+                def restart_group(self, group_id):
+                    self.restarted.append(group_id)
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = RestartSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                restart_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("does not match meeting agents", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+            self.assertEqual(supervisor.restarted, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_restart_session_refuses_duplicate_manifest_agent_before_restart(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.restarted = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "stopped",
+                            "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def restart_group(self, group_id):
+                    self.restarted.append(group_id)
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = RestartSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                restart_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("duplicate agent-a", str(raised.exception))
+            self.assertEqual(supervisor.restarted, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_restart_session_leaves_wrong_meeting_roster_row_untouched(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "other-meeting",
+                    "engagement_mode": "moderator_called",
+                    "status": "online",
+                    "capabilities": ["room_chat", "official_turn"],
+                },
+            )
+
+            class RestartSupervisor:
+                def snapshot_groups(self):
+                    return [{"group_id": "resident-main", "status": "stopped", "agents": [{"agent_id": "agent-a"}]}]
+
+                def restart_group(self, group_id):
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+            session = restart_live_agent_session(
+                root,
+                RestartSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["status"], "starting")
+            self.assertEqual(session["offline"]["attention"], ["agent-a:wrong_meeting"])
+            self.assertEqual(session["connection"]["attention"], ["agent-a:wrong_meeting"])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["meeting_id"], "other-meeting")
             self.assertEqual(agents["agent-a"]["status"], "online")
 
     def test_check_session_reports_ready_without_mutating_runtime_state(self):

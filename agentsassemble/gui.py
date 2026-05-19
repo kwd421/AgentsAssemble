@@ -28,7 +28,13 @@ from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
-from agentsassemble.live_agent_sessions import check_live_agent_session, resume_live_agent_session, start_live_agent_session, stop_live_agent_session
+from agentsassemble.live_agent_sessions import (
+    check_live_agent_session,
+    restart_live_agent_session,
+    resume_live_agent_session,
+    start_live_agent_session,
+    stop_live_agent_session,
+)
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_official_round_smoke, run_live_agent_smoke
 from agentsassemble.live_agent_turns import wait_for_official_turn_reply
 from agentsassemble.live_transcript import projected_live_transcript_text
@@ -556,6 +562,23 @@ def live_agent_session_check_payload(
         process_supervisor,
         meeting_id=str(payload.get("meeting_id") or ""),
         group_id=group_id,
+    )
+
+
+def live_agent_session_restart_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    group_id = str(payload.get("group_id") or "").strip()
+    if not group_id:
+        raise ValueError("Live agent group id is required.")
+    return restart_live_agent_session(
+        output_root,
+        process_supervisor,
+        meeting_id=str(payload.get("meeting_id") or ""),
+        group_id=group_id,
+        connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
     )
 
 
@@ -2352,12 +2375,22 @@ def _session_check_operation_summary(session: dict[str, object]) -> str:
     return "checked degraded resident live-agent session"
 
 
+def _session_restart_operation_summary(session: dict[str, object]) -> str:
+    if _operation_result_status(session.get("status")) == "ready":
+        return "restarted resident live-agent session"
+    return "resident live-agent session is still reconnecting after restart"
+
+
 def _session_start_error_message(error: Exception) -> str:
     return _session_error_message(error, action="start")
 
 
 def _session_resume_error_message(error: Exception) -> str:
     return _session_error_message(error, action="resume")
+
+
+def _session_restart_error_message(error: Exception) -> str:
+    return _session_error_message(error, action="restart")
 
 
 def _session_check_error_message(error: Exception) -> str:
@@ -2669,6 +2702,39 @@ def _make_handler(
                     target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
                     summary=_session_check_operation_summary(session),
                     details=_session_check_operation_details(session),
+                )
+                self._send_json(session)
+                return
+            if parsed.path == "/api/live-agent-sessions/restart":
+                payload = self._operation_json_payload(operation="session.restart")
+                if payload is None:
+                    return
+                try:
+                    session = live_agent_session_restart_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                    )
+                except (OSError, ValueError) as error:
+                    safe_error = _session_restart_error_message(error)
+                    safe_details = _session_start_error_details(payload, error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.restart",
+                        status="failed",
+                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
+                        error=safe_error,
+                        details=safe_details,
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="session.restart",
+                    status=_session_start_operation_status(session),
+                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
+                    summary=_session_restart_operation_summary(session),
+                    details=_session_start_operation_details(session),
                 )
                 self._send_json(session)
                 return
