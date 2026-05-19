@@ -6760,6 +6760,95 @@ class GuiServerTests(unittest.TestCase):
             session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.check"]
             self.assertEqual(session_operations[-1]["status"], "failed")
 
+    def test_live_agent_session_readiness_endpoint_returns_ready_snapshot_without_operation_record(self):
+        class ReadinessSessionSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "config_path": "/private/live-agents.json",
+                        "log_tail": "secret provider output",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            before_roster = (root / "live_agents.json").read_text(encoding="utf-8")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=ReadinessSessionSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/readiness?meeting_id=resident-m1&group_id=resident%20main",
+                    timeout=4,
+                ) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(session_payload["status"], "ready")
+            self.assertEqual(session_payload["group_id"], "resident-main")
+            self.assertEqual(session_payload["connection"]["connected"], 1)
+            self.assertEqual((root / "live_agents.json").read_text(encoding="utf-8"), before_roster)
+            self.assertEqual(operations["operations"], [])
+            payload_blob = json.dumps(session_payload, ensure_ascii=False)
+            self.assertNotIn("/private/live-agents.json", payload_blob)
+            self.assertNotIn("secret provider output", payload_blob)
+
+    def test_live_agent_session_readiness_endpoint_returns_degraded_missing_group_without_operation_record(self):
+        class ReadinessSessionSupervisor:
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=ReadinessSessionSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/readiness?meeting_id=resident-m1&group_id=resident-main",
+                    timeout=4,
+                ) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(session_payload["status"], "degraded")
+            self.assertEqual(session_payload["group_id"], "resident-main")
+            self.assertIn("group:unknown", session_payload["process"]["attention"])
+            self.assertIn("agent-a:not_in_group", session_payload["process"]["attention"])
+            self.assertEqual(operations["operations"], [])
+
     def test_live_agent_session_restart_returns_ready_snapshot_and_records_safe_operation(self):
         class RestartSessionSupervisor:
             def __init__(self, root: Path, config_path: Path) -> None:

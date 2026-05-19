@@ -247,6 +247,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("session-smoke soak cycle/reply counts", doc)
         self.assertIn("live-agent health --wait-ok", doc)
         self.assertIn("live-agent health --wait-session-ready", doc)
+        self.assertIn("live-agent session-readiness", doc)
+        self.assertIn("/api/live-agent-sessions/readiness", doc)
         self.assertIn("processes wait-event", doc)
         self.assertIn("rescan lifecycle history once per group", doc)
         self.assertIn("does not include command arguments, endpoint URLs, auth references, prompts, log tails", doc)

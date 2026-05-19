@@ -401,6 +401,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_check_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session check payload.")
 
+    live_session_readiness = live_agent_subparsers.add_parser(
+        "session-readiness",
+        parents=[live_server],
+        help="Read one resident session readiness snapshot without recording an operation.",
+    )
+    live_session_readiness.add_argument("--meeting-id", required=True, help="Existing resident meeting id to inspect.")
+    live_session_readiness.add_argument("--group-id", required=True, help="Supervised process group id to inspect.")
+    live_session_readiness.add_argument(
+        "--fail-on-degraded",
+        action="store_true",
+        help="Exit 1 when the targeted session is not ready.",
+    )
+    live_session_readiness.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session readiness payload.")
+
     live_stop_session = live_agent_subparsers.add_parser(
         "stop-session",
         parents=[live_server],
@@ -818,6 +832,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_recover_session(args)
         if args.live_agent_command == "check-session":
             return _run_live_agent_check_session(args)
+        if args.live_agent_command == "session-readiness":
+            return _run_live_agent_session_readiness(args)
         if args.live_agent_command == "stop-session":
             return _run_live_agent_stop_session(args)
         if args.live_agent_command == "say":
@@ -1274,6 +1290,24 @@ def _run_live_agent_check_session(args: argparse.Namespace) -> int:
             "meeting_id": str(args.meeting_id or ""),
             "group_id": str(args.group_id or ""),
         },
+        timeout_seconds=10.0,
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_session_check(response))
+    return 1 if args.fail_on_degraded and response.get("status") != "ready" else 0
+
+
+def _run_live_agent_session_readiness(args: argparse.Namespace) -> int:
+    query = urllib.parse.urlencode(
+        {
+            "meeting_id": str(args.meeting_id or ""),
+            "group_id": str(args.group_id or ""),
+        }
+    )
+    response = _request_json(
+        _server_url(args.server, f"/api/live-agent-sessions/readiness?{query}"),
         timeout_seconds=10.0,
     )
     if args.as_json:

@@ -257,6 +257,24 @@ The default CLI exit code is `0` for a successful check request, even when the s
 
 The operation ledger records one sanitized `session.check` entry for this explicit operator check with result status, meeting id, group id, expected/connected counts, process status, safe agent ids, and attention fields. It does not record config paths, command arguments, endpoint URLs, auth refs, prompts, log tails, provider output, replies, or official turn content. Ordinary auto-refresh of `/api/live-agents`, `/api/live-agent-processes`, and `/api/live-agent-health` does not create `session.check` records.
 
+Use `session-readiness` when automation needs the same targeted meeting/group readiness snapshot without appending a `session.check` operation record:
+
+```bash
+python3 -m agentsassemble.cli live-agent session-readiness \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1 \
+  --group-id resident-main \
+  --fail-on-degraded
+```
+
+The HTTP path is read-only:
+
+```text
+GET /api/live-agent-sessions/readiness?meeting_id=resident-1&group_id=resident-main
+```
+
+It reuses the session readiness rules from `check-session`: the target meeting must exist, the target process group manifest must match the meeting's bound agents, current presence must belong to the same meeting, and comparable `last_seen_at` values must be at or after the process `started_at`. It returns `ready` or `degraded` with the same process and connection attention fields, but it does not start, stop, restart, recover, probe, call providers, run official turns, mutate roster rows, or append operation history. The CLI exits `0` when the request succeeds unless `--fail-on-degraded` is set and the targeted session is not `ready`; transport, argument, and validation failures still exit `2`.
+
 Use `stop-session` when the visible resident meeting already exists and you want one operator action to stop the supervised group and make the roster evidence immediately show that the bound agents are no longer live:
 
 ```bash

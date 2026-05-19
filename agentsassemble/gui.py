@@ -571,6 +571,23 @@ def live_agent_session_check_payload(
     )
 
 
+def live_agent_session_readiness_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    *,
+    meeting_id: str,
+    group_id: str,
+) -> dict[str, object]:
+    if not str(group_id or "").strip():
+        raise ValueError("Live agent group id is required.")
+    return check_live_agent_session(
+        output_root,
+        process_supervisor,
+        meeting_id=str(meeting_id or ""),
+        group_id=str(group_id or ""),
+    )
+
+
 def live_agent_session_restart_payload(
     output_root: Path,
     process_supervisor: LiveAgentProcessSupervisor,
@@ -3151,6 +3168,23 @@ def _make_handler(
                 return
             if path == "/api/live-agent-health":
                 self._send_json(live_agent_health_payload(output_root, live_agent_process_supervisor))
+                return
+            if path == "/api/live-agent-sessions/readiness":
+                try:
+                    self._send_json(
+                        live_agent_session_readiness_payload(
+                            output_root,
+                            live_agent_process_supervisor,
+                            meeting_id=str(query.get("meeting_id", [""])[0] or ""),
+                            group_id=str(query.get("group_id", [""])[0] or ""),
+                        )
+                    )
+                except (OSError, ValueError) as error:
+                    details = {
+                        "requested_meeting_id": str(query.get("meeting_id", [""])[0] or ""),
+                        "group_id": str(query.get("group_id", [""])[0] or ""),
+                    }
+                    self._send_error(HTTPStatus.BAD_REQUEST, _session_check_error_message(error), details=details)
                 return
             if path == "/api/live-agent-processes":
                 self._send_json(live_agent_processes_payload(live_agent_process_supervisor, output_root=output_root))

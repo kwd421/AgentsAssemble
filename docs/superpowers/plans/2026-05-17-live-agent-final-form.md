@@ -2333,6 +2333,50 @@ Expected: pass.
 
 ---
 
+### Task 71: Targeted Read-Only Session Readiness
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for read-only targeted readiness**
+
+Cover `GET /api/live-agent-sessions/readiness?meeting_id=...&group_id=...`, `live-agent session-readiness`, ready and degraded target snapshots, `--fail-on-degraded`, and the invariant that the read-only path appends no `session.check` or other operation history record.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_session_readiness_parser_accepts_meeting_group_and_fail_flag \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_session_readiness_gets_read_only_endpoint_and_prints_summary \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_session_readiness_fail_on_degraded_returns_failure \
+  tests.test_gui_server.GuiServerTests.test_live_agent_session_readiness_endpoint_returns_ready_snapshot_without_operation_record \
+  tests.test_gui_server.GuiServerTests.test_live_agent_session_readiness_endpoint_returns_degraded_missing_group_without_operation_record
+```
+
+Expected: fail before implementation because the CLI subcommand and GET endpoint do not exist.
+
+- [x] **Step 2: Reuse the session check snapshot without operation recording**
+
+Add a read-only payload helper and HTTP GET route that call the existing `check_live_agent_session()` readiness computation without the POST `session.check` operation wrapper. Add a CLI command that fetches the GET route, prints the existing session summary, and exits `1` only when `--fail-on-degraded` is set and the target is not ready.
+
+Run the Step 1 command.
+Expected: pass.
+
+- [x] **Step 3: Document the distinction from `check-session`**
+
+Document that `check-session` is an explicit operator check that records `session.check`, while `session-readiness` and its GET endpoint are read-only automation surfaces that do not mutate process state, roster state, providers, official turns, probes, or operation history.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
