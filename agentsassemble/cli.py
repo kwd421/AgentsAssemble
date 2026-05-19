@@ -1403,7 +1403,8 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
             print(f"{agent_id}: {error}", file=sys.stderr)
         return 2
     total = sum(results.values())
-    print(f"Resident group stopped after posting {total} replies")
+    summary = ", ".join(f"{config.agent_id}={results.get(config.agent_id, 0)}" for config in configs)
+    print(f"Resident group stopped after posting {total} replies ({summary})")
     return 0
 
 

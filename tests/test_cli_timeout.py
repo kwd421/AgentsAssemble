@@ -5039,6 +5039,10 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual({event["message"] for event in replies}, {"Agent A reply", "Agent B reply"})
             self.assertEqual({event["source_event_id"] for event in replies}, {source_event["id"]})
             self.assertEqual({event["auto_chain_depth"] for event in replies}, {1})
+            output = stdout.getvalue()
+            self.assertIn("Resident group stopped after posting 2 replies", output)
+            self.assertIn("agent-a=1", output)
+            self.assertIn("agent-b=1", output)
 
     def test_live_agent_run_group_reports_remote_bridge_setup_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
