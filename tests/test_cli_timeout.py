@@ -964,6 +964,30 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.timeout, 3.0)
         self.assertEqual(args.poll_interval, 0.5)
 
+    def test_live_agent_health_parses_wait_session_ready_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "health",
+                "--wait-session-ready",
+                "--meeting-id",
+                "resident-m1",
+                "--group-id",
+                "resident-main",
+                "--timeout",
+                "3",
+                "--poll-interval",
+                "0.5",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "health")
+        self.assertTrue(args.wait_session_ready)
+        self.assertEqual(args.meeting_id, "resident-m1")
+        self.assertEqual(args.group_id, "resident-main")
+        self.assertEqual(args.timeout, 3.0)
+        self.assertEqual(args.poll_interval, 0.5)
+
     def test_live_agent_health_prints_summary(self):
         payload = {
             "status": "degraded",
@@ -1132,6 +1156,155 @@ class CliTimeoutTests(unittest.TestCase):
         output = stdout.getvalue()
         self.assertIn("status: degraded", output)
         self.assertIn("agent attention: agent-a", output)
+
+    def test_live_agent_health_wait_session_ready_polls_target_session_until_ready(self):
+        payloads = [
+            {
+                "status": "degraded",
+                "agents": {"counts": {}, "attention": []},
+                "processes": {"counts": {}, "attention": ["other-group"]},
+                "sessions": {
+                    "items": [
+                        {"meeting_id": "resident-m1", "group_id": "resident-main", "status": "starting"},
+                        {"meeting_id": "other-meeting", "group_id": "other-group", "status": "degraded"},
+                    ]
+                },
+            },
+            {
+                "status": "degraded",
+                "agents": {"counts": {}, "attention": []},
+                "processes": {"counts": {}, "attention": ["other-group"]},
+                "sessions": {
+                    "items": [
+                        {"meeting_id": "resident-m1", "group_id": "resident-main", "status": "ready"},
+                        {"meeting_id": "other-meeting", "group_id": "other-group", "status": "degraded"},
+                    ]
+                },
+            },
+        ]
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=payloads) as request_json:
+            with patch("agentsassemble.cli.time.sleep") as sleep:
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "health",
+                            "--server",
+                            "http://room.local",
+                            "--wait-session-ready",
+                            "--meeting-id",
+                            "resident-m1",
+                            "--group-id",
+                            "resident-main",
+                            "--timeout",
+                            "3",
+                            "--poll-interval",
+                            "0.1",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(request_json.call_count, 2)
+        self.assertEqual(sleep.call_count, 1)
+        self.assertIn("status: degraded", stdout.getvalue())
+        self.assertIn("session attention: none", stdout.getvalue())
+
+    def test_live_agent_health_wait_session_ready_times_out_with_last_summary(self):
+        payload = {
+            "status": "degraded",
+            "agents": {"counts": {}, "attention": []},
+            "processes": {"counts": {}, "attention": []},
+            "sessions": {
+                "attention": ["resident-m1:resident-main:agent-b:missing"],
+                "items": [{"meeting_id": "resident-m1", "group_id": "resident-main", "status": "degraded"}],
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("agentsassemble.cli.time.monotonic", side_effect=[0.0, 0.0, 1.1, 1.1]):
+                with patch("agentsassemble.cli.time.sleep") as sleep:
+                    with patch("sys.stdout", stdout):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "health",
+                                "--server",
+                                "http://room.local",
+                                "--wait-session-ready",
+                                "--meeting-id",
+                                "resident-m1",
+                                "--group-id",
+                                "resident-main",
+                                "--timeout",
+                                "1",
+                                "--poll-interval",
+                                "0.1",
+                            ]
+                        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(request_json.call_count, 1)
+        self.assertEqual(sleep.call_count, 0)
+        output = stdout.getvalue()
+        self.assertIn("status: degraded", output)
+        self.assertIn("session attention: resident-m1:resident-main:agent-b:missing", output)
+
+    def test_live_agent_health_wait_session_ready_honors_fail_on_degraded(self):
+        payloads = [
+            {
+                "status": "degraded",
+                "agents": {"counts": {}, "attention": []},
+                "processes": {"counts": {}, "attention": ["other-group"]},
+                "sessions": {
+                    "items": [{"meeting_id": "resident-m1", "group_id": "resident-main", "status": "ready"}]
+                },
+            },
+            {
+                "status": "ok",
+                "agents": {"counts": {}, "attention": []},
+                "processes": {"counts": {}, "attention": []},
+                "sessions": {
+                    "items": [{"meeting_id": "resident-m1", "group_id": "resident-main", "status": "ready"}]
+                },
+            },
+        ]
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=payloads) as request_json:
+            with patch("agentsassemble.cli.time.sleep") as sleep:
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "health",
+                            "--server",
+                            "http://room.local",
+                            "--wait-session-ready",
+                            "--meeting-id",
+                            "resident-m1",
+                            "--group-id",
+                            "resident-main",
+                            "--fail-on-degraded",
+                            "--timeout",
+                            "3",
+                            "--poll-interval",
+                            "0.1",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(request_json.call_count, 2)
+        self.assertEqual(sleep.call_count, 1)
+        self.assertIn("status: ok", stdout.getvalue())
+        self.assertNotIn("status: degraded", stdout.getvalue())
+
+    def test_live_agent_health_wait_session_ready_requires_meeting_and_group(self):
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            exit_code = main(["live-agent", "health", "--wait-session-ready"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("--wait-session-ready requires --meeting-id and --group-id", stderr.getvalue())
 
     def test_live_agent_smoke_parses_operator_options(self):
         args = build_parser().parse_args(

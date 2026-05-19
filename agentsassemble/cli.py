@@ -431,6 +431,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Poll until health reports ok or the timeout is reached.",
     )
+    live_health.add_argument(
+        "--wait-session-ready",
+        action="store_true",
+        help="Poll until the named meeting/group session reports ready in health.",
+    )
+    live_health.add_argument("--meeting-id", default="", help="Meeting id for --wait-session-ready.")
+    live_health.add_argument("--group-id", default="", help="Process group id for --wait-session-ready.")
     live_health.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
     live_health.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
 
@@ -1467,7 +1474,11 @@ def _resident_config_setup_error(config: ResidentAgentConfig) -> str:
 
 
 def _run_live_agent_health(args: argparse.Namespace) -> int:
-    if args.wait_ok:
+    if args.wait_ok and args.wait_session_ready:
+        raise ValueError("Use only one of --wait-ok or --wait-session-ready.")
+    if args.wait_session_ready and (not str(args.meeting_id or "").strip() or not str(args.group_id or "").strip()):
+        raise ValueError("--wait-session-ready requires --meeting-id and --group-id.")
+    if args.wait_ok or args.wait_session_ready:
         return _run_live_agent_health_wait(args)
     payload = _request_json(_server_url(args.server, "/api/live-agent-health"))
     _print_live_agent_health_payload(payload, as_json=args.as_json)
@@ -1500,7 +1511,7 @@ def _run_live_agent_health_wait(args: argparse.Namespace) -> int:
                 _print_live_agent_health_payload(last_payload, as_json=args.as_json)
             return 1
         last_payload = payload
-        if payload.get("status") == "ok":
+        if _live_agent_health_wait_satisfied(payload, args):
             _print_live_agent_health_payload(payload, as_json=args.as_json)
             return 0
         remaining_after_poll = max(0.0, deadline - time.monotonic())
@@ -1513,6 +1524,30 @@ def _print_live_agent_health_payload(payload: dict[str, object], *, as_json: boo
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print(_format_live_agent_health(payload))
+
+
+def _live_agent_health_wait_satisfied(payload: dict[str, object], args: argparse.Namespace) -> bool:
+    if args.wait_session_ready:
+        session = _find_live_agent_health_session(payload, args.meeting_id, args.group_id)
+        if session is None or str(session.get("status") or "").strip() != "ready":
+            return False
+        return not args.fail_on_degraded or payload.get("status") == "ok"
+    return payload.get("status") == "ok"
+
+
+def _find_live_agent_health_session(
+    payload: dict[str, object],
+    meeting_id: str,
+    group_id: str,
+) -> dict[str, object] | None:
+    sessions = payload.get("sessions") if isinstance(payload.get("sessions"), dict) else {}
+    items = sessions.get("items") if isinstance(sessions.get("items"), list) else []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("meeting_id") or "") == meeting_id and str(item.get("group_id") or "") == group_id:
+            return item
+    return None
 
 
 def _run_live_agent_preflight(args: argparse.Namespace) -> int:
