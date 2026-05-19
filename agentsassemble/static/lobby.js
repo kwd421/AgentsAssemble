@@ -108,6 +108,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-official-round-smoke")?.addEventListener("click", async () => {
     await runLiveAgentOfficialRoundSmoke(lobby);
   });
+  lobby.querySelector("#live-agent-session-smoke")?.addEventListener("click", async () => {
+    await runLiveAgentSessionSmoke();
+  });
   lobby.querySelector("#live-agent-readiness-check")?.addEventListener("click", async () => {
     await runLiveAgentReadiness(lobby);
   });
@@ -517,6 +520,7 @@ function renderLiveAgentProcessControls() {
         <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
         <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
         <button type="button" id="live-agent-official-round-smoke" ${processActionsDisabled ? "disabled" : ""}>공식진단</button>
+        <button type="button" id="live-agent-session-smoke" ${processActionsDisabled ? "disabled" : ""}>세션진단</button>
         <label class="live-agent-process-options">
           <input id="live-agent-readiness-official-round" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
           <span>공식 포함</span>
@@ -538,7 +542,7 @@ function renderLiveAgentProcessControls() {
 }
 
 function liveAgentProcessActionBusy() {
-  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentReadinessRunning;
+  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || Boolean(state.liveAgentProcessRowActionRunning);
 }
 
 function defaultOfficialRoundId(meeting) {
@@ -615,6 +619,8 @@ function renderLiveAgentProcessCard(group) {
   const status = group.status || "unknown";
   const canStop = status === "running" || status === "restarting";
   const canRecover = status === "unknown" || status === "error";
+  const actionDisabled = liveAgentProcessActionBusy();
+  const actionDisabledAttribute = actionDisabled ? " disabled" : "";
   const logTail = group.log_tail == null ? "" : String(group.log_tail);
   const agentLabel = liveAgentProcessAgentsLabel(group);
   const connectionLabel = liveAgentProcessConnectionLabel(group);
@@ -633,10 +639,10 @@ function renderLiveAgentProcessCard(group) {
       <em>${escapeHtml(liveAgentProcessStatusLabel(status))}</em>
       ${
         canStop
-          ? `<button type="button" data-live-agent-process-stop="${escapeHtml(group.group_id || "")}">중지</button>`
+          ? `<button type="button" data-live-agent-process-stop="${escapeHtml(group.group_id || "")}"${actionDisabledAttribute}>중지</button>`
           : canRecover
-            ? `<button type="button" class="live-agent-process-recover" data-live-agent-process-recover="${escapeHtml(group.group_id || "")}">복구</button>`
-            : `<button type="button" class="live-agent-process-restart" data-live-agent-process-restart="${escapeHtml(group.group_id || "")}">재시작</button>`
+            ? `<button type="button" class="live-agent-process-recover" data-live-agent-process-recover="${escapeHtml(group.group_id || "")}"${actionDisabledAttribute}>복구</button>`
+            : `<button type="button" class="live-agent-process-restart" data-live-agent-process-restart="${escapeHtml(group.group_id || "")}"${actionDisabledAttribute}>재시작</button>`
       }
       ${logTail ? `<pre class="live-agent-process-log">${escapeHtml(logTail)}</pre>` : ""}
     </article>
@@ -1240,6 +1246,39 @@ async function runLiveAgentOfficialRoundSmoke(lobby) {
   }
 }
 
+async function runLiveAgentSessionSmoke() {
+  if (liveAgentProcessActionBusy()) return;
+  state.liveAgentSessionSmokeRunning = true;
+  state.liveAgentProcessStatus = { message: "상주 세션 smoke 진단 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-session-smoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timeout: 12 }),
+    });
+    await refreshLiveAgentSessionSmokeSurfaces();
+    const tone = payload.status === "ok" ? "success" : "error";
+    state.liveAgentProcessStatus = { message: liveAgentSessionSmokeStatusMessage(payload), tone };
+  } catch {
+    await refreshLiveAgentSessionSmokeSurfaces();
+    state.liveAgentProcessStatus = { message: "상주 세션 smoke 진단 실패", tone: "error" };
+  } finally {
+    state.liveAgentSessionSmokeRunning = false;
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function refreshLiveAgentSessionSmokeSurfaces() {
+  try {
+    const lobbyPayload = await fetchJson("/api/lobby");
+    setLobbyEvents(lobbyPayload.events || []);
+  } catch {
+    // The session smoke result remains useful if only the lobby refresh fails.
+  }
+  await refreshLiveAgentRuntimeSurfaces();
+}
+
 async function runLiveAgentReadiness(lobby) {
   if (liveAgentProcessActionBusy()) return;
   const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
@@ -1284,6 +1323,24 @@ function officialRoundSmokeCountsLabel(payload) {
   const timedOut = payload.timeout_count || 0;
   const skipped = payload.skipped_count || 0;
   return `${answered} answered, ${timedOut} timed out, ${skipped} skipped`;
+}
+
+function liveAgentSessionSmokeStatusMessage(payload) {
+  const status = payload.status || "unknown";
+  const meetingId = payload.meeting_id || "session-smoke";
+  const roundsStatus = payload.rounds_status || "unknown";
+  const answeredRounds = Math.max(0, Number(payload.answered_round_count || 0));
+  const replies = Math.max(0, Number(payload.reply_count || 0));
+  const expectedReplies = Math.max(0, Number(payload.expected_reply_count || 0));
+  return (
+    `세션 smoke ${status}: ${meetingId} · ` +
+    `rounds ${roundsStatus} (${answeredRounds} answered) · ` +
+    `${replies}/${expectedReplies} replies · ` +
+    `start ${payload.start_status || "unknown"}, ` +
+    `check ${payload.check_status || "unknown"}, ` +
+    `restart ${payload.restart_status || "unknown"}, ` +
+    `stop ${payload.stop_status || "unknown"}`
+  );
 }
 
 async function runLiveAgentPreflight(lobby) {
@@ -1686,7 +1743,8 @@ function notifyMeetingRefreshRequested(meetingId) {
 }
 
 async function stopLiveAgentProcessGroup(groupId) {
-  if (!groupId) return;
+  if (!groupId || liveAgentProcessActionBusy()) return;
+  state.liveAgentProcessRowActionRunning = groupId;
   state.liveAgentProcessStatus = { message: `${groupId} 중지 중`, tone: "info" };
   renderLobby({ followLatest: false });
   try {
@@ -1700,13 +1758,16 @@ async function stopLiveAgentProcessGroup(groupId) {
     state.liveAgentProcessStatus = { message: `${groupId} 중지됨`, tone: "success" };
   } catch {
     state.liveAgentProcessStatus = { message: `${groupId} 중지 실패`, tone: "error" };
+  } finally {
+    await loadLiveAgentOperations({ background: true, force: true });
+    state.liveAgentProcessRowActionRunning = "";
+    renderLobby({ followLatest: false });
   }
-  await loadLiveAgentOperations({ background: true, force: true });
-  renderLobby({ followLatest: false });
 }
 
 async function restartLiveAgentProcessGroup(groupId) {
-  if (!groupId) return;
+  if (!groupId || liveAgentProcessActionBusy()) return;
+  state.liveAgentProcessRowActionRunning = groupId;
   state.liveAgentProcessStatus = { message: `${groupId} 재시작 중`, tone: "info" };
   renderLobby({ followLatest: false });
   try {
@@ -1720,13 +1781,16 @@ async function restartLiveAgentProcessGroup(groupId) {
     state.liveAgentProcessStatus = { message: `${groupId} 재시작됨`, tone: "success" };
   } catch (error) {
     state.liveAgentProcessStatus = { message: `${groupId} 재시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    await loadLiveAgentOperations({ background: true, force: true });
+    state.liveAgentProcessRowActionRunning = "";
+    renderLobby({ followLatest: false });
   }
-  await loadLiveAgentOperations({ background: true, force: true });
-  renderLobby({ followLatest: false });
 }
 
 async function recoverLiveAgentProcessGroup(groupId) {
-  if (!groupId) return;
+  if (!groupId || liveAgentProcessActionBusy()) return;
+  state.liveAgentProcessRowActionRunning = groupId;
   state.liveAgentProcessStatus = { message: `${groupId} 복구 중`, tone: "info" };
   renderLobby({ followLatest: false });
   try {
@@ -1740,9 +1804,11 @@ async function recoverLiveAgentProcessGroup(groupId) {
     state.liveAgentProcessStatus = { message: `${groupId} 복구됨`, tone: "success" };
   } catch (error) {
     state.liveAgentProcessStatus = { message: `${groupId} 복구 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    await loadLiveAgentOperations({ background: true, force: true });
+    state.liveAgentProcessRowActionRunning = "";
+    renderLobby({ followLatest: false });
   }
-  await loadLiveAgentOperations({ background: true, force: true });
-  renderLobby({ followLatest: false });
 }
 
 async function sendLiveAgentRegistration(form) {

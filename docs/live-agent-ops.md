@@ -472,7 +472,7 @@ For a clean doctor run, start the GUI with a temporary `--output-root` and point
 
 The GUI "상주 실행" panel exposes the same local diagnostic as the `진단` button. It calls `POST /api/live-agent-smoke`, starts the same temporary fake `local_cli`, `live_session`, and fake `remote_bridge` group, verifies the smoke replies by `source_event_id` and live-agent endpoint evidence, then refreshes the lobby, presence roster, and process records. Use it when you want operator-visible evidence without leaving the room UI.
 
-The GUI also exposes the credential-free official-turn path as `공식진단`. That button runs the same `POST /api/live-agent-official-round-smoke` path as the CLI official round smoke, reports the official reply counts in the status line, and treats any `status` other than `ok` as a failed 공식 라운드 smoke.
+The GUI also exposes the credential-free official-turn path as `공식진단`. That button runs the same `POST /api/live-agent-official-round-smoke` path as the CLI official round smoke, reports the official reply counts in the status line, and treats any `status` other than `ok` as a failed 공식 라운드 smoke. The adjacent `세션진단` button runs `POST /api/live-agent-session-smoke` without reusing the currently selected meeting or group fields, so each click creates a fresh diagnostic resident session and avoids colliding with a real meeting. Its status line reports the generated diagnostic meeting id, official-round result, lobby reply count, and start/check/restart/stop statuses.
 
 For the moderator-called official-turn path, run the official round smoke:
 

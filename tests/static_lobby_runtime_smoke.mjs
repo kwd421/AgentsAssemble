@@ -65,6 +65,7 @@ class FakeDocument {
     this.activeElement = null;
     this.byId = new Map();
     this.byClass = new Map();
+    this.byData = new Map();
     this.lobby = new FakeElement("div", { id: "lobby" }, this);
     this.byId.set("lobby", this.lobby);
   }
@@ -77,17 +78,22 @@ class FakeDocument {
 
   querySelectorAll(selector) {
     if (selector.startsWith(".")) return this.byClass.get(selector.slice(1)) || [];
-    if (selector.startsWith("[data-")) return [];
+    if (selector.startsWith("[data-")) {
+      const attributeName = selector.slice(1, -1);
+      return this.byData.get(attributeName) || [];
+    }
     return [];
   }
 
   loadInnerHtml(html) {
     this.byId = new Map([["lobby", this.lobby]]);
     this.byClass = new Map();
+    this.byData = new Map();
     for (const match of html.matchAll(/<([a-zA-Z][\w-]*)([^>]*)>/g)) {
       const [, tagName, rawAttributes] = match;
       const attributes = parseAttributes(rawAttributes);
-      if (!attributes.id && !attributes.class) continue;
+      const dataAttributeNames = Object.keys(attributes).filter((name) => name.startsWith("data-"));
+      if (!attributes.id && !attributes.class && dataAttributeNames.length === 0) continue;
       const element = new FakeElement(tagName, attributes, this);
       element.textContent = elementTextContent(html, match.index + match[0].length, tagName);
       if (attributes.id) this.byId.set(attributes.id, element);
@@ -97,6 +103,11 @@ class FakeDocument {
           elements.push(element);
           this.byClass.set(className, elements);
         }
+      }
+      for (const dataAttributeName of dataAttributeNames) {
+        const elements = this.byData.get(dataAttributeName) || [];
+        elements.push(element);
+        this.byData.set(dataAttributeName, elements);
       }
     }
   }
@@ -137,6 +148,14 @@ function unescapeHtml(value) {
     .replaceAll("&#039;", "'");
 }
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 function resetState() {
   Object.assign(state, {
     currentTab: "lobby",
@@ -168,7 +187,9 @@ function resetState() {
     liveAgentPreflightRunning: false,
     liveAgentSmokeRunning: false,
     liveAgentOfficialRoundSmokeRunning: false,
+    liveAgentSessionSmokeRunning: false,
     liveAgentReadinessRunning: false,
+    liveAgentProcessRowActionRunning: "",
     liveAgentRoundCallRunning: false,
     liveAgentProcessStatus: null,
     codexSessions: [],
@@ -186,7 +207,10 @@ function installHarness({
   sessionRestartPayload = null,
   sessionStopPayload = null,
   sessionCheckPayload = null,
+  sessionSmokePayload = null,
+  sessionSmokeResponse = null,
   sessionStartResponse = null,
+  processActionGate = null,
   roundPayload = null,
 } = {}) {
   const requests = [];
@@ -223,10 +247,19 @@ function installHarness({
     if (url === "/api/live-agent-processes/start") {
       return jsonResponse(processStartPayload || { group: { group_id: "crew", status: "running" }, groups: [] });
     }
-    if (url === "/api/live-agent-processes/crew/recover") {
+    const processActionMatch = String(url).match(/^\/api\/live-agent-processes\/([^/]+)\/(stop|restart|recover)$/);
+    if (processActionMatch) {
+      if (processActionGate) await processActionGate.promise;
+      const [, groupId, action] = processActionMatch;
+      if (action === "recover") {
+        return jsonResponse({
+          group: { group_id: groupId, status: "running", pid: 6789, recovered_from_status: "unknown" },
+          groups: [{ group_id: groupId, status: "running", pid: 6789, recovered_from_status: "unknown" }],
+        });
+      }
       return jsonResponse({
-        group: { group_id: "crew", status: "running", pid: 6789, recovered_from_status: "unknown" },
-        groups: [{ group_id: "crew", status: "running", pid: 6789, recovered_from_status: "unknown" }],
+        group: { group_id: groupId, status: action === "stop" ? "stopped" : "running" },
+        groups: [{ group_id: groupId, status: action === "stop" ? "stopped" : "running" }],
       });
     }
     if (url === "/api/live-agent-sessions/start") {
@@ -289,6 +322,27 @@ function installHarness({
           process: { status: "running", attention: [] },
         }
       );
+    }
+    if (url === "/api/live-agent-session-smoke") {
+      const payload = sessionSmokeResponse?.payload ||
+        sessionSmokePayload || {
+          status: "ok",
+          meeting_id: "session-smoke-123",
+          group_id: "session-smoke-123",
+          rounds_status: "answered",
+          round_count: 1,
+          answered_round_count: 1,
+          expected_reply_count: 3,
+          reply_count: 3,
+          start_status: "ready",
+          check_status: "ready",
+          restart_status: "ready",
+          stop_status: "stopped",
+        };
+      return jsonResponse(payload, {
+        ok: sessionSmokeResponse?.ok ?? true,
+        status: sessionSmokeResponse?.status ?? 200,
+      });
     }
     if (url === "/api/meetings/resident-gui/live-agent-turns/round") {
       return jsonResponse(
@@ -358,6 +412,10 @@ function sessionStopRequest(requests) {
 
 function sessionCheckRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-sessions/check");
+}
+
+function sessionSmokeRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-session-smoke");
 }
 
 function roundRequest(requests) {
@@ -669,6 +727,155 @@ test("session check button posts existing meeting and group payload", async () =
   assert.equal(
     requests.some((request) => request.url === "/api/live-agents"),
     false
+  );
+});
+
+test("session smoke button runs fresh diagnostic session instead of reusing current meeting fields", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    sessionSmokePayload: {
+      status: "ok",
+      meeting_id: "session-smoke-generated",
+      group_id: "session-smoke-generated",
+      rounds_status: "answered",
+      round_count: 1,
+      answered_round_count: 1,
+      expected_reply_count: 3,
+      reply_count: 3,
+      start_status: "ready",
+      check_status: "ready",
+      restart_status: "ready",
+      stop_status: "stopped",
+    },
+  });
+  state.payload = { meeting: { meeting_id: "real-meeting", meeting_template: { rounds: [] }, debate_rounds: [] } };
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-meeting-id").value = "real-meeting";
+  lobby.querySelector("#live-agent-process-group").value = "resident-main";
+
+  await lobby.querySelector("#live-agent-session-smoke").click();
+
+  assert.deepEqual(sessionSmokeRequest(requests).jsonBody, { timeout: 12 });
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "세션 smoke ok: session-smoke-generated · rounds answered (1 answered) · 3/3 replies · start ready, check ready, restart ready, stop stopped"
+  );
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-processes"),
+    true
+  );
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agents"),
+    true
+  );
+});
+
+test("session smoke failure still refreshes lobby and runtime surfaces", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    sessionSmokeResponse: {
+      ok: false,
+      status: 502,
+      payload: { error: "session smoke failed" },
+    },
+  });
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+
+  await lobby.querySelector("#live-agent-session-smoke").click();
+
+  assert.equal(state.liveAgentProcessStatus.message, "상주 세션 smoke 진단 실패");
+  assert.equal(state.liveAgentProcessStatus.tone, "error");
+  assert.equal(
+    requests.some((request) => request.url === "/api/lobby"),
+    true
+  );
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-processes"),
+    true
+  );
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agents"),
+    true
+  );
+});
+
+test("session smoke disables and guards process row actions", async () => {
+  resetState();
+  const { document, requests } = installHarness();
+  state.liveAgentSessionSmokeRunning = true;
+  state.liveAgentProcesses = [
+    {
+      group_id: "running-crew",
+      status: "running",
+      config_path: "configs/live-agents.example.json",
+      server: "http://127.0.0.1:8765",
+    },
+    {
+      group_id: "error-crew",
+      status: "error",
+      config_path: "configs/live-agents.example.json",
+      server: "http://127.0.0.1:8765",
+    },
+    {
+      group_id: "stopped-crew",
+      status: "stopped",
+      config_path: "configs/live-agents.example.json",
+      server: "http://127.0.0.1:8765",
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+  const stopButton = document.querySelectorAll("[data-live-agent-process-stop]")[0];
+  const recoverButton = document.querySelector(".live-agent-process-recover");
+  const restartButton = document.querySelectorAll("[data-live-agent-process-restart]")[0];
+
+  assert.equal(stopButton.disabled, true);
+  assert.equal(recoverButton.disabled, true);
+  assert.equal(restartButton.disabled, true);
+
+  await stopButton.click();
+  await recoverButton.click();
+  await restartButton.click();
+
+  assert.equal(
+    requests.some((request) => request.url.includes("/api/live-agent-processes/")),
+    false
+  );
+});
+
+test("process row action keeps the panel busy while the request is in flight", async () => {
+  resetState();
+  const gate = deferred();
+  const { document, requests } = installHarness({ processActionGate: gate });
+  state.liveAgentProcesses = [
+    {
+      group_id: "running-crew",
+      status: "running",
+      config_path: "configs/live-agents.example.json",
+      server: "http://127.0.0.1:8765",
+    },
+  ];
+  renderLobby({ followLatest: false });
+
+  const clickPromise = document.querySelectorAll("[data-live-agent-process-stop]")[0].click();
+
+  assert.equal(state.liveAgentProcessRowActionRunning, "running-crew");
+  assert.equal(document.querySelector("#live-agent-session-smoke").disabled, true);
+  await document.querySelector("#live-agent-session-smoke").click();
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-session-smoke"),
+    false
+  );
+
+  gate.resolve();
+  await clickPromise;
+
+  assert.equal(state.liveAgentProcessRowActionRunning, "");
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-processes/running-crew/stop"),
+    true
   );
 });
 
