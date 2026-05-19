@@ -1311,6 +1311,62 @@ If process launch fails after the visible meeting is created, raise a sanitized 
 
 ---
 
+### Task 43: Bounded Resident Session Soak Evidence
+
+**Files:**
+- Modify: `agentsassemble/live_agent_smoke.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Test: `tests/test_live_agent_smoke.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for same-session soak cycles**
+
+Cover `run_live_agent_session_smoke(..., soak_cycle_count=2, soak_interval_seconds=0.5)` keeping the recovered diagnostic session alive before stop, waiting the bounded interval before each cycle, running `check-session`, preserving `always` engagement, posting one human lobby probe per soak cycle, verifying all three fake resident replies by `source_event_id`, and returning safe `soak_cycle_count`, `soak_interval_seconds`, `soak_check_statuses`, `soak_reply_count`, `soak_source_event_ids`, and `soak_replies` metadata.
+
+Run: `python3 -m unittest tests.test_live_agent_smoke.LiveAgentSmokeTests.test_session_smoke_can_run_same_session_soak_cycles`
+Expected: fail because `soak_cycle_count` is not accepted and no soak fields exist.
+
+- [x] **Step 2: Add RED coverage for operator surfaces and bounds**
+
+Cover `live-agent session-smoke --soak-cycles 2 --soak-interval 0.5`, parser rejection for values above the cycle and interval bounds, API payload forwarding through `/api/live-agent-session-smoke`, readiness forwarding through `--session-smoke-soak-cycles` and `--session-smoke-soak-interval`, safe operation details with counts/statuses only, and docs mentioning `--soak-cycles`.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_session_smoke_parses_operator_options \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_session_smoke_rejects_unbounded_soak_cycles \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_session_smoke_rejects_unbounded_soak_interval \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_session_smoke_posts_endpoint_and_prints_summary \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_doctor_can_request_session_smoke \
+  tests.test_gui_server.GuiServerTests.test_live_agent_session_smoke_endpoint_records_safe_operation \
+  tests.test_gui_server.GuiServerTests.test_live_agent_readiness_endpoint_runs_opt_in_session_smoke \
+  tests.test_docs_architecture.DocsArchitectureTests
+```
+
+Expected: fail on missing parser/API/doc fields before implementation.
+
+- [x] **Step 3: Implement bounded same-session soak**
+
+Add small bounded `soak_cycle_count` and `soak_interval_seconds` parsers and validators. Defaults are `0` and `0.0` so current fast smoke and readiness behavior stay unchanged. For each soak cycle after `recover-session` and post-recover reply verification, wait the bounded interval, call `check-session`, require `ready`, set fake agents back to `always`, post one phase-labeled lobby probe, wait for endpoint-backed replies, then continue. Stop still runs in the existing `finally` block.
+
+Run targeted smoke, CLI, GUI, and docs tests from Steps 1-2.
+Expected: pass.
+
+- [x] **Step 4: Preserve privacy and operation hygiene**
+
+Return direct `session-smoke` payloads may include safe event/reply ids like the existing direct smoke payload, but `session.smoke` operation details and readiness-safe summaries must include only counts/statuses. Do not record source event ids, reply ids, reply text, temporary config paths, endpoint URLs, auth refs, commands, provider output, tokens, or log tails in operation history.
+
+Run: `python3 -m unittest tests.test_gui_server.GuiServerTests.test_live_agent_session_smoke_endpoint_records_safe_operation`
+Expected: pass with no soak source ids or reply ids in operation history.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

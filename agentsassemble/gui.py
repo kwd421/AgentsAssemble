@@ -38,6 +38,8 @@ from agentsassemble.live_agent_sessions import (
 )
 from agentsassemble.live_agent_smoke import (
     LiveAgentSmokeFailed,
+    MAX_SESSION_SMOKE_SOAK_CYCLES,
+    MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS,
     run_live_agent_official_round_smoke,
     run_live_agent_session_smoke,
     run_live_agent_smoke,
@@ -1149,6 +1151,8 @@ def live_agent_session_smoke_payload(
         meeting_id=str(payload.get("meeting_id") or ""),
         timeout_seconds=_payload_nonnegative_float(payload.get("timeout"), 12.0),
         lobby_probe_count=_payload_nonnegative_int(payload.get("lobby_probe_count"), 1),
+        soak_cycle_count=_payload_session_smoke_soak_cycle_count(payload.get("soak_cycle_count")),
+        soak_interval_seconds=_payload_session_smoke_soak_interval_seconds(payload.get("soak_interval_seconds")),
         request_json=_request_json,
         output_root=output_root,
     )
@@ -1223,6 +1227,12 @@ def live_agent_readiness_payload(
                     {
                         "timeout": _payload_nonnegative_float(payload.get("timeout"), 12.0),
                         "lobby_probe_count": _payload_nonnegative_int(payload.get("session_smoke_lobby_probe_count"), 1),
+                        "soak_cycle_count": _payload_session_smoke_soak_cycle_count(
+                            payload.get("session_smoke_soak_cycle_count")
+                        ),
+                        "soak_interval_seconds": _payload_session_smoke_soak_interval_seconds(
+                            payload.get("session_smoke_soak_interval_seconds")
+                        ),
                     },
                     default_server=default_server,
                 )
@@ -1998,9 +2008,6 @@ def _safe_readiness_smoke_result(smoke: dict[str, object]) -> dict[str, object]:
     agent_ids = _payload_probe_agent_ids(smoke.get("agent_ids"))
     if agent_ids:
         safe["agent_ids"] = agent_ids
-    source_event_id = str(smoke.get("source_event_id") or "").strip()[:128]
-    if source_event_id:
-        safe["source_event_id"] = source_event_id
     replies = smoke.get("replies") if isinstance(smoke.get("replies"), list) else []
     safe["reply_count"] = len(replies)
     error = str(smoke.get("error") or "").strip()[:240]
@@ -2024,8 +2031,6 @@ def _safe_readiness_official_round_smoke_result(smoke: dict[str, object]) -> dic
         "stopped": smoke.get("stopped") is True,
         "timeout_seconds": _payload_nonnegative_float(smoke.get("timeout_seconds"), 0.0),
         "statuses": _safe_payload_strings(smoke.get("statuses"), limit=32),
-        "request_event_ids": _safe_payload_strings(smoke.get("request_event_ids"), limit=128),
-        "reply_event_ids": _safe_payload_strings(smoke.get("reply_event_ids"), limit=128),
     }
     error = str(smoke.get("error") or "").strip()[:240]
     if error:
@@ -2049,6 +2054,9 @@ def _safe_readiness_session_smoke_result(smoke: dict[str, object]) -> dict[str, 
         "reply_count": _payload_nonnegative_int(smoke.get("reply_count"), 0),
         "post_restart_reply_count": _payload_nonnegative_int(smoke.get("post_restart_reply_count"), 0),
         "post_recover_reply_count": _payload_nonnegative_int(smoke.get("post_recover_reply_count"), 0),
+        "soak_cycle_count": _payload_nonnegative_int(smoke.get("soak_cycle_count"), 0),
+        "soak_reply_count": _payload_nonnegative_int(smoke.get("soak_reply_count"), 0),
+        "soak_check_statuses": _safe_payload_strings(smoke.get("soak_check_statuses"), limit=32),
         "start_status": _operation_result_status(smoke.get("start_status")),
         "check_status": _operation_result_status(smoke.get("check_status")),
         "resume_status": _operation_result_status(smoke.get("resume_status")),
@@ -2152,6 +2160,32 @@ def _payload_nonnegative_float(value: object, default: float) -> float:
     if not math.isfinite(parsed):
         return default
     return max(0.0, parsed)
+
+
+def _payload_session_smoke_soak_cycle_count(value: object) -> int:
+    if value is None or value == "":
+        return 0
+    try:
+        parsed = int(value)
+    except (OverflowError, TypeError, ValueError) as error:
+        raise ValueError("session smoke soak_cycle_count must be between 0 and 5") from error
+    if parsed < 0 or parsed > MAX_SESSION_SMOKE_SOAK_CYCLES:
+        raise ValueError(f"session smoke soak_cycle_count must be between 0 and {MAX_SESSION_SMOKE_SOAK_CYCLES}")
+    return parsed
+
+
+def _payload_session_smoke_soak_interval_seconds(value: object) -> float:
+    if value is None or value == "":
+        return 0.0
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError("session smoke soak_interval_seconds must be between 0 and 60") from error
+    if not math.isfinite(parsed) or parsed < 0 or parsed > MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS:
+        raise ValueError(
+            f"session smoke soak_interval_seconds must be between 0 and {MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS:g}"
+        )
+    return parsed
 
 
 def _payload_optional_int(value: object) -> int | None:
@@ -2397,6 +2431,9 @@ def _session_smoke_operation_details(smoke: dict[str, object]) -> dict[str, obje
         "reply_count": _payload_nonnegative_int(smoke.get("reply_count"), 0),
         "post_restart_reply_count": _payload_nonnegative_int(smoke.get("post_restart_reply_count"), 0),
         "post_recover_reply_count": _payload_nonnegative_int(smoke.get("post_recover_reply_count"), 0),
+        "soak_cycle_count": _payload_nonnegative_int(smoke.get("soak_cycle_count"), 0),
+        "soak_reply_count": _payload_nonnegative_int(smoke.get("soak_reply_count"), 0),
+        "soak_check_statuses": _safe_payload_strings(smoke.get("soak_check_statuses"), limit=32),
         "start_status": _operation_result_status(smoke.get("start_status")),
         "check_status": _operation_result_status(smoke.get("check_status")),
         "resume_status": _operation_result_status(smoke.get("resume_status")),
@@ -3544,6 +3581,14 @@ def _make_handler(
                         ),
                         "session_smoke_post_recover_reply_count": _payload_nonnegative_int(
                             session_smoke.get("post_recover_reply_count"),
+                            0,
+                        ),
+                        "session_smoke_soak_cycle_count": _payload_nonnegative_int(
+                            session_smoke.get("soak_cycle_count"),
+                            0,
+                        ),
+                        "session_smoke_soak_reply_count": _payload_nonnegative_int(
+                            session_smoke.get("soak_reply_count"),
                             0,
                         ),
                         "session_smoke_recover_status": _operation_result_status(session_smoke.get("recover_status")),

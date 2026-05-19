@@ -968,6 +968,16 @@ class GuiServerTests(unittest.TestCase):
             "post_recover_source_event_id": "post-recover-secret",
             "post_recover_source_event_ids": ["post-recover-secret", "post-recover-secret-2"],
             "post_recover_reply_count": 6,
+            "soak_cycle_count": 2,
+            "soak_interval_seconds": 0.5,
+            "soak_check_statuses": ["ready", "ready"],
+            "soak_source_event_ids": ["soak-secret", "soak-secret-2"],
+            "soak_reply_count": 6,
+            "soak_replies": [
+                {"id": "reply-soak-local", "actor_id": "session-smoke-local-cli", "source_event_id": "soak-secret"},
+                {"id": "reply-soak-session", "actor_id": "session-smoke-live-session", "source_event_id": "soak-secret"},
+                {"id": "reply-soak-bridge", "actor_id": "session-smoke-remote-bridge", "source_event_id": "soak-secret"},
+            ],
             "replies": [
                 {"id": "reply-local", "actor_id": "session-smoke-local-cli", "source_event_id": "probe-secret"},
                 {"id": "reply-session", "actor_id": "session-smoke-live-session", "source_event_id": "probe-secret"},
@@ -1030,6 +1040,8 @@ class GuiServerTests(unittest.TestCase):
                                 "meeting_id": "session-smoke-meeting",
                                 "timeout": 8,
                                 "lobby_probe_count": 2,
+                                "soak_cycle_count": 2,
+                                "soak_interval_seconds": 0.5,
                             }
                         ).encode("utf-8"),
                         headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
@@ -1053,6 +1065,8 @@ class GuiServerTests(unittest.TestCase):
             meeting_id="session-smoke-meeting",
             timeout_seconds=8.0,
             lobby_probe_count=2,
+            soak_cycle_count=2,
+            soak_interval_seconds=0.5,
             request_json=ANY,
             output_root=root,
         )
@@ -1066,6 +1080,9 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(session_operations[-1]["details"]["reply_count"], 6)
         self.assertEqual(session_operations[-1]["details"]["post_restart_reply_count"], 6)
         self.assertEqual(session_operations[-1]["details"]["post_recover_reply_count"], 6)
+        self.assertEqual(session_operations[-1]["details"]["soak_cycle_count"], 2)
+        self.assertEqual(session_operations[-1]["details"]["soak_reply_count"], 6)
+        self.assertEqual(session_operations[-1]["details"]["soak_check_statuses"], ["ready", "ready"])
         self.assertEqual(session_operations[-1]["details"]["resume_status"], "ready")
         self.assertEqual(session_operations[-1]["details"]["recover_status"], "ready")
         operation_blob = json.dumps(session_operations, ensure_ascii=False)
@@ -1075,6 +1092,8 @@ class GuiServerTests(unittest.TestCase):
         self.assertNotIn("post-restart-secret-2", operation_blob)
         self.assertNotIn("post-recover-secret", operation_blob)
         self.assertNotIn("post-recover-secret-2", operation_blob)
+        self.assertNotIn("soak-secret", operation_blob)
+        self.assertNotIn("soak-secret-2", operation_blob)
         self.assertNotIn("reply-local", operation_blob)
         self.assertNotIn("reply-session", operation_blob)
         self.assertNotIn("reply-bridge", operation_blob)
@@ -1084,6 +1103,9 @@ class GuiServerTests(unittest.TestCase):
         self.assertNotIn("reply-recover-local", operation_blob)
         self.assertNotIn("reply-recover-session", operation_blob)
         self.assertNotIn("reply-recover-bridge", operation_blob)
+        self.assertNotIn("reply-soak-local", operation_blob)
+        self.assertNotIn("reply-soak-session", operation_blob)
+        self.assertNotIn("reply-soak-bridge", operation_blob)
 
     def test_live_agent_session_smoke_endpoint_records_safe_failure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1122,6 +1144,39 @@ class GuiServerTests(unittest.TestCase):
         operation_blob = json.dumps({"error": error_payload, "operations": session_operations}, ensure_ascii=False)
         self.assertNotIn("SECRET_TOKEN", operation_blob)
         self.assertNotIn("/private/live-agents.json", operation_blob)
+
+    def test_live_agent_session_smoke_endpoint_rejects_negative_soak_payload_before_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch("agentsassemble.gui.run_live_agent_session_smoke") as session_smoke:
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-session-smoke",
+                        data=json.dumps({"soak_cycle_count": -1, "soak_interval_seconds": -0.5}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with self.assertRaises(HTTPError) as raised:
+                        urlopen(request, timeout=12)
+                    error_payload = json.loads(raised.exception.read().decode("utf-8"))
+                    raised.exception.close()
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        session_smoke.assert_not_called()
+        self.assertEqual(error_payload["error"], "Session smoke could not be run.")
+        session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.smoke"]
+        self.assertEqual(session_operations[-1]["status"], "failed")
 
     def test_live_agent_session_smoke_endpoint_runs_credential_free_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1364,7 +1419,7 @@ class GuiServerTests(unittest.TestCase):
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
-            smoke_result = {"status": "ok", "group_id": "doctor-smoke", "replies": []}
+            smoke_result = {"status": "ok", "group_id": "doctor-smoke", "source_event_id": "base-secret", "replies": []}
             probe_results = [
                 {
                     "status": "ok",
@@ -1447,7 +1502,7 @@ class GuiServerTests(unittest.TestCase):
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
-            smoke_result = {"status": "ok", "group_id": "doctor-smoke", "replies": []}
+            smoke_result = {"status": "ok", "group_id": "doctor-smoke", "source_event_id": "base-secret", "replies": []}
             official_result = {
                 "status": "ok",
                 "group_id": "doctor-smoke",
@@ -1516,8 +1571,6 @@ class GuiServerTests(unittest.TestCase):
                 "stopped": True,
                 "timeout_seconds": 8.0,
                 "statuses": ["answered"],
-                "request_event_ids": ["request-secret"],
-                "reply_event_ids": ["reply-secret"],
             },
         )
         official_smoke.assert_called_once()
@@ -1527,13 +1580,20 @@ class GuiServerTests(unittest.TestCase):
         serialized_payload = json.dumps(payload, ensure_ascii=False)
         self.assertNotIn("private-live-agents", serialized_payload)
         self.assertNotIn("secret official reply", serialized_payload)
+        self.assertNotIn("base-secret", serialized_payload)
+        self.assertNotIn("request-secret", serialized_payload)
+        self.assertNotIn("reply-secret", serialized_payload)
         readiness_operations = [
             operation for operation in operations["operations"] if operation["operation"] == "readiness.check"
         ]
         self.assertEqual(readiness_operations[-1]["status"], "success")
         self.assertEqual(readiness_operations[-1]["details"]["official_round_smoke"], "ok")
         self.assertEqual(readiness_operations[-1]["details"]["official_round_answered_count"], 1)
-        self.assertNotIn("secret official reply", json.dumps(readiness_operations, ensure_ascii=False))
+        operation_blob = json.dumps(readiness_operations, ensure_ascii=False)
+        self.assertNotIn("secret official reply", operation_blob)
+        self.assertNotIn("base-secret", operation_blob)
+        self.assertNotIn("request-secret", operation_blob)
+        self.assertNotIn("reply-secret", operation_blob)
 
     def test_live_agent_readiness_endpoint_runs_opt_in_session_smoke(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1553,6 +1613,9 @@ class GuiServerTests(unittest.TestCase):
                 "reply_count": 3,
                 "post_restart_reply_count": 3,
                 "post_recover_reply_count": 3,
+                "soak_cycle_count": 2,
+                "soak_reply_count": 6,
+                "soak_check_statuses": ["ready", "ready"],
                 "rounds_status": "answered",
                 "answered_round_count": 1,
                 "start_status": "ready",
@@ -1563,7 +1626,9 @@ class GuiServerTests(unittest.TestCase):
                 "stop_status": "stopped",
                 "source_event_id": "secret-source",
                 "post_recover_source_event_id": "secret-recover-source",
+                "soak_source_event_ids": ["secret-soak-source"],
                 "replies": [{"id": "secret-reply", "message": "secret session reply"}],
+                "soak_replies": [{"id": "secret-soak-reply", "message": "secret soak reply"}],
                 "started_group": {"config_path": "/Users/me/private-live-agents.json"},
             }
             try:
@@ -1578,6 +1643,8 @@ class GuiServerTests(unittest.TestCase):
                                 "group_id": "doctor-smoke",
                                 "timeout": 8,
                                 "session_smoke": True,
+                                "session_smoke_soak_cycle_count": 2,
+                                "session_smoke_soak_interval_seconds": 0.5,
                             }
                         ).encode("utf-8"),
                         headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
@@ -1613,6 +1680,9 @@ class GuiServerTests(unittest.TestCase):
                 "reply_count": 3,
                 "post_restart_reply_count": 3,
                 "post_recover_reply_count": 3,
+                "soak_cycle_count": 2,
+                "soak_reply_count": 6,
+                "soak_check_statuses": ["ready", "ready"],
                 "start_status": "ready",
                 "check_status": "ready",
                 "resume_status": "ready",
@@ -1626,10 +1696,14 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(session_smoke.call_args.kwargs["group_id"], "")
         self.assertEqual(session_smoke.call_args.kwargs["meeting_id"], "")
         self.assertEqual(session_smoke.call_args.kwargs["timeout_seconds"], 8.0)
+        self.assertEqual(session_smoke.call_args.kwargs["soak_cycle_count"], 2)
+        self.assertEqual(session_smoke.call_args.kwargs["soak_interval_seconds"], 0.5)
         serialized_payload = json.dumps(payload, ensure_ascii=False)
         self.assertNotIn("secret-source", serialized_payload)
         self.assertNotIn("secret-recover-source", serialized_payload)
+        self.assertNotIn("secret-soak-source", serialized_payload)
         self.assertNotIn("secret session reply", serialized_payload)
+        self.assertNotIn("secret soak reply", serialized_payload)
         self.assertNotIn("private-live-agents", serialized_payload)
         readiness_operations = [
             operation for operation in operations["operations"] if operation["operation"] == "readiness.check"
@@ -1638,7 +1712,12 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke"], "ok")
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_reply_count"], 3)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_post_recover_reply_count"], 3)
-        self.assertNotIn("secret session reply", json.dumps(readiness_operations, ensure_ascii=False))
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_soak_cycle_count"], 2)
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_soak_reply_count"], 6)
+        readiness_blob = json.dumps(readiness_operations, ensure_ascii=False)
+        self.assertNotIn("secret session reply", readiness_blob)
+        self.assertNotIn("secret soak reply", readiness_blob)
+        self.assertNotIn("secret-soak-source", readiness_blob)
 
     def test_live_agent_readiness_endpoint_sanitizes_session_smoke_failure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1680,6 +1759,49 @@ class GuiServerTests(unittest.TestCase):
         for secret in ("SECRET", "private-live-agents", "/Users/me", "config_path", "token="):
             self.assertNotIn(secret, serialized_payload)
             self.assertNotIn(secret, serialized_operations)
+
+    def test_live_agent_readiness_endpoint_rejects_negative_session_smoke_soak_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with (
+                    patch("agentsassemble.gui.run_live_agent_smoke", return_value={"status": "ok", "group_id": "doctor-smoke"}),
+                    patch("agentsassemble.gui.run_live_agent_session_smoke") as session_smoke,
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                        data=json.dumps(
+                            {
+                                "group_id": "doctor-smoke",
+                                "session_smoke": True,
+                                "session_smoke_soak_cycle_count": -1,
+                                "session_smoke_soak_interval_seconds": -0.5,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=12) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        session_smoke.assert_not_called()
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(payload["session_smoke"]["status"], "failed")
+        self.assertEqual(payload["session_smoke"]["error"], "session smoke could not be run")
+        readiness_operations = [operation for operation in operations["operations"] if operation["operation"] == "readiness.check"]
+        self.assertEqual(readiness_operations[-1]["status"], "failed")
 
     def test_live_agent_readiness_endpoint_skips_session_smoke_when_base_smoke_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1930,11 +2052,11 @@ class GuiServerTests(unittest.TestCase):
                 "status": "ok",
                 "group_id": "doctor-smoke",
                 "agent_ids": ["smoke-local"],
-                "source_event_id": "smoke-source",
                 "reply_count": 1,
             },
         )
         serialized_payload = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("smoke-source", serialized_payload)
         self.assertNotIn("private-live-agents", serialized_payload)
         self.assertNotIn("127.0.0.1:8765", serialized_payload)
         self.assertNotIn("log_tail", serialized_payload)

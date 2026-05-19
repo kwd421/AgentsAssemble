@@ -389,6 +389,151 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertEqual({reply["source_event_id"] for reply in result["post_restart_replies"]}, {"probe-3", "probe-4"})
         self.assertEqual({reply["source_event_id"] for reply in result["post_recover_replies"]}, {"probe-5", "probe-6"})
 
+    def test_session_smoke_can_run_same_session_soak_cycles(self):
+        calls = []
+        state = {"probe_ids": [], "check_count": 0, "sleeps": []}
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            calls.append((url, method, payload, timeout_seconds))
+            if url.endswith("/api/live-agent-sessions/start"):
+                meeting_dir = state["root"] / "meetings" / payload["meeting_id"]
+                meeting_dir.mkdir(parents=True, exist_ok=True)
+                (meeting_dir / "live_state.json").write_text(
+                    json.dumps({"meeting_id": payload["meeting_id"], "live_status": "running"}),
+                    encoding="utf-8",
+                )
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                }
+            if url.endswith("/live-agent-turns/rounds"):
+                return {
+                    "status": "answered",
+                    "meeting_id": "session-smoke-meeting",
+                    "round_count": 1,
+                    "answered_round_count": 1,
+                    "completed_round_count": 0,
+                    "timeout_round_count": 0,
+                    "skipped_round_count": 0,
+                    "stopped_round_count": 0,
+                }
+            if url.endswith("/engagement"):
+                return {"agent": {"agent_id": url.rsplit("/", 2)[-2], "engagement_mode": "always"}}
+            if url.endswith("/api/lobby") and method == "POST":
+                probe_id = f"probe-{len(state['probe_ids']) + 1}"
+                state["probe_ids"].append(probe_id)
+                return {"event": {"id": probe_id}}
+            if url.endswith("/api/lobby") and method == "GET":
+                events = []
+                for probe_id in state["probe_ids"]:
+                    events.extend(
+                        [
+                            {
+                                "id": f"reply-local-{probe_id}",
+                                "actor_id": "session-smoke-local-cli",
+                                "message": "session smoke local_cli ok",
+                                "source_event_id": probe_id,
+                                "live_agent_endpoint": True,
+                            },
+                            {
+                                "id": f"reply-session-{probe_id}",
+                                "actor_id": "session-smoke-live-session",
+                                "message": "session smoke live_session ok",
+                                "source_event_id": probe_id,
+                                "live_agent_endpoint": True,
+                            },
+                            {
+                                "id": f"reply-bridge-{probe_id}",
+                                "actor_id": "session-smoke-remote-bridge",
+                                "message": "session smoke remote_bridge ok",
+                                "source_event_id": probe_id,
+                                "live_agent_endpoint": True,
+                            },
+                        ]
+                    )
+                return {"events": events}
+            if url.endswith("/api/live-agent-sessions/check"):
+                state["check_count"] += 1
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                }
+            if (
+                url.endswith("/api/live-agent-sessions/resume")
+                or url.endswith("/api/live-agent-sessions/restart")
+                or url.endswith("/api/live-agent-sessions/recover")
+            ):
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                }
+            if url.endswith("/api/live-agent-processes"):
+                return {
+                    "groups": [
+                        {
+                            "group_id": "session-smoke",
+                            "status": "error",
+                            "meeting_id": "session-smoke-meeting",
+                            "diagnostic": True,
+                            "agents": [
+                                {"agent_id": "session-smoke-local-cli"},
+                                {"agent_id": "session-smoke-live-session"},
+                                {"agent_id": "session-smoke-remote-bridge"},
+                            ],
+                        }
+                    ]
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                return {
+                    "status": "stopped",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "offline": {"expected": 3, "offline": 3, "attention": []},
+                }
+            return {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state["root"] = Path(temp_dir) / "room"
+            result = run_live_agent_session_smoke(
+                server="http://room.local",
+                group_id="session-smoke",
+                meeting_id="session-smoke-meeting",
+                timeout_seconds=8,
+                soak_cycle_count=2,
+                soak_interval_seconds=0.5,
+                request_json=request_json,
+                output_root=state["root"],
+                sleep_fn=lambda seconds: state["sleeps"].append(seconds),
+                temp_dir_factory=lambda: _FixedTemporaryDirectory(Path(temp_dir) / "config"),
+            )
+
+        urls = [url for url, method, payload, timeout_seconds in calls]
+        lobby_post_indexes = [
+            index
+            for index, (url, method, payload, timeout_seconds) in enumerate(calls)
+            if url == "http://room.local/api/lobby" and method == "POST"
+        ]
+        stop_index = urls.index("http://room.local/api/live-agent-sessions/stop")
+        self.assertEqual(len(lobby_post_indexes), 5)
+        self.assertLess(urls.index("http://room.local/api/live-agent-sessions/recover"), lobby_post_indexes[2])
+        self.assertLess(lobby_post_indexes[2], lobby_post_indexes[3])
+        self.assertLess(lobby_post_indexes[3], lobby_post_indexes[4])
+        self.assertLess(lobby_post_indexes[4], stop_index)
+        self.assertEqual(state["check_count"], 3)
+        self.assertEqual(state["sleeps"], [0.5, 0.5])
+        self.assertEqual(result["soak_cycle_count"], 2)
+        self.assertEqual(result["soak_interval_seconds"], 0.5)
+        self.assertEqual(result["soak_check_statuses"], ["ready", "ready"])
+        self.assertEqual(result["soak_source_event_ids"], ["probe-4", "probe-5"])
+        self.assertEqual(result["soak_reply_count"], 6)
+        self.assertEqual({reply["source_event_id"] for reply in result["soak_replies"]}, {"probe-4", "probe-5"})
+
     def test_session_smoke_bounds_lobby_probe_count_before_side_effects(self):
         calls = []
 
@@ -406,6 +551,120 @@ class LiveAgentSmokeTests(unittest.TestCase):
             )
 
         self.assertEqual(calls, [])
+
+    def test_session_smoke_bounds_soak_options_before_side_effects(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            calls.append((url, method, payload, timeout_seconds))
+            return {}
+
+        with self.assertRaisesRegex(ValueError, "soak_cycle_count"):
+            run_live_agent_session_smoke(
+                server="http://room.local",
+                timeout_seconds=8,
+                soak_cycle_count=6,
+                request_json=request_json,
+                sleep_fn=lambda seconds: None,
+            )
+        with self.assertRaisesRegex(ValueError, "soak_interval_seconds"):
+            run_live_agent_session_smoke(
+                server="http://room.local",
+                timeout_seconds=8,
+                soak_interval_seconds=61,
+                request_json=request_json,
+                sleep_fn=lambda seconds: None,
+            )
+
+        self.assertEqual(calls, [])
+
+    def test_session_smoke_stops_session_when_soak_check_fails(self):
+        calls = []
+        state = {"probe_ids": [], "check_count": 0}
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            calls.append((url, method, payload, timeout_seconds))
+            if url.endswith("/api/live-agent-sessions/start"):
+                meeting_dir = state["root"] / "meetings" / payload["meeting_id"]
+                meeting_dir.mkdir(parents=True, exist_ok=True)
+                (meeting_dir / "live_state.json").write_text(
+                    json.dumps({"meeting_id": payload["meeting_id"], "live_status": "running"}),
+                    encoding="utf-8",
+                )
+                return {"status": "ready", "meeting_id": payload["meeting_id"], "group_id": payload["group_id"]}
+            if url.endswith("/live-agent-turns/rounds"):
+                return {"status": "answered", "answered_round_count": 1}
+            if url.endswith("/engagement"):
+                return {"agent": {"agent_id": url.rsplit("/", 2)[-2], "engagement_mode": "always"}}
+            if url.endswith("/api/lobby") and method == "POST":
+                probe_id = f"probe-{len(state['probe_ids']) + 1}"
+                state["probe_ids"].append(probe_id)
+                return {"event": {"id": probe_id}}
+            if url.endswith("/api/lobby") and method == "GET":
+                events = []
+                for probe_id in state["probe_ids"]:
+                    for agent_id, message in [
+                        ("session-smoke-local-cli", "session smoke local_cli ok"),
+                        ("session-smoke-live-session", "session smoke live_session ok"),
+                        ("session-smoke-remote-bridge", "session smoke remote_bridge ok"),
+                    ]:
+                        events.append(
+                            {
+                                "id": f"reply-{agent_id}-{probe_id}",
+                                "actor_id": agent_id,
+                                "message": message,
+                                "source_event_id": probe_id,
+                                "live_agent_endpoint": True,
+                            }
+                        )
+                return {"events": events}
+            if url.endswith("/api/live-agent-sessions/check"):
+                state["check_count"] += 1
+                status = "ready" if state["check_count"] == 1 else "degraded"
+                return {"status": status, "meeting_id": payload["meeting_id"], "group_id": payload["group_id"]}
+            if url.endswith("/api/live-agent-sessions/resume") or url.endswith("/api/live-agent-sessions/restart"):
+                return {"status": "ready", "meeting_id": payload["meeting_id"], "group_id": payload["group_id"]}
+            if url.endswith("/api/live-agent-sessions/recover"):
+                return {"status": "ready", "meeting_id": payload["meeting_id"], "group_id": payload["group_id"]}
+            if url.endswith("/api/live-agent-processes"):
+                return {
+                    "groups": [
+                        {
+                            "group_id": "session-smoke",
+                            "status": "error",
+                            "meeting_id": "session-smoke-meeting",
+                            "diagnostic": True,
+                            "agents": [
+                                {"agent_id": "session-smoke-local-cli"},
+                                {"agent_id": "session-smoke-live-session"},
+                                {"agent_id": "session-smoke-remote-bridge"},
+                            ],
+                        }
+                    ]
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                return {"status": "stopped", "meeting_id": payload["meeting_id"], "group_id": payload["group_id"]}
+            return {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state["root"] = Path(temp_dir) / "room"
+            with self.assertRaisesRegex(LiveAgentSmokeFailed, "soak check"):
+                run_live_agent_session_smoke(
+                    server="http://room.local",
+                    group_id="session-smoke",
+                    meeting_id="session-smoke-meeting",
+                    timeout_seconds=8,
+                    soak_cycle_count=1,
+                    request_json=request_json,
+                    output_root=state["root"],
+                    sleep_fn=lambda seconds: None,
+                    temp_dir_factory=lambda: _FixedTemporaryDirectory(Path(temp_dir) / "config"),
+                )
+
+        self.assertIn(
+            ("http://room.local/api/live-agent-sessions/stop", "POST"),
+            [(url, method) for url, method, payload, timeout_seconds in calls],
+        )
 
     def test_session_smoke_default_ids_are_rerunnable(self):
         start_group_ids = []

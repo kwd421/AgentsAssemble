@@ -34,7 +34,13 @@ from agentsassemble.live_agent_runner import (
     load_group_configs,
     resident_connection_kind_error,
 )
-from agentsassemble.live_agent_smoke import MAX_SESSION_SMOKE_LOBBY_PROBES, LiveAgentSmokeFailed, run_live_agent_smoke
+from agentsassemble.live_agent_smoke import (
+    MAX_SESSION_SMOKE_LOBBY_PROBES,
+    MAX_SESSION_SMOKE_SOAK_CYCLES,
+    MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS,
+    LiveAgentSmokeFailed,
+    run_live_agent_smoke,
+)
 from agentsassemble.live_session_transport import JsonlLiveSession
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
@@ -76,6 +82,20 @@ def parse_session_smoke_lobby_probe_count(value: str) -> int:
     parsed = parse_positive_int(value)
     if parsed > MAX_SESSION_SMOKE_LOBBY_PROBES:
         raise argparse.ArgumentTypeError(f"value must be at most {MAX_SESSION_SMOKE_LOBBY_PROBES}")
+    return parsed
+
+
+def parse_session_smoke_soak_cycle_count(value: str) -> int:
+    parsed = parse_nonnegative_int(value)
+    if parsed > MAX_SESSION_SMOKE_SOAK_CYCLES:
+        raise argparse.ArgumentTypeError(f"value must be at most {MAX_SESSION_SMOKE_SOAK_CYCLES}")
+    return parsed
+
+
+def parse_session_smoke_soak_interval_seconds(value: str) -> float:
+    parsed = parse_nonnegative_float(value)
+    if parsed > MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS:
+        raise argparse.ArgumentTypeError(f"value must be at most {MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS:g}")
     return parsed
 
 
@@ -391,6 +411,20 @@ def build_parser() -> argparse.ArgumentParser:
         dest="lobby_probe_count",
         help="Human lobby probes to verify before restart, after restart, and after recover, 1-5.",
     )
+    live_session_smoke.add_argument(
+        "--soak-cycles",
+        type=parse_session_smoke_soak_cycle_count,
+        default=0,
+        dest="soak_cycle_count",
+        help="Extra same-session check-and-reply soak cycles after recover, 0-5.",
+    )
+    live_session_smoke.add_argument(
+        "--soak-interval",
+        type=parse_session_smoke_soak_interval_seconds,
+        default=0.0,
+        dest="soak_interval_seconds",
+        help="Seconds to wait before each soak cycle, 0-60.",
+    )
     live_session_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable session smoke result.")
 
     live_official_round_smoke = live_agent_subparsers.add_parser(
@@ -432,6 +466,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--session-smoke",
         action="store_true",
         help="Also run the full credential-free resident session smoke inside readiness.",
+    )
+    live_doctor.add_argument(
+        "--session-smoke-soak-cycles",
+        type=parse_session_smoke_soak_cycle_count,
+        default=0,
+        help="Extra same-session session-smoke soak cycles when --session-smoke is enabled, 0-5.",
+    )
+    live_doctor.add_argument(
+        "--session-smoke-soak-interval",
+        type=parse_session_smoke_soak_interval_seconds,
+        default=0.0,
+        help="Seconds to wait before each session-smoke soak cycle, 0-60.",
     )
     live_doctor.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable readiness result.")
 
@@ -1310,8 +1356,15 @@ def _run_live_agent_session_smoke(args: argparse.Namespace) -> int:
             "meeting_id": str(args.meeting_id or ""),
             "timeout": float(args.timeout),
             "lobby_probe_count": int(args.lobby_probe_count),
+            "soak_cycle_count": int(args.soak_cycle_count),
+            "soak_interval_seconds": float(args.soak_interval_seconds),
         },
-        timeout_seconds=_session_smoke_http_timeout(float(args.timeout), lobby_probe_count=int(args.lobby_probe_count)),
+        timeout_seconds=_session_smoke_http_timeout(
+            float(args.timeout),
+            lobby_probe_count=int(args.lobby_probe_count),
+            soak_cycle_count=int(args.soak_cycle_count),
+            soak_interval_seconds=float(args.soak_interval_seconds),
+        ),
     )
     if args.as_json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -1344,6 +1397,11 @@ def _format_live_agent_session_smoke(result: dict[str, object]) -> str:
     expected_replies = result.get("expected_reply_count", 0)
     lobby_probe_count = max(1, int(result.get("lobby_probe_count") or 1))
     expected_reply_total = int(expected_replies) * lobby_probe_count
+    soak_cycle_count = max(0, int(result.get("soak_cycle_count") or 0))
+    soak_part = ""
+    if soak_cycle_count:
+        soak_expected_total = int(expected_replies) * soak_cycle_count
+        soak_part = f"soak {result.get('soak_reply_count', 0)}/{soak_expected_total} replies over {soak_cycle_count} cycles; "
     return (
         f"resident session smoke {result.get('status') or 'unknown'}: "
         f"{result.get('meeting_id') or 'session-smoke'} "
@@ -1354,6 +1412,7 @@ def _format_live_agent_session_smoke(result: dict[str, object]) -> str:
         f"{result.get('reply_count', 0)}/{expected_reply_total} replies; "
         f"post-restart {result.get('post_restart_reply_count', 0)}/{expected_reply_total} replies; "
         f"post-recover {result.get('post_recover_reply_count', 0)}/{expected_reply_total} replies; "
+        f"{soak_part}"
         f"start {result.get('start_status') or 'unknown'}, "
         f"check {result.get('check_status') or 'unknown'}, "
         f"resume {result.get('resume_status') or 'unknown'}, "
@@ -1369,6 +1428,10 @@ def _run_live_agent_doctor(args: argparse.Namespace) -> int:
         payload["official_round_smoke"] = True
     if args.session_smoke:
         payload["session_smoke"] = True
+        if int(args.session_smoke_soak_cycles):
+            payload["session_smoke_soak_cycle_count"] = int(args.session_smoke_soak_cycles)
+        if float(args.session_smoke_soak_interval):
+            payload["session_smoke_soak_interval_seconds"] = float(args.session_smoke_soak_interval)
     if args.probe_agent_ids:
         payload["probe_agent_ids"] = list(args.probe_agent_ids)
     if args.probe_group_ids:
@@ -1377,7 +1440,11 @@ def _run_live_agent_doctor(args: argparse.Namespace) -> int:
     official_round_windows = 4 if args.official_round_smoke else 0
     timeout_seconds = _operation_http_timeout(float(args.timeout), windows=1 + official_round_windows + probe_windows)
     if args.session_smoke:
-        timeout_seconds += _session_smoke_http_timeout(float(args.timeout))
+        timeout_seconds += _session_smoke_http_timeout(
+            float(args.timeout),
+            soak_cycle_count=int(args.session_smoke_soak_cycles),
+            soak_interval_seconds=float(args.session_smoke_soak_interval),
+        )
     payload = _request_json(
         _server_url(args.server, "/api/live-agent-readiness"),
         method="POST",
@@ -1553,10 +1620,16 @@ def _session_smoke_summary(smoke: dict[str, object]) -> str:
     label = f"{smoke.get('status') or 'unknown'} {group_id}".strip()
     lobby_probe_count = max(1, int(smoke.get("lobby_probe_count") or 1))
     expected_total = int(smoke.get("expected_reply_count") or 0) * lobby_probe_count
+    soak_cycle_count = max(0, int(smoke.get("soak_cycle_count") or 0))
+    soak_part = ""
+    if soak_cycle_count:
+        soak_expected_total = int(smoke.get("expected_reply_count") or 0) * soak_cycle_count
+        soak_part = f", soak {smoke.get('soak_reply_count', 0)}/{soak_expected_total} over {soak_cycle_count} cycles"
     return (
         f"{label} ("
         f"{smoke.get('reply_count', 0)}/{expected_total} replies, "
-        f"post-recover {smoke.get('post_recover_reply_count', 0)}/{expected_total})"
+        f"post-recover {smoke.get('post_recover_reply_count', 0)}/{expected_total}"
+        f"{soak_part})"
     )
 
 
@@ -2088,9 +2161,17 @@ def _operation_http_timeout(wait_seconds: float, *, windows: int = 1) -> float:
     return max(10.0, float(wait_seconds) * max(1, int(windows)) + 6.0)
 
 
-def _session_smoke_http_timeout(wait_seconds: float, *, lobby_probe_count: int = 1) -> float:
+def _session_smoke_http_timeout(
+    wait_seconds: float,
+    *,
+    lobby_probe_count: int = 1,
+    soak_cycle_count: int = 0,
+    soak_interval_seconds: float = 0.0,
+) -> float:
     timeout = max(0.0, float(wait_seconds))
     probes = max(1, int(lobby_probe_count))
+    soak_cycles = max(0, int(soak_cycle_count))
+    soak_interval = max(0.0, float(soak_interval_seconds))
     return (
         _operation_http_timeout(timeout)
         + _operation_http_timeout(timeout, windows=4)
@@ -2102,6 +2183,7 @@ def _session_smoke_http_timeout(wait_seconds: float, *, lobby_probe_count: int =
         + timeout
         + _operation_http_timeout(timeout)
         + (timeout * probes)
+        + (soak_cycles * (10.0 + timeout + soak_interval))
         + 20.0
     )
 

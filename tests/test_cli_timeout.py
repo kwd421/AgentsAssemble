@@ -681,6 +681,10 @@ class CliTimeoutTests(unittest.TestCase):
                 "8",
                 "--lobby-probes",
                 "2",
+                "--soak-cycles",
+                "2",
+                "--soak-interval",
+                "0.5",
                 "--json",
             ]
         )
@@ -691,11 +695,21 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.meeting_id, "session-smoke-meeting")
         self.assertEqual(args.timeout, 8.0)
         self.assertEqual(args.lobby_probe_count, 2)
+        self.assertEqual(args.soak_cycle_count, 2)
+        self.assertEqual(args.soak_interval_seconds, 0.5)
         self.assertTrue(args.as_json)
 
     def test_live_agent_session_smoke_rejects_unbounded_lobby_probes(self):
         with self.assertRaises(SystemExit):
             build_parser().parse_args(["live-agent", "session-smoke", "--lobby-probes", "6"])
+
+    def test_live_agent_session_smoke_rejects_unbounded_soak_cycles(self):
+        with self.assertRaises(SystemExit):
+            build_parser().parse_args(["live-agent", "session-smoke", "--soak-cycles", "6"])
+
+    def test_live_agent_session_smoke_rejects_unbounded_soak_interval(self):
+        with self.assertRaises(SystemExit):
+            build_parser().parse_args(["live-agent", "session-smoke", "--soak-interval", "61"])
 
     def test_live_agent_doctor_parses_operator_options(self):
         args = build_parser().parse_args(
@@ -2445,6 +2459,9 @@ class CliTimeoutTests(unittest.TestCase):
                 "reply_count": 3,
                 "post_restart_reply_count": 3,
                 "post_recover_reply_count": 3,
+                "soak_cycle_count": 2,
+                "soak_interval_seconds": 0.5,
+                "soak_reply_count": 6,
                 "recover_status": "ready",
             },
         }
@@ -2462,6 +2479,10 @@ class CliTimeoutTests(unittest.TestCase):
                         "--timeout",
                         "8",
                         "--session-smoke",
+                        "--session-smoke-soak-cycles",
+                        "2",
+                        "--session-smoke-soak-interval",
+                        "0.5",
                     ]
                 )
 
@@ -2469,12 +2490,18 @@ class CliTimeoutTests(unittest.TestCase):
         request_json.assert_called_once_with(
             "http://room.local/api/live-agent-readiness",
             method="POST",
-            payload={"group_id": "doctor-smoke", "timeout": 8.0, "session_smoke": True},
-            timeout_seconds=170.0,
+            payload={
+                "group_id": "doctor-smoke",
+                "timeout": 8.0,
+                "session_smoke": True,
+                "session_smoke_soak_cycle_count": 2,
+                "session_smoke_soak_interval_seconds": 0.5,
+            },
+            timeout_seconds=207.0,
         )
         output = stdout.getvalue()
         self.assertIn("readiness: ready", output)
-        self.assertIn("session smoke: ok session-smoke (3/3 replies, post-recover 3/3)", output)
+        self.assertIn("session smoke: ok session-smoke (3/3 replies, post-recover 3/3, soak 6/6 over 2 cycles)", output)
 
     def test_live_agent_doctor_can_request_official_round_and_session_smoke(self):
         payload = {
@@ -2635,6 +2662,9 @@ class CliTimeoutTests(unittest.TestCase):
             "reply_count": 6,
             "post_restart_reply_count": 6,
             "post_recover_reply_count": 6,
+            "soak_cycle_count": 2,
+            "soak_interval_seconds": 0.5,
+            "soak_reply_count": 6,
             "start_status": "ready",
             "check_status": "ready",
             "resume_status": "ready",
@@ -2659,6 +2689,10 @@ class CliTimeoutTests(unittest.TestCase):
                         "8",
                         "--lobby-probes",
                         "2",
+                        "--soak-cycles",
+                        "2",
+                        "--soak-interval",
+                        "0.5",
                     ]
                 )
 
@@ -2666,8 +2700,15 @@ class CliTimeoutTests(unittest.TestCase):
         request_json.assert_called_once_with(
             "http://room.local/api/live-agent-session-smoke",
             method="POST",
-            payload={"group_id": "session-smoke", "meeting_id": "session-smoke-meeting", "timeout": 8.0, "lobby_probe_count": 2},
-            timeout_seconds=180.0,
+            payload={
+                "group_id": "session-smoke",
+                "meeting_id": "session-smoke-meeting",
+                "timeout": 8.0,
+                "lobby_probe_count": 2,
+                "soak_cycle_count": 2,
+                "soak_interval_seconds": 0.5,
+            },
+            timeout_seconds=217.0,
         )
         output = stdout.getvalue()
         self.assertIn("resident session smoke ok: session-smoke-meeting", output)
@@ -2676,6 +2717,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("6/6 replies", output)
         self.assertIn("post-restart 6/6 replies", output)
         self.assertIn("post-recover 6/6 replies", output)
+        self.assertIn("soak 6/6 replies over 2 cycles", output)
         self.assertIn("start ready, check ready, resume ready, restart ready, recover ready, stop stopped", output)
 
     def test_live_agent_session_smoke_returns_failure_for_non_ok_status(self):

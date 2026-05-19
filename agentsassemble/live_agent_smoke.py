@@ -23,6 +23,8 @@ OFFICIAL_ROUND_SMOKE_ROUND_ID = "official_round_smoke"
 SESSION_SMOKE_ROUND_ID = "session_smoke_round"
 SMOKE_GROUP_ID_LIMIT = 48
 MAX_SESSION_SMOKE_LOBBY_PROBES = 5
+MAX_SESSION_SMOKE_SOAK_CYCLES = 5
+MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS = 60.0
 SESSION_SMOKE_RECOVERABLE_PROCESS_STATUSES = frozenset({"error", "unknown"})
 
 
@@ -290,6 +292,8 @@ def run_live_agent_session_smoke(
     meeting_id: str = "",
     timeout_seconds: float = 12.0,
     lobby_probe_count: int = 1,
+    soak_cycle_count: int = 0,
+    soak_interval_seconds: float = 0.0,
     request_json: RequestJson,
     output_root: Path | None = None,
     sleep_fn: Callable[[float], None] = time.sleep,
@@ -298,6 +302,8 @@ def run_live_agent_session_smoke(
     process_killer: Callable[[int], None] | None = None,
 ) -> dict[str, object]:
     clean_lobby_probe_count = _session_smoke_lobby_probe_count(lobby_probe_count)
+    clean_soak_cycle_count = _session_smoke_soak_cycle_count(soak_cycle_count)
+    clean_soak_interval_seconds = _session_smoke_soak_interval_seconds(soak_interval_seconds)
     clean_group_id = smoke_group_id(group_id) if group_id else smoke_group_id(f"session-smoke-{int(time.time() * 1000)}")
     clean_meeting_id = smoke_group_id(meeting_id) if meeting_id else smoke_group_id(f"session-{clean_group_id}")
     agent_ids = {
@@ -325,9 +331,12 @@ def run_live_agent_session_smoke(
     replies: list[dict[str, object]] = []
     post_restart_replies: list[dict[str, object]] = []
     post_recover_replies: list[dict[str, object]] = []
+    soak_replies: list[dict[str, object]] = []
     probe_event_ids: list[str] = []
     post_restart_probe_event_ids: list[str] = []
     post_recover_probe_event_ids: list[str] = []
+    soak_probe_event_ids: list[str] = []
+    soak_check_statuses: list[str] = []
     with _SmokeRemoteBridgeServer(response_message=expected_messages[agent_ids["remote_bridge"]]) as bridge:
         with temp_dir_factory() as temp_dir:
             temp_root = Path(temp_dir).resolve()
@@ -467,6 +476,32 @@ def run_live_agent_session_smoke(
                     timeout_seconds=float(timeout_seconds),
                     phase="recover",
                 )
+                for cycle_index in range(clean_soak_cycle_count):
+                    if clean_soak_interval_seconds:
+                        sleep_fn(clean_soak_interval_seconds)
+                    soak_check_result = request_json(
+                        _server_url(server, "/api/live-agent-sessions/check"),
+                        method="POST",
+                        payload={"meeting_id": clean_meeting_id, "group_id": clean_group_id},
+                        timeout_seconds=10.0,
+                    )
+                    soak_check_status = str(soak_check_result.get("status") or "")
+                    soak_check_statuses.append(soak_check_status)
+                    if soak_check_status != "ready":
+                        raise LiveAgentSmokeFailed("Session smoke soak check did not report ready.")
+                    _set_session_smoke_engagement(server, agent_ids.values(), request_json=request_json)
+                    cycle_probe_event_ids, cycle_replies = _session_smoke_lobby_probe_replies(
+                        server,
+                        clean_group_id=clean_group_id,
+                        expected_messages=expected_messages,
+                        lobby_probe_count=1,
+                        request_json=request_json,
+                        sleep_fn=sleep_fn,
+                        timeout_seconds=float(timeout_seconds),
+                        phase=f"soak-{cycle_index + 1}",
+                    )
+                    soak_probe_event_ids.extend(cycle_probe_event_ids)
+                    soak_replies.extend(cycle_replies)
             finally:
                 try:
                     stop_result = request_json(
@@ -482,6 +517,7 @@ def run_live_agent_session_smoke(
     safe_replies = _safe_session_smoke_replies(replies)
     safe_post_restart_replies = _safe_session_smoke_replies(post_restart_replies)
     safe_post_recover_replies = _safe_session_smoke_replies(post_recover_replies)
+    safe_soak_replies = _safe_session_smoke_replies(soak_replies)
     return {
         "status": "ok" if stop_result.get("status") == "stopped" else "failed",
         "meeting_id": clean_meeting_id,
@@ -494,6 +530,10 @@ def run_live_agent_session_smoke(
         "post_restart_source_event_ids": post_restart_probe_event_ids,
         "post_recover_source_event_id": post_recover_probe_event_ids[0] if post_recover_probe_event_ids else "",
         "post_recover_source_event_ids": post_recover_probe_event_ids,
+        "soak_cycle_count": clean_soak_cycle_count,
+        "soak_interval_seconds": clean_soak_interval_seconds,
+        "soak_source_event_ids": soak_probe_event_ids,
+        "soak_check_statuses": soak_check_statuses,
         "rounds_status": str(rounds_result.get("status") or ""),
         "round_count": _nonnegative_int(rounds_result.get("round_count")),
         "answered_round_count": _nonnegative_int(rounds_result.get("answered_round_count")),
@@ -505,9 +545,11 @@ def run_live_agent_session_smoke(
         "reply_count": len(safe_replies),
         "post_restart_reply_count": len(safe_post_restart_replies),
         "post_recover_reply_count": len(safe_post_recover_replies),
+        "soak_reply_count": len(safe_soak_replies),
         "replies": safe_replies,
         "post_restart_replies": safe_post_restart_replies,
         "post_recover_replies": safe_post_recover_replies,
+        "soak_replies": safe_soak_replies,
         "start_status": str(start_result.get("status") or ""),
         "check_status": str(check_result.get("status") or ""),
         "resume_status": str(resume_result.get("status") or ""),
@@ -809,6 +851,32 @@ def _session_smoke_lobby_probe_count(value: int) -> int:
         ) from error
     if parsed < 1 or parsed > MAX_SESSION_SMOKE_LOBBY_PROBES:
         raise ValueError(f"Session smoke lobby_probe_count must be between 1 and {MAX_SESSION_SMOKE_LOBBY_PROBES}.")
+    return parsed
+
+
+def _session_smoke_soak_cycle_count(value: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"Session smoke soak_cycle_count must be between 0 and {MAX_SESSION_SMOKE_SOAK_CYCLES}."
+        ) from error
+    if parsed < 0 or parsed > MAX_SESSION_SMOKE_SOAK_CYCLES:
+        raise ValueError(f"Session smoke soak_cycle_count must be between 0 and {MAX_SESSION_SMOKE_SOAK_CYCLES}.")
+    return parsed
+
+
+def _session_smoke_soak_interval_seconds(value: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"Session smoke soak_interval_seconds must be between 0 and {MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS}."
+        ) from error
+    if not math.isfinite(parsed) or parsed < 0 or parsed > MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS:
+        raise ValueError(
+            f"Session smoke soak_interval_seconds must be between 0 and {MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS}."
+        )
     return parsed
 
 
