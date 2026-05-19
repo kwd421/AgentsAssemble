@@ -9,6 +9,7 @@ from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_sessions import (
     check_live_agent_session,
+    live_agent_session_readiness_summary,
     recover_live_agent_session,
     resume_live_agent_session,
     restart_live_agent_session,
@@ -32,6 +33,92 @@ class FakeSessionSupervisor:
                 {"agent_id": "agent-a", "display_name": "Agent A", "provider_kind": "local_cli", "connection_kind": "local_cli"}
             ],
         }
+
+
+class LiveAgentSessionReadinessSummaryTests(unittest.TestCase):
+    def test_session_summary_degrades_duplicate_active_meeting_groups(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            summary = live_agent_session_readiness_summary(
+                root,
+                [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    },
+                    {
+                        "group_id": "resident-shadow",
+                        "status": "restarting",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    },
+                    {
+                        "group_id": "resident-stopped",
+                        "status": "stopped",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    },
+                ],
+            )
+
+        self.assertEqual(summary["ready"], 0)
+        self.assertEqual(summary["degraded"], 3)
+        items_by_group = {item["group_id"]: item for item in summary["items"]}
+        self.assertEqual(items_by_group["resident-main"]["ownership_attention"], ["meeting:duplicate_active_group"])
+        self.assertEqual(items_by_group["resident-shadow"]["ownership_attention"], ["meeting:duplicate_active_group"])
+        self.assertEqual(items_by_group["resident-stopped"]["ownership_attention"], [])
+
+    def test_check_session_degrades_duplicate_active_meeting_group(self):
+        class DuplicateSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    },
+                    {
+                        "group_id": "resident-shadow",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    },
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            session = check_live_agent_session(
+                root,
+                DuplicateSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+        self.assertEqual(session["status"], "degraded")
+        self.assertEqual(session["ownership"]["attention"], ["meeting:duplicate_active_group"])
 
 
 class LiveAgentSessionStartTests(unittest.TestCase):

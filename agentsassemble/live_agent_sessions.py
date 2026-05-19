@@ -17,6 +17,7 @@ from agentsassemble.meeting_setup import prepare_meeting_setup
 
 SUPPORTED_SESSION_CONNECTION_KINDS = frozenset({"local_cli", "live_session", "remote_bridge"})
 SESSION_PROCESS_STATUSES = frozenset({"running", "restarting", "error", "unknown", "stopped"})
+SESSION_ACTIVE_PROCESS_STATUSES = frozenset({"running", "restarting"})
 SESSION_AGENT_ATTENTION_STATUSES = frozenset(
     {
         "missing",
@@ -30,7 +31,7 @@ SESSION_AGENT_ATTENTION_STATUSES = frozenset(
         "duplicate_in_group",
     }
 )
-SESSION_MEETING_ATTENTION_STATUSES = frozenset({"missing", "invalid", "unavailable"})
+SESSION_MEETING_ATTENTION_STATUSES = frozenset({"missing", "invalid", "unavailable", "duplicate_active_group"})
 
 
 class LiveAgentSessionStartError(ValueError):
@@ -236,7 +237,8 @@ def check_live_agent_session(
     meeting = _read_existing_meeting(meeting_dir)
     expected_agents = _expected_agents_from_meeting(meeting)
     expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
-    group = _snapshot_process_group(process_supervisor, clean_group_id)
+    groups = _snapshot_process_groups(process_supervisor)
+    group = _find_group_in_list(groups, clean_group_id)
     process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=clean_meeting_id)
     connection = _connection_snapshot(
         output_root,
@@ -244,7 +246,12 @@ def check_live_agent_session(
         expected_agent_ids=expected_agent_ids,
         process_group=group,
     )
-    status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "degraded"
+    ownership = _session_ownership_snapshot(groups, meeting_id=clean_meeting_id, group_id=clean_group_id)
+    status = (
+        "ready"
+        if process["ready"] and connection["connected"] == connection["expected"] and not ownership["attention"]
+        else "degraded"
+    )
     return {
         "status": status,
         "meeting_id": clean_meeting_id,
@@ -253,6 +260,7 @@ def check_live_agent_session(
         "group": _safe_group_summary(group),
         "process": process,
         "connection": connection,
+        "ownership": ownership,
     }
 
 
@@ -264,6 +272,7 @@ def live_agent_session_readiness_summary(output_root: Path, groups: list[dict[st
             continue
         item = _live_agent_session_readiness_item(output_root, group, meeting_id=meeting_id)
         items.append(item)
+    _mark_duplicate_active_session_owners(items)
     ready_count = sum(1 for item in items if item.get("status") == "ready")
     degraded_count = len(items) - ready_count
     return {
@@ -314,6 +323,7 @@ def _live_agent_session_readiness_item(
         status = "degraded"
         expected = len(_process_agent_ids(group.get("agents")))
         connected = 0
+    ownership_attention: list[str] = []
     return {
         "meeting_id": meeting_id,
         "group_id": group_id,
@@ -321,6 +331,7 @@ def _live_agent_session_readiness_item(
         "process_status": process_status,
         "expected": expected,
         "connected": connected,
+        "ownership_attention": ownership_attention,
         "process_attention": process_attention,
         "connection_attention": connection_attention,
         "attention": attention,
@@ -375,6 +386,67 @@ def _session_readiness_attention(items: list[dict[str, object]]) -> list[str]:
             if label:
                 attention.append(f"{meeting_id}:{group_id}:{label}")
     return attention
+
+
+def _mark_duplicate_active_session_owners(items: list[dict[str, object]]) -> None:
+    active_by_meeting: dict[str, list[dict[str, object]]] = {}
+    for item in items:
+        meeting_id = str(item.get("meeting_id") or "")
+        if not meeting_id or str(item.get("process_status") or "") not in SESSION_ACTIVE_PROCESS_STATUSES:
+            continue
+        active_by_meeting.setdefault(meeting_id, []).append(item)
+    for active_items in active_by_meeting.values():
+        if len(active_items) < 2:
+            continue
+        for item in active_items:
+            _add_session_ownership_attention(item, "meeting:duplicate_active_group")
+
+
+def _add_session_ownership_attention(item: dict[str, object], label: str) -> None:
+    safe_label = _safe_session_attention_item(label)
+    if not safe_label:
+        return
+    ownership_attention = item.get("ownership_attention") if isinstance(item.get("ownership_attention"), list) else []
+    attention = item.get("attention") if isinstance(item.get("attention"), list) else []
+    if safe_label not in ownership_attention:
+        ownership_attention.append(safe_label)
+    if safe_label not in attention:
+        attention.append(safe_label)
+    item["ownership_attention"] = ownership_attention
+    item["attention"] = attention
+    item["status"] = "degraded"
+
+
+def _session_ownership_snapshot(
+    groups: list[dict[str, object]],
+    *,
+    meeting_id: str,
+    group_id: str,
+) -> dict[str, object]:
+    safe_group_id = _safe_session_group_id(group_id)
+    active_group_count = 0
+    target_group_active = False
+    for group in groups:
+        if _session_group_is_diagnostic(group):
+            continue
+        if _safe_optional_meeting_id(group.get("meeting_id")) != meeting_id:
+            continue
+        if _safe_session_process_status(group.get("status")) not in SESSION_ACTIVE_PROCESS_STATUSES:
+            continue
+        active_group_count += 1
+        if _safe_session_group_id(group.get("group_id")) == safe_group_id:
+            target_group_active = True
+    attention = ["meeting:duplicate_active_group"] if target_group_active and active_group_count > 1 else []
+    return {"attention": attention}
+
+
+def _session_group_is_diagnostic(group: dict[str, object]) -> bool:
+    value = group.get("diagnostic")
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().casefold() in {"1", "true", "yes", "on"}
+    return False
 
 
 def _safe_session_group_id(value: object) -> str:
@@ -908,10 +980,14 @@ def _find_process_group(process_supervisor: object, group_id: str) -> dict[str, 
 
 
 def _snapshot_process_group(process_supervisor: object, group_id: str) -> dict[str, object]:
+    return _find_group_in_list(_snapshot_process_groups(process_supervisor), group_id)
+
+
+def _snapshot_process_groups(process_supervisor: object) -> list[dict[str, object]]:
     if not hasattr(process_supervisor, "snapshot_groups"):
-        return {}
+        return []
     groups = process_supervisor.snapshot_groups()
-    return _find_group_in_list(groups, group_id)
+    return [group for group in groups if isinstance(group, dict)] if isinstance(groups, list) else []
 
 
 def _find_group_in_list(groups: object, group_id: str) -> dict[str, object]:

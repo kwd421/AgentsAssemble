@@ -1575,9 +1575,11 @@ def _format_live_agent_readiness(payload: dict[str, object]) -> str:
     agents = health.get("agents") if isinstance(health.get("agents"), dict) else {}
     processes = health.get("processes") if isinstance(health.get("processes"), dict) else {}
     connections = health.get("connections") if isinstance(health.get("connections"), dict) else {}
+    sessions = health.get("sessions") if isinstance(health.get("sessions"), dict) else {}
     agent_attention = agents.get("attention") if isinstance(agents.get("attention"), list) else []
     process_attention = processes.get("attention") if isinstance(processes.get("attention"), list) else []
     connection_attention = connections.get("attention") if isinstance(connections.get("attention"), list) else []
+    session_attention = sessions.get("attention") if isinstance(sessions.get("attention"), list) else []
     process_reasons = _process_reason_summary(processes.get("reasons"))
     smoke_suffix = str(smoke.get("group_id") or "").strip()
     smoke_label = f"{smoke.get('status') or 'unknown'} {smoke_suffix}".strip()
@@ -1588,6 +1590,7 @@ def _format_live_agent_readiness(payload: dict[str, object]) -> str:
         f"agent attention: {_attention_summary(agent_attention)}",
         f"process attention: {_attention_summary(process_attention)}",
         f"connection attention: {_attention_summary(connection_attention)}",
+        f"session attention: {_attention_summary(session_attention)}",
     ]
     if process_reasons:
         lines.append(f"process reasons: {process_reasons}")

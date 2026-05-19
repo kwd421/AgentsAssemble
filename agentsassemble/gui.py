@@ -2649,6 +2649,7 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
     connection = session.get("connection") if isinstance(session.get("connection"), dict) else {}
     process = session.get("process") if isinstance(session.get("process"), dict) else {}
     offline = session.get("offline") if isinstance(session.get("offline"), dict) else {}
+    ownership = session.get("ownership") if isinstance(session.get("ownership"), dict) else {}
     details = {
         "result_status": _operation_result_status(session.get("status")),
         "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
@@ -2661,6 +2662,7 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
         "process_status": clean_lobby_text(process.get("status"), limit=64),
         "process_agent_ids": _safe_payload_strings(process.get("agent_ids"), limit=64),
         "process_attention": _safe_payload_strings(process.get("attention"), limit=128),
+        "ownership_attention": _safe_payload_strings(ownership.get("attention"), limit=128),
     }
     if offline:
         details.update(

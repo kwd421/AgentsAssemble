@@ -1077,7 +1077,7 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
       agents: { total: 2, live: 1, counts: { online: 1, working: 0, error: 0, stale: 1, offline: 0 }, attention: ["agent-b"] },
       processes: { total: 2, counts: { running: 1, restarting: 0, error: 1, unknown: 0, stopped: 0 }, attention: ["resident-main"] },
       connections: { expected: 2, connected: 1, attention: ["resident-main:agent-b:stale"] },
-      sessions: { total: 2, ready: 1, degraded: 1, attention: ["resident-m1:resident-main:agent-b:stale"] },
+      sessions: { total: 2, ready: 0, degraded: 2, attention: ["resident-m1:resident-main:meeting:duplicate_active_group"] },
     },
   });
 
@@ -1094,7 +1094,7 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.match(health.textContent, /agents 1\/2 live/);
   assert.match(health.textContent, /processes 1\/2 running/);
   assert.match(health.textContent, /connections 1\/2 connected/);
-  assert.match(health.textContent, /sessions 1\/2 ready/);
+  assert.match(health.textContent, /sessions 0\/2 ready/);
   assert.match(health.textContent, /attention 4/);
   assert.equal(health.attributes["data-tone"], "warning");
 });

@@ -3149,6 +3149,7 @@ class GuiServerTests(unittest.TestCase):
                     "process_status": "running",
                     "expected": 1,
                     "connected": 1,
+                    "ownership_attention": [],
                     "process_attention": [],
                     "connection_attention": [],
                     "attention": [],
@@ -3160,6 +3161,7 @@ class GuiServerTests(unittest.TestCase):
                     "process_status": "running",
                     "expected": 1,
                     "connected": 0,
+                    "ownership_attention": [],
                     "process_attention": [],
                     "connection_attention": ["agent-b:missing"],
                     "attention": ["agent-b:missing"],
@@ -3171,6 +3173,7 @@ class GuiServerTests(unittest.TestCase):
                     "process_status": "error",
                     "expected": 1,
                     "connected": 1,
+                    "ownership_attention": [],
                     "process_attention": ["group:error"],
                     "connection_attention": [],
                     "attention": ["group:error"],
@@ -3235,6 +3238,7 @@ class GuiServerTests(unittest.TestCase):
                 "process_status": "running",
                 "expected": 1,
                 "connected": 0,
+                "ownership_attention": [],
                 "process_attention": [],
                 "connection_attention": [],
                 "attention": ["meeting:missing"],
@@ -3301,6 +3305,92 @@ class GuiServerTests(unittest.TestCase):
         self.assertNotIn("/tmp/secret", session_blob)
         self.assertNotIn("live-agents.json", session_blob)
         self.assertNotIn("log_tail", session_blob)
+
+    def test_live_agent_health_degrades_duplicate_active_meeting_session_groups(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    },
+                    {
+                        "group_id": "resident-shadow",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    },
+                    {
+                        "group_id": "resident-stopped",
+                        "status": "stopped",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    },
+                    {
+                        "group_id": "resident-diagnostic",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "diagnostic": True,
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    },
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "resident-m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "resident-m1",
+                    "agent_bindings": [{"role_id": "resident", "agent_id": "agent-a", "provider_id": "local-provider"}],
+                    "provider_configs": {"local-provider": {"kind": "local_cli"}},
+                },
+            )
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "status": "online",
+                                "meeting_id": "resident-m1",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["sessions"]["total"], 3)
+        self.assertEqual(payload["sessions"]["ready"], 0)
+        self.assertEqual(payload["sessions"]["degraded"], 3)
+        self.assertEqual(
+            payload["sessions"]["attention"],
+            [
+                "resident-m1:resident-main:meeting:duplicate_active_group",
+                "resident-m1:resident-shadow:meeting:duplicate_active_group",
+                "resident-m1:resident-stopped:group:stopped",
+            ],
+        )
+        items_by_group = {item["group_id"]: item for item in payload["sessions"]["items"]}
+        self.assertEqual(items_by_group["resident-main"]["ownership_attention"], ["meeting:duplicate_active_group"])
+        self.assertEqual(items_by_group["resident-shadow"]["ownership_attention"], ["meeting:duplicate_active_group"])
+        self.assertEqual(items_by_group["resident-stopped"]["ownership_attention"], [])
+        self.assertNotIn("resident-diagnostic", json.dumps(payload["sessions"], ensure_ascii=False))
 
     def test_live_agent_probe_endpoint_records_success_without_message_text(self):
         with tempfile.TemporaryDirectory() as temp_dir:

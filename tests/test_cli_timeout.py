@@ -2439,6 +2439,11 @@ class CliTimeoutTests(unittest.TestCase):
                     "connected": 1,
                     "attention": ["resident-main:agent-b:missing"],
                 },
+                "sessions": {
+                    "total": 2,
+                    "ready": 0,
+                    "attention": ["resident-m1:resident-main:meeting:duplicate_active_group"],
+                },
             },
             "smoke": {"status": "ok", "group_id": "doctor-smoke", "replies": []},
             "probes": [{"status": "ok", "agent_id": "agent-a", "reply_event_id": "reply-a"}],
@@ -2474,6 +2479,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("smoke: ok doctor-smoke", output)
         self.assertIn("process reasons: restart-group stale_watchdog missing manifest agent agent-a", output)
         self.assertIn("connection attention: resident-main:agent-b:missing", output)
+        self.assertIn("session attention: resident-m1:resident-main:meeting:duplicate_active_group", output)
         self.assertIn("probes: agent-a ok", output)
 
     def test_live_agent_doctor_posts_probe_group_request_with_conservative_timeout(self):
