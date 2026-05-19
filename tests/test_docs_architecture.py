@@ -255,6 +255,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("session.restart", doc)
         self.assertIn("session.stop", doc)
         self.assertIn("stale online rows cannot prove restart readiness", doc)
+        self.assertIn("preflights the persisted restart config and server", doc)
+        self.assertIn("duplicate manifest agent ids", doc)
         self.assertIn("agent_id:wrong_meeting", doc)
         self.assertIn("agent-x:extra_in_group", doc)
         self.assertIn("does not run official turns unless `--run-remaining-rounds`", doc)

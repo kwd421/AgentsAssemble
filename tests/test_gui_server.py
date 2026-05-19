@@ -6280,8 +6280,9 @@ class GuiServerTests(unittest.TestCase):
 
     def test_live_agent_session_restart_returns_ready_snapshot_and_records_safe_operation(self):
         class RestartSessionSupervisor:
-            def __init__(self, root: Path) -> None:
+            def __init__(self, root: Path, config_path: Path) -> None:
                 self.root = root
+                self.config_path = config_path
                 self.stopped = []
                 self.restarted = []
 
@@ -6290,7 +6291,8 @@ class GuiServerTests(unittest.TestCase):
                     {
                         "group_id": "resident-main",
                         "status": "running",
-                        "config_path": "/private/live-agents.json",
+                        "config_path": str(self.config_path),
+                        "server": "http://127.0.0.1:8765",
                         "log_tail": "secret provider output",
                         "agents": [{"agent_id": "agent-a"}],
                     }
@@ -6309,7 +6311,8 @@ class GuiServerTests(unittest.TestCase):
                 return {
                     "group_id": group_id,
                     "status": "running",
-                    "config_path": "/private/live-agents.json",
+                    "config_path": str(self.config_path),
+                    "server": "http://127.0.0.1:8765",
                     "log_tail": "secret provider output",
                     "agents": [{"agent_id": "agent-a"}],
                 }
@@ -6327,7 +6330,7 @@ class GuiServerTests(unittest.TestCase):
                 meeting_id="resident-m1",
             )
             heartbeat_live_agent(root, "agent-a", status="online")
-            supervisor = RestartSessionSupervisor(root)
+            supervisor = RestartSessionSupervisor(root, live_agent_config)
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()

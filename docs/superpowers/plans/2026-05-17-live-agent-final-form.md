@@ -2168,6 +2168,65 @@ Document that `live-agent doctor` mirrors the important health attention surface
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 66: Stop Session Duplicate Manifest Guard
+
+**Files:**
+- Modify: `agentsassemble/live_agent_sessions.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_sessions.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for duplicate stop manifest**
+
+Cover `stop-session` with a process group whose launch-time manifest repeats an expected meeting agent id. It must refuse before calling `stop_group` and before marking any bound roster row offline, because session controls promise exact meeting/process manifest ownership before mutating processes or presence.
+
+Run: `python3 -m unittest tests.test_live_agent_sessions.LiveAgentSessionStartTests.test_stop_session_refuses_duplicate_manifest_agent_before_stop_and_offline`
+Expected: fail before implementation because the stop prevalidation compares sets and lets duplicate manifest ids through.
+
+- [x] **Step 2: Reject duplicate stop manifests**
+
+Add the same duplicate manifest guard used by restart/recover validation to the stop-session prevalidation path. Keep the fix local to the manifest validator so stop still refuses before process and roster side effects.
+
+Run the Step 1 command plus nearby stop-session safety tests.
+Expected: pass.
+
+- [x] **Step 3: Document duplicate manifest refusal**
+
+Document that `stop-session` exact manifest validation includes duplicate manifest agent ids, not only missing or extra ids.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+### Task 67: Restart Session Persisted Config Prevalidation
+
+**Files:**
+- Modify: `agentsassemble/live_agent_sessions.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_sessions.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for drifted persisted restart config**
+
+Cover `restart-session` with a currently valid running process snapshot whose persisted `config_path` now contains duplicate agent ids, with a snapshot that names a blank config or blank server, and with a supervisor-specific preflight checker that refuses the restart config. The restart must refuse before calling `stop_group`, before calling `restart_group`, and before marking bound roster rows offline, because a changed persisted config or missing launch evidence would otherwise stop a good group before discovering the new launch record is invalid.
+
+Run: `python3 -m unittest tests.test_live_agent_sessions.LiveAgentSessionStartTests.test_restart_session_refuses_changed_persisted_config_before_stopping_group`
+Expected: fail before implementation because restart only validates the current process snapshot before stopping and lets the supervisor discover the drifted config later.
+
+- [x] **Step 2: Prevalidate persisted config before restart side effects**
+
+When the process snapshot includes a `config_path`, require a nonblank persisted config and server, then run the same live-agent preflight checker configured on the supervisor, falling back to the default checker, and resident manifest checks against that persisted config before stopping `running`/`restarting` groups or clearing roster rows. Keep the post-restart process snapshot validation as the race guard for any remaining drift.
+
+Run the Step 1 command plus nearby restart safety tests.
+Expected: pass.
+
+- [x] **Step 3: Document restart config prevalidation**
+
+Document that `restart-session` preflights the persisted restart config and server when the process record names one, so manifest drift, duplicate config agents, or missing launch evidence is refused before process or roster side effects.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

@@ -1214,6 +1214,46 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
             self.assertEqual(agents["agent-a"]["status"], "online")
 
+    def test_stop_session_refuses_duplicate_manifest_agent_before_stop_and_offline(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class StopSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+
+                def list_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    return {"group_id": group_id, "status": "stopped", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = StopSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                stop_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("duplicate agent-a", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
     def test_stop_session_refuses_group_owned_by_another_meeting_before_stop_and_offline(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -1589,6 +1629,258 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertIn("agent-a:duplicate_in_group", session["process"]["attention"])
             self.assertIn("agent-extra:extra_in_group", session["process"]["attention"])
             self.assertEqual(session["connection"]["connected"], 1)
+
+    def test_restart_session_refuses_changed_persisted_config_before_stopping_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a", "agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+                    self.restarted = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "config_path": str(live_agent_config),
+                            "server": "http://127.0.0.1:8765",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    raise AssertionError("must validate persisted restart config before stopping")
+
+                def restart_group(self, group_id):
+                    self.restarted.append(group_id)
+                    raise AssertionError("must validate persisted restart config before restarting")
+
+            supervisor = RestartSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                restart_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("Duplicate agent ids", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+            self.assertEqual(supervisor.restarted, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_restart_session_refuses_missing_persisted_server_before_stopping_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+                    self.restarted = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "config_path": str(live_agent_config),
+                            "server": "",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    raise AssertionError("must validate persisted server before stopping")
+
+                def restart_group(self, group_id):
+                    self.restarted.append(group_id)
+                    raise AssertionError("must validate persisted server before restarting")
+
+            supervisor = RestartSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                restart_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("has no server to restart", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+            self.assertEqual(supervisor.restarted, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_restart_session_refuses_missing_persisted_config_before_stopping_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+                    self.restarted = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "config_path": "",
+                            "server": "http://127.0.0.1:8765",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    raise AssertionError("must validate persisted config before stopping")
+
+                def restart_group(self, group_id):
+                    self.restarted.append(group_id)
+                    raise AssertionError("must validate persisted config before restarting")
+
+            supervisor = RestartSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                restart_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("has no config to restart", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+            self.assertEqual(supervisor.restarted, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_restart_session_uses_supervisor_preflight_checker_before_stopping_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+                    self.restarted = []
+                    self.preflight_paths = []
+
+                def preflight_checker(self, config_path, *, server_override=None):
+                    self.preflight_paths.append((config_path, server_override))
+                    return {
+                        "status": "failed",
+                        "checks": [{"id": "custom", "status": "failed", "message": "custom restart gate"}],
+                    }
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "config_path": str(live_agent_config),
+                            "server": "http://127.0.0.1:8765",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    raise AssertionError("custom preflight must run before stopping")
+
+                def restart_group(self, group_id):
+                    self.restarted.append(group_id)
+                    raise AssertionError("custom preflight must run before restarting")
+
+            supervisor = RestartSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                restart_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("custom restart gate", str(raised.exception))
+            self.assertEqual(supervisor.preflight_paths, [(live_agent_config, "http://127.0.0.1:8765")])
+            self.assertEqual(supervisor.stopped, [])
+            self.assertEqual(supervisor.restarted, [])
+
+    def test_restart_session_rejects_duplicate_persisted_config_after_custom_preflight_ok(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a", "agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+                    self.restarted = []
+
+                def preflight_checker(self, config_path, *, server_override=None):
+                    return {"status": "ok", "checks": [], "agents": []}
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "config_path": str(live_agent_config),
+                            "server": "http://127.0.0.1:8765",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    raise AssertionError("manifest validation must run before stopping")
+
+                def restart_group(self, group_id):
+                    self.restarted.append(group_id)
+                    raise AssertionError("manifest validation must run before restarting")
+
+            supervisor = RestartSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                restart_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("duplicate agent-a", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+            self.assertEqual(supervisor.restarted, [])
 
     def test_restart_session_uses_read_only_process_snapshot_before_mutation(self):
         with tempfile.TemporaryDirectory() as temp_dir:

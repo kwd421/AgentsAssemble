@@ -263,6 +263,13 @@ def restart_live_agent_session(
         expected_agent_ids,
         meeting_id=clean_meeting_id,
     )
+    _validate_restart_persisted_config(
+        existing_group,
+        group_id=clean_group_id,
+        expected_agents=expected_agents,
+        meeting_id=clean_meeting_id,
+        preflight_checker=getattr(process_supervisor, "preflight_checker", None),
+    )
     existing_status = str(existing_group.get("status") or "unknown")
     if existing_status in {"running", "restarting"}:
         try:
@@ -452,6 +459,10 @@ def _expected_agents_from_meeting(meeting: dict[str, object]) -> list[dict[str, 
 
 
 def _validate_resident_manifest(configs: object, expected_agents: list[dict[str, str]]) -> None:
+    config_agent_ids = [str(config.agent_id) for config in configs]
+    duplicate_agent_ids = _duplicate_agent_ids(config_agent_ids)
+    if duplicate_agent_ids:
+        raise ValueError(f"Resident group config does not match meeting agents: duplicate {', '.join(duplicate_agent_ids)}.")
     configs_by_id = {str(config.agent_id): config for config in configs}
     expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
     manifest_agent_ids = set(configs_by_id)
@@ -510,6 +521,32 @@ def _validate_resident_config_meeting_ids(configs: object, *, meeting_id: str) -
             raise ValueError(
                 f"Resident config for {agent_id} meeting id does not match session meeting id {clean_meeting_id}."
             )
+
+
+def _validate_restart_persisted_config(
+    group: dict[str, object],
+    *,
+    group_id: str,
+    expected_agents: list[dict[str, str]],
+    meeting_id: str,
+    preflight_checker: Callable[..., dict[str, object]] | None = None,
+) -> None:
+    config_path_value = str(group.get("config_path") or "").strip()
+    if not config_path_value and "config_path" not in group:
+        return
+    if not config_path_value:
+        raise ValueError(f"Live agent group {group_id} has no config to restart.")
+    config_path = Path(config_path_value)
+    server = str(group.get("server") or "").strip()
+    if not server:
+        raise ValueError(f"Live agent group {group_id} has no server to restart.")
+    checker = preflight_checker if callable(preflight_checker) else preflight_live_agent_config
+    preflight = checker(config_path, server_override=server)
+    if preflight.get("status") != "ok":
+        raise ValueError(_preflight_failure_message(preflight))
+    resident_configs = load_group_configs(config_path, server_override=server)
+    _validate_resident_config_meeting_ids(resident_configs, meeting_id=meeting_id)
+    _validate_resident_manifest(resident_configs, expected_agents)
 
 
 def _existing_meeting_dir(output_root: Path, meeting_id: str) -> Path:
@@ -846,6 +883,12 @@ def _validate_stop_group_matches_meeting(
     manifest_agent_ids = _process_agent_ids(group.get("agents"))
     if not manifest_agent_ids:
         raise ValueError(f"Live agent group {group_id} has no agent manifest; refusing session stop.")
+    duplicate_agent_ids = _duplicate_agent_ids(manifest_agent_ids)
+    if duplicate_agent_ids:
+        raise ValueError(
+            f"Live agent group {group_id} does not match meeting agents: "
+            f"duplicate {', '.join(duplicate_agent_ids)}."
+        )
     expected = set(expected_agent_ids)
     actual = set(manifest_agent_ids)
     if actual == expected:
