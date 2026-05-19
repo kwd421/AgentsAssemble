@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-from agentsassemble.live_agents import heartbeat_live_agent
+from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor as _LiveAgentProcessSupervisor
 
 
@@ -1141,6 +1141,51 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(groups[0]["status"], "restarting")
         self.assertIn("stale manifest agent agent-a", groups[0]["last_error"])
 
+    def test_stale_watchdog_schedules_auto_restart_for_wrong_meeting_manifest_agent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: FakeProcess(pid=7327),
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                meeting_id="resident-m1",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+            )
+            current_time["value"] += timedelta(seconds=61)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "status": "working",
+                    "meeting_id": "resident-m2",
+                },
+                now=current_time["value"],
+            )
+
+            groups = supervisor.list_groups()
+            events = _read_lifecycle_events(root)
+
+        self.assertEqual(groups[0]["status"], "restarting")
+        self.assertIsNone(groups[0]["pid"])
+        self.assertEqual(groups[0]["returncode"], -98)
+        self.assertEqual(groups[0]["restart_count"], 1)
+        self.assertIn("wrong meeting manifest agent agent-a", groups[0]["last_error"])
+        self.assertNotIn("resident-m2", groups[0]["last_error"])
+        self.assertEqual([event["event_type"] for event in events], ["started", "stale_watchdog", "restart_scheduled"])
+
     def test_stale_watchdog_ignores_fresh_manifest_agent(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -1164,6 +1209,44 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             )
             current_time["value"] += timedelta(seconds=70)
             heartbeat_live_agent(root, "agent-a", status="working", now=current_time["value"])
+            groups = supervisor.list_groups()
+
+        self.assertEqual(groups[0]["status"], "running")
+        self.assertEqual(groups[0]["restart_count"], 0)
+
+    def test_stale_watchdog_ignores_agent_meeting_id_when_group_has_no_meeting_owner(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: FakeProcess(pid=7328),
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+            )
+            current_time["value"] += timedelta(seconds=61)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "status": "working",
+                    "meeting_id": "resident-m2",
+                },
+                now=current_time["value"],
+            )
+
             groups = supervisor.list_groups()
 
         self.assertEqual(groups[0]["status"], "running")

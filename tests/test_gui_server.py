@@ -2120,6 +2120,50 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(connection["attention"], [{"agent_id": "agent-b", "status": "missing"}])
         self.assertNotIn("agent_connection", supervisor.groups[0])
 
+    def test_live_agent_process_connection_evidence_reports_wrong_meeting(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                return [
+                    {
+                        "group_id": "crew",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "status": "online",
+                                "meeting_id": "resident-m2",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-processes", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        connection = payload["groups"][0]["agent_connection"]
+        self.assertEqual(connection["expected"], 1)
+        self.assertEqual(connection["connected"], 0)
+        self.assertEqual(connection["attention"], [{"agent_id": "agent-a", "status": "wrong_meeting"}])
+
     def test_live_agent_process_connection_evidence_is_not_persisted_by_real_supervisor(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -2230,6 +2274,50 @@ class GuiServerTests(unittest.TestCase):
             ],
         )
         self.assertFalse(supervisor.list_called)
+
+    def test_live_agent_health_degrades_when_manifest_agent_is_attached_to_wrong_meeting(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "crew",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "status": "working",
+                                "meeting_id": "resident-m2",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["connections"]["expected"], 1)
+        self.assertEqual(payload["connections"]["connected"], 0)
+        self.assertEqual(payload["connections"]["attention"], ["crew:agent-a:wrong_meeting"])
 
     def test_live_agent_health_ignores_diagnostic_connection_gaps(self):
         class FakeSupervisor:

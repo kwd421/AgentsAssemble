@@ -1011,11 +1011,14 @@ def _stale_watchdog_reason(
     started_at = _parse_datetime(record.get("started_at"))
     if started_at is None or (now - started_at).total_seconds() <= threshold_seconds:
         return ""
+    meeting_id = _clean_meeting_id(record.get("meeting_id"))
     for manifest_agent in _safe_agent_manifest(record.get("agents")):
         agent_id = manifest_agent.get("agent_id") or ""
         agent = agents_by_id.get(agent_id)
         if agent is None:
             return f"missing manifest agent {agent_id}"
+        if meeting_id and str(agent.get("meeting_id") or "") != meeting_id:
+            return f"wrong meeting manifest agent {agent_id}"
         if str(agent.get("status") or "") == "stale":
             return f"stale manifest agent {agent_id}"
     return ""

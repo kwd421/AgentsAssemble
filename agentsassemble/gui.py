@@ -1352,6 +1352,7 @@ def _process_payload_with_agent_connection_evidence(
 
 def _agent_connection_evidence(group: dict[str, object], agents: list[dict[str, object]]) -> dict[str, object]:
     agents_by_id = {str(agent.get("agent_id") or ""): agent for agent in agents if str(agent.get("agent_id") or "")}
+    group_meeting_id = _safe_process_meeting_id(group.get("meeting_id"))
     expected = 0
     connected = 0
     attention = []
@@ -1363,6 +1364,9 @@ def _agent_connection_evidence(group: dict[str, object], agents: list[dict[str, 
         agent = agents_by_id.get(agent_id)
         if agent is None:
             attention.append({"agent_id": agent_id, "status": "missing"})
+            continue
+        if group_meeting_id and str(agent.get("meeting_id") or "") != group_meeting_id:
+            attention.append({"agent_id": agent_id, "status": "wrong_meeting"})
             continue
         status = str(agent.get("status") or "offline")
         if status in {"online", "working"}:

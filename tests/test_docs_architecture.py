@@ -162,6 +162,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("live-agent heartbeat", doc)
         self.assertIn("heartbeat_age_seconds", doc)
         self.assertIn("stale_after_seconds", doc)
+        self.assertIn("wrong-meeting", doc)
         self.assertIn("Slow resident replies keep sending `working` heartbeats", doc)
         self.assertIn("--status error", doc)
         self.assertIn("--last-error", doc)
