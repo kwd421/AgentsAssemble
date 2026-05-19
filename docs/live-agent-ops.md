@@ -123,6 +123,29 @@ The opt-in automatic path uses `--run-remaining-rounds` in the CLI or `run_remai
 
 The operation ledger records one sanitized `session.start` entry with result status, meeting id, group id, expected/connected counts, process status, safe agent ids, connection/process attention, and bounded `auto_rounds` counts when the opt-in path is requested. It does not record config paths, command arguments, endpoints, auth refs, prompts, log tails, provider output, replies, or official turn content.
 
+Use `resume-session` when the visible resident meeting already exists and you want one bounded operator action to reconnect its supervised group and re-check readiness:
+
+```bash
+python3 -m agentsassemble.cli live-agent resume-session \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1 \
+  --group-id resident-main \
+  --live-agent-config configs/live-agents.start-session.example.json \
+  --connect-timeout 5
+```
+
+The HTTP control-plane path is:
+
+```text
+POST /api/live-agent-sessions/resume
+```
+
+with `meeting_id`, `group_id`, `live_agent_config_path`, `connect_timeout_seconds`, and the same process restart and optional `run_remaining_rounds` fields as `start-session`. `meeting_id` must name an existing meeting. Resume reads that meeting's `agent_bindings` and `provider_configs`, validates the resident group manifest against those bound agents, and refuses mismatches before starting processes. It never calls the meeting creation path and never overwrites the existing meeting.
+
+If the matching process group is already `running`, resume reuses it and waits for real presence evidence. If the group is missing, stopped, `unknown`, or `error`, resume starts a fresh supervised process from the supplied config and group id so the process manifest matches the config that was just validated against the meeting. Missing roster entries are repaired as `offline` rows attached to the meeting so the operator can see stale evidence, but they are not counted as connected until a real registration or heartbeat reports `online` or `working`.
+
+`resume-session --run-remaining-rounds` uses the same ready gate as `start-session`: remaining official rounds run only when the resumed session returns `status: "ready"`. Otherwise `auto_rounds.status` is `skipped` with `reason: "session_not_ready"` and no official turn request events are appended. The operation ledger records one sanitized `session.resume` entry with the same safe count/status fields as `session.start`; it does not record config paths, command arguments, endpoints, auth refs, prompts, log tails, provider output, replies, or official turn content.
+
 Use `start-meeting` when you want a normal, visible meeting record that is ready for resident live-agent official turns, instead of a diagnostic smoke meeting:
 
 ```bash

@@ -41,6 +41,7 @@ from agentsassemble.meeting_events import append_live_event, read_live_events, w
 from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.live_agents import heartbeat_live_agent
+from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 
@@ -4829,6 +4830,250 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(session_operations[-1]["target_id"], meeting_id)
             self.assertEqual(session_operations[-1]["details"]["meeting_id"], meeting_id)
 
+    def test_live_agent_session_resume_existing_meeting_records_safe_operation(self):
+        class RunningSessionSupervisor:
+            def __init__(self) -> None:
+                self.started = []
+
+            def list_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "agents": [{"agent_id": "agent-a", "provider_kind": "local_cli", "connection_kind": "local_cli"}],
+                    }
+                ]
+
+            def start_group(self, **kwargs):
+                self.started.append(kwargs)
+                raise AssertionError("resume should reuse the already running group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            supervisor = RunningSessionSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/resume",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                            "live_agent_config_path": str(live_agent_config),
+                            "connect_timeout_seconds": 0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(session_payload["status"], "ready")
+            self.assertEqual(session_payload["meeting_id"], "resident-m1")
+            self.assertEqual(session_payload["group_id"], "resident-main")
+            self.assertEqual(session_payload["connection"]["connected"], 1)
+            self.assertEqual(supervisor.started, [])
+            session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.resume"]
+            self.assertEqual(session_operations[-1]["status"], "success")
+            self.assertEqual(session_operations[-1]["target_id"], "resident-m1")
+            self.assertEqual(session_operations[-1]["details"]["result_status"], "ready")
+            operation_blob = json.dumps(session_operations, ensure_ascii=False)
+            self.assertNotIn(str(live_agent_config), operation_blob)
+
+    def test_live_agent_session_resume_skips_auto_rounds_until_session_ready(self):
+        class StartingSessionSupervisor:
+            def list_groups(self):
+                return []
+
+            def start_group(self, **kwargs):
+                return {
+                    "group_id": kwargs.get("group_id") or "resident-main",
+                    "status": "running",
+                    "agents": [{"agent_id": "agent-a", "provider_kind": "local_cli", "connection_kind": "local_cli"}],
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=StartingSessionSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/resume",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                            "live_agent_config_path": str(live_agent_config),
+                            "connect_timeout_seconds": 0,
+                            "run_remaining_rounds": True,
+                            "round_timeout_seconds": 0,
+                            "round_max_rounds": 1,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(session_payload["status"], "starting")
+            self.assertEqual(session_payload["auto_rounds"]["status"], "skipped")
+            self.assertEqual(session_payload["auto_rounds"]["reason"], "session_not_ready")
+            request_events = [
+                event
+                for event in read_live_events(root / "meetings" / "resident-m1", limit=None)
+                if event.get("kind") == "live_agent_turn_request"
+            ]
+            self.assertEqual(request_events, [])
+            session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.resume"]
+            self.assertEqual(session_operations[-1]["status"], "degraded")
+            self.assertEqual(session_operations[-1]["details"]["auto_rounds_status"], "skipped")
+
+    def test_live_agent_session_resume_missing_meeting_returns_safe_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            live_agent_config = root / "live-agents.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": [sys.executable, "-c", "print('ok')"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=LiveAgentProcessSupervisor(root)))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/resume",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "missing-meeting",
+                            "group_id": "resident-main",
+                            "live_agent_config_path": str(live_agent_config),
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=4)
+                body = raised.exception.read().decode("utf-8")
+                error_payload = json.loads(body)
+                raised.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertIn("Meeting missing-meeting was not found", body)
+            self.assertNotIn(str(live_agent_config), body)
+            self.assertEqual(error_payload["details"]["requested_meeting_id"], "missing-meeting")
+
+    def test_live_agent_session_resume_redacts_command_names_from_error_response(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": ["secret-local-agent-cli"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=LiveAgentProcessSupervisor(root)))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/resume",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                            "live_agent_config_path": str(live_agent_config),
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=4)
+                body = raised.exception.read().decode("utf-8")
+                error_payload = json.loads(body)
+                raised.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertIn("details redacted", body)
+            self.assertNotIn("secret-local-agent-cli", body)
+            self.assertNotIn(str(live_agent_config), body)
+            self.assertEqual(error_payload["details"]["requested_meeting_id"], "resident-m1")
+
     def test_live_agent_official_turn_round_validates_before_append(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -6058,6 +6303,57 @@ class GuiServerTests(unittest.TestCase):
                 probe_mode="bridge",
                 probe_timeout_seconds=0.75,
             )
+
+
+def _write_single_agent_session_configs(council_config: Path, agent_config: Path, live_agent_config: Path) -> None:
+    council_config.write_text(
+        json.dumps(
+            {
+                "topic": "resident session",
+                "question": "Can a resident session resume?",
+                "roles": [
+                    {"id": "architect", "display_name": "Architect", "lens": "Architecture", "research_focus": "system"}
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    agent_config.write_text(
+        json.dumps(
+            {
+                "providers": [{"id": "local-cli", "kind": "local_cli", "display_name": "Local CLI"}],
+                "permission_profiles": [{"id": "meeting_readonly", "meeting_read": True, "official_turn": True}],
+                "agent_bindings": [
+                    {
+                        "agent_id": "agent-a",
+                        "role_id": "architect",
+                        "provider_id": "local-cli",
+                        "permission_profile_id": "meeting_readonly",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    live_agent_config.write_text(
+        json.dumps(
+            {
+                "agents": [
+                    {
+                        "agent_id": "agent-a",
+                        "display_name": "Agent A",
+                        "provider_kind": "local_cli",
+                        "connection_kind": "local_cli",
+                        "command": [sys.executable, "-c", "print('ok')"],
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

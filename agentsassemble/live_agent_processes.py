@@ -629,9 +629,13 @@ class LiveAgentProcessSupervisor:
             file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
 
 
-def _clean_group_id(value: str) -> str:
+def clean_live_agent_group_id(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value or "").strip()).strip(".-")
     return cleaned or "live-agents"
+
+
+def _clean_group_id(value: str) -> str:
+    return clean_live_agent_group_id(value)
 
 
 def _poll_process(process: object) -> object:

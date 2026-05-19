@@ -121,6 +121,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-session-start")?.addEventListener("click", async () => {
     await startLiveAgentSession(lobby);
   });
+  lobby.querySelector("#live-agent-session-resume")?.addEventListener("click", async () => {
+    await resumeLiveAgentSession(lobby);
+  });
   lobby.querySelector("#live-agent-call-round")?.addEventListener("click", async () => {
     await callLiveAgentOfficialRound(lobby);
   });
@@ -496,6 +499,7 @@ function renderLiveAgentProcessControls() {
         <input id="live-agent-process-stale-restart-after" type="number" min="0" max="86400" step="1" value="0" aria-label="stale restart after seconds" />
         <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
         <button type="button" id="live-agent-session-start" ${processActionsDisabled ? "disabled" : ""}>세션시작</button>
+        <button type="button" id="live-agent-session-resume" ${processActionsDisabled ? "disabled" : ""}>세션재개</button>
         <button type="button" id="live-agent-call-round" ${processActionsDisabled ? "disabled" : ""}>라운드호출</button>
         <button type="button" id="live-agent-call-remaining-rounds" ${processActionsDisabled ? "disabled" : ""}>남은라운드</button>
         <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
@@ -1334,6 +1338,27 @@ async function startLiveAgentProcessGroup(form) {
 
 async function startLiveAgentSession(lobby) {
   if (liveAgentProcessActionBusy()) return;
+  await runLiveAgentSessionAction(lobby, {
+    endpoint: "/api/live-agent-sessions/start",
+    includeCouncilConfigs: true,
+    busyMessage: "상주 세션 시작 중",
+    failurePrefix: "상주 세션 시작 실패",
+    notifyRecoverable: true,
+  });
+}
+
+async function resumeLiveAgentSession(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  await runLiveAgentSessionAction(lobby, {
+    endpoint: "/api/live-agent-sessions/resume",
+    includeCouncilConfigs: false,
+    busyMessage: "상주 세션 재개 중",
+    failurePrefix: "상주 세션 재개 실패",
+    notifyRecoverable: false,
+  });
+}
+
+async function runLiveAgentSessionAction(lobby, { endpoint, includeCouncilConfigs, busyMessage, failurePrefix, notifyRecoverable }) {
   const liveAgentConfigPath = lobby.querySelector("#live-agent-process-config")?.value.trim() || "";
   const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
   const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
@@ -1350,14 +1375,12 @@ async function startLiveAgentSession(lobby) {
   const staleRestartAfterSeconds = Math.max(0, Number(lobby.querySelector("#live-agent-process-stale-restart-after")?.value || 0));
   if (!liveAgentConfigPath) return;
   state.liveAgentSessionStartRunning = true;
-  state.liveAgentProcessStatus = { message: "상주 세션 시작 중", tone: "info" };
+  state.liveAgentProcessStatus = { message: busyMessage, tone: "info" };
   renderLobby({ followLatest: false });
   try {
     const requestBody = {
       meeting_id: meetingId,
       group_id: groupId,
-      council_config_path: councilConfigPath,
-      agent_config_path: agentConfigPath,
       live_agent_config_path: liveAgentConfigPath,
       connect_timeout_seconds: connectTimeoutSeconds,
       auto_restart: autoRestart,
@@ -1365,13 +1388,17 @@ async function startLiveAgentSession(lobby) {
       restart_backoff_seconds: restartBackoffSeconds,
       stale_restart_after_seconds: staleRestartAfterSeconds,
     };
+    if (includeCouncilConfigs) {
+      requestBody.council_config_path = councilConfigPath;
+      requestBody.agent_config_path = agentConfigPath;
+    }
     if (runRemainingRounds) {
       requestBody.run_remaining_rounds = true;
       requestBody.round_timeout_seconds = roundTimeoutSeconds;
       requestBody.round_max_rounds = roundMaxRounds;
       requestBody.round_stop_on_timeout = roundStopOnTimeout;
     }
-    const payload = await fetchJson("/api/live-agent-sessions/start", {
+    const payload = await fetchJson(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
@@ -1380,8 +1407,8 @@ async function startLiveAgentSession(lobby) {
     notifyMeetingStarted(payload.meeting_id);
     state.liveAgentProcessStatus = { message: liveAgentSessionStatusMessage(payload), tone: liveAgentSessionStatusTone(payload) };
   } catch (error) {
-    notifyRecoverableSessionMeeting(error);
-    state.liveAgentProcessStatus = { message: `상주 세션 시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+    if (notifyRecoverable) notifyRecoverableSessionMeeting(error);
+    state.liveAgentProcessStatus = { message: `${failurePrefix}: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   } finally {
     state.liveAgentSessionStartRunning = false;
     await loadLiveAgentOperations({ background: true, force: true });

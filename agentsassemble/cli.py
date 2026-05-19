@@ -271,6 +271,29 @@ def build_parser() -> argparse.ArgumentParser:
     live_start_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
     live_start_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session start payload.")
 
+    live_resume_session = live_agent_subparsers.add_parser(
+        "resume-session",
+        parents=[live_server],
+        help="Resume an existing resident meeting with a supervised live-agent group.",
+    )
+    live_resume_session.add_argument("--meeting-id", required=True, help="Existing resident meeting id to resume.")
+    live_resume_session.add_argument("--group-id", default="", help="Optional supervised process group id.")
+    live_resume_session.add_argument("--live-agent-config", required=True, help="Resident live-agent run-group config path.")
+    live_resume_session.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0, help="Seconds to wait for bound agents to connect.")
+    live_resume_session.add_argument("--auto-restart", action="store_true")
+    live_resume_session.add_argument("--max-restarts", type=parse_nonnegative_int, default=0)
+    live_resume_session.add_argument("--restart-backoff-seconds", type=parse_nonnegative_float, default=5.0)
+    live_resume_session.add_argument("--stale-restart-after-seconds", type=parse_nonnegative_float, default=0.0)
+    live_resume_session.add_argument(
+        "--run-remaining-rounds",
+        action="store_true",
+        help="After all bound agents connect, run remaining official template rounds.",
+    )
+    live_resume_session.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
+    live_resume_session.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
+    live_resume_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
+    live_resume_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session resume payload.")
+
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
     live_say.add_argument("--agent-id", required=True)
     live_say.add_argument("message", nargs="+")
@@ -539,6 +562,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_start_meeting(args)
         if args.live_agent_command == "start-session":
             return _run_live_agent_start_session(args)
+        if args.live_agent_command == "resume-session":
+            return _run_live_agent_resume_session(args)
         if args.live_agent_command == "say":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
             response = _request_json(
@@ -823,6 +848,56 @@ def _run_live_agent_start_session(args: argparse.Namespace) -> int:
         )
     response = _request_json(
         _server_url(args.server, "/api/live-agent-sessions/start"),
+        method="POST",
+        payload=payload,
+        timeout_seconds=timeout_seconds,
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_session_start(response))
+    if response.get("status") != "ready":
+        return 1
+    auto_rounds = response.get("auto_rounds") if isinstance(response.get("auto_rounds"), dict) else None
+    if auto_rounds is None:
+        return 0
+    return 0 if auto_rounds.get("status") in {"answered", "complete"} else 1
+
+
+def _run_live_agent_resume_session(args: argparse.Namespace) -> int:
+    if args.auto_restart and args.max_restarts <= 0:
+        raise ValueError("--auto-restart requires --max-restarts greater than 0.")
+    if args.stale_restart_after_seconds > 0 and (not args.auto_restart or args.max_restarts <= 0):
+        raise ValueError("--stale-restart-after-seconds requires --auto-restart and --max-restarts greater than 0.")
+    max_rounds = max(1, int(args.max_rounds))
+    if args.run_remaining_rounds and max_rounds > MAX_LIVE_AGENT_ROUND_BATCH:
+        raise ValueError(f"--max-rounds supports at most {MAX_LIVE_AGENT_ROUND_BATCH}.")
+    payload = {
+        "meeting_id": str(args.meeting_id or ""),
+        "group_id": str(args.group_id or ""),
+        "live_agent_config_path": str(args.live_agent_config or ""),
+        "connect_timeout_seconds": float(args.connect_timeout),
+        "auto_restart": bool(args.auto_restart),
+        "max_restarts": int(args.max_restarts),
+        "restart_backoff_seconds": float(args.restart_backoff_seconds),
+        "stale_restart_after_seconds": float(args.stale_restart_after_seconds),
+    }
+    timeout_seconds = float(args.connect_timeout) + 6.0
+    if args.run_remaining_rounds:
+        payload.update(
+            {
+                "run_remaining_rounds": True,
+                "round_timeout_seconds": float(args.round_timeout),
+                "round_max_rounds": max_rounds,
+                "round_stop_on_timeout": bool(args.stop_on_timeout),
+            }
+        )
+        timeout_seconds = float(args.connect_timeout) + _operation_http_timeout(
+            float(args.round_timeout),
+            windows=max_rounds * MAX_LIVE_AGENT_SEQUENCE_TURNS,
+        )
+    response = _request_json(
+        _server_url(args.server, "/api/live-agent-sessions/resume"),
         method="POST",
         payload=payload,
         timeout_seconds=timeout_seconds,
