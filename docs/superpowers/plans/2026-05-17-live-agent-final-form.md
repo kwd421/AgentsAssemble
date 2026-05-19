@@ -2953,6 +2953,61 @@ Document that `resume-session` treats `restarting` as a pending restart/backoff 
 
 ---
 
+### Task 84: Wait-Ready Uses Final Read-Only Session Readiness
+
+**Goal:** Make CLI `--wait-ready` a real final readiness gate for session start/resume/restart/recover commands, even when the mutating command initially returns `ready`.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED coverage for initial-ready final readiness checks**
+
+Cover `live-agent start-session --wait-ready` where the start POST returns `ready` with sanitized auto-round evidence, but the read-only session readiness endpoint reports a degraded duplicate-owner snapshot. The CLI must poll the read-only endpoint, return exit code `1`, preserve the auto-round evidence, and print the ownership attention reason.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_start_session_wait_ready_checks_final_readiness_even_when_initial_response_is_ready
+```
+
+Expected: fail before implementation because `_maybe_wait_for_live_agent_session_ready()` skips the read-only wait when the initial response is already `ready`.
+
+- [x] **Step 2: Always honor requested wait-ready**
+
+Change the shared wait helper so `--wait-ready` polls `GET /api/live-agent-sessions/readiness` whenever meeting and group ids are available, regardless of the initial status. Preserve sanitized `reply_probe` and `auto_rounds` evidence from the mutating response on the final snapshot.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_start_session_wait_ready_checks_final_readiness_even_when_initial_response_is_ready \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_start_session_wait_ready_polls_read_only_session_readiness \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_restart_session_wait_ready_uses_read_only_readiness_after_restart \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_uses_final_readiness_even_when_resume_returns_ready
+```
+
+Expected: pass.
+
+- [x] **Step 3: Surface final attention reasons in CLI summary**
+
+Include connection, process, and ownership attention in the compact session summary so a final degraded readiness result explains why it failed.
+
+- [x] **Step 4: Preserve failure semantics on readiness timeout**
+
+Cover and fix the review-found edge case where the initial mutating response is `ready`, the requested read-only readiness poll times out, and the CLI could otherwise return exit code `0` using the unverified initial response. The wait fallback now downgrades an initial `ready` response to `starting` until a read-only readiness snapshot proves readiness.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_start_session_wait_ready_times_out_after_initial_ready_without_unverified_success
+```
+
+Expected: fail before the fix, pass after the wait fallback is downgraded.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

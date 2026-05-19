@@ -2374,15 +2374,24 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("Resident session resident-m1 degraded", stdout.getvalue())
         self.assertIn("agent-b:offline", stdout.getvalue())
 
-    def test_live_agent_start_session_wait_ready_skips_poll_when_initial_response_is_ready(self):
-        response = {
+    def test_live_agent_start_session_wait_ready_checks_final_readiness_even_when_initial_response_is_ready(self):
+        start_response = {
             "status": "ready",
             "meeting_id": "resident-m1",
             "group_id": "resident-main",
             "connection": {"expected": 1, "connected": 1, "attention": []},
+            "auto_rounds": {"status": "answered", "round_count": 1, "answered_round_count": 1},
+        }
+        final_snapshot = {
+            "status": "degraded",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "connection": {"expected": 1, "connected": 1, "attention": []},
+            "process": {"status": "running", "attention": []},
+            "ownership": {"attention": ["meeting:duplicate_active_group"]},
         }
         stdout = StringIO()
-        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+        with patch("agentsassemble.cli._request_json", side_effect=[start_response, final_snapshot]) as request_json:
             with patch("sys.stdout", stdout):
                 exit_code = main(
                     [
@@ -2393,12 +2402,55 @@ class CliTimeoutTests(unittest.TestCase):
                         "--live-agent-config",
                         "configs/live-agents.start-session.example.json",
                         "--wait-ready",
+                        "--wait-timeout",
+                        "0",
                     ]
                 )
 
-        self.assertEqual(exit_code, 0)
-        request_json.assert_called_once()
-        self.assertIn("Resident session resident-m1 ready", stdout.getvalue())
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(request_json.call_count, 2)
+        self.assertEqual(
+            request_json.call_args_list[1].args,
+            (
+                "http://room.local/api/live-agent-sessions/readiness?"
+                "meeting_id=resident-m1&group_id=resident-main",
+            ),
+        )
+        self.assertNotIn("method", request_json.call_args_list[1].kwargs)
+        self.assertNotIn("payload", request_json.call_args_list[1].kwargs)
+        self.assertIn("Resident session resident-m1 degraded", stdout.getvalue())
+        self.assertIn("meeting:duplicate_active_group", stdout.getvalue())
+        self.assertIn("rounds answered: 1 rounds, 1 answered", stdout.getvalue())
+
+    def test_live_agent_start_session_wait_ready_times_out_after_initial_ready_without_unverified_success(self):
+        start_response = {
+            "status": "ready",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "connection": {"expected": 1, "connected": 1, "attention": []},
+            "auto_rounds": {"status": "answered", "round_count": 1, "answered_round_count": 1},
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=[start_response, TimeoutError()]) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "start-session",
+                        "--server",
+                        "http://room.local",
+                        "--live-agent-config",
+                        "configs/live-agents.start-session.example.json",
+                        "--wait-ready",
+                        "--wait-timeout",
+                        "1",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(request_json.call_count, 2)
+        self.assertIn("Resident session resident-m1 starting", stdout.getvalue())
+        self.assertIn("rounds answered: 1 rounds, 1 answered", stdout.getvalue())
 
     def test_live_agent_start_session_can_run_remaining_rounds_after_ready_connection(self):
         response = {

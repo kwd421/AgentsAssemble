@@ -1280,20 +1280,24 @@ def _maybe_wait_for_live_agent_session_ready(
     args: argparse.Namespace,
     response: dict[str, object],
 ) -> dict[str, object]:
-    if not getattr(args, "wait_ready", False) or response.get("status") == "ready":
+    if not getattr(args, "wait_ready", False):
         return response
     meeting_id = str(response.get("meeting_id") or getattr(args, "meeting_id", "") or "").strip()
     group_id = str(response.get("group_id") or getattr(args, "group_id", "") or "").strip()
     if not meeting_id or not group_id:
         raise ValueError("Session readiness wait requires meeting_id and group_id in the session response.")
-    return _wait_for_live_agent_session_ready(
+    initial_response = response
+    if response.get("status") == "ready":
+        initial_response = {**response, "status": "starting"}
+    waited = _wait_for_live_agent_session_ready(
         server=str(args.server),
         meeting_id=meeting_id,
         group_id=group_id,
         timeout_seconds=float(args.wait_timeout),
         poll_interval_seconds=float(args.wait_poll_interval),
-        initial_response=response,
+        initial_response=initial_response,
     )
+    return _attach_session_post_ready_results(waited, response)
 
 
 def _wait_for_live_agent_session_ready(
@@ -1556,7 +1560,7 @@ def _format_live_agent_session_start(response: dict[str, object]) -> str:
     connection = response.get("connection") if isinstance(response.get("connection"), dict) else {}
     expected = connection.get("expected", 0)
     connected = connection.get("connected", 0)
-    attention = connection.get("attention") if isinstance(connection.get("attention"), list) else []
+    attention = _live_agent_session_attention(response)
     suffix = f"; attention {', '.join(str(item) for item in attention)}" if attention else ""
     reply_probe = response.get("reply_probe") if isinstance(response.get("reply_probe"), dict) else None
     if reply_probe is not None:
@@ -1575,6 +1579,21 @@ def _format_live_agent_session_start(response: dict[str, object]) -> str:
             f"{auto_rounds.get('skipped_round_count', 0)} skipped"
         )
     return f"Resident session {meeting_id} {status}; group {group_id}; {connected}/{expected} connected{suffix}"
+
+
+def _live_agent_session_attention(response: dict[str, object]) -> list[object]:
+    attention: list[object] = []
+    seen = set()
+    for section_name in ("connection", "process", "ownership"):
+        section = response.get(section_name) if isinstance(response.get(section_name), dict) else {}
+        values = section.get("attention") if isinstance(section.get("attention"), list) else []
+        for value in values:
+            key = str(value)
+            if key in seen:
+                continue
+            seen.add(key)
+            attention.append(value)
+    return attention
 
 
 def _format_live_agent_session_stop(response: dict[str, object]) -> str:
