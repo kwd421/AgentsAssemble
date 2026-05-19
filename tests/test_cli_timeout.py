@@ -5610,6 +5610,140 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("primary-error: primary boom", stderr.getvalue())
         self.assertNotIn("secondary closed during shutdown", stderr.getvalue())
 
+    def test_live_agent_run_group_reports_worker_system_exit_as_error(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="exiting-agent",
+                display_name="Exiting Agent",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            )
+        ]
+
+        class ExitingRunner:
+            def __init__(self, *args, **kwargs):
+                del args, kwargs
+
+            def run(self):
+                raise SystemExit("runner exited unexpectedly")
+
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
+            patch("agentsassemble.cli.LiveAgentRunner", ExitingRunner),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("exiting-agent: runner exited unexpectedly", stderr.getvalue())
+
+    def test_live_agent_run_group_closes_sibling_runners_after_worker_keyboard_interrupt(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="interrupting-agent",
+                display_name="Interrupting Agent",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            ),
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="sibling-blocked",
+                display_name="Sibling Blocked",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            ),
+        ]
+        runners = {}
+        sibling_started = threading.Event()
+        sibling_closed_while_running = threading.Event()
+
+        class CloseRecordingRunner:
+            def __init__(self, agent_id):
+                self.agent_id = agent_id
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        class InterruptingRunner:
+            def __init__(self, config, *, command_runner, **kwargs):
+                del kwargs
+                self.config = config
+                self.command_runner = command_runner
+
+            def run(self):
+                if self.config.agent_id == "interrupting-agent":
+                    if not sibling_started.wait(timeout=1):
+                        raise AssertionError("secondary runner did not start")
+                    raise KeyboardInterrupt()
+                sibling_started.set()
+                deadline = time.time() + 0.5
+                while time.time() < deadline:
+                    if self.command_runner.closed:
+                        sibling_closed_while_running.set()
+                        return 0
+                    time.sleep(0.01)
+                return 0
+
+        def command_runner_for_config(config):
+            runner = CloseRecordingRunner(config.agent_id)
+            runners[config.agent_id] = runner
+            return runner
+
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
+            patch("agentsassemble.cli._command_runner_for_config", side_effect=command_runner_for_config),
+            patch("agentsassemble.cli.LiveAgentRunner", InterruptingRunner),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", StringIO()),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(sibling_closed_while_running.is_set())
+
     def test_live_agent_run_group_closes_sibling_runners_after_primary_failure(self):
         configs = [
             ResidentAgentConfig(

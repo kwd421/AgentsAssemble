@@ -1349,6 +1349,12 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
     def sleep(seconds: float) -> None:
         stop_event.wait(seconds)
 
+    def close_active_command_runners() -> None:
+        with active_command_runners_lock:
+            runners_to_close = list(active_command_runners)
+        for active_runner in runners_to_close:
+            _close_command_runner(active_runner)
+
     def run_agent(config) -> None:
         command_runner = None
         try:
@@ -1364,15 +1370,16 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
                 stop_event=stop_event,
             )
             results[config.agent_id] = runner.run()
-        except Exception as error:  # pragma: no cover - surfaced through CLI status in integration use
+        except BaseException as error:  # pragma: no cover - surfaced through CLI status in integration use
+            if isinstance(error, KeyboardInterrupt):
+                stop_event.set()
+                close_active_command_runners()
+                return
             if stop_event.is_set():
                 return
             errors[config.agent_id] = str(error)
             stop_event.set()
-            with active_command_runners_lock:
-                runners_to_close = list(active_command_runners)
-            for active_runner in runners_to_close:
-                _close_command_runner(active_runner)
+            close_active_command_runners()
         finally:
             if command_runner is not None:
                 _close_command_runner(command_runner)
@@ -1388,10 +1395,7 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
             thread.join()
     except KeyboardInterrupt:
         stop_event.set()
-        with active_command_runners_lock:
-            runners_to_close = list(active_command_runners)
-        for command_runner in runners_to_close:
-            _close_command_runner(command_runner)
+        close_active_command_runners()
         for thread in threads:
             thread.join(timeout=5)
     if errors:
