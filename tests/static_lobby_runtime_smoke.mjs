@@ -1924,6 +1924,39 @@ test("operation row prioritizes readiness session smoke soak statuses", () => {
   assert.match(rowText, /session_smoke_soak_check_statuses=ready,ready/);
 });
 
+test("operation row prioritizes readiness health reasons before smoke details", () => {
+  resetState();
+  const { document } = installHarness();
+  state.liveAgentOperations = [
+    {
+      timestamp: "2026-05-18T01:02:03+00:00",
+      operation: "readiness.check",
+      status: "degraded",
+      target_id: "doctor-smoke",
+      summary: "",
+      details: {
+        result_status: "degraded",
+        session_smoke_reply_count: 3,
+        session_smoke_post_restart_reply_count: 3,
+        health_process_attention: ["orphan-group"],
+        health_process_reasons: ["orphan-group recovered_unknown orphan running record marked unknown"],
+        health_session_attention: ["resident-m1:process"],
+        probe_statuses: ["agent-a:ok"],
+      },
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+
+  const rowText = document.querySelector(".live-agent-operation-row").textContent;
+  assert.match(rowText, /health_process_reasons=orphan-group recovered_unknown orphan running record marked unknown/);
+  assert.match(rowText, /health_process_attention=orphan-group/);
+  assert.ok(
+    rowText.indexOf("health_process_reasons=") <
+      rowText.indexOf("session_smoke_reply_count=3")
+  );
+});
+
 test("operation row prioritizes session smoke soak evidence", () => {
   resetState();
   const { document } = installHarness();

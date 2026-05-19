@@ -819,6 +819,11 @@ function liveAgentOperationDetailPriority(operationName = "") {
   if (operationName === "readiness.check") {
     return [
       "result_status",
+      "health_process_reasons",
+      "health_process_attention",
+      "health_session_attention",
+      "health_connection_attention",
+      "health_agent_attention",
       "session_smoke_reply_count",
       "session_smoke_post_restart_reply_count",
       "session_smoke_post_recover_reply_count",
