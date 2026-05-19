@@ -1406,6 +1406,45 @@ Expected: pass.
 
 ---
 
+### Task 45: High-Signal Operation Soak Evidence
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for operation detail priority**
+
+Cover `live-agent operations list` and the GUI `최근 작업` row for a `session.smoke` operation whose safe details include many fields. The compact default view must still show `result_status`, base reply count, post-recover reply count, soak cycle count, soak reply count, and soak check statuses before less useful identifiers push them out.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_operations_list_prioritizes_session_smoke_soak_evidence
+node tests/static_lobby_runtime_smoke.mjs
+```
+
+Expected: fail before operation detail priority is implemented because generic insertion order hides the soak evidence behind group/meeting/agent metadata.
+
+- [x] **Step 2: Prioritize safe liveness details in compact operation views**
+
+Keep the JSON operation payload unchanged. In the CLI formatter and GUI operation-row formatter, order details by operation type before applying the existing six-detail compact display. For `session.smoke`, prioritize result status, reply count, post-recover count, soak cycle count, soak reply count, and soak check statuses. For `readiness.check`, prioritize readiness result plus session-smoke reply/soak fields before probe lists.
+
+Run the Step 1 commands.
+Expected: pass.
+
+- [x] **Step 3: Document compact operation evidence**
+
+Document that the recent operation GUI list and default CLI output prioritize high-signal session-smoke/readiness liveness evidence while `--json` remains the full sanitized payload.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

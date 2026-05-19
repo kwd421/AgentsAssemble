@@ -189,6 +189,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("/api/live-agent-operations", doc)
         self.assertIn("assemble live-agent operations list", doc)
         self.assertIn("Recent operation views read from the JSONL tail", doc)
+        self.assertIn("prioritize high-signal liveness evidence", doc)
+        self.assertIn("session-smoke soak cycle/reply counts", doc)
         self.assertIn("rescan lifecycle history once per group", doc)
         self.assertIn("does not include command arguments, endpoint URLs, auth references, prompts, log tails", doc)
         self.assertIn("--live-agent-config", doc)

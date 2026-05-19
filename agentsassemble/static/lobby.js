@@ -732,7 +732,7 @@ function renderLiveAgentOperation(operation) {
   const target = String(operation.target_id || "-");
   const summaryParts = [
     String(operation.summary || operation.error || "").trim(),
-    liveAgentOperationDetailsLabel(operation.details),
+    liveAgentOperationDetailsLabel(operation.details, operation.operation),
   ].filter(Boolean);
   return `
     <article class="live-agent-operation-row live-agent-operation-${escapeHtml(status)}">
@@ -746,13 +746,52 @@ function renderLiveAgentOperation(operation) {
   `;
 }
 
-function liveAgentOperationDetailsLabel(details) {
+function liveAgentOperationDetailsLabel(details, operationName = "") {
   if (!details || typeof details !== "object" || Array.isArray(details)) return "";
-  return Object.entries(details)
+  return orderedLiveAgentOperationDetails(details, operationName)
     .map(([key, value]) => liveAgentOperationDetailLabel(key, value))
     .filter(Boolean)
     .slice(0, 6)
     .join("; ");
+}
+
+function orderedLiveAgentOperationDetails(details, operationName = "") {
+  const entries = [];
+  const used = new Set();
+  liveAgentOperationDetailPriority(operationName).forEach((key) => {
+    if (Object.hasOwn(details, key)) {
+      entries.push([key, details[key]]);
+      used.add(key);
+    }
+  });
+  Object.entries(details).forEach((entry) => {
+    if (!used.has(entry[0])) entries.push(entry);
+  });
+  return entries;
+}
+
+function liveAgentOperationDetailPriority(operationName = "") {
+  if (operationName === "session.smoke") {
+    return [
+      "result_status",
+      "reply_count",
+      "post_recover_reply_count",
+      "soak_cycle_count",
+      "soak_reply_count",
+      "soak_check_statuses",
+    ];
+  }
+  if (operationName === "readiness.check") {
+    return [
+      "result_status",
+      "session_smoke_reply_count",
+      "session_smoke_post_recover_reply_count",
+      "session_smoke_soak_cycle_count",
+      "session_smoke_soak_reply_count",
+      "probe_statuses",
+    ];
+  }
+  return [];
 }
 
 function liveAgentOperationDetailLabel(key, value) {

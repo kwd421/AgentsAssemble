@@ -1736,17 +1736,17 @@ def _format_live_agent_operation(operation: dict[str, object]) -> str:
     status = str(operation.get("status") or "unknown")
     target_id = str(operation.get("target_id") or "-")
     summary = str(operation.get("summary") or operation.get("error") or "").strip()
-    details = _format_live_agent_operation_details(operation.get("details"))
+    details = _format_live_agent_operation_details(operation.get("details"), operation_name=operation_name)
     suffix_parts = [part for part in (summary, details) if part]
     suffix = f" · {' · '.join(suffix_parts)}" if suffix_parts else ""
     return f"{timestamp} {operation_name} {status} {target_id}{suffix}"
 
 
-def _format_live_agent_operation_details(value: object) -> str:
+def _format_live_agent_operation_details(value: object, *, operation_name: str = "") -> str:
     if not isinstance(value, dict):
         return ""
     labels = []
-    for key, raw_detail in value.items():
+    for key, raw_detail in _ordered_live_agent_operation_details(value, operation_name=operation_name):
         clean_key = str(key or "").strip()
         clean_value = _format_live_agent_operation_detail_value(raw_detail)
         if clean_key and clean_value:
@@ -1754,6 +1754,44 @@ def _format_live_agent_operation_details(value: object) -> str:
         if len(labels) >= 6:
             break
     return "; ".join(labels)
+
+
+def _ordered_live_agent_operation_details(
+    value: dict[str, object],
+    *,
+    operation_name: str = "",
+) -> list[tuple[str, object]]:
+    priority = _live_agent_operation_detail_priority(operation_name)
+    seen = set()
+    ordered: list[tuple[str, object]] = []
+    for key in priority:
+        if key in value:
+            ordered.append((key, value[key]))
+            seen.add(key)
+    ordered.extend((key, raw_detail) for key, raw_detail in value.items() if key not in seen)
+    return ordered
+
+
+def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
+    if operation_name == "session.smoke":
+        return [
+            "result_status",
+            "reply_count",
+            "post_recover_reply_count",
+            "soak_cycle_count",
+            "soak_reply_count",
+            "soak_check_statuses",
+        ]
+    if operation_name == "readiness.check":
+        return [
+            "result_status",
+            "session_smoke_reply_count",
+            "session_smoke_post_recover_reply_count",
+            "session_smoke_soak_cycle_count",
+            "session_smoke_soak_reply_count",
+            "probe_statuses",
+        ]
+    return []
 
 
 def _format_live_agent_operation_detail_value(value: object) -> str:

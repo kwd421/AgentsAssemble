@@ -1641,3 +1641,42 @@ test("operation row renders safe details when summary is empty", () => {
   assert.match(rowText, /smoke_reply_count=3/);
   assert.match(rowText, /probe_agent_ids=agent-a,agent-b/);
 });
+
+test("operation row prioritizes session smoke soak evidence", () => {
+  resetState();
+  const { document } = installHarness();
+  state.liveAgentOperations = [
+    {
+      timestamp: "2026-05-18T01:02:03+00:00",
+      operation: "session.smoke",
+      status: "success",
+      target_id: "session-smoke",
+      summary: "",
+      details: {
+        group_id: "session-smoke",
+        meeting_id: "session-smoke",
+        result_status: "ok",
+        agent_ids: ["local", "session", "bridge"],
+        rounds_status: "answered",
+        round_count: 1,
+        reply_count: 3,
+        post_restart_reply_count: 3,
+        post_recover_reply_count: 3,
+        soak_cycle_count: 2,
+        soak_reply_count: 6,
+        soak_check_statuses: ["ready", "ready"],
+      },
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+
+  const rowText = document.querySelector(".live-agent-operation-row").textContent;
+  assert.match(rowText, /session\.smoke/);
+  assert.match(rowText, /result_status=ok/);
+  assert.match(rowText, /reply_count=3/);
+  assert.match(rowText, /post_recover_reply_count=3/);
+  assert.match(rowText, /soak_cycle_count=2/);
+  assert.match(rowText, /soak_reply_count=6/);
+  assert.match(rowText, /soak_check_statuses=ready,ready/);
+});

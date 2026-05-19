@@ -507,6 +507,55 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("smoke_reply_count=3", output)
         self.assertIn("probe_agent_ids=agent-a,agent-b", output)
 
+    def test_live_agent_operations_list_prioritizes_session_smoke_soak_evidence(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "session.smoke",
+                    "status": "success",
+                    "target_id": "session-smoke",
+                    "summary": "ran credential-free resident session smoke",
+                    "details": {
+                        "group_id": "session-smoke",
+                        "meeting_id": "session-smoke",
+                        "result_status": "ok",
+                        "agent_ids": ["local", "session", "bridge"],
+                        "rounds_status": "answered",
+                        "round_count": 1,
+                        "reply_count": 3,
+                        "post_restart_reply_count": 3,
+                        "post_recover_reply_count": 3,
+                        "soak_cycle_count": 2,
+                        "soak_reply_count": 6,
+                        "soak_check_statuses": ["ready", "ready"],
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "operations",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("session.smoke", output)
+        self.assertIn("result_status=ok", output)
+        self.assertIn("reply_count=3", output)
+        self.assertIn("post_recover_reply_count=3", output)
+        self.assertIn("soak_cycle_count=2", output)
+        self.assertIn("soak_reply_count=6", output)
+        self.assertIn("soak_check_statuses=ready,ready", output)
+
     def test_live_agent_engagement_updates_real_http_endpoint_without_refreshing_heartbeat(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
