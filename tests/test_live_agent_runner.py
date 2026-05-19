@@ -1136,6 +1136,77 @@ class LiveAgentRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Remote bridge request failed."):
             runner([], "prompt", timeout_seconds=45)
 
+    def test_remote_bridge_resident_command_runner_treats_command_failure_as_error(self):
+        def requester(url, headers, payload, timeout_seconds):
+            return {
+                "text": "Claude Code bridge failed with return code 1.",
+                "metadata": {
+                    "bridge": "friend-mac",
+                    "step": "lobby",
+                    "returncode": 1,
+                    "stderr": "not logged in token=secret-token",
+                },
+            }
+
+        runner = RemoteBridgeResidentCommandRunner(
+            config(
+                connection_kind="remote_bridge",
+                endpoint="http://friend.local:8777",
+                auth_ref="literal:bridge-token",
+            ),
+            requester=requester,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Remote bridge command failed with return code 1"):
+            runner([], "prompt", timeout_seconds=45)
+
+    def test_runner_records_remote_bridge_command_failure_as_error_heartbeat(self):
+        clock = FakeClock()
+        client = FakeRoomClient(
+            [{"lobby_events": [{"id": "evt1", "name": "나", "message": "원격 브릿지 응답해줘"}]}]
+        )
+
+        def requester(url, headers, payload, timeout_seconds):
+            return {
+                "text": "Claude Code bridge failed with return code 1.",
+                "metadata": {
+                    "bridge": "friend-mac",
+                    "step": "lobby",
+                    "returncode": 1,
+                    "stderr": "not logged in token=secret-token",
+                    "command": "claude -p --token secret-token",
+                },
+            }
+
+        remote_config = config(
+            provider_kind="claude_code",
+            connection_kind="remote_bridge",
+            endpoint="http://friend.local:8777",
+            auth_ref="literal:bridge-token",
+        )
+        bridge_runner = RemoteBridgeResidentCommandRunner(remote_config, requester=requester)
+        runner = LiveAgentRunner(
+            remote_config,
+            request_json=client,
+            command_runner=bridge_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        error_heartbeats = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload and payload.get("status") == "error"
+        ]
+        self.assertEqual(lobby_payloads, [])
+        self.assertEqual(error_heartbeats[-1]["last_observed_event_id"], "evt1")
+        self.assertIn("Remote bridge command failed with return code 1", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("secret-token", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("friend.local", error_heartbeats[-1]["last_error"])
+
     def test_remote_bridge_resident_command_runner_rejects_redacted_env_auth_value(self):
         with patch.dict("os.environ", {"BRIDGE_TOKEN": "<redacted>"}, clear=False):
             with self.assertRaisesRegex(ValueError, "available auth_ref"):

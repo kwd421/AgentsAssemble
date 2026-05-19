@@ -723,7 +723,7 @@ The remote bridge runner still owns the local safety guards:
 - self-authored events are skipped by `actor_id`;
 - already observed events are skipped by `last_observed_event_id`;
 - chain depth is capped by `--max-chain-depth`;
-- bridge failures become sanitized `error` heartbeats and the runner retries after cooldown.
+- bridge request failures, command timeouts, and non-zero bridge command return codes become sanitized `error` heartbeats instead of lobby messages, and the runner retries after cooldown.
 
 Post a human lobby message first, then run one bounded remote bridge resident:
 

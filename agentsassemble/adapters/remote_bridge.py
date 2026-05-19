@@ -201,12 +201,14 @@ class RemoteBridgeAdapter(ProviderAdapter):
             raise ValueError(f"Provider {self.provider.id} requires an available auth_ref for remote bridge use.")
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        return self.requester(
+        response = self.requester(
             f"{endpoint.rstrip('/')}/agentsassemble/run",
             headers,
             envelope,
             self.provider.timeout_seconds,
         )
+        _raise_bridge_failure(response)
+        return response
 
     def _safe_endpoint(self) -> str:
         if not self.provider.endpoint:
@@ -234,6 +236,17 @@ def _response_text(response: dict[str, Any]) -> str:
     if isinstance(response.get("result"), dict):
         return json.dumps(response["result"], ensure_ascii=False)
     return str(response.get("text", ""))
+
+
+def _raise_bridge_failure(response: dict[str, Any]) -> None:
+    metadata = response.get("metadata")
+    if not isinstance(metadata, dict):
+        return
+    if metadata.get("timed_out") is True:
+        raise TimeoutError("Remote bridge command timed out.")
+    returncode = metadata.get("returncode")
+    if isinstance(returncode, int) and not isinstance(returncode, bool) and returncode != 0:
+        raise ValueError(f"Remote bridge command failed with return code {returncode}.")
 
 
 def sanitize_bridge_metadata(metadata: Any) -> dict[str, Any]:

@@ -1854,6 +1854,44 @@ Document that resident polling and GUI refresh use bounded room-event tail reads
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 57: Remote Bridge Command Failure Boundary
+
+**Files:**
+- Modify: `agentsassemble/adapters/remote_bridge.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_remote_bridge_adapter.py`
+- Test: `tests/test_live_agent_runner.py`
+
+- [x] **Step 1: Add RED coverage for bridge command failure envelopes**
+
+Cover remote bridge `/agentsassemble/run` responses that include `metadata.returncode != 0` or `metadata.timed_out: true`. Those responses must be provider failures, not normal meeting content or lobby messages. Also cover the resident remote bridge command runner and runner loop so a bridge command failure raises into the existing error-heartbeat path without posting a lobby reply.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_remote_bridge_adapter.RemoteBridgeAdapterTests.test_remote_bridge_nonzero_returncode_is_provider_failure_not_content \
+  tests.test_remote_bridge_adapter.RemoteBridgeAdapterTests.test_remote_bridge_timeout_metadata_is_provider_failure_not_content \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_remote_bridge_resident_command_runner_treats_command_failure_as_error \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_records_remote_bridge_command_failure_as_error_heartbeat
+```
+
+Expected: fail before implementation because bridge failure text is parsed as ordinary provider content.
+
+- [x] **Step 2: Reject failed bridge command envelopes**
+
+At the remote bridge adapter response boundary, raise `TimeoutError` for timed-out command metadata and `ValueError` for non-zero integer return codes. Keep metadata allowlisting for successful responses unchanged and keep resident runner error sanitization responsible for auth/token-bearing exception messages. The resident runner records the failure as `error` presence metadata with the observed source event cursor and skips the lobby post.
+
+Run the Step 1 command plus existing remote bridge adapter and resident runner bridge tests.
+Expected: pass.
+
+- [x] **Step 3: Document failure-as-error semantics**
+
+Document that bridge request failures, command timeouts, and non-zero bridge command return codes become sanitized `error` heartbeats rather than lobby messages.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

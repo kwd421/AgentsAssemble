@@ -181,6 +181,61 @@ class RemoteBridgeAdapterTests(unittest.TestCase):
         self.assertEqual(message["bridge"], {"role_id": "fanboard_skeptic", "step": "round", "returncode": 0, "timed_out": False})
         self.assertNotIn("secret-token", str(message["bridge"]))
 
+    def test_remote_bridge_nonzero_returncode_is_provider_failure_not_content(self):
+        requester = FakeRequester(
+            {
+                "text": "Claude Code bridge failed with return code 1.",
+                "metadata": {
+                    "bridge": "friend-mac",
+                    "step": "round",
+                    "returncode": 1,
+                    "stderr": "not logged in token=secret-token",
+                    "command": "claude -p --token secret-token",
+                },
+            }
+        )
+        adapter = RemoteBridgeAdapter(
+            ProviderConfig(
+                id="friend-claude-code",
+                kind="remote_http_bridge",
+                display_name="Friend Claude Code",
+                endpoint="http://friend.local:8777",
+                auth_ref="literal:bridge-token",
+            ),
+            requester=requester,
+        )
+        role = Role("fanboard_skeptic", "만갤러", "Skeptic", "반례 검증")
+
+        with self.assertRaisesRegex(ValueError, "Remote bridge command failed with return code 1"):
+            adapter.run_round(role, {"role_id": role.id}, "round_1", "첫 주장", {})
+
+    def test_remote_bridge_timeout_metadata_is_provider_failure_not_content(self):
+        requester = FakeRequester(
+            {
+                "text": "bridge timeout",
+                "metadata": {
+                    "bridge": "friend-mac",
+                    "step": "lobby",
+                    "returncode": None,
+                    "timed_out": True,
+                },
+            }
+        )
+        adapter = RemoteBridgeAdapter(
+            ProviderConfig(
+                id="friend-claude-code",
+                kind="remote_http_bridge",
+                display_name="Friend Claude Code",
+                endpoint="http://friend.local:8777",
+                auth_ref="literal:bridge-token",
+            ),
+            requester=requester,
+        )
+        role = Role("fanboard_skeptic", "만갤러", "Skeptic", "반례 검증")
+
+        with self.assertRaisesRegex(TimeoutError, "Remote bridge command timed out"):
+            adapter.run_lobby_prompt(role, {"role_id": role.id}, "reply to lobby")
+
     def test_remote_bridge_rejects_redacted_literal_auth_without_sending_request(self):
         requester = FakeRequester({"text": "{}"})
         adapter = RemoteBridgeAdapter(
