@@ -3,10 +3,17 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from subprocess import TimeoutExpired
+from typing import Any
 
-from agentsassemble.codex_resident import codex_provider_connection_check, default_codex_resident_command
+from agentsassemble.codex_resident import (
+    codex_exec_prefix,
+    codex_provider_connection_check,
+    default_codex_resident_command,
+)
 from agentsassemble.live_agent_runner import (
     ResidentAgentConfig,
     SUPPORTED_RESIDENT_CONNECTION_KINDS,
@@ -20,8 +27,13 @@ def preflight_live_agent_config(
     *,
     server_override: str | None = None,
     command_resolver: Callable[[str], str | None] | None = None,
+    codex_capability_checker: Callable[[list[str]], dict[str, str]] | None = None,
+    codex_command_runner: Callable[..., Any] | None = None,
 ) -> dict[str, object]:
     resolver = command_resolver or _resolve_command_path
+    codex_checker = codex_capability_checker or (
+        lambda command: _codex_exec_safety_flags_check(command, command_runner=codex_command_runner)
+    )
     try:
         configs = _load_preflight_configs(config_path, server_override=server_override)
     except Exception as error:
@@ -29,7 +41,7 @@ def preflight_live_agent_config(
     if not configs:
         return _failed_config_report(config_path, "Live agent group config did not contain any valid agent objects.")
     top_checks = [_duplicate_agent_id_check(configs)]
-    agents = [_preflight_agent(config, resolver) for config in configs]
+    agents = [_preflight_agent(config, resolver, codex_checker) for config in configs]
     checks_failed = _failed_check_count(top_checks) + sum(_failed_check_count(agent["checks"]) for agent in agents)
     failed_agents = sum(1 for agent in agents if agent["status"] == "failed")
     status = "failed" if checks_failed else "ok"
@@ -76,6 +88,7 @@ def _duplicate_agent_id_check(configs: list[ResidentAgentConfig]) -> dict[str, s
 def _preflight_agent(
     config: ResidentAgentConfig,
     command_resolver: Callable[[str], str | None],
+    codex_capability_checker: Callable[[list[str]], dict[str, str]],
 ) -> dict[str, object]:
     checks = [
         _agent_id_check(config.agent_id),
@@ -92,7 +105,17 @@ def _preflight_agent(
             ]
         )
     else:
-        checks.append(_command_check(config.command, command_resolver))
+        command_check = _command_check(config.command, command_resolver)
+        checks.append(command_check)
+        if (
+            config.provider_kind == "codex_live_session"
+            and config.connection_kind == "live_session"
+            and command_check["status"] == "ok"
+        ):
+            codex_command_check = _codex_command_check(config.command)
+            checks.append(codex_command_check)
+            if codex_command_check["status"] == "ok":
+                checks.append(codex_capability_checker(_resolved_command(config.command, command_check.get("path", ""))))
     status = "failed" if _failed_check_count(checks) else "ok"
     command_path = ""
     for check in checks:
@@ -204,6 +227,74 @@ def _command_check(command: list[str], command_resolver: Callable[[str], str | N
             "path": resolved,
         }
     return {"id": "command", "status": "failed", "message": f"Command not found: {executable}"}
+
+
+def _codex_command_check(command: list[str]) -> dict[str, str]:
+    executable = str(command[0] if command else "").strip()
+    if Path(executable).name in {"codex", "codex.exe"}:
+        return {
+            "id": "codex_command",
+            "status": "ok",
+            "message": "codex_live_session command executable is codex.",
+        }
+    return {
+        "id": "codex_command",
+        "status": "failed",
+        "message": "codex_live_session command executable must be named codex.",
+    }
+
+
+def _resolved_command(command: list[str], resolved_path: str) -> list[str]:
+    if not command:
+        return command
+    return [resolved_path or command[0], *command[1:]]
+
+
+def _codex_exec_safety_flags_check(
+    command: list[str],
+    *,
+    command_runner: Callable[..., Any] | None = None,
+) -> dict[str, str]:
+    if not command:
+        return {"id": "codex_exec_safety_flags", "status": "failed", "message": "Codex command is empty."}
+    probe_command = [
+        *codex_exec_prefix(command),
+        "resume",
+        "--skip-git-repo-check",
+        "--help",
+    ]
+    runner = command_runner or subprocess.run
+    try:
+        completed = runner(
+            probe_command,
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except TimeoutExpired:
+        return {
+            "id": "codex_exec_safety_flags",
+            "status": "failed",
+            "message": "Codex safety flag probe timed out.",
+        }
+    except OSError as error:
+        return {
+            "id": "codex_exec_safety_flags",
+            "status": "failed",
+            "message": f"Codex safety flag probe could not run: {error.__class__.__name__}.",
+        }
+    if int(getattr(completed, "returncode", 1) or 0) == 0:
+        return {
+            "id": "codex_exec_safety_flags",
+            "status": "ok",
+            "message": "Codex exec read-only safety flags are available.",
+        }
+    return {
+        "id": "codex_exec_safety_flags",
+        "status": "failed",
+        "message": "Codex command does not accept required live-session safety flags.",
+    }
 
 
 def resident_command_executable_error(

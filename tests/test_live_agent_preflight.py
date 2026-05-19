@@ -15,6 +15,11 @@ class LiveAgentPreflightTests(unittest.TestCase):
         report = preflight_live_agent_config(
             config_path,
             command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+            codex_capability_checker=lambda command: {
+                "id": "codex_exec_safety_flags",
+                "status": "ok",
+                "message": "Codex exec read-only safety flags are available.",
+            },
         )
 
         self.assertEqual(report["status"], "ok")
@@ -312,6 +317,11 @@ class LiveAgentPreflightTests(unittest.TestCase):
             report = preflight_live_agent_config(
                 config_path,
                 command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+                codex_capability_checker=lambda command: {
+                    "id": "codex_exec_safety_flags",
+                    "status": "ok",
+                    "message": "Codex exec read-only safety flags are available.",
+                },
             )
 
             self.assertEqual(report["status"], "ok")
@@ -328,6 +338,145 @@ class LiveAgentPreflightTests(unittest.TestCase):
                     "message": "codex_live_session uses live_session.",
                 },
                 agent["checks"],
+            )
+            self.assertIn(
+                {
+                    "id": "codex_exec_safety_flags",
+                    "status": "ok",
+                    "message": "Codex exec read-only safety flags are available.",
+                },
+                agent["checks"],
+            )
+
+    def test_preflight_rejects_codex_live_session_when_safety_flag_probe_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "codex-live",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "live_session",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            probed_commands = []
+
+            def capability_checker(command):
+                probed_commands.append(command)
+                return {
+                    "id": "codex_exec_safety_flags",
+                    "status": "failed",
+                    "message": "Codex command does not accept required live-session safety flags.",
+                }
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+                codex_capability_checker=capability_checker,
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            self.assertEqual(probed_commands, [["/usr/local/bin/codex"]])
+            self.assertIn(
+                {
+                    "id": "codex_exec_safety_flags",
+                    "status": "failed",
+                    "message": "Codex command does not accept required live-session safety flags.",
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_default_codex_capability_probe_uses_exec_level_safety_flags_before_resume(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "codex-live",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "live_session",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            calls = []
+
+            def fake_run(command, **kwargs):
+                calls.append({"command": command, "kwargs": kwargs})
+
+                class Completed:
+                    returncode = 0
+                    stdout = "help"
+                    stderr = ""
+
+                return Completed()
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+                codex_command_runner=fake_run,
+            )
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(calls[0]["command"][:6], ["/usr/local/bin/codex", "exec", "--sandbox", "read-only", "--ignore-rules", "resume"])
+            self.assertLess(calls[0]["command"].index("--sandbox"), calls[0]["command"].index("resume"))
+            self.assertIn("--skip-git-repo-check", calls[0]["command"])
+            self.assertIn("--help", calls[0]["command"])
+            self.assertEqual(calls[0]["kwargs"]["timeout"], 10)
+            self.assertTrue(calls[0]["kwargs"]["capture_output"])
+            self.assertFalse(calls[0]["kwargs"]["check"])
+
+    def test_preflight_rejects_codex_live_session_with_non_codex_executable_before_probe(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "codex-live",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "live_session",
+                                "command": ["wrapped-codex"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            probed_commands = []
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/wrapped-codex" if command == "wrapped-codex" else None,
+                codex_capability_checker=lambda command: probed_commands.append(command) or {
+                    "id": "codex_exec_safety_flags",
+                    "status": "ok",
+                    "message": "Codex exec read-only safety flags are available.",
+                },
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            self.assertEqual(probed_commands, [])
+            self.assertIn(
+                {
+                    "id": "codex_command",
+                    "status": "failed",
+                    "message": "codex_live_session command executable must be named codex.",
+                },
+                report["agents"][0]["checks"],
             )
 
     def test_preflight_rejects_codex_live_session_with_local_cli_connection(self):
