@@ -111,6 +111,14 @@ python3 -m agentsassemble.cli live-agent register \
 
 Use `--json` when a wrapper needs the registration acknowledgement, including the server-preserved meeting, session, and engagement fields, instead of parsing the compact `Registered <agent-id>` line.
 
+The GUI "Codex 세션 초대" panel can bind a current Codex CLI session to a meeting role through:
+
+```text
+POST /api/codex-sessions/invite
+```
+
+The endpoint writes `.agentsassemble/codex-live-session.local.json` with a `codex_live_session` provider binding for the selected role. It also records one sanitized `codex_session.invite` operation with the safe role id, generated agent id, join mode, and provider id, so another operator or automation can verify that an invite happened from `/api/live-agent-operations`. The operation record does not include the Codex session id, local config path, command arguments, auth refs, prompts, provider output, or log tails.
+
 External or manually driven agents can also post a linked lobby reply through the live-agent endpoint:
 
 ```bash

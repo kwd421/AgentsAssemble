@@ -339,6 +339,29 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(payload["binding"]["role_id"], "lore_lawyer")
             self.assertTrue((root / "codex-live-session.local.json").exists())
+            persisted_operations = (root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8")
+            invite_operations = [
+                operation
+                for operation in operations["operations"]
+                if operation["operation"] == "codex_session.invite"
+            ]
+            self.assertEqual(len(invite_operations), 1)
+            self.assertEqual(invite_operations[0]["status"], "success")
+            self.assertEqual(invite_operations[0]["target_id"], "lore_lawyer")
+            self.assertEqual(
+                invite_operations[0]["details"],
+                {
+                    "role_id": "lore_lawyer",
+                    "agent_id": "codex-live-lore-lawyer",
+                    "join_mode": "current_session",
+                    "provider_id": "codex-live",
+                },
+            )
+            operation_blob = json.dumps(invite_operations, ensure_ascii=False)
+            self.assertNotIn("019e02af-c287-7cd1-aab7-c1e059c5ed44", operation_blob)
+            self.assertNotIn("codex-live-session.local.json", operation_blob)
+            self.assertNotIn("019e02af-c287-7cd1-aab7-c1e059c5ed44", persisted_operations)
+            self.assertNotIn("codex-live-session.local.json", persisted_operations)
 
     def test_live_agent_process_endpoints_start_list_and_stop_group(self):
         class FakeSupervisor:

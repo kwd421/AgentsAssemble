@@ -2116,6 +2116,16 @@ def _binding_for_role(bindings: object, role_id: str) -> dict[str, object]:
     raise ValueError(f"No Codex live binding was written for role {role_id}.")
 
 
+def _codex_session_invite_operation_details(invite: dict[str, object]) -> dict[str, object]:
+    binding = invite.get("binding") if isinstance(invite.get("binding"), dict) else {}
+    return {
+        "role_id": clean_lobby_text(binding.get("role_id"), limit=128),
+        "agent_id": clean_lobby_text(binding.get("agent_id"), limit=128),
+        "join_mode": clean_lobby_text(binding.get("join_mode"), limit=64),
+        "provider_id": clean_lobby_text(binding.get("provider_id"), limit=128),
+    }
+
+
 def _live_agent_for_id(output_root: Path, agent_id: str) -> dict[str, object]:
     for agent in read_live_agents(output_root):
         if agent.get("agent_id") == agent_id:
@@ -4760,6 +4770,15 @@ def _make_handler(
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
+                operation_details = _codex_session_invite_operation_details(invite)
+                record_live_agent_operation(
+                    output_root,
+                    operation="codex_session.invite",
+                    status="success",
+                    target_id=operation_details.get("role_id", ""),
+                    summary="wrote Codex live session invite",
+                    details=operation_details,
+                )
                 self._send_json(invite)
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")

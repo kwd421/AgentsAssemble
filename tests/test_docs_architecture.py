@@ -116,6 +116,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("before any supervised process, resident registration, or worker thread is launched", doc)
         self.assertIn("configs/live-agents.codex-session.example.json", doc)
         self.assertIn("codex exec resume", doc)
+        self.assertIn("codex_session.invite", doc)
         self.assertIn("--sandbox read-only", doc)
         self.assertIn("--ignore-rules", doc)
         self.assertIn("Codex CLI still owns the actual enforcement", doc)
