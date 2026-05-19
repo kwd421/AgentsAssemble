@@ -664,6 +664,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const readySessions = Math.max(0, Number(sessions.ready || 0));
   const sessionTotal = Math.max(0, Number(sessions.total || 0));
   const attentionCount = liveAgentHealthAttentionCount(health);
+  const sessionAttention = liveAgentHealthAttentionSummary(sessions.attention, "session attention");
   const tone = status === "ok" ? "success" : status === "degraded" ? "warning" : "error";
   return (
     `<p class="live-agent-runtime-health" data-tone="${escapeHtml(tone)}">` +
@@ -673,6 +674,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
     `connections ${escapeHtml(`${connected}/${expected}`)} connected · ` +
     `sessions ${escapeHtml(`${readySessions}/${sessionTotal}`)} ready · ` +
     `attention ${escapeHtml(attentionCount)}` +
+    (sessionAttention ? `<br><small>${escapeHtml(sessionAttention)}</small>` : "") +
     "</p>"
   );
 }
@@ -683,6 +685,15 @@ function liveAgentHealthAttentionCount(health) {
     const attention = section && typeof section === "object" && Array.isArray(section.attention) ? section.attention : [];
     return count + attention.length;
   }, 0);
+}
+
+function liveAgentHealthAttentionSummary(value, label) {
+  if (!Array.isArray(value) || value.length === 0) return "";
+  const cleaned = value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 3);
+  if (!cleaned.length) return "";
+  const remaining = Math.max(0, value.length - cleaned.length);
+  const suffix = remaining > 0 ? ` +${remaining} more` : "";
+  return `${label} ${cleaned.join(", ")}${suffix}`;
 }
 
 function renderLiveAgentProcessCard(group) {

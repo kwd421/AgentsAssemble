@@ -1096,6 +1096,7 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.match(health.textContent, /connections 1\/2 connected/);
   assert.match(health.textContent, /sessions 0\/2 ready/);
   assert.match(health.textContent, /attention 4/);
+  assert.match(health.textContent, /session attention resident-m1:resident-main:meeting:duplicate_active_group/);
   assert.equal(health.attributes["data-tone"], "warning");
 });
 

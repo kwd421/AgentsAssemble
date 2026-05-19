@@ -82,6 +82,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("meeting-owned session readiness", doc)
         self.assertIn("sessions.items", doc)
         self.assertIn("meeting:duplicate_active_group", doc)
+        self.assertIn("compact `session attention` reason", doc)
         self.assertIn("diagnostic smoke artifacts stay excluded", doc)
         self.assertIn("/api/live-agent-session-smoke", doc)
         self.assertIn("pre-restart, post-restart, post-recover, and optional same-session soak lobby reply counts", doc)
