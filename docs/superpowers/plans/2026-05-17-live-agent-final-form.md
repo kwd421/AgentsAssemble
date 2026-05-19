@@ -2854,6 +2854,63 @@ Document that recovered room reads do not inherit provider-command cooldown, so 
 
 ---
 
+### Task 82: Clear Recovered Room Snapshot Errors
+
+**Goal:** Prevent stale transient room-read errors from lingering in the roster after room snapshots recover, without clearing provider-command failure evidence.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_runner.py`
+
+- [x] **Step 1: Add RED coverage for recovered room error clearing**
+
+Cover a bounded resident run where a post-start `/room` read fails, then a later `/room` snapshot succeeds with no eligible event. The runner must attempt the error heartbeat for the failed read and then send an `online` heartbeat with empty `last_error` once a healthy room snapshot proves the room surface recovered. Keep provider command failure backoff/error persistence covered separately.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_clears_transient_room_error_after_room_snapshot_recovers \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_keeps_error_status_on_periodic_heartbeat_during_failure_backoff
+```
+
+Expected: fail before implementation because a recovered room snapshot does not clear the transient `last_error`.
+
+- [x] **Step 2: Track and clear transient room errors**
+
+Track whether the current `last_error` came from a recoverable room snapshot read. On the next successful room snapshot, send a best-effort `online` heartbeat with `last_error: ""` and clear the runner-local transient marker. Do not use this path for provider command failures, which still keep `last_error_at` and cooldown evidence until reply success or final offline.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_clears_transient_room_error_after_room_snapshot_recovers \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_keeps_error_status_on_periodic_heartbeat_during_failure_backoff \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_replies_immediately_after_transient_room_failure_recovery \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_survives_transient_room_failure_when_error_heartbeat_fails
+```
+
+Expected: pass.
+
+- [x] **Step 3: Preserve provider errors if transient clear fails first**
+
+Cover the review-found edge case where a transient room error clear heartbeat fails, leaving the transient marker active, and the next eligible provider command fails in the same recovered tick. The later healthy room snapshot must not clear provider failure evidence.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_clear_provider_error_after_room_clear_heartbeat_failed
+```
+
+Expected: fail before implementation because the stale transient marker can clear a later provider `last_error`.
+
+- [x] **Step 4: Document transient room error clearing**
+
+Document that healthy recovered room snapshots clear only transient room errors from presence, not provider-command failure evidence.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

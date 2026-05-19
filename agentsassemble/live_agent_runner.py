@@ -68,6 +68,7 @@ class LiveAgentRunner:
         self.last_error = ""
         self.last_heartbeat_at: datetime | None = None
         self.seen_room_snapshot = False
+        self.transient_room_error_active = False
 
     def run(self) -> int:
         self._register()
@@ -92,6 +93,7 @@ class LiveAgentRunner:
             if not self.seen_room_snapshot or self.stop_event.is_set():
                 raise
             self.last_error = str(error)
+            self.transient_room_error_active = True
             self._heartbeat_due_safely("error", last_error=self.last_error, **self._cursor_metadata())
             return 0
         engagement_mode = _runtime_engagement_mode(self.config, room)
@@ -213,6 +215,7 @@ class LiveAgentRunner:
         except Exception as error:
             if self.stop_event.is_set():
                 return None
+            self.transient_room_error_active = False
             self.last_error = str(error)
             self.last_error_at = self.now_fn()
             self._heartbeat("error", last_error=self.last_error, **self._cursor_metadata(cursor_field, source_event_id))
@@ -234,6 +237,7 @@ class LiveAgentRunner:
         self.last_reply_at = self.now_fn()
         self.last_error_at = None
         self.last_error = ""
+        self.transient_room_error_active = False
         self._heartbeat(
             "online",
             last_reply_at=self.last_reply_at.isoformat(),
@@ -304,7 +308,18 @@ class LiveAgentRunner:
         room = self.request_json(_server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/room"))
         self._restore_agent_snapshot(room.get("agent"))
         self.seen_room_snapshot = True
+        self._clear_transient_room_error_if_needed()
         return room
+
+    def _clear_transient_room_error_if_needed(self) -> None:
+        if not self.transient_room_error_active:
+            return
+        try:
+            self._heartbeat("online", last_error="", **self._cursor_metadata())
+        except Exception:
+            return
+        self.last_error = ""
+        self.transient_room_error_active = False
 
     def _restore_agent_snapshot(self, agent: object) -> None:
         self._restore_observed_cursor(agent)

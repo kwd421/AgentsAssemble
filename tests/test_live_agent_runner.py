@@ -494,6 +494,91 @@ class LiveAgentRunnerTests(unittest.TestCase):
         lobby_payloads = [payload for url, method, payload in calls if url.endswith("/lobby")]
         self.assertEqual(lobby_payloads[0]["source_event_id"], "evt1")
 
+    def test_runner_clears_transient_room_error_after_room_snapshot_recovers(self):
+        clock = FakeClock()
+        calls = []
+        room_reads = 0
+
+        def request_json(url, *, method="GET", payload=None):
+            nonlocal room_reads
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            if url.endswith("/room"):
+                room_reads += 1
+                if room_reads == 1:
+                    return {"lobby_events": []}
+                if room_reads == 2:
+                    raise ConnectionError("transient room read failed")
+                return {"lobby_events": []}
+            return {}
+
+        runner = LiveAgentRunner(
+            config(max_ticks=3, heartbeat_interval=60.0),
+            request_json=request_json,
+            command_runner=lambda command, prompt, *, timeout_seconds: "unused",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        heartbeat_payloads = [payload for url, method, payload in calls if url.endswith("/heartbeat")]
+        self.assertIn({"status": "error", "last_error": "transient room read failed"}, heartbeat_payloads)
+        self.assertIn({"status": "online", "last_error": ""}, heartbeat_payloads)
+
+    def test_runner_does_not_clear_provider_error_after_room_clear_heartbeat_failed(self):
+        clock = FakeClock()
+        calls = []
+        room_reads = 0
+        clear_attempts = 0
+
+        def request_json(url, *, method="GET", payload=None):
+            nonlocal room_reads, clear_attempts
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                if (payload or {}).get("status") == "online" and (payload or {}).get("last_error") == "":
+                    clear_attempts += 1
+                    if clear_attempts == 1:
+                        raise ConnectionError("clear heartbeat failed")
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            if url.endswith("/room"):
+                room_reads += 1
+                if room_reads == 1:
+                    return {"lobby_events": []}
+                if room_reads == 2:
+                    raise ConnectionError("transient room read failed")
+                if room_reads == 3:
+                    return {"lobby_events": [{"id": "evt1", "name": "나", "message": "provider 실패"}]}
+                return {"lobby_events": [{"id": "evt1", "name": "나", "message": "provider 실패"}]}
+            return {}
+
+        def fail_command(command, prompt, *, timeout_seconds):
+            del command, prompt, timeout_seconds
+            raise RuntimeError("provider boom")
+
+        runner = LiveAgentRunner(
+            config(max_ticks=4, cooldown=0.0),
+            request_json=request_json,
+            command_runner=fail_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        clear_payloads = [
+            payload
+            for url, method, payload in calls
+            if url.endswith("/heartbeat") and payload["status"] == "online" and payload.get("last_error") == ""
+        ]
+        self.assertEqual(len(clear_payloads), 1)
+        self.assertEqual(runner.last_error, "provider boom")
+
     def test_runner_does_not_mask_lobby_post_failure_when_final_offline_heartbeat_fails(self):
         clock = FakeClock()
         calls = []
