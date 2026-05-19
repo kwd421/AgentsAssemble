@@ -966,6 +966,7 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             )
 
             started = supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew")
+            connect_live_agent(root, {"agent_id": "a", "status": "working"}, now=current_time["value"])
             current_time["value"] = datetime(2026, 5, 17, 12, 1, tzinfo=UTC)
             stopped = supervisor.stop_group("crew")
             events = _read_lifecycle_events(root)
@@ -980,6 +981,10 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(events[1]["timestamp"], "2026-05-17T12:01:00+00:00")
         self.assertEqual(events[1]["status"], "stopped")
         self.assertEqual(events[1]["returncode"], 0)
+        self.assertEqual(events[1]["offline"]["expected"], 1)
+        self.assertEqual(events[1]["offline"]["offline"], 1)
+        self.assertEqual(events[1]["offline"]["offline_agent_ids"], ["a"])
+        self.assertEqual(events[1]["offline"]["attention"], [])
         self.assertEqual(started["recent_events"], [events[0]])
         self.assertEqual(stopped["recent_events"], events)
         self.assertNotIn("secret-value", events_text)
@@ -992,6 +997,7 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertNotIn("command_path", events_text)
         self.assertNotIn("env:", events_text)
         self.assertNotIn("recent_events", persisted["groups"][0])
+        self.assertNotIn("offline", persisted["groups"][0])
 
     def test_auto_restart_writes_lifecycle_events_for_crash_and_relaunch(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1019,6 +1025,7 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
                 max_restarts=1,
                 restart_backoff_seconds=10,
             )
+            connect_live_agent(root, {"agent_id": "a", "status": "online"}, now=current_time["value"])
             processes[0].returncode = 2
             waiting = supervisor.list_groups()
             current_time["value"] += timedelta(seconds=11)
@@ -1030,10 +1037,47 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(events[1]["returncode"], 2)
         self.assertEqual(events[1]["restart_count"], 1)
         self.assertEqual(events[1]["next_restart_at"], "2026-05-17T12:00:10+00:00")
+        self.assertEqual(events[1]["offline"]["offline_agent_ids"], ["a"])
         self.assertEqual(events[2]["pid"], 7001)
         self.assertEqual(events[2]["restart_count"], 1)
         self.assertEqual(waiting[0]["recent_events"], events[:2])
         self.assertEqual(restarted[0]["recent_events"], events)
+
+    def test_crash_lifecycle_error_event_includes_offline_attention(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            process = FakeProcess(pid=7100)
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: process,
+                now_fn=lambda: current_time["value"],
+            )
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                meeting_id="meeting-1",
+            )
+            connect_live_agent(
+                root,
+                {"agent_id": "agent-a", "meeting_id": "meeting-2", "status": "online"},
+                now=current_time["value"],
+            )
+            process.returncode = 2
+
+            groups = supervisor.list_groups()
+            events = _read_lifecycle_events(root)
+
+        self.assertEqual([event["event_type"] for event in events], ["started", "error"])
+        self.assertEqual(events[1]["offline"]["expected"], 1)
+        self.assertEqual(events[1]["offline"]["offline"], 0)
+        self.assertEqual(events[1]["offline"]["skipped"], 1)
+        self.assertEqual(events[1]["offline"]["offline_agent_ids"], [])
+        self.assertEqual(events[1]["offline"]["attention"], [{"agent_id": "agent-a", "status": "wrong_meeting"}])
+        self.assertEqual(groups[0]["recent_events"], events)
 
     def test_recent_lifecycle_events_are_bounded(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1692,6 +1736,7 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
                 max_restarts=1,
                 restart_backoff_seconds=0,
             )
+            connect_live_agent(root, {"agent_id": "a", "status": "online"})
             reports["current"] = {
                 "status": "failed",
                 "checks": [],
@@ -1714,6 +1759,8 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             events = _read_lifecycle_events(root)
 
         self.assertEqual([event["event_type"] for event in events], ["started", "restart_scheduled", "restart_failed"])
+        self.assertEqual(events[1]["offline"]["offline_agent_ids"], ["a"])
+        self.assertEqual(events[-1]["offline"]["offline_agent_ids"], ["a"])
         self.assertEqual(events[-1]["status"], "error")
         self.assertEqual(events[-1]["returncode"], 2)
         self.assertEqual(groups[0]["recent_events"], events)

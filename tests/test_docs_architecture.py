@@ -177,6 +177,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("does not include command arguments, endpoint URLs, auth references", doc)
         self.assertIn(".agentsassemble/live-agent-runs/events.jsonl", doc)
         self.assertIn("lifecycle event history", doc)
+        self.assertIn("offline reconciliation summaries with expected/offline/skipped counts", doc)
         self.assertIn("recovered_unknown", doc)
         self.assertIn("recent_events", doc)
         self.assertIn("live-agent heartbeat", doc)

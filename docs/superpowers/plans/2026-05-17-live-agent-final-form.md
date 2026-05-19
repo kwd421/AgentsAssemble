@@ -1566,6 +1566,41 @@ Document that process stop and stop-running responses include the offline reconc
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 49: Surface Crash-Time Offline Evidence In Lifecycle Events
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for lifecycle offline evidence**
+
+Extend lifecycle tests so stop, crash `restart_scheduled`, and failed immediate auto-restart events must include the same safe output-only offline reconciliation summary that process stop responses expose. Keep `processes.json` free of output-only `recent_events` and `offline` payloads.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_start_and_stop_write_safe_lifecycle_events tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_auto_restart_writes_lifecycle_events_for_crash_and_relaunch tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_auto_restart_failure_writes_restart_failed_lifecycle_event
+python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path
+```
+
+Expected: fail before implementation because `events.jsonl` records process status/restart facts but drops the offline reconciliation evidence.
+
+- [x] **Step 2: Attach sanitized offline summaries to lifecycle events**
+
+Add an optional `offline` field to lifecycle event construction and safe readback. Include only expected/offline/skipped counts, safe `offline_agent_ids`, and compact attention entries. Attach it to `stopped`, `error`, `restart_scheduled`, and `restart_failed` events only when reconciliation evidence exists.
+
+Run the Step 1 commands.
+Expected: pass.
+
+- [x] **Step 3: Document lifecycle evidence**
+
+Document that `events.jsonl` and process `recent_events` can now carry offline reconciliation summaries for stop/crash/restart-failure paths without including command arguments, endpoint URLs, auth refs, prompts, log tails, or environment-derived values.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification
