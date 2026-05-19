@@ -862,7 +862,7 @@ curl -X POST \
   http://127.0.0.1:8765/api/live-agent-processes/local-cli-group/stop
 ```
 
-After a successful process stop, the supervisor reconciles existing live-agent presence rows for that group's launch-time manifest and marks matching agents `offline` immediately. This prevents a killed or interrupted resident process from looking `online` until heartbeat staleness expires. The reconciliation is conservative: it does not create new presence rows, does not touch agents currently attached to another meeting, and does not mark an agent offline while another running or restarting group with the same meeting id still expects that agent.
+After a successful process stop, the supervisor reconciles existing live-agent presence rows for that group's launch-time manifest and marks matching agents `offline` immediately. This prevents a killed or interrupted resident process from looking `online` until heartbeat staleness expires. The stop response includes an output-only offline reconciliation summary with expected/offline/skipped counts, safe `offline_agent_ids`, and attention entries for skipped manifest agents. The reconciliation is conservative: it does not create new presence rows, does not touch agents currently attached to another meeting, and does not mark an agent offline while another running or restarting group with the same meeting id still expects that agent.
 
 Use the GUI restart button on a stopped, crashed, or recovered group to relaunch it from the persisted `config_path` and `server`. Restart also reruns preflight before launching, so a config or environment that became invalid while the group was down is refused synchronously. The HTTP restart path is:
 
@@ -898,7 +898,7 @@ curl -X POST \
   http://127.0.0.1:8765/api/live-agent-processes/stop-running
 ```
 
-The bulk stop response reports `stopped_count`, `failed_count`, `skipped_count`, and the corresponding safe group records. The operation ledger records `process.stop_running` with counts and safe group ids only; it does not record config paths, server URLs, commands, auth refs, log tails, prompts, or provider output.
+The bulk stop response reports `stopped_count`, `failed_count`, `skipped_count`, the corresponding safe group records, and each stopped record's offline reconciliation summary when a manifest was present. The operation ledger records `process.stop_running` with counts, safe group ids, offline counts, safe `offline_agent_ids`, and compact offline attention only; it does not record config paths, server URLs, commands, auth refs, log tails, prompts, or provider output.
 
 Add `--json` to any process CLI command to print the raw HTTP payload.
 

@@ -1859,6 +1859,9 @@ def _format_live_agent_process_bulk_stop(payload: dict[str, object]) -> str:
     skipped_count = _safe_int(result.get("skipped_count"))
     summary = f"Stopped {stopped_count} live-agent process groups"
     details = []
+    offline = _live_agent_process_bulk_offline_summary(result.get("stopped"))
+    if offline:
+        details.append(offline)
     if failed_count:
         details.append(f"failed {failed_count}")
     if skipped_count:
@@ -1892,7 +1895,9 @@ def _format_live_agent_process_action(group: dict[str, object], action: str) -> 
     if action == "start":
         return f"Started {group_id} (pid {pid if pid not in (None, '') else '-'})"
     if action == "stop":
-        return f"Stopped {group_id} ({status})"
+        offline = _live_agent_process_offline_summary(group.get("offline"))
+        suffix = f", {offline}" if offline else ""
+        return f"Stopped {group_id} ({status}{suffix})"
     if action == "restart":
         return f"Restarted {group_id} (pid {pid if pid not in (None, '') else '-'})"
     if action == "recover":
@@ -1954,6 +1959,34 @@ def _format_live_agent_process_connection_attention(value: object) -> str:
         if agent_id and status:
             labels.append(f"{status} {agent_id}")
     return ", ".join(labels)
+
+
+def _live_agent_process_offline_summary(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    expected = _safe_int(value.get("expected"))
+    offline = _safe_int(value.get("offline"))
+    if expected <= 0:
+        return ""
+    return f"offline {offline}/{expected}"
+
+
+def _live_agent_process_bulk_offline_summary(records: object) -> str:
+    if not isinstance(records, list):
+        return ""
+    expected = 0
+    offline = 0
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        summary = record.get("offline")
+        if not isinstance(summary, dict):
+            continue
+        expected += _safe_int(summary.get("expected"))
+        offline += _safe_int(summary.get("offline"))
+    if expected <= 0:
+        return ""
+    return f"offline {offline}/{expected}"
 
 
 def _format_live_agent_process_last_event(value: object) -> str:

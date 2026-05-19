@@ -1525,6 +1525,47 @@ Document that process stop now reconciles existing manifest presence rows immedi
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 48: Surface Process-Stop Offline Evidence
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for stop-time offline evidence**
+
+Extend process stop and bulk stop tests so `stop_group()` and `stop_running_groups()` must return an output-only `offline` reconciliation summary with expected/offline/skipped counts, safe `offline_agent_ids`, and attention entries for missing, wrong-meeting, or still-owned manifest agents. Extend CLI/API operation tests so the default stop output and sanitized operation details surface those counts without recording config paths, server URLs, command arguments, auth refs, log tails, prompts, or provider output.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stop_group_marks_matching_manifest_agents_offline tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stop_group_does_not_offline_manifest_agent_from_another_meeting tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stop_group_does_not_offline_agent_still_owned_by_another_running_group tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stop_running_groups_stops_owned_running_and_pending_restart_groups
+python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_stop_restart_and_recover_quote_group_id tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_stop_running_posts_bulk_endpoint
+python3 -m unittest tests.test_gui_server.GuiServerTests.test_live_agent_process_endpoints_start_list_and_stop_group tests.test_gui_server.GuiServerTests.test_live_agent_process_stop_running_endpoint_records_sanitized_operation
+python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path
+```
+
+Expected: fail before implementation because the roster reconciliation side effect exists but no public stop payload or operation detail exposes the evidence.
+
+- [x] **Step 2: Attach safe output-only summaries at stop boundaries**
+
+Return the reconciliation summary from the supervisor's manifest-offline helper and attach it only to stop/restart-failure output records, not persisted `processes.json`. Aggregate the summaries for `stop-running`, include concise CLI text such as `offline 2/3`, and record only bounded counts, safe agent ids, and compact attention strings in `process.stop` and `process.stop_running` operation details.
+
+Run the Step 1 commands.
+Expected: pass.
+
+- [x] **Step 3: Document operator evidence**
+
+Document that process stop and stop-running responses include the offline reconciliation summary and that operation history records only sanitized counts, safe `offline_agent_ids`, and compact attention.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

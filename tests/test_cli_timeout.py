@@ -3260,7 +3260,13 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(json.loads(stdout.getvalue()), payload)
 
     def test_live_agent_processes_stop_restart_and_recover_quote_group_id(self):
-        stop_payload = {"group": {"group_id": "crew one", "status": "stopped"}}
+        stop_payload = {
+            "group": {
+                "group_id": "crew one",
+                "status": "stopped",
+                "offline": {"expected": 2, "offline": 2, "skipped": 0, "offline_agent_ids": ["a", "b"], "attention": []},
+            }
+        }
         restart_payload = {"group": {"group_id": "crew one", "status": "running", "pid": 5678}}
         recover_payload = {"group": {"group_id": "crew one", "status": "running", "pid": 6789, "recovered_from_status": "unknown"}}
         stdout = StringIO()
@@ -3289,7 +3295,7 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertEqual(request_json.call_args_list[2].kwargs, {"method": "POST", "payload": {}})
         output = stdout.getvalue()
-        self.assertIn("Stopped crew one (stopped)", output)
+        self.assertIn("Stopped crew one (stopped, offline 2/2)", output)
         self.assertIn("Restarted crew one (pid 5678)", output)
         self.assertIn("Recovered crew one from unknown (pid 6789)", output)
 
@@ -3300,8 +3306,28 @@ class CliTimeoutTests(unittest.TestCase):
                 "failed_count": 0,
                 "skipped_count": 1,
                 "stopped": [
-                    {"group_id": "crew-a", "status": "stopped"},
-                    {"group_id": "crew-b", "status": "stopped"},
+                    {
+                        "group_id": "crew-a",
+                        "status": "stopped",
+                        "offline": {
+                            "expected": 1,
+                            "offline": 1,
+                            "skipped": 0,
+                            "offline_agent_ids": ["agent-a"],
+                            "attention": [],
+                        },
+                    },
+                    {
+                        "group_id": "crew-b",
+                        "status": "stopped",
+                        "offline": {
+                            "expected": 2,
+                            "offline": 1,
+                            "skipped": 1,
+                            "offline_agent_ids": ["agent-b"],
+                            "attention": [{"agent_id": "agent-c", "status": "wrong_meeting"}],
+                        },
+                    },
                 ],
                 "failed": [],
                 "skipped": [{"group_id": "old-crew", "status": "unknown"}],
@@ -3321,6 +3347,7 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("Stopped 2 live-agent process groups", stdout.getvalue())
         self.assertIn("skipped 1", stdout.getvalue())
+        self.assertIn("offline 2/3", stdout.getvalue())
 
     def test_live_agent_processes_http_error_body_reaches_stderr(self):
         class BadRequestHandler:

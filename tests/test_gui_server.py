@@ -413,6 +413,13 @@ class GuiServerTests(unittest.TestCase):
                 record = dict(self.groups[0])
                 record["status"] = "stopped"
                 record["returncode"] = 0
+                record["offline"] = {
+                    "expected": 1,
+                    "offline": 1,
+                    "skipped": 0,
+                    "offline_agent_ids": ["local-a"],
+                    "attention": [],
+                }
                 self.groups = [record]
                 return record
 
@@ -486,6 +493,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(listed["groups"][0]["recent_events"][0]["status"], "running")
             self.assertEqual(listed["groups"][0]["log_tail"], "resident booted")
             self.assertEqual(stopped["group"]["status"], "stopped")
+            self.assertEqual(stopped["group"]["offline"]["offline_agent_ids"], ["local-a"])
             self.assertEqual(restarted["group"]["status"], "running")
             self.assertEqual(restarted["group"]["pid"], 9876)
             self.assertEqual(restarted["group"]["agents"][0]["display_name"], "Local A")
@@ -505,6 +513,9 @@ class GuiServerTests(unittest.TestCase):
                 ],
             )
             operation_text = json.dumps(operations, ensure_ascii=False)
+            self.assertIn('"offline_agent_count": 1', operation_text)
+            self.assertIn('"offline_expected_agent_count": 1', operation_text)
+            self.assertIn('"offline_agent_ids": ["local-a"]', operation_text)
             self.assertNotIn(str(config_path), operation_text)
             self.assertNotIn(f"http://127.0.0.1:{server.server_port}", operation_text)
 
@@ -532,7 +543,28 @@ class GuiServerTests(unittest.TestCase):
                     "stopped_count": 2,
                     "failed_count": 0,
                     "skipped_count": 1,
-                    "stopped": self.groups[:2],
+                    "stopped": [
+                        {
+                            **self.groups[0],
+                            "offline": {
+                                "expected": 1,
+                                "offline": 1,
+                                "skipped": 0,
+                                "offline_agent_ids": ["agent-a"],
+                                "attention": [],
+                            },
+                        },
+                        {
+                            **self.groups[1],
+                            "offline": {
+                                "expected": 1,
+                                "offline": 0,
+                                "skipped": 1,
+                                "offline_agent_ids": [],
+                                "attention": [{"agent_id": "agent-b", "status": "wrong_meeting"}],
+                            },
+                        },
+                    ],
                     "failed": [],
                     "skipped": self.groups[2:],
                 }
@@ -573,6 +605,10 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(details["failed_count"], 0)
             self.assertEqual(details["skipped_count"], 1)
             self.assertEqual(details["stopped_group_ids"], ["crew-a", "crew-b"])
+            self.assertEqual(details["offline_agent_count"], 1)
+            self.assertEqual(details["offline_expected_agent_count"], 2)
+            self.assertEqual(details["offline_agent_ids"], ["agent-a"])
+            self.assertEqual(details["offline_attention"], ["agent-b:wrong_meeting"])
             operation_text = json.dumps(operations, ensure_ascii=False)
             self.assertNotIn("/tmp/secret-a.json", operation_text)
             self.assertNotIn("/tmp/secret-b.json", operation_text)

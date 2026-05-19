@@ -156,6 +156,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("process.stop_running", doc)
         self.assertIn("does not attempt to signal historical `unknown`, `error`, or already `stopped` records", doc)
         self.assertIn("marks matching agents `offline` immediately", doc)
+        self.assertIn("offline reconciliation summary", doc)
+        self.assertIn("offline_agent_ids", doc)
         self.assertIn("does not touch agents currently attached to another meeting", doc)
         self.assertIn("another running or restarting group with the same meeting id still expects that agent", doc)
         self.assertIn("does not control arbitrary OS PIDs", doc)

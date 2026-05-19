@@ -1922,6 +1922,65 @@ def _operation_group_ids(records: object) -> list[str]:
     return group_ids
 
 
+def _process_offline_operation_details(summary: object) -> dict[str, object]:
+    if not isinstance(summary, dict):
+        return {}
+    expected = _payload_nonnegative_int(summary.get("expected"), 0)
+    offline = _payload_nonnegative_int(summary.get("offline"), 0)
+    skipped = _payload_nonnegative_int(summary.get("skipped"), 0)
+    offline_agent_ids = _safe_payload_strings(summary.get("offline_agent_ids"), limit=64)
+    attention = _process_offline_attention(summary.get("attention"))
+    if expected <= 0 and offline <= 0 and skipped <= 0 and not offline_agent_ids and not attention:
+        return {}
+    return {
+        "offline_expected_agent_count": expected,
+        "offline_agent_count": offline,
+        "offline_skipped_agent_count": skipped,
+        "offline_agent_ids": offline_agent_ids,
+        "offline_attention": attention,
+    }
+
+
+def _process_bulk_offline_operation_details(records: object) -> dict[str, object]:
+    if not isinstance(records, list):
+        return {}
+    expected = 0
+    offline = 0
+    skipped = 0
+    offline_agent_ids: list[str] = []
+    attention: list[str] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        summary = record.get("offline")
+        if not isinstance(summary, dict):
+            continue
+        expected += _payload_nonnegative_int(summary.get("expected"), 0)
+        offline += _payload_nonnegative_int(summary.get("offline"), 0)
+        skipped += _payload_nonnegative_int(summary.get("skipped"), 0)
+        offline_agent_ids.extend(_safe_payload_strings(summary.get("offline_agent_ids"), limit=64))
+        attention.extend(_process_offline_attention(summary.get("attention")))
+    if expected <= 0 and offline <= 0 and skipped <= 0 and not offline_agent_ids and not attention:
+        return {}
+    return {
+        "offline_expected_agent_count": expected,
+        "offline_agent_count": offline,
+        "offline_skipped_agent_count": skipped,
+        "offline_agent_ids": offline_agent_ids,
+        "offline_attention": attention,
+    }
+
+
+def _process_offline_attention(value: object) -> list[str]:
+    attention: list[str] = []
+    for item in _as_dict_list(value):
+        agent_id = clean_lobby_text(item.get("agent_id"), limit=64)
+        status = clean_lobby_text(item.get("status"), limit=64)
+        if agent_id and status:
+            attention.append(f"{agent_id}:{status}")
+    return attention
+
+
 def _process_stop_running_operation_status(result: dict[str, object]) -> str:
     failed_count = _payload_nonnegative_int(result.get("failed_count"), 0)
     stopped_count = _payload_nonnegative_int(result.get("stopped_count"), 0)
@@ -3417,6 +3476,7 @@ def _make_handler(
                         "skipped_count": _payload_nonnegative_int(result.get("skipped_count"), 0),
                         "stopped_group_ids": _operation_group_ids(result.get("stopped")),
                         "failed_group_ids": _operation_group_ids(result.get("failed")),
+                        **_process_bulk_offline_operation_details(result.get("stopped")),
                     },
                 )
                 self._send_json(stopped)
@@ -3690,6 +3750,7 @@ def _make_handler(
                     details={
                         "group_id": _operation_group_id({}, group) or live_agent_process_stop_id,
                         "group_status": str(group.get("status") or ""),
+                        **_process_offline_operation_details(group.get("offline")),
                     },
                 )
                 self._send_json(stopped)

@@ -624,11 +624,16 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             connect_live_agent(root, {"agent_id": "agent-a", "meeting_id": "meeting-1", "status": "online"}, now=now)
             connect_live_agent(root, {"agent_id": "agent-b", "meeting_id": "meeting-1", "status": "working"}, now=now)
 
-            supervisor.stop_group("crew")
+            stopped = supervisor.stop_group("crew")
             agents = {str(agent["agent_id"]): agent for agent in read_live_agents(root, now=now)}
 
         self.assertEqual(agents["agent-a"]["status"], "offline")
         self.assertEqual(agents["agent-b"]["status"], "offline")
+        self.assertEqual(stopped["offline"]["expected"], 2)
+        self.assertEqual(stopped["offline"]["offline"], 2)
+        self.assertEqual(stopped["offline"]["skipped"], 0)
+        self.assertEqual(stopped["offline"]["offline_agent_ids"], ["agent-a", "agent-b"])
+        self.assertEqual(stopped["offline"]["attention"], [])
 
     def test_stop_group_does_not_offline_manifest_agent_from_another_meeting(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -645,11 +650,15 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew", meeting_id="meeting-1")
             connect_live_agent(root, {"agent_id": "agent-a", "meeting_id": "meeting-2", "status": "online"}, now=now)
 
-            supervisor.stop_group("crew")
+            stopped = supervisor.stop_group("crew")
             agents = {str(agent["agent_id"]): agent for agent in read_live_agents(root, now=now)}
 
         self.assertEqual(agents["agent-a"]["status"], "online")
         self.assertEqual(agents["agent-a"]["meeting_id"], "meeting-2")
+        self.assertEqual(stopped["offline"]["expected"], 1)
+        self.assertEqual(stopped["offline"]["offline"], 0)
+        self.assertEqual(stopped["offline"]["skipped"], 1)
+        self.assertEqual(stopped["offline"]["attention"], [{"agent_id": "agent-a", "status": "wrong_meeting"}])
 
     def test_stop_group_does_not_offline_agent_still_owned_by_another_running_group(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -673,10 +682,14 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew-b")
             connect_live_agent(root, {"agent_id": "agent-a", "status": "online"}, now=now)
 
-            supervisor.stop_group("crew-a")
+            stopped = supervisor.stop_group("crew-a")
             agents = {str(agent["agent_id"]): agent for agent in read_live_agents(root, now=now)}
 
         self.assertEqual(agents["agent-a"]["status"], "online")
+        self.assertEqual(stopped["offline"]["expected"], 1)
+        self.assertEqual(stopped["offline"]["offline"], 0)
+        self.assertEqual(stopped["offline"]["skipped"], 1)
+        self.assertEqual(stopped["offline"]["attention"], [{"agent_id": "agent-a", "status": "still_owned"}])
         self.assertEqual(supervisor.list_groups()[0]["status"], "stopped")
         self.assertEqual(supervisor.list_groups()[1]["status"], "running")
 
@@ -710,6 +723,7 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             )
             processes[-1].returncode = 7
             supervisor.list_groups()
+            connect_live_agent(root, {"agent_id": "a", "status": "online"}, now=datetime(2026, 5, 17, 12, 0, tzinfo=UTC))
 
             result = supervisor.stop_running_groups()
             groups = {group["group_id"]: group for group in supervisor.list_groups()}
@@ -723,6 +737,9 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(groups["pending-restart"]["next_restart_at"], "")
         self.assertEqual(groups["already-stopped"]["status"], "stopped")
         self.assertEqual(processes[0].signals, [signal.SIGINT])
+        self.assertEqual(result["stopped"][0]["offline"]["offline_agent_ids"], [])
+        self.assertEqual(result["stopped"][0]["offline"]["attention"], [{"agent_id": "a", "status": "still_owned"}])
+        self.assertEqual(result["stopped"][1]["offline"]["offline_agent_ids"], ["a"])
 
     def test_stop_running_groups_cancels_due_restart_without_launching_again(self):
         with tempfile.TemporaryDirectory() as temp_dir:

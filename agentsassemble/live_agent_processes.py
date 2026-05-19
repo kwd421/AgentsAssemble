@@ -356,7 +356,7 @@ class LiveAgentProcessSupervisor:
         transition_record["stopped_at"] = stopped_at.isoformat()
         transition_record["last_error"] = last_error
         transition_record["restart_count"] = restart_count
-        self._mark_manifest_agents_offline(record)
+        offline = self._mark_manifest_agents_offline(record)
         if backoff_seconds <= 0:
             self._append_lifecycle_event(
                 transition_record,
@@ -405,7 +405,9 @@ class LiveAgentProcessSupervisor:
             timestamp=stopped_at,
             returncode=returncode,
         )
-        return self._record_for_output(record) if include_recent_events else dict(record)
+        if include_recent_events:
+            return self._record_for_output(record, offline=offline)
+        return {**dict(record), "offline": offline}
 
     def _start_due_auto_restarts(self) -> None:
         now = self.now_fn()
@@ -511,10 +513,10 @@ class LiveAgentProcessSupervisor:
         record["pid"] = None
         record["stopped_at"] = self.now_fn().isoformat()
         record["next_restart_at"] = ""
-        self._mark_manifest_agents_offline(record)
+        offline = self._mark_manifest_agents_offline(record)
         self._write_records()
         self._append_lifecycle_event(record, "stopped", timestamp=_parse_datetime(record.get("stopped_at")))
-        return self._record_for_output(record)
+        return self._record_for_output(record, offline=offline)
 
     def _mark_auto_restart_failed(
         self,
@@ -536,10 +538,12 @@ class LiveAgentProcessSupervisor:
         record["next_restart_at"] = ""
         self._processes.pop(group_id, None)
         self._close_log(group_id)
-        self._mark_manifest_agents_offline(record)
+        offline = self._mark_manifest_agents_offline(record)
         self._write_records()
         self._append_lifecycle_event(record, "restart_failed", timestamp=stopped_at, returncode=returncode)
-        return self._record_for_output(record) if include_recent_events else dict(record)
+        if include_recent_events:
+            return self._record_for_output(record, offline=offline)
+        return {**dict(record), "offline": offline}
 
     def _mark_stopped(
         self,
@@ -555,7 +559,7 @@ class LiveAgentProcessSupervisor:
         record["next_restart_at"] = ""
         self._processes.pop(group_id, None)
         self._close_log(group_id)
-        self._mark_manifest_agents_offline(record)
+        offline = self._mark_manifest_agents_offline(record)
         self._write_records()
         self._append_lifecycle_event(
             record,
@@ -563,7 +567,9 @@ class LiveAgentProcessSupervisor:
             timestamp=_parse_datetime(record.get("stopped_at")),
             returncode=returncode,
         )
-        return self._record_for_output(record) if include_recent_events else dict(record)
+        if include_recent_events:
+            return self._record_for_output(record, offline=offline)
+        return {**dict(record), "offline": offline}
 
     def _close_log(self, group_id: str) -> None:
         log_file = self._logs.pop(group_id, None)
@@ -637,6 +643,7 @@ class LiveAgentProcessSupervisor:
         record: dict[str, object],
         *,
         recent_events: list[dict[str, object]] | None = None,
+        offline: dict[str, object] | None = None,
     ) -> dict[str, object]:
         visible = dict(record)
         visible["log_tail"] = _read_log_tail(Path(str(record.get("log_path") or "")), self.log_tail_bytes)
@@ -647,23 +654,36 @@ class LiveAgentProcessSupervisor:
                 RECENT_LIFECYCLE_EVENT_LIMIT,
             )
         visible["recent_events"] = recent_events
+        if offline is not None:
+            visible["offline"] = offline
         return visible
 
-    def _mark_manifest_agents_offline(self, record: dict[str, object]) -> None:
+    def _mark_manifest_agents_offline(self, record: dict[str, object]) -> dict[str, object]:
         agent_ids = _manifest_agent_ids(record.get("agents"))
         if not agent_ids:
-            return
+            return _offline_reconciliation_summary(expected=0, offline_agent_ids=[], attention=[])
         meeting_id = str(record.get("meeting_id") or "")
         agents_by_id = _agents_by_id(read_live_agents(self.output_root, now=self.now_fn()))
+        offline_agent_ids: list[str] = []
+        attention: list[dict[str, str]] = []
         for agent_id in agent_ids:
             existing = agents_by_id.get(agent_id)
             if existing is None:
+                attention.append(_offline_reconciliation_attention(agent_id, "missing"))
                 continue
             if str(existing.get("meeting_id") or "") != meeting_id:
+                attention.append(_offline_reconciliation_attention(agent_id, "wrong_meeting"))
                 continue
             if self._agent_expected_by_other_active_group(record, agent_id):
+                attention.append(_offline_reconciliation_attention(agent_id, "still_owned"))
                 continue
             heartbeat_live_agent(self.output_root, agent_id, status="offline", now=self.now_fn())
+            offline_agent_ids.append(agent_id)
+        return _offline_reconciliation_summary(
+            expected=len(agent_ids),
+            offline_agent_ids=offline_agent_ids,
+            attention=attention,
+        )
 
     def _agent_expected_by_other_active_group(self, stopped_record: dict[str, object], agent_id: str) -> bool:
         group_id = str(stopped_record.get("group_id") or "")
@@ -1004,6 +1024,25 @@ def _manifest_agent_ids(value: object) -> list[str]:
         agent_ids.append(agent_id)
         seen.add(agent_id)
     return agent_ids
+
+
+def _offline_reconciliation_summary(
+    *,
+    expected: int,
+    offline_agent_ids: list[str],
+    attention: list[dict[str, str]],
+) -> dict[str, object]:
+    return {
+        "expected": max(0, int(expected)),
+        "offline": len(offline_agent_ids),
+        "skipped": len(attention),
+        "offline_agent_ids": list(offline_agent_ids),
+        "attention": list(attention),
+    }
+
+
+def _offline_reconciliation_attention(agent_id: str, status: str) -> dict[str, str]:
+    return {"agent_id": str(agent_id), "status": str(status)}
 
 
 def _should_auto_restart(record: dict[str, object], returncode: object) -> bool:
