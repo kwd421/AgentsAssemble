@@ -2377,6 +2377,48 @@ Expected: pass.
 
 ---
 
+### Task 72: Session Command Readiness Wait
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for command-local readiness wait**
+
+Cover `start-session --wait-ready`, bounded `--wait-timeout`, `--wait-poll-interval`, generated meeting/group ids returned by `start-session`, the invariant that wait polling uses only `GET /api/live-agent-sessions/readiness`, ready short-circuit behavior, timeout output with the last readiness summary, and the same wait path after `restart-session`.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_start_session_parser_accepts_wait_ready_options \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_start_session_wait_ready_polls_read_only_session_readiness \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_start_session_wait_ready_times_out_with_last_summary \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_start_session_wait_ready_skips_poll_when_initial_response_is_ready \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_restart_session_wait_ready_uses_read_only_readiness_after_restart
+```
+
+Expected: fail before implementation because the session commands do not accept wait flags.
+
+- [x] **Step 2: Implement shared read-only wait polling for session commands**
+
+Add common parser options to `start-session`, `resume-session`, `restart-session`, and `recover-session`. After the existing POST returns a non-ready session response, poll the targeted read-only readiness endpoint with the remaining deadline as the per-request timeout. Print only the final observed session summary, return `0` once ready, and return `1` on timeout without appending repeated `session.check` operations.
+
+Run the Step 1 command.
+Expected: pass.
+
+- [x] **Step 3: Document wait semantics**
+
+Document that `--wait-ready` is a CLI-side automation gate over `session-readiness`, distinct from `check-session`, providers, probes, official turns, smoke checks, decisions, and transcript finalization.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
