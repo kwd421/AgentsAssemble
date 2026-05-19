@@ -668,7 +668,7 @@ class GuiServerTests(unittest.TestCase):
             thread.start()
             try:
                 with urlopen(
-                    f"http://127.0.0.1:{server.server_port}/api/live-agent-process-events?group_id=crew&limit=2",
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-process-events?group_id=crew&limit=2&scan_limit=4",
                     timeout=4,
                 ) as response:
                     payload = json.loads(response.read().decode("utf-8"))
@@ -683,6 +683,11 @@ class GuiServerTests(unittest.TestCase):
 
         self.assertEqual([event["event_type"] for event in payload["events"]], ["started", "restart_scheduled"])
         self.assertEqual(payload["events"][1]["offline"]["offline_agent_ids"], ["agent-a"])
+        self.assertEqual(payload["limit"], 2)
+        self.assertEqual(payload["group_id"], "crew")
+        self.assertEqual(payload["scan_limit"], 4)
+        self.assertEqual(payload["scanned_event_count"], 3)
+        self.assertEqual(payload["truncated"], False)
         payload_text = json.dumps(payload, ensure_ascii=False)
         self.assertNotIn("other", json.dumps([event["group_id"] for event in payload["events"]]))
         self.assertNotIn("http://room.local", payload_text)

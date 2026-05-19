@@ -541,6 +541,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="List recent supervised live-agent process lifecycle events.",
     )
     live_process_events.add_argument("--limit", type=parse_positive_int, default=50)
+    live_process_events.add_argument("--scan-limit", type=parse_positive_int, default=None)
     live_process_events.add_argument("--group-id", default="")
     live_process_events.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON event payload.")
 
@@ -1692,6 +1693,8 @@ def _run_live_agent_processes(args: argparse.Namespace) -> int:
         return 0
     if args.live_agent_process_command == "events":
         params = {"limit": args.limit}
+        if args.scan_limit is not None:
+            params["scan_limit"] = args.scan_limit
         if args.group_id:
             params["group_id"] = args.group_id
         query = urllib.parse.urlencode(params)
@@ -1876,10 +1879,13 @@ def _print_live_agent_process_events_payload(payload: dict[str, object], *, as_j
     events = payload.get("events") if isinstance(payload.get("events"), list) else []
     if not events:
         print("no live-agent process events")
-        return
-    for item in events:
-        if isinstance(item, dict):
-            print(_format_live_agent_process_event(item))
+    else:
+        for item in events:
+            if isinstance(item, dict):
+                print(_format_live_agent_process_event(item))
+    scan_notice = _format_live_agent_process_event_scan_notice(payload)
+    if scan_notice:
+        print(scan_notice)
 
 
 def _format_live_agent_process_event(event: dict[str, object]) -> str:
@@ -1908,6 +1914,15 @@ def _format_live_agent_process_event(event: dict[str, object]) -> str:
     if attention:
         parts.append(attention)
     return " ".join(parts)
+
+
+def _format_live_agent_process_event_scan_notice(payload: dict[str, object]) -> str:
+    if payload.get("truncated") is not True:
+        return ""
+    scanned = _safe_int(payload.get("scanned_event_count")) or _safe_int(payload.get("scan_limit"))
+    if scanned <= 0:
+        return "searched bounded lifecycle history; older matches may exist"
+    return f"searched recent {scanned} lifecycle events; older matches may exist"
 
 
 def _format_live_agent_process_bulk_stop(payload: dict[str, object]) -> str:

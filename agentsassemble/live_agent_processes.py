@@ -22,6 +22,8 @@ from agentsassemble.meeting_events import clean_lobby_text
 RECENT_LIFECYCLE_EVENT_LIMIT = 5
 DEFAULT_PROCESS_EVENT_LIMIT = 50
 MAX_PROCESS_EVENT_LIMIT = 200
+DEFAULT_PROCESS_EVENT_SCAN_LIMIT = 1000
+MAX_PROCESS_EVENT_SCAN_LIMIT = 5000
 JSONL_TAIL_BLOCK_BYTES = 8192
 STALE_WATCHDOG_RETURNCODE = -98
 SAFE_LIFECYCLE_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
@@ -754,12 +756,32 @@ def read_live_agent_process_events(
     limit: int = DEFAULT_PROCESS_EVENT_LIMIT,
     group_id: str = "",
 ) -> list[dict[str, object]]:
+    return read_live_agent_process_event_history(output_root, limit=limit, group_id=group_id)["events"]
+
+
+def read_live_agent_process_event_history(
+    output_root: Path,
+    *,
+    limit: int = DEFAULT_PROCESS_EVENT_LIMIT,
+    group_id: str = "",
+    scan_limit: object = None,
+) -> dict[str, object]:
+    safe_limit = _process_event_limit(limit)
+    safe_scan_limit = _process_event_scan_limit(scan_limit, event_limit=safe_limit)
+    clean_group_id = _clean_optional_group_id(group_id)
+    history: dict[str, object] = {
+        "events": [],
+        "limit": safe_limit,
+        "group_id": clean_group_id,
+        "scan_limit": safe_scan_limit,
+        "scanned_event_count": 0,
+        "truncated": False,
+    }
     path = output_root / "live-agent-runs" / "events.jsonl"
     if not path.exists() or not path.is_file():
-        return []
-    safe_limit = _process_event_limit(limit)
-    clean_group_id = _clean_optional_group_id(group_id)
+        return history
     events: list[dict[str, object]] = []
+    scanned_event_count = 0
     for line in _jsonl_tail_lines_newest_first(path):
         if not line.strip():
             continue
@@ -770,13 +792,20 @@ def read_live_agent_process_events(
         event = _safe_lifecycle_event(payload)
         if not event:
             continue
+        scanned_event_count += 1
         if clean_group_id and event.get("group_id") != clean_group_id:
-            continue
-        events.append(event)
-        if len(events) >= safe_limit:
+            pass
+        else:
+            events.append(event)
+            if len(events) >= safe_limit:
+                break
+        if scanned_event_count >= safe_scan_limit:
+            history["truncated"] = True
             break
     events.reverse()
-    return events
+    history["events"] = events
+    history["scanned_event_count"] = scanned_event_count
+    return history
 
 
 def clean_live_agent_group_id(value: str) -> str:
@@ -981,6 +1010,19 @@ def _process_event_limit(value: object) -> int:
     if parsed <= 0:
         return DEFAULT_PROCESS_EVENT_LIMIT
     return min(parsed, MAX_PROCESS_EVENT_LIMIT)
+
+
+def _process_event_scan_limit(value: object, *, event_limit: int) -> int:
+    default = min(max(event_limit * 20, 500), MAX_PROCESS_EVENT_SCAN_LIMIT)
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 0:
+        return default
+    return min(parsed, MAX_PROCESS_EVENT_SCAN_LIMIT)
 
 
 def _lifecycle_event(

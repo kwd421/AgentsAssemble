@@ -1680,6 +1680,47 @@ Document that lifecycle event queries read from the JSONL tail, can be filtered 
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 52: Bounded Sparse Lifecycle Event Queries
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for sparse group scans**
+
+Cover filtered lifecycle event queries whose requested group has no recent matches. The query must stop after a bounded recent lifecycle-event scan budget, return safe metadata (`limit`, normalized `group_id`, `scan_limit`, `scanned_event_count`, `truncated`), and make clear when older matches may exist outside the searched tail window. Keep the existing list-returning `read_live_agent_process_events()` compatible.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_read_live_agent_process_event_history_caps_sparse_group_scan tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_read_live_agent_process_event_history_is_not_truncated_when_result_window_fills tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_read_live_agent_process_event_history_preserves_partial_matches_with_truncation
+python3 -m unittest tests.test_gui_server.GuiServerTests.test_live_agent_process_events_endpoint_returns_sanitized_tail_without_operation_record
+python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_events_json_prints_raw_payload tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_events_warns_when_scan_is_truncated
+python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path
+```
+
+Expected: fail before implementation because the public reader returns only events, the API has no metadata, the CLI has no `--scan-limit`, and docs do not explain truncation.
+
+- [x] **Step 2: Add bounded history metadata**
+
+Add `read_live_agent_process_event_history()` as the metadata-bearing helper while preserving `read_live_agent_process_events()` as a list-returning compatibility wrapper. Count sanitized lifecycle events considered from the tail before group filtering. Stop when the requested result window is filled or when the scan budget is exhausted. Expose optional `scan_limit` through API and CLI.
+
+Run the Step 1 commands.
+Expected: pass.
+
+- [x] **Step 3: Document truncation semantics**
+
+Document that `truncated: true` means the scan budget was exhausted and older matching lifecycle events may exist. Document CLI warning text and JSON metadata fields.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

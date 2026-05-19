@@ -939,13 +939,13 @@ What to check:
 - `.agentsassemble/live-agent-runs/operations.jsonl`: safe control-operation history for API, GUI, and CLI operator actions. It records bounded entries for process start/stop/restart, engagement updates, official turn requests/replies, preflight checks, smoke runs, and readiness checks, including success, degraded, and refused/failed attempts. The operation ledger does not include command arguments, endpoint URLs, auth references, prompts, log tails, config paths, environment-derived values, provider secrets, or official turn content. Ordinary heartbeat polling and health reads are intentionally not operation records.
 - `.agentsassemble/live-agent-runs/<group_id>.log`: stdout/stderr for the supervised `run-group` process. Delegate provider subprocess stdout/stderr is captured by the runner, not streamed directly into this file. The GUI and process API expose only a bounded `log_tail`.
 
-Recent operation views read from the JSONL tail and stop after the requested result window. Recent lifecycle event queries also read from the JSONL tail and stop after the requested result window, with an optional safe group-id filter. Process rows still split bounded `recent_events` by group for compact GUI and CLI status. Long sessions can keep historical JSONL artifacts without forcing operator history queries to load the whole file or rescan lifecycle history once per group.
+Recent operation views read from the JSONL tail and stop after the requested result window. Recent lifecycle event queries also read from the JSONL tail and stop after the requested result window, with an optional safe group-id filter and a separate `scan_limit` budget for how many recent lifecycle events may be considered before the query stops. If `truncated` is true, the scan budget was exhausted and older matching events may still exist outside the searched tail window. Process rows still split bounded `recent_events` by group for compact GUI and CLI status. Long sessions can keep historical JSONL artifacts without forcing operator history queries to load the whole file or rescan lifecycle history once per group.
 
 The recent process lifecycle history is available through HTTP:
 
 ```bash
 curl 'http://127.0.0.1:8765/api/live-agent-process-events?limit=20'
-curl 'http://127.0.0.1:8765/api/live-agent-process-events?group_id=local-cli-group&limit=20'
+curl 'http://127.0.0.1:8765/api/live-agent-process-events?group_id=local-cli-group&limit=20&scan_limit=1000'
 ```
 
 and through the CLI:
@@ -954,7 +954,8 @@ and through the CLI:
 assemble live-agent processes events \
   --server http://127.0.0.1:8765 \
   --group-id local-cli-group \
-  --limit 20
+  --limit 20 \
+  --scan-limit 1000
 ```
 
 The module form is equivalent when running from a checkout:
@@ -966,7 +967,7 @@ python3 -m agentsassemble.cli live-agent processes events \
   --json
 ```
 
-Use the lifecycle event view to answer what the supervised process did over time without opening `events.jsonl`. The default CLI output shows timestamp, group id, event type, process status, pid or return code, restart counters, next restart time, and compact offline reconciliation evidence when present. Use `--json` when an operator script needs the full sanitized event payload.
+Use the lifecycle event view to answer what the supervised process did over time without opening `events.jsonl`. The default CLI output shows timestamp, group id, event type, process status, pid or return code, restart counters, next restart time, and compact offline reconciliation evidence when present. When the scan is truncated, the CLI prints `searched recent N lifecycle events; older matches may exist` so an empty filtered result is not mistaken for complete proof that no older event exists. Use `--json` when an operator script needs the full sanitized event payload, including `limit`, normalized `group_id`, `scan_limit`, `scanned_event_count`, and `truncated`.
 
 The recent operation history is available through the GUI "최근 작업" list, through HTTP:
 

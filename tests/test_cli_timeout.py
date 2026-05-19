@@ -3334,7 +3334,14 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("wrong_meeting agent-b", output)
 
     def test_live_agent_processes_events_json_prints_raw_payload(self):
-        payload = {"events": [{"group_id": "crew", "event_type": "started"}]}
+        payload = {
+            "events": [{"group_id": "crew", "event_type": "started"}],
+            "limit": 3,
+            "group_id": "",
+            "scan_limit": 500,
+            "scanned_event_count": 1,
+            "truncated": False,
+        }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
             with patch("sys.stdout", stdout):
@@ -3354,6 +3361,42 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         request_json.assert_called_once_with("http://room.local/api/live-agent-process-events?limit=3")
         self.assertEqual(json.loads(stdout.getvalue()), payload)
+
+    def test_live_agent_processes_events_warns_when_scan_is_truncated(self):
+        payload = {
+            "events": [],
+            "limit": 2,
+            "group_id": "missing",
+            "scan_limit": 3,
+            "scanned_event_count": 3,
+            "truncated": True,
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "processes",
+                        "events",
+                        "--server",
+                        "http://room.local",
+                        "--group-id",
+                        "missing",
+                        "--limit",
+                        "2",
+                        "--scan-limit",
+                        "3",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-process-events?limit=2&scan_limit=3&group_id=missing"
+        )
+        output = stdout.getvalue()
+        self.assertIn("no live-agent process events", output)
+        self.assertIn("searched recent 3 lifecycle events; older matches may exist", output)
 
     def test_live_agent_processes_stop_restart_and_recover_quote_group_id(self):
         stop_payload = {

@@ -14,6 +14,7 @@ from unittest.mock import patch
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.live_agent_processes import (
     LiveAgentProcessSupervisor as _LiveAgentProcessSupervisor,
+    read_live_agent_process_event_history,
     read_live_agent_process_events,
 )
 
@@ -1326,6 +1327,98 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
                 events = read_live_agent_process_events(root, limit=2)
 
         self.assertEqual([event["pid"] for event in events], [8003, 8004])
+
+    def test_read_live_agent_process_event_history_caps_sparse_group_scan(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "live-agent-runs" / "events.jsonl"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "timestamp": f"2026-05-17T12:00:{index:02d}+00:00",
+                            "group_id": "other",
+                            "event_type": "started",
+                            "status": "running",
+                            "pid": 8100 + index,
+                        }
+                    )
+                    for index in range(5)
+                ),
+                encoding="utf-8",
+            )
+
+            history = read_live_agent_process_event_history(root, limit=2, group_id="missing", scan_limit=3)
+
+        self.assertEqual(history["events"], [])
+        self.assertEqual(history["limit"], 2)
+        self.assertEqual(history["group_id"], "missing")
+        self.assertEqual(history["scan_limit"], 3)
+        self.assertEqual(history["scanned_event_count"], 3)
+        self.assertEqual(history["truncated"], True)
+
+    def test_read_live_agent_process_event_history_is_not_truncated_when_result_window_fills(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "live-agent-runs" / "events.jsonl"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "timestamp": f"2026-05-17T12:00:{index:02d}+00:00",
+                            "group_id": "crew",
+                            "event_type": "started",
+                            "status": "running",
+                            "pid": 8200 + index,
+                        }
+                    )
+                    for index in range(5)
+                ),
+                encoding="utf-8",
+            )
+
+            history = read_live_agent_process_event_history(root, limit=2, group_id="crew", scan_limit=3)
+
+        self.assertEqual([event["pid"] for event in history["events"]], [8203, 8204])
+        self.assertEqual(history["scanned_event_count"], 2)
+        self.assertEqual(history["truncated"], False)
+
+    def test_read_live_agent_process_event_history_preserves_partial_matches_with_truncation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "live-agent-runs" / "events.jsonl"
+            path.parent.mkdir(parents=True)
+            records = [
+                ("crew", 8300),
+                ("crew", 8301),
+                ("other", 8302),
+                ("crew", 8303),
+                ("other", 8304),
+                ("crew", 8305),
+            ]
+            path.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "timestamp": f"2026-05-17T12:00:{index:02d}+00:00",
+                            "group_id": group_id,
+                            "event_type": "started",
+                            "status": "running",
+                            "pid": pid,
+                        }
+                    )
+                    for index, (group_id, pid) in enumerate(records)
+                ),
+                encoding="utf-8",
+            )
+
+            history = read_live_agent_process_event_history(root, limit=3, group_id="crew", scan_limit=3)
+
+        self.assertEqual([event["pid"] for event in history["events"]], [8303, 8305])
+        self.assertEqual(history["scanned_event_count"], 3)
+        self.assertEqual(history["truncated"], True)
 
     def test_list_groups_reads_lifecycle_history_once_for_all_groups(self):
         with tempfile.TemporaryDirectory() as temp_dir:

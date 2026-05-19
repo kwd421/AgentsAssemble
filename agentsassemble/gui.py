@@ -25,7 +25,7 @@ from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
-from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor, read_live_agent_process_events
+from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor, read_live_agent_process_event_history
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
 from agentsassemble.live_agent_sessions import (
@@ -471,8 +471,14 @@ def live_agent_operations_payload(output_root: Path, *, limit: int = 50) -> dict
     return {"operations": read_live_agent_operations(output_root, limit=limit)}
 
 
-def live_agent_process_events_payload(output_root: Path, *, limit: int = 50, group_id: str = "") -> dict[str, object]:
-    return {"events": read_live_agent_process_events(output_root, limit=limit, group_id=group_id)}
+def live_agent_process_events_payload(
+    output_root: Path,
+    *,
+    limit: int = 50,
+    group_id: str = "",
+    scan_limit: object = None,
+) -> dict[str, object]:
+    return read_live_agent_process_event_history(output_root, limit=limit, group_id=group_id, scan_limit=scan_limit)
 
 
 def live_agent_meeting_start_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
@@ -2825,6 +2831,7 @@ def _make_handler(
                         output_root,
                         limit=self._limit(query, default=50),
                         group_id=str(query.get("group_id", [""])[0] or ""),
+                        scan_limit=query.get("scan_limit", [""])[0],
                     )
                 )
                 return
