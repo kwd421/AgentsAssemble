@@ -194,6 +194,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("stale_after_seconds", doc)
         self.assertIn("last_observed_live_event_id", doc)
         self.assertIn("registration acknowledgement", doc)
+        self.assertIn("--source-event-id", doc)
+        self.assertIn("live_agent_endpoint", doc)
         self.assertIn("official cursor", doc)
         self.assertIn("wrong-meeting", doc)
         self.assertIn("Slow resident replies keep sending `working` heartbeats", doc)

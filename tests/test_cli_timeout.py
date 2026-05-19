@@ -329,6 +329,50 @@ class CliTimeoutTests(unittest.TestCase):
             payload={"message": "Gemini 접속 확인", "kind": "message"},
         )
 
+    def test_live_agent_say_posts_source_metadata_and_json_acknowledgement(self):
+        stdout = StringIO()
+        response = {
+            "event": {
+                "id": "reply-1",
+                "actor_id": "gemini-cli",
+                "source_event_id": "evt1",
+                "auto_chain_depth": 1,
+                "live_agent_endpoint": True,
+            }
+        }
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "say",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "gemini-cli",
+                        "--source-event-id",
+                        "evt1",
+                        "--auto-chain-depth",
+                        "1",
+                        "--json",
+                        "Gemini",
+                        "답변",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents/gemini-cli/lobby",
+            method="POST",
+            payload={
+                "message": "Gemini 답변",
+                "kind": "message",
+                "source_event_id": "evt1",
+                "auto_chain_depth": 1,
+            },
+        )
+        self.assertEqual(json.loads(stdout.getvalue()), response)
+
     def test_live_agent_heartbeat_posts_error_status_and_metadata(self):
         stdout = StringIO()
         with patch(

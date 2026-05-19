@@ -369,6 +369,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
     live_say.add_argument("--agent-id", required=True)
+    live_say.add_argument("--source-event-id", default="")
+    live_say.add_argument("--auto-chain-depth", type=parse_nonnegative_int, default=None)
+    live_say.add_argument("--json", action="store_true", dest="as_json", help="Print the raw lobby post response.")
     live_say.add_argument("message", nargs="+")
 
     live_room = live_agent_subparsers.add_parser("room", parents=[live_server], help="Read the live room snapshot for an agent.")
@@ -718,13 +721,21 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_stop_session(args)
         if args.live_agent_command == "say":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
+            payload = {"message": " ".join(args.message), "kind": "message"}
+            if args.source_event_id:
+                payload["source_event_id"] = args.source_event_id
+            if args.auto_chain_depth is not None:
+                payload["auto_chain_depth"] = args.auto_chain_depth
             response = _request_json(
                 _server_url(args.server, f"/api/live-agents/{agent_id}/lobby"),
                 method="POST",
-                payload={"message": " ".join(args.message), "kind": "message"},
+                payload=payload,
             )
             event = response.get("event", {}) if isinstance(response.get("event"), dict) else {}
-            print(f"Posted {event.get('id') or 'lobby message'}")
+            if args.as_json:
+                print(json.dumps(response, ensure_ascii=False, indent=2))
+            else:
+                print(f"Posted {event.get('id') or 'lobby message'}")
             return 0
         if args.live_agent_command == "room":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
