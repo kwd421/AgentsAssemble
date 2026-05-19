@@ -436,6 +436,61 @@ class LiveAgentRunnerTests(unittest.TestCase):
         lobby_payloads = [payload for url, method, payload in calls if url.endswith("/lobby")]
         self.assertEqual(lobby_payloads[0]["source_event_id"], "evt1")
 
+    def test_runner_does_not_mask_lobby_reply_when_initial_working_heartbeat_fails(self):
+        clock = FakeClock()
+        calls = []
+        command_calls = []
+        timeline = []
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "working 증거 실패해도 답해"}]}
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/room"):
+                return room
+            if url.endswith("/lobby"):
+                return {"event": {"id": "reply-id"}}
+            if url.endswith("/heartbeat"):
+                if (payload or {}).get("status") == "working":
+                    timeline.append("working-heartbeat")
+                    raise ConnectionError("working heartbeat failed")
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            return {}
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            timeline.append("command")
+            command_calls.append((command, prompt, timeout_seconds))
+            return "posted after working heartbeat failure"
+
+        runner = LiveAgentRunner(
+            config(),
+            request_json=request_json,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        try:
+            replies = runner.run()
+        except Exception as error:  # pragma: no cover - assertion path for clearer RED output
+            self.fail(f"initial working heartbeat failure masked the lobby reply: {error}")
+        self.assertEqual(replies, 1)
+        self.assertEqual(len(command_calls), 1)
+        self.assertLess(timeline.index("working-heartbeat"), timeline.index("command"))
+        self.assertEqual(runner.last_error, "")
+        self.assertIsNone(runner.last_error_at)
+        working_payloads = [
+            payload for url, method, payload in calls if url.endswith("/heartbeat") and payload["status"] == "working"
+        ]
+        self.assertEqual(working_payloads[0]["last_observed_event_id"], "evt1")
+        error_payloads = [
+            payload for url, method, payload in calls if url.endswith("/heartbeat") and payload["status"] == "error"
+        ]
+        self.assertEqual(error_payloads, [])
+        lobby_payloads = [payload for url, method, payload in calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "evt1")
+
     def test_runner_does_not_mask_official_reply_when_success_heartbeat_fails(self):
         clock = FakeClock()
         calls = []
@@ -481,6 +536,73 @@ class LiveAgentRunnerTests(unittest.TestCase):
             self.fail(f"success heartbeat failure masked the posted official reply: {error}")
         self.assertEqual(replies, 1)
         self.assertEqual(runner.last_error, "")
+        official_payloads = [payload for url, method, payload in calls if url.endswith("/official-turn")]
+        self.assertEqual(official_payloads[0]["source_event_id"], "turn-request-1")
+
+    def test_runner_does_not_mask_official_reply_when_initial_working_heartbeat_fails(self):
+        clock = FakeClock()
+        calls = []
+        command_calls = []
+        timeline = []
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [],
+            "live_events": [
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "working 증거 실패해도 공식 답변해",
+                }
+            ],
+        }
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/room"):
+                return room
+            if url.endswith("/official-turn"):
+                return {"event": {"id": "official-reply-id"}}
+            if url.endswith("/heartbeat"):
+                if (payload or {}).get("status") == "working":
+                    timeline.append("working-heartbeat")
+                    raise ConnectionError("working heartbeat failed")
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            return {}
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            timeline.append("command")
+            command_calls.append((command, prompt, timeout_seconds))
+            return "official reply after working heartbeat failure"
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1"),
+            request_json=request_json,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        try:
+            replies = runner.run()
+        except Exception as error:  # pragma: no cover - assertion path for clearer RED output
+            self.fail(f"initial working heartbeat failure masked the official reply: {error}")
+        self.assertEqual(replies, 1)
+        self.assertEqual(len(command_calls), 1)
+        self.assertLess(timeline.index("working-heartbeat"), timeline.index("command"))
+        self.assertEqual(runner.last_error, "")
+        self.assertIsNone(runner.last_error_at)
+        working_payloads = [
+            payload for url, method, payload in calls if url.endswith("/heartbeat") and payload["status"] == "working"
+        ]
+        self.assertEqual(working_payloads[0]["last_observed_live_event_id"], "turn-request-1")
+        error_payloads = [
+            payload for url, method, payload in calls if url.endswith("/heartbeat") and payload["status"] == "error"
+        ]
+        self.assertEqual(error_payloads, [])
         official_payloads = [payload for url, method, payload in calls if url.endswith("/official-turn")]
         self.assertEqual(official_payloads[0]["source_event_id"], "turn-request-1")
 

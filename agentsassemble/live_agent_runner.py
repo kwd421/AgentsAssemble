@@ -217,7 +217,7 @@ class LiveAgentRunner:
     ) -> tuple[str, str] | None:
         source_event_id = str(candidate.get("id") or "")
         self._set_cursor(cursor_field, source_event_id)
-        self._heartbeat("working", **self._cursor_metadata(cursor_field, source_event_id))
+        self._heartbeat_due_safely("working", **self._cursor_metadata(cursor_field, source_event_id))
         try:
             reply = self._run_command_with_working_heartbeats(
                 self.config.command,

@@ -3151,6 +3151,49 @@ Document that provider-command error presence writes are best-effort, local back
 
 ---
 
+### Task 88: Initial Working Heartbeats Are Best-Effort
+
+**Goal:** Keep selected lobby and official-turn replies moving after a healthy room snapshot even when the pre-command `working` presence write fails.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_runner.py`
+
+- [x] **Step 1: Add RED coverage for lobby replies masked by working heartbeat failure**
+
+Cover a selected lobby event where the initial `status: "working"` heartbeat fails before the provider command. The provider command should still run, the lobby reply should still post, and the runner should keep `last_error` clear.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_lobby_reply_when_initial_working_heartbeat_fails
+```
+
+Expected: fail before implementation because the strict `working` heartbeat raises before the command runs.
+
+- [x] **Step 2: Add RED coverage for official replies masked by working heartbeat failure**
+
+Cover a selected moderator-called official turn request where the initial `working` heartbeat fails before the provider command. The provider command should still run and the official reply should still post with the original `source_event_id`.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_official_reply_when_initial_working_heartbeat_fails
+```
+
+Expected: fail before implementation because the strict `working` heartbeat raises before the command runs.
+
+- [x] **Step 3: Make pre-command working evidence best-effort**
+
+Use the safe heartbeat path for the initial `working` heartbeat while keeping startup registration and the first room read strict.
+
+- [x] **Step 4: Document the working heartbeat boundary**
+
+Document that `working` is operator evidence after event selection, not a readiness gate that can block command execution or durable reply posting.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
