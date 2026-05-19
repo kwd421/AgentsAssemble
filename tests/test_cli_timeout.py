@@ -6333,6 +6333,369 @@ class CliTimeoutTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["status"], "timeout")
 
+    def test_live_agent_wait_official_turn_parses_cursor_and_wait_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "wait-official-turn",
+                "--server",
+                "http://room.local",
+                "--agent-id",
+                "claude-terminal",
+                "--after-event-id",
+                "live-old",
+                "--timeout",
+                "3",
+                "--poll-interval",
+                "0.5",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "wait-official-turn")
+        self.assertEqual(args.agent_id, "claude-terminal")
+        self.assertEqual(args.after_event_id, "live-old")
+        self.assertEqual(args.timeout, 3.0)
+        self.assertEqual(args.poll_interval, 0.5)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_wait_turn_request_alias_parses_same_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "wait-turn-request",
+                "--server",
+                "http://room.local",
+                "--agent-id",
+                "claude-terminal",
+                "--after-event-id",
+                "live-old",
+                "--timeout",
+                "3",
+                "--poll-interval",
+                "0.5",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "wait-turn-request")
+        self.assertEqual(args.agent_id, "claude-terminal")
+        self.assertEqual(args.after_event_id, "live-old")
+        self.assertEqual(args.timeout, 3.0)
+        self.assertEqual(args.poll_interval, 0.5)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_wait_official_turn_returns_targeted_unanswered_request(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "meeting_id": "meeting-1",
+                "last_observed_live_event_id": "live-old",
+            },
+            "live_events": [
+                {"id": "live-old", "kind": "message", "channel": "official", "actor_id": "other-agent", "content": "old"},
+                {
+                    "id": "live-other",
+                    "kind": "live_agent_turn_request",
+                    "target_agent_id": "other-agent",
+                    "content": "not yours",
+                },
+                {
+                    "id": "live-answered",
+                    "kind": "live_agent_turn_request",
+                    "target_agent_id": "claude-terminal",
+                    "content": "already answered",
+                },
+                {
+                    "id": "reply-answered",
+                    "kind": "message",
+                    "channel": "official",
+                    "official_record": True,
+                    "actor_id": "claude-terminal",
+                    "source_event_id": "live-answered",
+                    "content": "done",
+                },
+                {
+                    "id": "live-next",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "meeting-1",
+                    "target_agent_id": "claude-terminal",
+                    "role_id": "architect",
+                    "display_name": "Claude Terminal",
+                    "content": "Give the official answer.",
+                },
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-official-turn",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agents/claude-terminal/room")
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "event")
+        self.assertEqual(payload["event"]["id"], "live-next")
+        self.assertEqual(payload["meeting_id"], "meeting-1")
+        self.assertEqual(payload["source_event_id"], "live-next")
+        self.assertEqual(payload["reply_command"][0:7], ["python3", "-m", "agentsassemble.cli", "live-agent", "official-reply", "--server", "http://room.local"])
+
+    def test_live_agent_wait_official_turn_uses_visible_tail_when_cursor_is_missing(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "meeting_id": "meeting-1",
+                "last_observed_live_event_id": "evicted-live-cursor",
+            },
+            "live_events": [
+                {
+                    "id": "live-visible",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "meeting-1",
+                    "target_agent_id": "claude-terminal",
+                    "content": "visible tail request",
+                },
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-official-turn",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["event"]["id"], "live-visible")
+
+    def test_live_agent_wait_official_turn_times_out_without_targeted_request(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {"agent_id": "claude-terminal", "last_observed_live_event_id": "live-old"},
+            "live_events": [{"id": "live-old", "kind": "message", "content": "old"}],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-official-turn",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "timeout")
+        self.assertEqual(payload["last_observed_live_event_id"], "live-old")
+
+    def test_live_agent_official_reply_posts_official_reply(self):
+        stdout = StringIO()
+        response = {
+            "agent": {"agent_id": "claude-terminal", "last_observed_live_event_id": "live-next"},
+            "event": {"id": "reply-next"},
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "official-reply",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--meeting-id",
+                        "meeting-1",
+                        "--source-event-id",
+                        "live-next",
+                        "--json",
+                        "Official answer.",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents/claude-terminal/official-turn",
+            method="POST",
+            payload={
+                "meeting_id": "meeting-1",
+                "source_event_id": "live-next",
+                "content": "Official answer.",
+            },
+        )
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["event"]["id"], "reply-next")
+
+    def test_live_agent_answer_turn_alias_posts_official_reply(self):
+        stdout = StringIO()
+        response = {
+            "agent": {"agent_id": "claude-terminal", "last_observed_live_event_id": "live-next"},
+            "event": {"id": "reply-next"},
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "answer-turn",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--meeting-id",
+                        "meeting-1",
+                        "--source-event-id",
+                        "live-next",
+                        "--json",
+                        "Official answer.",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents/claude-terminal/official-turn",
+            method="POST",
+            payload={
+                "meeting_id": "meeting-1",
+                "source_event_id": "live-next",
+                "content": "Official answer.",
+            },
+        )
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["event"]["id"], "reply-next")
+
+    def test_live_agent_official_self_service_round_trip_against_gui_server(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            (root / "meetings" / "m1").mkdir(parents=True)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                with patch("sys.stdout", StringIO()):
+                    register_exit = main(
+                        [
+                            "live-agent",
+                            "register",
+                            "--server",
+                            server_url,
+                            "--agent-id",
+                            "claude-terminal",
+                            "--display-name",
+                            "Claude Terminal",
+                            "--provider-kind",
+                            "claude_code",
+                            "--connection-kind",
+                            "manual",
+                            "--meeting-id",
+                            "m1",
+                            "--engagement-mode",
+                            "moderator_called",
+                        ]
+                    )
+                call_stdout = StringIO()
+                with patch("sys.stdout", call_stdout):
+                    call_exit = main(
+                        [
+                            "live-agent",
+                            "call",
+                            "--server",
+                            server_url,
+                            "--meeting-id",
+                            "m1",
+                            "--agent-id",
+                            "claude-terminal",
+                            "--role-id",
+                            "architect",
+                            "--json",
+                            "Give the official answer.",
+                        ]
+                    )
+                wait_stdout = StringIO()
+                with patch("sys.stdout", wait_stdout):
+                    wait_exit = main(
+                        [
+                            "live-agent",
+                            "wait-official-turn",
+                            "--server",
+                            server_url,
+                            "--agent-id",
+                            "claude-terminal",
+                            "--timeout",
+                            "0",
+                            "--json",
+                        ]
+                    )
+                wait_payload = json.loads(wait_stdout.getvalue())
+                reply_stdout = StringIO()
+                with patch("sys.stdout", reply_stdout):
+                    reply_exit = main(
+                        [
+                            "live-agent",
+                            "official-reply",
+                            "--server",
+                            server_url,
+                            "--agent-id",
+                            "claude-terminal",
+                            "--meeting-id",
+                            "m1",
+                            "--source-event-id",
+                            wait_payload["source_event_id"],
+                            "--json",
+                            "Official self-service reply.",
+                        ]
+                    )
+                operations = cli_module._request_json(f"{server_url}/api/live-agent-operations")
+                persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual((register_exit, call_exit, wait_exit, reply_exit), (0, 0, 0, 0))
+        call_payload = json.loads(call_stdout.getvalue())
+        reply_payload = json.loads(reply_stdout.getvalue())
+        self.assertEqual(wait_payload["source_event_id"], call_payload["event"]["id"])
+        self.assertEqual(wait_payload["meeting_id"], "m1")
+        self.assertEqual(reply_payload["event"]["source_event_id"], wait_payload["source_event_id"])
+        self.assertEqual(reply_payload["event"]["content"], "Official self-service reply.")
+        self.assertEqual(persisted_agent["last_observed_live_event_id"], wait_payload["source_event_id"])
+        self.assertIn("official_turn.reply", [item["operation"] for item in operations["operations"]])
+
     def test_live_agent_processes_wait_event_observes_matching_event_after_timestamp(self):
         payloads = [
             {

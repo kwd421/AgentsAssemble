@@ -37,6 +37,7 @@ from agentsassemble.live_agent_runner import (
     SUPPORTED_RESIDENT_CONNECTION_KINDS,
     config_from_args,
     load_group_configs,
+    official_turn_request_candidate,
     resident_connection_kind_error,
 )
 from agentsassemble.live_agent_smoke import (
@@ -480,6 +481,18 @@ def build_parser() -> argparse.ArgumentParser:
     live_say.add_argument("--json", action="store_true", dest="as_json", help="Print the raw lobby post response.")
     live_say.add_argument("message", nargs="+")
 
+    live_answer_turn = live_agent_subparsers.add_parser(
+        "official-reply",
+        aliases=["answer-turn"],
+        parents=[live_server],
+        help="Post an official turn reply as a live agent.",
+    )
+    live_answer_turn.add_argument("--agent-id", required=True)
+    live_answer_turn.add_argument("--meeting-id", required=True)
+    live_answer_turn.add_argument("--source-event-id", required=True)
+    live_answer_turn.add_argument("--json", action="store_true", dest="as_json", help="Print the raw official turn reply response.")
+    live_answer_turn.add_argument("message", nargs="+")
+
     live_room = live_agent_subparsers.add_parser("room", parents=[live_server], help="Read the live room snapshot for an agent.")
     live_room.add_argument("--agent-id", required=True)
 
@@ -494,6 +507,18 @@ def build_parser() -> argparse.ArgumentParser:
     live_wait_room_event.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
     live_wait_room_event.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
     live_wait_room_event.add_argument("--json", action="store_true", dest="as_json", help="Print the raw wait result.")
+
+    live_wait_turn_request = live_agent_subparsers.add_parser(
+        "wait-official-turn",
+        aliases=["wait-turn-request"],
+        parents=[live_server],
+        help="Wait for the next targeted official turn request visible to a live agent.",
+    )
+    live_wait_turn_request.add_argument("--agent-id", required=True)
+    live_wait_turn_request.add_argument("--after-event-id", default="")
+    live_wait_turn_request.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
+    live_wait_turn_request.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_wait_turn_request.add_argument("--json", action="store_true", dest="as_json", help="Print the raw wait result.")
 
     live_health = live_agent_subparsers.add_parser("health", parents=[live_server], help="Read live-agent room health.")
     live_health.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON health payload.")
@@ -932,6 +957,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             else:
                 print(f"Posted {event.get('id') or 'lobby message'}")
             return 0
+        if args.live_agent_command in {"official-reply", "answer-turn"}:
+            return _run_live_agent_answer_turn(args)
         if args.live_agent_command == "room":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
             response = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
@@ -939,6 +966,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return 0
         if args.live_agent_command == "wait-room-event":
             return _run_live_agent_wait_room_event(args)
+        if args.live_agent_command in {"wait-official-turn", "wait-turn-request"}:
+            return _run_live_agent_wait_turn_request(args)
         if args.live_agent_command == "health":
             return _run_live_agent_health(args)
         if args.live_agent_command == "preflight":
@@ -3442,6 +3471,121 @@ def _format_wait_room_event(payload: dict[str, object]) -> str:
     name = str(event.get("name") or event.get("actor_id") or "participant")
     message = str(event.get("message") or "").strip()
     return f"{event_id} {name}: {message}"
+
+
+def _run_live_agent_answer_turn(args: argparse.Namespace) -> int:
+    agent_id = urllib.parse.quote(args.agent_id, safe="")
+    response = _request_json(
+        _server_url(args.server, f"/api/live-agents/{agent_id}/official-turn"),
+        method="POST",
+        payload={
+            "meeting_id": args.meeting_id,
+            "source_event_id": args.source_event_id,
+            "content": " ".join(args.message),
+        },
+    )
+    event = response.get("event", {}) if isinstance(response.get("event"), dict) else {}
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(f"Answered official turn {event.get('id') or args.source_event_id}")
+    return 0
+
+
+def _run_live_agent_wait_turn_request(args: argparse.Namespace) -> int:
+    deadline = time.monotonic() + float(args.timeout)
+    last_room: dict[str, object] = {}
+    while True:
+        agent_id = urllib.parse.quote(args.agent_id, safe="")
+        room = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
+        last_room = room
+        candidate = _wait_turn_request_candidate(args, room)
+        if candidate is not None:
+            payload = _wait_turn_request_payload(args, room, candidate)
+            if args.as_json:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                print(_format_wait_turn_request(payload))
+            return 0
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            payload = _wait_turn_request_timeout_payload(args, last_room)
+            if args.as_json:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                cursor = payload.get("last_observed_live_event_id") or "(none)"
+                print(f"no new official turn request after {cursor}")
+            return 1
+        sleep_interval = max(float(args.poll_interval), 0.05)
+        time.sleep(min(sleep_interval, remaining))
+
+
+def _wait_turn_request_candidate(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object] | None:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    events = room.get("live_events") if isinstance(room.get("live_events"), list) else []
+    typed_events = [event for event in events if isinstance(event, dict)]
+    cursor = str(args.after_event_id or agent.get("last_observed_live_event_id") or "").strip()
+    return official_turn_request_candidate(typed_events, args.agent_id, cursor)
+
+
+def _wait_turn_request_payload(
+    args: argparse.Namespace,
+    room: dict[str, object],
+    event: dict[str, object],
+) -> dict[str, object]:
+    event_id = str(event.get("id") or "")
+    meeting_id = _wait_turn_request_meeting_id(room, event)
+    return {
+        "status": "event",
+        "agent_id": args.agent_id,
+        "meeting_id": meeting_id,
+        "source_event_id": event_id,
+        "event": event,
+        "reply_command": [
+            "python3",
+            "-m",
+            "agentsassemble.cli",
+            "live-agent",
+            "official-reply",
+            "--server",
+            str(args.server),
+            "--agent-id",
+            str(args.agent_id),
+            "--meeting-id",
+            meeting_id,
+            "--source-event-id",
+            event_id,
+            "<reply>",
+        ],
+        "room": {
+            "meeting_id": str(room.get("meeting_id") or meeting_id),
+            "lobby_event_count": len(room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []),
+            "live_event_count": len(room.get("live_events") if isinstance(room.get("live_events"), list) else []),
+        },
+    }
+
+
+def _wait_turn_request_meeting_id(room: dict[str, object], event: dict[str, object]) -> str:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    return str(event.get("meeting_id") or room.get("meeting_id") or agent.get("meeting_id") or "").strip()
+
+
+def _wait_turn_request_timeout_payload(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object]:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    return {
+        "status": "timeout",
+        "agent_id": args.agent_id,
+        "timeout_seconds": float(args.timeout),
+        "last_observed_live_event_id": str(args.after_event_id or agent.get("last_observed_live_event_id") or "").strip(),
+    }
+
+
+def _format_wait_turn_request(payload: dict[str, object]) -> str:
+    event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+    event_id = str(event.get("id") or "official turn request")
+    role_id = str(event.get("role_id") or event.get("target_agent_id") or payload.get("agent_id") or "agent")
+    content = str(event.get("content") or "").strip()
+    return f"{event_id} {role_id}: {content}"
 
 
 class _JsonlLiveSessionCommandRunner:

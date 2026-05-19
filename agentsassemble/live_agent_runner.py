@@ -568,7 +568,10 @@ def official_turn_request_candidate(
     for event in _events_after(events, last_observed_event_id):
         if str(event.get("kind") or "") != "live_agent_turn_request":
             continue
-        if str(event.get("id") or "") in answered_request_ids:
+        event_id = str(event.get("id") or "").strip()
+        if not event_id:
+            continue
+        if event_id in answered_request_ids:
             continue
         if str(event.get("actor_id") or "") == agent_id:
             continue

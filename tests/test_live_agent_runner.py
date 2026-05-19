@@ -1490,6 +1490,23 @@ class LiveAgentRunnerTests(unittest.TestCase):
             pending_events[0],
         )
 
+    def test_official_turn_candidate_skips_request_without_event_id(self):
+        events = [
+            {
+                "kind": "live_agent_turn_request",
+                "target_agent_id": "agent-a",
+                "content": "malformed request without id",
+            },
+            {
+                "id": "turn-request-2",
+                "kind": "live_agent_turn_request",
+                "target_agent_id": "agent-a",
+                "content": "valid request",
+            },
+        ]
+
+        self.assertEqual(official_turn_request_candidate(events, "agent-a", ""), events[1])
+
     def test_moderator_called_skips_visible_already_answered_request_without_model_call(self):
         clock = FakeClock()
         room = {
