@@ -68,6 +68,14 @@ def start_live_agent_session(
     resident_configs = load_group_configs(live_agent_config_path, server_override=server)
     _validate_resident_config_meeting_ids(resident_configs, meeting_id=meeting_id)
     _validate_resident_manifest(resident_configs, expected_agents)
+    requested_meeting_id = _safe_optional_meeting_id(meeting_id)
+    if requested_meeting_id:
+        _validate_existing_process_group_owner(
+            process_supervisor,
+            clean_live_agent_group_id(group_id.strip() or live_agent_config_path.stem),
+            requested_meeting_id,
+            action="start",
+        )
 
     started_meeting = start_live_agent_meeting(
         output_root,
@@ -95,7 +103,7 @@ def start_live_agent_session(
             _start_group_failure_message(error),
             meeting_id=clean_meeting_id,
         ) from error
-    process = _process_snapshot(group, expected_agent_ids=expected_agent_ids)
+    process = _process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=clean_meeting_id)
     connection = _wait_for_connections(
         output_root,
         meeting_id=clean_meeting_id,
@@ -145,6 +153,13 @@ def resume_live_agent_session(
     resident_configs = load_group_configs(live_agent_config_path, server_override=server)
     _validate_resident_config_meeting_ids(resident_configs, meeting_id=clean_meeting_id)
     _validate_resident_manifest(resident_configs, expected_agents)
+    clean_group_id = clean_live_agent_group_id(group_id.strip() or live_agent_config_path.stem)
+    _validate_existing_process_group_owner(
+        process_supervisor,
+        clean_group_id,
+        clean_meeting_id,
+        action="resume",
+    )
     _ensure_bound_agent_roster(
         output_root,
         meeting,
@@ -156,14 +171,14 @@ def resume_live_agent_session(
         process_supervisor,
         live_agent_config_path=live_agent_config_path,
         server=server,
-        group_id=group_id.strip() or live_agent_config_path.stem,
+        group_id=clean_group_id,
         meeting_id=clean_meeting_id,
         auto_restart=auto_restart,
         max_restarts=max_restarts,
         restart_backoff_seconds=restart_backoff_seconds,
         stale_restart_after_seconds=stale_restart_after_seconds,
     )
-    process = _process_snapshot(group, expected_agent_ids=expected_agent_ids)
+    process = _process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=clean_meeting_id)
     connection = _wait_for_connections(
         output_root,
         meeting_id=clean_meeting_id,
@@ -198,7 +213,7 @@ def check_live_agent_session(
     expected_agents = _expected_agents_from_meeting(meeting)
     expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
     group = _snapshot_process_group(process_supervisor, clean_group_id)
-    process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids)
+    process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=clean_meeting_id)
     connection = _connection_snapshot(output_root, meeting_id=clean_meeting_id, expected_agent_ids=expected_agent_ids)
     status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "degraded"
     return {
@@ -228,7 +243,12 @@ def restart_live_agent_session(
     meeting = _read_existing_meeting(meeting_dir)
     expected_agents = _expected_agents_from_meeting(meeting)
     expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
-    existing_group = _validate_restart_group_matches_meeting(process_supervisor, clean_group_id, expected_agent_ids)
+    existing_group = _validate_restart_group_matches_meeting(
+        process_supervisor,
+        clean_group_id,
+        expected_agent_ids,
+        meeting_id=clean_meeting_id,
+    )
     existing_status = str(existing_group.get("status") or "unknown")
     if existing_status in {"running", "restarting"}:
         try:
@@ -251,7 +271,7 @@ def restart_live_agent_session(
             _restart_group_failure_message(error, group_id=clean_group_id),
             meeting_id=clean_meeting_id,
         ) from error
-    process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids)
+    process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=clean_meeting_id)
     connection = _wait_for_connections(
         output_root,
         meeting_id=clean_meeting_id,
@@ -286,7 +306,12 @@ def stop_live_agent_session(
     meeting = _read_existing_meeting(meeting_dir)
     expected_agents = _expected_agents_from_meeting(meeting)
     expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
-    _validate_stop_group_matches_meeting(process_supervisor, clean_group_id, expected_agent_ids)
+    _validate_stop_group_matches_meeting(
+        process_supervisor,
+        clean_group_id,
+        expected_agent_ids,
+        meeting_id=clean_meeting_id,
+    )
     try:
         group = process_supervisor.stop_group(clean_group_id)
     except Exception as error:
@@ -300,7 +325,7 @@ def stop_live_agent_session(
         meeting_id=clean_meeting_id,
         expected_agent_ids=expected_agent_ids,
     )
-    process = _stop_process_snapshot(group, expected_agent_ids=expected_agent_ids)
+    process = _stop_process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=clean_meeting_id)
     group_status = str(group.get("status") if isinstance(group, dict) else "unknown") or "unknown"
     status = (
         "stopped"
@@ -586,6 +611,8 @@ def _resume_process_group(
 ) -> dict[str, object]:
     clean_group_id = clean_live_agent_group_id(group_id)
     existing_group = _find_process_group(process_supervisor, clean_group_id)
+    if existing_group:
+        _validate_process_group_owner(existing_group, clean_group_id, meeting_id, action="resume")
     existing_status = str(existing_group.get("status") or "") if existing_group else ""
     if existing_status == "running":
         return existing_group
@@ -622,6 +649,37 @@ def _find_group_in_list(groups: object, group_id: str) -> dict[str, object]:
         if isinstance(group, dict) and str(group.get("group_id") or "") == group_id:
             return group
     return {}
+
+
+def _validate_existing_process_group_owner(
+    process_supervisor: object,
+    group_id: str,
+    meeting_id: str,
+    *,
+    action: str,
+) -> None:
+    group = _snapshot_process_group(process_supervisor, group_id)
+    if not group:
+        group = _find_process_group(process_supervisor, group_id)
+    if group:
+        _validate_process_group_owner(group, group_id, meeting_id, action=action)
+
+
+def _validate_process_group_owner(group: dict[str, object], group_id: str, meeting_id: str, *, action: str) -> None:
+    if not _process_group_owner_conflicts(group, meeting_id):
+        return
+    raise ValueError(
+        f"Live agent group {group_id} belongs to a different meeting; "
+        f"refusing session {action} for {meeting_id}."
+    )
+
+
+def _process_group_owner_conflicts(group: dict[str, object], meeting_id: str) -> bool:
+    raw_owner = clean_lobby_text(group.get("meeting_id"), limit=128)
+    if not raw_owner:
+        return False
+    safe_owner = _safe_optional_meeting_id(raw_owner)
+    return not safe_owner or safe_owner != meeting_id
 
 
 def _wait_for_connections(
@@ -671,10 +729,13 @@ def _validate_stop_group_matches_meeting(
     process_supervisor: object,
     group_id: str,
     expected_agent_ids: list[str],
+    *,
+    meeting_id: str,
 ) -> None:
     group = _find_process_group(process_supervisor, group_id)
     if not group:
         return
+    _validate_process_group_owner(group, group_id, meeting_id, action="stop")
     manifest_agent_ids = _process_agent_ids(group.get("agents"))
     if not manifest_agent_ids:
         raise ValueError(f"Live agent group {group_id} has no agent manifest; refusing session stop.")
@@ -697,10 +758,13 @@ def _validate_restart_group_matches_meeting(
     process_supervisor: object,
     group_id: str,
     expected_agent_ids: list[str],
+    *,
+    meeting_id: str,
 ) -> dict[str, object]:
     group = _snapshot_process_group(process_supervisor, group_id)
     if not group:
         raise ValueError(f"Live agent group {group_id} was not found.")
+    _validate_process_group_owner(group, group_id, meeting_id, action="restart")
     manifest_agent_ids = _process_agent_ids(group.get("agents"))
     if not manifest_agent_ids:
         raise ValueError(f"Live agent group {group_id} has no agent manifest; refusing session restart.")
@@ -725,16 +789,16 @@ def _validate_restart_group_matches_meeting(
     raise ValueError(f"Live agent group {group_id} does not match meeting agents: {suffix}.")
 
 
-def _stop_process_snapshot(group: object, *, expected_agent_ids: list[str]) -> dict[str, object]:
-    process = _process_snapshot(group, expected_agent_ids=expected_agent_ids)
+def _stop_process_snapshot(group: object, *, expected_agent_ids: list[str], meeting_id: str = "") -> dict[str, object]:
+    process = _process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=meeting_id)
     if process["status"] == "running" and "group:running" not in process["attention"]:
         process["attention"] = [*process["attention"], "group:running"]
         process["ready"] = False
     return process
 
 
-def _check_process_snapshot(group: object, *, expected_agent_ids: list[str]) -> dict[str, object]:
-    process = _process_snapshot(group, expected_agent_ids=expected_agent_ids)
+def _check_process_snapshot(group: object, *, expected_agent_ids: list[str], meeting_id: str = "") -> dict[str, object]:
+    process = _process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=meeting_id)
     expected = set(expected_agent_ids)
     extra_agent_ids = [agent_id for agent_id in process["agent_ids"] if agent_id not in expected]
     duplicate_agent_ids = _duplicate_agent_ids(process["agent_ids"])
@@ -749,7 +813,7 @@ def _check_process_snapshot(group: object, *, expected_agent_ids: list[str]) -> 
     return process
 
 
-def _process_snapshot(group: object, *, expected_agent_ids: list[str]) -> dict[str, object]:
+def _process_snapshot(group: object, *, expected_agent_ids: list[str], meeting_id: str = "") -> dict[str, object]:
     group_payload = group if isinstance(group, dict) else {}
     status = str(group_payload.get("status") or "unknown")
     manifest_ids = _process_agent_ids(group_payload.get("agents"))
@@ -757,6 +821,8 @@ def _process_snapshot(group: object, *, expected_agent_ids: list[str]) -> dict[s
     attention = []
     if status != "running":
         attention.append(f"group:{status}")
+    if meeting_id and _process_group_owner_conflicts(group_payload, meeting_id):
+        attention.append("group:wrong_meeting")
     attention.extend(f"{agent_id}:not_in_group" for agent_id in missing_agent_ids)
     return {
         "ready": not attention,

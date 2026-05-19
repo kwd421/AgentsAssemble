@@ -287,7 +287,8 @@ class LiveAgentSessionStartTests(unittest.TestCase):
                 connect_timeout_seconds=0,
             )
 
-            self.assertEqual(session["status"], "ready")
+            self.assertEqual(session["status"], "starting")
+            self.assertIn("group:wrong_meeting", session["process"]["attention"])
             self.assertNotIn("meeting_id", session["group"])
             self.assertNotIn("../secret-meeting", json.dumps(session, ensure_ascii=False))
 
@@ -586,6 +587,42 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(supervisor.started, [])
             self.assertFalse((root / "meetings").exists())
 
+    def test_start_session_refuses_existing_process_group_owned_by_another_meeting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+
+            class OwnedGroupSupervisor(FakeSessionSupervisor):
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "stopped",
+                            "meeting_id": "other-meeting",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+            supervisor = OwnedGroupSupervisor(root)
+
+            with self.assertRaises(ValueError) as raised:
+                start_live_agent_session(
+                    root,
+                    supervisor,
+                    server="http://127.0.0.1:8765",
+                    council_config_path=council_config,
+                    agent_config_path=agent_config,
+                    live_agent_config_path=live_agent_config,
+                    meeting_id="resident-m1",
+                    group_id="resident-main",
+                )
+
+            self.assertIn("belongs to a different meeting", str(raised.exception))
+            self.assertEqual(supervisor.started, [])
+            self.assertFalse((root / "meetings").exists())
+
     def test_resume_session_reuses_running_group_for_existing_meeting_without_recreating_it(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -738,6 +775,106 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(agents[0]["agent_id"], "agent-a")
             self.assertEqual(agents[0]["meeting_id"], "resident-m1")
             self.assertEqual(agents[0]["status"], "offline")
+
+    def test_resume_session_refuses_running_group_owned_by_another_meeting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            (root / "live_agents.json").unlink()
+
+            class RunningOwnedSupervisor:
+                def __init__(self) -> None:
+                    self.started = []
+
+                def list_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "meeting_id": "other-meeting",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def start_group(self, **kwargs):
+                    self.started.append(kwargs)
+                    raise AssertionError("resume must not start over a group owned by another meeting")
+
+            supervisor = RunningOwnedSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                resume_live_agent_session(
+                    root,
+                    supervisor,
+                    server="http://127.0.0.1:8765",
+                    live_agent_config_path=live_agent_config,
+                    meeting_id="resident-m1",
+                    group_id="resident-main",
+                    connect_timeout_seconds=0,
+                    preflight_checker=lambda *args, **kwargs: {"status": "ok"},
+                )
+
+            self.assertIn("belongs to a different meeting", str(raised.exception))
+            self.assertEqual(supervisor.started, [])
+            self.assertFalse((root / "live_agents.json").exists())
+
+    def test_resume_session_refuses_stopped_group_owned_by_another_meeting_before_roster_or_start(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            (root / "live_agents.json").unlink()
+
+            class StoppedOwnedSupervisor:
+                def __init__(self) -> None:
+                    self.started = []
+
+                def list_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "stopped",
+                            "meeting_id": "other-meeting",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def start_group(self, **kwargs):
+                    self.started.append(kwargs)
+                    return {"group_id": "resident-main", "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = StoppedOwnedSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                resume_live_agent_session(
+                    root,
+                    supervisor,
+                    server="http://127.0.0.1:8765",
+                    live_agent_config_path=live_agent_config,
+                    meeting_id="resident-m1",
+                    group_id="resident-main",
+                    connect_timeout_seconds=0,
+                    preflight_checker=lambda *args, **kwargs: {"status": "ok"},
+                )
+
+            self.assertIn("belongs to a different meeting", str(raised.exception))
+            self.assertEqual(supervisor.started, [])
+            self.assertFalse((root / "live_agents.json").exists())
 
     def test_resume_session_restarts_unknown_group_from_supplied_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -977,6 +1114,89 @@ class LiveAgentSessionStartTests(unittest.TestCase):
                 stop_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
 
             self.assertIn("does not match meeting agents", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_stop_session_refuses_group_owned_by_another_meeting_before_stop_and_offline(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class StopSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+
+                def list_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "meeting_id": "other-meeting",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    return {"group_id": group_id, "status": "stopped", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = StopSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                stop_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("belongs to a different meeting", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_stop_session_refuses_unsafe_process_owner_without_echoing_it(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class StopSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+
+                def list_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "meeting_id": "../secret-meeting",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    return {"group_id": group_id, "status": "stopped", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = StopSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                stop_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("belongs to a different meeting", str(raised.exception))
+            self.assertNotIn("../secret-meeting", str(raised.exception))
             self.assertEqual(supervisor.stopped, [])
             agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
             self.assertEqual(agents["agent-a"]["status"], "online")
@@ -1398,6 +1618,53 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
             self.assertEqual(agents["agent-a"]["status"], "online")
 
+    def test_restart_session_refuses_group_owned_by_another_meeting_before_restart(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+                    self.restarted = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "meeting_id": "other-meeting",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    return {"group_id": group_id, "status": "stopped", "agents": [{"agent_id": "agent-a"}]}
+
+                def restart_group(self, group_id):
+                    self.restarted.append(group_id)
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = RestartSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                restart_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("belongs to a different meeting", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+            self.assertEqual(supervisor.restarted, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
     def test_restart_session_refuses_duplicate_manifest_agent_before_restart(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -1632,6 +1899,43 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
             self.assertEqual(agents["agent-a"]["meeting_id"], "other-meeting")
             self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_check_session_reports_degraded_when_process_group_belongs_to_another_meeting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            before_roster = (root / "live_agents.json").read_text(encoding="utf-8")
+
+            class CheckSupervisor:
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "meeting_id": "other-meeting",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+            session = check_live_agent_session(
+                root,
+                CheckSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            self.assertEqual(session["status"], "degraded")
+            self.assertEqual(session["group"]["meeting_id"], "other-meeting")
+            self.assertIn("group:wrong_meeting", session["process"]["attention"])
+            self.assertEqual((root / "live_agents.json").read_text(encoding="utf-8"), before_roster)
 
     def test_check_session_reports_degraded_duplicate_manifest_agent(self):
         with tempfile.TemporaryDirectory() as temp_dir:
