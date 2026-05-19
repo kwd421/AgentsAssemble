@@ -3071,6 +3071,14 @@ class CliTimeoutTests(unittest.TestCase):
                     ],
                     "recent_events": [
                         {
+                            "event_type": "stale_watchdog",
+                            "timestamp": "2026-05-17T11:59:45+00:00",
+                            "group_id": "crew",
+                            "status": "running",
+                            "restart_count": 0,
+                            "reason": "missing manifest agent local-a",
+                        },
+                        {
                             "event_type": "restart_scheduled",
                             "timestamp": "2026-05-17T11:59:50+00:00",
                             "group_id": "crew",
@@ -3126,6 +3134,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("missing friend-b", output)
         self.assertIn("last event started", output)
         self.assertIn("last offline restart_scheduled", output)
+        self.assertIn("last reason stale_watchdog missing manifest agent local-a", output)
         self.assertIn("offline 1/2", output)
         self.assertIn("wrong_meeting friend-b", output)
         self.assertNotIn("command", output)
@@ -3291,11 +3300,12 @@ class CliTimeoutTests(unittest.TestCase):
                 {
                     "timestamp": "2026-05-17T12:01:00+00:00",
                     "group_id": "crew one",
-                    "event_type": "restart_scheduled",
-                    "status": "restarting",
-                    "returncode": 2,
+                    "event_type": "stale_watchdog",
+                    "status": "running",
+                    "returncode": -98,
                     "restart_count": 1,
                     "max_restarts": 2,
+                    "reason": "stale manifest agent agent-a",
                     "next_restart_at": "2026-05-17T12:01:10+00:00",
                     "offline": {
                         "expected": 2,
@@ -3328,7 +3338,8 @@ class CliTimeoutTests(unittest.TestCase):
         request_json.assert_called_once_with("http://room.local/api/live-agent-process-events?limit=2&group_id=crew+one")
         output = stdout.getvalue()
         self.assertIn("2026-05-17T12:00:00+00:00 crew one started running pid 1234 restarts 0/2", output)
-        self.assertIn("2026-05-17T12:01:00+00:00 crew one restart_scheduled restarting returncode 2 restarts 1/2", output)
+        self.assertIn("2026-05-17T12:01:00+00:00 crew one stale_watchdog running returncode -98 restarts 1/2", output)
+        self.assertIn("reason stale manifest agent agent-a", output)
         self.assertIn("next restart 2026-05-17T12:01:10+00:00", output)
         self.assertIn("offline 1/2", output)
         self.assertIn("wrong_meeting agent-b", output)

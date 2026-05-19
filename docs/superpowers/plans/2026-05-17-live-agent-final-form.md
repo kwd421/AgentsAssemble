@@ -2034,6 +2034,41 @@ Document that lifecycle history and process row `recent_events` retain sanitized
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 62: CLI Lifecycle Reason Display
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED coverage for CLI reason display**
+
+Extend default text-output CLI coverage so `live-agent processes list` shows the latest safe watchdog reason from each process row's bounded `recent_events`, and `live-agent processes events` shows the reason on a lifecycle event line. Cover the list case where the latest row event differs from the latest reason-bearing watchdog event.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_list_prints_summary \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_events_fetches_filtered_history
+```
+
+Expected: fail before implementation because default CLI text output does not render lifecycle `reason`.
+
+- [x] **Step 2: Render reason in CLI lifecycle summaries**
+
+Append `reason <value>` to lifecycle event lines when a sanitized reason is present. For process rows, include `reason <value>` when the latest row event carries it, or `last reason <event_type> <value>` when an older recent event carries the latest available reason.
+
+Run the Step 1 command.
+Expected: pass.
+
+- [x] **Step 3: Document CLI reason output**
+
+Document that default CLI process lists and lifecycle event views expose sanitized watchdog reasons without requiring `--json`.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

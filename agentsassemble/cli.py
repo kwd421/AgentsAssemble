@@ -1931,6 +1931,9 @@ def _format_live_agent_process_event(event: dict[str, object]) -> str:
     previous_status = str(event.get("previous_status") or "").strip()
     if previous_status:
         parts.append(f"previous {previous_status}")
+    reason = _format_live_agent_process_event_reason(event.get("reason"))
+    if reason:
+        parts.append(f"reason {reason}")
     offline = _live_agent_process_offline_summary(event.get("offline"))
     if offline:
         parts.append(offline)
@@ -2094,7 +2097,9 @@ def _format_live_agent_process_last_event(value: object) -> str:
         return ""
     event_type = str(latest.get("event_type") or "").strip()
     offline = _format_live_agent_process_last_offline_event(value, latest_event=latest)
-    suffix = f", {offline}" if offline else ""
+    reason = _format_live_agent_process_last_reason_event(value, latest_event=latest)
+    suffix = ", ".join(detail for detail in (offline, reason) if detail)
+    suffix = f", {suffix}" if suffix else ""
     return f"last event {event_type}{suffix}"
 
 
@@ -2127,6 +2132,28 @@ def _format_live_agent_process_last_offline_event(
             return details
         return f"last offline {event_type} {details}"
     return ""
+
+
+def _format_live_agent_process_last_reason_event(
+    value: list[object],
+    *,
+    latest_event: dict[str, object],
+) -> str:
+    for item in reversed(value):
+        if not isinstance(item, dict):
+            continue
+        reason = _format_live_agent_process_event_reason(item.get("reason"))
+        if not reason:
+            continue
+        if item is latest_event:
+            return f"reason {reason}"
+        event_type = str(item.get("event_type") or "").strip()
+        return f"last reason {event_type} {reason}" if event_type else f"last reason {reason}"
+    return ""
+
+
+def _format_live_agent_process_event_reason(value: object) -> str:
+    return str(value or "").strip()
 
 
 def _format_live_agent_process_offline_attention(value: object) -> str:
