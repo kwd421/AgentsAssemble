@@ -170,6 +170,106 @@ class LiveAgentPresenceTests(unittest.TestCase):
             self.assertEqual(agent["status"], "working")
             self.assertEqual(agent["last_seen_at"], "2026-05-17T12:00:45+00:00")
 
+    def test_presence_last_error_redacts_sensitive_external_error_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            sensitive_error = (
+                "remote bridge failed at https://friend.example/agentsassemble/run?token=abc "
+                "using env:REMOTE_BRIDGE_TOKEN and /Users/me/private/live-agents.json"
+            )
+
+            connected = connect_live_agent(
+                root,
+                {
+                    "agent_id": "friend-bridge",
+                    "connection_kind": "remote_bridge",
+                    "endpoint": "http://friend.local:8777",
+                    "last_error": sensitive_error,
+                },
+            )
+            heartbeat = heartbeat_live_agent(
+                root,
+                "friend-bridge",
+                status="error",
+                metadata={"last_error": sensitive_error},
+            )
+            persisted = (root / "live_agents.json").read_text(encoding="utf-8")
+            visible = read_live_agents(root)[0]
+
+        self.assertEqual(connected["last_error"], "Live-agent presence error details redacted.")
+        self.assertEqual(heartbeat["last_error"], "Live-agent presence error details redacted.")
+        self.assertEqual(visible["last_error"], "Live-agent presence error details redacted.")
+        for forbidden in (
+            "friend.example",
+            "abc",
+            "REMOTE_BRIDGE_TOKEN",
+            "/Users/me/private",
+            "live-agents.json",
+        ):
+            self.assertNotIn(forbidden, persisted)
+            self.assertNotIn(forbidden, json.dumps(visible, ensure_ascii=False))
+
+    def test_presence_last_error_redacts_common_token_and_endpoint_forms(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            sensitive_errors = [
+                "bridge failed friend.local:8777/agentsassemble/run",
+                "bridge failed friend.local/agentsassemble/run",
+                "missing env OPENAI_API_KEY",
+                "env var REMOTE_BRIDGE_TOKEN missing",
+                "$ANTHROPIC_API_KEY missing",
+                "config at configs/private.yaml",
+                "failed reading configs/private.toml",
+                "prompt file prompts/private.txt failed",
+                "github_pat_1234567890abcdef leaked",
+                "xoxb-1234567890-secret leaked",
+                "AKIA1234567890ABCDEF leaked",
+                "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZ2VudCJ9.signature",
+            ]
+
+            for index, sensitive_error in enumerate(sensitive_errors):
+                heartbeat = heartbeat_live_agent(
+                    root,
+                    f"external-agent-{index}",
+                    status="error",
+                    metadata={"last_error": sensitive_error},
+                )
+                self.assertEqual(heartbeat["last_error"], "Live-agent presence error details redacted.")
+            persisted = (root / "live_agents.json").read_text(encoding="utf-8")
+
+        for forbidden in (
+            "friend.local",
+            "OPENAI_API_KEY",
+            "REMOTE_BRIDGE_TOKEN",
+            "ANTHROPIC_API_KEY",
+            "configs/private",
+            "prompts/private",
+            "ghp_",
+            "github_pat_",
+            "xoxb-",
+            "AKIA",
+            "eyJhbGci",
+        ):
+            self.assertNotIn(forbidden, persisted)
+
+    def test_presence_last_error_keeps_safe_operator_labels(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            safe_labels = ["command failed", "oauth failed", "configuration failed", "curl failed"]
+
+            for label in safe_labels:
+                agent = heartbeat_live_agent(
+                    root,
+                    label.replace(" ", "-"),
+                    status="error",
+                    metadata={"last_error": label},
+                )
+                self.assertEqual(agent["last_error"], label)
+
+            persisted = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))
+
+        self.assertEqual([agent["last_error"] for agent in persisted["agents"]], safe_labels)
+
     def test_connect_live_agent_preserves_existing_engagement_mode_on_reregistration(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

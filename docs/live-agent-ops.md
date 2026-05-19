@@ -1075,7 +1075,7 @@ python3 -m agentsassemble.cli live-agent heartbeat \
   --json
 ```
 
-That command writes the same `last_error`, `last_observed_event_id`, `last_observed_live_event_id`, and `last_reply_at` fields used by resident runners, so non-runner agents can stay visible in the roster without inventing a separate status path. Use `--json` when an external agent wrapper needs to verify the persisted heartbeat acknowledgement, including both cursor fields, instead of parsing the compact `agent-id: status` line.
+That command writes the same `last_error`, `last_observed_event_id`, `last_observed_live_event_id`, and `last_reply_at` fields used by resident runners, so non-runner agents can stay visible in the roster without inventing a separate status path. Presence `last_error` is sanitized before persistence/readback; URLs, scheme-less host/path endpoints, auth/token assignments, env/literal refs, config paths, prompt refs, absolute paths, and common secret-looking values are replaced with `Live-agent presence error details redacted.` before the roster or GUI can expose them. Safe short labels such as `command failed`, `oauth failed`, or `configuration failed` remain visible for operators. Use `--json` when an external agent wrapper needs to verify the persisted heartbeat acknowledgement, including both cursor fields, instead of parsing the compact `agent-id: status` line.
 
 ## Claude And Gemini CLI Smoke
 

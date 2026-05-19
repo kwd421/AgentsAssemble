@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from datetime import UTC, datetime
 from math import ceil
@@ -17,6 +18,31 @@ LIVE_AGENT_CONNECTION_KINDS = {"codex_resume", "local_cli", "live_session", "rem
 DEFAULT_STALE_AFTER_SECONDS = 180
 OUTPUT_ONLY_FRESHNESS_FIELDS = {"heartbeat_age_seconds", "stale_after_seconds"}
 LIVE_AGENT_STATE_LOCK = threading.Lock()
+PRESENCE_ERROR_REDACTED = "Live-agent presence error details redacted."
+SENSITIVE_PRESENCE_ERROR_MARKERS = (
+    re.compile(r"\bbearer\s+[A-Za-z0-9._-]+", re.IGNORECASE),
+    re.compile(r"\b(?:auth|token|secret|password|endpoint|prompt|config|url)\b\s*[:=]\s*\S+", re.IGNORECASE),
+    re.compile(r"\b(?:env|literal):[^\s,;]+", re.IGNORECASE),
+    re.compile(r"\benv\s+var\s+[A-Z][A-Z0-9_]{2,}\b"),
+    re.compile(r"\benv\s+[A-Z][A-Z0-9_]{2,}\b"),
+    re.compile(r"(?<!\w)\$[A-Z][A-Z0-9_]{2,}\b"),
+    re.compile(r"\bprompt\s+(?:file|path|at)\s+[^\s,;)'\"]+", re.IGNORECASE),
+    re.compile(r"\bconfig\s+(?:file|path|at|from|in)\s+[^\s,;)'\"]+", re.IGNORECASE),
+)
+SENSITIVE_PRESENCE_ERROR_PATTERNS = (
+    re.compile(r"https?://\S+", re.IGNORECASE),
+    re.compile(r"\b(?:localhost|(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}|\d{1,3}(?:\.\d{1,3}){3})(?::\d{2,5})?/[^\s]+"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{6,}\b"),
+    re.compile(r"\bAIza[A-Za-z0-9_-]{10,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{10,}\b"),
+    re.compile(r"\bghp_[A-Za-z0-9_]{10,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{10,}\b"),
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),
+    re.compile(r"\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}\b"),
+    re.compile(r"\b[A-Za-z]:\\[^\s,;)'\"]+"),
+    re.compile(r"(?<!\w)[^\s,;)'\"]*\.(?:json|ya?ml|toml|env|txt)\b", re.IGNORECASE),
+    re.compile(r"(?<!\w)['\"]?/[^\s,;)'\"]+"),
+)
 
 
 def read_live_agents(
@@ -75,8 +101,8 @@ def connect_live_agent(
             or clean_lobby_text(existing.get("session_id"), limit=128),
             "endpoint": endpoint,
             "capabilities": _clean_capabilities(payload.get("capabilities") or existing.get("capabilities")),
-            "last_error": clean_lobby_text(payload.get("last_error"), limit=500)
-            or clean_lobby_text(existing.get("last_error"), limit=500),
+            "last_error": _clean_presence_last_error(payload.get("last_error"))
+            or _clean_presence_last_error(existing.get("last_error")),
             "last_reply_at": clean_lobby_text(payload.get("last_reply_at"), limit=64)
             or clean_lobby_text(existing.get("last_reply_at"), limit=64),
             "last_observed_event_id": clean_lobby_text(payload.get("last_observed_event_id"), limit=128)
@@ -190,7 +216,10 @@ def heartbeat_live_agent(
             ("last_observed_live_event_id", 128),
         ):
             if key in metadata:
-                agent[key] = clean_lobby_text(metadata.get(key), limit=limit)
+                if key == "last_error":
+                    agent[key] = _clean_presence_last_error(metadata.get(key))
+                else:
+                    agent[key] = clean_lobby_text(metadata.get(key), limit=limit)
         if "diagnostic" in metadata:
             agent["diagnostic"] = _bool_value(metadata.get("diagnostic"))
         _upsert_agent(agents, agent)
@@ -269,7 +298,10 @@ def _with_inferred_status(
 
 
 def _without_output_only_freshness(agent: dict[str, object]) -> dict[str, object]:
-    return {key: value for key, value in agent.items() if key not in OUTPUT_ONLY_FRESHNESS_FIELDS}
+    clean_agent = {key: value for key, value in agent.items() if key not in OUTPUT_ONLY_FRESHNESS_FIELDS}
+    if "last_error" in clean_agent:
+        clean_agent["last_error"] = _clean_presence_last_error(clean_agent.get("last_error"))
+    return clean_agent
 
 
 def _parse_timestamp(value: object) -> datetime | None:
@@ -314,3 +346,18 @@ def _clean_capabilities(value: object) -> list[str]:
         capabilities.append(cleaned)
         seen.add(cleaned)
     return capabilities
+
+
+def _clean_presence_last_error(value: object) -> str:
+    text = clean_lobby_text(value, limit=500)
+    if not text:
+        return ""
+    if _looks_sensitive_presence_error(text):
+        return PRESENCE_ERROR_REDACTED
+    return text
+
+
+def _looks_sensitive_presence_error(text: str) -> bool:
+    if any(pattern.search(text) for pattern in SENSITIVE_PRESENCE_ERROR_MARKERS):
+        return True
+    return any(pattern.search(text) for pattern in SENSITIVE_PRESENCE_ERROR_PATTERNS)
