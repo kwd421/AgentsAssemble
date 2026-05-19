@@ -124,19 +124,27 @@ class LiveAgentRunner:
             if generated is None:
                 return 0
             source_event_id, reply = generated
-            response = self.request_json(
-                _server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/official-turn"),
-                method="POST",
-                payload={
-                    "meeting_id": _official_turn_meeting_id(self.config, room, candidate),
-                    "source_event_id": source_event_id,
-                    "content": reply,
-                    "role_id": str(candidate.get("role_id") or self.config.agent_id),
-                    "display_name": str(candidate.get("display_name") or self.config.display_name or self.config.agent_id),
-                    "turn_id": str(candidate.get("turn_id") or ""),
-                    "turn_index": _optional_int(candidate.get("turn_index")),
-                },
-            )
+            try:
+                response = self.request_json(
+                    _server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/official-turn"),
+                    method="POST",
+                    payload={
+                        "meeting_id": _official_turn_meeting_id(self.config, room, candidate),
+                        "source_event_id": source_event_id,
+                        "content": reply,
+                        "role_id": str(candidate.get("role_id") or self.config.agent_id),
+                        "display_name": str(candidate.get("display_name") or self.config.display_name or self.config.agent_id),
+                        "turn_id": str(candidate.get("turn_id") or ""),
+                        "turn_index": _optional_int(candidate.get("turn_index")),
+                    },
+                )
+            except Exception as error:
+                self._record_reply_post_error(
+                    error,
+                    cursor_field="last_observed_live_event_id",
+                    observed_event_id=source_event_id,
+                )
+                raise
             self._record_reply_success(
                 response.get("event"),
                 cursor_field="last_observed_live_event_id",
@@ -174,17 +182,25 @@ class LiveAgentRunner:
         source_event_id, reply = generated
 
         source_depth = _chain_depth(candidate)
-        response = self.request_json(
-            _server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/lobby"),
-            method="POST",
-            payload={
-                "message": reply,
-                "kind": "message",
-                "actor_id": self.config.agent_id,
-                "source_event_id": source_event_id,
-                "auto_chain_depth": source_depth + 1,
-            },
-        )
+        try:
+            response = self.request_json(
+                _server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/lobby"),
+                method="POST",
+                payload={
+                    "message": reply,
+                    "kind": "message",
+                    "actor_id": self.config.agent_id,
+                    "source_event_id": source_event_id,
+                    "auto_chain_depth": source_depth + 1,
+                },
+            )
+        except Exception as error:
+            self._record_reply_post_error(
+                error,
+                cursor_field="last_observed_event_id",
+                observed_event_id=source_event_id,
+            )
+            raise
         self._record_reply_success(
             response.get("event"),
             cursor_field="last_observed_event_id",
@@ -238,11 +254,29 @@ class LiveAgentRunner:
         self.last_error_at = None
         self.last_error = ""
         self.transient_room_error_active = False
-        self._heartbeat(
+        self._heartbeat_due_safely(
             "online",
             last_reply_at=self.last_reply_at.isoformat(),
             last_error="",
             **self._cursor_metadata(),
+        )
+
+    def _record_reply_post_error(
+        self,
+        error: Exception,
+        *,
+        cursor_field: str,
+        observed_event_id: str,
+    ) -> None:
+        if self.stop_event.is_set():
+            return
+        self.transient_room_error_active = False
+        self.last_error = str(error)
+        self.last_error_at = self.now_fn()
+        self._heartbeat_due_safely(
+            "error",
+            last_error=self.last_error,
+            **self._cursor_metadata(cursor_field, observed_event_id),
         )
 
     def _register(self) -> None:

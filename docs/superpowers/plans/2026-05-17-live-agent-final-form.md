@@ -3045,6 +3045,69 @@ Update the operator docs so `check-session` and `session-readiness` explicitly l
 
 ---
 
+### Task 86: Reply Post Failures Leave Presence Evidence
+
+**Goal:** Preserve operator evidence when a resident agent generates a reply but cannot post it back to the lobby or official meeting surface.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_runner.py`
+
+- [x] **Step 1: Add RED coverage for failed reply posts**
+
+Cover lobby and official-turn post failures after the provider command has returned a reply. The runner must attempt an `error` heartbeat with `last_error` and the relevant observed cursor before surfacing the original post failure.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_lobby_post_failure_when_final_offline_heartbeat_fails \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_records_official_turn_post_failure_before_raising
+```
+
+Expected: fail before implementation because post failures raise without leaving an error heartbeat.
+
+- [x] **Step 2: Preserve the original post failure when error heartbeat fails**
+
+Cover a lobby post failure where the attempted error heartbeat also fails. The original post failure must remain the exception visible to the supervisor, and the attempted heartbeat must still carry the observed cursor.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_lobby_post_failure_when_error_heartbeat_fails
+```
+
+Expected: fail before implementation because the heartbeat failure can mask the post failure.
+
+- [x] **Step 3: Record post failures best-effort**
+
+Wrap lobby and official-turn post calls so post failures update runner-local `last_error`, attempt a best-effort `error` heartbeat with cursor metadata, and then re-raise the original post exception.
+
+- [x] **Step 4: Document reply post failure evidence**
+
+Document that generated reply post failures are distinct from provider command failures and room read failures, but still leave best-effort presence evidence for operators.
+
+- [x] **Step 5: Keep posted replies successful when success heartbeat fails**
+
+Cover lobby and official-turn reply posts that succeed, followed by a failed `online` heartbeat carrying `last_reply_at`. The runner must keep the posted reply successful, return the handled reply count, and leave `last_error` clear.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_lobby_reply_when_success_heartbeat_fails \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_official_reply_when_success_heartbeat_fails
+```
+
+Expected: fail before implementation because `_record_reply_success()` lets the success heartbeat failure raise after the reply has already been posted.
+
+- [x] **Step 6: Make post-success presence update best-effort**
+
+Use the existing safe heartbeat path for the post-success `online` heartbeat so a transient presence write failure cannot convert an already-posted reply into a failed runner tick.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
