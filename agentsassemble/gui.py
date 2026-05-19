@@ -35,7 +35,12 @@ from agentsassemble.live_agent_sessions import (
     start_live_agent_session,
     stop_live_agent_session,
 )
-from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_official_round_smoke, run_live_agent_smoke
+from agentsassemble.live_agent_smoke import (
+    LiveAgentSmokeFailed,
+    run_live_agent_official_round_smoke,
+    run_live_agent_session_smoke,
+    run_live_agent_smoke,
+)
 from agentsassemble.live_agent_turns import wait_for_official_turn_reply
 from agentsassemble.live_transcript import projected_live_transcript_text
 from agentsassemble.meeting import run_demo_meeting
@@ -499,6 +504,7 @@ def live_agent_session_start_payload(
         max_restarts=_payload_nonnegative_int(payload.get("max_restarts"), 0),
         restart_backoff_seconds=_payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
         stale_restart_after_seconds=_payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0),
+        diagnostic=_payload_bool(payload.get("diagnostic")),
     )
     if _payload_bool(payload.get("run_remaining_rounds")):
         auto_rounds_options = _session_auto_rounds_options(payload)
@@ -1109,6 +1115,22 @@ def live_agent_official_round_smoke_payload(
         group_id=str(payload.get("group_id") or ""),
         timeout_seconds=_payload_nonnegative_float(payload.get("timeout"), 12.0),
         request_json=_request_json,
+    )
+
+
+def live_agent_session_smoke_payload(
+    output_root: Path,
+    payload: dict[str, object],
+    *,
+    default_server: str,
+) -> dict[str, object]:
+    return run_live_agent_session_smoke(
+        server=default_server,
+        group_id=str(payload.get("group_id") or ""),
+        meeting_id=str(payload.get("meeting_id") or ""),
+        timeout_seconds=_payload_nonnegative_float(payload.get("timeout"), 12.0),
+        request_json=_request_json,
+        output_root=output_root,
     )
 
 
@@ -2259,6 +2281,34 @@ def _official_round_smoke_operation_details(smoke: dict[str, object]) -> dict[st
     }
 
 
+def _session_smoke_operation_details(smoke: dict[str, object]) -> dict[str, object]:
+    return {
+        "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
+        "meeting_id": clean_lobby_text(smoke.get("meeting_id"), limit=128),
+        "result_status": _operation_result_status(smoke.get("status")),
+        "agent_ids": _safe_payload_strings(smoke.get("agent_ids"), limit=64),
+        "rounds_status": _operation_result_status(smoke.get("rounds_status")),
+        "round_count": _payload_nonnegative_int(smoke.get("round_count"), 0),
+        "answered_round_count": _payload_nonnegative_int(smoke.get("answered_round_count"), 0),
+        "completed_round_count": _payload_nonnegative_int(smoke.get("completed_round_count"), 0),
+        "timeout_round_count": _payload_nonnegative_int(smoke.get("timeout_round_count"), 0),
+        "skipped_round_count": _payload_nonnegative_int(smoke.get("skipped_round_count"), 0),
+        "expected_reply_count": _payload_nonnegative_int(smoke.get("expected_reply_count"), 0),
+        "reply_count": _payload_nonnegative_int(smoke.get("reply_count"), 0),
+        "start_status": _operation_result_status(smoke.get("start_status")),
+        "check_status": _operation_result_status(smoke.get("check_status")),
+        "restart_status": _operation_result_status(smoke.get("restart_status")),
+        "stop_status": _operation_result_status(smoke.get("stop_status")),
+    }
+
+
+def _session_smoke_error_details(payload: dict[str, object]) -> dict[str, object]:
+    return {
+        "group_id": clean_lobby_text(payload.get("group_id"), limit=128),
+        "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
+    }
+
+
 def _session_start_operation_details(session: dict[str, object]) -> dict[str, object]:
     connection = session.get("connection") if isinstance(session.get("connection"), dict) else {}
     process = session.get("process") if isinstance(session.get("process"), dict) else {}
@@ -3230,6 +3280,41 @@ def _make_handler(
                     target_id=str(smoke.get("group_id") or payload.get("group_id") or ""),
                     summary="ran credential-free official round smoke",
                     details=_official_round_smoke_operation_details(smoke),
+                )
+                self._send_json(smoke)
+                return
+            if parsed.path == "/api/live-agent-session-smoke":
+                payload = self._operation_json_payload(operation="session.smoke")
+                if payload is None:
+                    return
+                try:
+                    smoke = live_agent_session_smoke_payload(
+                        output_root,
+                        payload,
+                        default_server=self._local_server_url(),
+                    )
+                except (LiveAgentSmokeFailed, ValueError, urllib.error.URLError) as error:
+                    del error
+                    safe_error = "Session smoke could not be run."
+                    safe_details = _session_smoke_error_details(payload)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.smoke",
+                        status="failed",
+                        target_id=str(safe_details.get("group_id") or ""),
+                        error=safe_error,
+                        details=safe_details,
+                    )
+                    self._send_error(HTTPStatus.BAD_GATEWAY, safe_error, details=safe_details)
+                    return
+                result_status = _operation_result_status(smoke.get("status"))
+                record_live_agent_operation(
+                    output_root,
+                    operation="session.smoke",
+                    status=_operation_success_for_result(result_status, success_values={"ok"}),
+                    target_id=str(smoke.get("group_id") or payload.get("group_id") or ""),
+                    summary="ran credential-free resident session smoke",
+                    details=_session_smoke_operation_details(smoke),
                 )
                 self._send_json(smoke)
                 return

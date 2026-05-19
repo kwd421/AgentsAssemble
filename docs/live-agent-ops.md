@@ -483,6 +483,17 @@ python3 -m agentsassemble.cli live-agent official-round-smoke \
 
 That command calls `POST /api/live-agent-official-round-smoke`. The server creates a diagnostic meeting, binds three fake resident agents to its roles, starts the group in `moderator_called` mode, calls the same `/api/meetings/<meeting_id>/live-agent-turns/round` endpoint used by real operator rounds, waits for official replies, and stops the group. It is still credential-free and omits prompt text, reply text, config paths, endpoint URLs, auth refs, command arguments, tokens, and log tails from the smoke response and operation history.
 
+For the strongest credential-free resident session proof, run the session smoke:
+
+```bash
+python3 -m agentsassemble.cli live-agent session-smoke \
+  --server http://127.0.0.1:8765
+```
+
+That command calls `POST /api/live-agent-session-smoke`. The server creates temporary fake council, agent binding, and resident group configs for three resident transports: `local_cli`, JSONL `live_session`, and loopback `remote_bridge`. It calls the same `start-session` path used by the GUI `세션시작` button; runs one bounded remaining official round through `/api/meetings/<meeting_id>/live-agent-turns/rounds`; switches the fake bound agents from moderator-called mode to `always`; posts one human lobby probe; verifies all three fake agents replied through the live-agent lobby endpoint with the probe `source_event_id`; calls `check-session`; calls `restart-session`; then calls `stop-session` for cleanup. It proves the visible meeting binding, resident process launch, official-turn dispatch, auto lobby reply, meeting-aware readiness check, meeting-aware restart, and meeting-aware stop surfaces in one bounded local operation.
+
+If `--group-id` and `--meeting-id` are omitted, the command generates a fresh diagnostic group and meeting id so the no-argument smoke is safe to rerun. The session smoke is still credential-free and does not call Claude, Gemini, Cursor, model APIs, a real remote bridge, account login, billing, or external networks. The response and `session.smoke` operation record safe ids, counts, and statuses only: no temporary config paths, command arguments, endpoint URLs, auth refs, prompts, reply text, provider output, tokens, or log tails.
+
 Use `--json` when another script needs machine-readable evidence:
 
 ```bash

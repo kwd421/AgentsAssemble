@@ -666,6 +666,30 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.timeout, 8.0)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_session_smoke_parses_operator_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "session-smoke",
+                "--server",
+                "http://room.local",
+                "--group-id",
+                "session-smoke",
+                "--meeting-id",
+                "session-smoke-meeting",
+                "--timeout",
+                "8",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "session-smoke")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.group_id, "session-smoke")
+        self.assertEqual(args.meeting_id, "session-smoke-meeting")
+        self.assertEqual(args.timeout, 8.0)
+        self.assertTrue(args.as_json)
+
     def test_live_agent_doctor_parses_operator_options(self):
         args = build_parser().parse_args(
             [
@@ -2380,6 +2404,72 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("official round smoke ok: round-smoke", stdout.getvalue())
         self.assertIn("3 answered, 0 timed out, 0 skipped", stdout.getvalue())
+
+    def test_live_agent_session_smoke_posts_endpoint_and_prints_summary(self):
+        payload = {
+            "status": "ok",
+            "meeting_id": "session-smoke-meeting",
+            "group_id": "session-smoke",
+            "rounds_status": "answered",
+            "answered_round_count": 1,
+            "expected_reply_count": 3,
+            "reply_count": 3,
+            "start_status": "ready",
+            "check_status": "ready",
+            "restart_status": "ready",
+            "stop_status": "stopped",
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-smoke",
+                        "--server",
+                        "http://room.local",
+                        "--group-id",
+                        "session-smoke",
+                        "--meeting-id",
+                        "session-smoke-meeting",
+                        "--timeout",
+                        "8",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-session-smoke",
+            method="POST",
+            payload={"group_id": "session-smoke", "meeting_id": "session-smoke-meeting", "timeout": 8.0},
+            timeout_seconds=46.0,
+        )
+        output = stdout.getvalue()
+        self.assertIn("resident session smoke ok: session-smoke-meeting", output)
+        self.assertIn("rounds answered (1 answered)", output)
+        self.assertIn("3/3 replies", output)
+        self.assertIn("start ready, check ready, restart ready, stop stopped", output)
+
+    def test_live_agent_session_smoke_returns_failure_for_non_ok_status(self):
+        payload = {
+            "status": "failed",
+            "meeting_id": "session-smoke-meeting",
+            "group_id": "session-smoke",
+            "rounds_status": "answered",
+            "answered_round_count": 1,
+            "expected_reply_count": 3,
+            "reply_count": 1,
+            "start_status": "ready",
+            "check_status": "ready",
+            "restart_status": "",
+            "stop_status": "stopped",
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "session-smoke", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 1)
 
     def test_live_agent_doctor_json_exits_one_when_not_ready(self):
         payload = {

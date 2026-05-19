@@ -50,6 +50,7 @@ def start_live_agent_session(
     max_restarts: int = 0,
     restart_backoff_seconds: float = 5.0,
     stale_restart_after_seconds: float = 0.0,
+    diagnostic: bool = False,
     preflight_checker: Callable[..., dict[str, object]] | None = None,
 ) -> dict[str, object]:
     preflight = (preflight_checker or preflight_live_agent_config)(
@@ -75,6 +76,8 @@ def start_live_agent_session(
         meeting_id=meeting_id,
     )
     clean_meeting_id = str(started_meeting.get("meeting_id") or "")
+    if diagnostic:
+        _mark_expected_agents_diagnostic(output_root, expected_agent_ids)
     try:
         group = process_supervisor.start_group(
             config_path=live_agent_config_path,
@@ -84,6 +87,7 @@ def start_live_agent_session(
             max_restarts=max_restarts,
             restart_backoff_seconds=restart_backoff_seconds,
             stale_restart_after_seconds=stale_restart_after_seconds,
+            diagnostic=diagnostic,
         )
     except Exception as error:
         raise LiveAgentSessionStartError(
@@ -495,6 +499,11 @@ def _meeting_bindings_by_agent_id(meeting: dict[str, object]) -> dict[str, dict[
         for binding in bindings
         if isinstance(binding, dict) and str(binding.get("agent_id") or "")
     }
+
+
+def _mark_expected_agents_diagnostic(output_root: Path, expected_agent_ids: list[str]) -> None:
+    for agent_id in expected_agent_ids:
+        connect_live_agent(output_root, {"agent_id": agent_id, "diagnostic": True})
 
 
 def _mark_bound_agents_offline(

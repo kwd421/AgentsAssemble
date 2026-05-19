@@ -18,6 +18,7 @@ from agentsassemble.meeting_events import write_live_state
 RequestJson = Callable[..., dict[str, object]]
 SMOKE_BRIDGE_TOKEN = "agentsassemble-smoke-token"
 OFFICIAL_ROUND_SMOKE_ROUND_ID = "official_round_smoke"
+SESSION_SMOKE_ROUND_ID = "session_smoke_round"
 SMOKE_GROUP_ID_LIMIT = 48
 
 
@@ -278,6 +279,177 @@ def run_live_agent_official_round_smoke(
     )
 
 
+def run_live_agent_session_smoke(
+    *,
+    server: str,
+    group_id: str = "",
+    meeting_id: str = "",
+    timeout_seconds: float = 12.0,
+    request_json: RequestJson,
+    output_root: Path | None = None,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    python_executable: str = sys.executable,
+    temp_dir_factory: Callable[[], object] = tempfile.TemporaryDirectory,
+) -> dict[str, object]:
+    clean_group_id = smoke_group_id(group_id) if group_id else smoke_group_id(f"session-smoke-{int(time.time() * 1000)}")
+    clean_meeting_id = smoke_group_id(meeting_id) if meeting_id else smoke_group_id(f"session-{clean_group_id}")
+    agent_ids = {
+        "local_cli": f"{clean_group_id}-local-cli",
+        "live_session": f"{clean_group_id}-live-session",
+        "remote_bridge": f"{clean_group_id}-remote-bridge",
+    }
+    role_ids = {
+        "local_cli": "session_smoke_local_cli",
+        "live_session": "session_smoke_live_session",
+        "remote_bridge": "session_smoke_remote_bridge",
+    }
+    expected_messages = {
+        agent_ids["local_cli"]: "session smoke local_cli ok",
+        agent_ids["live_session"]: "session smoke live_session ok",
+        agent_ids["remote_bridge"]: "session smoke remote_bridge ok",
+    }
+    start_result: dict[str, object] = {}
+    rounds_result: dict[str, object] = {}
+    check_result: dict[str, object] = {}
+    restart_result: dict[str, object] = {}
+    stop_result: dict[str, object] = {}
+    replies: list[dict[str, object]] = []
+    probe_event_id = ""
+    with _SmokeRemoteBridgeServer(response_message=expected_messages[agent_ids["remote_bridge"]]) as bridge:
+        with temp_dir_factory() as temp_dir:
+            temp_root = Path(temp_dir).resolve()
+            council_config_path = temp_root / "council.json"
+            agent_config_path = temp_root / "agents.json"
+            live_agent_config_path = temp_root / "live-agents.json"
+            _write_session_smoke_configs(
+                council_config_path=council_config_path,
+                agent_config_path=agent_config_path,
+                live_agent_config_path=live_agent_config_path,
+                server=server,
+                meeting_id=clean_meeting_id,
+                agent_ids=agent_ids,
+                role_ids=role_ids,
+                expected_messages=expected_messages,
+                python_executable=python_executable,
+                bridge_endpoint=bridge["endpoint"],
+                bridge_auth_ref=bridge["auth_ref"],
+            )
+            try:
+                start_result = request_json(
+                    _server_url(server, "/api/live-agent-sessions/start"),
+                    method="POST",
+                    payload={
+                        "meeting_id": clean_meeting_id,
+                        "group_id": clean_group_id,
+                        "council_config_path": str(council_config_path),
+                        "agent_config_path": str(agent_config_path),
+                        "live_agent_config_path": str(live_agent_config_path),
+                        "connect_timeout_seconds": float(timeout_seconds),
+                        "diagnostic": True,
+                    },
+                    timeout_seconds=_smoke_operation_http_timeout(float(timeout_seconds)),
+                )
+                if start_result.get("status") != "ready":
+                    raise LiveAgentSmokeFailed("Session smoke start did not become ready.")
+                _mark_session_smoke_meeting_diagnostic(output_root, clean_meeting_id)
+                rounds_result = request_json(
+                    _server_url(
+                        server,
+                        f"/api/meetings/{urllib.parse.quote(clean_meeting_id, safe='')}/live-agent-turns/rounds",
+                    ),
+                    method="POST",
+                    payload={
+                        "max_rounds": 1,
+                        "timeout_seconds": float(timeout_seconds),
+                        "stop_on_timeout": False,
+                    },
+                    timeout_seconds=_smoke_operation_http_timeout(float(timeout_seconds), windows=4),
+                )
+                if rounds_result.get("status") != "answered" or _nonnegative_int(rounds_result.get("answered_round_count")) < 1:
+                    raise LiveAgentSmokeFailed("Session smoke official round did not answer.")
+                _set_session_smoke_engagement(server, agent_ids.values(), request_json=request_json)
+                probe_response = request_json(
+                    _server_url(server, "/api/lobby"),
+                    method="POST",
+                    payload={
+                        "name": "AgentsAssemble Session Smoke",
+                        "side": "mine",
+                        "message": f"live-agent session-smoke {clean_group_id} {int(time.time() * 1000)}",
+                    },
+                )
+                probe_event_id = _event_id(probe_response)
+                replies = wait_for_smoke_replies(
+                    server,
+                    expected_messages=expected_messages,
+                    source_event_id=probe_event_id,
+                    request_json=request_json,
+                    sleep_fn=sleep_fn,
+                    timeout_seconds=float(timeout_seconds),
+                )
+                check_result = request_json(
+                    _server_url(server, "/api/live-agent-sessions/check"),
+                    method="POST",
+                    payload={"meeting_id": clean_meeting_id, "group_id": clean_group_id},
+                    timeout_seconds=10.0,
+                )
+                if check_result.get("status") != "ready":
+                    raise LiveAgentSmokeFailed("Session smoke check did not report ready.")
+                restart_result = request_json(
+                    _server_url(server, "/api/live-agent-sessions/restart"),
+                    method="POST",
+                    payload={
+                        "meeting_id": clean_meeting_id,
+                        "group_id": clean_group_id,
+                        "connect_timeout_seconds": float(timeout_seconds),
+                    },
+                    timeout_seconds=_smoke_operation_http_timeout(float(timeout_seconds)),
+                )
+                if restart_result.get("status") != "ready":
+                    raise LiveAgentSmokeFailed("Session smoke restart did not become ready.")
+            finally:
+                try:
+                    stop_result = request_json(
+                        _server_url(server, "/api/live-agent-sessions/stop"),
+                        method="POST",
+                        payload={"meeting_id": clean_meeting_id, "group_id": clean_group_id},
+                        timeout_seconds=20.0,
+                    )
+                except Exception:
+                    if start_result:
+                        raise
+
+    safe_replies = [
+        {
+            "id": str(reply.get("id") or ""),
+            "actor_id": str(reply.get("actor_id") or ""),
+            "source_event_id": str(reply.get("source_event_id") or ""),
+            "live_agent_endpoint": reply.get("live_agent_endpoint") is True,
+        }
+        for reply in replies
+    ]
+    return {
+        "status": "ok" if stop_result.get("status") == "stopped" else "failed",
+        "meeting_id": clean_meeting_id,
+        "group_id": clean_group_id,
+        "agent_ids": list(agent_ids.values()),
+        "source_event_id": probe_event_id,
+        "rounds_status": str(rounds_result.get("status") or ""),
+        "round_count": _nonnegative_int(rounds_result.get("round_count")),
+        "answered_round_count": _nonnegative_int(rounds_result.get("answered_round_count")),
+        "completed_round_count": _nonnegative_int(rounds_result.get("completed_round_count")),
+        "timeout_round_count": _nonnegative_int(rounds_result.get("timeout_round_count")),
+        "skipped_round_count": _nonnegative_int(rounds_result.get("skipped_round_count")),
+        "stopped_round_count": _nonnegative_int(rounds_result.get("stopped_round_count")),
+        "expected_reply_count": len(expected_messages),
+        "reply_count": len(safe_replies),
+        "replies": safe_replies,
+        "start_status": str(start_result.get("status") or ""),
+        "check_status": str(check_result.get("status") or ""),
+        "restart_status": str(restart_result.get("status") or ""),
+        "stop_status": str(stop_result.get("status") or ""),
+    }
+
+
 def build_live_agent_official_round_smoke_config(
     *,
     server: str,
@@ -305,6 +477,260 @@ def build_live_agent_official_round_smoke_config(
         agent["engagement_mode"] = "moderator_called"
         agent["meeting_id"] = meeting_id
     return config
+
+
+def _write_session_smoke_configs(
+    *,
+    council_config_path: Path,
+    agent_config_path: Path,
+    live_agent_config_path: Path,
+    server: str,
+    meeting_id: str,
+    agent_ids: dict[str, str],
+    role_ids: dict[str, str],
+    expected_messages: dict[str, str],
+    python_executable: str,
+    bridge_endpoint: str,
+    bridge_auth_ref: str,
+) -> None:
+    council_config_path.parent.mkdir(parents=True, exist_ok=True)
+    council_config_path.write_text(
+        json.dumps(
+            {
+                "topic": "Resident session smoke",
+                "question": "Can credential-free resident agents start, auto-reply, restart, and stop?",
+                "roles": [
+                    {
+                        "id": role_ids["local_cli"],
+                        "display_name": "Session Smoke Local CLI",
+                        "lens": "Credential-free resident session smoke through a local CLI process.",
+                        "research_focus": "Verify resident session start, official turn, and lobby auto-reply through local_cli.",
+                    },
+                    {
+                        "id": role_ids["live_session"],
+                        "display_name": "Session Smoke Live Session",
+                        "lens": "Credential-free resident session smoke through a persistent JSONL live session.",
+                        "research_focus": "Verify the resident live_session transport survives official and lobby turns.",
+                    },
+                    {
+                        "id": role_ids["remote_bridge"],
+                        "display_name": "Session Smoke Remote Bridge",
+                        "lens": "Credential-free resident session smoke through a loopback remote bridge.",
+                        "research_focus": "Verify a remote_bridge resident participates without exposing bridge credentials.",
+                    },
+                ],
+                "meeting_template": {
+                    "id": "session_smoke",
+                    "display_name": "Session Smoke",
+                    "rounds": [
+                        {
+                            "id": SESSION_SMOKE_ROUND_ID,
+                            "title": "Session Smoke Round",
+                            "instruction": "Return one concise credential-free smoke reply.",
+                            "turn_control": {"selection": "all_roles"},
+                        }
+                    ],
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    agent_config_path.write_text(
+        json.dumps(
+            {
+                "providers": [
+                    {
+                        "id": "session-smoke-local",
+                        "kind": "local_cli",
+                        "display_name": "Session Smoke Local CLI",
+                        "command": [python_executable, "-c", "import sys; sys.stdin.read(); print('session smoke provider ready')"],
+                    },
+                    {
+                        "id": "session-smoke-bridge",
+                        "kind": "remote_http_bridge",
+                        "display_name": "Session Smoke Remote Bridge",
+                        "endpoint": bridge_endpoint,
+                        "auth_ref": bridge_auth_ref,
+                    }
+                ],
+                "permission_profiles": [
+                    {
+                        "id": "meeting_readonly",
+                        "meeting_read": True,
+                        "lobby_chat": True,
+                        "official_turn": True,
+                        "web_search": False,
+                        "tool_use": False,
+                        "filesystem_read": False,
+                        "filesystem_write": False,
+                        "git_write": False,
+                        "push": False,
+                        "secrets": False,
+                        "implementation": False,
+                    }
+                ],
+                "agent_bindings": [
+                    {
+                        "agent_id": agent_ids["local_cli"],
+                        "role_id": role_ids["local_cli"],
+                        "owner_id": "session-smoke",
+                        "provider_id": "session-smoke-local",
+                        "model_id": "local-cli",
+                        "permission_profile_id": "meeting_readonly",
+                        "join_mode": "fresh",
+                    },
+                    {
+                        "agent_id": agent_ids["live_session"],
+                        "role_id": role_ids["live_session"],
+                        "owner_id": "session-smoke",
+                        "provider_id": "session-smoke-local",
+                        "model_id": "local-cli",
+                        "permission_profile_id": "meeting_readonly",
+                        "join_mode": "fresh",
+                    },
+                    {
+                        "agent_id": agent_ids["remote_bridge"],
+                        "role_id": role_ids["remote_bridge"],
+                        "owner_id": "session-smoke",
+                        "provider_id": "session-smoke-bridge",
+                        "model_id": "remote-bridge",
+                        "permission_profile_id": "meeting_readonly",
+                        "join_mode": "fresh",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    live_agent_config_path.write_text(
+        json.dumps(
+            {
+                "server": server,
+                "poll_interval": 0.05,
+                "heartbeat_interval": 0,
+                "cooldown": 0,
+                "max_chain_depth": 0,
+                "agents": [
+                    _session_smoke_agent_config(
+                        agent_id=agent_ids["local_cli"],
+                        display_name="Session Smoke Local CLI",
+                        provider_kind="local_cli",
+                        connection_kind="local_cli",
+                        meeting_id=meeting_id,
+                        message=expected_messages[agent_ids["local_cli"]],
+                        python_executable=python_executable,
+                    ),
+                    _session_smoke_agent_config(
+                        agent_id=agent_ids["live_session"],
+                        display_name="Session Smoke Live Session",
+                        provider_kind="local_cli",
+                        connection_kind="live_session",
+                        meeting_id=meeting_id,
+                        message=expected_messages[agent_ids["live_session"]],
+                        python_executable=python_executable,
+                    ),
+                    _session_smoke_agent_config(
+                        agent_id=agent_ids["remote_bridge"],
+                        display_name="Session Smoke Remote Bridge",
+                        provider_kind="remote_http_bridge",
+                        connection_kind="remote_bridge",
+                        meeting_id=meeting_id,
+                        message=expected_messages[agent_ids["remote_bridge"]],
+                        python_executable=python_executable,
+                        bridge_endpoint=bridge_endpoint,
+                        bridge_auth_ref=bridge_auth_ref,
+                    ),
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _mark_session_smoke_meeting_diagnostic(output_root: Path | None, meeting_id: str) -> None:
+    if output_root is None:
+        return
+    live_state_path = output_root / "meetings" / meeting_id / "live_state.json"
+    if not live_state_path.exists():
+        return
+    try:
+        data = json.loads(live_state_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return
+    if not isinstance(data, dict):
+        return
+    data["diagnostic"] = True
+    data["diagnostic_kind"] = "session_smoke"
+    write_live_state(live_state_path.parent, data)
+
+
+def _session_smoke_agent_config(
+    *,
+    agent_id: str,
+    display_name: str,
+    provider_kind: str,
+    connection_kind: str,
+    meeting_id: str,
+    message: str,
+    python_executable: str,
+    bridge_endpoint: str = "",
+    bridge_auth_ref: str = "",
+) -> dict[str, object]:
+    if connection_kind == "remote_bridge":
+        return {
+            "agent_id": agent_id,
+            "display_name": display_name,
+            "provider_kind": provider_kind,
+            "connection_kind": "remote_bridge",
+            "meeting_id": meeting_id,
+            "engagement_mode": "moderator_called",
+            "endpoint": bridge_endpoint,
+            "auth_ref": bridge_auth_ref,
+            "timeout_seconds": 5,
+        }
+    if connection_kind == "live_session":
+        script = "\n".join(
+            [
+                "import json, sys",
+                "for line in sys.stdin:",
+                "    payload = json.loads(line)",
+                f"    print(json.dumps({{'request_id': payload['request_id'], 'message': {message!r}}}), flush=True)",
+            ]
+        )
+        command = [python_executable, "-u", "-c", script]
+    else:
+        script = f"import sys; sys.stdin.read(); print({message!r})"
+        command = [python_executable, "-c", script]
+    return {
+        "agent_id": agent_id,
+        "display_name": display_name,
+        "provider_kind": provider_kind,
+        "connection_kind": connection_kind,
+        "meeting_id": meeting_id,
+        "engagement_mode": "moderator_called",
+        "command": command,
+        "timeout_seconds": 5,
+    }
+
+
+def _set_session_smoke_engagement(
+    server: str,
+    agent_ids: object,
+    *,
+    request_json: RequestJson,
+) -> None:
+    for agent_id in agent_ids:
+        request_json(
+            _server_url(server, f"/api/live-agents/{urllib.parse.quote(str(agent_id), safe='')}/engagement"),
+            method="POST",
+            payload={"engagement_mode": "always"},
+        )
 
 
 def seed_official_round_smoke_agents(
@@ -612,13 +1038,15 @@ def _is_ascii_group_id_char(char: str) -> bool:
 
 
 class _SmokeRemoteBridgeServer:
-    def __init__(self, token: str = SMOKE_BRIDGE_TOKEN) -> None:
+    def __init__(self, token: str = SMOKE_BRIDGE_TOKEN, response_message: str = "smoke remote_bridge ok") -> None:
         self.token = token
+        self.response_message = response_message
         self.server: ThreadingHTTPServer | None = None
         self.thread: threading.Thread | None = None
 
     def __enter__(self) -> dict[str, str]:
         token = self.token
+        response_message = self.response_message
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
@@ -635,7 +1063,7 @@ class _SmokeRemoteBridgeServer:
                     self.rfile.read(length)
                 body = json.dumps(
                     {
-                        "text": json.dumps({"message": "smoke remote_bridge ok", "kind": "message"}),
+                        "text": json.dumps({"message": response_message, "kind": "message"}),
                         "metadata": {"bridge": "smoke-remote-bridge"},
                     },
                     ensure_ascii=False,

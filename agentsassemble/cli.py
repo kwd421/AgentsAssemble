@@ -359,6 +359,16 @@ def build_parser() -> argparse.ArgumentParser:
     live_smoke.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait for fake agent replies.")
     live_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable smoke result.")
 
+    live_session_smoke = live_agent_subparsers.add_parser(
+        "session-smoke",
+        parents=[live_server],
+        help="Run a credential-free resident session start/reply/check/restart/stop smoke.",
+    )
+    live_session_smoke.add_argument("--group-id", default="", help="Optional supervised process group id for the smoke run.")
+    live_session_smoke.add_argument("--meeting-id", default="", help="Optional resident meeting id for the smoke run.")
+    live_session_smoke.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait for fake session readiness and replies.")
+    live_session_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable session smoke result.")
+
     live_official_round_smoke = live_agent_subparsers.add_parser(
         "official-round-smoke",
         parents=[live_server],
@@ -624,6 +634,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_preflight(args)
         if args.live_agent_command == "smoke":
             return _run_live_agent_smoke(args)
+        if args.live_agent_command == "session-smoke":
+            return _run_live_agent_session_smoke(args)
         if args.live_agent_command == "official-round-smoke":
             return _run_live_agent_official_round_smoke(args)
         if args.live_agent_command == "doctor":
@@ -1240,6 +1252,24 @@ def _run_live_agent_smoke(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_live_agent_session_smoke(args: argparse.Namespace) -> int:
+    result = _request_json(
+        _server_url(args.server, "/api/live-agent-session-smoke"),
+        method="POST",
+        payload={
+            "group_id": str(args.group_id or ""),
+            "meeting_id": str(args.meeting_id or ""),
+            "timeout": float(args.timeout),
+        },
+        timeout_seconds=_operation_http_timeout(float(args.timeout), windows=5),
+    )
+    if args.as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_session_smoke(result))
+    return 0 if result.get("status") == "ok" else 1
+
+
 def _run_live_agent_official_round_smoke(args: argparse.Namespace) -> int:
     result = _request_json(
         _server_url(args.server, "/api/live-agent-official-round-smoke"),
@@ -1258,6 +1288,21 @@ def _run_live_agent_official_round_smoke(args: argparse.Namespace) -> int:
             f"{result.get('skipped_count', 0)} skipped)"
         )
     return 0 if result.get("status") == "ok" else 1
+
+
+def _format_live_agent_session_smoke(result: dict[str, object]) -> str:
+    return (
+        f"resident session smoke {result.get('status') or 'unknown'}: "
+        f"{result.get('meeting_id') or 'session-smoke'} "
+        f"group {result.get('group_id') or 'session-smoke'}; "
+        f"rounds {result.get('rounds_status') or 'unknown'} "
+        f"({result.get('answered_round_count', 0)} answered); "
+        f"{result.get('reply_count', 0)}/{result.get('expected_reply_count', 0)} replies; "
+        f"start {result.get('start_status') or 'unknown'}, "
+        f"check {result.get('check_status') or 'unknown'}, "
+        f"restart {result.get('restart_status') or 'unknown'}, "
+        f"stop {result.get('stop_status') or 'unknown'}"
+    )
 
 
 def _run_live_agent_doctor(args: argparse.Namespace) -> int:
