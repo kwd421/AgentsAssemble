@@ -4517,6 +4517,24 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.max_ticks, 0)
         self.assertEqual(args.resident_command, ["claude", "-p"])
 
+    def test_live_agent_run_parser_rejects_invalid_resident_bounds(self):
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            with self.assertRaises(SystemExit) as raised:
+                build_parser().parse_args(["live-agent", "run", "--agent-id", "agent-a", "--max-ticks", "-1"])
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("value must be non-negative", stderr.getvalue())
+
+    def test_live_agent_run_parser_rejects_non_finite_timing(self):
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            with self.assertRaises(SystemExit) as raised:
+                build_parser().parse_args(["live-agent", "run", "--agent-id", "agent-a", "--poll-interval", "nan"])
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("value must be a finite non-negative number", stderr.getvalue())
+
     def test_live_agent_run_accepts_live_session_connection_kind(self):
         args = build_parser().parse_args(
             [
@@ -4591,6 +4609,17 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.live_agent_command, "run-group")
         self.assertEqual(args.config, "configs/live-agents.example.json")
         self.assertEqual(args.max_ticks, 2)
+
+    def test_live_agent_run_group_rejects_negative_tick_bound(self):
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            with self.assertRaises(SystemExit) as raised:
+                build_parser().parse_args(
+                    ["live-agent", "run-group", "--config", "configs/live-agents.example.json", "--max-ticks", "-1"]
+                )
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("value must be non-negative", stderr.getvalue())
 
     def test_live_agent_run_group_accepts_server_override(self):
         args = build_parser().parse_args(

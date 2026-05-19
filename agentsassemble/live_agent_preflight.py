@@ -19,6 +19,7 @@ from agentsassemble.live_agent_runner import (
     SUPPORTED_RESIDENT_CONNECTION_KINDS,
     live_agent_command_parts,
     live_agent_nonnegative_float,
+    live_agent_nonnegative_int,
     resident_connection_kind_error,
 )
 from agentsassemble.remote_bridge_config import remote_bridge_auth_ref_available, remote_bridge_endpoint_error
@@ -170,8 +171,8 @@ def _load_preflight_configs(path: Path, *, server_override: str | None = None) -
         "poll_interval": live_agent_nonnegative_float(data.get("poll_interval"), 2.0, "poll_interval"),
         "heartbeat_interval": live_agent_nonnegative_float(data.get("heartbeat_interval"), 30.0, "heartbeat_interval"),
         "cooldown": live_agent_nonnegative_float(data.get("cooldown"), 5.0, "cooldown"),
-        "max_chain_depth": int(data.get("max_chain_depth", 1)),
-        "max_ticks": int(data.get("max_ticks", 0)),
+        "max_chain_depth": live_agent_nonnegative_int(data.get("max_chain_depth"), 1, "max_chain_depth"),
+        "max_ticks": live_agent_nonnegative_int(data.get("max_ticks"), 0, "max_ticks"),
     }
     agents = data.get("agents")
     if not isinstance(agents, list) or not agents:
@@ -218,8 +219,12 @@ def _preflight_config_from_mapping(
             "heartbeat_interval",
         ),
         cooldown=live_agent_nonnegative_float(data.get("cooldown"), defaults["cooldown"], "cooldown"),
-        max_chain_depth=int(_value_or_default(data.get("max_chain_depth"), defaults["max_chain_depth"])),
-        max_ticks=int(data.get("max_ticks") if data.get("max_ticks") is not None else defaults["max_ticks"]),
+        max_chain_depth=live_agent_nonnegative_int(
+            data.get("max_chain_depth"),
+            defaults["max_chain_depth"],
+            "max_chain_depth",
+        ),
+        max_ticks=live_agent_nonnegative_int(data.get("max_ticks"), defaults["max_ticks"], "max_ticks"),
     )
 
 

@@ -1239,6 +1239,34 @@ class LiveAgentRunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Live agent cooldown must be a finite non-negative number."):
                 load_group_configs(path)
 
+    def test_group_config_rejects_invalid_integer_limits(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {"agent_id": "agent-a", "command": ["python3"], "max_chain_depth": 1.5},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "Live agent max_chain_depth must be a non-negative integer."):
+                load_group_configs(path)
+
+    def test_group_config_rejects_negative_max_ticks_override(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps({"agents": [{"agent_id": "agent-a", "command": ["python3"]}]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "Live agent max_ticks must be a non-negative integer."):
+                load_group_configs(path, max_ticks_override=-1)
+
     def test_group_config_preserves_live_session_connection_kind(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "live-agents.json"

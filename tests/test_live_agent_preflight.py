@@ -350,6 +350,26 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 "Live agent heartbeat_interval must be a finite non-negative number.",
             )
 
+    def test_preflight_rejects_invalid_integer_limits(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "max_ticks": -1,
+                        "agents": [{"agent_id": "agent-a", "command": ["python3"]}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(config_path, command_resolver=lambda command: "/usr/bin/python3")
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 0, "failed_agents": 0, "checks_failed": 1})
+            self.assertEqual(report["checks"][0]["id"], "config_load")
+            self.assertEqual(report["checks"][0]["message"], "Live agent max_ticks must be a non-negative integer.")
+
     def test_preflight_accepts_remote_bridge_without_command_and_checks_endpoint_auth_ref(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"

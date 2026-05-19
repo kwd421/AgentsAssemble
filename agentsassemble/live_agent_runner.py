@@ -612,11 +612,11 @@ def load_group_configs(
         "poll_interval": live_agent_nonnegative_float(data.get("poll_interval"), 2.0, "poll_interval"),
         "heartbeat_interval": live_agent_nonnegative_float(data.get("heartbeat_interval"), 30.0, "heartbeat_interval"),
         "cooldown": live_agent_nonnegative_float(data.get("cooldown"), 5.0, "cooldown"),
-        "max_chain_depth": int(data.get("max_chain_depth", 1)),
-        "max_ticks": int(data.get("max_ticks", 0)),
+        "max_chain_depth": live_agent_nonnegative_int(data.get("max_chain_depth"), 1, "max_chain_depth"),
+        "max_ticks": live_agent_nonnegative_int(data.get("max_ticks"), 0, "max_ticks"),
     }
     if max_ticks_override is not None:
-        defaults["max_ticks"] = max_ticks_override
+        defaults["max_ticks"] = live_agent_nonnegative_int(max_ticks_override, 0, "max_ticks")
     agents = data.get("agents")
     if not isinstance(agents, list) or not agents:
         raise ValueError("Live agent group config requires a non-empty agents list.")
@@ -694,8 +694,12 @@ def _config_from_mapping(
             "heartbeat_interval",
         ),
         cooldown=live_agent_nonnegative_float(data.get("cooldown"), defaults["cooldown"], "cooldown"),
-        max_chain_depth=int(_value_or_default(data.get("max_chain_depth"), defaults["max_chain_depth"])),
-        max_ticks=int(data.get("max_ticks") if data.get("max_ticks") is not None else defaults["max_ticks"]),
+        max_chain_depth=live_agent_nonnegative_int(
+            data.get("max_chain_depth"),
+            defaults["max_chain_depth"],
+            "max_chain_depth",
+        ),
+        max_ticks=live_agent_nonnegative_int(data.get("max_ticks"), defaults["max_ticks"], "max_ticks"),
     )
 
 
@@ -719,6 +723,26 @@ def live_agent_nonnegative_float(value: object, default: int | float, field_name
         raise ValueError(f"Live agent {field_name} must be a finite non-negative number.") from None
     if not math.isfinite(parsed) or parsed < 0:
         raise ValueError(f"Live agent {field_name} must be a finite non-negative number.")
+    return parsed
+
+
+def live_agent_nonnegative_int(value: object, default: int, field_name: str) -> int:
+    raw_value = default if value is None else value
+    if isinstance(raw_value, bool):
+        raise ValueError(f"Live agent {field_name} must be a non-negative integer.")
+    if isinstance(raw_value, int):
+        parsed = raw_value
+    elif isinstance(raw_value, float):
+        if not math.isfinite(raw_value) or not raw_value.is_integer():
+            raise ValueError(f"Live agent {field_name} must be a non-negative integer.")
+        parsed = int(raw_value)
+    else:
+        try:
+            parsed = int(raw_value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Live agent {field_name} must be a non-negative integer.") from None
+    if parsed < 0:
+        raise ValueError(f"Live agent {field_name} must be a non-negative integer.")
     return parsed
 
 
