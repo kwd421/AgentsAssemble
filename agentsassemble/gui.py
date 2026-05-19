@@ -1440,6 +1440,9 @@ def _agent_connection_evidence(group: dict[str, object], agents: list[dict[str, 
         if group_meeting_id and str(agent.get("meeting_id") or "") != group_meeting_id:
             attention.append({"agent_id": agent_id, "status": "wrong_meeting"})
             continue
+        if _agent_last_seen_before_group_start(agent, group):
+            attention.append({"agent_id": agent_id, "status": "not_reconnected"})
+            continue
         status = str(agent.get("status") or "offline")
         if status in {"online", "working"}:
             connected += 1
@@ -1448,6 +1451,26 @@ def _agent_connection_evidence(group: dict[str, object], agents: list[dict[str, 
             status = "offline"
         attention.append({"agent_id": agent_id, "status": status})
     return {"expected": expected, "connected": connected, "attention": attention}
+
+
+def _agent_last_seen_before_group_start(agent: dict[str, object], group: dict[str, object]) -> bool:
+    group_started_at = _parse_public_timestamp(group.get("started_at"))
+    agent_last_seen_at = _parse_public_timestamp(agent.get("last_seen_at"))
+    if group_started_at is None or agent_last_seen_at is None:
+        return False
+    return agent_last_seen_at < group_started_at
+
+
+def _parse_public_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _diagnostic_agent_group_ids(agents: list[dict[str, object]]) -> set[str]:

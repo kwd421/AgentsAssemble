@@ -2738,6 +2738,50 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(connection["connected"], 0)
         self.assertEqual(connection["attention"], [{"agent_id": "agent-a", "status": "wrong_meeting"}])
 
+    def test_live_agent_process_connection_evidence_requires_presence_after_group_start(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                return [
+                    {
+                        "group_id": "crew",
+                        "status": "running",
+                        "started_at": "2999-01-01T00:01:00+00:00",
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "status": "online",
+                                "last_seen_at": "2999-01-01T00:00:00+00:00",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-processes", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        connection = payload["groups"][0]["agent_connection"]
+        self.assertEqual(connection["expected"], 1)
+        self.assertEqual(connection["connected"], 0)
+        self.assertEqual(connection["attention"], [{"agent_id": "agent-a", "status": "not_reconnected"}])
+
     def test_live_agent_process_connection_evidence_is_not_persisted_by_real_supervisor(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -2892,6 +2936,50 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(payload["connections"]["expected"], 1)
         self.assertEqual(payload["connections"]["connected"], 0)
         self.assertEqual(payload["connections"]["attention"], ["crew:agent-a:wrong_meeting"])
+
+    def test_live_agent_health_degrades_when_manifest_agent_has_not_reconnected_after_group_start(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "crew",
+                        "status": "running",
+                        "started_at": "2999-01-01T00:01:00+00:00",
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "status": "working",
+                                "last_seen_at": "2999-01-01T00:00:00+00:00",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["connections"]["expected"], 1)
+        self.assertEqual(payload["connections"]["connected"], 0)
+        self.assertEqual(payload["connections"]["attention"], ["crew:agent-a:not_reconnected"])
 
     def test_live_agent_health_ignores_diagnostic_connection_gaps(self):
         class FakeSupervisor:

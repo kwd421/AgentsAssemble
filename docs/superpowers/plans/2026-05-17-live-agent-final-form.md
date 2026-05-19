@@ -1892,6 +1892,41 @@ Document that bridge request failures, command timeouts, and non-zero bridge com
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 58: Process Connection Freshness Evidence
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_gui_server.py`
+
+- [x] **Step 1: Add RED coverage for pre-start presence reuse**
+
+Cover `/api/live-agent-processes` and `/api/live-agent-health` with a running process group whose manifest agent has `online` or `working` presence, but that presence row's `last_seen_at` is older than the group's `started_at`. The process connection and health summaries must not count that agent as connected.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_gui_server.GuiServerTests.test_live_agent_process_connection_evidence_requires_presence_after_group_start \
+  tests.test_gui_server.GuiServerTests.test_live_agent_health_degrades_when_manifest_agent_has_not_reconnected_after_group_start
+```
+
+Expected: fail before implementation because manifest connection evidence only checks current status and meeting id.
+
+- [x] **Step 2: Require fresh presence for process connection proof**
+
+Parse public ISO timestamps from `started_at` and `last_seen_at`. When both are present and the presence heartbeat is older than the process start, report the manifest agent as `not_reconnected` and do not increment the connected count. Keep legacy rows without comparable timestamps on the existing status-based path.
+
+Run the Step 1 command plus existing manifest connection evidence tests.
+Expected: pass.
+
+- [x] **Step 3: Document not-reconnected attention**
+
+Document that `not_reconnected` means a presence row predates the supervised process start and therefore cannot prove the fresh resident process attached after restart or recovery.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification
