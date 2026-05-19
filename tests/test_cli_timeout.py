@@ -233,6 +233,63 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("claude-code-live", stdout.getvalue())
 
+    def test_live_agent_register_json_prints_registration_acknowledgement(self):
+        stdout = StringIO()
+        response = {
+            "status": "registered",
+            "agent": {
+                "agent_id": "claude-code-live",
+                "status": "online",
+                "meeting_id": "server-m1",
+                "session_id": "server-session-1",
+                "engagement_mode": "manual",
+            },
+            "server_clock": "2026-05-19T00:00:00+00:00",
+        }
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "register",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-code-live",
+                        "--display-name",
+                        "Claude Code Live",
+                        "--provider-kind",
+                        "claude_code",
+                        "--connection-kind",
+                        "local_cli",
+                        "--meeting-id",
+                        "m1",
+                        "--session-id",
+                        "session-1",
+                        "--engagement-mode",
+                        "watch",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents",
+            method="POST",
+            payload={
+                "agent_id": "claude-code-live",
+                "display_name": "Claude Code Live",
+                "provider_kind": "claude_code",
+                "connection_kind": "local_cli",
+                "session_id": "session-1",
+                "endpoint": "",
+                "meeting_id": "m1",
+                "engagement_mode": "watch",
+                "capabilities": ["room_chat", "mentions"],
+            },
+        )
+        self.assertEqual(json.loads(stdout.getvalue()), response)
+
     def test_live_agent_register_accepts_live_session_connection_kind(self):
         args = build_parser().parse_args(
             [

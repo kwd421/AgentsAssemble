@@ -94,6 +94,23 @@ Changing engagement mode updates `live_agents.json`, `/api/live-agents`, and `/a
 
 Resident runners read the current room presence on every poll and use that roster `engagement_mode` before falling back to their startup config. Re-registration and heartbeat updates preserve an operator-selected mode instead of silently clobbering it. `watch` and `manual` observe new lobby events and advance `last_observed_event_id` without posting replies, so switching an agent back to an active mode does not replay the backlog.
 
+External or manually driven agents can register through the same room control plane before they begin polling:
+
+```bash
+python3 -m agentsassemble.cli live-agent register \
+  --server http://127.0.0.1:8765 \
+  --agent-id claude-code-live \
+  --display-name "Claude Code Live" \
+  --provider-kind claude_code \
+  --connection-kind local_cli \
+  --meeting-id resident-1 \
+  --session-id session-1 \
+  --engagement-mode watch \
+  --json
+```
+
+Use `--json` when a wrapper needs the registration acknowledgement, including the server-preserved meeting, session, and engagement fields, instead of parsing the compact `Registered <agent-id>` line.
+
 ## Start A Resident Meeting
 
 Use `start-session` when you want the operator path that creates the visible resident meeting and starts its supervised resident group in one bounded operation:

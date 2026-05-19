@@ -198,6 +198,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_register.add_argument("--endpoint", default="")
     live_register.add_argument("--meeting-id", default="")
     live_register.add_argument("--engagement-mode", default="mentioned")
+    live_register.add_argument("--json", action="store_true", dest="as_json", help="Print the raw registration response.")
 
     live_heartbeat = live_agent_subparsers.add_parser("heartbeat", parents=[live_server], help="Update live agent presence.")
     live_heartbeat.add_argument("--agent-id", required=True)
@@ -673,7 +674,10 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             }
             response = _request_json(_server_url(args.server, "/api/live-agents"), method="POST", payload=payload)
             agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
-            print(f"Registered {agent.get('agent_id') or args.agent_id}")
+            if args.as_json:
+                print(json.dumps(response, ensure_ascii=False, indent=2))
+            else:
+                print(f"Registered {agent.get('agent_id') or args.agent_id}")
             return 0
         if args.live_agent_command == "heartbeat":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
