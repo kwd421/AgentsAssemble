@@ -170,6 +170,34 @@ class LiveAgentPresenceTests(unittest.TestCase):
             self.assertEqual(agent["status"], "working")
             self.assertEqual(agent["last_seen_at"], "2026-05-17T12:00:45+00:00")
 
+    def test_heartbeat_can_refresh_session_id_from_runner_metadata(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            started = datetime(2026, 5, 17, 12, 0, tzinfo=UTC)
+            pinged = started + timedelta(seconds=45)
+
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "codex-live",
+                    "display_name": "Codex Live",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                },
+                now=started,
+            )
+            agent = heartbeat_live_agent(
+                root,
+                "codex-live",
+                status="online",
+                metadata={"session_id": "019e3038-39cc-76a2-a746-5ba8c0f3b408"},
+                now=pinged,
+            )
+
+            self.assertEqual(agent["session_id"], "019e3038-39cc-76a2-a746-5ba8c0f3b408")
+            visible = read_live_agents(root, now=pinged)[0]
+            self.assertEqual(visible["session_id"], "019e3038-39cc-76a2-a746-5ba8c0f3b408")
+
     def test_presence_last_error_redacts_sensitive_external_error_text(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

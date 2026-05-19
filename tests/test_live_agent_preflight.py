@@ -9,6 +9,19 @@ from agentsassemble.live_agent_preflight import preflight_live_agent_config
 
 
 class LiveAgentPreflightTests(unittest.TestCase):
+    def test_codex_live_agent_example_preflights_with_fake_codex_resolver(self):
+        config_path = Path("configs/live-agents.codex-session.example.json")
+
+        report = preflight_live_agent_config(
+            config_path,
+            command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+        )
+
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["summary"]["agents"], 2)
+        self.assertEqual(report["summary"]["checks_failed"], 0)
+        self.assertEqual([agent["command"] for agent in report["agents"]], [["codex"], ["codex"]])
+
     def test_preflight_reports_ok_without_running_commands(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"
@@ -275,6 +288,81 @@ class LiveAgentPreflightTests(unittest.TestCase):
             self.assertIn(
                 {"id": "remote_bridge_auth_ref", "status": "ok", "message": "Remote bridge auth_ref is available."},
                 friend["checks"],
+            )
+
+    def test_preflight_accepts_codex_live_session_with_default_codex_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "codex-live",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "live_session",
+                                "session_id": "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+            )
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 0, "checks_failed": 0})
+            agent = report["agents"][0]
+            self.assertEqual(agent["provider_kind"], "codex_live_session")
+            self.assertEqual(agent["connection_kind"], "live_session")
+            self.assertEqual(agent["command"], ["codex"])
+            self.assertEqual(agent["command_path"], "/usr/local/bin/codex")
+            self.assertIn(
+                {
+                    "id": "provider_connection_kind",
+                    "status": "ok",
+                    "message": "codex_live_session uses live_session.",
+                },
+                agent["checks"],
+            )
+
+    def test_preflight_rejects_codex_live_session_with_local_cli_connection(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "codex-live",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "local_cli",
+                                "command": ["codex"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            self.assertIn(
+                {
+                    "id": "provider_connection_kind",
+                    "status": "failed",
+                    "message": "codex_live_session residents require live_session connection_kind.",
+                },
+                report["agents"][0]["checks"],
             )
 
     def test_preflight_rejects_remote_bridge_redacted_auth_placeholder(self):

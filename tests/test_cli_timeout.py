@@ -4535,6 +4535,32 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(args.connection_kind, "live_session")
 
+    def test_live_agent_run_uses_codex_resident_runner_for_codex_live_session_provider(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run",
+                "--agent-id",
+                "codex-live",
+                "--provider-kind",
+                "codex_live_session",
+                "--connection-kind",
+                "live_session",
+                "--session-id",
+                "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                "--max-ticks",
+                "1",
+            ]
+        )
+
+        config = cli_module.config_from_args(args)
+        runner = cli_module._command_runner_for_config(config)
+        try:
+            self.assertEqual(config.command, ["codex"])
+            self.assertEqual(runner.__class__.__name__, "CodexResidentCommandRunner")
+        finally:
+            cli_module._close_command_runner(runner)
+
     def test_live_agent_run_rejects_non_resident_connection_kind(self):
         stderr = StringIO()
         with patch("sys.stderr", stderr):

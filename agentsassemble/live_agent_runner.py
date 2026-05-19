@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
 
+from agentsassemble.codex_resident import default_codex_resident_command
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
 from agentsassemble.remote_bridge_config import (
@@ -234,7 +235,7 @@ class LiveAgentRunner:
                 "display_name": self.config.display_name,
                 "provider_kind": self.config.provider_kind,
                 "connection_kind": self.config.connection_kind,
-                "session_id": self.config.session_id,
+                "session_id": self._current_session_id(),
                 "endpoint": self.config.endpoint,
                 "meeting_id": self.config.meeting_id,
                 "engagement_mode": self.config.engagement_mode,
@@ -245,12 +246,19 @@ class LiveAgentRunner:
 
     def _heartbeat(self, status: str, **metadata: object) -> None:
         payload = {"status": status, **metadata}
+        session_id = self._current_session_id()
+        if session_id:
+            payload.setdefault("session_id", session_id)
         self.request_json(
             _server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/heartbeat"),
             method="POST",
             payload=payload,
         )
         self.last_heartbeat_at = self.now_fn()
+
+    def _current_session_id(self) -> str:
+        runner_session_id = str(getattr(self.command_runner, "session_id", "") or "").strip()
+        return runner_session_id or self.config.session_id
 
     def _heartbeat_final_offline(self) -> None:
         try:
@@ -585,18 +593,21 @@ def load_group_configs(
 
 
 def config_from_args(args: object) -> ResidentAgentConfig:
+    provider_kind = str(getattr(args, "provider_kind"))
+    connection_kind = str(getattr(args, "connection_kind"))
+    command = list(getattr(args, "resident_command", []) or [])
     return ResidentAgentConfig(
         server=str(getattr(args, "server")),
         agent_id=str(getattr(args, "agent_id")),
         display_name=str(getattr(args, "display_name") or getattr(args, "agent_id")),
-        provider_kind=str(getattr(args, "provider_kind")),
-        connection_kind=str(getattr(args, "connection_kind")),
+        provider_kind=provider_kind,
+        connection_kind=connection_kind,
         session_id=str(getattr(args, "session_id")),
         endpoint=str(getattr(args, "endpoint")),
         auth_ref=str(getattr(args, "auth_ref", "")),
         meeting_id=str(getattr(args, "meeting_id")),
         engagement_mode=str(getattr(args, "engagement_mode")),
-        command=list(getattr(args, "resident_command", []) or []),
+        command=default_codex_resident_command(provider_kind, connection_kind, command),
         timeout_seconds=int(getattr(args, "timeout")),
         poll_interval=float(getattr(args, "poll_interval")),
         heartbeat_interval=float(getattr(args, "heartbeat_interval")),
@@ -616,10 +627,12 @@ def _config_from_mapping(
     connection_kind = str(data.get("connection_kind") or "local_cli")
     if connection_kind not in SUPPORTED_RESIDENT_CONNECTION_KINDS:
         raise ValueError(resident_connection_kind_error())
+    provider_kind = str(data.get("provider_kind") or "local_cli")
     command = data.get("command")
     endpoint = data.get("endpoint")
     auth_ref = data.get("auth_ref")
     command_parts = [str(part) for part in command] if isinstance(command, list) else []
+    command_parts = default_codex_resident_command(provider_kind, connection_kind, command_parts)
     if connection_kind != "remote_bridge" and not command_parts:
         raise ValueError("Each live agent requires a command list.")
     agent_id = str(data.get("agent_id") or "")
@@ -629,7 +642,7 @@ def _config_from_mapping(
         server=str(server_override or data.get("server") or server),
         agent_id=agent_id,
         display_name=str(data.get("display_name") or agent_id),
-        provider_kind=str(data.get("provider_kind") or "local_cli"),
+        provider_kind=provider_kind,
         connection_kind=connection_kind,
         session_id=str(data.get("session_id") or ""),
         endpoint=endpoint if isinstance(endpoint, str) else "",

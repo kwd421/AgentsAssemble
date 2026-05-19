@@ -26,6 +26,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("docs/live-session-room-model.md", doc)
         self.assertIn("live_session", doc)
         self.assertIn("codex_live_session", doc)
+        self.assertIn("codex exec resume", doc)
+        self.assertIn("not native Codex/Claude channel injection", doc)
         self.assertIn("advisory", doc)
 
     def test_roadmap_mentions_room_event_log_and_live_session_adapter(self):
@@ -97,6 +99,9 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("python3 -m agentsassemble.cli live-agent preflight", doc)
         self.assertIn("Resident runners support only `local_cli`, `live_session`, and `remote_bridge`", doc)
         self.assertIn("Registration-only kinds such as `manual` and `codex_resume`", doc)
+        self.assertIn("configs/live-agents.codex-session.example.json", doc)
+        self.assertIn("codex exec resume", doc)
+        self.assertIn("not native Codex/Claude channel injection", doc)
         self.assertIn("python3 -m agentsassemble.cli providers health", doc)
         self.assertIn("--probe bridge", doc)
         self.assertIn("/agentsassemble/health", doc)

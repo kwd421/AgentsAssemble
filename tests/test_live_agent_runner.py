@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
@@ -1061,6 +1062,31 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(loaded[0].endpoint, "http://friend.local:8777")
         self.assertEqual(loaded[0].auth_ref, "env:BRIDGE_TOKEN")
 
+    def test_group_config_defaults_codex_live_session_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "codex-live",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "live_session",
+                                "session_id": "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        self.assertEqual(loaded[0].provider_kind, "codex_live_session")
+        self.assertEqual(loaded[0].connection_kind, "live_session")
+        self.assertEqual(loaded[0].command, ["codex"])
+
     def test_group_config_rejects_non_resident_connection_kind_even_with_command(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "live-agents.json"
@@ -1119,6 +1145,49 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(calls[0]["payload"]["session_id"], "session-1")
         self.assertFalse(calls[0]["payload"]["permissions"]["filesystem_write"])
         self.assertNotIn("command", calls[0]["payload"])
+
+    def test_codex_resident_command_runner_starts_then_resumes_session(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            calls = []
+
+            class Completed:
+                returncode = 0
+                stdout = "session id: 019e3038-39cc-76a2-a746-5ba8c0f3b408\n"
+                stderr = ""
+
+            def command_runner(command, **kwargs):
+                calls.append({"command": command, "kwargs": kwargs})
+                output_path = Path(command[command.index("--output-last-message") + 1])
+                output_path.write_text(f"reply {len(calls)}", encoding="utf-8")
+                return Completed()
+
+            runner = CodexResidentCommandRunner(
+                config(
+                    provider_kind="codex_live_session",
+                    connection_kind="live_session",
+                    command=["codex"],
+                ),
+                command_runner=command_runner,
+                cwd=Path(temp_dir),
+            )
+            try:
+                first_reply = runner([], "first prompt", timeout_seconds=45)
+                second_reply = runner([], "second prompt", timeout_seconds=45)
+            finally:
+                runner.close()
+
+        self.assertEqual(first_reply, "reply 1")
+        self.assertEqual(second_reply, "reply 2")
+        self.assertEqual(runner.session_id, "019e3038-39cc-76a2-a746-5ba8c0f3b408")
+        self.assertEqual(calls[0]["command"][:2], ["codex", "exec"])
+        self.assertIn("--cd", calls[0]["command"])
+        self.assertEqual(calls[0]["command"][-1], "-")
+        self.assertEqual(calls[0]["kwargs"]["input"], "first prompt")
+        self.assertEqual(calls[0]["kwargs"]["cwd"], str(Path(temp_dir)))
+        self.assertEqual(calls[1]["command"][:3], ["codex", "exec", "resume"])
+        self.assertIn("019e3038-39cc-76a2-a746-5ba8c0f3b408", calls[1]["command"])
+        self.assertNotIn("--cd", calls[1]["command"])
+        self.assertEqual(calls[1]["kwargs"]["input"], "second prompt")
 
     def test_remote_bridge_resident_command_runner_sanitizes_auth_failures(self):
         def requester(url, headers, payload, timeout_seconds):
@@ -1206,6 +1275,38 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertIn("Remote bridge command failed with return code 1", error_heartbeats[-1]["last_error"])
         self.assertNotIn("secret-token", error_heartbeats[-1]["last_error"])
         self.assertNotIn("friend.local", error_heartbeats[-1]["last_error"])
+
+    def test_runner_heartbeats_updated_command_runner_session_id_after_reply(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "세션 이어서 답해줘"}]}
+        client = FakeRoomClient([room])
+
+        class SessionCommandRunner:
+            def __init__(self):
+                self.session_id = ""
+
+            def __call__(self, command, prompt, *, timeout_seconds):
+                del command, prompt, timeout_seconds
+                self.session_id = "019e3038-39cc-76a2-a746-5ba8c0f3b408"
+                return "Codex resident reply"
+
+        command_runner = SessionCommandRunner()
+        runner = LiveAgentRunner(
+            config(provider_kind="codex_live_session", connection_kind="live_session", command=["codex"]),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        reply_heartbeats = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload and payload.get("last_reply_at")
+        ]
+        self.assertEqual(reply_heartbeats[-1]["session_id"], "019e3038-39cc-76a2-a746-5ba8c0f3b408")
 
     def test_remote_bridge_resident_command_runner_rejects_redacted_env_auth_value(self):
         with patch.dict("os.environ", {"BRIDGE_TOKEN": "<redacted>"}, clear=False):

@@ -15,6 +15,7 @@ import urllib.request
 from pathlib import Path
 
 from agentsassemble.bridges.claude_code_bridge import serve_bridge
+from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.codex_sessions import (
     DEFAULT_INVITE_CONFIG_PATH,
     build_codex_live_invite_config,
@@ -2537,6 +2538,8 @@ def _stop_signal(name: str) -> int | None:
 def _validate_resident_config(config: ResidentAgentConfig) -> None:
     if config.connection_kind not in SUPPORTED_RESIDENT_CONNECTION_KINDS:
         raise ValueError(resident_connection_kind_error())
+    if config.provider_kind == "codex_live_session" and config.connection_kind != "live_session":
+        raise ValueError("codex_live_session resident requires live_session connection_kind.")
     if config.connection_kind == "remote_bridge":
         if not config.endpoint:
             raise ValueError("Remote bridge resident requires --endpoint.")
@@ -2548,6 +2551,8 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
 
 
 def _command_runner_for_config(config: ResidentAgentConfig):
+    if config.provider_kind == "codex_live_session" and config.connection_kind == "live_session":
+        return CodexResidentCommandRunner(config)
     if config.connection_kind == "live_session":
         return _JsonlLiveSessionCommandRunner()
     if config.connection_kind == "remote_bridge":

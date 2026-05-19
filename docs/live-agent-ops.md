@@ -477,11 +477,11 @@ python3 -m agentsassemble.cli live-agent preflight \
   --config configs/live-agents.example.json
 ```
 
-The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not execute provider commands. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, local command executables are present for `local_cli` and `live_session`, and remote bridge agents have an endpoint plus an available `auth_ref`. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint. It cannot prove Claude, Gemini, Cursor, account login, billing, subscription, model availability, network access, bridge command execution, or native PTY/session readiness.
+The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not execute provider commands. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, local command executables are present for `local_cli` and `live_session`, `codex_live_session` residents use the `live_session` connection kind with a resolvable Codex command, and remote bridge agents have an endpoint plus an available `auth_ref`. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint. It cannot prove Claude, Gemini, Cursor, account login, billing, subscription, model availability, network access, bridge command execution, real Codex execution, or native PTY/session readiness.
 
 Resident runners support only `local_cli`, `live_session`, and `remote_bridge`. Registration-only kinds such as `manual` and `codex_resume` can appear in the roster, but `live-agent run`, `live-agent run-group`, supervised start, and preflight reject them as resident process configs instead of silently treating them like a local CLI command.
 
-Direct `live-agent run` and `live-agent run-group` also refuse missing `local_cli` or `live_session` command executables before registering any resident agent. Direct `run-group` rejects duplicate agent ids before worker threads start, so one bad local config cannot partially register sibling agents under an ambiguous id. Supervised process start, restart, and recovery run this same preflight gate automatically inside the local GUI supervisor before opening a log file, launching `run-group`, or clearing meeting roster evidence. A failed gate returns a GUI/API/CLI error immediately and leaves no new process record behind. The GUI status line shows the refusal reason returned by the API. The check runs in the launching process environment, so PATH and `env:` auth references are evaluated from the process that would launch the resident group.
+Direct `live-agent run` and `live-agent run-group` also refuse missing `local_cli` or `live_session` command executables before registering any resident agent. For `provider_kind: "codex_live_session"` plus `connection_kind: "live_session"`, omitting `command` defaults to `["codex"]`; this proves only that the Codex CLI executable is available. Direct `run-group` rejects duplicate agent ids before worker threads start, so one bad local config cannot partially register sibling agents under an ambiguous id. Supervised process start, restart, and recovery run this same preflight gate automatically inside the local GUI supervisor before opening a log file, launching `run-group`, or clearing meeting roster evidence. A failed gate returns a GUI/API/CLI error immediately and leaves no new process record behind. The GUI status line shows the refusal reason returned by the API. The check runs in the launching process environment, so PATH and `env:` auth references are evaluated from the process that would launch the resident group.
 
 ## Provider Runtime Health
 
@@ -718,6 +718,8 @@ Expected result: `Fake CLI` appears in the live-agent roster, reads the lobby ev
 Use `--connection-kind live_session` when the resident agent command speaks the AgentsAssemble JSONL session protocol. Unlike `local_cli`, this keeps one local process alive for the resident runner and sends multiple room events through that same stdin/stdout bridge.
 
 This connection kind is for `live-agent run` and `live-agent run-group`. The one-shot `live-agent delegate` command keeps plain local CLI semantics and does not use the JSONL session envelope. When `delegate` posts its one reply, it links the lobby message to the latest unobserved non-self lobby event from the room snapshot with `source_event_id` and increments `auto_chain_depth`, so the reply still has the same traceable event lineage as resident runner replies. If only self-authored or already-observed events remain, the one-shot reply is still posted but no stale source event is attached. If the delegate command fails, times out, or returns an empty reply after the working heartbeat, the CLI makes a best-effort `error` heartbeat with a compact `last_error` instead of leaving the roster stuck at `working`. That heartbeat does not copy command stdout/stderr, and OS launch failures store the error category without the failing path.
+
+`provider_kind: "codex_live_session"` is a provider-specific resident behind the same `live_session` compatibility gate, but it does not speak the JSONL protocol below. The runner calls Codex CLI directly with `codex exec --output-last-message ... -` for a fresh session and `codex exec resume --output-last-message ... <session_id> -` after a session id is known. It preserves the configured or extracted session id inside the resident runner so later lobby events continue the same Codex CLI history. This is not native Codex/Claude channel injection, a PTY attachment, or sandboxed filesystem/git isolation.
 
 Protocol:
 
@@ -1095,6 +1097,13 @@ If approved and installed, `configs/live-agents.example.json` shows the expected
 ```json
 ["claude", "-p"]
 ["gemini"]
+```
+
+For the first Codex resident shape, use `configs/live-agents.codex-session.example.json`. It uses `provider_kind: "codex_live_session"` with `connection_kind: "live_session"` and may omit `command`, in which case the resident runner defaults to `["codex"]`:
+
+```bash
+python3 -m agentsassemble.cli live-agent preflight \
+  --config configs/live-agents.codex-session.example.json
 ```
 
 After approval, start a bounded real-provider group:

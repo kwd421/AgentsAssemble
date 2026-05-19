@@ -1,0 +1,28 @@
+{
+  "server": "http://127.0.0.1:8765",
+  "poll_interval": 2,
+  "heartbeat_interval": 30,
+  "cooldown": 5,
+  "max_chain_depth": 1,
+  "agents": [
+    {
+      "agent_id": "codex-live-lore",
+      "display_name": "Codex Live Lore",
+      "provider_kind": "codex_live_session",
+      "connection_kind": "live_session",
+      "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+      "meeting_id": "",
+      "engagement_mode": "always",
+      "timeout_seconds": 240
+    },
+    {
+      "agent_id": "codex-live-feats",
+      "display_name": "Codex Live Feats",
+      "provider_kind": "codex_live_session",
+      "connection_kind": "live_session",
+      "meeting_id": "",
+      "engagement_mode": "always",
+      "timeout_seconds": 240
+    }
+  ]
+}

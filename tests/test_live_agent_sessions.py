@@ -219,6 +219,51 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(supervisor.started, [])
             self.assertFalse((root / "meetings").exists())
 
+    def test_start_session_accepts_codex_live_session_manifest_with_default_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"], provider_kind="codex_live_session")
+            live_agent_config = root / "live-agents.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "server": "http://127.0.0.1:8765",
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "live_session",
+                                "session_id": "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                                "engagement_mode": "moderator_called",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            supervisor = FakeSessionSupervisor(root)
+
+            session = start_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+                preflight_checker=lambda *args, **kwargs: {"status": "ok"},
+            )
+
+        self.assertEqual(session["meeting_id"], "resident-m1")
+        self.assertEqual(session["group_id"], "resident-main")
+        self.assertEqual(supervisor.started[0]["config_path"], live_agent_config)
+        self.assertEqual(supervisor.started[0]["group_id"], "resident-main")
+
     def test_start_session_allows_remote_bridge_provider_label_behind_bridge_transport(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

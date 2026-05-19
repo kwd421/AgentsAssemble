@@ -6,6 +6,7 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
+from agentsassemble.codex_resident import codex_provider_connection_check, default_codex_resident_command
 from agentsassemble.live_agent_runner import (
     ResidentAgentConfig,
     SUPPORTED_RESIDENT_CONNECTION_KINDS,
@@ -80,6 +81,9 @@ def _preflight_agent(
         _agent_id_check(config.agent_id),
         _connection_kind_check(config.connection_kind),
     ]
+    provider_connection_check = codex_provider_connection_check(config.provider_kind, config.connection_kind)
+    if provider_connection_check is not None:
+        checks.append(provider_connection_check)
     if config.connection_kind == "remote_bridge":
         checks.extend(
             [
@@ -138,18 +142,22 @@ def _preflight_config_from_mapping(
     command = data.get("command")
     endpoint = data.get("endpoint")
     auth_ref = data.get("auth_ref")
+    provider_kind = str(data.get("provider_kind") or "local_cli")
+    connection_kind = str(data.get("connection_kind") or "local_cli")
+    command_parts = [str(part) for part in command] if isinstance(command, list) else []
+    command_parts = default_codex_resident_command(provider_kind, connection_kind, command_parts)
     return ResidentAgentConfig(
         server=str(server_override or data.get("server") or server),
         agent_id=str(data.get("agent_id") or ""),
         display_name=str(data.get("display_name") or data.get("agent_id") or ""),
-        provider_kind=str(data.get("provider_kind") or "local_cli"),
-        connection_kind=str(data.get("connection_kind") or "local_cli"),
+        provider_kind=provider_kind,
+        connection_kind=connection_kind,
         session_id=str(data.get("session_id") or ""),
         endpoint=endpoint if isinstance(endpoint, str) else "",
         auth_ref=auth_ref if isinstance(auth_ref, str) else "",
         meeting_id=str(data.get("meeting_id") or ""),
         engagement_mode=str(data.get("engagement_mode") or "mentioned"),
-        command=[str(part) for part in command] if isinstance(command, list) else [],
+        command=command_parts,
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),
         poll_interval=float(_value_or_default(data.get("poll_interval"), defaults["poll_interval"])),
         heartbeat_interval=float(_value_or_default(data.get("heartbeat_interval"), defaults["heartbeat_interval"])),

@@ -210,6 +210,7 @@ def heartbeat_live_agent(
                 "last_seen_at": timestamp,
             }
         for key, limit in (
+            ("session_id", 128),
             ("last_error", 500),
             ("last_reply_at", 64),
             ("last_observed_event_id", 128),
