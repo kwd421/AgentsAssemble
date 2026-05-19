@@ -368,6 +368,96 @@ class LiveAgentRunnerTests(unittest.TestCase):
         heartbeat_statuses = [payload["status"] for url, method, payload in calls if url.endswith("/heartbeat")]
         self.assertEqual(heartbeat_statuses[-1], "offline")
 
+    def test_runner_survives_transient_room_failure_after_initial_snapshot(self):
+        clock = FakeClock()
+        calls = []
+        room_reads = 0
+        command_calls = []
+
+        def request_json(url, *, method="GET", payload=None):
+            nonlocal room_reads
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            if url.endswith("/room"):
+                room_reads += 1
+                if room_reads == 1:
+                    return {"lobby_events": []}
+                if room_reads == 2:
+                    raise ConnectionError("transient room read failed")
+                return {"lobby_events": [{"id": "evt1", "name": "나", "message": "다시 왔어?"}]}
+            if url.endswith("/lobby"):
+                return {"event": {"id": "reply-id"}}
+            return {}
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            del command, timeout_seconds
+            command_calls.append(prompt)
+            return "Agent A recovered"
+
+        runner = LiveAgentRunner(
+            config(max_ticks=3, cooldown=0.0),
+            request_json=request_json,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        error_payloads = [
+            payload for url, method, payload in calls if url.endswith("/heartbeat") and payload["status"] == "error"
+        ]
+        lobby_payloads = [payload for url, method, payload in calls if url.endswith("/lobby")]
+        self.assertEqual(len(error_payloads), 1)
+        self.assertEqual(error_payloads[0]["last_error"], "transient room read failed")
+        self.assertEqual(len(command_calls), 1)
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "evt1")
+
+    def test_runner_survives_transient_room_failure_when_error_heartbeat_fails(self):
+        clock = FakeClock()
+        calls = []
+        room_reads = 0
+
+        def request_json(url, *, method="GET", payload=None):
+            nonlocal room_reads
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                if (payload or {}).get("status") == "error":
+                    raise ConnectionError("heartbeat write failed")
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            if url.endswith("/room"):
+                room_reads += 1
+                if room_reads == 1:
+                    return {"lobby_events": []}
+                if room_reads == 2:
+                    raise ConnectionError("transient room read failed")
+                return {"lobby_events": [{"id": "evt1", "name": "나", "message": "아직 살아있어?"}]}
+            if url.endswith("/lobby"):
+                return {"event": {"id": "reply-id"}}
+            return {}
+
+        runner = LiveAgentRunner(
+            config(max_ticks=3, cooldown=0.0),
+            request_json=request_json,
+            command_runner=lambda command, prompt, *, timeout_seconds: "still alive",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        error_heartbeat_attempts = [
+            payload for url, method, payload in calls if url.endswith("/heartbeat") and payload["status"] == "error"
+        ]
+        lobby_payloads = [payload for url, method, payload in calls if url.endswith("/lobby")]
+        self.assertEqual(len(error_heartbeat_attempts), 1)
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "evt1")
+
     def test_runner_does_not_mask_lobby_post_failure_when_final_offline_heartbeat_fails(self):
         clock = FakeClock()
         calls = []

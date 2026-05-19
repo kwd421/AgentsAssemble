@@ -2752,6 +2752,62 @@ Expected: pass.
 
 ---
 
+### Task 80: Resident Room Snapshot Transient Recovery
+
+**Goal:** Keep long-running resident agents alive when a read-only room snapshot briefly fails after the runner already has usable room state, while preserving fail-fast behavior for startup room failures and mutating reply failures.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_runner.py`
+
+- [x] **Step 1: Add RED coverage for transient room read recovery**
+
+Cover a bounded resident run where the first `/room` snapshot succeeds with no events, the second `/room` read raises a transient error, and the third snapshot contains a lobby event. The runner must record one `error` heartbeat for the transient read failure, keep polling, and post the later reply. Keep the existing first-room-failure test as the fatal startup boundary.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_survives_transient_room_failure_after_initial_snapshot \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_room_failure_when_final_offline_heartbeat_fails
+```
+
+Expected: fail before implementation because every `_room()` exception currently terminates the runner.
+
+- [x] **Step 2: Keep polling after post-start room read failures**
+
+Track whether the runner has successfully read a room snapshot. If a later read-only room snapshot fails, record `last_error`, emit an `error` heartbeat with the current cursors, and return zero replies for that tick so the resident loop can poll again. Keep registration, startup heartbeat, first room snapshot, lobby post, official turn post, and provider command failures on their existing paths.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_survives_transient_room_failure_after_initial_snapshot \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_room_failure_when_final_offline_heartbeat_fails \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_keeps_error_status_on_periodic_heartbeat_during_failure_backoff
+```
+
+Expected: pass.
+
+- [x] **Step 3: Keep polling when the transient error heartbeat also fails**
+
+Cover a post-start `/room` read failure where the attempted `error` heartbeat also raises. The runner must still continue to the next poll and reply to a later healthy room snapshot.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_survives_transient_room_failure_when_error_heartbeat_fails
+```
+
+Expected: fail before implementation because the transient room failure path calls `_heartbeat("error")` directly.
+
+- [x] **Step 4: Document room snapshot recovery boundary**
+
+Document that only post-start read-only room snapshot failures are treated as recoverable, while the first room read still fails fast because no room state has been established.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

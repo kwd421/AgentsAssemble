@@ -67,6 +67,7 @@ class LiveAgentRunner:
         self.last_error_at: datetime | None = None
         self.last_error = ""
         self.last_heartbeat_at: datetime | None = None
+        self.seen_room_snapshot = False
 
     def run(self) -> int:
         self._register()
@@ -85,7 +86,15 @@ class LiveAgentRunner:
         return replies
 
     def tick(self) -> int:
-        room = self._room()
+        try:
+            room = self._room()
+        except Exception as error:
+            if not self.seen_room_snapshot or self.stop_event.is_set():
+                raise
+            self.last_error = str(error)
+            self.last_error_at = self.now_fn()
+            self._heartbeat_due_safely("error", last_error=self.last_error, **self._cursor_metadata())
+            return 0
         engagement_mode = _runtime_engagement_mode(self.config, room)
         if engagement_mode == "moderator_called":
             self._observe_lobby_cursor(_lobby_events(room))
@@ -295,6 +304,7 @@ class LiveAgentRunner:
     def _room(self) -> dict[str, object]:
         room = self.request_json(_server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/room"))
         self._restore_agent_snapshot(room.get("agent"))
+        self.seen_room_snapshot = True
         return room
 
     def _restore_agent_snapshot(self, agent: object) -> None:
