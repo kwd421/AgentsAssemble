@@ -178,6 +178,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn(".agentsassemble/live-agent-runs/events.jsonl", doc)
         self.assertIn("lifecycle event history", doc)
         self.assertIn("offline reconciliation summaries with expected/offline/skipped counts", doc)
+        self.assertIn("default CLI process list and GUI process rows show the latest lifecycle offline summary", doc)
         self.assertIn("recovered_unknown", doc)
         self.assertIn("recent_events", doc)
         self.assertIn("live-agent heartbeat", doc)

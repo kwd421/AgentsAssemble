@@ -1992,13 +1992,61 @@ def _live_agent_process_bulk_offline_summary(records: object) -> str:
 def _format_live_agent_process_last_event(value: object) -> str:
     if not isinstance(value, list) or not value:
         return ""
+    latest = _latest_live_agent_process_event(value)
+    if latest is None:
+        return ""
+    event_type = str(latest.get("event_type") or "").strip()
+    offline = _format_live_agent_process_last_offline_event(value, latest_event=latest)
+    suffix = f", {offline}" if offline else ""
+    return f"last event {event_type}{suffix}"
+
+
+def _latest_live_agent_process_event(value: list[object]) -> dict[str, object] | None:
+    for item in reversed(value):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("event_type") or "").strip():
+            return item
+    return None
+
+
+def _format_live_agent_process_last_offline_event(
+    value: list[object],
+    *,
+    latest_event: dict[str, object],
+) -> str:
     for item in reversed(value):
         if not isinstance(item, dict):
             continue
         event_type = str(item.get("event_type") or "").strip()
-        if event_type:
-            return f"last event {event_type}"
+        if not event_type:
+            continue
+        offline = _live_agent_process_offline_summary(item.get("offline"))
+        if not offline:
+            continue
+        attention = _format_live_agent_process_offline_attention(item.get("offline"))
+        details = ", ".join(detail for detail in (offline, attention) if detail)
+        if item is latest_event:
+            return details
+        return f"last offline {event_type} {details}"
     return ""
+
+
+def _format_live_agent_process_offline_attention(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    attention = value.get("attention")
+    if not isinstance(attention, list):
+        return ""
+    labels = []
+    for item in attention[:10]:
+        if not isinstance(item, dict):
+            continue
+        agent_id = str(item.get("agent_id") or "").strip()
+        status = str(item.get("status") or "").strip()
+        if agent_id and status:
+            labels.append(f"{status} {agent_id}")
+    return ", ".join(labels)
 
 
 def _safe_int(value: object) -> int:

@@ -1589,6 +1589,23 @@ test("process row renders recovery watchdog and next restart evidence", () => {
       restart_backoff_seconds: 5,
       stale_restart_after_seconds: 240,
       next_restart_at: "2026-05-17T12:01:00+00:00",
+      recent_events: [
+        {
+          event_type: "restart_scheduled",
+          timestamp: "2026-05-17T12:00:10+00:00",
+          offline: {
+            expected: 2,
+            offline: 1,
+            skipped: 1,
+            offline_agent_ids: ["agent-a"],
+            attention: [{ agent_id: "agent-b", status: "wrong_meeting" }],
+          },
+        },
+        {
+          event_type: "started",
+          timestamp: "2026-05-17T12:00:20+00:00",
+        },
+      ],
     },
   ];
 
@@ -1599,6 +1616,10 @@ test("process row renders recovery watchdog and next restart evidence", () => {
   assert.match(rowText, /auto restart 1\/3/);
   assert.match(rowText, /stale watchdog 240s/);
   assert.match(rowText, /next restart 2026-05-17T12:01:00\+00:00/);
+  assert.match(rowText, /last event started/);
+  assert.match(rowText, /last offline restart_scheduled/);
+  assert.match(rowText, /offline 1\/2/);
+  assert.match(rowText, /wrong_meeting agent-b/);
 });
 
 test("process row recover button posts recover endpoint and updates status", async () => {

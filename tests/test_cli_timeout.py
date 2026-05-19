@@ -3071,13 +3071,27 @@ class CliTimeoutTests(unittest.TestCase):
                     ],
                     "recent_events": [
                         {
+                            "event_type": "restart_scheduled",
+                            "timestamp": "2026-05-17T11:59:50+00:00",
+                            "group_id": "crew",
+                            "status": "restarting",
+                            "restart_count": 1,
+                            "offline": {
+                                "expected": 2,
+                                "offline": 1,
+                                "skipped": 1,
+                                "offline_agent_ids": ["local-a"],
+                                "attention": [{"agent_id": "friend-b", "status": "wrong_meeting"}],
+                            },
+                        },
+                        {
                             "event_type": "started",
                             "timestamp": "2026-05-17T12:00:00+00:00",
                             "group_id": "crew",
                             "status": "running",
                             "pid": 1234,
                             "restart_count": 1,
-                        }
+                        },
                     ],
                     "agent_connection": {
                         "expected": 2,
@@ -3111,6 +3125,9 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("agents connected 1/2", output)
         self.assertIn("missing friend-b", output)
         self.assertIn("last event started", output)
+        self.assertIn("last offline restart_scheduled", output)
+        self.assertIn("offline 1/2", output)
+        self.assertIn("wrong_meeting friend-b", output)
         self.assertNotIn("command", output)
         self.assertNotIn("auth", output)
         stopped_line = next(line for line in output.splitlines() if line.startswith("stopped-crew:"))

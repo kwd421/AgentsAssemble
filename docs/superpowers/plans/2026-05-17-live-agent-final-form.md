@@ -1601,6 +1601,44 @@ Document that `events.jsonl` and process `recent_events` can now carry offline r
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 50: Show Lifecycle Offline Evidence In Process Rows
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for visible lifecycle offline evidence**
+
+Extend CLI process list and GUI process row tests so a latest `recent_events` item with an `offline` summary must render compact operator text such as `offline 1/2` and `wrong_meeting agent-b` beside the last lifecycle event label.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_list_prints_summary
+node tests/static_lobby_runtime_smoke.mjs
+python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path
+```
+
+Expected: fail before implementation because CLI and GUI rows show only the lifecycle event type/timestamp.
+
+- [x] **Step 2: Render safe summaries in CLI and GUI rows**
+
+Append only expected/offline counts and bounded attention labels from the latest lifecycle event's sanitized `offline` payload. Keep raw JSON available through `--json`; do not expose config paths beyond existing process row behavior, command arguments, endpoints, auth refs, prompts, provider output, or log tails.
+
+Run the Step 1 commands.
+Expected: pass.
+
+- [x] **Step 3: Document visible operator behavior**
+
+Document that the default CLI process list and GUI process rows show the latest lifecycle offline summary, so crash-time roster reconciliation can be seen without opening JSON.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

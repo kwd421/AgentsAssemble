@@ -858,7 +858,43 @@ function liveAgentProcessEventLabel(group) {
   const latest = [...events].reverse().find((event) => event && event.event_type);
   if (!latest) return "";
   const timestamp = String(latest.timestamp || "").trim();
-  return timestamp ? `last event ${latest.event_type} · ${timestamp}` : `last event ${latest.event_type}`;
+  const offline = liveAgentProcessLatestOfflineEventLabel(events, latest);
+  const details = [offline, timestamp].filter(Boolean).join(" · ");
+  return details ? `last event ${latest.event_type} · ${details}` : `last event ${latest.event_type}`;
+}
+
+function liveAgentProcessLatestOfflineEventLabel(events, latest) {
+  const offlineEvent = [...events].reverse().find((event) => {
+    if (!event || !event.event_type) return false;
+    return Boolean(liveAgentProcessEventOfflineLabel(event.offline));
+  });
+  if (!offlineEvent) return "";
+  const offline = liveAgentProcessEventOfflineLabel(offlineEvent.offline);
+  if (!offline) return "";
+  return offlineEvent === latest ? offline : `last offline ${offlineEvent.event_type} ${offline}`;
+}
+
+function liveAgentProcessEventOfflineLabel(value) {
+  if (!value || typeof value !== "object") return "";
+  const expected = Math.max(0, Number(value.expected || 0));
+  const offline = Math.max(0, Number(value.offline || 0));
+  if (!expected) return "";
+  const attention = liveAgentProcessEventOfflineAttentionLabel(value.attention);
+  return attention ? `offline ${offline}/${expected} · ${attention}` : `offline ${offline}/${expected}`;
+}
+
+function liveAgentProcessEventOfflineAttentionLabel(value) {
+  if (!Array.isArray(value)) return "";
+  return value
+    .slice(0, 10)
+    .map((item) => {
+      if (!item || typeof item !== "object") return "";
+      const agentId = String(item.agent_id || "").trim();
+      const status = String(item.status || "").trim();
+      return agentId && status ? `${status} ${agentId}` : "";
+    })
+    .filter(Boolean)
+    .join(", ");
 }
 
 function liveAgentProcessMeetingLabel(group) {
