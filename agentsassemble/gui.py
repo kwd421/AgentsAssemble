@@ -526,17 +526,7 @@ def live_agent_session_start_payload(
         stale_restart_after_seconds=_payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0),
         diagnostic=_payload_bool(payload.get("diagnostic")),
     )
-    if _payload_bool(payload.get("run_remaining_rounds")):
-        auto_rounds_options = _session_auto_rounds_options(payload)
-        if _operation_result_status(session.get("status")) == "ready":
-            session["auto_rounds"] = live_agent_turn_rounds_payload(
-                output_root,
-                str(session.get("meeting_id") or ""),
-                auto_rounds_options,
-            )
-        else:
-            session["auto_rounds"] = _skipped_session_auto_rounds_result(session, auto_rounds_options)
-    return session
+    return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
 
 def live_agent_session_resume_payload(
@@ -562,17 +552,7 @@ def live_agent_session_resume_payload(
         restart_backoff_seconds=_payload_nonnegative_float(payload.get("restart_backoff_seconds"), 5.0),
         stale_restart_after_seconds=_payload_nonnegative_float(payload.get("stale_restart_after_seconds"), 0.0),
     )
-    if _payload_bool(payload.get("run_remaining_rounds")):
-        auto_rounds_options = _session_auto_rounds_options(payload)
-        if _operation_result_status(session.get("status")) == "ready":
-            session["auto_rounds"] = live_agent_turn_rounds_payload(
-                output_root,
-                str(session.get("meeting_id") or ""),
-                auto_rounds_options,
-            )
-        else:
-            session["auto_rounds"] = _skipped_session_auto_rounds_result(session, auto_rounds_options)
-    return session
+    return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
 
 def live_agent_session_check_payload(
@@ -599,13 +579,14 @@ def live_agent_session_restart_payload(
     group_id = str(payload.get("group_id") or "").strip()
     if not group_id:
         raise ValueError("Live agent group id is required.")
-    return restart_live_agent_session(
+    session = restart_live_agent_session(
         output_root,
         process_supervisor,
         meeting_id=str(payload.get("meeting_id") or ""),
         group_id=group_id,
         connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
     )
+    return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
 
 def live_agent_session_recover_payload(
@@ -616,13 +597,14 @@ def live_agent_session_recover_payload(
     group_id = str(payload.get("group_id") or "").strip()
     if not group_id:
         raise ValueError("Live agent group id is required.")
-    return recover_live_agent_session(
+    session = recover_live_agent_session(
         output_root,
         process_supervisor,
         meeting_id=str(payload.get("meeting_id") or ""),
         group_id=group_id,
         connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
     )
+    return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
 
 def live_agent_session_stop_payload(
@@ -650,6 +632,25 @@ def _session_auto_rounds_options(payload: dict[str, object]) -> dict[str, object
         "max_rounds": _payload_bounded_round_count(payload.get("round_max_rounds", payload.get("max_rounds"))),
         "stop_on_timeout": _payload_bool(payload.get("round_stop_on_timeout", payload.get("stop_on_timeout"))),
     }
+
+
+def _attach_session_auto_rounds_if_requested(
+    output_root: Path,
+    session: dict[str, object],
+    payload: dict[str, object],
+) -> dict[str, object]:
+    if not _payload_bool(payload.get("run_remaining_rounds")):
+        return session
+    auto_rounds_options = _session_auto_rounds_options(payload)
+    if _operation_result_status(session.get("status")) == "ready":
+        session["auto_rounds"] = live_agent_turn_rounds_payload(
+            output_root,
+            str(session.get("meeting_id") or ""),
+            auto_rounds_options,
+        )
+    else:
+        session["auto_rounds"] = _skipped_session_auto_rounds_result(session, auto_rounds_options)
+    return session
 
 
 def _skipped_session_auto_rounds_result(session: dict[str, object], options: dict[str, object]) -> dict[str, object]:
@@ -2791,13 +2792,23 @@ def _session_check_operation_summary(session: dict[str, object]) -> str:
 
 def _session_restart_operation_summary(session: dict[str, object]) -> str:
     if _operation_result_status(session.get("status")) == "ready":
-        return "restarted resident live-agent session"
+        auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
+        if auto_rounds is None:
+            return "restarted resident live-agent session"
+        if _operation_result_status(auto_rounds.get("status")) in {"answered", "complete"}:
+            return "restarted resident live-agent session and ran remaining rounds"
+        return "restarted resident live-agent session with degraded remaining rounds"
     return "resident live-agent session is still reconnecting after restart"
 
 
 def _session_recover_operation_summary(session: dict[str, object]) -> str:
     if _operation_result_status(session.get("status")) == "ready":
-        return "recovered resident live-agent session"
+        auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
+        if auto_rounds is None:
+            return "recovered resident live-agent session"
+        if _operation_result_status(auto_rounds.get("status")) in {"answered", "complete"}:
+            return "recovered resident live-agent session and ran remaining rounds"
+        return "recovered resident live-agent session with degraded remaining rounds"
     return "resident live-agent session is still reconnecting after recovery"
 
 

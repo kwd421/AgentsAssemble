@@ -1718,14 +1718,16 @@ async function restartLiveAgentSession(lobby) {
   state.liveAgentProcessStatus = { message: "상주 세션 재시작 중", tone: "info" };
   renderLobby({ followLatest: false });
   try {
+    const requestBody = {
+      meeting_id: meetingId,
+      group_id: groupId,
+      connect_timeout_seconds: liveAgentSessionConnectTimeoutSeconds(lobby),
+    };
+    addLiveAgentSessionRemainingRoundsPayload(lobby, requestBody);
     const payload = await fetchJson("/api/live-agent-sessions/restart", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        meeting_id: meetingId,
-        group_id: groupId,
-        connect_timeout_seconds: liveAgentSessionConnectTimeoutSeconds(lobby),
-      }),
+      body: JSON.stringify(requestBody),
     });
     await refreshLiveAgentRuntimeSurfaces();
     notifyMeetingStarted(payload.meeting_id);
@@ -1748,14 +1750,16 @@ async function recoverLiveAgentSession(lobby) {
   state.liveAgentProcessStatus = { message: "상주 세션 복구 중", tone: "info" };
   renderLobby({ followLatest: false });
   try {
+    const requestBody = {
+      meeting_id: meetingId,
+      group_id: groupId,
+      connect_timeout_seconds: liveAgentSessionConnectTimeoutSeconds(lobby),
+    };
+    addLiveAgentSessionRemainingRoundsPayload(lobby, requestBody);
     const payload = await fetchJson("/api/live-agent-sessions/recover", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        meeting_id: meetingId,
-        group_id: groupId,
-        connect_timeout_seconds: liveAgentSessionConnectTimeoutSeconds(lobby),
-      }),
+      body: JSON.stringify(requestBody),
     });
     await refreshLiveAgentRuntimeSurfaces();
     notifyMeetingStarted(payload.meeting_id);
@@ -1767,6 +1771,15 @@ async function recoverLiveAgentSession(lobby) {
     await loadLiveAgentOperations({ background: true, force: true });
     renderLobby({ followLatest: false });
   }
+}
+
+function addLiveAgentSessionRemainingRoundsPayload(lobby, requestBody) {
+  const runRemainingRounds = lobby.querySelector("#live-agent-session-run-remaining-rounds")?.checked === true;
+  if (!runRemainingRounds) return;
+  requestBody.run_remaining_rounds = true;
+  requestBody.round_timeout_seconds = liveAgentRoundTimeoutSeconds(lobby);
+  requestBody.round_max_rounds = liveAgentRoundMaxRounds(lobby);
+  requestBody.round_stop_on_timeout = lobby.querySelector("#live-agent-round-stop-on-timeout")?.checked === true;
 }
 
 async function checkLiveAgentSession(lobby) {

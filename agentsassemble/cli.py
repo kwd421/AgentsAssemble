@@ -332,6 +332,14 @@ def build_parser() -> argparse.ArgumentParser:
     live_restart_session.add_argument("--meeting-id", required=True, help="Existing resident meeting id to restart.")
     live_restart_session.add_argument("--group-id", required=True, help="Supervised process group id to restart.")
     live_restart_session.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0, help="Seconds to wait for bound agents to reconnect.")
+    live_restart_session.add_argument(
+        "--run-remaining-rounds",
+        action="store_true",
+        help="After all bound agents reconnect, run remaining official template rounds.",
+    )
+    live_restart_session.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
+    live_restart_session.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
+    live_restart_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
     live_restart_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session restart payload.")
 
     live_recover_session = live_agent_subparsers.add_parser(
@@ -342,6 +350,14 @@ def build_parser() -> argparse.ArgumentParser:
     live_recover_session.add_argument("--meeting-id", required=True, help="Existing resident meeting id to recover.")
     live_recover_session.add_argument("--group-id", required=True, help="Supervised process group id to recover.")
     live_recover_session.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0, help="Seconds to wait for recovered agents to reconnect.")
+    live_recover_session.add_argument(
+        "--run-remaining-rounds",
+        action="store_true",
+        help="After all recovered agents reconnect, run remaining official template rounds.",
+    )
+    live_recover_session.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
+    live_recover_session.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
+    live_recover_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
     live_recover_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session recover payload.")
 
     live_check_session = live_agent_subparsers.add_parser(
@@ -1080,6 +1096,41 @@ def _run_live_agent_resume_session(args: argparse.Namespace) -> int:
     return 0 if auto_rounds.get("status") in {"answered", "complete"} else 1
 
 
+def _session_remaining_rounds_request(
+    args: argparse.Namespace,
+    payload: dict[str, object],
+    *,
+    connect_timeout_seconds: float,
+) -> float:
+    timeout_seconds = connect_timeout_seconds + 6.0
+    max_rounds = max(1, int(getattr(args, "max_rounds")))
+    if getattr(args, "run_remaining_rounds"):
+        if max_rounds > MAX_LIVE_AGENT_ROUND_BATCH:
+            raise ValueError(f"--max-rounds supports at most {MAX_LIVE_AGENT_ROUND_BATCH}.")
+        payload.update(
+            {
+                "run_remaining_rounds": True,
+                "round_timeout_seconds": float(getattr(args, "round_timeout")),
+                "round_max_rounds": max_rounds,
+                "round_stop_on_timeout": bool(getattr(args, "stop_on_timeout")),
+            }
+        )
+        timeout_seconds = connect_timeout_seconds + _operation_http_timeout(
+            float(getattr(args, "round_timeout")),
+            windows=max_rounds * MAX_LIVE_AGENT_SEQUENCE_TURNS,
+        )
+    return timeout_seconds
+
+
+def _session_command_exit_code(response: dict[str, object]) -> int:
+    if response.get("status") != "ready":
+        return 1
+    auto_rounds = response.get("auto_rounds") if isinstance(response.get("auto_rounds"), dict) else None
+    if auto_rounds is None:
+        return 0
+    return 0 if auto_rounds.get("status") in {"answered", "complete"} else 1
+
+
 def _run_live_agent_stop_session(args: argparse.Namespace) -> int:
     response = _request_json(
         _server_url(args.server, "/api/live-agent-sessions/stop"),
@@ -1098,39 +1149,51 @@ def _run_live_agent_stop_session(args: argparse.Namespace) -> int:
 
 
 def _run_live_agent_restart_session(args: argparse.Namespace) -> int:
+    payload = {
+        "meeting_id": str(args.meeting_id or ""),
+        "group_id": str(args.group_id or ""),
+        "connect_timeout_seconds": float(args.connect_timeout),
+    }
+    timeout_seconds = _session_remaining_rounds_request(
+        args,
+        payload,
+        connect_timeout_seconds=float(args.connect_timeout),
+    )
     response = _request_json(
         _server_url(args.server, "/api/live-agent-sessions/restart"),
         method="POST",
-        payload={
-            "meeting_id": str(args.meeting_id or ""),
-            "group_id": str(args.group_id or ""),
-            "connect_timeout_seconds": float(args.connect_timeout),
-        },
-        timeout_seconds=float(args.connect_timeout) + 6.0,
+        payload=payload,
+        timeout_seconds=timeout_seconds,
     )
     if args.as_json:
         print(json.dumps(response, ensure_ascii=False, indent=2))
     else:
         print(_format_live_agent_session_start(response))
-    return 0 if response.get("status") == "ready" else 1
+    return _session_command_exit_code(response)
 
 
 def _run_live_agent_recover_session(args: argparse.Namespace) -> int:
+    payload = {
+        "meeting_id": str(args.meeting_id or ""),
+        "group_id": str(args.group_id or ""),
+        "connect_timeout_seconds": float(args.connect_timeout),
+    }
+    timeout_seconds = _session_remaining_rounds_request(
+        args,
+        payload,
+        connect_timeout_seconds=float(args.connect_timeout),
+    )
     response = _request_json(
         _server_url(args.server, "/api/live-agent-sessions/recover"),
         method="POST",
-        payload={
-            "meeting_id": str(args.meeting_id or ""),
-            "group_id": str(args.group_id or ""),
-            "connect_timeout_seconds": float(args.connect_timeout),
-        },
-        timeout_seconds=float(args.connect_timeout) + 6.0,
+        payload=payload,
+        timeout_seconds=timeout_seconds,
     )
     if args.as_json:
         print(json.dumps(response, ensure_ascii=False, indent=2))
     else:
         print(_format_live_agent_session_start(response))
-    return 0 if response.get("status") == "ready" else 1
+    return _session_command_exit_code(response)
 
 
 def _run_live_agent_check_session(args: argparse.Namespace) -> int:
