@@ -924,6 +924,15 @@ The CLI equivalents are:
 python3 -m agentsassemble.cli live-agent processes list \
   --server http://127.0.0.1:8765
 
+python3 -m agentsassemble.cli live-agent processes list \
+  --server http://127.0.0.1:8765 \
+  --fail-on-attention
+
+python3 -m agentsassemble.cli live-agent processes wait local-cli-group \
+  --server http://127.0.0.1:8765 \
+  --timeout 30 \
+  --poll-interval 2
+
 python3 -m agentsassemble.cli live-agent processes stop local-cli-group \
   --server http://127.0.0.1:8765
 
@@ -947,7 +956,11 @@ The bulk stop response reports `stopped_count`, `failed_count`, `skipped_count`,
 
 Add `--json` to any process CLI command to print the raw HTTP payload.
 
-The process CLI uses exit code `0` for successful supervisor requests, even when a listed group is `stopped`, `error`, or `unknown`. It uses exit code `2` for argument validation, connection failures, invalid JSON, HTTP errors, missing config files, unknown group ids, and refused restarts.
+For scriptable gates, add `--fail-on-attention` to `processes list`. The command still prints the ordinary process summary first, then exits `1` when any listed group is `error`, `unknown`, `restarting`, or has manifest-aware `agent_connection.attention`. A historical `stopped` group alone does not fail this check.
+
+Use `processes wait <group_id>` immediately after `processes start`, `processes restart`, `processes recover`, or an external GUI action when automation needs a bounded readiness gate before posting probes or official turns. The command polls `/api/live-agent-processes` until the named group is `running`, has no process attention, and either has no expected manifest count or has `connected >= expected`. The `processes wait` command exits `0` only when the named group is ready. It exits `1` on timeout and prints the last observed group summary, or `group not found` if the group never appeared. It exits `2` for non-timeout transport, parsing, validation, or HTTP errors. The wait HTTP client bounds each poll by the remaining deadline, recomputes sleep after each poll, and reports both direct timeout and wrapped URL timeout failures as the normal wait timeout shape. Use `--json` when another agent or monitor needs the machine-readable `status`, `group_id`, `timeout_seconds`, `attempts`, `group`, and optional `error` fields.
+
+The process CLI uses exit code `0` for successful supervisor requests, even when a listed group is `stopped`, `error`, or `unknown`, unless `--fail-on-attention` or `processes wait` is used as an explicit readiness gate. It uses exit code `2` for argument validation, connection failures, invalid JSON, HTTP errors, missing config files, unknown group ids, and refused restarts.
 
 The supervisor only stops group ids it launched in the current GUI process. It does not control arbitrary OS PIDs. Historical records from a previous GUI process are shown as `unknown`, `stopped`, or `error`, but are not treated as externally stoppable PIDs. Restarting a historical record starts a fresh local process from the saved config and server instead of attaching to the old PID. A manual restart resets the auto-restart counter for the new run while preserving the configured retry policy.
 
