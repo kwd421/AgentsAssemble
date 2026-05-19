@@ -3237,6 +3237,49 @@ Document that direct restart/recovery controls refuse blank persisted launch con
 
 ---
 
+### Task 90: Auto-Restart Refuses Blank Launch Config
+
+**Goal:** Keep immediate and delayed auto-restart relaunch paths from treating a blank persisted `config_path` as the current directory.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+
+- [x] **Step 1: Add RED coverage for immediate auto-restart blank config**
+
+Cover a crashed running group with `auto_restart` enabled, zero backoff, and a corrupted blank persisted `config_path`. The supervisor must mark the group `error` with clear missing-config text, increment the restart counter, write `restart_failed` lifecycle evidence, and avoid preflight or relaunch.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_immediate_auto_restart_refuses_blank_persisted_config_before_preflight
+```
+
+Expected: fail before implementation because the immediate restart path treats `Path("")` as the current directory and reaches preflight.
+
+- [x] **Step 2: Add RED coverage for delayed auto-restart blank config**
+
+Cover a crashed running group with delayed auto-restart whose persisted `config_path` is whitespace-only before the due restart. The due restart must mark the group `error`, clear `next_restart_at`, write `restart_failed`, and avoid preflight or relaunch.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_delayed_auto_restart_refuses_blank_persisted_config_before_preflight
+```
+
+Expected: fail before implementation because the due restart path reports generic file-not-found or directory errors.
+
+- [x] **Step 3: Share the persisted config guard in auto-restart relaunches**
+
+Use the same persisted config guard for immediate and delayed auto-restart relaunches that direct restart/recovery already use.
+
+- [x] **Step 4: Document auto-restart missing-launch-config handling**
+
+Document that auto-restart relaunches also refuse blank persisted launch config before preflight or process launch.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

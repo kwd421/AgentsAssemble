@@ -378,7 +378,7 @@ class LiveAgentProcessSupervisor:
             )
             try:
                 return self._start_group_unlocked(
-                    config_path=Path(str(record.get("config_path") or "")),
+                    config_path=_persisted_config_path_or_raise(record, group_id, action="restart"),
                     server=str(record.get("server") or ""),
                     group_id=group_id,
                     meeting_id=str(record.get("meeting_id") or ""),
@@ -432,7 +432,7 @@ class LiveAgentProcessSupervisor:
                 continue
             try:
                 self._start_group_unlocked(
-                    config_path=Path(str(record.get("config_path") or "")),
+                    config_path=_persisted_config_path_or_raise(record, group_id, action="restart"),
                     server=str(record.get("server") or ""),
                     group_id=group_id,
                     meeting_id=str(record.get("meeting_id") or ""),
