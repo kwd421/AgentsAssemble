@@ -2729,8 +2729,9 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
             "session_smoke_soak_check_statuses",
             "probe_statuses",
         ]
-    if operation_name in {"session.start", "session.resume", "session.restart", "session.recover"}:
+    if operation_name in {"session.start", "session.ensure", "session.resume", "session.restart", "session.recover"}:
         return [
+            "ensure_action",
             "result_status",
             "connected_agent_count",
             "reply_probe_status",
@@ -2744,6 +2745,8 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
 
 
 def _live_agent_operation_detail_limit(operation_name: str) -> int:
+    if operation_name == "session.ensure":
+        return 9
     if operation_name in {"session.start", "session.resume", "session.restart", "session.recover"}:
         return 8
     return 7

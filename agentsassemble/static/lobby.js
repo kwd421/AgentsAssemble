@@ -129,6 +129,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-session-start")?.addEventListener("click", async () => {
     await startLiveAgentSession(lobby);
   });
+  lobby.querySelector("#live-agent-session-ensure")?.addEventListener("click", async () => {
+    await ensureLiveAgentSession(lobby);
+  });
   lobby.querySelector("#live-agent-session-resume")?.addEventListener("click", async () => {
     await resumeLiveAgentSession(lobby);
   });
@@ -544,6 +547,7 @@ function renderLiveAgentProcessControls() {
         <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
         <button type="button" id="live-agent-process-stop-running" ${processActionsDisabled ? "disabled" : ""}>실행중지</button>
         <button type="button" id="live-agent-session-start" ${processActionsDisabled ? "disabled" : ""}>세션시작</button>
+        <button type="button" id="live-agent-session-ensure" ${processActionsDisabled ? "disabled" : ""}>세션보장</button>
         <button type="button" id="live-agent-session-resume" ${processActionsDisabled ? "disabled" : ""}>세션재개</button>
         <button type="button" id="live-agent-session-restart" ${processActionsDisabled ? "disabled" : ""}>세션재시작</button>
         <button type="button" id="live-agent-session-recover" ${processActionsDisabled ? "disabled" : ""}>세션복구</button>
@@ -824,8 +828,9 @@ function liveAgentOperationDetailPriority(operationName = "") {
       "probe_statuses",
     ];
   }
-  if (["session.start", "session.resume", "session.restart", "session.recover"].includes(operationName)) {
+  if (["session.start", "session.ensure", "session.resume", "session.restart", "session.recover"].includes(operationName)) {
     return [
+      "ensure_action",
       "result_status",
       "connected_agent_count",
       "reply_probe_status",
@@ -840,6 +845,7 @@ function liveAgentOperationDetailPriority(operationName = "") {
 }
 
 function liveAgentOperationDetailLimit(operationName = "") {
+  if (operationName === "session.ensure") return 9;
   if (["session.start", "session.resume", "session.restart", "session.recover"].includes(operationName)) return 8;
   return 7;
 }
@@ -1722,6 +1728,17 @@ async function startLiveAgentSession(lobby) {
     includeCouncilConfigs: true,
     busyMessage: "상주 세션 시작 중",
     failurePrefix: "상주 세션 시작 실패",
+    notifyRecoverable: true,
+  });
+}
+
+async function ensureLiveAgentSession(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  await runLiveAgentSessionAction(lobby, {
+    endpoint: "/api/live-agent-sessions/ensure",
+    includeCouncilConfigs: true,
+    busyMessage: "상주 세션 보장 중",
+    failurePrefix: "상주 세션 보장 실패",
     notifyRecoverable: true,
   });
 }

@@ -211,6 +211,7 @@ function installHarness({
   processStartPayload = null,
   processStopRunningPayload = null,
   sessionStartPayload = null,
+  sessionEnsurePayload = null,
   sessionResumePayload = null,
   sessionRestartPayload = null,
   sessionRecoverPayload = null,
@@ -304,6 +305,18 @@ function installHarness({
       return jsonResponse(
         sessionStartPayload || {
           status: "ready",
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          connection: { expected: 3, connected: 3, attention: [] },
+          process: { status: "running", attention: [] },
+        }
+      );
+    }
+    if (url === "/api/live-agent-sessions/ensure") {
+      return jsonResponse(
+        sessionEnsurePayload || {
+          status: "ready",
+          action: "resume",
           meeting_id: "resident-gui",
           group_id: "resident-main",
           connection: { expected: 3, connected: 3, attention: [] },
@@ -444,6 +457,10 @@ function processStartRequest(requests) {
 
 function sessionStartRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-sessions/start");
+}
+
+function sessionEnsureRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-sessions/ensure");
 }
 
 function sessionResumeRequest(requests) {
@@ -781,6 +798,62 @@ test("session start button posts matching meeting and resident config payload", 
     state.liveAgentProcessStatus.message,
     "세션 ready: resident-gui · 3/3 connected · probes ok: 3/3 ok · rounds answered: 2 rounds, 1 answered, 1 already complete, 0 timed out, 0 skipped"
   );
+  assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
+  assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+});
+
+test("session ensure button posts one-shot resident session payload", async () => {
+  resetState();
+  const { document, requests, events } = installHarness({
+    sessionEnsurePayload: {
+      status: "ready",
+      action: "resume",
+      meeting_id: "resident-gui",
+      group_id: "resident-main",
+      connection: { expected: 3, connected: 3, attention: [] },
+      process: { status: "running", attention: [] },
+    },
+  });
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-meeting-id").value = "resident-gui";
+  lobby.querySelector("#live-agent-session-council-config").value = "configs/demo-council.json";
+  lobby.querySelector("#live-agent-session-agent-config").value = "configs/agents.start-session.example.json";
+  lobby.querySelector("#live-agent-process-config").value = "configs/live-agents.start-session.example.json";
+  lobby.querySelector("#live-agent-process-group").value = "resident-main";
+  lobby.querySelector("#live-agent-session-connect-timeout").value = "7";
+  lobby.querySelector("#live-agent-process-auto-restart").checked = true;
+  lobby.querySelector("#live-agent-process-max-restarts").value = "4";
+  lobby.querySelector("#live-agent-process-restart-backoff").value = "2";
+  lobby.querySelector("#live-agent-process-stale-restart-after").value = "300";
+  lobby.querySelector("#live-agent-session-run-remaining-rounds").checked = true;
+  lobby.querySelector("#live-agent-session-probe-bound-agents").checked = true;
+  lobby.querySelector("#live-agent-session-probe-timeout").value = "4";
+  lobby.querySelector("#live-agent-round-timeout").value = "12";
+  lobby.querySelector("#live-agent-round-max-rounds").value = "2";
+  lobby.querySelector("#live-agent-round-stop-on-timeout").checked = true;
+
+  await lobby.querySelector("#live-agent-session-ensure").click();
+
+  assert.deepEqual(sessionEnsureRequest(requests).jsonBody, {
+    meeting_id: "resident-gui",
+    group_id: "resident-main",
+    council_config_path: "configs/demo-council.json",
+    agent_config_path: "configs/agents.start-session.example.json",
+    live_agent_config_path: "configs/live-agents.start-session.example.json",
+    connect_timeout_seconds: 7,
+    auto_restart: true,
+    max_restarts: 4,
+    restart_backoff_seconds: 2,
+    stale_restart_after_seconds: 300,
+    probe_bound_agents: true,
+    probe_timeout_seconds: 4,
+    run_remaining_rounds: true,
+    round_timeout_seconds: 12,
+    round_max_rounds: 2,
+    round_stop_on_timeout: true,
+  });
+  assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 3/3 connected");
   assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
 });

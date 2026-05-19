@@ -36,6 +36,7 @@ from agentsassemble.gui import (
     _live_agent_turn_rounds_payload_locked,
     _run_session_bound_agent_probe,
     live_agents_payload,
+    live_agent_session_ensure_payload,
     send_lobby_message_to_remote_bridge,
     append_side_chat_event,
 )
@@ -6848,6 +6849,233 @@ class GuiServerTests(unittest.TestCase):
             self.assertIn("group:unknown", session_payload["process"]["attention"])
             self.assertIn("agent-a:not_in_group", session_payload["process"]["attention"])
             self.assertEqual(operations["operations"], [])
+
+    def test_live_agent_session_ensure_returns_ready_without_mutating_ready_session(self):
+        class EnsureSessionSupervisor:
+            def __init__(self) -> None:
+                self.started = []
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+            def list_groups(self):
+                return self.snapshot_groups()
+
+            def start_group(self, **kwargs):
+                self.started.append(kwargs)
+                raise AssertionError("ready ensure must not start a group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            supervisor = EnsureSessionSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/ensure",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                            "live_agent_config_path": str(live_agent_config),
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(session_payload["status"], "ready")
+            self.assertEqual(session_payload["action"], "none")
+            self.assertEqual(supervisor.started, [])
+            session_operations = [operation for operation in operations["operations"] if operation["operation"].startswith("session.")]
+            self.assertEqual([operation["operation"] for operation in session_operations], ["session.ensure"])
+            self.assertEqual(session_operations[-1]["status"], "success")
+            self.assertEqual(session_operations[-1]["details"]["ensure_action"], "none")
+
+    def test_live_agent_session_ensure_resumes_existing_meeting_when_group_is_missing(self):
+        class EnsureSessionSupervisor:
+            def __init__(self, output_root: Path) -> None:
+                self.output_root = output_root
+                self.started = []
+                self.groups = []
+
+            def snapshot_groups(self):
+                return list(self.groups)
+
+            def list_groups(self):
+                return list(self.groups)
+
+            def start_group(self, **kwargs):
+                self.started.append(kwargs)
+                heartbeat_live_agent(self.output_root, "agent-a", status="online")
+                group = {
+                    "group_id": kwargs.get("group_id") or "resident-main",
+                    "status": "running",
+                    "meeting_id": kwargs.get("meeting_id"),
+                    "agents": [{"agent_id": "agent-a"}],
+                }
+                self.groups = [group]
+                return group
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            supervisor = EnsureSessionSupervisor(root)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/ensure",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                            "live_agent_config_path": str(live_agent_config),
+                            "connect_timeout_seconds": 0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(session_payload["status"], "ready")
+            self.assertEqual(session_payload["action"], "resume")
+            self.assertEqual(supervisor.started[0]["group_id"], "resident-main")
+            self.assertEqual(supervisor.started[0]["meeting_id"], "resident-m1")
+            session_operations = [operation for operation in operations["operations"] if operation["operation"].startswith("session.")]
+            self.assertEqual([operation["operation"] for operation in session_operations], ["session.ensure"])
+            self.assertEqual(session_operations[-1]["status"], "success")
+            self.assertEqual(session_operations[-1]["details"]["ensure_action"], "resume")
+
+    def test_live_agent_session_ensure_selects_start_restart_and_recover_actions(self):
+        class EnsureActionSupervisor:
+            def __init__(self, output_root: Path, initial_status: str = "") -> None:
+                self.output_root = output_root
+                self.groups = []
+                self.calls = []
+                if initial_status:
+                    self.groups = [
+                        {
+                            "group_id": "resident-main",
+                            "status": initial_status,
+                            "meeting_id": "resident-m1",
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+            def snapshot_groups(self):
+                return list(self.groups)
+
+            def list_groups(self):
+                return list(self.groups)
+
+            def start_group(self, **kwargs):
+                self.calls.append(("start", kwargs))
+                return self._running_group(kwargs.get("meeting_id"), kwargs.get("group_id"))
+
+            def restart_group(self, group_id):
+                self.calls.append(("restart", {"group_id": group_id}))
+                return self._running_group("resident-m1", group_id)
+
+            def recover_group(self, group_id):
+                self.calls.append(("recover", {"group_id": group_id}))
+                return self._running_group("resident-m1", group_id)
+
+            def _running_group(self, meeting_id, group_id):
+                heartbeat_live_agent(self.output_root, "agent-a", status="online")
+                group = {
+                    "group_id": group_id or "resident-main",
+                    "status": "running",
+                    "meeting_id": meeting_id,
+                    "agents": [{"agent_id": "agent-a"}],
+                }
+                self.groups = [group]
+                return group
+
+        cases = [
+            ("start", "", False, "start"),
+            ("resume", "restarting", True, "start"),
+            ("restart", "stopped", True, "restart"),
+            ("recover", "error", True, "recover"),
+            ("recover", "unknown", True, "recover"),
+        ]
+        for expected_action, initial_status, create_meeting, expected_call in cases:
+            with self.subTest(action=expected_action):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    root = Path(temp_dir)
+                    council_config = root / "council.json"
+                    agent_config = root / "agents.json"
+                    live_agent_config = root / "live-agents.json"
+                    _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+                    if create_meeting:
+                        start_live_agent_meeting(
+                            root,
+                            council_config_path=council_config,
+                            agent_config_path=agent_config,
+                            meeting_id="resident-m1",
+                        )
+                    supervisor = EnsureActionSupervisor(root, initial_status)
+
+                    session_payload = live_agent_session_ensure_payload(
+                        root,
+                        supervisor,
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                            "council_config_path": str(council_config),
+                            "agent_config_path": str(agent_config),
+                            "live_agent_config_path": str(live_agent_config),
+                            "connect_timeout_seconds": 0,
+                        },
+                        default_server="http://127.0.0.1:8765",
+                    )
+
+                    self.assertEqual(session_payload["status"], "ready")
+                    self.assertEqual(session_payload["action"], expected_action)
+                    self.assertEqual(supervisor.calls[0][0], expected_call)
 
     def test_live_agent_session_restart_returns_ready_snapshot_and_records_safe_operation(self):
         class RestartSessionSupervisor:

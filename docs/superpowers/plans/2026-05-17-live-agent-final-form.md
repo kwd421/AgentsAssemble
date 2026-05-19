@@ -2465,6 +2465,64 @@ Expected: pass.
 
 ---
 
+### Task 74: GUI/API Session Ensure Control
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for GUI/API ensuring**
+
+Cover `POST /api/live-agent-sessions/ensure`, the ready no-op path, existing-meeting missing-group resume, the single `session.ensure` operation record, safe `ensure_action` details, and the GUI `세션보장` button sending the same resident session payload as start.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_gui_server.GuiServerTests.test_live_agent_session_ensure_returns_ready_without_mutating_ready_session \
+  tests.test_gui_server.GuiServerTests.test_live_agent_session_ensure_resumes_existing_meeting_when_group_is_missing \
+  tests.test_static_ui_assets.StaticUiAssetTests
+node --test tests/static_lobby_runtime_smoke.mjs --test-name-pattern "session ensure"
+```
+
+Expected: fail before implementation because `/api/live-agent-sessions/ensure` and the GUI button do not exist.
+
+- [x] **Step 2: Implement server-side ensure orchestration**
+
+Reuse the read-only targeted readiness snapshot first. Return ready snapshots without process mutation, choose start/resume/restart/recover for degraded targets, then return a final read-only readiness snapshot carrying the chosen `action`. Record exactly one sanitized `session.ensure` operation for the public API call and do not append child `session.check`, `session.resume`, or other nested operation records.
+
+Run the Step 1 command.
+Expected: pass.
+
+- [x] **Step 3: Add the GUI control and compact operation evidence**
+
+Add `세션보장` beside `세션시작`, post to `/api/live-agent-sessions/ensure` with council, agent, resident group, watchdog, probe, and remaining-round options, and show `session.ensure` compact details in CLI/GUI operation rows with `ensure_action` prioritized.
+
+Run:
+
+```bash
+node --test tests/static_lobby_runtime_smoke.mjs --test-name-pattern "session ensure|operation row"
+python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_operations_list_prioritizes_session_control_probe_and_auto_rounds
+```
+
+Expected: pass.
+
+- [x] **Step 4: Document the operator surface**
+
+Document that `ensure-session`, `세션보장`, and `POST /api/live-agent-sessions/ensure` expose the same one-shot policy, while internal readiness reads remain read-only and do not append `session.check` records.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

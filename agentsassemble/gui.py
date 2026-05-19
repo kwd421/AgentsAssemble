@@ -555,6 +555,103 @@ def live_agent_session_resume_payload(
     return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
 
+def live_agent_session_ensure_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+    *,
+    default_server: str,
+) -> dict[str, object]:
+    current = _live_agent_session_optional_readiness_payload(output_root, process_supervisor, payload)
+    action = _live_agent_session_ensure_action(current)
+    if action == "none":
+        session = current if isinstance(current, dict) else {}
+    elif action == "start":
+        session = live_agent_session_start_payload(
+            output_root,
+            process_supervisor,
+            payload,
+            default_server=default_server,
+        )
+    elif action == "restart":
+        session = live_agent_session_restart_payload(output_root, process_supervisor, payload)
+    elif action == "recover":
+        session = live_agent_session_recover_payload(output_root, process_supervisor, payload)
+    else:
+        session = live_agent_session_resume_payload(
+            output_root,
+            process_supervisor,
+            payload,
+            default_server=default_server,
+        )
+    ensured = _live_agent_session_ensured_readiness_payload(output_root, process_supervisor, payload, session)
+    ensured["action"] = action
+    return ensured
+
+
+def _live_agent_session_optional_readiness_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+) -> dict[str, object] | None:
+    meeting_id = str(payload.get("meeting_id") or "").strip()
+    group_id = str(payload.get("group_id") or "").strip()
+    if not meeting_id or not group_id:
+        return None
+    try:
+        return live_agent_session_readiness_payload(
+            output_root,
+            process_supervisor,
+            meeting_id=meeting_id,
+            group_id=group_id,
+        )
+    except ValueError as error:
+        if "was not found" in str(error):
+            return None
+        raise
+
+
+def _live_agent_session_ensure_action(current: dict[str, object] | None) -> str:
+    if current is None:
+        return "start"
+    if _operation_result_status(current.get("status")) == "ready":
+        return "none"
+    process = current.get("process") if isinstance(current.get("process"), dict) else {}
+    group = current.get("group") if isinstance(current.get("group"), dict) else {}
+    process_status = clean_lobby_text(process.get("status"), limit=64) or clean_lobby_text(current.get("process_status"), limit=64)
+    if not clean_lobby_text(group.get("group_id"), limit=128):
+        return "resume"
+    if process_status == "stopped":
+        return "restart"
+    if process_status in {"error", "unknown"}:
+        return "recover"
+    return "resume"
+
+
+def _live_agent_session_ensured_readiness_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+    session: dict[str, object],
+) -> dict[str, object]:
+    meeting_id = str(session.get("meeting_id") or payload.get("meeting_id") or "").strip()
+    group_id = str(session.get("group_id") or payload.get("group_id") or "").strip()
+    if meeting_id and group_id:
+        ensured = live_agent_session_readiness_payload(
+            output_root,
+            process_supervisor,
+            meeting_id=meeting_id,
+            group_id=group_id,
+        )
+    else:
+        ensured = dict(session)
+    for key in ("reply_probe", "auto_rounds"):
+        value = session.get(key)
+        if isinstance(value, dict):
+            ensured[key] = value
+    return ensured
+
+
 def live_agent_session_check_payload(
     output_root: Path,
     process_supervisor: LiveAgentProcessSupervisor,
@@ -2869,6 +2966,9 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
         "process_attention": _safe_payload_strings(process.get("attention"), limit=128),
         "ownership_attention": _safe_payload_strings(ownership.get("attention"), limit=128),
     }
+    ensure_action = clean_lobby_text(session.get("action"), limit=64)
+    if ensure_action:
+        details["ensure_action"] = ensure_action
     if offline:
         details.update(
             {
@@ -2984,6 +3084,23 @@ def _session_resume_operation_summary(session: dict[str, object]) -> str:
     return "resumed resident live-agent session with degraded remaining rounds"
 
 
+def _session_ensure_operation_summary(session: dict[str, object]) -> str:
+    action = clean_lobby_text(session.get("action"), limit=64) or "unknown"
+    if action == "none":
+        return "resident live-agent session already ready"
+    if _operation_result_status(session.get("status")) != "ready":
+        return f"resident live-agent session ensure still connecting via {action}"
+    reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
+    if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
+        return f"ensured resident live-agent session via {action} with degraded reply probe"
+    auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
+    if auto_rounds is None:
+        return f"ensured resident live-agent session via {action}"
+    if _operation_result_status(auto_rounds.get("status")) in {"answered", "complete"}:
+        return f"ensured resident live-agent session via {action} and ran remaining rounds"
+    return f"ensured resident live-agent session via {action} with degraded remaining rounds"
+
+
 def _session_stop_operation_status(session: dict[str, object]) -> str:
     return "success" if _operation_result_status(session.get("status")) == "stopped" else "degraded"
 
@@ -3038,6 +3155,10 @@ def _session_start_error_message(error: Exception) -> str:
 
 def _session_resume_error_message(error: Exception) -> str:
     return _session_error_message(error, action="resume")
+
+
+def _session_ensure_error_message(error: Exception) -> str:
+    return _session_error_message(error, action="ensure")
 
 
 def _session_restart_error_message(error: Exception) -> str:
@@ -3316,6 +3437,40 @@ def _make_handler(
                     status=_session_start_operation_status(session),
                     target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
                     summary=_session_start_operation_summary(session),
+                    details=_session_start_operation_details(session),
+                )
+                self._send_json(session)
+                return
+            if parsed.path == "/api/live-agent-sessions/ensure":
+                payload = self._operation_json_payload(operation="session.ensure")
+                if payload is None:
+                    return
+                try:
+                    session = live_agent_session_ensure_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                        default_server=self._request_server_url(),
+                    )
+                except (OSError, ValueError) as error:
+                    safe_error = _session_ensure_error_message(error)
+                    safe_details = _session_start_error_details(payload, error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.ensure",
+                        status="failed",
+                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
+                        error=safe_error,
+                        details=safe_details,
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="session.ensure",
+                    status=_session_start_operation_status(session),
+                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
+                    summary=_session_ensure_operation_summary(session),
                     details=_session_start_operation_details(session),
                 )
                 self._send_json(session)
