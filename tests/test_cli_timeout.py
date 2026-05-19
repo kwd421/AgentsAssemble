@@ -1005,6 +1005,42 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("session_smoke_soak_check_statuses=ready,ready", output)
 
+    def test_live_agent_operations_list_prioritizes_readiness_health_reasons(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "readiness.check",
+                    "status": "degraded",
+                    "target_id": "doctor-smoke",
+                    "summary": "",
+                    "details": {
+                        "result_status": "degraded",
+                        "session_smoke_reply_count": 3,
+                        "session_smoke_post_restart_reply_count": 3,
+                        "health_process_attention": ["orphan-group"],
+                        "health_process_reasons": [
+                            "orphan-group recovered_unknown orphan running record marked unknown"
+                        ],
+                        "probe_statuses": ["agent-a:ok"],
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "operations", "list", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("health_process_reasons=orphan-group recovered_unknown orphan running record marked unknown", output)
+        self.assertIn("health_process_attention=orphan-group", output)
+        self.assertLess(
+            output.index("health_process_reasons="),
+            output.index("session_smoke_reply_count=3"),
+        )
+
     def test_live_agent_operations_list_prioritizes_session_smoke_soak_evidence(self):
         payload = {
             "operations": [

@@ -2712,6 +2712,63 @@ def _probe_group_statuses(probe_groups: object) -> list[str]:
     return statuses
 
 
+def _readiness_health_operation_details(health: object) -> dict[str, object]:
+    if not isinstance(health, dict):
+        return {}
+    details: dict[str, object] = {"health_status": _operation_result_status(health.get("status"))}
+    detail_names = {
+        "agents": "agent",
+        "processes": "process",
+        "connections": "connection",
+        "sessions": "session",
+    }
+    for section_name, detail_name in detail_names.items():
+        section = health.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        attention = _safe_health_operation_strings(section.get("attention"), limit=128)
+        if attention:
+            details[f"health_{detail_name}_attention"] = attention
+    process_reasons = _health_process_reason_labels(health.get("processes"))
+    if process_reasons:
+        details["health_process_reasons"] = process_reasons
+    return details
+
+
+def _health_process_reason_labels(processes: object) -> list[str]:
+    if not isinstance(processes, dict):
+        return []
+    reasons = processes.get("reasons")
+    if not isinstance(reasons, dict):
+        return []
+    labels = []
+    for group_id, reason_payload in reasons.items():
+        clean_group_id = clean_lobby_text(group_id, limit=64)
+        if not clean_group_id:
+            continue
+        if isinstance(reason_payload, dict):
+            event_type = clean_lobby_text(reason_payload.get("event_type"), limit=64)
+            reason = clean_lobby_text(reason_payload.get("reason"), limit=160)
+        else:
+            event_type = ""
+            reason = clean_lobby_text(reason_payload, limit=160)
+        label = " ".join(part for part in (clean_group_id, event_type, reason) if part)
+        if _looks_sensitive_operator_diagnostic_text(label):
+            continue
+        if label:
+            labels.append(label)
+    return labels
+
+
+def _safe_health_operation_strings(value: object, *, limit: int) -> list[str]:
+    strings = []
+    for text in _safe_payload_strings(value, limit=limit):
+        if _looks_sensitive_operator_diagnostic_text(text):
+            continue
+        strings.append(text)
+    return strings
+
+
 def _payload_bool(value: object) -> bool:
     if isinstance(value, bool):
         return value
@@ -4405,6 +4462,7 @@ def _make_handler(
                     details={
                         "group_id": str(smoke.get("group_id") or payload.get("group_id") or ""),
                         "result_status": result_status,
+                        **_readiness_health_operation_details(readiness.get("health")),
                         "probe_agent_ids": _payload_probe_agent_ids(payload.get("probe_agent_ids")),
                         "probe_group_ids": _payload_probe_group_ids(payload.get("probe_group_ids")),
                         "effective_probe_agent_ids": _payload_probe_agent_ids(readiness.get("effective_probe_agent_ids")),

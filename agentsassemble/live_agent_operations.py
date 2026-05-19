@@ -39,6 +39,32 @@ SENSITIVE_TEXT_PATTERNS = (
     re.compile(r"(?<!\w)['\"]?/[^\s,;)'\"]+"),
 )
 
+HEALTH_OPERATION_DETAIL_KEYS = {
+    "health_agent_attention",
+    "health_connection_attention",
+    "health_process_attention",
+    "health_process_reasons",
+    "health_session_attention",
+}
+
+HEALTH_OPERATION_SENSITIVE_LABEL_MARKERS = (
+    "api-key",
+    "apikey",
+    "auth",
+    "authorization",
+    "bearer",
+    "command",
+    "endpoint",
+    "env",
+    "log",
+    "password",
+    "path",
+    "prompt",
+    "secret",
+    "token",
+    "url",
+)
+
 REDACTED_ERROR = "Live-agent operation error details redacted."
 
 
@@ -178,7 +204,10 @@ def _safe_details(value: object) -> dict[str, object]:
         clean_key = _clean_detail_key(key)
         if not clean_key or _is_sensitive_detail_key(clean_key):
             continue
-        safe_value = _safe_detail_value(raw_detail)
+        if clean_key in HEALTH_OPERATION_DETAIL_KEYS:
+            safe_value = _safe_health_operation_detail_value(raw_detail)
+        else:
+            safe_value = _safe_detail_value(raw_detail)
         if safe_value is not None:
             details[clean_key] = safe_value
     return details
@@ -279,6 +308,53 @@ def _safe_detail_value(value: object) -> object | None:
                 safe_items.append(item)
         return safe_items
     return None
+
+
+def _safe_health_operation_detail_value(value: object) -> object | None:
+    if isinstance(value, str):
+        return _safe_health_operation_label(value, limit=OPERATION_TEXT_LIMIT)
+    if isinstance(value, list):
+        safe_items = []
+        for item in value[:20]:
+            if isinstance(item, str):
+                safe_items.append(_safe_health_operation_label(item, limit=OPERATION_FIELD_LIMIT))
+            elif isinstance(item, int) and not isinstance(item, bool):
+                safe_items.append(item)
+            elif isinstance(item, float) and math.isfinite(item):
+                safe_items.append(item)
+            elif isinstance(item, bool):
+                safe_items.append(item)
+        return safe_items
+    return _safe_detail_value(value)
+
+
+def _safe_health_operation_label(value: object, *, limit: int) -> str:
+    text = _clean_field(value, limit=limit)
+    if not text:
+        return ""
+    redacted = text
+    for pattern in SENSITIVE_TEXT_PATTERNS:
+        redacted = pattern.sub("[redacted]", redacted)
+    redacted = _replace_sensitive_health_operation_label_text(redacted)
+    return _clean_field(redacted, limit=limit)
+
+
+def _replace_sensitive_health_operation_label_text(text: str) -> str:
+    redacted = text
+    for marker in HEALTH_OPERATION_SENSITIVE_LABEL_MARKERS:
+        redacted = re.sub(
+            rf"(?<!\S)(?:--?)?[^\s,;:=]*{re.escape(marker)}[^\s,;:=]*\s*[:=]\s*(?:Bearer\s+)?[^\s,;]+",
+            "[redacted]",
+            redacted,
+            flags=re.IGNORECASE,
+        )
+        redacted = re.sub(
+            rf"(?<!\S)(?:--?)?[^\s,;:=]*{re.escape(marker)}[^\s,;:=]*\s+(?:Bearer\s+)?[^\s,;]+",
+            "[redacted]",
+            redacted,
+            flags=re.IGNORECASE,
+        )
+    return redacted
 
 
 def _clean_field(value: object, *, limit: int) -> str:

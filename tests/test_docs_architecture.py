@@ -214,6 +214,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("recovered_unknown", doc)
         self.assertIn("orphan running record marked unknown", doc)
         self.assertIn("targeted `session-readiness` and `check-session` responses", doc)
+        self.assertIn("health process reasons and attention", doc)
         self.assertIn("recent_events", doc)
         self.assertIn("live-agent heartbeat", doc)
         self.assertIn("heartbeat_age_seconds", doc)

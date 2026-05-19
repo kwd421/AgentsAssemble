@@ -120,6 +120,56 @@ class LiveAgentOperationTests(unittest.TestCase):
         self.assertEqual([operation["target_id"] for operation in operations], ["agent-1", "agent-2"])
         self.assertEqual([operation["details"]["index"] for operation in operations], [1, 2])
 
+    def test_readiness_health_details_preserve_safe_operational_words(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            operation = append_live_agent_operation(
+                root,
+                operation="readiness.check",
+                status="degraded",
+                target_id="doctor-smoke",
+                details={
+                    "health_process_attention": [
+                        "missing-config-group",
+                        "/private/live-agents.json",
+                        "env:SECRET_TOKEN",
+                    ],
+                    "health_process_reasons": [
+                        "missing-config-group restart_failed missing launch config",
+                        "/private/live-agents.json restart_failed env:SECRET_TOKEN",
+                        "auth-group restart_failed Authorization Bearer abc123",
+                        "bearer-group restart_failed Bearer abc123",
+                        "password-group restart_failed password hunter2",
+                        "api-group restart_failed --api-key abc123",
+                    ],
+                },
+                now=datetime(2026, 5, 18, 1, 2, 3, tzinfo=UTC),
+            )
+
+            operations = read_live_agent_operations(root)
+            persisted = (root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8")
+
+        self.assertEqual(operations, [operation])
+        self.assertEqual(
+            operations[0]["details"]["health_process_attention"][0],
+            "missing-config-group",
+        )
+        self.assertEqual(
+            operations[0]["details"]["health_process_reasons"][0],
+            "missing-config-group restart_failed missing launch config",
+        )
+        operation_blob = json.dumps(operations[0], ensure_ascii=False)
+        self.assertNotIn("/private/live-agents.json", operation_blob)
+        self.assertNotIn("SECRET_TOKEN", operation_blob)
+        self.assertNotIn("Bearer abc123", operation_blob)
+        self.assertNotIn("password hunter2", operation_blob)
+        self.assertNotIn("--api-key abc123", operation_blob)
+        self.assertNotIn("/private/live-agents.json", persisted)
+        self.assertNotIn("SECRET_TOKEN", persisted)
+        self.assertNotIn("Bearer abc123", persisted)
+        self.assertNotIn("password hunter2", persisted)
+        self.assertNotIn("--api-key abc123", persisted)
+
     def test_read_operations_does_not_load_whole_history_file_at_once(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -35,6 +35,7 @@ from agentsassemble.gui import (
     live_agent_turn_rounds_payload,
     _live_agent_turn_rounds_payload_locked,
     _run_session_bound_agent_probe,
+    _readiness_health_operation_details,
     live_agents_payload,
     live_agent_session_ensure_payload,
     send_lobby_message_to_remote_bridge,
@@ -1819,6 +1820,144 @@ class GuiServerTests(unittest.TestCase):
             ]
             self.assertEqual(readiness_operations[-1]["status"], "degraded")
             self.assertEqual(readiness_operations[-1]["details"]["result_status"], "degraded")
+
+    def test_live_agent_readiness_operation_records_safe_health_attention(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "orphan-group",
+                        "status": "unknown",
+                        "recent_events": [{"event_type": "recovered_unknown", "status": "unknown"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch(
+                    "agentsassemble.gui.run_live_agent_smoke",
+                    return_value={"status": "ok", "group_id": "doctor-smoke", "replies": []},
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                        data=json.dumps({"group_id": "doctor-smoke", "timeout": 8}).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=12) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "degraded")
+        readiness_operations = [
+            operation for operation in operations["operations"] if operation["operation"] == "readiness.check"
+        ]
+        details = readiness_operations[-1]["details"]
+        self.assertEqual(details["health_status"], "degraded")
+        self.assertEqual(details["health_process_attention"], ["orphan-group"])
+        self.assertEqual(
+            details["health_process_reasons"],
+            ["orphan-group recovered_unknown orphan running record marked unknown"],
+        )
+        details_blob = json.dumps(details, ensure_ascii=False)
+        self.assertNotIn("recent_events", details_blob)
+        self.assertNotIn("live-agents.json", details_blob)
+
+    def test_live_agent_readiness_operation_omits_suspicious_health_attention(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "/private/live-agents.json",
+                        "status": "unknown",
+                        "recent_events": [{"event_type": "recovered_unknown", "status": "unknown"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            (root / "live_agents.json").write_text(
+                json.dumps({"agents": [{"agent_id": "env:SECRET_TOKEN", "status": "offline"}]}),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch(
+                    "agentsassemble.gui.run_live_agent_smoke",
+                    return_value={"status": "ok", "group_id": "doctor-smoke", "replies": []},
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                        data=json.dumps({"group_id": "doctor-smoke", "timeout": 8}).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=12) as response:
+                        json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        readiness_operations = [
+            operation for operation in operations["operations"] if operation["operation"] == "readiness.check"
+        ]
+        details_blob = json.dumps(readiness_operations[-1]["details"], ensure_ascii=False)
+        self.assertNotIn("live-agents.json", details_blob)
+        self.assertNotIn("SECRET_TOKEN", details_blob)
+        self.assertNotIn("/private", details_blob)
+        self.assertNotIn("env:", details_blob)
+
+    def test_readiness_health_operation_details_filters_sensitive_values(self):
+        details = _readiness_health_operation_details(
+            {
+                "status": "degraded",
+                "processes": {
+                    "attention": ["orphan-group", "/private/live-agents.json", "env:SECRET_TOKEN"],
+                    "reasons": {
+                        "orphan-group": {
+                            "event_type": "recovered_unknown",
+                            "reason": "orphan running record marked unknown",
+                        },
+                        "/private/live-agents.json": {
+                            "event_type": "recovered_unknown",
+                            "reason": "env:SECRET_TOKEN",
+                        },
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(details["health_status"], "degraded")
+        self.assertEqual(details["health_process_attention"], ["orphan-group"])
+        self.assertEqual(
+            details["health_process_reasons"],
+            ["orphan-group recovered_unknown orphan running record marked unknown"],
+        )
+        details_blob = json.dumps(details, ensure_ascii=False)
+        self.assertNotIn("live-agents.json", details_blob)
+        self.assertNotIn("SECRET_TOKEN", details_blob)
+        self.assertNotIn("/private", details_blob)
+        self.assertNotIn("env:", details_blob)
 
     def test_live_agent_readiness_endpoint_runs_opt_in_targeted_probes(self):
         with tempfile.TemporaryDirectory() as temp_dir:
