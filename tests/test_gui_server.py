@@ -2896,7 +2896,11 @@ class GuiServerTests(unittest.TestCase):
                         "recent_events": [{"event_type": "restart_failed"}],
                     },
                     {"group_id": "crashed-group", "status": "error"},
-                    {"group_id": "orphan-group", "status": "unknown"},
+                    {
+                        "group_id": "orphan-group",
+                        "status": "unknown",
+                        "recent_events": [{"event_type": "recovered_unknown", "status": "unknown"}],
+                    },
                     {"group_id": "stopped-group", "status": "stopped"},
                     {"group_id": "diagnostic-stopped", "status": "stopped", "diagnostic": True},
                     {"group_id": "diagnostic-error", "status": "error", "diagnostic": True},
@@ -2995,12 +2999,65 @@ class GuiServerTests(unittest.TestCase):
                     "restart-group": {"event_type": "stale_watchdog", "reason": "missing manifest agent agent-a"},
                     "missing-config-group": {"event_type": "restart_failed", "reason": "missing launch config"},
                     "missing-server-group": {"event_type": "restart_failed", "reason": "missing launch server"},
+                    "orphan-group": {
+                        "event_type": "recovered_unknown",
+                        "reason": "orphan running record marked unknown",
+                    },
                 },
             )
             self.assertNotIn("SECRET_TOKEN", json.dumps(payload, ensure_ascii=False))
             self.assertNotIn("live-agents.json", json.dumps(payload, ensure_ascii=False))
             self.assertNotIn("private/token", json.dumps(payload, ensure_ascii=False))
             self.assertFalse(supervisor.list_called)
+
+    def test_live_agent_health_endpoint_reports_only_current_recovered_unknown_reason(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "current-orphan",
+                        "status": "unknown",
+                        "recent_events": [{"event_type": "recovered_unknown", "status": "unknown"}],
+                    },
+                    {
+                        "group_id": "resolved-orphan",
+                        "status": "unknown",
+                        "recent_events": [
+                            {"event_type": "recovered_unknown", "status": "unknown"},
+                            {"event_type": "stopped", "status": "stopped"},
+                        ],
+                    },
+                    {
+                        "group_id": "running-after-recovery",
+                        "status": "running",
+                        "recent_events": [{"event_type": "recovered_unknown", "status": "unknown"}],
+                    },
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(
+            payload["processes"]["reasons"],
+            {
+                "current-orphan": {
+                    "event_type": "recovered_unknown",
+                    "reason": "orphan running record marked unknown",
+                },
+            },
+        )
 
     def test_live_agent_health_endpoint_reports_only_current_restart_failed_launch_reason(self):
         class FakeSupervisor:

@@ -82,6 +82,8 @@ LIVE_AGENT_ROUND_SCHEDULER_LOCKS: dict[str, threading.RLock] = {}
 LIVE_AGENT_ROUND_SCHEDULER_LOCKS_LOCK = threading.Lock()
 HEALTH_WATCHDOG_REASON_EVENT_TYPES = {"stale_watchdog", "stale_watchdog_stop_failed"}
 HEALTH_RESTART_FAILED_REASON_EVENT_TYPE = "restart_failed"
+HEALTH_RECOVERED_UNKNOWN_REASON_EVENT_TYPE = "recovered_unknown"
+HEALTH_RECOVERED_UNKNOWN_REASON = "orphan running record marked unknown"
 SAFE_HEALTH_WATCHDOG_REASON_PATTERN = re.compile(
     r"^(?:(?:missing|stale|offline|error) manifest agent|wrong meeting manifest agent) [A-Za-z0-9_.-]{1,64}$"
 )
@@ -1696,6 +1698,10 @@ def _live_agent_process_health_reason(group: dict[str, object]) -> dict[str, str
             if seen_newer_event or status != "error":
                 continue
             reason = _safe_health_restart_failed_reason(group.get("last_error"), group_id=group_id)
+        elif event_type == HEALTH_RECOVERED_UNKNOWN_REASON_EVENT_TYPE:
+            if seen_newer_event or status != "unknown":
+                continue
+            reason = HEALTH_RECOVERED_UNKNOWN_REASON
         else:
             seen_newer_event = True
             continue

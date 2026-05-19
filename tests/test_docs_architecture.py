@@ -212,6 +212,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("offline reconciliation summaries with expected/offline/skipped counts", doc)
         self.assertIn("default CLI process list and GUI process rows show the latest lifecycle offline summary", doc)
         self.assertIn("recovered_unknown", doc)
+        self.assertIn("orphan running record marked unknown", doc)
         self.assertIn("recent_events", doc)
         self.assertIn("live-agent heartbeat", doc)
         self.assertIn("heartbeat_age_seconds", doc)

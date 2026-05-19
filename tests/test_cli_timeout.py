@@ -1232,6 +1232,10 @@ class CliTimeoutTests(unittest.TestCase):
                         "event_type": "restart_failed",
                         "reason": "missing launch config",
                     },
+                    "orphan-group": {
+                        "event_type": "recovered_unknown",
+                        "reason": "orphan running record marked unknown",
+                    },
                 },
             },
             "connections": {
@@ -1263,7 +1267,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn(
             (
                 "process reasons: crashed-group stale_watchdog missing manifest agent agent-a, "
-                "missing-config-group restart_failed missing launch config"
+                "missing-config-group restart_failed missing launch config, "
+                "orphan-group recovered_unknown orphan running record marked unknown"
             ),
             output,
         )
