@@ -293,6 +293,8 @@ class CliTimeoutTests(unittest.TestCase):
                         "delegate failed",
                         "--last-observed-event-id",
                         "evt1",
+                        "--last-observed-live-event-id",
+                        "live-evt1",
                         "--last-reply-at",
                         "2026-05-17T12:00:00+00:00",
                     ]
@@ -307,6 +309,7 @@ class CliTimeoutTests(unittest.TestCase):
                 "last_error": "delegate failed",
                 "last_reply_at": "2026-05-17T12:00:00+00:00",
                 "last_observed_event_id": "evt1",
+                "last_observed_live_event_id": "live-evt1",
             },
         )
         self.assertIn("claude-code-live: error", stdout.getvalue())

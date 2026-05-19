@@ -205,6 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_heartbeat.add_argument("--last-error", default=None)
     live_heartbeat.add_argument("--last-reply-at", default=None)
     live_heartbeat.add_argument("--last-observed-event-id", default=None)
+    live_heartbeat.add_argument("--last-observed-live-event-id", default=None)
 
     live_engagement = live_agent_subparsers.add_parser("engagement", parents=[live_server], help="Update a live agent engagement mode.")
     live_engagement.add_argument("--agent-id", required=True)
@@ -758,6 +759,7 @@ def _heartbeat_payload(args: argparse.Namespace) -> dict[str, object]:
         "last_error": getattr(args, "last_error", None),
         "last_reply_at": getattr(args, "last_reply_at", None),
         "last_observed_event_id": getattr(args, "last_observed_event_id", None),
+        "last_observed_live_event_id": getattr(args, "last_observed_live_event_id", None),
     }
     for key, value in optional_fields.items():
         if value is not None:

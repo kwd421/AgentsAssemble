@@ -927,7 +927,7 @@ Default files under `--output-root .agentsassemble`:
 
 What to check:
 
-- `.agentsassemble/live_agents.json`: presence, status, heartbeat metadata, `last_error`, `last_reply_at`, and `last_observed_event_id`.
+- `.agentsassemble/live_agents.json`: presence, status, heartbeat metadata, `last_error`, `last_reply_at`, `last_observed_event_id`, and `last_observed_live_event_id`.
 - `/api/live-agents`: roster entries add output-only `heartbeat_age_seconds` and `stale_after_seconds` so operators can see why an agent is fresh or stale. These freshness fields are inferred at read time and are not persisted in `live_agents.json`.
 - Slow resident replies keep sending `working` heartbeats while the provider command is still in flight, so a long Claude, Gemini, local CLI, live session, or remote bridge turn does not look stale merely because it is still answering.
 - `.agentsassemble/lobby.jsonl`: human lobby messages and live-agent replies. Live-agent auto replies include `actor_id`, `source_event_id`, `auto_chain_depth`, and the server-issued `live_agent_endpoint` evidence flag when they were posted through the resident live-agent lobby endpoint.
@@ -1035,6 +1035,7 @@ python3 -m agentsassemble.cli live-agent heartbeat \
   --status error \
   --last-error "delegate command failed" \
   --last-observed-event-id evt1 \
+  --last-observed-live-event-id live_evt1 \
   --last-reply-at 2026-05-17T12:00:00+00:00
 ```
 
