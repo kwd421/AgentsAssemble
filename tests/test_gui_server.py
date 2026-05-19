@@ -363,6 +363,153 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("019e02af-c287-7cd1-aab7-c1e059c5ed44", persisted_operations)
             self.assertNotIn("codex-live-session.local.json", persisted_operations)
 
+    def test_codex_session_invite_http_failure_records_safe_operation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "roles": [
+                            {"id": "lore_lawyer", "display_name": "설정충"},
+                            {"id": "show_me_the_feats", "display_name": "근거충"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (root / "codex-live-session.local.json").write_text(
+                json.dumps(
+                    {
+                        "agent_bindings": [
+                            {
+                                "agent_id": "codex-live-feats",
+                                "role_id": "show_me_the_feats",
+                                "owner_id": "host",
+                                "provider_id": "codex-live",
+                                "permission_profile_id": "codex_live_meeting_readonly",
+                                "join_mode": "current_session",
+                                "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/codex-sessions/invite",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "role_id": "lore_lawyer",
+                            "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as caught:
+                    urlopen(request, timeout=4)
+                error_payload = json.loads(caught.exception.read().decode("utf-8"))
+                caught.exception.close()
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(caught.exception.code, 400)
+            self.assertEqual(error_payload["error"], "Codex live session invite failed.")
+            self.assertEqual(error_payload["details"], {"role_id": "lore_lawyer"})
+            persisted_operations = (root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8")
+            invite_operations = [
+                operation
+                for operation in operations["operations"]
+                if operation["operation"] == "codex_session.invite"
+            ]
+            self.assertEqual(len(invite_operations), 1)
+            self.assertEqual(invite_operations[0]["status"], "failed")
+            self.assertEqual(invite_operations[0]["target_id"], "lore_lawyer")
+            self.assertEqual(invite_operations[0]["details"], {"role_id": "lore_lawyer"})
+            response_blob = json.dumps(error_payload, ensure_ascii=False)
+            operation_blob = json.dumps(invite_operations, ensure_ascii=False)
+            for blob in (response_blob, operation_blob, persisted_operations):
+                self.assertNotIn("019e02af-c287-7cd1-aab7-c1e059c5ed44", blob)
+                self.assertNotIn("codex-live-session.local.json", blob)
+
+    def test_codex_session_invite_http_failure_omits_unknown_role_detail(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "roles": [{"id": "lore_lawyer", "display_name": "설정충"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/codex-sessions/invite",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "role_id": "codex-live-session.local.json",
+                            "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as caught:
+                    urlopen(request, timeout=4)
+                error_payload = json.loads(caught.exception.read().decode("utf-8"))
+                caught.exception.close()
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(caught.exception.code, 400)
+            self.assertEqual(error_payload["error"], "Codex live session invite failed.")
+            self.assertNotIn("details", error_payload)
+            persisted_operations = (root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8")
+            invite_operations = [
+                operation
+                for operation in operations["operations"]
+                if operation["operation"] == "codex_session.invite"
+            ]
+            self.assertEqual(len(invite_operations), 1)
+            self.assertEqual(invite_operations[0]["status"], "failed")
+            self.assertEqual(invite_operations[0]["target_id"], "")
+            self.assertEqual(invite_operations[0]["details"], {})
+            response_blob = json.dumps(error_payload, ensure_ascii=False)
+            operation_blob = json.dumps(invite_operations, ensure_ascii=False)
+            for blob in (response_blob, operation_blob, persisted_operations):
+                self.assertNotIn("019e02af-c287-7cd1-aab7-c1e059c5ed44", blob)
+                self.assertNotIn("codex-live-session.local.json", blob)
+
     def test_live_agent_process_endpoints_start_list_and_stop_group(self):
         class FakeSupervisor:
             def __init__(self):

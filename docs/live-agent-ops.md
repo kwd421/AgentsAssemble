@@ -117,7 +117,7 @@ The GUI "Codex 세션 초대" panel can bind a current Codex CLI session to a me
 POST /api/codex-sessions/invite
 ```
 
-The endpoint writes `.agentsassemble/codex-live-session.local.json` with a `codex_live_session` provider binding for the selected role. It also records one sanitized `codex_session.invite` operation with the safe role id, generated agent id, join mode, and provider id, so another operator or automation can verify that an invite happened from `/api/live-agent-operations`. The operation record does not include the Codex session id, local config path, command arguments, auth refs, prompts, provider output, or log tails.
+The endpoint writes `.agentsassemble/codex-live-session.local.json` with a `codex_live_session` provider binding for the selected role. It also records sanitized successful and failed invite attempts as `codex_session.invite` operations, so another operator or automation can verify what happened from `/api/live-agent-operations`. Successful records include the safe role id, generated agent id, join mode, and provider id. Failed records include only the safe role id and a generic invite failure. The operation record does not include the Codex session id, local config path, command arguments, auth refs, prompts, provider output, or log tails.
 
 External or manually driven agents can also post a linked lobby reply through the live-agent endpoint:
 

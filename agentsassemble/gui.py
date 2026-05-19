@@ -2126,6 +2126,16 @@ def _codex_session_invite_operation_details(invite: dict[str, object]) -> dict[s
     }
 
 
+def _codex_session_invite_error_details(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
+    role_id = clean_lobby_text(payload.get("role_id"), limit=128)
+    meeting_id = _optional_str(payload.get("meeting_id"))
+    try:
+        known_role_ids = set(_codex_invite_role_ids(output_root, meeting_id))
+    except ValueError:
+        known_role_ids = set()
+    return {"role_id": role_id} if role_id in known_role_ids else {}
+
+
 def _live_agent_for_id(output_root: Path, agent_id: str) -> dict[str, object]:
     for agent in read_live_agents(output_root):
         if agent.get("agent_id") == agent_id:
@@ -4767,8 +4777,19 @@ def _make_handler(
                         role_id=str(payload.get("role_id") or ""),
                         meeting_id=_optional_str(payload.get("meeting_id")),
                     )
-                except ValueError as error:
-                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                except ValueError:
+                    safe_error = "Codex live session invite failed."
+                    safe_details = _codex_session_invite_error_details(output_root, payload)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="codex_session.invite",
+                        status="failed",
+                        target_id=safe_details.get("role_id", ""),
+                        summary="Codex live session invite failed",
+                        error=safe_error,
+                        details=safe_details,
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
                     return
                 operation_details = _codex_session_invite_operation_details(invite)
                 record_live_agent_operation(
