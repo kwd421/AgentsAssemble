@@ -1998,6 +1998,42 @@ Document that the stale watchdog restarts owned groups when manifest agents are 
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 61: Stale Watchdog Lifecycle Reason Evidence
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+
+- [x] **Step 1: Add RED coverage for watchdog lifecycle reasons**
+
+Extend stale-watchdog lifecycle tests so `stale_watchdog` and `stale_watchdog_stop_failed` events expose the safe restart reason in both raw lifecycle history and process row `recent_events`. Cover that provider `last_error` text is not copied into the reason.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stale_watchdog_schedules_auto_restart_for_missing_manifest_agent \
+  tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stale_watchdog_schedules_auto_restart_for_error_manifest_agent \
+  tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stale_watchdog_stop_failure_does_not_repeat_watchdog_events
+```
+
+Expected: fail before implementation because lifecycle watchdog events only expose the event type and counters, not the reason.
+
+- [x] **Step 2: Add sanitized lifecycle reason field**
+
+Thread a bounded `reason` through lifecycle event construction and sanitized readback. Attach it only to stale-watchdog event paths, using the existing safe reason strings such as missing, stale, offline, error, or wrong-meeting manifest agent. Drop suspicious reason values and any non-watchdog reason instead of serializing command paths, env markers, config paths, provider output, or arbitrary persisted free text.
+
+Run the Step 1 command plus `python3 -m unittest tests.test_live_agent_processes`.
+Expected: pass.
+
+- [x] **Step 3: Document lifecycle reason evidence**
+
+Document that lifecycle history and process row `recent_events` retain sanitized stale-watchdog reasons without command arguments, endpoint URLs, auth refs, prompts, log tails, provider output, or environment-derived values.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

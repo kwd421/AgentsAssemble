@@ -1323,6 +1323,7 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
                         "pid": 1234,
                         "next_restart_at": "env:SECRET_TOKEN",
                         "previous_status": "prompt secret",
+                        "reason": "secret raw provider output token",
                     }
                 ),
                 encoding="utf-8",
@@ -1340,6 +1341,46 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertNotIn("http://secret.local", events_text)
         self.assertNotIn("/tmp/secret.json", events_text)
         self.assertNotIn("prompt secret", events_text)
+        self.assertNotIn("reason", events[0])
+        self.assertNotIn("secret raw provider output token", events_text)
+
+    def test_read_live_agent_process_events_preserves_only_known_watchdog_reasons(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "live-agent-runs" / "events.jsonl"
+            path.parent.mkdir(parents=True)
+            rows = [
+                {
+                    "timestamp": "2026-05-17T12:00:00+00:00",
+                    "group_id": "crew",
+                    "event_type": "started",
+                    "status": "running",
+                    "reason": "missing manifest agent agent-a",
+                },
+                {
+                    "timestamp": "2026-05-17T12:00:01+00:00",
+                    "group_id": "crew",
+                    "event_type": "stale_watchdog",
+                    "status": "running",
+                    "reason": "secret raw provider output token",
+                },
+                {
+                    "timestamp": "2026-05-17T12:00:02+00:00",
+                    "group_id": "crew",
+                    "event_type": "stale_watchdog",
+                    "status": "running",
+                    "reason": "missing manifest agent agent-a",
+                },
+            ]
+            path.write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
+
+            events = read_live_agent_process_events(root, limit=3)
+            events_text = json.dumps(events, ensure_ascii=False)
+
+        self.assertNotIn("reason", events[0])
+        self.assertNotIn("reason", events[1])
+        self.assertEqual(events[2]["reason"], "missing manifest agent agent-a")
+        self.assertNotIn("secret raw provider output token", events_text)
 
     def test_read_live_agent_process_events_does_not_load_whole_history_file_at_once(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1606,6 +1647,8 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertIn("Stale watchdog", groups[0]["last_error"])
         self.assertTrue(processes[0].signals)
         self.assertEqual([event["event_type"] for event in events], ["started", "stale_watchdog", "restart_scheduled"])
+        self.assertEqual(events[1]["reason"], "missing manifest agent agent-a")
+        self.assertEqual(groups[0]["recent_events"][1]["reason"], "missing manifest agent agent-a")
 
     def test_stale_watchdog_waits_until_group_exceeds_threshold(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1741,10 +1784,13 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             current_time["value"] += timedelta(seconds=61)
             heartbeat_live_agent(root, "agent-a", status="error", now=current_time["value"], metadata={"last_error": "secret raw provider output"})
             groups = supervisor.list_groups()
+            events = _read_lifecycle_events(root)
 
         self.assertEqual(groups[0]["status"], "restarting")
         self.assertIn("error manifest agent agent-a", groups[0]["last_error"])
         self.assertNotIn("secret raw provider output", groups[0]["last_error"])
+        self.assertEqual(events[1]["reason"], "error manifest agent agent-a")
+        self.assertNotIn("secret raw provider output", json.dumps(events, ensure_ascii=False))
 
     def test_stale_watchdog_schedules_auto_restart_for_wrong_meeting_manifest_agent(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2084,6 +2130,7 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             [event["event_type"] for event in events],
             ["started", "stale_watchdog_stop_failed"],
         )
+        self.assertEqual(events[1]["reason"], "missing manifest agent agent-a")
 
     def test_auto_restart_failure_writes_restart_failed_lifecycle_event(self):
         with tempfile.TemporaryDirectory() as temp_dir:

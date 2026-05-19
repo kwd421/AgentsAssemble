@@ -27,6 +27,10 @@ JSONL_TAIL_BLOCK_BYTES = 8192
 STALE_WATCHDOG_RETURNCODE = -98
 SAFE_LIFECYCLE_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 SAFE_LIFECYCLE_TIMESTAMP_PATTERN = re.compile(r"^[0-9T:+.\-Z]{1,64}$")
+SAFE_WATCHDOG_REASON_PATTERN = re.compile(
+    r"^(?:(?:missing|stale|offline|error) manifest agent|wrong meeting manifest agent) [A-Za-z0-9_.-]{1,64}$"
+)
+WATCHDOG_REASON_EVENT_TYPES = {"stale_watchdog", "stale_watchdog_stop_failed"}
 
 
 class LiveAgentProcessSupervisor:
@@ -490,9 +494,9 @@ class LiveAgentProcessSupervisor:
             )
             self._close_log(group_id)
             self._write_records()
-            self._append_lifecycle_event(record, "stale_watchdog_stop_failed")
+            self._append_lifecycle_event(record, "stale_watchdog_stop_failed", reason=reason)
             return
-        self._append_lifecycle_event(record, "stale_watchdog", returncode=STALE_WATCHDOG_RETURNCODE)
+        self._append_lifecycle_event(record, "stale_watchdog", returncode=STALE_WATCHDOG_RETURNCODE, reason=reason)
         self._handle_process_exit(
             group_id,
             returncode=STALE_WATCHDOG_RETURNCODE,
@@ -734,6 +738,7 @@ class LiveAgentProcessSupervisor:
         returncode: object = None,
         previous_status: str = "",
         offline: dict[str, object] | None = None,
+        reason: str = "",
     ) -> None:
         event = _lifecycle_event(
             record,
@@ -742,6 +747,7 @@ class LiveAgentProcessSupervisor:
             returncode=returncode,
             previous_status=previous_status,
             offline=offline,
+            reason=reason,
         )
         path = self._event_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1037,6 +1043,7 @@ def _lifecycle_event(
     returncode: object = None,
     previous_status: str = "",
     offline: dict[str, object] | None = None,
+    reason: str = "",
 ) -> dict[str, object]:
     event: dict[str, object] = {
         "timestamp": timestamp.isoformat(),
@@ -1056,6 +1063,9 @@ def _lifecycle_event(
         event["meeting_id"] = meeting_id
     if previous_status:
         event["previous_status"] = str(previous_status)
+    safe_reason = _safe_lifecycle_reason(event.get("event_type"), reason)
+    if safe_reason:
+        event["reason"] = safe_reason
     safe_offline = _safe_offline_reconciliation_summary(offline)
     if safe_offline:
         event["offline"] = safe_offline
@@ -1089,6 +1099,9 @@ def _safe_lifecycle_event(payload: object) -> dict[str, object]:
     previous_status = _safe_optional_lifecycle_token(payload.get("previous_status"))
     if previous_status:
         event["previous_status"] = previous_status
+    reason = _safe_lifecycle_reason(event_type, payload.get("reason"))
+    if reason:
+        event["reason"] = reason
     offline = _safe_offline_reconciliation_summary(payload.get("offline"))
     if offline:
         event["offline"] = offline
@@ -1114,6 +1127,22 @@ def _safe_lifecycle_timestamp(value: object) -> str:
     if SAFE_LIFECYCLE_TIMESTAMP_PATTERN.fullmatch(raw):
         return raw
     return ""
+
+
+def _safe_lifecycle_reason(event_type: object, value: object) -> str:
+    if str(event_type or "") not in WATCHDOG_REASON_EVENT_TYPES:
+        return ""
+    reason = clean_lobby_text(value, limit=160)
+    if not reason or _looks_sensitive_lifecycle_reason(reason):
+        return ""
+    if not SAFE_WATCHDOG_REASON_PATTERN.fullmatch(reason):
+        return ""
+    return reason
+
+
+def _looks_sensitive_lifecycle_reason(reason: str) -> bool:
+    lowered = reason.casefold()
+    return "/" in reason or "\\" in reason or ".json" in lowered or "env:" in lowered
 
 
 def _record_returncode(record: dict[str, object]) -> int | None:
