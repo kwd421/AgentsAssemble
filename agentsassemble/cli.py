@@ -43,6 +43,7 @@ from agentsassemble.live_agent_smoke import (
     LiveAgentSmokeFailed,
     run_live_agent_smoke,
 )
+from agentsassemble.live_agent_sessions import session_ensure_action
 from agentsassemble.live_session_transport import JsonlLiveSession
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
@@ -1396,9 +1397,9 @@ def _run_live_agent_ensure_session(args: argparse.Namespace) -> int:
 
 def _ensure_live_agent_session(args: argparse.Namespace) -> tuple[str, dict[str, object]]:
     initial = _initial_live_agent_session_readiness(args)
-    if initial is not None and initial.get("status") == "ready":
-        return "none", initial
-    action = _ensure_live_agent_session_action(initial)
+    action = session_ensure_action(initial)
+    if action == "none":
+        return action, initial if isinstance(initial, dict) else {}
     response = _request_json(
         _server_url(str(args.server), f"/api/live-agent-sessions/{action}"),
         method="POST",
@@ -1436,21 +1437,6 @@ def _initial_live_agent_session_readiness(args: argparse.Namespace) -> dict[str,
         if "was not found" in str(error):
             return None
         raise
-
-
-def _ensure_live_agent_session_action(initial: dict[str, object] | None) -> str:
-    if initial is None:
-        return "start"
-    process = initial.get("process") if isinstance(initial.get("process"), dict) else {}
-    group = initial.get("group") if isinstance(initial.get("group"), dict) else {}
-    process_status = str(process.get("status") or initial.get("process_status") or "unknown")
-    if process_status == "unknown" and not str(group.get("group_id") or "").strip():
-        return "resume"
-    if process_status in {"unknown", "error"}:
-        return "recover"
-    if process_status == "stopped":
-        return "restart"
-    return "resume"
 
 
 def _ensure_live_agent_session_payload(args: argparse.Namespace, action: str) -> dict[str, object]:

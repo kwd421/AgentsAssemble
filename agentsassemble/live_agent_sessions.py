@@ -34,6 +34,25 @@ SESSION_AGENT_ATTENTION_STATUSES = frozenset(
 SESSION_MEETING_ATTENTION_STATUSES = frozenset({"missing", "invalid", "unavailable", "duplicate_active_group"})
 
 
+def session_ensure_action(readiness: dict[str, object] | None) -> str:
+    if readiness is None:
+        return "start"
+    if clean_lobby_text(readiness.get("status"), limit=64) == "ready":
+        return "none"
+    group = readiness.get("group") if isinstance(readiness.get("group"), dict) else {}
+    if not clean_lobby_text(group.get("group_id"), limit=128):
+        return "resume"
+    process = readiness.get("process") if isinstance(readiness.get("process"), dict) else {}
+    process_status = clean_lobby_text(process.get("status"), limit=64)
+    if not process_status:
+        process_status = clean_lobby_text(readiness.get("process_status"), limit=64) or "unknown"
+    if process_status == "stopped":
+        return "restart"
+    if process_status in {"error", "unknown"}:
+        return "recover"
+    return "resume"
+
+
 class LiveAgentSessionStartError(ValueError):
     def __init__(self, message: str, *, meeting_id: str) -> None:
         super().__init__(message)

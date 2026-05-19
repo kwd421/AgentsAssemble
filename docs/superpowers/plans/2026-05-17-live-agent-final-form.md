@@ -2523,6 +2523,61 @@ Expected: pass.
 
 ---
 
+### Task 75: Shared Session Ensure Policy
+
+**Files:**
+- Modify: `agentsassemble/live_agent_sessions.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_sessions.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for the shared action policy**
+
+Cover the single action-selection table for no target, ready, missing group, running degraded, restarting degraded, stopped, error, unknown, and missing process status snapshots.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_sessions.LiveAgentSessionEnsureActionTests.test_session_ensure_action_uses_one_policy_for_cli_and_api_surfaces
+```
+
+Expected: fail before implementation because `session_ensure_action` is not exported from `agentsassemble.live_agent_sessions`.
+
+- [x] **Step 2: Move CLI/API ensure action selection to the shared helper**
+
+Add `session_ensure_action(readiness)` to `agentsassemble/live_agent_sessions.py`, import it from both `agentsassemble/cli.py` and `agentsassemble/gui.py`, remove the duplicate local action-selection helpers, and preserve the public ready no-op, start, resume, restart, and recover behavior.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_sessions.LiveAgentSessionEnsureActionTests.test_session_ensure_action_uses_one_policy_for_cli_and_api_surfaces \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_returns_ready_without_control_post \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_resumes_when_group_is_missing_for_existing_meeting \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_resumes_running_degraded_session_and_waits_ready \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_recovers_error_session \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_restarts_stopped_session \
+  tests.test_gui_server.GuiServerTests.test_live_agent_session_ensure_returns_ready_without_mutating_ready_session \
+  tests.test_gui_server.GuiServerTests.test_live_agent_session_ensure_resumes_existing_meeting_when_group_is_missing \
+  tests.test_gui_server.GuiServerTests.test_live_agent_session_ensure_selects_start_restart_and_recover_actions
+```
+
+Expected: pass.
+
+- [x] **Step 3: Document the shared policy boundary**
+
+Document that `ensure-session`, `세션보장`, and `/api/live-agent-sessions/ensure` use the same `session_ensure_action` helper, so the action chosen for a readiness snapshot cannot drift between CLI and API surfaces.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

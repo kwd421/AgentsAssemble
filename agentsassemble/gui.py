@@ -35,6 +35,7 @@ from agentsassemble.live_agent_sessions import (
     recover_live_agent_session,
     restart_live_agent_session,
     resume_live_agent_session,
+    session_ensure_action,
     start_live_agent_session,
     stop_live_agent_session,
 )
@@ -563,7 +564,7 @@ def live_agent_session_ensure_payload(
     default_server: str,
 ) -> dict[str, object]:
     current = _live_agent_session_optional_readiness_payload(output_root, process_supervisor, payload)
-    action = _live_agent_session_ensure_action(current)
+    action = session_ensure_action(current)
     if action == "none":
         session = current if isinstance(current, dict) else {}
     elif action == "start":
@@ -609,23 +610,6 @@ def _live_agent_session_optional_readiness_payload(
         if "was not found" in str(error):
             return None
         raise
-
-
-def _live_agent_session_ensure_action(current: dict[str, object] | None) -> str:
-    if current is None:
-        return "start"
-    if _operation_result_status(current.get("status")) == "ready":
-        return "none"
-    process = current.get("process") if isinstance(current.get("process"), dict) else {}
-    group = current.get("group") if isinstance(current.get("group"), dict) else {}
-    process_status = clean_lobby_text(process.get("status"), limit=64) or clean_lobby_text(current.get("process_status"), limit=64)
-    if not clean_lobby_text(group.get("group_id"), limit=128):
-        return "resume"
-    if process_status == "stopped":
-        return "restart"
-    if process_status in {"error", "unknown"}:
-        return "recover"
-    return "resume"
 
 
 def _live_agent_session_ensured_readiness_payload(

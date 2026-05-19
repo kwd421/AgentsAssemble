@@ -251,6 +251,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("--wait-ready", doc)
         self.assertIn("live-agent ensure-session", doc)
         self.assertIn("세션보장", doc)
+        self.assertIn("session_ensure_action", doc)
         self.assertIn("/api/live-agent-sessions/readiness", doc)
         self.assertIn("/api/live-agent-sessions/ensure", doc)
         self.assertIn("processes wait-event", doc)

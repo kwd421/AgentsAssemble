@@ -3641,6 +3641,7 @@ class CliTimeoutTests(unittest.TestCase):
             "status": "degraded",
             "meeting_id": "resident-m1",
             "group_id": "resident-main",
+            "group": {"group_id": "resident-main", "status": "error"},
             "process": {"status": "error", "attention": ["group:error"]},
             "connection": {"expected": 2, "connected": 0, "attention": ["agent-a:offline", "agent-b:offline"]},
         }
@@ -3688,6 +3689,7 @@ class CliTimeoutTests(unittest.TestCase):
             "status": "degraded",
             "meeting_id": "resident-m1",
             "group_id": "resident-main",
+            "group": {"group_id": "resident-main", "status": "stopped"},
             "process": {"status": "stopped", "attention": ["group:stopped"]},
             "connection": {"expected": 2, "connected": 0, "attention": ["agent-a:offline", "agent-b:offline"]},
         }

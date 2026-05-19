@@ -15,6 +15,7 @@ from agentsassemble.live_agent_sessions import (
     restart_live_agent_session,
     start_live_agent_session,
     stop_live_agent_session,
+    session_ensure_action,
 )
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 
@@ -33,6 +34,26 @@ class FakeSessionSupervisor:
                 {"agent_id": "agent-a", "display_name": "Agent A", "provider_kind": "local_cli", "connection_kind": "local_cli"}
             ],
         }
+
+
+class LiveAgentSessionEnsureActionTests(unittest.TestCase):
+    def test_session_ensure_action_uses_one_policy_for_cli_and_api_surfaces(self):
+        cases = [
+            ("start", None),
+            ("none", {"status": "ready", "group": {}, "process": {"status": "unknown"}}),
+            ("resume", {"status": "degraded", "group": {}, "process": {"status": "unknown"}}),
+            ("resume", {"status": "degraded", "group": {"group_id": "resident-main"}, "process": {"status": "running"}}),
+            ("resume", {"status": "degraded", "group": {"group_id": "resident-main"}, "process": {"status": "restarting"}}),
+            ("restart", {"status": "degraded", "group": {"group_id": "resident-main"}, "process": {"status": "stopped"}}),
+            ("restart", {"status": "degraded", "group": {"group_id": "resident-main"}, "process_status": "stopped"}),
+            ("recover", {"status": "degraded", "group": {"group_id": "resident-main"}, "process": {"status": "error"}}),
+            ("recover", {"status": "degraded", "group": {"group_id": "resident-main"}, "process": {"status": "unknown"}}),
+            ("recover", {"status": "degraded", "group": {"group_id": "resident-main"}}),
+        ]
+
+        for expected_action, readiness in cases:
+            with self.subTest(expected_action=expected_action, readiness=readiness):
+                self.assertEqual(session_ensure_action(readiness), expected_action)
 
 
 class LiveAgentSessionReadinessSummaryTests(unittest.TestCase):
