@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import subprocess
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -232,7 +233,7 @@ class LiveAgentRunner:
             if self.stop_event.is_set():
                 return None
             self.transient_room_error_active = False
-            self.last_error = str(error)
+            self.last_error = _safe_provider_command_error(error)
             self.last_error_at = self.now_fn()
             self._heartbeat_due_safely(
                 "error",
@@ -970,8 +971,30 @@ def _looks_sensitive_error(text: str) -> bool:
         "password",
         "http://",
         "https://",
+        "env:",
+        ".json",
+        ".env",
+        ".toml",
     )
-    return any(marker in normalized for marker in markers)
+    if any(marker in normalized for marker in markers):
+        return True
+    if "/" in text or "\\" in text or "--" in text:
+        return True
+    return bool(re.search(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)", text))
+
+
+def _safe_provider_command_error(error: Exception) -> str:
+    if isinstance(error, subprocess.CalledProcessError):
+        return f"Resident command exited with return code {error.returncode}."
+    if isinstance(error, subprocess.TimeoutExpired):
+        return f"Resident command timed out after {error.timeout} seconds."
+    if isinstance(error, OSError):
+        detail = str(getattr(error, "strerror", "") or "").strip() or error.__class__.__name__
+        return f"Resident command failed: {detail}."
+    text = str(error).strip()
+    if not text:
+        return "Resident command failed."
+    return "Resident command error details redacted." if _looks_sensitive_error(text) else text
 
 
 def resident_connection_kind_error() -> str:

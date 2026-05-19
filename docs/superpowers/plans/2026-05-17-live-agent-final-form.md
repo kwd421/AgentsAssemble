@@ -3472,6 +3472,53 @@ Document that raw local process logs are not scrubbed, while API/GUI `log_tail` 
 
 ---
 
+### Task 95: Compact Resident Subprocess Command Errors
+
+**Goal:** Keep resident local subprocess failures useful in `last_error` without copying command arguments, stdout, stderr, config paths, or tokens into presence.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_runner.py`
+
+- [x] **Step 1: Add RED coverage for non-zero subprocess command args**
+
+Cover a resident command runner that raises `subprocess.CalledProcessError` with command args containing `--token`, a secret value, and a config path plus private stdout/stderr. The error heartbeat must report only `Resident command exited with return code 7.` and omit command args/output.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_records_subprocess_failure_without_command_args
+```
+
+Expected: fail before implementation because `LiveAgentRunner` currently persists `str(error)`, which includes the command list.
+
+- [x] **Step 2: Add RED coverage for subprocess timeout command args**
+
+Cover a resident command runner that raises `subprocess.TimeoutExpired` with command args and captured output. The error heartbeat must report only `Resident command timed out after 9 seconds.` and omit command args/output.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_records_subprocess_timeout_without_command_args
+```
+
+Expected: fail before implementation because timeout exception strings include the command list.
+
+- [x] **Step 3: Sanitize provider command errors before heartbeat**
+
+At the provider-command failure boundary in `LiveAgentRunner._generate_reply()`, map subprocess non-zero exits, timeouts, and OS launch failures to compact resident command messages before assigning `last_error` or sending the `error` heartbeat. Keep safe non-subprocess messages visible, and redact suspicious generic messages with a fixed marker.
+
+- [x] **Step 4: Cover OS errors and suspicious generic command errors**
+
+Cover `FileNotFoundError` with a private path and generic runtime errors that mention config paths. The runner's own `last_error` and the heartbeat payload must both use compact or redacted messages without the private path.
+
+- [x] **Step 5: Document compact resident command errors**
+
+Document that resident subprocess failures do not copy command args, stdout, or stderr into presence `last_error`.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

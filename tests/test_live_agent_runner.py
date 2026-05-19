@@ -2284,6 +2284,137 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertNotIn("secret-token", error_heartbeats[-1]["last_error"])
         self.assertNotIn("friend.local", error_heartbeats[-1]["last_error"])
 
+    def test_runner_records_subprocess_failure_without_command_args(self):
+        clock = FakeClock()
+        client = FakeRoomClient(
+            [{"lobby_events": [{"id": "evt1", "name": "나", "message": "로컬 CLI 응답해줘"}]}]
+        )
+
+        def fail_command(command, prompt, *, timeout_seconds):
+            del prompt, timeout_seconds
+            raise subprocess.CalledProcessError(
+                7,
+                [*command, "--token", "secret-token", "--config", "/private/live-agents.json"],
+                output="private stdout",
+                stderr="private stderr",
+            )
+
+        runner = LiveAgentRunner(
+            config(command=["fake-agent"]),
+            request_json=client,
+            command_runner=fail_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        error_heartbeats = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload and payload.get("status") == "error"
+        ]
+        self.assertEqual(error_heartbeats[-1]["last_error"], "Resident command exited with return code 7.")
+        self.assertEqual(runner.last_error, "Resident command exited with return code 7.")
+        self.assertNotIn("secret-token", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("live-agents.json", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("private stdout", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("private stderr", error_heartbeats[-1]["last_error"])
+
+    def test_runner_records_subprocess_timeout_without_command_args(self):
+        clock = FakeClock()
+        client = FakeRoomClient(
+            [{"lobby_events": [{"id": "evt1", "name": "나", "message": "로컬 CLI 타임아웃?"}]}]
+        )
+
+        def timeout_command(command, prompt, *, timeout_seconds):
+            del prompt
+            raise subprocess.TimeoutExpired(
+                [*command, "--token", "secret-token"],
+                timeout_seconds,
+                output="private stdout",
+                stderr="private stderr",
+            )
+
+        runner = LiveAgentRunner(
+            config(command=["fake-agent"], timeout_seconds=9),
+            request_json=client,
+            command_runner=timeout_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        error_heartbeats = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload and payload.get("status") == "error"
+        ]
+        self.assertEqual(error_heartbeats[-1]["last_error"], "Resident command timed out after 9 seconds.")
+        self.assertEqual(runner.last_error, "Resident command timed out after 9 seconds.")
+        self.assertNotIn("secret-token", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("private stdout", error_heartbeats[-1]["last_error"])
+        self.assertNotIn("private stderr", error_heartbeats[-1]["last_error"])
+
+    def test_runner_records_os_error_without_path(self):
+        clock = FakeClock()
+        client = FakeRoomClient(
+            [{"lobby_events": [{"id": "evt1", "name": "나", "message": "로컬 CLI 실행돼?"}]}]
+        )
+
+        def fail_command(command, prompt, *, timeout_seconds):
+            del command, prompt, timeout_seconds
+            raise FileNotFoundError(2, "No such file or directory", "/private/token/fake-agent")
+
+        runner = LiveAgentRunner(
+            config(command=["/private/token/fake-agent"]),
+            request_json=client,
+            command_runner=fail_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        error_heartbeats = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload and payload.get("status") == "error"
+        ]
+        self.assertEqual(error_heartbeats[-1]["last_error"], "Resident command failed: No such file or directory.")
+        self.assertEqual(runner.last_error, "Resident command failed: No such file or directory.")
+        self.assertNotIn("/private/token/fake-agent", error_heartbeats[-1]["last_error"])
+
+    def test_runner_redacts_sensitive_generic_command_error(self):
+        clock = FakeClock()
+        client = FakeRoomClient(
+            [{"lobby_events": [{"id": "evt1", "name": "나", "message": "로컬 CLI 에러?"}]}]
+        )
+
+        def fail_command(command, prompt, *, timeout_seconds):
+            del command, prompt, timeout_seconds
+            raise RuntimeError("failed using /private/live-agents.json")
+
+        runner = LiveAgentRunner(
+            config(command=["fake-agent"]),
+            request_json=client,
+            command_runner=fail_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        error_heartbeats = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload and payload.get("status") == "error"
+        ]
+        self.assertEqual(error_heartbeats[-1]["last_error"], "Resident command error details redacted.")
+        self.assertEqual(runner.last_error, "Resident command error details redacted.")
+        self.assertNotIn("live-agents.json", error_heartbeats[-1]["last_error"])
+
     def test_runner_records_jsonl_live_session_failure_without_sensitive_stderr(self):
         clock = FakeClock()
         client = FakeRoomClient(
