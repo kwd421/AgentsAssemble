@@ -226,6 +226,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Live-agent presence error details redacted.", doc)
         self.assertIn("the final heartbeat can report `offline` while preserving `last_error`", doc)
         self.assertIn("reuse `last_observed_event_id`", doc)
+        self.assertIn("skip visible official turn requests that already have a same-agent reply", doc)
         self.assertIn("does not resume old resident agents except pending auto-restart records", doc)
         self.assertIn("backend supervisor monitor", doc)
         self.assertIn("without an open browser", doc)

@@ -674,6 +674,46 @@ class LiveAgentRunnerTests(unittest.TestCase):
         official_payloads = [payload for url, method, payload in client.calls if url.endswith("/official-turn")]
         self.assertEqual([payload["source_event_id"] for payload in official_payloads], ["turn-request-1", "turn-request-2"])
 
+    def test_moderator_called_skips_visible_already_answered_request_without_model_call(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [],
+            "live_events": [
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "이미 답한 요청",
+                },
+                {
+                    "id": "reply-1",
+                    "kind": "message",
+                    "channel": "official",
+                    "official_record": True,
+                    "actor_id": "agent-a",
+                    "source_event_id": "turn-request-1",
+                    "content": "이미 있는 답변",
+                },
+            ],
+        }
+        client = FakeRoomClient([room])
+        command_calls = []
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: command_calls.append(prompt) or "duplicate reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        self.assertEqual(command_calls, [])
+        self.assertEqual([call for call in client.calls if call[0].endswith("/official-turn")], [])
+        self.assertEqual(runner.last_observed_live_event_id, "reply-1")
+
     def test_moderator_called_mode_ignores_untargeted_official_turn_request(self):
         clock = FakeClock()
         room = {

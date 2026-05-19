@@ -488,8 +488,11 @@ def official_turn_request_candidate(
     agent_id: str,
     last_observed_event_id: str,
 ) -> dict[str, object] | None:
+    answered_request_ids = _visible_official_reply_source_ids(events, agent_id)
     for event in _events_after(events, last_observed_event_id):
         if str(event.get("kind") or "") != "live_agent_turn_request":
+            continue
+        if str(event.get("id") or "") in answered_request_ids:
             continue
         if str(event.get("actor_id") or "") == agent_id:
             continue
@@ -499,6 +502,19 @@ def official_turn_request_candidate(
             continue
         return event
     return None
+
+
+def _visible_official_reply_source_ids(events: list[dict[str, object]], agent_id: str) -> set[str]:
+    source_ids: set[str] = set()
+    for event in events:
+        if str(event.get("kind") or "") != "message":
+            continue
+        if str(event.get("actor_id") or "") != agent_id:
+            continue
+        source_event_id = str(event.get("source_event_id") or "").strip()
+        if source_event_id:
+            source_ids.add(source_event_id)
+    return source_ids
 
 
 def _runtime_engagement_mode(config: ResidentAgentConfig, room: dict[str, object]) -> str:
