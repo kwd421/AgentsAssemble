@@ -1355,8 +1355,11 @@ def _stale_watchdog_reason(
             return f"missing manifest agent {agent_id}"
         if meeting_id and str(agent.get("meeting_id") or "") != meeting_id:
             return f"wrong meeting manifest agent {agent_id}"
-        if str(agent.get("status") or "") == "stale":
+        status = str(agent.get("status") or "")
+        if status == "stale":
             return f"stale manifest agent {agent_id}"
+        if status in {"offline", "error"}:
+            return f"{status} manifest agent {agent_id}"
     return ""
 
 

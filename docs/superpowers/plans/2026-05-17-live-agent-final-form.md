@@ -1963,6 +1963,41 @@ Document that session start/resume/check readiness uses the same fresh-heartbeat
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 60: Stale Watchdog Non-Live Agent Recovery
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+
+- [x] **Step 1: Add RED coverage for offline/error manifest agents**
+
+Cover a running supervised group with stale watchdog enabled where the process is still alive but the launch-time manifest agent reports `offline` or `error` presence after the watchdog threshold. The group must schedule the same bounded auto-restart path used for missing, stale, and wrong-meeting manifest agents, and the reason must not include raw provider `last_error` text.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stale_watchdog_schedules_auto_restart_for_offline_manifest_agent \
+  tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_stale_watchdog_schedules_auto_restart_for_error_manifest_agent
+```
+
+Expected: fail before implementation because the watchdog only treats missing, wrong-meeting, and `stale` presence as restart reasons.
+
+- [x] **Step 2: Treat offline/error manifest presence as non-live**
+
+At the shared stale-watchdog reason function, after meeting ownership is checked, restart for manifest agents whose current status is `offline` or `error`. Preserve the existing fresh `online`/`working` path and keep restart reasons limited to status plus safe agent id.
+
+Run the Step 1 command plus existing watchdog stale/fresh tests.
+Expected: pass.
+
+- [x] **Step 3: Document watchdog non-live recovery**
+
+Document that the stale watchdog restarts owned groups when manifest agents are missing, stale, offline, error, or attached to the wrong meeting after the configured threshold.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

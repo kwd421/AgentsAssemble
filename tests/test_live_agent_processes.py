@@ -1689,6 +1689,63 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(groups[0]["status"], "restarting")
         self.assertIn("stale manifest agent agent-a", groups[0]["last_error"])
 
+    def test_stale_watchdog_schedules_auto_restart_for_offline_manifest_agent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: FakeProcess(pid=73261),
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+            )
+            current_time["value"] += timedelta(seconds=61)
+            heartbeat_live_agent(root, "agent-a", status="offline", now=current_time["value"])
+            groups = supervisor.list_groups()
+
+        self.assertEqual(groups[0]["status"], "restarting")
+        self.assertIn("offline manifest agent agent-a", groups[0]["last_error"])
+
+    def test_stale_watchdog_schedules_auto_restart_for_error_manifest_agent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "live-agents.json"
+            config_path.write_text('{"agents": [{"agent_id": "agent-a", "command": ["fake"]}]}', encoding="utf-8")
+            current_time = {"value": datetime(2026, 5, 17, 12, 0, tzinfo=UTC)}
+
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: FakeProcess(pid=73262),
+                now_fn=lambda: current_time["value"],
+            )
+            supervisor.start_group(
+                config_path=config_path,
+                server="http://room.local",
+                group_id="crew",
+                auto_restart=True,
+                max_restarts=1,
+                restart_backoff_seconds=10,
+                stale_restart_after_seconds=60,
+            )
+            current_time["value"] += timedelta(seconds=61)
+            heartbeat_live_agent(root, "agent-a", status="error", now=current_time["value"], metadata={"last_error": "secret raw provider output"})
+            groups = supervisor.list_groups()
+
+        self.assertEqual(groups[0]["status"], "restarting")
+        self.assertIn("error manifest agent agent-a", groups[0]["last_error"])
+        self.assertNotIn("secret raw provider output", groups[0]["last_error"])
+
     def test_stale_watchdog_schedules_auto_restart_for_wrong_meeting_manifest_agent(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
