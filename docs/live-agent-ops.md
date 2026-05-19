@@ -275,6 +275,22 @@ GET /api/live-agent-sessions/readiness?meeting_id=resident-1&group_id=resident-m
 
 It reuses the session readiness rules from `check-session`: the target meeting must exist, the target process group manifest must match the meeting's bound agents, current presence must belong to the same meeting, and comparable `last_seen_at` values must be at or after the process `started_at`. It returns `ready` or `degraded` with the same process and connection attention fields, but it does not start, stop, restart, recover, probe, call providers, run official turns, mutate roster rows, or append operation history. The CLI exits `0` when the request succeeds unless `--fail-on-degraded` is set and the targeted session is not `ready`; transport, argument, and validation failures still exit `2`.
 
+Use `ensure-session` when a script should make one resident session ready without manually choosing between start, resume, restart, or recover:
+
+```bash
+python3 -m agentsassemble.cli live-agent ensure-session \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1 \
+  --group-id resident-main \
+  --council-config configs/demo-council.json \
+  --agent-config configs/agents.start-session.example.json \
+  --live-agent-config configs/live-agents.start-session.example.json \
+  --connect-timeout 5 \
+  --wait-timeout 30
+```
+
+The command first reads `GET /api/live-agent-sessions/readiness` when both `meeting_id` and `group_id` are known. If that snapshot is already `ready`, it prints the session summary and performs no control-plane POST. If the meeting is missing or no target ids are supplied, it calls `start-session`. If the target meeting exists but the process group is absent, or if the target is degraded with a `running` or `restarting` process, it calls `resume-session` so the existing meeting can reconnect without recreating the meeting or forcing an unnecessary restart. If the process is `stopped`, it calls `restart-session`; if it is `unknown` or `error` for an existing process group, it calls `recover-session`. After any mutating command, `ensure-session` uses the same read-only readiness wait as `--wait-ready`, so the final success decision comes from the targeted readiness snapshot rather than from the mutating command's shorter response. It returns `0` once ready and `1` with the last observed summary on timeout. It does not add a new server endpoint, and its repeated wait reads do not append `session.check` operation records.
+
 Use `stop-session` when the visible resident meeting already exists and you want one operator action to stop the supervised group and make the roster evidence immediately show that the bound agents are no longer live:
 
 ```bash

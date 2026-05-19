@@ -2419,6 +2419,52 @@ Expected: pass.
 
 ---
 
+### Task 73: Scriptable Session Ensure
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for one-shot session ensuring**
+
+Cover `live-agent ensure-session` parser options, the no-op ready path that only reads the read-only readiness endpoint, missing-meeting start, existing-meeting missing-group resume, running degraded resume plus readiness wait, stopped restart, error recover, final read-only readiness as the success source even when the mutating command reports `ready`, and timeout of that final readiness proof.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_parser_accepts_session_configs_and_wait_options \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_returns_ready_without_control_post \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_starts_when_meeting_is_missing \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_resumes_when_group_is_missing_for_existing_meeting \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_resumes_running_degraded_session_and_waits_ready \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_recovers_error_session \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_restarts_stopped_session \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_uses_final_readiness_even_when_resume_returns_ready \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_fails_when_final_readiness_times_out_after_ready_post
+```
+
+Expected: fail before implementation because the `ensure-session` command does not exist.
+
+- [x] **Step 2: Implement CLI-only orchestration over existing session APIs**
+
+Use `session-readiness` as the initial read-only probe. Return immediately for `ready`; call `start-session` when no target exists or the meeting is missing; call `resume-session` when the existing meeting's process group is absent or the target is running/restarting but degraded; call `restart-session` for stopped sessions; call `recover-session` for existing unknown/error sessions. After any mutating call, reuse the read-only readiness wait loop instead of appending repeated `session.check` records, so final success is based on targeted readiness.
+
+Run the Step 1 command.
+Expected: pass.
+
+- [x] **Step 3: Document the ensure policy**
+
+Document that `ensure-session` is a scriptable CLI one-shot over existing APIs, not a new server endpoint, and that its repeated readiness waits remain read-only.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

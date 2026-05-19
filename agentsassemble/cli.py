@@ -119,6 +119,13 @@ def _add_session_readiness_wait_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--wait-poll-interval", type=parse_nonnegative_float, default=2.0)
 
 
+def _add_session_auto_restart_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--auto-restart", action="store_true")
+    parser.add_argument("--max-restarts", type=parse_nonnegative_int, default=0)
+    parser.add_argument("--restart-backoff-seconds", type=parse_nonnegative_float, default=5.0)
+    parser.add_argument("--stale-restart-after-seconds", type=parse_nonnegative_float, default=0.0)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="assemble")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -301,10 +308,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_start_session.add_argument("--live-agent-config", required=True, help="Resident live-agent run-group config path.")
     live_start_session.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0, help="Seconds to wait for bound agents to connect.")
     _add_session_readiness_wait_args(live_start_session)
-    live_start_session.add_argument("--auto-restart", action="store_true")
-    live_start_session.add_argument("--max-restarts", type=parse_nonnegative_int, default=0)
-    live_start_session.add_argument("--restart-backoff-seconds", type=parse_nonnegative_float, default=5.0)
-    live_start_session.add_argument("--stale-restart-after-seconds", type=parse_nonnegative_float, default=0.0)
+    _add_session_auto_restart_args(live_start_session)
     live_start_session.add_argument(
         "--run-remaining-rounds",
         action="store_true",
@@ -331,10 +335,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_resume_session.add_argument("--live-agent-config", required=True, help="Resident live-agent run-group config path.")
     live_resume_session.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0, help="Seconds to wait for bound agents to connect.")
     _add_session_readiness_wait_args(live_resume_session)
-    live_resume_session.add_argument("--auto-restart", action="store_true")
-    live_resume_session.add_argument("--max-restarts", type=parse_nonnegative_int, default=0)
-    live_resume_session.add_argument("--restart-backoff-seconds", type=parse_nonnegative_float, default=5.0)
-    live_resume_session.add_argument("--stale-restart-after-seconds", type=parse_nonnegative_float, default=0.0)
+    _add_session_auto_restart_args(live_resume_session)
     live_resume_session.add_argument(
         "--run-remaining-rounds",
         action="store_true",
@@ -400,6 +401,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_recover_session.add_argument("--probe-timeout", type=parse_nonnegative_float, default=12.0)
     live_recover_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session recover payload.")
+
+    live_ensure_session = live_agent_subparsers.add_parser(
+        "ensure-session",
+        parents=[live_server],
+        help="Inspect one resident session and start, resume, restart, or recover it as needed.",
+    )
+    live_ensure_session.add_argument("--meeting-id", default="", help="Resident meeting id to ensure; blank starts a new session.")
+    live_ensure_session.add_argument("--group-id", default="", help="Supervised process group id to ensure.")
+    live_ensure_session.add_argument("--council-config", default="", help="Council config path for start when the meeting is missing.")
+    live_ensure_session.add_argument("--agent-config", default="", help="Agent runtime config for start when the meeting is missing.")
+    live_ensure_session.add_argument("--live-agent-config", required=True, help="Resident live-agent run-group config path.")
+    live_ensure_session.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0, help="Seconds to wait for bound agents to connect.")
+    live_ensure_session.add_argument("--wait-timeout", type=parse_nonnegative_float, default=30.0)
+    live_ensure_session.add_argument("--wait-poll-interval", type=parse_nonnegative_float, default=2.0)
+    _add_session_auto_restart_args(live_ensure_session)
+    live_ensure_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw ensured session payload.")
 
     live_check_session = live_agent_subparsers.add_parser(
         "check-session",
@@ -844,6 +861,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_restart_session(args)
         if args.live_agent_command == "recover-session":
             return _run_live_agent_recover_session(args)
+        if args.live_agent_command == "ensure-session":
+            return _run_live_agent_ensure_session(args)
         if args.live_agent_command == "check-session":
             return _run_live_agent_check_session(args)
         if args.live_agent_command == "session-readiness":
@@ -1110,22 +1129,8 @@ def _run_live_agent_start_meeting(args: argparse.Namespace) -> int:
 
 
 def _run_live_agent_start_session(args: argparse.Namespace) -> int:
-    if args.auto_restart and args.max_restarts <= 0:
-        raise ValueError("--auto-restart requires --max-restarts greater than 0.")
-    if args.stale_restart_after_seconds > 0 and (not args.auto_restart or args.max_restarts <= 0):
-        raise ValueError("--stale-restart-after-seconds requires --auto-restart and --max-restarts greater than 0.")
-    payload = {
-        "meeting_id": str(args.meeting_id or ""),
-        "group_id": str(args.group_id or ""),
-        "council_config_path": str(args.council_config or ""),
-        "agent_config_path": str(args.agent_config or ""),
-        "live_agent_config_path": str(args.live_agent_config or ""),
-        "connect_timeout_seconds": float(args.connect_timeout),
-        "auto_restart": bool(args.auto_restart),
-        "max_restarts": int(args.max_restarts),
-        "restart_backoff_seconds": float(args.restart_backoff_seconds),
-        "stale_restart_after_seconds": float(args.stale_restart_after_seconds),
-    }
+    _validate_session_auto_restart_args(args)
+    payload = _session_start_payload(args)
     timeout_seconds = _session_remaining_rounds_request(
         args,
         payload,
@@ -1145,14 +1150,19 @@ def _run_live_agent_start_session(args: argparse.Namespace) -> int:
     return _session_command_exit_code(response)
 
 
-def _run_live_agent_resume_session(args: argparse.Namespace) -> int:
+def _validate_session_auto_restart_args(args: argparse.Namespace) -> None:
     if args.auto_restart and args.max_restarts <= 0:
         raise ValueError("--auto-restart requires --max-restarts greater than 0.")
     if args.stale_restart_after_seconds > 0 and (not args.auto_restart or args.max_restarts <= 0):
         raise ValueError("--stale-restart-after-seconds requires --auto-restart and --max-restarts greater than 0.")
-    payload = {
+
+
+def _session_start_payload(args: argparse.Namespace) -> dict[str, object]:
+    return {
         "meeting_id": str(args.meeting_id or ""),
         "group_id": str(args.group_id or ""),
+        "council_config_path": str(args.council_config or ""),
+        "agent_config_path": str(args.agent_config or ""),
         "live_agent_config_path": str(args.live_agent_config or ""),
         "connect_timeout_seconds": float(args.connect_timeout),
         "auto_restart": bool(args.auto_restart),
@@ -1160,6 +1170,11 @@ def _run_live_agent_resume_session(args: argparse.Namespace) -> int:
         "restart_backoff_seconds": float(args.restart_backoff_seconds),
         "stale_restart_after_seconds": float(args.stale_restart_after_seconds),
     }
+
+
+def _run_live_agent_resume_session(args: argparse.Namespace) -> int:
+    _validate_session_auto_restart_args(args)
+    payload = _session_resume_payload(args)
     timeout_seconds = _session_remaining_rounds_request(
         args,
         payload,
@@ -1177,6 +1192,19 @@ def _run_live_agent_resume_session(args: argparse.Namespace) -> int:
     else:
         print(_format_live_agent_session_start(response))
     return _session_command_exit_code(response)
+
+
+def _session_resume_payload(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "meeting_id": str(args.meeting_id or ""),
+        "group_id": str(args.group_id or ""),
+        "live_agent_config_path": str(args.live_agent_config or ""),
+        "connect_timeout_seconds": float(args.connect_timeout),
+        "auto_restart": bool(args.auto_restart),
+        "max_restarts": int(args.max_restarts),
+        "restart_backoff_seconds": float(args.restart_backoff_seconds),
+        "stale_restart_after_seconds": float(args.stale_restart_after_seconds),
+    }
 
 
 def _session_remaining_rounds_request(
@@ -1354,6 +1382,87 @@ def _run_live_agent_recover_session(args: argparse.Namespace) -> int:
     else:
         print(_format_live_agent_session_start(response))
     return _session_command_exit_code(response)
+
+
+def _run_live_agent_ensure_session(args: argparse.Namespace) -> int:
+    _validate_session_auto_restart_args(args)
+    action, response = _ensure_live_agent_session(args)
+    if args.as_json:
+        print(json.dumps({"action": action, "session": response}, ensure_ascii=False, indent=2))
+    else:
+        print(f"Ensured via {action}: {_format_live_agent_session_start(response)}")
+    return _session_command_exit_code(response)
+
+
+def _ensure_live_agent_session(args: argparse.Namespace) -> tuple[str, dict[str, object]]:
+    initial = _initial_live_agent_session_readiness(args)
+    if initial is not None and initial.get("status") == "ready":
+        return "none", initial
+    action = _ensure_live_agent_session_action(initial)
+    response = _request_json(
+        _server_url(str(args.server), f"/api/live-agent-sessions/{action}"),
+        method="POST",
+        payload=_ensure_live_agent_session_payload(args, action),
+        timeout_seconds=float(args.connect_timeout) + 6.0,
+    )
+    meeting_id = str(response.get("meeting_id") or getattr(args, "meeting_id", "") or "").strip()
+    group_id = str(response.get("group_id") or getattr(args, "group_id", "") or "").strip()
+    if meeting_id and group_id:
+        wait_initial_response = response
+        if response.get("status") == "ready":
+            wait_initial_response = {**response, "status": "starting"}
+        response = _wait_for_live_agent_session_ready(
+            server=str(args.server),
+            meeting_id=meeting_id,
+            group_id=group_id,
+            timeout_seconds=float(args.wait_timeout),
+            poll_interval_seconds=float(args.wait_poll_interval),
+            initial_response=wait_initial_response,
+        )
+    return action, response
+
+
+def _initial_live_agent_session_readiness(args: argparse.Namespace) -> dict[str, object] | None:
+    meeting_id = str(args.meeting_id or "").strip()
+    group_id = str(args.group_id or "").strip()
+    if not meeting_id or not group_id:
+        return None
+    try:
+        return _request_json(
+            _live_agent_session_readiness_url(str(args.server), meeting_id, group_id),
+            timeout_seconds=10.0,
+        )
+    except ValueError as error:
+        if "was not found" in str(error):
+            return None
+        raise
+
+
+def _ensure_live_agent_session_action(initial: dict[str, object] | None) -> str:
+    if initial is None:
+        return "start"
+    process = initial.get("process") if isinstance(initial.get("process"), dict) else {}
+    group = initial.get("group") if isinstance(initial.get("group"), dict) else {}
+    process_status = str(process.get("status") or initial.get("process_status") or "unknown")
+    if process_status == "unknown" and not str(group.get("group_id") or "").strip():
+        return "resume"
+    if process_status in {"unknown", "error"}:
+        return "recover"
+    if process_status == "stopped":
+        return "restart"
+    return "resume"
+
+
+def _ensure_live_agent_session_payload(args: argparse.Namespace, action: str) -> dict[str, object]:
+    if action == "start":
+        return _session_start_payload(args)
+    if action == "resume":
+        return _session_resume_payload(args)
+    return {
+        "meeting_id": str(args.meeting_id or ""),
+        "group_id": str(args.group_id or ""),
+        "connect_timeout_seconds": float(args.connect_timeout),
+    }
 
 
 def _run_live_agent_check_session(args: argparse.Namespace) -> int:
