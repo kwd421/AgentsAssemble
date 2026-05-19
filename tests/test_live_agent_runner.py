@@ -16,6 +16,7 @@ from agentsassemble.live_agent_runner import (
     event_reply_candidate,
     load_group_configs,
     official_turn_prompt,
+    official_turn_request_candidate,
 )
 
 
@@ -142,7 +143,7 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
         lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
         self.assertEqual(lobby_payloads[0]["source_event_id"], "evt2")
-        self.assertEqual(runner.last_observed_event_id, "reply-id")
+        self.assertEqual(runner.last_observed_event_id, "evt2")
 
     def test_runner_restores_observed_cursor_from_room_snapshot_before_replying(self):
         clock = FakeClock()
@@ -191,6 +192,38 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
         lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
         self.assertEqual(lobby_payloads[0]["source_event_id"], "evt3")
+
+    def test_runner_recovers_when_lobby_cursor_fell_out_of_bounded_room_tail(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "last_observed_event_id": "evicted-cursor"},
+            "lobby_events": [
+                {"id": "evt-new", "side": "mine", "name": "나", "message": "tail 밖 cursor 이후 새 이벤트"},
+            ],
+        }
+        client = FakeRoomClient([room])
+        runner = LiveAgentRunner(
+            config(),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "reply after evicted cursor",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "evt-new")
+
+    def test_lobby_candidate_uses_bounded_tail_when_cursor_is_absent(self):
+        events = [
+            {"id": "evt-new", "side": "mine", "name": "나", "message": "tail 안의 새 말"},
+        ]
+
+        self.assertEqual(
+            event_reply_candidate(events, "agent-a", "Agent A", "evicted-cursor", max_chain_depth=1),
+            events[0],
+        )
 
     def test_runner_ignores_cursor_snapshot_without_matching_agent_id(self):
         clock = FakeClock()
@@ -673,6 +706,74 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
         official_payloads = [payload for url, method, payload in client.calls if url.endswith("/official-turn")]
         self.assertEqual([payload["source_event_id"] for payload in official_payloads], ["turn-request-1", "turn-request-2"])
+
+    def test_moderator_called_recovers_when_live_cursor_fell_out_of_bounded_room_tail(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "agent": {
+                "agent_id": "agent-a",
+                "engagement_mode": "moderator_called",
+                "meeting_id": "m1",
+                "last_observed_live_event_id": "evicted-live-cursor",
+            },
+            "lobby_events": [],
+            "live_events": [
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "현재 tail에 남은 공식 요청에 답해줘.",
+                }
+            ],
+        }
+        client = FakeRoomClient([room])
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "official reply after evicted cursor",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        official_payloads = [payload for url, method, payload in client.calls if url.endswith("/official-turn")]
+        self.assertEqual(official_payloads[0]["source_event_id"], "turn-request-1")
+
+    def test_official_turn_candidate_uses_bounded_tail_when_cursor_is_absent_but_keeps_answered_guard(self):
+        answered_events = [
+            {
+                "id": "turn-request-1",
+                "kind": "live_agent_turn_request",
+                "target_agent_id": "agent-a",
+                "content": "이미 답한 요청",
+            },
+            {
+                "id": "reply-1",
+                "kind": "message",
+                "channel": "official",
+                "official_record": True,
+                "actor_id": "agent-a",
+                "source_event_id": "turn-request-1",
+                "content": "이미 있는 답변",
+            },
+        ]
+        pending_events = [
+            {
+                "id": "turn-request-2",
+                "kind": "live_agent_turn_request",
+                "target_agent_id": "agent-a",
+                "content": "tail 안의 새 공식 요청",
+            }
+        ]
+
+        self.assertIsNone(official_turn_request_candidate(answered_events, "agent-a", "evicted-live-cursor"))
+        self.assertEqual(
+            official_turn_request_candidate(pending_events, "agent-a", "evicted-live-cursor"),
+            pending_events[0],
+        )
 
     def test_moderator_called_skips_visible_already_answered_request_without_model_call(self):
         clock = FakeClock()

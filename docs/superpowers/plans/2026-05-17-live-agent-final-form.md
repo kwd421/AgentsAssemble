@@ -2663,6 +2663,58 @@ Expected: pass.
 
 ---
 
+### Task 78: Resident Cursor Bounded-tail Recovery
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_runner.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for evicted cursors**
+
+Cover a lobby resident whose persisted `last_observed_event_id` is no longer present in the bounded room tail and a moderator-called resident whose persisted `last_observed_live_event_id` is no longer present in the bounded live-event tail. Both must recover by considering the current bounded tail eligible instead of staying idle forever. Also cover the direct lobby and official-turn candidate helpers, including the already-answered official request guard.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_recovers_when_lobby_cursor_fell_out_of_bounded_room_tail \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_moderator_called_recovers_when_live_cursor_fell_out_of_bounded_room_tail \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_lobby_candidate_uses_bounded_tail_when_cursor_is_absent \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_official_turn_candidate_uses_bounded_tail_when_cursor_is_absent_but_keeps_answered_guard
+```
+
+Expected: fail before implementation because `_events_after()` returns an empty list when the cursor id is absent from the visible tail.
+
+- [x] **Step 2: Recover from bounded-tail cursor eviction without duplicate replies**
+
+Update the shared event cursor helper so a missing cursor id means the current bounded tail is newly visible. Keep duplicate prevention by recording the answered source event id as the runner's local lobby cursor after successful lobby replies, matching the persisted cursor semantics already used by the live-agent lobby endpoint.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_recovers_when_lobby_cursor_fell_out_of_bounded_room_tail \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_moderator_called_recovers_when_live_cursor_fell_out_of_bounded_room_tail \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_reply_to_the_same_event_twice \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_restores_observed_cursor_from_registration_before_replying \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_keeps_local_cursor_when_presence_snapshot_is_stale \
+  tests.test_live_agent_runner.LiveAgentRunnerTests.test_moderator_called_skips_visible_already_answered_request_without_model_call
+```
+
+Expected: pass.
+
+- [x] **Step 3: Document long-session bounded-tail recovery**
+
+Document that resident polling uses bounded room tails, but evicted cursors do not make residents permanently idle; lobby reply success stores the source event id locally so repeated snapshots still avoid duplicate replies.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

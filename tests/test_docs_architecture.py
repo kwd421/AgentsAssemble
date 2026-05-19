@@ -349,6 +349,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Existing `transcript.md` files always win", doc)
         self.assertIn("runner", doc)
         self.assertIn("does not replay the backlog", doc)
+        self.assertIn("persisted lobby or official cursor has fallen outside the bounded room tail", doc)
+        self.assertIn("recover when that cursor has aged out of the bounded room tail", doc)
         self.assertIn("not native Claude Code Channels", doc)
         self.assertIn("not a native Claude, Gemini, or Cursor PTY protocol", doc)
         self.assertIn("Fake CLI", doc)

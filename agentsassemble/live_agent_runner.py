@@ -175,7 +175,11 @@ class LiveAgentRunner:
                 "auto_chain_depth": source_depth + 1,
             },
         )
-        self._record_reply_success(response.get("event"), cursor_field="last_observed_event_id")
+        self._record_reply_success(
+            response.get("event"),
+            cursor_field="last_observed_event_id",
+            observed_event_id=source_event_id,
+        )
         return 1
 
     def _generate_reply(
@@ -811,7 +815,7 @@ def _events_after(events: list[dict[str, object]], last_observed_event_id: str) 
     for index, event in enumerate(events):
         if event.get("id") == last_observed_event_id:
             return events[index + 1 :]
-    return []
+    return events
 
 
 def _is_self_event(event: dict[str, object], agent_id: str, display_name: str) -> bool:
