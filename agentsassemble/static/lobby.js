@@ -2368,6 +2368,7 @@ async function sendCodexSessionInvite(form) {
       message: `${roleLabel} · ${shortSessionId(binding.session_id || sessionId)} 연결됨`,
       tone: "success",
     };
+    await loadLiveAgentOperations({ background: true, force: true });
   } catch {
     state.codexInviteStatus = { message: "Codex 세션 초대 실패", tone: "error" };
   }

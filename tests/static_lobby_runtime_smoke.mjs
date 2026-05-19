@@ -222,6 +222,8 @@ function installHarness({
   sessionStartResponse = null,
   processActionGate = null,
   roundPayload = null,
+  codexInvitePayload = null,
+  liveAgentOperationsPayload = null,
 } = {}) {
   const requests = [];
   const events = [];
@@ -432,7 +434,23 @@ function installHarness({
     if (url === "/api/lobby") return jsonResponse({ events: [] });
     if (url === "/api/live-agents") return jsonResponse({ agents: [] });
     if (url === "/api/live-agent-processes") return jsonResponse({ groups: [] });
-    if (url === "/api/live-agent-operations?limit=20") return jsonResponse({ operations: [] });
+    if (url === "/api/live-agent-operations?limit=20") {
+      return jsonResponse(liveAgentOperationsPayload || { operations: [] });
+    }
+    if (url === "/api/codex-sessions/invite") {
+      return jsonResponse(
+        codexInvitePayload || {
+          config_path: ".agentsassemble/codex-live-session.local.json",
+          binding: {
+            agent_id: "codex-live-lore-lawyer",
+            role_id: "lore_lawyer",
+            provider_id: "codex-live",
+            join_mode: "current_session",
+            session_id: "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+          },
+        }
+      );
+    }
     return jsonResponse({});
   };
   return { document, requests, events };
@@ -517,6 +535,54 @@ test("readiness button omits official round smoke when the checkbox is unchecked
   assert.deepEqual(request.jsonBody, { group_id: "doctor-smoke", timeout: 12 });
   assert.equal(Object.hasOwn(request.jsonBody, "official_round_smoke"), false);
   assert.equal(Object.hasOwn(request.jsonBody, "session_smoke"), false);
+});
+
+test("codex invite refreshes operation history after writing the invite", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    liveAgentOperationsPayload: {
+      operations: [
+        {
+          timestamp: "2026-05-18T01:02:03+00:00",
+          operation: "codex_session.invite",
+          status: "success",
+          target_id: "lore_lawyer",
+          summary: "wrote Codex live session invite",
+          details: {
+            role_id: "lore_lawyer",
+            agent_id: "codex-live-lore-lawyer",
+            join_mode: "current_session",
+            provider_id: "codex-live",
+          },
+        },
+      ],
+    },
+  });
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      roles: [{ id: "lore_lawyer", display_name: "설정충" }],
+    },
+  };
+  state.codexSessions = [
+    {
+      id: "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+      thread_name: "handoff",
+      updated_at: "2026-05-17T00:00:00Z",
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#codex-session-select").value = "019e02af-c287-7cd1-aab7-c1e059c5ed44";
+  lobby.querySelector("#codex-role-select").value = "lore_lawyer";
+  await lobby.querySelector("#codex-invite-form").submit();
+
+  assert.ok(requests.some((request) => request.url === "/api/codex-sessions/invite"));
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-operations?limit=20"));
+  const rowText = document.querySelector(".live-agent-operation-row").textContent;
+  assert.match(rowText, /codex_session\.invite/);
+  assert.match(rowText, /role_id=lore_lawyer/);
 });
 
 test("readiness button sends official round smoke and reports the official counts when checked", async () => {
