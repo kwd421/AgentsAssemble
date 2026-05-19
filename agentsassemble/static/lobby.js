@@ -1410,6 +1410,7 @@ function liveAgentSessionSmokeStatusMessage(payload) {
     `${replies}/${expectedReplies} replies · ` +
     `start ${payload.start_status || "unknown"}, ` +
     `check ${payload.check_status || "unknown"}, ` +
+    `resume ${payload.resume_status || "unknown"}, ` +
     `restart ${payload.restart_status || "unknown"}, ` +
     `stop ${payload.stop_status || "unknown"}`
   );

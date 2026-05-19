@@ -2311,6 +2311,7 @@ def _session_smoke_operation_details(smoke: dict[str, object]) -> dict[str, obje
         "reply_count": _payload_nonnegative_int(smoke.get("reply_count"), 0),
         "start_status": _operation_result_status(smoke.get("start_status")),
         "check_status": _operation_result_status(smoke.get("check_status")),
+        "resume_status": _operation_result_status(smoke.get("resume_status")),
         "restart_status": _operation_result_status(smoke.get("restart_status")),
         "stop_status": _operation_result_status(smoke.get("stop_status")),
     }

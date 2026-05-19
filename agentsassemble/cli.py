@@ -362,7 +362,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_session_smoke = live_agent_subparsers.add_parser(
         "session-smoke",
         parents=[live_server],
-        help="Run a credential-free resident session start/reply/check/restart/stop smoke.",
+        help="Run a credential-free resident session start/reply/check/resume/restart/stop smoke.",
     )
     live_session_smoke.add_argument("--group-id", default="", help="Optional supervised process group id for the smoke run.")
     live_session_smoke.add_argument("--meeting-id", default="", help="Optional resident meeting id for the smoke run.")
@@ -1261,7 +1261,7 @@ def _run_live_agent_session_smoke(args: argparse.Namespace) -> int:
             "meeting_id": str(args.meeting_id or ""),
             "timeout": float(args.timeout),
         },
-        timeout_seconds=_operation_http_timeout(float(args.timeout), windows=5),
+        timeout_seconds=_session_smoke_http_timeout(float(args.timeout)),
     )
     if args.as_json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -1300,6 +1300,7 @@ def _format_live_agent_session_smoke(result: dict[str, object]) -> str:
         f"{result.get('reply_count', 0)}/{result.get('expected_reply_count', 0)} replies; "
         f"start {result.get('start_status') or 'unknown'}, "
         f"check {result.get('check_status') or 'unknown'}, "
+        f"resume {result.get('resume_status') or 'unknown'}, "
         f"restart {result.get('restart_status') or 'unknown'}, "
         f"stop {result.get('stop_status') or 'unknown'}"
     )
@@ -2008,6 +2009,19 @@ def _probe_http_timeout(probe_timeout_seconds: float) -> float:
 
 def _operation_http_timeout(wait_seconds: float, *, windows: int = 1) -> float:
     return max(10.0, float(wait_seconds) * max(1, int(windows)) + 6.0)
+
+
+def _session_smoke_http_timeout(wait_seconds: float) -> float:
+    timeout = max(0.0, float(wait_seconds))
+    return (
+        _operation_http_timeout(timeout)
+        + _operation_http_timeout(timeout, windows=4)
+        + timeout
+        + 10.0
+        + _operation_http_timeout(timeout)
+        + _operation_http_timeout(timeout)
+        + 20.0
+    )
 
 
 def _request_json(

@@ -311,6 +311,7 @@ def run_live_agent_session_smoke(
     start_result: dict[str, object] = {}
     rounds_result: dict[str, object] = {}
     check_result: dict[str, object] = {}
+    resume_result: dict[str, object] = {}
     restart_result: dict[str, object] = {}
     stop_result: dict[str, object] = {}
     replies: list[dict[str, object]] = []
@@ -394,6 +395,19 @@ def run_live_agent_session_smoke(
                 )
                 if check_result.get("status") != "ready":
                     raise LiveAgentSmokeFailed("Session smoke check did not report ready.")
+                resume_result = request_json(
+                    _server_url(server, "/api/live-agent-sessions/resume"),
+                    method="POST",
+                    payload={
+                        "meeting_id": clean_meeting_id,
+                        "group_id": clean_group_id,
+                        "live_agent_config_path": str(live_agent_config_path),
+                        "connect_timeout_seconds": float(timeout_seconds),
+                    },
+                    timeout_seconds=_smoke_operation_http_timeout(float(timeout_seconds)),
+                )
+                if resume_result.get("status") != "ready":
+                    raise LiveAgentSmokeFailed("Session smoke resume did not report ready.")
                 restart_result = request_json(
                     _server_url(server, "/api/live-agent-sessions/restart"),
                     method="POST",
@@ -445,6 +459,7 @@ def run_live_agent_session_smoke(
         "replies": safe_replies,
         "start_status": str(start_result.get("status") or ""),
         "check_status": str(check_result.get("status") or ""),
+        "resume_status": str(resume_result.get("status") or ""),
         "restart_status": str(restart_result.get("status") or ""),
         "stop_status": str(stop_result.get("status") or ""),
     }
@@ -498,7 +513,7 @@ def _write_session_smoke_configs(
         json.dumps(
             {
                 "topic": "Resident session smoke",
-                "question": "Can credential-free resident agents start, auto-reply, restart, and stop?",
+                "question": "Can credential-free resident agents start, auto-reply, resume, restart, and stop?",
                 "roles": [
                     {
                         "id": role_ids["local_cli"],

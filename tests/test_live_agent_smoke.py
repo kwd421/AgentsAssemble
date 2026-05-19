@@ -16,7 +16,7 @@ from agentsassemble.live_agent_smoke import (
 
 
 class LiveAgentSmokeTests(unittest.TestCase):
-    def test_session_smoke_runs_start_reply_check_restart_and_stop_sequence(self):
+    def test_session_smoke_runs_start_reply_check_resume_restart_and_stop_sequence(self):
         calls = []
         state = {"probe_id": "", "started": False}
 
@@ -112,6 +112,13 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "group_id": payload["group_id"],
                     "connection": {"expected": 3, "connected": 3, "attention": []},
                 }
+            if url.endswith("/api/live-agent-sessions/resume"):
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                }
             if url.endswith("/api/live-agent-sessions/restart"):
                 return {
                     "status": "ready",
@@ -150,8 +157,17 @@ class LiveAgentSmokeTests(unittest.TestCase):
         urls = [url for url, method, payload, timeout_seconds in calls]
         self.assertIn("http://room.local/api/live-agent-sessions/start", urls)
         self.assertIn("http://room.local/api/live-agent-sessions/check", urls)
+        self.assertIn("http://room.local/api/live-agent-sessions/resume", urls)
         self.assertIn("http://room.local/api/live-agent-sessions/restart", urls)
         self.assertIn("http://room.local/api/live-agent-sessions/stop", urls)
+        self.assertLess(
+            urls.index("http://room.local/api/live-agent-sessions/check"),
+            urls.index("http://room.local/api/live-agent-sessions/resume"),
+        )
+        self.assertLess(
+            urls.index("http://room.local/api/live-agent-sessions/resume"),
+            urls.index("http://room.local/api/live-agent-sessions/restart"),
+        )
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["meeting_id"], "session-smoke-meeting")
         self.assertEqual(result["group_id"], "session-smoke")
@@ -162,6 +178,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertEqual(result["reply_count"], 3)
         self.assertEqual(result["start_status"], "ready")
         self.assertEqual(result["check_status"], "ready")
+        self.assertEqual(result["resume_status"], "ready")
         self.assertEqual(result["restart_status"], "ready")
         self.assertEqual(result["stop_status"], "stopped")
         self.assertEqual(
@@ -245,7 +262,11 @@ class LiveAgentSmokeTests(unittest.TestCase):
                             },
                         ]
                     }
-                if url.endswith("/api/live-agent-sessions/check") or url.endswith("/api/live-agent-sessions/restart"):
+                if (
+                    url.endswith("/api/live-agent-sessions/check")
+                    or url.endswith("/api/live-agent-sessions/resume")
+                    or url.endswith("/api/live-agent-sessions/restart")
+                ):
                     return {
                         "status": "ready",
                         "meeting_id": payload["meeting_id"],

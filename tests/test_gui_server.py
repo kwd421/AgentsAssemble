@@ -967,6 +967,7 @@ class GuiServerTests(unittest.TestCase):
             ],
             "start_status": "ready",
             "check_status": "ready",
+            "resume_status": "ready",
             "restart_status": "ready",
             "stop_status": "stopped",
         }
@@ -1011,6 +1012,7 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(session_operations[-1]["details"]["rounds_status"], "answered")
         self.assertEqual(session_operations[-1]["details"]["answered_round_count"], 1)
         self.assertEqual(session_operations[-1]["details"]["reply_count"], 3)
+        self.assertEqual(session_operations[-1]["details"]["resume_status"], "ready")
         operation_blob = json.dumps(session_operations, ensure_ascii=False)
         self.assertNotIn("probe-secret", operation_blob)
         self.assertNotIn("reply-local", operation_blob)

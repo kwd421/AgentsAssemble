@@ -356,6 +356,7 @@ function installHarness({
           reply_count: 3,
           start_status: "ready",
           check_status: "ready",
+          resume_status: "ready",
           restart_status: "ready",
           stop_status: "stopped",
         };
@@ -764,6 +765,7 @@ test("session smoke button runs fresh diagnostic session instead of reusing curr
       reply_count: 3,
       start_status: "ready",
       check_status: "ready",
+      resume_status: "ready",
       restart_status: "ready",
       stop_status: "stopped",
     },
@@ -779,7 +781,7 @@ test("session smoke button runs fresh diagnostic session instead of reusing curr
   assert.deepEqual(sessionSmokeRequest(requests).jsonBody, { timeout: 12 });
   assert.equal(
     state.liveAgentProcessStatus.message,
-    "세션 smoke ok: session-smoke-generated · rounds answered (1 answered) · 3/3 replies · start ready, check ready, restart ready, stop stopped"
+    "세션 smoke ok: session-smoke-generated · rounds answered (1 answered) · 3/3 replies · start ready, check ready, resume ready, restart ready, stop stopped"
   );
   assert.equal(
     requests.some((request) => request.url === "/api/live-agent-processes"),
