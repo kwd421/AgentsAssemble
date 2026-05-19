@@ -294,6 +294,20 @@ def build_parser() -> argparse.ArgumentParser:
     live_resume_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
     live_resume_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session resume payload.")
 
+    live_check_session = live_agent_subparsers.add_parser(
+        "check-session",
+        parents=[live_server],
+        help="Check an existing resident meeting's supervised live-agent group without mutating it.",
+    )
+    live_check_session.add_argument("--meeting-id", required=True, help="Existing resident meeting id to check.")
+    live_check_session.add_argument("--group-id", required=True, help="Supervised process group id to check.")
+    live_check_session.add_argument(
+        "--fail-on-degraded",
+        action="store_true",
+        help="Exit 1 when the checked session is not ready.",
+    )
+    live_check_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session check payload.")
+
     live_stop_session = live_agent_subparsers.add_parser(
         "stop-session",
         parents=[live_server],
@@ -573,6 +587,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_start_session(args)
         if args.live_agent_command == "resume-session":
             return _run_live_agent_resume_session(args)
+        if args.live_agent_command == "check-session":
+            return _run_live_agent_check_session(args)
         if args.live_agent_command == "stop-session":
             return _run_live_agent_stop_session(args)
         if args.live_agent_command == "say":
@@ -942,6 +958,23 @@ def _run_live_agent_stop_session(args: argparse.Namespace) -> int:
     return 0 if response.get("status") == "stopped" else 1
 
 
+def _run_live_agent_check_session(args: argparse.Namespace) -> int:
+    response = _request_json(
+        _server_url(args.server, "/api/live-agent-sessions/check"),
+        method="POST",
+        payload={
+            "meeting_id": str(args.meeting_id or ""),
+            "group_id": str(args.group_id or ""),
+        },
+        timeout_seconds=10.0,
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_session_check(response))
+    return 1 if args.fail_on_degraded and response.get("status") != "ready" else 0
+
+
 def _format_live_agent_session_start(response: dict[str, object]) -> str:
     status = str(response.get("status") or "unknown")
     meeting_id = str(response.get("meeting_id") or "unknown")
@@ -974,6 +1007,24 @@ def _format_live_agent_session_stop(response: dict[str, object]) -> str:
     attention = offline.get("attention") if isinstance(offline.get("attention"), list) else []
     suffix = f"; attention {', '.join(str(item) for item in attention)}" if attention else ""
     return f"Resident session {meeting_id} {status}; group {group_id}; {stopped}/{expected} offline{suffix}"
+
+
+def _format_live_agent_session_check(response: dict[str, object]) -> str:
+    status = str(response.get("status") or "unknown")
+    meeting_id = str(response.get("meeting_id") or "unknown")
+    group_id = str(response.get("group_id") or "unknown")
+    connection = response.get("connection") if isinstance(response.get("connection"), dict) else {}
+    process = response.get("process") if isinstance(response.get("process"), dict) else {}
+    expected = connection.get("expected", 0)
+    connected = connection.get("connected", 0)
+    process_status = str(process.get("status") or "unknown")
+    attention = []
+    if isinstance(connection.get("attention"), list):
+        attention.extend(connection["attention"])
+    if isinstance(process.get("attention"), list):
+        attention.extend(process["attention"])
+    suffix = f"; attention {', '.join(str(item) for item in attention)}" if attention else ""
+    return f"Resident session {meeting_id} {status}; group {group_id}; {connected}/{expected} connected; process {process_status}{suffix}"
 
 
 def _load_live_agent_sequence_turns(args: argparse.Namespace) -> list[dict[str, object]]:

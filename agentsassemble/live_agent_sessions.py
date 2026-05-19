@@ -170,6 +170,36 @@ def resume_live_agent_session(
     }
 
 
+def check_live_agent_session(
+    output_root: Path,
+    process_supervisor: object,
+    *,
+    meeting_id: str,
+    group_id: str,
+) -> dict[str, object]:
+    clean_meeting_id = _clean_existing_meeting_id(meeting_id)
+    if not str(group_id or "").strip():
+        raise ValueError("Live agent group id is required.")
+    clean_group_id = clean_live_agent_group_id(group_id)
+    meeting_dir = _existing_meeting_dir(output_root, clean_meeting_id)
+    meeting = _read_existing_meeting(meeting_dir)
+    expected_agents = _expected_agents_from_meeting(meeting)
+    expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
+    group = _snapshot_process_group(process_supervisor, clean_group_id)
+    process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids)
+    connection = _connection_snapshot(output_root, meeting_id=clean_meeting_id, expected_agent_ids=expected_agent_ids)
+    status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "degraded"
+    return {
+        "status": status,
+        "meeting_id": clean_meeting_id,
+        "group_id": str(group.get("group_id") if isinstance(group, dict) and group.get("group_id") else clean_group_id),
+        "meeting": _safe_meeting_summary(meeting),
+        "group": _safe_group_summary(group),
+        "process": process,
+        "connection": connection,
+    }
+
+
 def stop_live_agent_session(
     output_root: Path,
     process_supervisor: object,
@@ -497,6 +527,17 @@ def _find_process_group(process_supervisor: object, group_id: str) -> dict[str, 
     if not hasattr(process_supervisor, "list_groups"):
         return {}
     groups = process_supervisor.list_groups()
+    return _find_group_in_list(groups, group_id)
+
+
+def _snapshot_process_group(process_supervisor: object, group_id: str) -> dict[str, object]:
+    if not hasattr(process_supervisor, "snapshot_groups"):
+        return {}
+    groups = process_supervisor.snapshot_groups()
+    return _find_group_in_list(groups, group_id)
+
+
+def _find_group_in_list(groups: object, group_id: str) -> dict[str, object]:
     if not isinstance(groups, list):
         return {}
     for group in groups:
@@ -582,6 +623,22 @@ def _stop_process_snapshot(group: object, *, expected_agent_ids: list[str]) -> d
     return process
 
 
+def _check_process_snapshot(group: object, *, expected_agent_ids: list[str]) -> dict[str, object]:
+    process = _process_snapshot(group, expected_agent_ids=expected_agent_ids)
+    expected = set(expected_agent_ids)
+    extra_agent_ids = [agent_id for agent_id in process["agent_ids"] if agent_id not in expected]
+    duplicate_agent_ids = _duplicate_agent_ids(process["agent_ids"])
+    if not extra_agent_ids and not duplicate_agent_ids:
+        return process
+    process["attention"] = [
+        *process["attention"],
+        *(f"{agent_id}:extra_in_group" for agent_id in extra_agent_ids),
+        *(f"{agent_id}:duplicate_in_group" for agent_id in duplicate_agent_ids),
+    ]
+    process["ready"] = False
+    return process
+
+
 def _process_snapshot(group: object, *, expected_agent_ids: list[str]) -> dict[str, object]:
     group_payload = group if isinstance(group, dict) else {}
     status = str(group_payload.get("status") or "unknown")
@@ -612,6 +669,16 @@ def _process_agent_ids(value: object) -> list[str]:
         if agent_id:
             agent_ids.append(agent_id)
     return agent_ids
+
+
+def _duplicate_agent_ids(agent_ids: list[str]) -> list[str]:
+    seen = set()
+    duplicates = []
+    for agent_id in agent_ids:
+        if agent_id in seen and agent_id not in duplicates:
+            duplicates.append(agent_id)
+        seen.add(agent_id)
+    return duplicates
 
 
 def _safe_meeting_summary(value: object) -> dict[str, object]:

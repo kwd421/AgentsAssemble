@@ -6,7 +6,12 @@ from pathlib import Path
 
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_runner import load_group_configs
-from agentsassemble.live_agent_sessions import resume_live_agent_session, start_live_agent_session, stop_live_agent_session
+from agentsassemble.live_agent_sessions import (
+    check_live_agent_session,
+    resume_live_agent_session,
+    start_live_agent_session,
+    stop_live_agent_session,
+)
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 
 
@@ -1024,6 +1029,211 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(supervisor.stopped, ["resident-main"])
             agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
             self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_check_session_reports_ready_without_mutating_runtime_state(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect", "critic"])
+            agent_config = _write_agent_config(root, ["agent-a", "agent-b"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            heartbeat_live_agent(root, "agent-b", status="working")
+            before_roster = (root / "live_agents.json").read_text(encoding="utf-8")
+
+            class CheckSupervisor:
+                def __init__(self) -> None:
+                    self.started = []
+                    self.stopped = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "config_path": str(root / "secret-live-agents.json"),
+                            "log_tail": "secret provider output",
+                            "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-b"}],
+                        }
+                    ]
+
+                def start_group(self, **kwargs):
+                    self.started.append(kwargs)
+                    raise AssertionError("check must not start groups")
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    raise AssertionError("check must not stop groups")
+
+            supervisor = CheckSupervisor()
+
+            session = check_live_agent_session(
+                root,
+                supervisor,
+                meeting_id="resident-m1",
+                group_id="resident main",
+            )
+
+            self.assertEqual(session["status"], "ready")
+            self.assertEqual(session["meeting_id"], "resident-m1")
+            self.assertEqual(session["group_id"], "resident-main")
+            self.assertEqual(session["connection"]["connected"], 2)
+            self.assertEqual(session["process"]["status"], "running")
+            self.assertEqual(session["process"]["attention"], [])
+            self.assertEqual(supervisor.started, [])
+            self.assertEqual(supervisor.stopped, [])
+            self.assertEqual((root / "live_agents.json").read_text(encoding="utf-8"), before_roster)
+            serialized = json.dumps(session, ensure_ascii=False)
+            self.assertNotIn("secret-live-agents", serialized)
+            self.assertNotIn("secret provider output", serialized)
+
+    def test_check_session_uses_read_only_process_snapshot_when_available(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class CheckSupervisor:
+                def __init__(self) -> None:
+                    self.snapshot_calls = 0
+
+                def snapshot_groups(self):
+                    self.snapshot_calls += 1
+                    return [{"group_id": "resident-main", "status": "running", "agents": [{"agent_id": "agent-a"}]}]
+
+                def list_groups(self):
+                    raise AssertionError("check must not use mutating list_groups when snapshot_groups is available")
+
+            supervisor = CheckSupervisor()
+
+            session = check_live_agent_session(
+                root,
+                supervisor,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            self.assertEqual(session["status"], "ready")
+            self.assertEqual(supervisor.snapshot_calls, 1)
+
+    def test_check_session_reports_degraded_mismatch_without_reassigning_wrong_meeting_roster(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "other-meeting",
+                    "engagement_mode": "moderator_called",
+                    "status": "online",
+                    "capabilities": ["room_chat", "official_turn"],
+                },
+            )
+            before_roster = (root / "live_agents.json").read_text(encoding="utf-8")
+
+            class CheckSupervisor:
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-x"}],
+                        }
+                    ]
+
+            session = check_live_agent_session(
+                root,
+                CheckSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            self.assertEqual(session["status"], "degraded")
+            self.assertEqual(session["connection"]["attention"], ["agent-a:wrong_meeting"])
+            self.assertIn("agent-x:extra_in_group", session["process"]["attention"])
+            self.assertEqual((root / "live_agents.json").read_text(encoding="utf-8"), before_roster)
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["meeting_id"], "other-meeting")
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_check_session_reports_degraded_duplicate_manifest_agent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class CheckSupervisor:
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-a"}],
+                        }
+                    ]
+
+            session = check_live_agent_session(
+                root,
+                CheckSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            self.assertEqual(session["status"], "degraded")
+            self.assertIn("agent-a:duplicate_in_group", session["process"]["attention"])
+
+    def test_check_session_requires_existing_meeting_and_explicit_group_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+
+            class CheckSupervisor:
+                def list_groups(self):
+                    return []
+
+            with self.assertRaises(ValueError) as raised:
+                check_live_agent_session(root, CheckSupervisor(), meeting_id="resident-m1", group_id=" ")
+            self.assertIn("Live agent group id is required", str(raised.exception))
+
+            with self.assertRaises(ValueError) as raised:
+                check_live_agent_session(root, CheckSupervisor(), meeting_id="missing-meeting", group_id="resident-main")
+            self.assertIn("Meeting missing-meeting was not found", str(raised.exception))
 
 
 def _write_council_config(root: Path, role_ids: list[str]) -> Path:

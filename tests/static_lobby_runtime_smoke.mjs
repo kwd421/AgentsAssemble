@@ -162,6 +162,7 @@ function resetState() {
     liveAgentOperationsLoading: false,
     liveAgentProcessStartRunning: false,
     liveAgentSessionStartRunning: false,
+    liveAgentSessionCheckRunning: false,
     liveAgentSessionStopRunning: false,
     liveAgentPreflightRunning: false,
     liveAgentSmokeRunning: false,
@@ -182,6 +183,7 @@ function installHarness({
   sessionStartPayload = null,
   sessionResumePayload = null,
   sessionStopPayload = null,
+  sessionCheckPayload = null,
   sessionStartResponse = null,
   roundPayload = null,
 } = {}) {
@@ -264,6 +266,17 @@ function installHarness({
         }
       );
     }
+    if (url === "/api/live-agent-sessions/check") {
+      return jsonResponse(
+        sessionCheckPayload || {
+          status: "ready",
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          connection: { expected: 3, connected: 3, attention: [] },
+          process: { status: "running", attention: [] },
+        }
+      );
+    }
     if (url === "/api/meetings/resident-gui/live-agent-turns/round") {
       return jsonResponse(
         roundPayload || {
@@ -324,6 +337,10 @@ function sessionResumeRequest(requests) {
 
 function sessionStopRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-sessions/stop");
+}
+
+function sessionCheckRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-sessions/check");
 }
 
 function roundRequest(requests) {
@@ -559,6 +576,42 @@ test("session stop button posts existing meeting and group payload", async () =>
   assert.equal(
     state.liveAgentProcessStatus.message,
     "세션 stopped: resident-gui · resident-main · 3/3 offline"
+  );
+});
+
+test("session check button posts existing meeting and group payload", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    sessionCheckPayload: {
+      status: "degraded",
+      meeting_id: "resident-gui",
+      group_id: "resident-main",
+      connection: { expected: 3, connected: 2, attention: ["agent-c:offline"] },
+      process: { status: "running", attention: [] },
+    },
+  });
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-meeting-id").value = "resident-gui";
+  lobby.querySelector("#live-agent-process-group").value = "resident-main";
+
+  await lobby.querySelector("#live-agent-session-check").click();
+
+  assert.deepEqual(sessionCheckRequest(requests).jsonBody, {
+    meeting_id: "resident-gui",
+    group_id: "resident-main",
+  });
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "세션 degraded: resident-gui · resident-main · 2/3 connected · process running"
+  );
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-processes"),
+    false
+  );
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agents"),
+    false
   );
 });
 

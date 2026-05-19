@@ -124,6 +124,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-session-resume")?.addEventListener("click", async () => {
     await resumeLiveAgentSession(lobby);
   });
+  lobby.querySelector("#live-agent-session-check")?.addEventListener("click", async () => {
+    await checkLiveAgentSession(lobby);
+  });
   lobby.querySelector("#live-agent-session-stop")?.addEventListener("click", async () => {
     await stopLiveAgentSession(lobby);
   });
@@ -503,6 +506,7 @@ function renderLiveAgentProcessControls() {
         <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
         <button type="button" id="live-agent-session-start" ${processActionsDisabled ? "disabled" : ""}>세션시작</button>
         <button type="button" id="live-agent-session-resume" ${processActionsDisabled ? "disabled" : ""}>세션재개</button>
+        <button type="button" id="live-agent-session-check" ${processActionsDisabled ? "disabled" : ""}>세션점검</button>
         <button type="button" id="live-agent-session-stop" ${processActionsDisabled ? "disabled" : ""}>세션중지</button>
         <button type="button" id="live-agent-call-round" ${processActionsDisabled ? "disabled" : ""}>라운드호출</button>
         <button type="button" id="live-agent-call-remaining-rounds" ${processActionsDisabled ? "disabled" : ""}>남은라운드</button>
@@ -530,7 +534,7 @@ function renderLiveAgentProcessControls() {
 }
 
 function liveAgentProcessActionBusy() {
-  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentReadinessRunning;
+  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentReadinessRunning;
 }
 
 function defaultOfficialRoundId(meeting) {
@@ -1362,6 +1366,30 @@ async function resumeLiveAgentSession(lobby) {
   });
 }
 
+async function checkLiveAgentSession(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
+  const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
+  if (!meetingId || !groupId) return;
+  state.liveAgentSessionCheckRunning = true;
+  state.liveAgentProcessStatus = { message: "상주 세션 점검 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-sessions/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meeting_id: meetingId, group_id: groupId }),
+    });
+    state.liveAgentProcessStatus = { message: liveAgentSessionCheckStatusMessage(payload), tone: liveAgentSessionStatusTone(payload) };
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `상주 세션 점검 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    state.liveAgentSessionCheckRunning = false;
+    await loadLiveAgentOperations({ background: true, force: true });
+    renderLobby({ followLatest: false });
+  }
+}
+
 async function stopLiveAgentSession(lobby) {
   if (liveAgentProcessActionBusy()) return;
   const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
@@ -1572,6 +1600,14 @@ function liveAgentSessionStatusMessage(payload) {
 function liveAgentSessionStopStatusMessage(payload) {
   const offline = payload?.offline && typeof payload.offline === "object" ? payload.offline : {};
   return `세션 ${payload?.status || "unknown"}: ${payload?.meeting_id || "unknown"} · ${payload?.group_id || "unknown"} · ${offline.offline || 0}/${offline.expected || 0} offline`;
+}
+
+function liveAgentSessionCheckStatusMessage(payload) {
+  const connection = payload?.connection && typeof payload.connection === "object" ? payload.connection : {};
+  const process = payload?.process && typeof payload.process === "object" ? payload.process : {};
+  const expected = Math.max(0, Number(connection.expected || 0));
+  const connected = Math.max(0, Number(connection.connected || 0));
+  return `세션 ${payload?.status || "unknown"}: ${payload?.meeting_id || "unknown"} · ${payload?.group_id || "unknown"} · ${connected}/${expected} connected · process ${process.status || "unknown"}`;
 }
 
 function liveAgentSessionStatusTone(payload) {
