@@ -28,6 +28,7 @@ from agentsassemble.gui import (
     codex_session_invite_payload,
     codex_sessions_payload,
     connect_live_agent_payload,
+    live_agent_official_turn_payload,
     live_agent_turn_sequence_payload,
     live_agent_turn_request_payload,
     live_agent_turn_round_payload,
@@ -7387,6 +7388,59 @@ class GuiServerTests(unittest.TestCase):
             transcript = build_meeting_payload(meeting_dir)["artifacts"]["transcript.md"]
             self.assertEqual(transcript.count("첫 공식 답변"), 1)
             self.assertNotIn("중복 공식 답변", transcript)
+
+    def test_live_agent_official_turn_reply_ignores_explicit_nonofficial_same_source_message(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            request_event = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "공식 발언 차례",
+                },
+            )
+            nonofficial_event = {
+                "id": "nonofficial-same-source",
+                "kind": "message",
+                "meeting_id": "m1",
+                "channel": "system",
+                "official_record": False,
+                "actor_id": "agent-a",
+                "source_event_id": request_event["id"],
+                "content": "비공식 상태 메모",
+            }
+            with (meeting_dir / "live_events.jsonl").open("a", encoding="utf-8") as file:
+                file.write(json.dumps(nonofficial_event, ensure_ascii=False, sort_keys=True) + "\n")
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+
+            result = live_agent_official_turn_payload(
+                root,
+                "agent-a",
+                {
+                    "meeting_id": "m1",
+                    "source_event_id": request_event["id"],
+                    "content": "정식 공식 답변",
+                },
+            )
+
+            self.assertNotEqual(result["event"]["id"], nonofficial_event["id"])
+            self.assertEqual(result["event"]["content"], "정식 공식 답변")
+            self.assertEqual(result["event"]["channel"], "official")
+            self.assertTrue(result["event"]["official_record"])
+            official_replies = [
+                event
+                for event in read_live_events(meeting_dir, limit=None)
+                if event.get("kind") == "message"
+                and event.get("channel") == "official"
+                and event.get("official_record") is True
+                and event.get("source_event_id") == request_event["id"]
+            ]
+            self.assertEqual(len(official_replies), 1)
 
     def test_live_agent_official_turn_reply_rejects_meeting_the_agent_is_not_attached_to(self):
         with tempfile.TemporaryDirectory() as temp_dir:

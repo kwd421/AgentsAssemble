@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -99,6 +100,40 @@ class LiveAgentTurnsTests(unittest.TestCase):
 
             self.assertEqual(result["status"], "answered")
             self.assertEqual(result["reply_event"]["id"], reply["id"])
+
+    def test_wait_treats_legacy_same_source_message_as_official_reply(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            request = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "official turn",
+                },
+            )
+            legacy_reply = {
+                "id": "legacy-reply",
+                "kind": "message",
+                "meeting_id": "m1",
+                "actor_id": "agent-a",
+                "source_event_id": request["id"],
+                "content": "legacy official reply",
+            }
+            with (meeting_dir / "live_events.jsonl").open("a", encoding="utf-8") as file:
+                file.write(json.dumps(legacy_reply, ensure_ascii=False, sort_keys=True) + "\n")
+
+            result = wait_for_official_turn_reply(
+                meeting_dir,
+                agent_id="agent-a",
+                source_event_id=str(request["id"]),
+                timeout_seconds=0,
+                poll_interval=0,
+            )
+
+            self.assertEqual(result["status"], "answered")
+            self.assertEqual(result["reply_event"]["id"], legacy_reply["id"])
 
     def test_wait_timeout_does_not_fabricate_reply(self):
         with tempfile.TemporaryDirectory() as temp_dir:

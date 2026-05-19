@@ -714,6 +714,83 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual([call for call in client.calls if call[0].endswith("/official-turn")], [])
         self.assertEqual(runner.last_observed_live_event_id, "reply-1")
 
+    def test_moderator_called_does_not_treat_informal_same_source_message_as_official_reply(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [],
+            "live_events": [
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "공식 답변이 필요해",
+                },
+                {
+                    "id": "informal-1",
+                    "kind": "message",
+                    "channel": "system",
+                    "official_record": False,
+                    "actor_id": "agent-a",
+                    "source_event_id": "turn-request-1",
+                    "content": "비공식 상태 메모",
+                },
+            ],
+        }
+        client = FakeRoomClient([room])
+        command_calls = []
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: command_calls.append(prompt) or "공식 답변",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        self.assertEqual(len(command_calls), 1)
+        official_payloads = [payload for url, method, payload in client.calls if url.endswith("/official-turn")]
+        self.assertEqual(official_payloads[0]["source_event_id"], "turn-request-1")
+
+    def test_moderator_called_treats_legacy_same_source_message_as_answered_official_request(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [],
+            "live_events": [
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "이미 답한 요청",
+                },
+                {
+                    "id": "legacy-reply-1",
+                    "kind": "message",
+                    "actor_id": "agent-a",
+                    "source_event_id": "turn-request-1",
+                    "content": "channel metadata가 생기기 전 공식 답변",
+                },
+            ],
+        }
+        client = FakeRoomClient([room])
+        command_calls = []
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: command_calls.append(prompt) or "duplicate reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        self.assertEqual(command_calls, [])
+        self.assertEqual([call for call in client.calls if call[0].endswith("/official-turn")], [])
+
     def test_moderator_called_mode_ignores_untargeted_official_turn_request(self):
         clock = FakeClock()
         room = {

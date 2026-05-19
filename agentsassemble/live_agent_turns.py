@@ -54,11 +54,7 @@ def official_turn_reply(
     source_event_id: str,
 ) -> dict[str, object] | None:
     for event in events:
-        if event.get("kind") != "message":
-            continue
-        if event.get("channel") != "official":
-            continue
-        if event.get("official_record") is not True:
+        if not is_official_turn_reply_event(event):
             continue
         if str(event.get("actor_id") or "") != agent_id:
             continue
@@ -66,6 +62,17 @@ def official_turn_reply(
             continue
         return event
     return None
+
+
+def is_official_turn_reply_event(event: dict[str, object]) -> bool:
+    if event.get("kind") != "message":
+        return False
+    if event.get("official_record") is False:
+        return False
+    channel = str(event.get("channel") or "").strip()
+    if channel and channel != "official":
+        return False
+    return True
 
 
 def _effective_poll_interval(poll_interval: float) -> float:

@@ -46,7 +46,7 @@ from agentsassemble.live_agent_smoke import (
     run_live_agent_session_smoke,
     run_live_agent_smoke,
 )
-from agentsassemble.live_agent_turns import wait_for_official_turn_reply
+from agentsassemble.live_agent_turns import is_official_turn_reply_event, wait_for_official_turn_reply
 from agentsassemble.live_transcript import projected_live_transcript_text
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
@@ -1975,7 +1975,7 @@ def _matching_live_agent_turn_request(meeting_dir: Path, agent_id: str, source_e
 
 def _official_turn_reply_for_request(meeting_dir: Path, agent_id: str, source_event_id: str) -> dict[str, object] | None:
     for event in read_live_events(meeting_dir, limit=None):
-        if event.get("kind") != "message":
+        if not is_official_turn_reply_event(event):
             continue
         if str(event.get("actor_id") or "") != agent_id:
             continue

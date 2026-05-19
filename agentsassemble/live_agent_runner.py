@@ -10,6 +10,7 @@ from typing import Callable
 
 from agentsassemble.codex_resident import default_codex_resident_command
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
+from agentsassemble.live_agent_turns import is_official_turn_reply_event
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
 from agentsassemble.remote_bridge_config import (
     remote_bridge_auth_ref_available,
@@ -507,7 +508,7 @@ def official_turn_request_candidate(
 def _visible_official_reply_source_ids(events: list[dict[str, object]], agent_id: str) -> set[str]:
     source_ids: set[str] = set()
     for event in events:
-        if str(event.get("kind") or "") != "message":
+        if not is_official_turn_reply_event(event):
             continue
         if str(event.get("actor_id") or "") != agent_id:
             continue
