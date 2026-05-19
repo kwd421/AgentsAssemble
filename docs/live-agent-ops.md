@@ -546,6 +546,8 @@ python3 -m agentsassemble.cli live-agent doctor \
 
 The doctor calls `POST /api/live-agent-readiness`. The readiness endpoint first records the current `/api/live-agent-health` snapshot, then runs the same credential-free smoke used by `live-agent smoke`. This order is intentional: the smoke leaves offline fake agents and a stopped smoke process record behind, so readiness uses pre-smoke health as the room health proof and treats the smoke result as a separate control-plane proof.
 
+The default doctor text mirrors the important health attention surfaces: agent attention, process attention, connection attention, and sanitized process watchdog reasons. This keeps missing, stale, wrong-meeting, offline, error, or not-reconnected manifest agents visible in the single readiness answer without opening raw health JSON.
+
 When you also need the moderator-called official-turn path in the same operator answer, opt into the credential-free official round smoke:
 
 ```bash
@@ -596,7 +598,7 @@ Smoke-created fake agents and process groups are marked `diagnostic`. They remai
 Status meanings:
 
 - `ready`: pre-smoke health is `ok`, the fake `local_cli`, `live_session`, plus `remote_bridge` smoke passed, and every requested targeted probe replied.
-- `degraded`: smoke passed, every requested official/session smoke and targeted probe replied, but pre-smoke health already had agent or process attention.
+- `degraded`: smoke passed, every requested official/session smoke and targeted probe replied, but pre-smoke health already had agent, process, or connection attention.
 - `failed`: the room was reached, but the base smoke check did not pass, requested official/session smoke was skipped, timed out, or failed, or a requested targeted probe was skipped, timed out, or failed.
 
 For scripts:

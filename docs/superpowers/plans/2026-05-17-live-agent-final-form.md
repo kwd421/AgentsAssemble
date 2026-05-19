@@ -2140,6 +2140,34 @@ Document that `/api/live-agent-health`, `live-agent health`, and `live-agent doc
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 65: Doctor Connection Attention Summary
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED coverage for doctor connection attention**
+
+Extend the existing doctor text-output test so the embedded readiness health payload includes `connections.attention` for a manifest agent that is not connected. The compact doctor output must include a `connection attention:` line, matching the existing `live-agent health` summary surface.
+
+Run: `python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_doctor_posts_readiness_request_and_prints_summary`
+Expected: fail before implementation because doctor renders agent and process attention but not connection attention.
+
+- [x] **Step 2: Render connection attention in doctor**
+
+Read `health.connections.attention` in `_format_live_agent_readiness()` and always render the same `_attention_summary()` line used for agent and process attention, so healthy readiness payloads print `connection attention: none` and degraded payloads name the missing connection evidence.
+
+Run the Step 1 command.
+Expected: pass.
+
+- [x] **Step 3: Document doctor attention parity**
+
+Document that `live-agent doctor` mirrors the important health attention surfaces: agent attention, process attention, connection attention, and sanitized process watchdog reasons.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification
