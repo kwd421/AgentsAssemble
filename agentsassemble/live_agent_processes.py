@@ -924,14 +924,14 @@ def _process_record(payload: dict[str, object]) -> dict[str, object]:
     return {
         "group_id": _clean_group_id(str(payload.get("group_id") or "")),
         "status": _process_record_status(payload.get("status")),
-        "pid": payload.get("pid") if isinstance(payload.get("pid"), int) else None,
+        "pid": _safe_process_pid(payload.get("pid")),
         "meeting_id": _clean_meeting_id(payload.get("meeting_id")),
         "config_path": str(payload.get("config_path") or ""),
         "server": str(payload.get("server") or ""),
         "log_path": str(payload.get("log_path") or ""),
         "started_at": str(payload.get("started_at") or ""),
         "stopped_at": str(payload.get("stopped_at") or ""),
-        "returncode": payload.get("returncode") if isinstance(payload.get("returncode"), int) else None,
+        "returncode": _safe_process_returncode(payload.get("returncode")),
         "last_error": str(payload.get("last_error") or ""),
         "auto_restart": _bool_value(payload.get("auto_restart")),
         "restart_count": _nonnegative_int(payload.get("restart_count"), 0),
@@ -948,6 +948,18 @@ def _process_record(payload: dict[str, object]) -> dict[str, object]:
 def _process_record_status(value: object) -> str:
     status = str(value or "unknown").strip()
     return status if status in PROCESS_RECORD_STATUSES else "unknown"
+
+
+def _safe_process_pid(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def _safe_process_returncode(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
 
 
 def _read_log_tail(path: Path, byte_limit: int) -> str:
@@ -1056,8 +1068,8 @@ def _lifecycle_event(
         "group_id": _clean_group_id(str(record.get("group_id") or "")),
         "event_type": str(event_type or "updated"),
         "status": str(record.get("status") or "unknown"),
-        "pid": record.get("pid") if isinstance(record.get("pid"), int) else None,
-        "returncode": returncode if isinstance(returncode, int) else _record_returncode(record),
+        "pid": _safe_process_pid(record.get("pid")),
+        "returncode": _event_returncode(returncode, record),
         "restart_count": _nonnegative_int(record.get("restart_count"), 0),
         "max_restarts": _nonnegative_int(record.get("max_restarts"), 0),
     }
@@ -1091,8 +1103,8 @@ def _safe_lifecycle_event(payload: object) -> dict[str, object]:
         "group_id": group_id,
         "event_type": event_type,
         "status": _safe_lifecycle_token(payload.get("status"), default="unknown"),
-        "pid": payload.get("pid") if isinstance(payload.get("pid"), int) else None,
-        "returncode": payload.get("returncode") if isinstance(payload.get("returncode"), int) else None,
+        "pid": _safe_process_pid(payload.get("pid")),
+        "returncode": _safe_process_returncode(payload.get("returncode")),
         "restart_count": _nonnegative_int(payload.get("restart_count"), 0),
         "max_restarts": _nonnegative_int(payload.get("max_restarts"), 0),
     }
@@ -1152,7 +1164,12 @@ def _looks_sensitive_lifecycle_reason(reason: str) -> bool:
 
 
 def _record_returncode(record: dict[str, object]) -> int | None:
-    return record.get("returncode") if isinstance(record.get("returncode"), int) else None
+    return _safe_process_returncode(record.get("returncode"))
+
+
+def _event_returncode(returncode: object, record: dict[str, object]) -> int | None:
+    explicit = _safe_process_returncode(returncode)
+    return explicit if explicit is not None else _record_returncode(record)
 
 
 def _preflight_failure_message(report: dict[str, object]) -> str:

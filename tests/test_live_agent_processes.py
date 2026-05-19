@@ -1320,7 +1320,8 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
                         "group_id": "crew",
                         "event_type": "started http://secret.local",
                         "status": "/tmp/secret.json",
-                        "pid": 1234,
+                        "pid": -1234,
+                        "returncode": True,
                         "next_restart_at": "env:SECRET_TOKEN",
                         "previous_status": "prompt secret",
                         "reason": "secret raw provider output token",
@@ -1334,6 +1335,8 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
 
         self.assertEqual(events[0]["event_type"], "updated")
         self.assertEqual(events[0]["status"], "unknown")
+        self.assertIsNone(events[0]["pid"])
+        self.assertIsNone(events[0]["returncode"])
         self.assertEqual(events[0]["timestamp"], "")
         self.assertNotIn("next_restart_at", events[0])
         self.assertNotIn("previous_status", events[0])
@@ -2356,6 +2359,38 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             group = LiveAgentProcessSupervisor(root).snapshot_groups()[0]
 
         self.assertEqual(group["status"], "unknown")
+
+    def test_persisted_invalid_process_numbers_are_reported_unknown(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir()
+            (runs_dir / "processes.json").write_text(
+                json.dumps(
+                    {
+                        "groups": [
+                            {
+                                "group_id": "crew",
+                                "status": "error",
+                                "pid": -4444,
+                                "config_path": "configs/live-agents.example.json",
+                                "server": "http://room.local",
+                                "log_path": str(runs_dir / "crew.log"),
+                                "started_at": "2026-05-17T12:00:00+00:00",
+                                "stopped_at": "2026-05-17T12:01:00+00:00",
+                                "returncode": True,
+                                "last_error": "",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            group = LiveAgentProcessSupervisor(root).snapshot_groups()[0]
+
+        self.assertIsNone(group["pid"])
+        self.assertIsNone(group["returncode"])
 
     def test_list_groups_includes_bounded_log_tail_without_persisting_it(self):
         with tempfile.TemporaryDirectory() as temp_dir:
