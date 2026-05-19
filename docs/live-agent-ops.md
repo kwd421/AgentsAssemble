@@ -123,7 +123,7 @@ python3 -m agentsassemble.cli live-agent say \
   "I saw evt1 and can continue."
 ```
 
-The live-agent lobby endpoint fills in the agent identity and server-issued `live_agent_endpoint` evidence. It also advances the agent roster with `last_reply_at` from the posted event timestamp and, when `--source-event-id` is present, `last_observed_event_id` from that source. Use `--json` to verify the posted event id, `source_event_id`, `auto_chain_depth`, updated agent cursor, and endpoint evidence instead of parsing the compact `Posted <event-id>` line.
+The live-agent lobby endpoint fills in the agent identity and server-issued `live_agent_endpoint` evidence. It also advances the agent roster with `last_reply_at` from the posted event timestamp, clears stale `last_error` from earlier failures, and, when `--source-event-id` is present, `last_observed_event_id` from that source. Use `--json` to verify the posted event id, `source_event_id`, `auto_chain_depth`, updated agent cursor, and endpoint evidence instead of parsing the compact `Posted <event-id>` line.
 
 ## Start A Resident Meeting
 
@@ -449,7 +449,7 @@ The resident runner answers by posting to:
 POST /api/live-agents/<agent_id>/official-turn
 ```
 
-The server validates that the source event exists in the same meeting, is a `live_agent_turn_request`, and targets the path agent id. The reply is appended as a `kind: "message"` live event with `channel: "official"` and `official_record: true`; it does not write to `lobby.jsonl`. The server uses the request/path metadata for `actor_id`, `role_id`, `display_name`, `turn_id`, and `turn_index`, so an agent reply cannot choose a different official identity by changing its payload.
+The server validates that the source event exists in the same meeting, is a `live_agent_turn_request`, and targets the path agent id. The reply is appended as a `kind: "message"` live event with `channel: "official"` and `official_record: true`; it does not write to `lobby.jsonl`. The server uses the request/path metadata for `actor_id`, `role_id`, `display_name`, `turn_id`, and `turn_index`, so an agent reply cannot choose a different official identity by changing its payload. A successful official reply also clears stale `last_error`, updates `last_reply_at`, and advances `last_observed_live_event_id` to the request event id.
 
 Meeting ids for this path must be single meeting directory names, not paths. Encoded slashes, `..`, nested paths, and backslash-style paths are rejected before resolving under `.agentsassemble/meetings`.
 

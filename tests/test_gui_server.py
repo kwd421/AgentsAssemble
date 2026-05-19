@@ -4107,6 +4107,7 @@ class GuiServerTests(unittest.TestCase):
                     "connection_kind": "local_cli",
                     "meeting_id": "m1",
                     "engagement_mode": "moderator_called",
+                    "last_error": "previous official turn failed",
                 },
             )
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
@@ -4152,6 +4153,7 @@ class GuiServerTests(unittest.TestCase):
                     lobby = json.loads(response.read().decode("utf-8"))
                 with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
                     operations = json.loads(response.read().decode("utf-8"))
+                persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
             finally:
                 server.shutdown()
                 server.server_close()
@@ -4171,7 +4173,9 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(reply_event["display_name"], "Agent A")
             self.assertEqual(reply_event["turn_id"], "round_1:0:architect")
             self.assertEqual(reply_event["engagement_mode"], "moderator_called")
+            self.assertEqual(replied["agent"]["last_error"], "")
             self.assertEqual(replied["agent"]["last_observed_live_event_id"], request_event["id"])
+            self.assertEqual(persisted_agent["last_error"], "")
             self.assertNotIn("private target-B instruction", [event.get("content") for event in replied["live_events"]])
             self.assertEqual(lobby["events"], [])
             self.assertEqual([item["operation"] for item in operations["operations"]], ["official_turn.request", "official_turn.reply"])
@@ -7378,6 +7382,7 @@ class GuiServerTests(unittest.TestCase):
                 {
                     "agent_id": "gemini-cli",
                     "display_name": "Gemini CLI",
+                    "last_error": "previous command failed",
                     "last_observed_live_event_id": "live-evt0",
                 },
             )
@@ -7411,9 +7416,11 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(event["auto_chain_depth"], 1)
         self.assertTrue(event["live_agent_endpoint"])
         self.assertEqual(agent["last_reply_at"], event["created_at"])
+        self.assertEqual(agent["last_error"], "")
         self.assertEqual(agent["last_observed_event_id"], "evt1")
         self.assertEqual(agent["last_observed_live_event_id"], "live-evt0")
         self.assertEqual(persisted_agent["last_reply_at"], event["created_at"])
+        self.assertEqual(persisted_agent["last_error"], "")
         self.assertEqual(persisted_agent["last_observed_event_id"], "evt1")
         self.assertEqual(persisted_agent["last_observed_live_event_id"], "live-evt0")
 

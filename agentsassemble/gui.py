@@ -722,7 +722,10 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
         },
         live_agent_endpoint=True,
     )
-    reply_metadata: dict[str, object] = {"last_reply_at": event.get("created_at") or datetime.now(UTC).isoformat()}
+    reply_metadata: dict[str, object] = {
+        "last_error": "",
+        "last_reply_at": event.get("created_at") or datetime.now(UTC).isoformat(),
+    }
     source_event_id = clean_lobby_text(event.get("source_event_id"), limit=128)
     if source_event_id:
         reply_metadata["last_observed_event_id"] = source_event_id
@@ -1106,7 +1109,11 @@ def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: 
         output_root,
         agent_id,
         status="online",
-        metadata={"last_reply_at": datetime.now(UTC).isoformat(), "last_observed_live_event_id": source_event_id},
+        metadata={
+            "last_error": "",
+            "last_reply_at": datetime.now(UTC).isoformat(),
+            "last_observed_live_event_id": source_event_id,
+        },
     )
     return {
         "agent": updated_agent,
