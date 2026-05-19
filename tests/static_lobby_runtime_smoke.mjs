@@ -1591,6 +1591,11 @@ test("process row renders recovery watchdog and next restart evidence", () => {
       next_restart_at: "2026-05-17T12:01:00+00:00",
       recent_events: [
         {
+          event_type: "stale_watchdog",
+          timestamp: "2026-05-17T12:00:05+00:00",
+          reason: "missing manifest agent agent-a",
+        },
+        {
           event_type: "restart_scheduled",
           timestamp: "2026-05-17T12:00:10+00:00",
           offline: {
@@ -1618,6 +1623,7 @@ test("process row renders recovery watchdog and next restart evidence", () => {
   assert.match(rowText, /next restart 2026-05-17T12:01:00\+00:00/);
   assert.match(rowText, /last event started/);
   assert.match(rowText, /last offline restart_scheduled/);
+  assert.match(rowText, /last reason stale_watchdog missing manifest agent agent-a/);
   assert.match(rowText, /offline 1\/2/);
   assert.match(rowText, /wrong_meeting agent-b/);
 });

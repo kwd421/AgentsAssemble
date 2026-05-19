@@ -2069,6 +2069,39 @@ Document that default CLI process lists and lifecycle event views expose sanitiz
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 63: GUI Process Row Lifecycle Reason Display
+
+**Files:**
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+
+- [x] **Step 1: Add RED coverage for GUI reason display**
+
+Extend the process-row runtime smoke so a bounded `recent_events` list includes an older `stale_watchdog` event with a sanitized `reason`, followed by a later offline-bearing `restart_scheduled` event and latest `started` event. The rendered row must keep the latest-event anchor while surfacing the older watchdog reason as `last reason <event_type> <reason>`.
+
+Run:
+
+```bash
+node --test tests/static_lobby_runtime_smoke.mjs --test-name-pattern "process row renders recovery watchdog and next restart evidence"
+```
+
+Expected: fail before implementation because GUI process rows render offline lifecycle evidence but not lifecycle `reason`.
+
+- [x] **Step 2: Render reason in GUI lifecycle summaries**
+
+Teach `liveAgentProcessEventLabel()` to include the latest available reason-bearing event from the row's bounded `recent_events`. Use `reason <value>` when the latest event carries it, or `last reason <event_type> <value>` when an older recent event carries the latest available reason.
+
+Run the Step 1 command.
+Expected: pass.
+
+- [x] **Step 3: Document GUI reason output**
+
+Document that both CLI process lists and GUI process rows expose the latest sanitized watchdog reason from bounded lifecycle history without opening raw JSON.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

@@ -859,8 +859,24 @@ function liveAgentProcessEventLabel(group) {
   if (!latest) return "";
   const timestamp = String(latest.timestamp || "").trim();
   const offline = liveAgentProcessLatestOfflineEventLabel(events, latest);
-  const details = [offline, timestamp].filter(Boolean).join(" · ");
+  const reason = liveAgentProcessLatestReasonEventLabel(events, latest);
+  const details = [offline, reason, timestamp].filter(Boolean).join(" · ");
   return details ? `last event ${latest.event_type} · ${details}` : `last event ${latest.event_type}`;
+}
+
+function liveAgentProcessLatestReasonEventLabel(events, latest) {
+  const reasonEvent = [...events].reverse().find((event) => {
+    if (!event || !event.event_type) return false;
+    return Boolean(liveAgentProcessEventReasonLabel(event.reason));
+  });
+  if (!reasonEvent) return "";
+  const reason = liveAgentProcessEventReasonLabel(reasonEvent.reason);
+  if (!reason) return "";
+  return reasonEvent === latest ? `reason ${reason}` : `last reason ${reasonEvent.event_type} ${reason}`;
+}
+
+function liveAgentProcessEventReasonLabel(value) {
+  return String(value || "").trim();
 }
 
 function liveAgentProcessLatestOfflineEventLabel(events, latest) {
