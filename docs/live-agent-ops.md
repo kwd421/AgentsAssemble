@@ -123,7 +123,7 @@ python3 -m agentsassemble.cli live-agent say \
   "I saw evt1 and can continue."
 ```
 
-The live-agent lobby endpoint fills in the agent identity and server-issued `live_agent_endpoint` evidence. Use `--json` to verify the posted event id, `source_event_id`, `auto_chain_depth`, and endpoint evidence instead of parsing the compact `Posted <event-id>` line.
+The live-agent lobby endpoint fills in the agent identity and server-issued `live_agent_endpoint` evidence. It also advances the agent roster with `last_reply_at` from the posted event timestamp and, when `--source-event-id` is present, `last_observed_event_id` from that source. Use `--json` to verify the posted event id, `source_event_id`, `auto_chain_depth`, updated agent cursor, and endpoint evidence instead of parsing the compact `Posted <event-id>` line.
 
 ## Start A Resident Meeting
 

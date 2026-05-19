@@ -7373,7 +7373,14 @@ class GuiServerTests(unittest.TestCase):
     def test_live_agent_lobby_message_records_actor_source_and_chain_depth(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            connect_live_agent_payload(root, {"agent_id": "gemini-cli", "display_name": "Gemini CLI"})
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "gemini-cli",
+                    "display_name": "Gemini CLI",
+                    "last_observed_live_event_id": "live-evt0",
+                },
+            )
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
@@ -7397,10 +7404,58 @@ class GuiServerTests(unittest.TestCase):
                 server.server_close()
 
             event = payload["event"]
+            agent = payload["agent"]
+            persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
         self.assertEqual(event["actor_id"], "gemini-cli")
         self.assertEqual(event["source_event_id"], "evt1")
         self.assertEqual(event["auto_chain_depth"], 1)
         self.assertTrue(event["live_agent_endpoint"])
+        self.assertEqual(agent["last_reply_at"], event["created_at"])
+        self.assertEqual(agent["last_observed_event_id"], "evt1")
+        self.assertEqual(agent["last_observed_live_event_id"], "live-evt0")
+        self.assertEqual(persisted_agent["last_reply_at"], event["created_at"])
+        self.assertEqual(persisted_agent["last_observed_event_id"], "evt1")
+        self.assertEqual(persisted_agent["last_observed_live_event_id"], "live-evt0")
+
+    def test_live_agent_lobby_message_without_source_preserves_existing_cursors(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "gemini-cli",
+                    "display_name": "Gemini CLI",
+                    "last_observed_event_id": "evt0",
+                    "last_observed_live_event_id": "live-evt0",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/gemini-cli/lobby",
+                    data=json.dumps({"message": "수동 메모"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            event = payload["event"]
+            agent = payload["agent"]
+            persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
+
+        self.assertEqual(event["source_event_id"], "")
+        self.assertEqual(agent["last_reply_at"], event["created_at"])
+        self.assertEqual(agent["last_observed_event_id"], "evt0")
+        self.assertEqual(agent["last_observed_live_event_id"], "live-evt0")
+        self.assertEqual(persisted_agent["last_reply_at"], event["created_at"])
+        self.assertEqual(persisted_agent["last_observed_event_id"], "evt0")
+        self.assertEqual(persisted_agent["last_observed_live_event_id"], "live-evt0")
 
     def test_generic_lobby_post_cannot_mark_live_agent_endpoint(self):
         with tempfile.TemporaryDirectory() as temp_dir:

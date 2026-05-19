@@ -722,7 +722,17 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
         },
         live_agent_endpoint=True,
     )
-    return {"agent": agent, "event": event, "events": read_lobby(output_root)}
+    reply_metadata: dict[str, object] = {"last_reply_at": event.get("created_at") or datetime.now(UTC).isoformat()}
+    source_event_id = clean_lobby_text(event.get("source_event_id"), limit=128)
+    if source_event_id:
+        reply_metadata["last_observed_event_id"] = source_event_id
+    updated_agent = heartbeat_live_agent(
+        output_root,
+        str(agent.get("agent_id") or agent_id),
+        status="online",
+        metadata=reply_metadata,
+    )
+    return {"agent": updated_agent, "event": event, "events": read_lobby(output_root)}
 
 
 def live_agent_turn_request_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
