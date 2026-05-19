@@ -2428,6 +2428,59 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertLessEqual(len(groups[0]["log_tail"]), 128)
         self.assertNotIn("log_tail", persisted["groups"][0])
 
+    def test_list_groups_redacts_sensitive_log_tail_without_persisting_it(self):
+        sensitive_tails = [
+            "safe boot line\ntoken=secret-token http://friend.local/private/live-agents.json",
+            "Authorization: Bearer bridge-token",
+            "password=hunter2",
+            "env:API_KEY",
+            "$API_KEY",
+            "${API_KEY}",
+            "dotenv file .env",
+            "loading configs/live-agents.toml",
+            "C:\\Users\\friend\\live-agents.toml",
+            "--api-key secret-token",
+        ]
+        for log_tail in sensitive_tails:
+            with self.subTest(log_tail=log_tail):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    root = Path(temp_dir)
+                    runs_dir = root / "live-agent-runs"
+                    runs_dir.mkdir()
+                    log_path = runs_dir / "crew.log"
+                    log_path.write_text(log_tail, encoding="utf-8")
+                    (runs_dir / "processes.json").write_text(
+                        json.dumps(
+                            {
+                                "groups": [
+                                    {
+                                        "group_id": "crew",
+                                        "status": "error",
+                                        "pid": 1111,
+                                        "config_path": "configs/live-agents.example.json",
+                                        "server": "http://room.local",
+                                        "log_path": str(log_path),
+                                        "started_at": "2026-05-17T12:00:00+00:00",
+                                        "stopped_at": "2026-05-17T12:01:00+00:00",
+                                        "returncode": 2,
+                                        "last_error": "",
+                                    }
+                                ]
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    groups = LiveAgentProcessSupervisor(root, log_tail_bytes=512).list_groups()
+                    persisted = json.loads((runs_dir / "processes.json").read_text(encoding="utf-8"))
+                    raw_log = log_path.read_text(encoding="utf-8")
+
+                self.assertEqual(groups[0]["log_tail"], "log tail redacted.")
+                self.assertNotIn(log_tail, groups[0]["log_tail"])
+                self.assertNotIn("safe boot line", groups[0]["log_tail"])
+                self.assertEqual(raw_log, log_tail)
+                self.assertNotIn("log_tail", persisted["groups"][0])
+
     def test_snapshot_groups_does_not_start_due_auto_restarts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -3431,6 +3431,47 @@ Document that JSONL live-session subprocess errors may expose safe short stderr 
 
 ---
 
+### Task 94: Redact Sensitive Process Log Tails
+
+**Goal:** Keep GUI/process API log-tail clues useful without exposing secrets, endpoints, config paths, command options, or environment references from supervised `run-group` logs.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+
+- [x] **Step 1: Add RED coverage for sensitive process log tails**
+
+Cover persisted supervised process records whose backing `<group_id>.log` tail contains token, bearer auth, password, env refs, config filenames, slash/backslash paths, URL, or option-string evidence. `list_groups()` must expose `log tail redacted.` and must not persist `log_tail` back into `processes.json`.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_list_groups_redacts_sensitive_log_tail_without_persisting_it
+```
+
+Expected: fail before implementation because `_read_log_tail()` returns the raw bounded file tail.
+
+- [x] **Step 2: Preserve safe bounded process log tails**
+
+Keep the existing bounded safe-tail behavior so short benign clues such as `final clue` remain visible and bounded.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_list_groups_includes_bounded_log_tail_without_persisting_it
+```
+
+- [x] **Step 3: Sanitize only the process output surface**
+
+Sanitize the `log_tail` attached by `_record_for_output()` before process rows reach the API, CLI, or GUI. Keep `_read_log_tail()` as a raw bounded reader and do not rewrite or scrub the raw local `.log` file; it remains local diagnostic evidence.
+
+- [x] **Step 4: Document process log-tail redaction**
+
+Document that raw local process logs are not scrubbed, while API/GUI `log_tail` output redacts suspicious tails with a fixed marker.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

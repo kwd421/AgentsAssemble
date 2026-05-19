@@ -32,6 +32,23 @@ SAFE_WATCHDOG_REASON_PATTERN = re.compile(
 )
 WATCHDOG_REASON_EVENT_TYPES = {"stale_watchdog", "stale_watchdog_stop_failed"}
 PROCESS_RECORD_STATUSES = {"running", "restarting", "stopped", "error", "unknown"}
+SENSITIVE_LOG_TAIL_MARKERS = (
+    "authorization",
+    "bearer ",
+    "credential",
+    "password",
+    "secret",
+    "token",
+    "api-key",
+    "apikey",
+    "x-api-key",
+    "http://",
+    "https://",
+    "env:",
+    ".json",
+    ".env",
+    ".toml",
+)
 
 
 class LiveAgentProcessSupervisor:
@@ -668,7 +685,9 @@ class LiveAgentProcessSupervisor:
         offline: dict[str, object] | None = None,
     ) -> dict[str, object]:
         visible = dict(record)
-        visible["log_tail"] = _read_log_tail(Path(str(record.get("log_path") or "")), self.log_tail_bytes)
+        visible["log_tail"] = _safe_log_tail_for_output(
+            _read_log_tail(Path(str(record.get("log_path") or "")), self.log_tail_bytes)
+        )
         if recent_events is None:
             recent_events = _recent_lifecycle_events(
                 self._event_path(),
@@ -980,6 +999,21 @@ def _read_log_tail(path: Path, byte_limit: int) -> str:
         size = file.tell()
         file.seek(max(0, size - byte_limit))
         return file.read(byte_limit).decode("utf-8", errors="replace")
+
+
+def _safe_log_tail_for_output(log_tail: str) -> str:
+    if not log_tail:
+        return ""
+    return "log tail redacted." if _looks_sensitive_log_tail(log_tail) else log_tail
+
+
+def _looks_sensitive_log_tail(log_tail: str) -> bool:
+    lowered = log_tail.casefold()
+    if any(marker in lowered for marker in SENSITIVE_LOG_TAIL_MARKERS):
+        return True
+    if "/" in log_tail or "\\" in log_tail or "--" in log_tail:
+        return True
+    return bool(re.search(r"\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)", log_tail))
 
 
 def _recent_lifecycle_events(path: Path, group_id: str, limit: int) -> list[dict[str, object]]:
