@@ -3794,6 +3794,10 @@ def _make_handler(
                             session_smoke.get("soak_reply_count"),
                             0,
                         ),
+                        "session_smoke_soak_check_statuses": _safe_payload_strings(
+                            session_smoke.get("soak_check_statuses"),
+                            limit=32,
+                        ),
                         "session_smoke_recover_status": _operation_result_status(session_smoke.get("recover_status")),
                     },
                 )

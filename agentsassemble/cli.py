@@ -1675,6 +1675,7 @@ def _session_smoke_summary(smoke: dict[str, object]) -> str:
     return (
         f"{label} ("
         f"{smoke.get('reply_count', 0)}/{expected_total} replies, "
+        f"post-restart {smoke.get('post_restart_reply_count', 0)}/{expected_total}, "
         f"post-recover {smoke.get('post_recover_reply_count', 0)}/{expected_total}"
         f"{soak_part})"
     )
@@ -1842,7 +1843,7 @@ def _format_live_agent_operation_details(value: object, *, operation_name: str =
         clean_value = _format_live_agent_operation_detail_value(raw_detail)
         if clean_key and clean_value:
             labels.append(f"{clean_key}={clean_value}")
-        if len(labels) >= 6:
+        if len(labels) >= 7:
             break
     return "; ".join(labels)
 
@@ -1868,6 +1869,7 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
         return [
             "result_status",
             "reply_count",
+            "post_restart_reply_count",
             "post_recover_reply_count",
             "soak_cycle_count",
             "soak_reply_count",
@@ -1877,9 +1879,11 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
         return [
             "result_status",
             "session_smoke_reply_count",
+            "session_smoke_post_restart_reply_count",
             "session_smoke_post_recover_reply_count",
             "session_smoke_soak_cycle_count",
             "session_smoke_soak_reply_count",
+            "session_smoke_soak_check_statuses",
             "probe_statuses",
         ]
     return []

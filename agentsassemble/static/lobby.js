@@ -755,7 +755,7 @@ function liveAgentOperationDetailsLabel(details, operationName = "") {
   return orderedLiveAgentOperationDetails(details, operationName)
     .map(([key, value]) => liveAgentOperationDetailLabel(key, value))
     .filter(Boolean)
-    .slice(0, 6)
+    .slice(0, 7)
     .join("; ");
 }
 
@@ -779,6 +779,7 @@ function liveAgentOperationDetailPriority(operationName = "") {
     return [
       "result_status",
       "reply_count",
+      "post_restart_reply_count",
       "post_recover_reply_count",
       "soak_cycle_count",
       "soak_reply_count",
@@ -789,9 +790,11 @@ function liveAgentOperationDetailPriority(operationName = "") {
     return [
       "result_status",
       "session_smoke_reply_count",
+      "session_smoke_post_restart_reply_count",
       "session_smoke_post_recover_reply_count",
       "session_smoke_soak_cycle_count",
       "session_smoke_soak_reply_count",
+      "session_smoke_soak_check_statuses",
       "probe_statuses",
     ];
   }
@@ -1537,12 +1540,17 @@ function sessionSmokeStatusLabel(payload) {
   const lobbyProbeCount = Math.max(1, Number(payload.lobby_probe_count || 1));
   const expectedReplyTotal = expectedReplies * lobbyProbeCount;
   const replies = Math.max(0, Number(payload.reply_count || 0));
+  const postRestartReplies = Math.max(0, Number(payload.post_restart_reply_count || 0));
   const postRecoverReplies = Math.max(0, Number(payload.post_recover_reply_count || 0));
   const soakCycles = Math.max(0, Number(payload.soak_cycle_count || 0));
   const soakReplies = Math.max(0, Number(payload.soak_reply_count || 0));
   const expectedSoakReplies = expectedReplies * soakCycles;
   const soakLabel = soakCycles > 0 ? `, soak ${soakReplies}/${expectedSoakReplies} over ${soakCycles} cycles` : "";
-  return `${replies}/${expectedReplyTotal} replies, post-recover ${postRecoverReplies}/${expectedReplyTotal}${soakLabel}`;
+  return (
+    `${replies}/${expectedReplyTotal} replies, ` +
+    `post-restart ${postRestartReplies}/${expectedReplyTotal}, ` +
+    `post-recover ${postRecoverReplies}/${expectedReplyTotal}${soakLabel}`
+  );
 }
 
 function liveAgentSessionSmokeStatusMessage(payload) {

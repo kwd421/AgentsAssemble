@@ -1902,6 +1902,7 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_post_recover_reply_count"], 3)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_soak_cycle_count"], 2)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_soak_reply_count"], 6)
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_soak_check_statuses"], ["ready", "ready"])
         readiness_blob = json.dumps(readiness_operations, ensure_ascii=False)
         self.assertNotIn("secret session reply", readiness_blob)
         self.assertNotIn("secret soak reply", readiness_blob)

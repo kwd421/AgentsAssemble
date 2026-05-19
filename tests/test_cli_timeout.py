@@ -507,6 +507,43 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("smoke_reply_count=3", output)
         self.assertIn("probe_agent_ids=agent-a,agent-b", output)
 
+    def test_live_agent_operations_list_prioritizes_readiness_session_smoke_soak_statuses(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "readiness.check",
+                    "status": "success",
+                    "target_id": "doctor-smoke",
+                    "summary": "",
+                    "details": {
+                        "result_status": "ready",
+                        "session_smoke_reply_count": 3,
+                        "session_smoke_post_restart_reply_count": 3,
+                        "session_smoke_post_recover_reply_count": 3,
+                        "session_smoke_soak_cycle_count": 2,
+                        "session_smoke_soak_reply_count": 6,
+                        "session_smoke_soak_check_statuses": ["ready", "ready"],
+                        "probe_statuses": ["agent-a:ok"],
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "operations", "list", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("readiness.check", output)
+        self.assertIn("session_smoke_post_restart_reply_count=3", output)
+        self.assertLess(
+            output.index("session_smoke_post_restart_reply_count=3"),
+            output.index("session_smoke_post_recover_reply_count=3"),
+        )
+        self.assertIn("session_smoke_soak_check_statuses=ready,ready", output)
+
     def test_live_agent_operations_list_prioritizes_session_smoke_soak_evidence(self):
         payload = {
             "operations": [
@@ -551,6 +588,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("session.smoke", output)
         self.assertIn("result_status=ok", output)
         self.assertIn("reply_count=3", output)
+        self.assertLess(output.index("post_restart_reply_count=3"), output.index("post_recover_reply_count=3"))
         self.assertIn("post_recover_reply_count=3", output)
         self.assertIn("soak_cycle_count=2", output)
         self.assertIn("soak_reply_count=6", output)
@@ -2576,7 +2614,11 @@ class CliTimeoutTests(unittest.TestCase):
         )
         output = stdout.getvalue()
         self.assertIn("readiness: ready", output)
-        self.assertIn("session smoke: ok session-smoke (3/3 replies, post-recover 3/3, soak 6/6 over 2 cycles)", output)
+        self.assertIn(
+            "session smoke: ok session-smoke "
+            "(3/3 replies, post-restart 3/3, post-recover 3/3, soak 6/6 over 2 cycles)",
+            output,
+        )
 
     def test_live_agent_doctor_can_request_official_round_and_session_smoke(self):
         payload = {
@@ -2640,7 +2682,10 @@ class CliTimeoutTests(unittest.TestCase):
         )
         output = stdout.getvalue()
         self.assertIn("official round smoke: ok doctor-smoke (3 answered, 0 timed out, 0 skipped)", output)
-        self.assertIn("session smoke: ok session-smoke (3/3 replies, post-recover 3/3)", output)
+        self.assertIn(
+            "session smoke: ok session-smoke (3/3 replies, post-restart 3/3, post-recover 3/3)",
+            output,
+        )
 
     def test_live_agent_doctor_prints_probe_group_refusal_reason(self):
         payload = {

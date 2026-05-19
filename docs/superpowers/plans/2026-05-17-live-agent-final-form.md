@@ -2258,6 +2258,39 @@ Document that `recover-session` preflights the persisted recover config and serv
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 69: Session Smoke Post-Restart Operator Evidence
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for missing post-restart evidence in summaries**
+
+Cover `live-agent doctor --session-smoke`, GUI readiness status text, and recent operation detail ordering so the compact operator surface shows post-restart reply counts alongside post-recover counts. The same session smoke already verifies post-restart replies internally; the failure is that doctor/readiness/operation summaries do not keep that proof visible.
+
+Run:
+`python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_operations_list_prioritizes_session_smoke_soak_evidence tests.test_cli_timeout.CliTimeoutTests.test_live_agent_doctor_can_request_session_smoke tests.test_cli_timeout.CliTimeoutTests.test_live_agent_doctor_can_request_official_round_and_session_smoke`
+and `node --test tests/static_lobby_runtime_smoke.mjs`
+Expected: fail before implementation because post-restart evidence is omitted from doctor/readiness summaries and can be truncated from compact operation details.
+
+- [x] **Step 2: Surface post-restart evidence before post-recover evidence**
+
+Add post-restart counts to the CLI and GUI session smoke summary labels. Prioritize `post_restart_reply_count` and `session_smoke_post_restart_reply_count` before their post-recover counterparts in operation detail ordering, and keep the compact detail cap wide enough to retain soak check statuses.
+
+Run the Step 1 commands.
+Expected: pass.
+
+- [x] **Step 3: Document the operator surface**
+
+Document that readiness and operation summaries expose post-restart and post-recover reply counts plus soak statuses while still omitting event ids, replies, config paths, commands, endpoints, auth refs, provider output, tokens, and log tails.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

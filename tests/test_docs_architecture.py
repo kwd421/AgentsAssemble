@@ -251,6 +251,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("session.start", doc)
         self.assertIn("session.recover", doc)
         self.assertIn("post-recover", doc)
+        self.assertIn("post-restart and post-recover reply counts", doc)
         self.assertIn("session.check", doc)
         self.assertIn("session.restart", doc)
         self.assertIn("session.stop", doc)

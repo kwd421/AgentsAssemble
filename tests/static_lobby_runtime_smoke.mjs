@@ -544,6 +544,7 @@ test("readiness button sends session smoke and reports the session counts when c
         expected_reply_count: 3,
         lobby_probe_count: 1,
         reply_count: 3,
+        post_restart_reply_count: 3,
         post_recover_reply_count: 3,
       },
     },
@@ -557,7 +558,7 @@ test("readiness button sends session smoke and reports the session counts when c
   });
   assert.equal(
     state.liveAgentProcessStatus.message,
-    "readiness ready · session 3/3 replies, post-recover 3/3"
+    "readiness ready · session 3/3 replies, post-restart 3/3, post-recover 3/3"
   );
 });
 
@@ -572,6 +573,7 @@ test("readiness button sends bounded session smoke soak controls when configured
         expected_reply_count: 3,
         lobby_probe_count: 1,
         reply_count: 3,
+        post_restart_reply_count: 3,
         post_recover_reply_count: 3,
         soak_cycle_count: 2,
         soak_reply_count: 6,
@@ -602,7 +604,7 @@ test("readiness button sends bounded session smoke soak controls when configured
   });
   assert.equal(
     state.liveAgentProcessStatus.message,
-    "readiness ready · session 3/3 replies, post-recover 3/3, soak 6/6 over 2 cycles"
+    "readiness ready · session 3/3 replies, post-restart 3/3, post-recover 3/3, soak 6/6 over 2 cycles"
   );
 });
 
@@ -662,6 +664,7 @@ test("readiness status can show official and session smoke evidence together", a
         expected_reply_count: 3,
         lobby_probe_count: 1,
         reply_count: 3,
+        post_restart_reply_count: 3,
         post_recover_reply_count: 3,
       },
     },
@@ -676,7 +679,7 @@ test("readiness status can show official and session smoke evidence together", a
   });
   assert.equal(
     state.liveAgentProcessStatus.message,
-    "readiness ready · official 2 answered, 0 timed out, 0 skipped · session 3/3 replies, post-recover 3/3"
+    "readiness ready · official 2 answered, 0 timed out, 0 skipped · session 3/3 replies, post-restart 3/3, post-recover 3/3"
   );
 });
 
@@ -1706,6 +1709,41 @@ test("operation row renders safe details when summary is empty", () => {
   assert.match(rowText, /probe_agent_ids=agent-a,agent-b/);
 });
 
+test("operation row prioritizes readiness session smoke soak statuses", () => {
+  resetState();
+  const { document } = installHarness();
+  state.liveAgentOperations = [
+    {
+      timestamp: "2026-05-18T01:02:03+00:00",
+      operation: "readiness.check",
+      status: "success",
+      target_id: "doctor-smoke",
+      summary: "",
+      details: {
+        result_status: "ready",
+        session_smoke_reply_count: 3,
+        session_smoke_post_restart_reply_count: 3,
+        session_smoke_post_recover_reply_count: 3,
+        session_smoke_soak_cycle_count: 2,
+        session_smoke_soak_reply_count: 6,
+        session_smoke_soak_check_statuses: ["ready", "ready"],
+        probe_statuses: ["agent-a:ok"],
+      },
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+
+  const rowText = document.querySelector(".live-agent-operation-row").textContent;
+  assert.match(rowText, /readiness\.check/);
+  assert.match(rowText, /session_smoke_post_restart_reply_count=3/);
+  assert.ok(
+    rowText.indexOf("session_smoke_post_restart_reply_count=3") <
+      rowText.indexOf("session_smoke_post_recover_reply_count=3")
+  );
+  assert.match(rowText, /session_smoke_soak_check_statuses=ready,ready/);
+});
+
 test("operation row prioritizes session smoke soak evidence", () => {
   resetState();
   const { document } = installHarness();
@@ -1739,6 +1777,7 @@ test("operation row prioritizes session smoke soak evidence", () => {
   assert.match(rowText, /session\.smoke/);
   assert.match(rowText, /result_status=ok/);
   assert.match(rowText, /reply_count=3/);
+  assert.ok(rowText.indexOf("post_restart_reply_count=3") < rowText.indexOf("post_recover_reply_count=3"));
   assert.match(rowText, /post_recover_reply_count=3/);
   assert.match(rowText, /soak_cycle_count=2/);
   assert.match(rowText, /soak_reply_count=6/);
