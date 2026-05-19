@@ -2622,6 +2622,47 @@ Expected: pass.
 
 ---
 
+### Task 77: CLI Ensure Post-ready Checks
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for CLI ensure post-ready options**
+
+Cover `ensure-session` accepting `--probe-bound-agents`, `--probe-timeout`, `--run-remaining-rounds`, `--round-timeout`, `--max-rounds`, and `--stop-on-timeout`. Cover the ready no-op path posting to `/api/live-agent-sessions/ensure` when post-ready checks are requested, cover a mutating ensure path preserving `reply_probe` and `auto_rounds` after the final read-only readiness wait, and cover restart/recover action payloads carrying the same post-ready options.
+
+Run:
+
+```bash
+python3 -m unittest \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_parser_accepts_session_configs_and_wait_options \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_ready_noop_can_probe_and_run_remaining_rounds \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_preserves_probe_and_round_results_after_readiness_wait \
+  tests.test_cli_timeout.CliTimeoutTests.test_live_agent_ensure_session_restart_and_recover_carry_post_ready_options
+```
+
+Expected: fail before implementation because `ensure-session` does not accept the post-ready options and ready no-op returns the read-only snapshot without a control-plane POST.
+
+- [x] **Step 2: Implement CLI ensure post-ready routing**
+
+Add the same optional probe and remaining-round flags to `ensure-session`. Preserve the existing no-POST ready fast path when no post-ready check is requested. When a ready no-op does request post-ready checks, post to `/api/live-agent-sessions/ensure` so the server runs the same bounded checks as GUI `세션보장` without process mutation. For mutating actions, pass the same optional probe and remaining-round payload fields to the selected session control endpoint and reattach returned `reply_probe` and `auto_rounds` evidence after the final read-only readiness wait.
+
+Run the Step 1 command.
+Expected: pass.
+
+- [x] **Step 3: Document the CLI/API parity**
+
+Document that `ensure-session` keeps the read-only ready fast path by default, but uses `/api/live-agent-sessions/ensure` for ready no-op post-ready checks and preserves probe/round evidence after mutating action waits.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

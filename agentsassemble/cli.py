@@ -417,6 +417,20 @@ def build_parser() -> argparse.ArgumentParser:
     live_ensure_session.add_argument("--wait-timeout", type=parse_nonnegative_float, default=30.0)
     live_ensure_session.add_argument("--wait-poll-interval", type=parse_nonnegative_float, default=2.0)
     _add_session_auto_restart_args(live_ensure_session)
+    live_ensure_session.add_argument(
+        "--run-remaining-rounds",
+        action="store_true",
+        help="After the ensured session is ready, run remaining official template rounds.",
+    )
+    live_ensure_session.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
+    live_ensure_session.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
+    live_ensure_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
+    live_ensure_session.add_argument(
+        "--probe-bound-agents",
+        action="store_true",
+        help="Before optional remaining rounds, require each bound live agent to answer a lobby probe.",
+    )
+    live_ensure_session.add_argument("--probe-timeout", type=parse_nonnegative_float, default=12.0)
     live_ensure_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw ensured session payload.")
 
     live_check_session = live_agent_subparsers.add_parser(
@@ -1399,12 +1413,32 @@ def _ensure_live_agent_session(args: argparse.Namespace) -> tuple[str, dict[str,
     initial = _initial_live_agent_session_readiness(args)
     action = session_ensure_action(initial)
     if action == "none":
+        if _session_post_ready_checks_requested(args):
+            payload = _session_start_payload(args)
+            timeout_seconds = _session_remaining_rounds_request(
+                args,
+                payload,
+                connect_timeout_seconds=float(args.connect_timeout),
+            )
+            response = _request_json(
+                _server_url(str(args.server), "/api/live-agent-sessions/ensure"),
+                method="POST",
+                payload=payload,
+                timeout_seconds=timeout_seconds,
+            )
+            return str(response.get("action") or action), response
         return action, initial if isinstance(initial, dict) else {}
+    payload = _ensure_live_agent_session_payload(args, action)
+    timeout_seconds = _session_remaining_rounds_request(
+        args,
+        payload,
+        connect_timeout_seconds=float(args.connect_timeout),
+    )
     response = _request_json(
         _server_url(str(args.server), f"/api/live-agent-sessions/{action}"),
         method="POST",
-        payload=_ensure_live_agent_session_payload(args, action),
-        timeout_seconds=float(args.connect_timeout) + 6.0,
+        payload=payload,
+        timeout_seconds=timeout_seconds,
     )
     meeting_id = str(response.get("meeting_id") or getattr(args, "meeting_id", "") or "").strip()
     group_id = str(response.get("group_id") or getattr(args, "group_id", "") or "").strip()
@@ -1420,6 +1454,7 @@ def _ensure_live_agent_session(args: argparse.Namespace) -> tuple[str, dict[str,
             poll_interval_seconds=float(args.wait_poll_interval),
             initial_response=wait_initial_response,
         )
+        response = _attach_session_post_ready_results(response, wait_initial_response)
     return action, response
 
 
@@ -1449,6 +1484,26 @@ def _ensure_live_agent_session_payload(args: argparse.Namespace, action: str) ->
         "group_id": str(args.group_id or ""),
         "connect_timeout_seconds": float(args.connect_timeout),
     }
+
+
+def _session_post_ready_checks_requested(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "probe_bound_agents", False) or getattr(args, "run_remaining_rounds", False))
+
+
+def _attach_session_post_ready_results(
+    response: dict[str, object],
+    source: dict[str, object],
+) -> dict[str, object]:
+    if not isinstance(response, dict) or not isinstance(source, dict):
+        return response
+    merged = response
+    for key in ("reply_probe", "auto_rounds"):
+        value = source.get(key)
+        if isinstance(value, dict):
+            if merged is response:
+                merged = dict(response)
+            merged[key] = value
+    return merged
 
 
 def _run_live_agent_check_session(args: argparse.Namespace) -> int:
