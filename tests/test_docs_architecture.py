@@ -27,7 +27,11 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("live_session", doc)
         self.assertIn("codex_live_session", doc)
         self.assertIn("codex exec resume", doc)
+        self.assertIn("--sandbox read-only", doc)
+        self.assertIn("--ignore-rules", doc)
+        self.assertIn("Codex CLI still owns the actual enforcement", doc)
         self.assertIn("not native Codex/Claude channel injection", doc)
+        self.assertIn("not native Codex/Claude channel injection, verified PTY persistence, OS-level sandboxing", doc)
         self.assertIn("advisory", doc)
 
     def test_roadmap_mentions_room_event_log_and_live_session_adapter(self):
@@ -101,7 +105,11 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Registration-only kinds such as `manual` and `codex_resume`", doc)
         self.assertIn("configs/live-agents.codex-session.example.json", doc)
         self.assertIn("codex exec resume", doc)
+        self.assertIn("--sandbox read-only", doc)
+        self.assertIn("--ignore-rules", doc)
+        self.assertIn("Codex CLI still owns the actual enforcement", doc)
         self.assertIn("not native Codex/Claude channel injection", doc)
+        self.assertIn("general sandbox for arbitrary local CLI and remote bridge residents", doc)
         self.assertIn("python3 -m agentsassemble.cli providers health", doc)
         self.assertIn("--probe bridge", doc)
         self.assertIn("/agentsassemble/health", doc)

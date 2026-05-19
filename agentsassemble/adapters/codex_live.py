@@ -5,6 +5,7 @@ from subprocess import TimeoutExpired
 from typing import Any
 
 from agentsassemble.adapters.codex import CodexAdapter
+from agentsassemble.codex_resident import codex_exec_prefix
 from agentsassemble.models import Role
 
 
@@ -34,32 +35,29 @@ class CodexLiveSessionAdapter(CodexAdapter):
         command = ["codex"]
         if self.search_enabled and use_search:
             command.append("--search")
+        exec_prefix = codex_exec_prefix(command)
         session_id = session.get("session_id")
         session_mode = "resumed" if session_id else "started"
         if session_id:
-            command.extend(
-                [
-                    "exec",
-                    "resume",
-                    "--skip-git-repo-check",
-                    "--output-last-message",
-                    str(output_path),
-                    str(session_id),
-                    "-",
-                ]
-            )
+            command = [
+                *exec_prefix,
+                "resume",
+                "--skip-git-repo-check",
+                "--output-last-message",
+                str(output_path),
+                str(session_id),
+                "-",
+            ]
         else:
-            command.extend(
-                [
-                    "exec",
-                    "--skip-git-repo-check",
-                    "--cd",
-                    str(meeting_path),
-                    "--output-last-message",
-                    str(output_path),
-                    "-",
-                ]
-            )
+            command = [
+                *exec_prefix,
+                "--skip-git-repo-check",
+                "--cd",
+                str(meeting_path),
+                "--output-last-message",
+                str(output_path),
+                "-",
+            ]
         try:
             completed = self.command_runner(
                 command,

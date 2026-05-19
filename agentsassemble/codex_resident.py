@@ -11,6 +11,13 @@ if TYPE_CHECKING:
     from agentsassemble.live_agent_runner import ResidentAgentConfig
 
 
+CODEX_EXEC_SAFETY_FLAGS = ("--sandbox", "read-only", "--ignore-rules")
+
+
+def codex_exec_prefix(base_command: list[str]) -> list[str]:
+    return [*base_command, "exec", *CODEX_EXEC_SAFETY_FLAGS]
+
+
 class CodexResidentCommandRunner:
     """Run a resident Codex CLI participant through codex exec/resume."""
 
@@ -64,10 +71,10 @@ class CodexResidentCommandRunner:
 
     def _build_command(self, output_path: Path) -> list[str]:
         base_command = list(self.config.command or ["codex"])
+        exec_prefix = codex_exec_prefix(base_command)
         if self.session_id:
             return [
-                *base_command,
-                "exec",
+                *exec_prefix,
                 "resume",
                 "--skip-git-repo-check",
                 "--output-last-message",
@@ -76,8 +83,7 @@ class CodexResidentCommandRunner:
                 "-",
             ]
         return [
-            *base_command,
-            "exec",
+            *exec_prefix,
             "--skip-git-repo-check",
             "--cd",
             str(self.cwd),

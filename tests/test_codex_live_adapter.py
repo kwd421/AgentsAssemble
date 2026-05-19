@@ -8,6 +8,17 @@ from agentsassemble.models import ResearchSteering, Role, get_research_depth
 
 
 class CodexLiveSessionAdapterTests(unittest.TestCase):
+    def assert_codex_exec_safety_flags(self, command):
+        exec_index = command.index("exec")
+        self.assertEqual(
+            command[exec_index : exec_index + 4],
+            ["exec", "--sandbox", "read-only", "--ignore-rules"],
+        )
+        self.assertEqual(command.count("--sandbox"), 1)
+        self.assertEqual(command.count("read-only"), 1)
+        self.assertEqual(command.count("--ignore-rules"), 1)
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
+
     def test_live_session_starts_fresh_then_resumes_same_session(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir)
@@ -44,11 +55,14 @@ class CodexLiveSessionAdapterTests(unittest.TestCase):
             )
             message = adapter.run_round(role, session, "round_1", "첫 발언", {"research": research})
 
-            self.assertIn("exec", calls[0]["command"])
+            self.assertEqual(calls[0]["command"][:3], ["codex", "--search", "exec"])
+            self.assert_codex_exec_safety_flags(calls[0]["command"])
             self.assertNotIn("resume", calls[0]["command"])
             self.assertEqual(session["session_id"], "019e02af-c287-7cd1-aab7-c1e059c5ed44")
             self.assertEqual(research["codex"]["session_mode"], "started")
-            self.assertEqual(calls[1]["command"][:3], ["codex", "exec", "resume"])
+            self.assertEqual(calls[1]["command"][:2], ["codex", "exec"])
+            self.assert_codex_exec_safety_flags(calls[1]["command"])
+            self.assertLess(calls[1]["command"].index("--sandbox"), calls[1]["command"].index("resume"))
             self.assertIn("019e02af-c287-7cd1-aab7-c1e059c5ed44", calls[1]["command"])
             self.assertEqual(calls[1]["cwd"], str(meeting_dir))
             self.assertEqual(message["codex"]["session_mode"], "resumed")
@@ -78,7 +92,9 @@ class CodexLiveSessionAdapterTests(unittest.TestCase):
 
             message = adapter.run_round(role, session, "round_1", "첫 발언", {})
 
-            self.assertEqual(calls[0]["command"][:3], ["codex", "exec", "resume"])
+            self.assertEqual(calls[0]["command"][:2], ["codex", "exec"])
+            self.assert_codex_exec_safety_flags(calls[0]["command"])
+            self.assertLess(calls[0]["command"].index("--sandbox"), calls[0]["command"].index("resume"))
             self.assertIn("019e3038-39cc-76a2-a746-5ba8c0f3b408", calls[0]["command"])
             self.assertEqual(session["session_id"], "019e3038-39cc-76a2-a746-5ba8c0f3b408")
             self.assertEqual(message["codex"]["session_mode"], "resumed")
