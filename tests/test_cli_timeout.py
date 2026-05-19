@@ -1563,6 +1563,99 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("rounds answered: 1 rounds, 1 answered", stdout.getvalue())
 
+    def test_live_agent_stop_session_parser_accepts_meeting_and_group(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "stop-session",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "resident-m1",
+                "--group-id",
+                "resident-main",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "stop-session")
+        self.assertEqual(args.meeting_id, "resident-m1")
+        self.assertEqual(args.group_id, "resident-main")
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_stop_session_posts_request_and_prints_summary(self):
+        response = {
+            "status": "stopped",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "offline": {
+                "expected": 2,
+                "offline": 2,
+                "attention": [],
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "stop-session",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-sessions/stop",
+            method="POST",
+            payload={
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+            },
+            timeout_seconds=20.0,
+        )
+        self.assertIn("Resident session resident-m1 stopped", stdout.getvalue())
+        self.assertIn("resident-main", stdout.getvalue())
+        self.assertIn("2/2 offline", stdout.getvalue())
+
+    def test_live_agent_stop_session_returns_failure_for_degraded_stop(self):
+        response = {
+            "status": "stopping",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "offline": {
+                "expected": 2,
+                "offline": 1,
+                "attention": ["agent-b:wrong_meeting"],
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "stop-session",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("Resident session resident-m1 stopping", stdout.getvalue())
+        self.assertIn("1/2 offline", stdout.getvalue())
+        self.assertIn("agent-b:wrong_meeting", stdout.getvalue())
+
     def test_live_agent_start_session_cli_redacts_config_load_paths_from_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -28,7 +28,7 @@ from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
-from agentsassemble.live_agent_sessions import resume_live_agent_session, start_live_agent_session
+from agentsassemble.live_agent_sessions import resume_live_agent_session, start_live_agent_session, stop_live_agent_session
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_official_round_smoke, run_live_agent_smoke
 from agentsassemble.live_agent_turns import wait_for_official_turn_reply
 from agentsassemble.live_transcript import projected_live_transcript_text
@@ -541,6 +541,22 @@ def live_agent_session_resume_payload(
         else:
             session["auto_rounds"] = _skipped_session_auto_rounds_result(session, auto_rounds_options)
     return session
+
+
+def live_agent_session_stop_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    group_id = str(payload.get("group_id") or "").strip()
+    if not group_id:
+        raise ValueError("Live agent group id is required.")
+    return stop_live_agent_session(
+        output_root,
+        process_supervisor,
+        meeting_id=str(payload.get("meeting_id") or ""),
+        group_id=group_id,
+    )
 
 
 def _session_auto_rounds_options(payload: dict[str, object]) -> dict[str, object]:
@@ -2226,6 +2242,24 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
     return details
 
 
+def _session_stop_operation_details(session: dict[str, object]) -> dict[str, object]:
+    offline = session.get("offline") if isinstance(session.get("offline"), dict) else {}
+    process = session.get("process") if isinstance(session.get("process"), dict) else {}
+    return {
+        "result_status": _operation_result_status(session.get("status")),
+        "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
+        "group_id": clean_lobby_text(session.get("group_id"), limit=128),
+        "expected_agent_count": _payload_nonnegative_int(offline.get("expected"), 0),
+        "offline_agent_count": _payload_nonnegative_int(offline.get("offline"), 0),
+        "agent_ids": _safe_payload_strings(offline.get("agent_ids"), limit=64),
+        "offline_agent_ids": _safe_payload_strings(offline.get("offline_agent_ids"), limit=64),
+        "attention": _safe_payload_strings(offline.get("attention"), limit=128),
+        "process_status": clean_lobby_text(process.get("status"), limit=64),
+        "process_agent_ids": _safe_payload_strings(process.get("agent_ids"), limit=64),
+        "process_attention": _safe_payload_strings(process.get("attention"), limit=128),
+    }
+
+
 def _session_auto_rounds_operation_details(auto_rounds: dict[str, object], meeting_id: str) -> dict[str, object]:
     rounds_details = _turn_rounds_operation_details(auto_rounds, meeting_id)
     return {
@@ -2278,12 +2312,26 @@ def _session_resume_operation_summary(session: dict[str, object]) -> str:
     return "resumed resident live-agent session with degraded remaining rounds"
 
 
+def _session_stop_operation_status(session: dict[str, object]) -> str:
+    return "success" if _operation_result_status(session.get("status")) == "stopped" else "degraded"
+
+
+def _session_stop_operation_summary(session: dict[str, object]) -> str:
+    if _operation_result_status(session.get("status")) == "stopped":
+        return "stopped resident live-agent session"
+    return "resident live-agent session is still stopping"
+
+
 def _session_start_error_message(error: Exception) -> str:
     return _session_error_message(error, action="start")
 
 
 def _session_resume_error_message(error: Exception) -> str:
     return _session_error_message(error, action="resume")
+
+
+def _session_stop_error_message(error: Exception) -> str:
+    return _session_error_message(error, action="stop")
 
 
 def _session_error_message(error: Exception, *, action: str) -> str:
@@ -2554,6 +2602,39 @@ def _make_handler(
                     target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
                     summary=_session_resume_operation_summary(session),
                     details=_session_start_operation_details(session),
+                )
+                self._send_json(session)
+                return
+            if parsed.path == "/api/live-agent-sessions/stop":
+                payload = self._operation_json_payload(operation="session.stop")
+                if payload is None:
+                    return
+                try:
+                    session = live_agent_session_stop_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                    )
+                except (OSError, ValueError) as error:
+                    safe_error = _session_stop_error_message(error)
+                    safe_details = _session_start_error_details(payload, error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.stop",
+                        status="failed",
+                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
+                        error=safe_error,
+                        details=safe_details,
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="session.stop",
+                    status=_session_stop_operation_status(session),
+                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
+                    summary=_session_stop_operation_summary(session),
+                    details=_session_stop_operation_details(session),
                 )
                 self._send_json(session)
                 return

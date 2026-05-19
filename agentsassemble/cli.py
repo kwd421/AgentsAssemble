@@ -294,6 +294,15 @@ def build_parser() -> argparse.ArgumentParser:
     live_resume_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
     live_resume_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session resume payload.")
 
+    live_stop_session = live_agent_subparsers.add_parser(
+        "stop-session",
+        parents=[live_server],
+        help="Stop an existing resident meeting's supervised live-agent group.",
+    )
+    live_stop_session.add_argument("--meeting-id", required=True, help="Existing resident meeting id to stop.")
+    live_stop_session.add_argument("--group-id", required=True, help="Supervised process group id to stop.")
+    live_stop_session.add_argument("--json", action="store_true", dest="as_json", help="Print the raw session stop payload.")
+
     live_say = live_agent_subparsers.add_parser("say", parents=[live_server], help="Post a lobby message as a live agent.")
     live_say.add_argument("--agent-id", required=True)
     live_say.add_argument("message", nargs="+")
@@ -564,6 +573,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_start_session(args)
         if args.live_agent_command == "resume-session":
             return _run_live_agent_resume_session(args)
+        if args.live_agent_command == "stop-session":
+            return _run_live_agent_stop_session(args)
         if args.live_agent_command == "say":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
             response = _request_json(
@@ -914,6 +925,23 @@ def _run_live_agent_resume_session(args: argparse.Namespace) -> int:
     return 0 if auto_rounds.get("status") in {"answered", "complete"} else 1
 
 
+def _run_live_agent_stop_session(args: argparse.Namespace) -> int:
+    response = _request_json(
+        _server_url(args.server, "/api/live-agent-sessions/stop"),
+        method="POST",
+        payload={
+            "meeting_id": str(args.meeting_id or ""),
+            "group_id": str(args.group_id or ""),
+        },
+        timeout_seconds=20.0,
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_session_stop(response))
+    return 0 if response.get("status") == "stopped" else 1
+
+
 def _format_live_agent_session_start(response: dict[str, object]) -> str:
     status = str(response.get("status") or "unknown")
     meeting_id = str(response.get("meeting_id") or "unknown")
@@ -934,6 +962,18 @@ def _format_live_agent_session_start(response: dict[str, object]) -> str:
             f"{auto_rounds.get('skipped_round_count', 0)} skipped"
         )
     return f"Resident session {meeting_id} {status}; group {group_id}; {connected}/{expected} connected{suffix}"
+
+
+def _format_live_agent_session_stop(response: dict[str, object]) -> str:
+    status = str(response.get("status") or "unknown")
+    meeting_id = str(response.get("meeting_id") or "unknown")
+    group_id = str(response.get("group_id") or "unknown")
+    offline = response.get("offline") if isinstance(response.get("offline"), dict) else {}
+    expected = offline.get("expected", 0)
+    stopped = offline.get("offline", 0)
+    attention = offline.get("attention") if isinstance(offline.get("attention"), list) else []
+    suffix = f"; attention {', '.join(str(item) for item in attention)}" if attention else ""
+    return f"Resident session {meeting_id} {status}; group {group_id}; {stopped}/{expected} offline{suffix}"
 
 
 def _load_live_agent_sequence_turns(args: argparse.Namespace) -> list[dict[str, object]]:

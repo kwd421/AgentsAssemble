@@ -6,8 +6,8 @@ from pathlib import Path
 
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_runner import load_group_configs
-from agentsassemble.live_agent_sessions import resume_live_agent_session, start_live_agent_session
-from agentsassemble.live_agents import heartbeat_live_agent, read_live_agents
+from agentsassemble.live_agent_sessions import resume_live_agent_session, start_live_agent_session, stop_live_agent_session
+from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 
 
 class FakeSessionSupervisor:
@@ -745,6 +745,285 @@ class LiveAgentSessionStartTests(unittest.TestCase):
 
             self.assertIn("does not cover meeting agents", str(raised.exception))
             self.assertEqual(supervisor.started, [])
+
+    def test_stop_session_stops_group_and_marks_bound_agents_offline(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect", "critic"])
+            agent_config = _write_agent_config(root, ["agent-a", "agent-b"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            heartbeat_live_agent(root, "agent-b", status="working")
+
+            class StopSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    return {
+                        "group_id": group_id,
+                        "status": "stopped",
+                        "config_path": str(root / "secret-live-agents.json"),
+                        "log_tail": "secret provider output",
+                        "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-b"}],
+                    }
+
+            supervisor = StopSupervisor()
+
+            session = stop_live_agent_session(
+                root,
+                supervisor,
+                meeting_id="resident-m1",
+                group_id="resident main",
+            )
+
+            self.assertEqual(session["status"], "stopped")
+            self.assertEqual(session["meeting_id"], "resident-m1")
+            self.assertEqual(session["group_id"], "resident-main")
+            self.assertEqual(supervisor.stopped, ["resident-main"])
+            self.assertEqual(session["offline"]["expected"], 2)
+            self.assertEqual(session["offline"]["offline"], 2)
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "offline")
+            self.assertEqual(agents["agent-b"]["status"], "offline")
+            serialized = json.dumps(session, ensure_ascii=False)
+            self.assertNotIn("secret-live-agents", serialized)
+            self.assertNotIn("secret provider output", serialized)
+            self.assertTrue((root / "meetings" / "resident-m1" / "live_state.json").exists())
+
+    def test_stop_session_refuses_missing_meeting_before_stopping_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            class StopSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    return {"group_id": group_id, "status": "stopped", "agents": []}
+
+            supervisor = StopSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                stop_live_agent_session(root, supervisor, meeting_id="missing-meeting", group_id="resident-main")
+
+            self.assertIn("Meeting missing-meeting was not found", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+
+    def test_stop_session_requires_explicit_group_id_before_stopping(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+
+            class StopSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    return {"group_id": group_id, "status": "stopped", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = StopSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                stop_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id=" ")
+
+            self.assertIn("Live agent group id is required", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+
+    def test_stop_session_refuses_group_manifest_mismatch_before_stop_and_offline(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect", "critic"])
+            agent_config = _write_agent_config(root, ["agent-a", "agent-b"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class StopSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+
+                def list_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-x"}],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    return {"group_id": group_id, "status": "stopped", "agents": [{"agent_id": "agent-a"}]}
+
+            supervisor = StopSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                stop_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("does not match meeting agents", str(raised.exception))
+            self.assertEqual(supervisor.stopped, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_stop_session_leaves_wrong_meeting_roster_row_untouched(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "other-meeting",
+                    "engagement_mode": "moderator_called",
+                    "status": "online",
+                    "capabilities": ["room_chat", "official_turn"],
+                },
+            )
+
+            class StopSupervisor:
+                def stop_group(self, group_id):
+                    return {"group_id": group_id, "status": "stopped", "agents": [{"agent_id": "agent-a"}]}
+
+                def list_groups(self):
+                    return [{"group_id": "resident-main", "status": "running", "agents": [{"agent_id": "agent-a"}]}]
+
+            session = stop_live_agent_session(
+                root,
+                StopSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            self.assertEqual(session["status"], "stopping")
+            self.assertEqual(session["offline"]["expected"], 1)
+            self.assertEqual(session["offline"]["offline"], 0)
+            self.assertEqual(session["offline"]["attention"], ["agent-a:wrong_meeting"])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["meeting_id"], "other-meeting")
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_stop_session_reports_stopping_when_stop_returns_unknown_status(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class StopSupervisor:
+                def stop_group(self, group_id):
+                    return {"group_id": group_id, "agents": [{"agent_id": "agent-a"}]}
+
+                def list_groups(self):
+                    return [{"group_id": "resident-main", "status": "running", "agents": [{"agent_id": "agent-a"}]}]
+
+            session = stop_live_agent_session(
+                root,
+                StopSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            self.assertEqual(session["status"], "stopping")
+            self.assertIn("group:unknown", session["process"]["attention"])
+
+    def test_stop_session_reports_process_attention_when_group_remains_running(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class StopSupervisor:
+                def stop_group(self, group_id):
+                    return {"group_id": group_id, "status": "running", "agents": [{"agent_id": "agent-a"}]}
+
+                def list_groups(self):
+                    return [{"group_id": "resident-main", "status": "running", "agents": [{"agent_id": "agent-a"}]}]
+
+            session = stop_live_agent_session(
+                root,
+                StopSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            self.assertEqual(session["status"], "stopping")
+            self.assertIn("group:running", session["process"]["attention"])
+
+    def test_stop_session_does_not_mark_agents_offline_when_stop_group_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class StopSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+
+                def list_groups(self):
+                    return [{"group_id": "resident-main", "status": "running", "agents": [{"agent_id": "agent-a"}]}]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    raise ValueError("stop failed: /private/live-agents.json")
+
+            supervisor = StopSupervisor()
+
+            with self.assertRaises(ValueError):
+                stop_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertEqual(supervisor.stopped, ["resident-main"])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
 
 
 def _write_council_config(root: Path, role_ids: list[str]) -> Path:

@@ -10,7 +10,7 @@ from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.live_agent_runner import load_group_configs
-from agentsassemble.live_agents import connect_live_agent, read_live_agents
+from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.meeting_setup import prepare_meeting_setup
 
@@ -18,6 +18,12 @@ SUPPORTED_SESSION_CONNECTION_KINDS = frozenset({"local_cli", "live_session", "re
 
 
 class LiveAgentSessionStartError(ValueError):
+    def __init__(self, message: str, *, meeting_id: str) -> None:
+        super().__init__(message)
+        self.meeting_id = meeting_id
+
+
+class LiveAgentSessionStopError(ValueError):
     def __init__(self, message: str, *, meeting_id: str) -> None:
         super().__init__(message)
         self.meeting_id = meeting_id
@@ -161,6 +167,53 @@ def resume_live_agent_session(
         "group": _safe_group_summary(group),
         "process": process,
         "connection": connection,
+    }
+
+
+def stop_live_agent_session(
+    output_root: Path,
+    process_supervisor: object,
+    *,
+    meeting_id: str,
+    group_id: str,
+) -> dict[str, object]:
+    clean_meeting_id = _clean_existing_meeting_id(meeting_id)
+    if not str(group_id or "").strip():
+        raise ValueError("Live agent group id is required.")
+    clean_group_id = clean_live_agent_group_id(group_id)
+    meeting_dir = _existing_meeting_dir(output_root, clean_meeting_id)
+    meeting = _read_existing_meeting(meeting_dir)
+    expected_agents = _expected_agents_from_meeting(meeting)
+    expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
+    _validate_stop_group_matches_meeting(process_supervisor, clean_group_id, expected_agent_ids)
+    try:
+        group = process_supervisor.stop_group(clean_group_id)
+    except Exception as error:
+        raise LiveAgentSessionStopError(
+            _stop_group_failure_message(error, group_id=clean_group_id),
+            meeting_id=clean_meeting_id,
+        ) from error
+    offline = _mark_bound_agents_offline(
+        output_root,
+        meeting,
+        meeting_id=clean_meeting_id,
+        expected_agent_ids=expected_agent_ids,
+    )
+    process = _stop_process_snapshot(group, expected_agent_ids=expected_agent_ids)
+    group_status = str(group.get("status") if isinstance(group, dict) else "unknown") or "unknown"
+    status = (
+        "stopped"
+        if group_status in {"stopped", "error"} and int(offline.get("offline") or 0) == int(offline.get("expected") or 0)
+        else "stopping"
+    )
+    return {
+        "status": status,
+        "meeting_id": clean_meeting_id,
+        "group_id": str(group.get("group_id") if isinstance(group, dict) else clean_group_id),
+        "meeting": _safe_meeting_summary(meeting),
+        "group": _safe_group_summary(group),
+        "process": process,
+        "offline": offline,
     }
 
 
@@ -349,6 +402,70 @@ def _meeting_bindings_by_agent_id(meeting: dict[str, object]) -> dict[str, dict[
     }
 
 
+def _mark_bound_agents_offline(
+    output_root: Path,
+    meeting: dict[str, object],
+    *,
+    meeting_id: str,
+    expected_agent_ids: list[str],
+) -> dict[str, object]:
+    agents_by_id = {str(agent.get("agent_id") or ""): agent for agent in read_live_agents(output_root)}
+    roles_by_id = _meeting_roles_by_id(meeting)
+    bindings_by_agent = _meeting_bindings_by_agent_id(meeting)
+    providers = meeting.get("provider_configs") if isinstance(meeting.get("provider_configs"), dict) else {}
+    offline_agent_ids = []
+    attention = []
+    for agent_id in expected_agent_ids:
+        existing = agents_by_id.get(agent_id)
+        if existing is not None and str(existing.get("meeting_id") or "") != meeting_id:
+            attention.append(f"{agent_id}:wrong_meeting")
+            continue
+        if existing is None:
+            binding = bindings_by_agent.get(agent_id, {})
+            role = roles_by_id.get(str(binding.get("role_id") or ""), {})
+            provider = providers.get(str(binding.get("provider_id") or "")) if isinstance(providers, dict) else None
+            provider_kind = str(provider.get("kind") or "") if isinstance(provider, dict) else "manual"
+            try:
+                connect_live_agent(
+                    output_root,
+                    {
+                        "agent_id": agent_id,
+                        "display_name": str(role.get("display_name") or agent_id),
+                        "provider_kind": provider_kind,
+                        "connection_kind": _resident_connection_kind_for_provider(provider_kind),
+                        "endpoint": str(provider.get("endpoint") or "") if isinstance(provider, dict) else "",
+                        "session_id": str(binding.get("session_id") or ""),
+                        "meeting_id": meeting_id,
+                        "engagement_mode": "moderator_called",
+                        "status": "offline",
+                        "capabilities": ["room_chat", "official_turn"],
+                    },
+                )
+            except ValueError:
+                attention.append(f"{agent_id}:offline_record_failed")
+                continue
+        else:
+            heartbeat_live_agent(output_root, agent_id, status="offline")
+        offline_agent_ids.append(agent_id)
+    return {
+        "expected": len(expected_agent_ids),
+        "offline": len(offline_agent_ids),
+        "agent_ids": expected_agent_ids,
+        "offline_agent_ids": offline_agent_ids,
+        "attention": attention,
+    }
+
+
+def _resident_connection_kind_for_provider(provider_kind: str) -> str:
+    if provider_kind == "remote_http_bridge":
+        return "remote_bridge"
+    if provider_kind == "codex_live_session":
+        return "live_session"
+    if provider_kind == "local_cli":
+        return "local_cli"
+    return "manual"
+
+
 def _resume_process_group(
     process_supervisor: object,
     *,
@@ -429,6 +546,40 @@ def _connection_snapshot(output_root: Path, *, meeting_id: str, expected_agent_i
         "connected_agent_ids": connected_agent_ids,
         "attention": attention,
     }
+
+
+def _validate_stop_group_matches_meeting(
+    process_supervisor: object,
+    group_id: str,
+    expected_agent_ids: list[str],
+) -> None:
+    group = _find_process_group(process_supervisor, group_id)
+    if not group:
+        return
+    manifest_agent_ids = _process_agent_ids(group.get("agents"))
+    if not manifest_agent_ids:
+        raise ValueError(f"Live agent group {group_id} has no agent manifest; refusing session stop.")
+    expected = set(expected_agent_ids)
+    actual = set(manifest_agent_ids)
+    if actual == expected:
+        return
+    missing = sorted(expected - actual)
+    extra = sorted(actual - expected)
+    details = []
+    if missing:
+        details.append(f"missing {', '.join(missing)}")
+    if extra:
+        details.append(f"extra {', '.join(extra)}")
+    suffix = "; ".join(details) if details else "different agent manifest"
+    raise ValueError(f"Live agent group {group_id} does not match meeting agents: {suffix}.")
+
+
+def _stop_process_snapshot(group: object, *, expected_agent_ids: list[str]) -> dict[str, object]:
+    process = _process_snapshot(group, expected_agent_ids=expected_agent_ids)
+    if process["status"] == "running" and "group:running" not in process["attention"]:
+        process["attention"] = [*process["attention"], "group:running"]
+        process["ready"] = False
+    return process
 
 
 def _process_snapshot(group: object, *, expected_agent_ids: list[str]) -> dict[str, object]:
@@ -524,3 +675,11 @@ def _start_group_failure_message(error: Exception) -> str:
     if _looks_sensitive_preflight_message(message):
         return "Resident process group failed to start: details redacted."
     return f"Resident process group failed to start: {message[:240]}"
+
+
+def _stop_group_failure_message(error: Exception, *, group_id: str) -> str:
+    message = str(error).replace("\r", " ").replace("\n", " ").strip()
+    expected_not_found = f"Live agent group {group_id} was not found."
+    if message == expected_not_found:
+        return message
+    return "Resident process group failed to stop: details redacted."

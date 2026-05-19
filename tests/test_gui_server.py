@@ -40,7 +40,7 @@ from agentsassemble.gui import (
 from agentsassemble.meeting_events import append_live_event, read_live_events, write_live_state
 from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
 from agentsassemble.meeting import run_demo_meeting
-from agentsassemble.live_agents import heartbeat_live_agent
+from agentsassemble.live_agents import heartbeat_live_agent, read_live_agents
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
@@ -5073,6 +5073,164 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("secret-local-agent-cli", body)
             self.assertNotIn(str(live_agent_config), body)
             self.assertEqual(error_payload["details"]["requested_meeting_id"], "resident-m1")
+
+    def test_live_agent_session_stop_marks_agents_offline_and_records_safe_operation(self):
+        class StopSessionSupervisor:
+            def __init__(self) -> None:
+                self.stopped = []
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                return {
+                    "group_id": group_id,
+                    "status": "stopped",
+                    "config_path": "/private/live-agents.json",
+                    "log_tail": "secret provider output",
+                    "agents": [{"agent_id": "agent-a"}],
+                }
+
+            def list_groups(self):
+                return [{"group_id": "resident-main", "status": "stopped", "agents": [{"agent_id": "agent-a"}]}]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            supervisor = StopSessionSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/stop",
+                    data=json.dumps({"meeting_id": "resident-m1", "group_id": "resident main"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(session_payload["status"], "stopped")
+            self.assertEqual(session_payload["group_id"], "resident-main")
+            self.assertEqual(supervisor.stopped, ["resident-main"])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "offline")
+            session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.stop"]
+            self.assertEqual(session_operations[-1]["status"], "success")
+            self.assertEqual(session_operations[-1]["target_id"], "resident-m1")
+            self.assertEqual(session_operations[-1]["details"]["offline_agent_count"], 1)
+            operation_blob = json.dumps(session_operations, ensure_ascii=False)
+            self.assertNotIn("/private/live-agents.json", operation_blob)
+            self.assertNotIn("secret provider output", operation_blob)
+
+    def test_live_agent_session_stop_missing_meeting_returns_safe_error(self):
+        class StopSessionSupervisor:
+            def __init__(self) -> None:
+                self.stopped = []
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                return {"group_id": group_id, "status": "stopped", "agents": []}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            supervisor = StopSessionSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/stop",
+                    data=json.dumps({"meeting_id": "missing-meeting", "group_id": "resident-main"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=4)
+                body = raised.exception.read().decode("utf-8")
+                error_payload = json.loads(body)
+                raised.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertIn("Meeting missing-meeting was not found", body)
+            self.assertEqual(error_payload["details"]["requested_meeting_id"], "missing-meeting")
+            self.assertEqual(error_payload["details"]["group_id"], "resident-main")
+            self.assertEqual(supervisor.stopped, [])
+
+    def test_live_agent_session_stop_failure_does_not_offline_agents_and_records_safe_operation(self):
+        class StopSessionSupervisor:
+            def __init__(self) -> None:
+                self.stopped = []
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                raise ValueError("provider output: raw model reply should never leak")
+
+            def list_groups(self):
+                return [{"group_id": "resident-main", "status": "running", "agents": [{"agent_id": "agent-a"}]}]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            supervisor = StopSessionSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/stop",
+                    data=json.dumps({"meeting_id": "resident-m1", "group_id": "resident-main"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=4)
+                body = raised.exception.read().decode("utf-8")
+                raised.exception.close()
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(supervisor.stopped, ["resident-main"])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+            self.assertIn("details redacted", body)
+            self.assertNotIn("raw model reply", body)
+            self.assertNotIn("provider output", body)
+            session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.stop"]
+            self.assertEqual(session_operations[-1]["status"], "failed")
+            self.assertEqual(session_operations[-1]["details"]["meeting_id"], "resident-m1")
+            operation_blob = json.dumps(session_operations, ensure_ascii=False)
+            self.assertNotIn("raw model reply", operation_blob)
+            self.assertNotIn("provider output", operation_blob)
 
     def test_live_agent_official_turn_round_validates_before_append(self):
         with tempfile.TemporaryDirectory() as temp_dir:

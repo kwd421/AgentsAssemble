@@ -22,6 +22,7 @@ export const state = {
   liveAgentOperationsLoading: false,
   liveAgentProcessStartRunning: false,
   liveAgentSessionStartRunning: false,
+  liveAgentSessionStopRunning: false,
   liveAgentPreflightRunning: false,
   liveAgentSmokeRunning: false,
   liveAgentOfficialRoundSmokeRunning: false,

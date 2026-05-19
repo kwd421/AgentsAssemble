@@ -162,6 +162,7 @@ function resetState() {
     liveAgentOperationsLoading: false,
     liveAgentProcessStartRunning: false,
     liveAgentSessionStartRunning: false,
+    liveAgentSessionStopRunning: false,
     liveAgentPreflightRunning: false,
     liveAgentSmokeRunning: false,
     liveAgentOfficialRoundSmokeRunning: false,
@@ -180,6 +181,7 @@ function installHarness({
   processStartPayload = null,
   sessionStartPayload = null,
   sessionResumePayload = null,
+  sessionStopPayload = null,
   sessionStartResponse = null,
   roundPayload = null,
 } = {}) {
@@ -251,6 +253,17 @@ function installHarness({
         }
       );
     }
+    if (url === "/api/live-agent-sessions/stop") {
+      return jsonResponse(
+        sessionStopPayload || {
+          status: "stopped",
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          offline: { expected: 3, offline: 3, attention: [] },
+          process: { status: "stopped", attention: [] },
+        }
+      );
+    }
     if (url === "/api/meetings/resident-gui/live-agent-turns/round") {
       return jsonResponse(
         roundPayload || {
@@ -307,6 +320,10 @@ function sessionStartRequest(requests) {
 
 function sessionResumeRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-sessions/resume");
+}
+
+function sessionStopRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-sessions/stop");
 }
 
 function roundRequest(requests) {
@@ -515,6 +532,34 @@ test("session resume button posts existing meeting and resident config payload",
   );
   assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+});
+
+test("session stop button posts existing meeting and group payload", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    sessionStopPayload: {
+      status: "stopped",
+      meeting_id: "resident-gui",
+      group_id: "resident-main",
+      offline: { expected: 3, offline: 3, attention: [] },
+      process: { status: "stopped", attention: [] },
+    },
+  });
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-meeting-id").value = "resident-gui";
+  lobby.querySelector("#live-agent-process-group").value = "resident-main";
+
+  await lobby.querySelector("#live-agent-session-stop").click();
+
+  assert.deepEqual(sessionStopRequest(requests).jsonBody, {
+    meeting_id: "resident-gui",
+    group_id: "resident-main",
+  });
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "세션 stopped: resident-gui · resident-main · 3/3 offline"
+  );
 });
 
 test("official round button posts selected meeting round and requests meeting refresh", async () => {
