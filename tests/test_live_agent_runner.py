@@ -1169,6 +1169,24 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(modes["agent-default"], "mentioned")
         self.assertEqual(modes["agent-always"], "always")
 
+    def test_group_config_rejects_non_object_agent_entries(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {"agent_id": "agent-a", "command": ["fake"]},
+                            "agent-b",
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "Each live agent entry must be a JSON object."):
+                load_group_configs(path)
+
     def test_group_config_preserves_live_session_connection_kind(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "live-agents.json"

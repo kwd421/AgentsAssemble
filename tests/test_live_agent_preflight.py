@@ -297,6 +297,21 @@ class LiveAgentPreflightTests(unittest.TestCase):
             self.assertEqual(report["summary"], {"agents": 0, "failed_agents": 0, "checks_failed": 1})
             self.assertEqual(report["checks"][0]["id"], "config_load")
 
+    def test_preflight_rejects_mixed_non_object_agent_entries(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps({"agents": [{"agent_id": "agent-a", "command": ["python3"]}, "agent-b"]}),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(config_path, command_resolver=lambda command: "/usr/bin/python3")
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 0, "failed_agents": 0, "checks_failed": 1})
+            self.assertEqual(report["checks"][0]["id"], "config_load")
+            self.assertEqual(report["checks"][0]["message"], "Each live agent entry must be a JSON object.")
+
     def test_preflight_accepts_remote_bridge_without_command_and_checks_endpoint_auth_ref(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"

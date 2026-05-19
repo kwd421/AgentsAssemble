@@ -619,10 +619,11 @@ def load_group_configs(
     agents = data.get("agents")
     if not isinstance(agents, list) or not agents:
         raise ValueError("Live agent group config requires a non-empty agents list.")
+    if not all(isinstance(agent, dict) for agent in agents):
+        raise ValueError("Each live agent entry must be a JSON object.")
     return [
         _config_from_mapping(agent, server=server, defaults=defaults, server_override=server_override)
         for agent in agents
-        if isinstance(agent, dict)
     ]
 
 
