@@ -93,7 +93,7 @@ Official turns and informal chat must stay separate.
 Engagement mode means when a participant should react to room messages.
 
 - `manual`: does not auto-react.
-- `mentioned`: can answer when called by name in free chat.
+- `mentioned`: can answer when called by name or agent id in free chat; partial prefix/suffix matches do not count as a call.
 - `moderator_called`: can make an official turn only when the moderator grants it.
 - `human_only`: reacts to human messages but ignores agent chatter by default.
 - `always`: reacts to all visible room messages and must be treated as loop-prone.

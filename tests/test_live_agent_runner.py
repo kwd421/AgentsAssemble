@@ -909,7 +909,11 @@ class LiveAgentRunnerTests(unittest.TestCase):
     def test_mentioned_mode_replies_only_when_called_by_display_name_or_agent_id(self):
         called_by_name = {"id": "name", "side": "mine", "name": "나", "message": "Agent A 지금 가능해?"}
         called_by_id = {"id": "id", "side": "mine", "name": "나", "message": "agent-a 상태 알려줘"}
+        called_with_at = {"id": "at", "side": "mine", "name": "나", "message": "@agent-a 상태 알려줘"}
         unrelated = {"id": "other", "side": "mine", "name": "나", "message": "아무나 답해"}
+        prefix_collision = {"id": "prefix", "side": "mine", "name": "나", "message": "agent-aardvark 상태 알려줘"}
+        suffix_collision = {"id": "suffix", "side": "mine", "name": "나", "message": "super-agent-a 상태 알려줘"}
+        name_collision = {"id": "name-prefix", "side": "mine", "name": "나", "message": "Agent Alpha 상태 알려줘"}
 
         self.assertEqual(
             event_reply_candidate([called_by_name], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="mentioned"),
@@ -919,8 +923,43 @@ class LiveAgentRunnerTests(unittest.TestCase):
             event_reply_candidate([called_by_id], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="mentioned"),
             called_by_id,
         )
+        self.assertEqual(
+            event_reply_candidate([called_with_at], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="mentioned"),
+            called_with_at,
+        )
         self.assertIsNone(
             event_reply_candidate([unrelated], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="mentioned")
+        )
+        self.assertIsNone(
+            event_reply_candidate([prefix_collision], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="mentioned")
+        )
+        self.assertIsNone(
+            event_reply_candidate([suffix_collision], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="mentioned")
+        )
+        self.assertIsNone(
+            event_reply_candidate([name_collision], "agent-a", "Agent A", "", max_chain_depth=1, engagement_mode="mentioned")
+        )
+
+    def test_mentioned_mode_handles_non_ascii_casefold_and_regex_meta_names(self):
+        korean_call = {"id": "korean", "side": "mine", "name": "나", "message": "설정충 지금 가능해?"}
+        german_call = {"id": "casefold", "side": "mine", "name": "나", "message": "STRASSE-BOT 확인해줘"}
+        regex_call = {"id": "regex", "side": "mine", "name": "나", "message": "agent.1 상태 알려줘"}
+        regex_collision = {"id": "regex-collision", "side": "mine", "name": "나", "message": "agentx1 상태 알려줘"}
+
+        self.assertEqual(
+            event_reply_candidate([korean_call], "canon", "설정충", "", max_chain_depth=1, engagement_mode="mentioned"),
+            korean_call,
+        )
+        self.assertEqual(
+            event_reply_candidate([german_call], "straße-bot", "Straße Bot", "", max_chain_depth=1, engagement_mode="mentioned"),
+            german_call,
+        )
+        self.assertEqual(
+            event_reply_candidate([regex_call], "agent.1", "Agent Dot", "", max_chain_depth=1, engagement_mode="mentioned"),
+            regex_call,
+        )
+        self.assertIsNone(
+            event_reply_candidate([regex_collision], "agent.1", "Agent Dot", "", max_chain_depth=1, engagement_mode="mentioned")
         )
 
     def test_idle_runner_sends_periodic_heartbeat(self):

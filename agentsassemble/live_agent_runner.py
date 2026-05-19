@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -754,7 +755,15 @@ def _is_human_lobby_event(event: dict[str, object]) -> bool:
 def _message_mentions_agent(message: str, agent_id: str, display_name: str) -> bool:
     normalized_message = message.casefold()
     mentions = [agent_id, display_name]
-    return any(str(mention or "").casefold() in normalized_message for mention in mentions if str(mention or "").strip())
+    return any(_contains_mention_token(normalized_message, str(mention or "").casefold()) for mention in mentions)
+
+
+def _contains_mention_token(normalized_message: str, normalized_mention: str) -> bool:
+    mention = normalized_mention.strip()
+    if not mention:
+        return False
+    pattern = rf"(?<![\w-]){re.escape(mention)}(?![\w-])"
+    return re.search(pattern, normalized_message) is not None
 
 
 def _chain_depth(event: dict[str, object]) -> int:

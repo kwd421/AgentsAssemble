@@ -14,6 +14,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("human", doc)
         self.assertIn("local_cli delegate", doc)
         self.assertIn("live_session", doc)
+        self.assertIn("partial prefix/suffix matches do not count as a call", doc)
         self.assertIn("Codex app", doc)
         self.assertIn("CLI", doc)
         self.assertIn("memory capsule", doc)
