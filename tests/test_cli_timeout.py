@@ -1486,6 +1486,9 @@ class CliTimeoutTests(unittest.TestCase):
                 "1",
                 "--stale-restart-after-seconds",
                 "30",
+                "--probe-bound-agents",
+                "--probe-timeout",
+                "4",
                 "--json",
             ]
         )
@@ -1501,6 +1504,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.max_restarts, 2)
         self.assertEqual(args.restart_backoff_seconds, 1.0)
         self.assertEqual(args.stale_restart_after_seconds, 30.0)
+        self.assertTrue(args.probe_bound_agents)
+        self.assertEqual(args.probe_timeout, 4.0)
         self.assertTrue(args.as_json)
 
     def test_live_agent_start_session_parser_accepts_auto_round_options(self):
@@ -1655,6 +1660,71 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("Resident session resident-m1 ready", stdout.getvalue())
         self.assertIn("rounds answered: 1 rounds, 1 answered", stdout.getvalue())
+
+    def test_live_agent_start_session_can_probe_bound_agents_before_rounds(self):
+        response = {
+            "status": "ready",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "connection": {"expected": 1, "connected": 1, "attention": []},
+            "reply_probe": {
+                "status": "ok",
+                "probe_count": 1,
+                "ok_count": 1,
+                "timeout_count": 0,
+                "failed_count": 0,
+                "skipped_count": 0,
+                "probes": [{"agent_id": "agent-a", "status": "ok"}],
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "start-session",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                        "--council-config",
+                        "configs/demo-council.json",
+                        "--agent-config",
+                        "configs/agents.example.json",
+                        "--live-agent-config",
+                        "configs/live-agents.example.json",
+                        "--connect-timeout",
+                        "3",
+                        "--probe-bound-agents",
+                        "--probe-timeout",
+                        "0.5",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-sessions/start",
+            method="POST",
+            payload={
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "council_config_path": "configs/demo-council.json",
+                "agent_config_path": "configs/agents.example.json",
+                "live_agent_config_path": "configs/live-agents.example.json",
+                "connect_timeout_seconds": 3.0,
+                "auto_restart": False,
+                "max_restarts": 0,
+                "restart_backoff_seconds": 5.0,
+                "stale_restart_after_seconds": 0.0,
+                "probe_bound_agents": True,
+                "probe_timeout_seconds": 0.5,
+            },
+            timeout_seconds=21.5,
+        )
+        self.assertIn("probes ok: 1/1 ok", stdout.getvalue())
 
     def test_live_agent_start_session_auto_round_degradation_exits_nonzero(self):
         response = {
@@ -2072,6 +2142,9 @@ class CliTimeoutTests(unittest.TestCase):
                 "--max-rounds",
                 "2",
                 "--stop-on-timeout",
+                "--probe-bound-agents",
+                "--probe-timeout",
+                "4",
                 "--json",
             ]
         )
@@ -2084,6 +2157,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.round_timeout, 8.0)
         self.assertEqual(args.max_rounds, 2)
         self.assertTrue(args.stop_on_timeout)
+        self.assertTrue(args.probe_bound_agents)
+        self.assertEqual(args.probe_timeout, 4.0)
         self.assertTrue(args.as_json)
 
     def test_live_agent_restart_session_can_run_remaining_rounds_after_ready_connection(self):
@@ -2234,6 +2309,9 @@ class CliTimeoutTests(unittest.TestCase):
                 "--max-rounds",
                 "2",
                 "--stop-on-timeout",
+                "--probe-bound-agents",
+                "--probe-timeout",
+                "4",
                 "--json",
             ]
         )
@@ -2246,6 +2324,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.round_timeout, 8.0)
         self.assertEqual(args.max_rounds, 2)
         self.assertTrue(args.stop_on_timeout)
+        self.assertTrue(args.probe_bound_agents)
+        self.assertEqual(args.probe_timeout, 4.0)
         self.assertTrue(args.as_json)
 
     def test_live_agent_recover_session_posts_request_and_prints_summary(self):

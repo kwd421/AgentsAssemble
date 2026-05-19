@@ -720,6 +720,14 @@ test("session start button posts matching meeting and resident config payload", 
       group_id: "resident-main",
       connection: { expected: 3, connected: 3, attention: [] },
       process: { status: "running", attention: [] },
+      reply_probe: {
+        status: "ok",
+        probe_count: 3,
+        ok_count: 3,
+        timeout_count: 0,
+        failed_count: 0,
+        skipped_count: 0,
+      },
       auto_rounds: {
         status: "answered",
         round_count: 2,
@@ -743,6 +751,8 @@ test("session start button posts matching meeting and resident config payload", 
   lobby.querySelector("#live-agent-process-restart-backoff").value = "2";
   lobby.querySelector("#live-agent-process-stale-restart-after").value = "300";
   lobby.querySelector("#live-agent-session-run-remaining-rounds").checked = true;
+  lobby.querySelector("#live-agent-session-probe-bound-agents").checked = true;
+  lobby.querySelector("#live-agent-session-probe-timeout").value = "4";
   lobby.querySelector("#live-agent-round-timeout").value = "12";
   lobby.querySelector("#live-agent-round-max-rounds").value = "2";
   lobby.querySelector("#live-agent-round-stop-on-timeout").checked = true;
@@ -760,6 +770,8 @@ test("session start button posts matching meeting and resident config payload", 
     max_restarts: 4,
     restart_backoff_seconds: 2,
     stale_restart_after_seconds: 300,
+    probe_bound_agents: true,
+    probe_timeout_seconds: 4,
     run_remaining_rounds: true,
     round_timeout_seconds: 12,
     round_max_rounds: 2,
@@ -767,7 +779,7 @@ test("session start button posts matching meeting and resident config payload", 
   });
   assert.equal(
     state.liveAgentProcessStatus.message,
-    "세션 ready: resident-gui · 3/3 connected · rounds answered: 2 rounds, 1 answered, 1 already complete, 0 timed out, 0 skipped"
+    "세션 ready: resident-gui · 3/3 connected · probes ok: 3/3 ok · rounds answered: 2 rounds, 1 answered, 1 already complete, 0 timed out, 0 skipped"
   );
   assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
@@ -782,6 +794,14 @@ test("session resume button posts existing meeting and resident config payload",
       group_id: "resident-main",
       connection: { expected: 3, connected: 3, attention: [] },
       process: { status: "running", attention: [] },
+      reply_probe: {
+        status: "ok",
+        probe_count: 3,
+        ok_count: 3,
+        timeout_count: 0,
+        failed_count: 0,
+        skipped_count: 0,
+      },
       auto_rounds: {
         status: "answered",
         round_count: 1,
@@ -803,6 +823,8 @@ test("session resume button posts existing meeting and resident config payload",
   lobby.querySelector("#live-agent-process-restart-backoff").value = "2";
   lobby.querySelector("#live-agent-process-stale-restart-after").value = "300";
   lobby.querySelector("#live-agent-session-run-remaining-rounds").checked = true;
+  lobby.querySelector("#live-agent-session-probe-bound-agents").checked = true;
+  lobby.querySelector("#live-agent-session-probe-timeout").value = "4";
   lobby.querySelector("#live-agent-round-timeout").value = "12";
   lobby.querySelector("#live-agent-round-max-rounds").value = "2";
   lobby.querySelector("#live-agent-round-stop-on-timeout").checked = true;
@@ -818,6 +840,8 @@ test("session resume button posts existing meeting and resident config payload",
     max_restarts: 4,
     restart_backoff_seconds: 2,
     stale_restart_after_seconds: 300,
+    probe_bound_agents: true,
+    probe_timeout_seconds: 4,
     run_remaining_rounds: true,
     round_timeout_seconds: 12,
     round_max_rounds: 2,
@@ -825,7 +849,7 @@ test("session resume button posts existing meeting and resident config payload",
   });
   assert.equal(
     state.liveAgentProcessStatus.message,
-    "세션 ready: resident-gui · 3/3 connected · rounds answered: 1 rounds, 1 answered, 0 timed out, 0 skipped"
+    "세션 ready: resident-gui · 3/3 connected · probes ok: 3/3 ok · rounds answered: 1 rounds, 1 answered, 0 timed out, 0 skipped"
   );
   assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
@@ -840,10 +864,19 @@ test("session restart button posts existing meeting group and timeout payload", 
       group_id: "resident-main",
       connection: { expected: 3, connected: 3, attention: [] },
       process: { status: "running", attention: [] },
+      reply_probe: {
+        status: "failed",
+        probe_count: 3,
+        ok_count: 2,
+        timeout_count: 1,
+        failed_count: 0,
+        skipped_count: 0,
+      },
       auto_rounds: {
-        status: "answered",
-        round_count: 1,
-        answered_round_count: 1,
+        status: "skipped",
+        reason: "probe_not_ready",
+        round_count: 0,
+        answered_round_count: 0,
         completed_round_count: 0,
         timeout_round_count: 0,
         skipped_round_count: 0,
@@ -856,6 +889,8 @@ test("session restart button posts existing meeting group and timeout payload", 
   lobby.querySelector("#live-agent-process-group").value = "resident-main";
   lobby.querySelector("#live-agent-session-connect-timeout").value = "7";
   lobby.querySelector("#live-agent-session-run-remaining-rounds").checked = true;
+  lobby.querySelector("#live-agent-session-probe-bound-agents").checked = true;
+  lobby.querySelector("#live-agent-session-probe-timeout").value = "4";
   lobby.querySelector("#live-agent-round-timeout").value = "12";
   lobby.querySelector("#live-agent-round-max-rounds").value = "2";
   lobby.querySelector("#live-agent-round-stop-on-timeout").checked = true;
@@ -866,6 +901,8 @@ test("session restart button posts existing meeting group and timeout payload", 
     meeting_id: "resident-gui",
     group_id: "resident-main",
     connect_timeout_seconds: 7,
+    probe_bound_agents: true,
+    probe_timeout_seconds: 4,
     run_remaining_rounds: true,
     round_timeout_seconds: 12,
     round_max_rounds: 2,
@@ -873,7 +910,7 @@ test("session restart button posts existing meeting group and timeout payload", 
   });
   assert.equal(
     state.liveAgentProcessStatus.message,
-    "세션 ready: resident-gui · 3/3 connected · rounds answered: 1 rounds, 1 answered, 0 timed out, 0 skipped"
+    "세션 ready: resident-gui · 3/3 connected · probes failed: 2/3 ok · rounds skipped: 0 rounds, 0 answered, 0 timed out, 0 skipped"
   );
   assert.equal(
     requests.some((request) => request.url === "/api/live-agent-processes"),
@@ -897,6 +934,14 @@ test("session recover button posts existing meeting group and timeout payload", 
       connection: { expected: 3, connected: 3, attention: [] },
       offline: { expected: 3, offline: 3, attention: [] },
       process: { status: "running", attention: [] },
+      reply_probe: {
+        status: "ok",
+        probe_count: 3,
+        ok_count: 3,
+        timeout_count: 0,
+        failed_count: 0,
+        skipped_count: 0,
+      },
       auto_rounds: {
         status: "answered",
         round_count: 1,
@@ -913,6 +958,8 @@ test("session recover button posts existing meeting group and timeout payload", 
   lobby.querySelector("#live-agent-process-group").value = "resident-main";
   lobby.querySelector("#live-agent-session-connect-timeout").value = "7";
   lobby.querySelector("#live-agent-session-run-remaining-rounds").checked = true;
+  lobby.querySelector("#live-agent-session-probe-bound-agents").checked = true;
+  lobby.querySelector("#live-agent-session-probe-timeout").value = "4";
   lobby.querySelector("#live-agent-round-timeout").value = "12";
   lobby.querySelector("#live-agent-round-max-rounds").value = "2";
   lobby.querySelector("#live-agent-round-stop-on-timeout").checked = true;
@@ -923,6 +970,8 @@ test("session recover button posts existing meeting group and timeout payload", 
     meeting_id: "resident-gui",
     group_id: "resident-main",
     connect_timeout_seconds: 7,
+    probe_bound_agents: true,
+    probe_timeout_seconds: 4,
     run_remaining_rounds: true,
     round_timeout_seconds: 12,
     round_max_rounds: 2,
@@ -930,7 +979,7 @@ test("session recover button posts existing meeting group and timeout payload", 
   });
   assert.equal(
     state.liveAgentProcessStatus.message,
-    "세션 ready: resident-gui · 3/3 connected · rounds answered: 1 rounds, 1 answered, 0 timed out, 0 skipped"
+    "세션 ready: resident-gui · 3/3 connected · probes ok: 3/3 ok · rounds answered: 1 rounds, 1 answered, 0 timed out, 0 skipped"
   );
   assert.equal(
     requests.some((request) => request.url === "/api/live-agent-processes"),

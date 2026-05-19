@@ -639,24 +639,194 @@ def _attach_session_auto_rounds_if_requested(
     session: dict[str, object],
     payload: dict[str, object],
 ) -> dict[str, object]:
+    reply_probe = None
+    if _payload_bool(payload.get("probe_bound_agents")):
+        reply_probe = _session_bound_agent_reply_probe_payload(output_root, session, payload)
+        session["reply_probe"] = reply_probe
     if not _payload_bool(payload.get("run_remaining_rounds")):
         return session
     auto_rounds_options = _session_auto_rounds_options(payload)
-    if _operation_result_status(session.get("status")) == "ready":
+    if _operation_result_status(session.get("status")) != "ready":
+        session["auto_rounds"] = _skipped_session_auto_rounds_result(
+            session,
+            auto_rounds_options,
+            reason="session_not_ready",
+        )
+    elif reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
+        session["auto_rounds"] = _skipped_session_auto_rounds_result(
+            session,
+            auto_rounds_options,
+            reason="probe_not_ready",
+        )
+    else:
         session["auto_rounds"] = live_agent_turn_rounds_payload(
             output_root,
             str(session.get("meeting_id") or ""),
             auto_rounds_options,
         )
-    else:
-        session["auto_rounds"] = _skipped_session_auto_rounds_result(session, auto_rounds_options)
     return session
 
 
-def _skipped_session_auto_rounds_result(session: dict[str, object], options: dict[str, object]) -> dict[str, object]:
+def _session_bound_agent_reply_probe_payload(
+    output_root: Path,
+    session: dict[str, object],
+    payload: dict[str, object],
+) -> dict[str, object]:
+    timeout_seconds = safe_probe_timeout(
+        _payload_nonnegative_float(payload.get("probe_timeout_seconds", payload.get("probe_timeout")), 12.0)
+    )
+    agent_ids = _session_bound_agent_ids(session)
+    if _operation_result_status(session.get("status")) != "ready":
+        return _session_reply_probe_summary(
+            agent_ids,
+            [],
+            timeout_seconds=timeout_seconds,
+            status="skipped",
+            reason="session_not_ready",
+        )
+    if not agent_ids:
+        return _session_reply_probe_summary(
+            agent_ids,
+            [],
+            timeout_seconds=timeout_seconds,
+            status="skipped",
+            reason="no_bound_agents",
+        )
+    probes = []
+    for agent_id in agent_ids:
+        try:
+            probe = _run_session_bound_agent_probe(output_root, agent_id, timeout_seconds=timeout_seconds)
+        except ValueError:
+            probe = {"status": "failed", "agent_id": agent_id, "reason": "probe could not be run"}
+        probes.append(_safe_readiness_probe_result(probe))
+    status = "ok" if probes and all(_operation_result_status(probe.get("status")) == "ok" for probe in probes) else "failed"
+    return _session_reply_probe_summary(agent_ids, probes, timeout_seconds=timeout_seconds, status=status)
+
+
+def _session_bound_agent_ids(session: dict[str, object]) -> list[str]:
+    connection = session.get("connection") if isinstance(session.get("connection"), dict) else {}
+    for key in ("agent_ids", "connected_agent_ids"):
+        agent_ids = _safe_payload_strings(connection.get(key), limit=64)
+        if agent_ids:
+            return agent_ids
+    process = session.get("process") if isinstance(session.get("process"), dict) else {}
+    return _safe_payload_strings(process.get("agent_ids"), limit=64)
+
+
+def _run_session_bound_agent_probe(output_root: Path, agent_id: str, *, timeout_seconds: float) -> dict[str, object]:
+    previous_engagement = _live_agent_engagement_snapshot(output_root, agent_id)
+    previous_mode = str(previous_engagement.get("engagement_mode") or "")
+    switch_for_probe = previous_mode in {"manual", "watch", "moderator_called"}
+    if switch_for_probe:
+        update_live_agent_engagement(output_root, agent_id, "human_only")
+    try:
+        return run_live_agent_probe(output_root, agent_id, timeout_seconds=timeout_seconds)
+    finally:
+        if switch_for_probe:
+            _restore_live_agent_engagement_snapshot(output_root, agent_id, previous_engagement)
+
+
+def _live_agent_engagement_snapshot(output_root: Path, agent_id: str) -> dict[str, object]:
+    clean_agent_id = str(agent_id or "").strip()
+    state = _read_live_agent_presence_state(output_root)
+    agents = state.get("agents")
+    if isinstance(agents, list):
+        for agent in agents:
+            if isinstance(agent, dict) and str(agent.get("agent_id") or "") == clean_agent_id:
+                snapshot: dict[str, object] = {"engagement_mode": str(agent.get("engagement_mode") or "")}
+                if "engagement_mode_updated_at" in agent:
+                    snapshot["engagement_mode_updated_at"] = str(agent.get("engagement_mode_updated_at") or "")
+                return snapshot
+    for agent in read_live_agents(output_root):
+        if str(agent.get("agent_id") or "") == clean_agent_id:
+            return {"engagement_mode": str(agent.get("engagement_mode") or "")}
+    return {"engagement_mode": ""}
+
+
+def _restore_live_agent_engagement_snapshot(
+    output_root: Path,
+    agent_id: str,
+    snapshot: dict[str, object],
+) -> None:
+    clean_agent_id = str(agent_id or "").strip()
+    if not clean_agent_id:
+        return
+    state = _read_live_agent_presence_state(output_root)
+    agents = state.get("agents")
+    if not isinstance(agents, list):
+        return
+    for agent in agents:
+        if not isinstance(agent, dict) or str(agent.get("agent_id") or "") != clean_agent_id:
+            continue
+        agent["engagement_mode"] = str(snapshot.get("engagement_mode") or "")
+        if "engagement_mode_updated_at" in snapshot:
+            agent["engagement_mode_updated_at"] = str(snapshot.get("engagement_mode_updated_at") or "")
+        else:
+            agent.pop("engagement_mode_updated_at", None)
+        _write_live_agent_presence_state(output_root, state)
+        return
+
+
+def _read_live_agent_presence_state(output_root: Path) -> dict[str, object]:
+    path = output_root / "live_agents.json"
+    if not path.exists():
+        return {"agents": []}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"agents": []}
+    return data if isinstance(data, dict) else {"agents": []}
+
+
+def _write_live_agent_presence_state(output_root: Path, state: dict[str, object]) -> None:
+    output_root.mkdir(parents=True, exist_ok=True)
+    path = output_root / "live_agents.json"
+    temp_path = path.with_suffix(".json.tmp")
+    temp_path.write_text(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    temp_path.replace(path)
+
+
+def _session_reply_probe_summary(
+    agent_ids: list[str],
+    probes: list[dict[str, object]],
+    *,
+    timeout_seconds: float,
+    status: str,
+    reason: str = "",
+) -> dict[str, object]:
+    ok_count = sum(1 for probe in probes if _operation_result_status(probe.get("status")) == "ok")
+    timeout_count = sum(1 for probe in probes if _operation_result_status(probe.get("status")) == "timeout")
+    skipped_count = sum(1 for probe in probes if _operation_result_status(probe.get("status")) == "skipped")
+    failed_count = sum(
+        1
+        for probe in probes
+        if _operation_result_status(probe.get("status")) not in {"ok", "timeout", "skipped"}
+    )
+    summary: dict[str, object] = {
+        "status": status,
+        "agent_ids": agent_ids,
+        "probe_count": len(probes),
+        "ok_count": ok_count,
+        "timeout_count": timeout_count,
+        "failed_count": failed_count,
+        "skipped_count": skipped_count,
+        "timeout_seconds": timeout_seconds,
+        "probes": probes,
+    }
+    if reason:
+        summary["reason"] = clean_lobby_text(reason, limit=128)
+    return summary
+
+
+def _skipped_session_auto_rounds_result(
+    session: dict[str, object],
+    options: dict[str, object],
+    *,
+    reason: str = "session_not_ready",
+) -> dict[str, object]:
     return {
         "status": "skipped",
-        "reason": "session_not_ready",
+        "reason": clean_lobby_text(reason, limit=128),
         "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
         "round_count": 0,
         "answered_round_count": 0,
@@ -2690,6 +2860,9 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
                 "offline_attention": _safe_payload_strings(offline.get("attention"), limit=128),
             }
         )
+    reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
+    if reply_probe is not None:
+        details.update(_session_reply_probe_operation_details(reply_probe))
     auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
     if auto_rounds is not None:
         details.update(_session_auto_rounds_operation_details(auto_rounds, str(session.get("meeting_id") or "")))
@@ -2739,8 +2912,26 @@ def _session_auto_rounds_operation_details(auto_rounds: dict[str, object], meeti
     }
 
 
+def _session_reply_probe_operation_details(reply_probe: dict[str, object]) -> dict[str, object]:
+    return {
+        "reply_probe_status": _operation_result_status(reply_probe.get("status")),
+        "reply_probe_reason": clean_lobby_text(reply_probe.get("reason"), limit=128),
+        "reply_probe_agent_ids": _safe_payload_strings(reply_probe.get("agent_ids"), limit=64),
+        "reply_probe_statuses": _probe_statuses(reply_probe.get("probes")),
+        "reply_probe_count": _payload_nonnegative_int(reply_probe.get("probe_count"), 0),
+        "reply_probe_ok_count": _payload_nonnegative_int(reply_probe.get("ok_count"), 0),
+        "reply_probe_timeout_count": _payload_nonnegative_int(reply_probe.get("timeout_count"), 0),
+        "reply_probe_failed_count": _payload_nonnegative_int(reply_probe.get("failed_count"), 0),
+        "reply_probe_skipped_count": _payload_nonnegative_int(reply_probe.get("skipped_count"), 0),
+        "reply_probe_timeout_seconds": _payload_nonnegative_float(reply_probe.get("timeout_seconds"), 0.0),
+    }
+
+
 def _session_start_operation_status(session: dict[str, object]) -> str:
     if _operation_result_status(session.get("status")) != "ready":
+        return "degraded"
+    reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
+    if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
         return "degraded"
     auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
     if auto_rounds is None:
@@ -2751,6 +2942,9 @@ def _session_start_operation_status(session: dict[str, object]) -> str:
 def _session_start_operation_summary(session: dict[str, object]) -> str:
     if _operation_result_status(session.get("status")) != "ready":
         return "resident live-agent session is still connecting"
+    reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
+    if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
+        return "started resident live-agent session with degraded reply probe"
     auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
     if auto_rounds is None:
         return "started resident live-agent session"
@@ -2762,6 +2956,9 @@ def _session_start_operation_summary(session: dict[str, object]) -> str:
 def _session_resume_operation_summary(session: dict[str, object]) -> str:
     if _operation_result_status(session.get("status")) != "ready":
         return "resident live-agent session is still reconnecting"
+    reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
+    if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
+        return "resumed resident live-agent session with degraded reply probe"
     auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
     if auto_rounds is None:
         return "resumed resident live-agent session"
@@ -2792,6 +2989,9 @@ def _session_check_operation_summary(session: dict[str, object]) -> str:
 
 def _session_restart_operation_summary(session: dict[str, object]) -> str:
     if _operation_result_status(session.get("status")) == "ready":
+        reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
+        if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
+            return "restarted resident live-agent session with degraded reply probe"
         auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
         if auto_rounds is None:
             return "restarted resident live-agent session"
@@ -2803,6 +3003,9 @@ def _session_restart_operation_summary(session: dict[str, object]) -> str:
 
 def _session_recover_operation_summary(session: dict[str, object]) -> str:
     if _operation_result_status(session.get("status")) == "ready":
+        reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
+        if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
+            return "recovered resident live-agent session with degraded reply probe"
         auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
         if auto_rounds is None:
             return "recovered resident live-agent session"

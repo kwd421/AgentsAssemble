@@ -33,6 +33,7 @@ from agentsassemble.gui import (
     live_agent_turn_round_payload,
     live_agent_turn_rounds_payload,
     _live_agent_turn_rounds_payload_locked,
+    _run_session_bound_agent_probe,
     live_agents_payload,
     send_lobby_message_to_remote_bridge,
     append_side_chat_event,
@@ -5883,6 +5884,123 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn(str(agent_config), operation_blob)
             self.assertNotIn(str(live_agent_config), operation_blob)
             self.assertNotIn("auto round reply", operation_blob)
+
+    def test_live_agent_session_start_probe_failure_skips_auto_rounds_and_records_safe_operation(self):
+        class FakeSessionSupervisor:
+            def __init__(self, output_root: Path) -> None:
+                self.output_root = output_root
+
+            def start_group(self, **kwargs):
+                heartbeat_live_agent(self.output_root, "agent-a", status="online")
+                return {
+                    "group_id": kwargs.get("group_id") or "resident-main",
+                    "status": "running",
+                    "agents": [
+                        {"agent_id": "agent-a", "display_name": "Agent A", "provider_kind": "local_cli", "connection_kind": "local_cli"},
+                    ],
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            supervisor = FakeSessionSupervisor(root)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                probe_result = {
+                    "status": "timeout",
+                    "agent_id": "agent-a",
+                    "reason": "agent did not reply",
+                    "source_event_id": "probe-event-1",
+                    "reply": {"message": "probe reply should not be recorded"},
+                }
+                with (
+                    patch("agentsassemble.gui.run_live_agent_probe", return_value=probe_result) as run_probe,
+                    patch("agentsassemble.gui.live_agent_turn_rounds_payload") as rounds_payload,
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/start",
+                        data=json.dumps(
+                            {
+                                "meeting_id": "resident-m1",
+                                "group_id": "resident-main",
+                                "council_config_path": str(council_config),
+                                "agent_config_path": str(agent_config),
+                                "live_agent_config_path": str(live_agent_config),
+                                "connect_timeout_seconds": 0,
+                                "probe_bound_agents": True,
+                                "probe_timeout_seconds": 0.5,
+                                "run_remaining_rounds": True,
+                                "round_timeout_seconds": 2,
+                                "round_max_rounds": 1,
+                                "round_stop_on_timeout": True,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=4) as response:
+                        session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        run_probe.assert_called_once_with(root, "agent-a", timeout_seconds=0.5)
+        rounds_payload.assert_not_called()
+        self.assertEqual(session_payload["status"], "ready")
+        self.assertEqual(session_payload["reply_probe"]["status"], "failed")
+        self.assertEqual(session_payload["reply_probe"]["ok_count"], 0)
+        self.assertEqual(session_payload["reply_probe"]["timeout_count"], 1)
+        self.assertEqual(session_payload["reply_probe"]["probes"][0]["status"], "timeout")
+        self.assertEqual(session_payload["auto_rounds"]["status"], "skipped")
+        self.assertEqual(session_payload["auto_rounds"]["reason"], "probe_not_ready")
+        session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.start"]
+        self.assertEqual(session_operations[-1]["status"], "degraded")
+        self.assertEqual(session_operations[-1]["details"]["reply_probe_status"], "failed")
+        self.assertEqual(session_operations[-1]["details"]["reply_probe_statuses"], ["agent-a:timeout"])
+        self.assertEqual(session_operations[-1]["details"]["auto_rounds_reason"], "probe_not_ready")
+        operation_blob = json.dumps(session_operations, ensure_ascii=False)
+        self.assertNotIn(str(council_config), operation_blob)
+        self.assertNotIn(str(agent_config), operation_blob)
+        self.assertNotIn(str(live_agent_config), operation_blob)
+        self.assertNotIn("probe reply should not be recorded", operation_blob)
+
+    def test_session_bound_agent_probe_temporarily_opens_moderator_called_agent_and_restores_mode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "engagement_mode": "moderator_called",
+                },
+            )
+            observed_modes = []
+
+            def fake_probe(output_root: Path, agent_id: str, *, timeout_seconds: float):
+                agent = next(item for item in read_live_agents(output_root) if item.get("agent_id") == agent_id)
+                observed_modes.append(agent.get("engagement_mode"))
+                return {"status": "ok", "agent_id": agent_id, "source_event_id": "probe-event-1", "reply_event_id": "reply-1"}
+
+            with patch("agentsassemble.gui.run_live_agent_probe", side_effect=fake_probe) as run_probe:
+                result = _run_session_bound_agent_probe(root, "agent-a", timeout_seconds=0.5)
+
+            agent = next(item for item in read_live_agents(root) if item.get("agent_id") == "agent-a")
+            persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(observed_modes, ["human_only"])
+            self.assertEqual(agent["engagement_mode"], "moderator_called")
+            self.assertNotIn("engagement_mode_updated_at", persisted_agent)
+            run_probe.assert_called_once_with(root, "agent-a", timeout_seconds=0.5)
 
     def test_live_agent_session_start_skips_auto_rounds_until_session_ready(self):
         class SlowSessionSupervisor:
