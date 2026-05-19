@@ -4025,6 +4025,216 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("Posted reply-new", stdout.getvalue())
 
+    def test_live_agent_delegate_records_error_heartbeat_on_command_failure(self):
+        stderr = StringIO()
+        room_payload = {"lobby_events": [{"id": "evt-human", "name": "나", "message": "방 상태 어때?"}]}
+        responses = [
+            {"agent": {"agent_id": "claude-code-live"}},
+            {"agent": {"agent_id": "claude-code-live", "status": "working"}},
+            room_payload,
+            {"agent": {"agent_id": "claude-code-live", "status": "error"}},
+        ]
+        command_error = cli_module.subprocess.CalledProcessError(
+            7,
+            ["claude", "-p"],
+            output="private stdout",
+            stderr="private stderr",
+        )
+        with patch("agentsassemble.cli._request_json", side_effect=responses) as request_json:
+            with patch("agentsassemble.cli._run_delegate_command", side_effect=command_error):
+                with patch("sys.stderr", stderr):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "delegate",
+                            "--server",
+                            "http://room.local",
+                            "--agent-id",
+                            "claude-code-live",
+                            "--display-name",
+                            "Claude Code Live",
+                            "--provider-kind",
+                            "claude_code",
+                            "--command",
+                            "claude",
+                            "-p",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(len(request_json.call_args_list), 4)
+        self.assertEqual(
+            request_json.call_args_list[3].args[0],
+            "http://room.local/api/live-agents/claude-code-live/heartbeat",
+        )
+        self.assertEqual(
+            request_json.call_args_list[3].kwargs["payload"],
+            {"status": "error", "last_error": "Delegate command exited with return code 7."},
+        )
+        self.assertIn("returned non-zero exit status 7", stderr.getvalue())
+
+    def test_live_agent_delegate_redacts_os_error_path_from_error_heartbeat(self):
+        stderr = StringIO()
+        room_payload = {"lobby_events": [{"id": "evt-human", "name": "나", "message": "방 상태 어때?"}]}
+        responses = [
+            {"agent": {"agent_id": "claude-code-live"}},
+            {"agent": {"agent_id": "claude-code-live", "status": "working"}},
+            room_payload,
+            {"agent": {"agent_id": "claude-code-live", "status": "error"}},
+        ]
+        command_error = OSError(2, "No such file or directory", "/private/token/claude")
+        with patch("agentsassemble.cli._request_json", side_effect=responses) as request_json:
+            with patch("agentsassemble.cli._run_delegate_command", side_effect=command_error):
+                with patch("sys.stderr", stderr):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "delegate",
+                            "--server",
+                            "http://room.local",
+                            "--agent-id",
+                            "claude-code-live",
+                            "--display-name",
+                            "Claude Code Live",
+                            "--provider-kind",
+                            "claude_code",
+                            "--command",
+                            "claude",
+                            "-p",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(
+            request_json.call_args_list[3].kwargs["payload"],
+            {"status": "error", "last_error": "Delegate command failed: No such file or directory."},
+        )
+        self.assertNotIn("/private/token/claude", request_json.call_args_list[3].kwargs["payload"]["last_error"])
+        self.assertIn("/private/token/claude", stderr.getvalue())
+
+    def test_live_agent_delegate_records_error_heartbeat_on_empty_reply(self):
+        stderr = StringIO()
+        room_payload = {"lobby_events": [{"id": "evt-human", "name": "나", "message": "방 상태 어때?"}]}
+        responses = [
+            {"agent": {"agent_id": "claude-code-live"}},
+            {"agent": {"agent_id": "claude-code-live", "status": "working"}},
+            room_payload,
+            {"agent": {"agent_id": "claude-code-live", "status": "error"}},
+        ]
+        with patch("agentsassemble.cli._request_json", side_effect=responses) as request_json:
+            with patch("agentsassemble.cli._run_delegate_command", return_value="  \n"):
+                with patch("sys.stderr", stderr):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "delegate",
+                            "--server",
+                            "http://room.local",
+                            "--agent-id",
+                            "claude-code-live",
+                            "--display-name",
+                            "Claude Code Live",
+                            "--provider-kind",
+                            "claude_code",
+                            "--command",
+                            "claude",
+                            "-p",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(len(request_json.call_args_list), 4)
+        self.assertEqual(
+            request_json.call_args_list[3].kwargs["payload"],
+            {"status": "error", "last_error": "Delegate command returned an empty reply."},
+        )
+        self.assertIn("Delegate command returned an empty reply.", stderr.getvalue())
+
+    def test_live_agent_delegate_records_error_heartbeat_on_command_timeout(self):
+        stderr = StringIO()
+        room_payload = {"lobby_events": [{"id": "evt-human", "name": "나", "message": "방 상태 어때?"}]}
+        responses = [
+            {"agent": {"agent_id": "claude-code-live"}},
+            {"agent": {"agent_id": "claude-code-live", "status": "working"}},
+            room_payload,
+            {"agent": {"agent_id": "claude-code-live", "status": "error"}},
+        ]
+        command_error = cli_module.subprocess.TimeoutExpired(
+            ["claude", "-p"],
+            9,
+            output="private stdout",
+            stderr="private stderr",
+        )
+        with patch("agentsassemble.cli._request_json", side_effect=responses) as request_json:
+            with patch("agentsassemble.cli._run_delegate_command", side_effect=command_error):
+                with patch("sys.stderr", stderr):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "delegate",
+                            "--server",
+                            "http://room.local",
+                            "--agent-id",
+                            "claude-code-live",
+                            "--display-name",
+                            "Claude Code Live",
+                            "--provider-kind",
+                            "claude_code",
+                            "--command",
+                            "claude",
+                            "-p",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(
+            request_json.call_args_list[3].kwargs["payload"],
+            {"status": "error", "last_error": "Delegate command timed out after 9 seconds."},
+        )
+        self.assertNotIn("private stdout", request_json.call_args_list[3].kwargs["payload"]["last_error"])
+        self.assertNotIn("private stderr", request_json.call_args_list[3].kwargs["payload"]["last_error"])
+        self.assertIn("timed out after 9 seconds", stderr.getvalue())
+
+    def test_live_agent_delegate_error_heartbeat_failure_does_not_mask_command_failure(self):
+        stderr = StringIO()
+        room_payload = {"lobby_events": [{"id": "evt-human", "name": "나", "message": "방 상태 어때?"}]}
+        command_error = cli_module.subprocess.CalledProcessError(7, ["claude", "-p"])
+        responses = [
+            {"agent": {"agent_id": "claude-code-live"}},
+            {"agent": {"agent_id": "claude-code-live", "status": "working"}},
+            room_payload,
+            urllib.error.URLError("heartbeat down"),
+        ]
+        with patch("agentsassemble.cli._request_json", side_effect=responses) as request_json:
+            with patch("agentsassemble.cli._run_delegate_command", side_effect=command_error):
+                with patch("sys.stderr", stderr):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "delegate",
+                            "--server",
+                            "http://room.local",
+                            "--agent-id",
+                            "claude-code-live",
+                            "--display-name",
+                            "Claude Code Live",
+                            "--provider-kind",
+                            "claude_code",
+                            "--command",
+                            "claude",
+                            "-p",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(len(request_json.call_args_list), 4)
+        self.assertEqual(
+            request_json.call_args_list[3].kwargs["payload"],
+            {"status": "error", "last_error": "Delegate command exited with return code 7."},
+        )
+        self.assertIn("returned non-zero exit status 7", stderr.getvalue())
+        self.assertNotIn("heartbeat down", stderr.getvalue())
+
     def test_live_agent_run_accepts_remote_bridge_without_local_command(self):
         args = build_parser().parse_args(
             [

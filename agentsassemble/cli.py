@@ -2275,9 +2275,13 @@ def _run_live_agent_delegate(args: argparse.Namespace) -> int:
         payload={"status": "working"},
     )
     room = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
-    reply = _run_delegate_command(args.delegate_command, _delegate_prompt(args, room), timeout_seconds=args.timeout).strip()
-    if not reply:
-        raise ValueError("Delegate command returned an empty reply.")
+    try:
+        reply = _run_delegate_command(args.delegate_command, _delegate_prompt(args, room), timeout_seconds=args.timeout).strip()
+        if not reply:
+            raise ValueError("Delegate command returned an empty reply.")
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        _heartbeat_delegate_error(args, agent_id, error)
+        raise
     lobby_payload = {"message": reply, "kind": "message"}
     source_event = _delegate_source_event(args, room)
     if source_event is not None:
@@ -2525,6 +2529,29 @@ def _delegate_chain_depth(event: dict[str, object]) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         return max(0, value)
     return 0
+
+
+def _heartbeat_delegate_error(args: argparse.Namespace, quoted_agent_id: str, error: Exception) -> None:
+    try:
+        _request_json(
+            _server_url(args.server, f"/api/live-agents/{quoted_agent_id}/heartbeat"),
+            method="POST",
+            payload={"status": "error", "last_error": _delegate_error_message(error)},
+        )
+    except Exception:
+        return
+
+
+def _delegate_error_message(error: Exception) -> str:
+    if isinstance(error, subprocess.CalledProcessError):
+        return f"Delegate command exited with return code {error.returncode}."
+    if isinstance(error, subprocess.TimeoutExpired):
+        return f"Delegate command timed out after {error.timeout} seconds."
+    if isinstance(error, OSError):
+        detail = str(getattr(error, "strerror", "") or "").strip() or error.__class__.__name__
+        return f"Delegate command failed: {detail}."
+    message = str(error).strip()
+    return message or "Delegate command failed."
 
 
 def _run_delegate_command(command: list[str], prompt: str, *, timeout_seconds: int) -> str:
