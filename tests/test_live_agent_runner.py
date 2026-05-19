@@ -1187,6 +1187,23 @@ class LiveAgentRunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Each live agent entry must be a JSON object."):
                 load_group_configs(path)
 
+    def test_group_config_rejects_non_string_command_entries(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {"agent_id": "agent-a", "command": ["python3", None]},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "Live agent command entries must be strings."):
+                load_group_configs(path)
+
     def test_group_config_preserves_live_session_connection_kind(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "live-agents.json"

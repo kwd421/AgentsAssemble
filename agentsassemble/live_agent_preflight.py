@@ -17,6 +17,7 @@ from agentsassemble.codex_resident import (
 from agentsassemble.live_agent_runner import (
     ResidentAgentConfig,
     SUPPORTED_RESIDENT_CONNECTION_KINDS,
+    live_agent_command_parts,
     resident_connection_kind_error,
 )
 from agentsassemble.remote_bridge_config import remote_bridge_auth_ref_available, remote_bridge_endpoint_error
@@ -194,7 +195,7 @@ def _preflight_config_from_mapping(
     auth_ref = data.get("auth_ref")
     provider_kind = str(data.get("provider_kind") or "local_cli")
     connection_kind = str(data.get("connection_kind") or "local_cli")
-    command_parts = [str(part) for part in command] if isinstance(command, list) else []
+    command_parts = live_agent_command_parts(command)
     command_parts = default_codex_resident_command(provider_kind, connection_kind, command_parts)
     return ResidentAgentConfig(
         server=str(server_override or data.get("server") or server),

@@ -666,7 +666,7 @@ def _config_from_mapping(
     command = data.get("command")
     endpoint = data.get("endpoint")
     auth_ref = data.get("auth_ref")
-    command_parts = [str(part) for part in command] if isinstance(command, list) else []
+    command_parts = live_agent_command_parts(command)
     command_parts = default_codex_resident_command(provider_kind, connection_kind, command_parts)
     if connection_kind != "remote_bridge" and not command_parts:
         raise ValueError("Each live agent requires a command list.")
@@ -692,6 +692,16 @@ def _config_from_mapping(
         max_chain_depth=int(_value_or_default(data.get("max_chain_depth"), defaults["max_chain_depth"])),
         max_ticks=int(data.get("max_ticks") if data.get("max_ticks") is not None else defaults["max_ticks"]),
     )
+
+
+def live_agent_command_parts(value: object) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        return []
+    if not all(isinstance(part, str) for part in value):
+        raise ValueError("Live agent command entries must be strings.")
+    return list(value)
 
 
 def _lobby_events(room: dict[str, object]) -> list[dict[str, object]]:
