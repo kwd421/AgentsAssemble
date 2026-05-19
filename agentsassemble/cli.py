@@ -483,6 +483,18 @@ def build_parser() -> argparse.ArgumentParser:
     live_room = live_agent_subparsers.add_parser("room", parents=[live_server], help="Read the live room snapshot for an agent.")
     live_room.add_argument("--agent-id", required=True)
 
+    live_wait_room_event = live_agent_subparsers.add_parser(
+        "wait-room-event",
+        parents=[live_server],
+        help="Wait for the next non-self lobby event visible to a live agent.",
+    )
+    live_wait_room_event.add_argument("--agent-id", required=True)
+    live_wait_room_event.add_argument("--after-event-id", default="")
+    live_wait_room_event.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
+    live_wait_room_event.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
+    live_wait_room_event.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_wait_room_event.add_argument("--json", action="store_true", dest="as_json", help="Print the raw wait result.")
+
     live_health = live_agent_subparsers.add_parser("health", parents=[live_server], help="Read live-agent room health.")
     live_health.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON health payload.")
     live_health.add_argument(
@@ -925,6 +937,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             response = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
             print(json.dumps(response, ensure_ascii=False, indent=2))
             return 0
+        if args.live_agent_command == "wait-room-event":
+            return _run_live_agent_wait_room_event(args)
         if args.live_agent_command == "health":
             return _run_live_agent_health(args)
         if args.live_agent_command == "preflight":
@@ -3309,6 +3323,125 @@ def _run_live_agent_delegate(args: argparse.Namespace) -> int:
     event = response.get("event", {}) if isinstance(response.get("event"), dict) else {}
     print(f"Posted {event.get('id') or 'lobby message'}")
     return 0
+
+
+def _run_live_agent_wait_room_event(args: argparse.Namespace) -> int:
+    deadline = time.monotonic() + float(args.timeout)
+    last_room: dict[str, object] = {}
+    while True:
+        agent_id = urllib.parse.quote(args.agent_id, safe="")
+        room = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
+        last_room = room
+        candidate = _wait_room_event_candidate(args, room)
+        if candidate is not None:
+            payload = _wait_room_event_payload(args, room, candidate)
+            if args.as_json:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                print(_format_wait_room_event(payload))
+            return 0
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            payload = _wait_room_timeout_payload(args, last_room)
+            if args.as_json:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                cursor = payload.get("last_observed_event_id") or "(none)"
+                print(f"no new room event after {cursor}")
+            return 1
+        sleep_interval = max(float(args.poll_interval), 0.05)
+        time.sleep(min(sleep_interval, remaining))
+
+
+def _wait_room_event_candidate(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object] | None:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    events = room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []
+    cursor = str(args.after_event_id or agent.get("last_observed_event_id") or "").strip()
+    display_name = str(agent.get("display_name") or "").strip()
+    for event in _events_after_id(events, cursor):
+        if not isinstance(event, dict):
+            continue
+        if _wait_room_self_event(args.agent_id, display_name, event):
+            continue
+        if _delegate_chain_depth(event) > int(args.max_chain_depth):
+            continue
+        if not str(event.get("message") or "").strip():
+            continue
+        if not str(event.get("id") or "").strip():
+            continue
+        return event
+    return None
+
+
+def _events_after_id(events: list[object], event_id: str) -> list[object]:
+    if not event_id:
+        return events
+    for index, event in enumerate(events):
+        if isinstance(event, dict) and str(event.get("id") or "") == event_id:
+            return events[index + 1 :]
+    return events
+
+
+def _wait_room_self_event(agent_id: str, display_name: str, event: dict[str, object]) -> bool:
+    actor_id = str(event.get("actor_id") or "")
+    if actor_id:
+        return actor_id == agent_id
+    return bool(display_name) and str(event.get("name") or "") == display_name
+
+
+def _wait_room_event_payload(
+    args: argparse.Namespace,
+    room: dict[str, object],
+    event: dict[str, object],
+) -> dict[str, object]:
+    event_id = str(event.get("id") or "")
+    auto_chain_depth = _delegate_chain_depth(event) + 1
+    return {
+        "status": "event",
+        "agent_id": args.agent_id,
+        "source_event_id": event_id,
+        "auto_chain_depth": auto_chain_depth,
+        "event": event,
+        "reply_command": [
+            "python3",
+            "-m",
+            "agentsassemble.cli",
+            "live-agent",
+            "say",
+            "--server",
+            str(args.server),
+            "--agent-id",
+            str(args.agent_id),
+            "--source-event-id",
+            event_id,
+            "--auto-chain-depth",
+            str(auto_chain_depth),
+            "<reply>",
+        ],
+        "room": {
+            "meeting_id": str(room.get("meeting_id") or ""),
+            "lobby_event_count": len(room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []),
+            "live_event_count": len(room.get("live_events") if isinstance(room.get("live_events"), list) else []),
+        },
+    }
+
+
+def _wait_room_timeout_payload(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object]:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    return {
+        "status": "timeout",
+        "agent_id": args.agent_id,
+        "timeout_seconds": float(args.timeout),
+        "last_observed_event_id": str(args.after_event_id or agent.get("last_observed_event_id") or "").strip(),
+    }
+
+
+def _format_wait_room_event(payload: dict[str, object]) -> str:
+    event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+    event_id = str(event.get("id") or "room event")
+    name = str(event.get("name") or event.get("actor_id") or "participant")
+    message = str(event.get("message") or "").strip()
+    return f"{event_id} {name}: {message}"
 
 
 class _JsonlLiveSessionCommandRunner:

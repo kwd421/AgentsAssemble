@@ -6132,6 +6132,207 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.poll_interval, 0.5)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_wait_room_event_parses_cursor_and_wait_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "wait-room-event",
+                "--server",
+                "http://room.local",
+                "--agent-id",
+                "claude-terminal",
+                "--after-event-id",
+                "evt-old",
+                "--max-chain-depth",
+                "2",
+                "--timeout",
+                "3",
+                "--poll-interval",
+                "0.5",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "wait-room-event")
+        self.assertEqual(args.agent_id, "claude-terminal")
+        self.assertEqual(args.after_event_id, "evt-old")
+        self.assertEqual(args.max_chain_depth, 2)
+        self.assertEqual(args.timeout, 3.0)
+        self.assertEqual(args.poll_interval, 0.5)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_wait_room_event_returns_next_non_self_lobby_event(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "display_name": "Claude Terminal",
+                "last_observed_event_id": "evt-old",
+            },
+            "lobby_events": [
+                {"id": "evt-old", "name": "나", "message": "old"},
+                {"id": "evt-self", "actor_id": "claude-terminal", "name": "Claude Terminal", "message": "self"},
+                {"id": "evt-next", "name": "나", "message": "새 이벤트", "auto_chain_depth": 1},
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-room-event",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agents/claude-terminal/room")
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "event")
+        self.assertEqual(payload["event"]["id"], "evt-next")
+        self.assertEqual(payload["source_event_id"], "evt-next")
+        self.assertEqual(payload["reply_command"][0:7], ["python3", "-m", "agentsassemble.cli", "live-agent", "say", "--server", "http://room.local"])
+
+    def test_live_agent_wait_room_event_treats_actor_id_as_authoritative_for_self_check(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "display_name": "Shared Name",
+                "last_observed_event_id": "evt-old",
+            },
+            "lobby_events": [
+                {"id": "evt-old", "name": "나", "message": "old"},
+                {"id": "evt-other", "actor_id": "other-agent", "name": "Shared Name", "message": "not self"},
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-room-event",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["event"]["id"], "evt-other")
+
+    def test_live_agent_wait_room_event_polls_until_candidate_arrives(self):
+        stdout = StringIO()
+        first_room = {
+            "agent": {"agent_id": "claude-terminal", "last_observed_event_id": "evt-old"},
+            "lobby_events": [{"id": "evt-old", "name": "나", "message": "old"}],
+        }
+        second_room = {
+            "agent": {"agent_id": "claude-terminal", "last_observed_event_id": "evt-old"},
+            "lobby_events": [
+                {"id": "evt-old", "name": "나", "message": "old"},
+                {"id": "evt-next", "name": "나", "message": "new"},
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", side_effect=[first_room, second_room]) as request_json:
+            with patch("agentsassemble.cli.time.sleep") as sleep:
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "wait-room-event",
+                            "--server",
+                            "http://room.local",
+                            "--agent-id",
+                            "claude-terminal",
+                            "--timeout",
+                            "1",
+                            "--poll-interval",
+                            "0",
+                            "--json",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(request_json.call_count, 2)
+        sleep.assert_called_once()
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["event"]["id"], "evt-next")
+
+    def test_live_agent_wait_room_event_times_out_without_new_event(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {"agent_id": "claude-terminal", "last_observed_event_id": "evt-old"},
+            "lobby_events": [{"id": "evt-old", "name": "나", "message": "old"}],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-room-event",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "timeout")
+        self.assertEqual(payload["last_observed_event_id"], "evt-old")
+
+    def test_live_agent_wait_room_event_skips_over_chain_limit(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {"agent_id": "claude-terminal", "last_observed_event_id": "evt-old"},
+            "lobby_events": [
+                {"id": "evt-old", "name": "나", "message": "old"},
+                {"id": "evt-chain", "name": "Gemini", "message": "chain", "auto_chain_depth": 2},
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-room-event",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--max-chain-depth",
+                        "1",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "timeout")
+
     def test_live_agent_processes_wait_event_observes_matching_event_after_timestamp(self):
         payloads = [
             {
