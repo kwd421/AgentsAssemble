@@ -2114,6 +2114,28 @@ class LiveAgentRunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Live agent max_ticks must be a non-negative integer."):
                 load_group_configs(path, max_ticks_override=-1)
 
+    def test_group_config_rejects_negative_terminal_idle_timeout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "connection_kind": "terminal_session",
+                                "command": ["python3"],
+                                "terminal_idle_timeout": -0.1,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "Live agent terminal_idle_timeout must be a finite non-negative number."):
+                load_group_configs(path)
+
     def test_group_config_preserves_live_session_connection_kind(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "live-agents.json"
@@ -2135,6 +2157,33 @@ class LiveAgentRunnerTests(unittest.TestCase):
             loaded = load_group_configs(path)
 
         self.assertEqual(loaded[0].connection_kind, "live_session")
+
+    def test_group_config_preserves_terminal_session_connection_kind(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "claude-terminal",
+                                "display_name": "Claude Terminal",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "terminal_session",
+                                "command": ["claude"],
+                                "terminal_idle_timeout": 0.2,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        self.assertEqual(loaded[0].connection_kind, "terminal_session")
+        self.assertEqual(loaded[0].command, ["claude"])
+        self.assertEqual(loaded[0].terminal_idle_timeout, 0.2)
 
     def test_group_config_accepts_remote_bridge_without_local_command(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2209,7 +2258,7 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 ValueError,
-                "Resident groups support local_cli, live_session, and remote_bridge connections.",
+                "Resident groups support local_cli, live_session, terminal_session, and remote_bridge connections.",
             ):
                 load_group_configs(path)
 

@@ -32,7 +32,9 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("--ignore-rules", doc)
         self.assertIn("Codex CLI still owns the actual enforcement", doc)
         self.assertIn("not native Codex/Claude channel injection", doc)
-        self.assertIn("not native Codex/Claude channel injection, verified PTY persistence, OS-level sandboxing", doc)
+        self.assertIn("Resident `terminal_session`", doc)
+        self.assertIn("local PTY-backed slice", doc)
+        self.assertIn("not Claude Code Channels, Gemini SDK sessions, tmux ownership, or OS-level sandboxing", doc)
         self.assertIn("advisory", doc)
 
     def test_roadmap_mentions_room_event_log_and_live_session_adapter(self):
@@ -78,7 +80,9 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Do not start it until the real-provider checklist below is satisfied.", doc)
         self.assertIn("auto-refresh in the GUI every 5 seconds", doc)
         self.assertIn("Fake Live Session Smoke", doc)
+        self.assertIn("Fake Terminal Session Smoke", doc)
         self.assertIn("--connection-kind live_session", doc)
+        self.assertIn("--connection-kind terminal_session", doc)
         self.assertIn("JSONL", doc)
         self.assertIn("one local process", doc)
         self.assertIn("one-shot `live-agent delegate`", doc)
@@ -106,7 +110,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("both `세션진단` and `점검` with `세션 포함` send the same soak controls", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent health", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent preflight", doc)
-        self.assertIn("Resident runners support only `local_cli`, `live_session`, and `remote_bridge`", doc)
+        self.assertIn("Resident runners support only `local_cli`, `live_session`, `terminal_session`, and `remote_bridge`", doc)
         self.assertIn("Registration-only kinds such as `manual` and `codex_resume`", doc)
         self.assertIn("does not send prompts, start resident sessions, call remote bridges, or execute model turns", doc)
         self.assertIn("resolvable command executable named `codex`", doc)
@@ -361,7 +365,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("persisted lobby or official cursor has fallen outside the bounded room tail", doc)
         self.assertIn("recover when that cursor has aged out of the bounded room tail", doc)
         self.assertIn("not native Claude Code Channels", doc)
-        self.assertIn("not a native Claude, Gemini, or Cursor PTY protocol", doc)
+        self.assertIn("The `terminal_session` transport is a local PTY bridge", doc)
         self.assertIn("Fake CLI", doc)
         self.assertIn("approval", doc)
 

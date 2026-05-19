@@ -9,18 +9,20 @@
       "agent_id": "claude-code-live",
       "display_name": "Claude Code",
       "provider_kind": "claude_code",
-      "connection_kind": "local_cli",
+      "connection_kind": "terminal_session",
       "engagement_mode": "always",
-      "command": ["claude", "-p"],
+      "command": ["claude"],
+      "terminal_idle_timeout": 0.75,
       "timeout_seconds": 120
     },
     {
       "agent_id": "gemini-cli-live",
       "display_name": "Gemini CLI",
       "provider_kind": "gemini",
-      "connection_kind": "local_cli",
+      "connection_kind": "terminal_session",
       "engagement_mode": "always",
       "command": ["gemini"],
+      "terminal_idle_timeout": 0.75,
       "timeout_seconds": 120
     }
   ]

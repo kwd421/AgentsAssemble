@@ -10,6 +10,16 @@ import threading
 import time
 from collections.abc import Callable
 
+try:
+    import pty
+except ImportError:  # pragma: no cover - depends on host platform
+    pty = None  # type: ignore[assignment]
+
+try:
+    import termios
+except ImportError:  # pragma: no cover - depends on host platform
+    termios = None  # type: ignore[assignment]
+
 
 class JsonlLiveSession:
     def __init__(
@@ -248,6 +258,166 @@ class JsonlLiveSession:
             pass
 
 
+class TerminalLiveSession:
+    def __init__(
+        self,
+        command: list[str],
+        *,
+        popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
+        idle_timeout_seconds: float = 0.35,
+        max_response_bytes: int = 128_000,
+    ) -> None:
+        if not command:
+            raise ValueError("Terminal session command is required.")
+        if not terminal_sessions_supported():
+            raise RuntimeError("PTY terminal sessions are not available on this host.")
+        self.command = list(command)
+        self.idle_timeout_seconds = max(0.01, float(idle_timeout_seconds))
+        self.max_response_bytes = max(1, int(max_response_bytes))
+        self._lock = threading.Lock()
+        self._closed = False
+        assert pty is not None
+        master_fd, slave_fd = pty.openpty()
+        self._master_fd = master_fd
+        try:
+            _disable_terminal_echo(slave_fd)
+            self.process = popen_factory(
+                self.command,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                bufsize=0,
+                close_fds=True,
+                start_new_session=_supports_process_groups(),
+            )
+        except Exception:
+            try:
+                os.close(master_fd)
+            except OSError:
+                pass
+            raise
+        finally:
+            os.close(slave_fd)
+        _remember_process_group(self.process)
+        os.set_blocking(self._master_fd, False)
+        self._drain_available(timeout_seconds=0.05)
+
+    def ask(self, prompt: str, *, timeout_seconds: int | float) -> str:
+        with self._lock:
+            self._ensure_running()
+            self._drain_available(timeout_seconds=0.01)
+            deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+            self._write_terminal_submission(prompt, deadline=deadline, timeout_seconds=timeout_seconds)
+            response = self._read_until_idle(deadline=deadline, timeout_seconds=timeout_seconds)
+            message = _clean_terminal_response(response)
+            if not message.strip():
+                raise ValueError("Terminal session returned an empty message.")
+            return message
+
+    def close(self, *, timeout_seconds: float = 2.0) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            os.close(self._master_fd)
+        except OSError:
+            pass
+        if self.process.poll() is None:
+            _terminate_process(self.process, timeout_seconds=timeout_seconds)
+        _terminate_process_group_children(self.process, timeout_seconds=timeout_seconds)
+
+    def _write_terminal_submission(
+        self,
+        prompt: str,
+        *,
+        deadline: float,
+        timeout_seconds: int | float,
+    ) -> None:
+        data = (_single_terminal_submission(prompt) + "\n").encode("utf-8")
+        offset = 0
+        while offset < len(data):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self.close(timeout_seconds=0.1)
+                raise TimeoutError(f"Terminal session timed out after {timeout_seconds} seconds.")
+            writable = _select_fds([], [self._master_fd], remaining)[1]
+            if not writable:
+                self.close(timeout_seconds=0.1)
+                raise TimeoutError(f"Terminal session timed out after {timeout_seconds} seconds.")
+            try:
+                written = os.write(self._master_fd, data[offset:])
+            except OSError as error:
+                self.close(timeout_seconds=0.1)
+                raise RuntimeError("Terminal session closed while writing request.") from error
+            if written == 0:
+                self.close(timeout_seconds=0.1)
+                raise RuntimeError("Terminal session closed while writing request.")
+            offset += written
+
+    def _read_until_idle(self, *, deadline: float, timeout_seconds: int | float) -> bytes:
+        chunks: list[bytes] = []
+        total_bytes = 0
+        last_read_at: float | None = None
+        while True:
+            now = time.monotonic()
+            if last_read_at is None:
+                wait_until = deadline
+            else:
+                wait_until = min(deadline, last_read_at + self.idle_timeout_seconds)
+            wait_seconds = max(0.0, wait_until - now)
+            if wait_seconds <= 0:
+                if chunks and last_read_at is not None and now >= last_read_at + self.idle_timeout_seconds:
+                    return b"".join(chunks)
+                self.close(timeout_seconds=0.1)
+                raise TimeoutError(f"Terminal session timed out after {timeout_seconds} seconds.")
+            readable = _select_fds([self._master_fd], [], wait_seconds)[0]
+            if not readable:
+                now = time.monotonic()
+                if chunks and last_read_at is not None and now >= last_read_at + self.idle_timeout_seconds:
+                    return b"".join(chunks)
+                self.close(timeout_seconds=0.1)
+                raise TimeoutError(f"Terminal session timed out after {timeout_seconds} seconds.")
+            chunk = self._read_master_chunk()
+            if not chunk:
+                raise self._process_closed_error()
+            chunks.append(chunk)
+            total_bytes += len(chunk)
+            last_read_at = time.monotonic()
+            if total_bytes > self.max_response_bytes:
+                self.close(timeout_seconds=0.1)
+                raise ValueError(f"Terminal session response exceeded {self.max_response_bytes} bytes.")
+
+    def _drain_available(self, *, timeout_seconds: float) -> None:
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while time.monotonic() < deadline:
+            readable = _select_fds([self._master_fd], [], 0)[0]
+            if not readable:
+                return
+            if not self._read_master_chunk():
+                return
+
+    def _read_master_chunk(self) -> bytes:
+        try:
+            return os.read(self._master_fd, 4096)
+        except BlockingIOError:
+            return b""
+        except OSError as error:
+            if self.process.poll() is not None:
+                return b""
+            raise RuntimeError("Terminal session closed while reading response.") from error
+
+    def _ensure_running(self) -> None:
+        if self._closed:
+            raise RuntimeError("Terminal session is closed.")
+        returncode = self.process.poll()
+        if returncode is not None:
+            raise RuntimeError(f"Terminal session exited with return code {returncode}.")
+
+    def _process_closed_error(self) -> RuntimeError:
+        returncode = self.process.poll()
+        return RuntimeError(f"Terminal session closed with return code {returncode}.")
+
+
 def _terminate_process(process: subprocess.Popen[bytes], *, timeout_seconds: float) -> None:
     if process.poll() is not None:
         return
@@ -325,6 +495,40 @@ def _process_group_exists(process: subprocess.Popen[bytes]) -> bool:
 
 def _supports_process_groups() -> bool:
     return hasattr(os, "killpg") and hasattr(os, "setsid") and hasattr(os, "getpgid")
+
+
+def terminal_sessions_supported() -> bool:
+    return (
+        pty is not None
+        and termios is not None
+        and hasattr(pty, "openpty")
+        and hasattr(termios, "tcgetattr")
+        and hasattr(termios, "tcsetattr")
+    )
+
+
+def _select_fds(readers: list[int], writers: list[int], timeout: float) -> tuple[list[int], list[int], list[int]]:
+    import select
+
+    return select.select(readers, writers, [], timeout)
+
+
+def _disable_terminal_echo(fd: int) -> None:
+    assert termios is not None
+    attrs = termios.tcgetattr(fd)
+    attrs[3] = attrs[3] & ~termios.ECHO
+    termios.tcsetattr(fd, termios.TCSANOW, attrs)
+
+
+def _single_terminal_submission(prompt: str) -> str:
+    return " ".join(str(prompt or "").split())
+
+
+def _clean_terminal_response(response: bytes) -> str:
+    text = response.decode("utf-8", errors="replace")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    return text.strip()
 
 
 def _stop_signal(name: str) -> int | None:

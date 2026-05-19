@@ -7,8 +7,14 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from agentsassemble.live_session_transport import JsonlLiveSession
+from agentsassemble.live_session_transport import JsonlLiveSession, TerminalLiveSession, terminal_sessions_supported
+
+try:
+    import pty
+except ImportError:  # pragma: no cover - depends on host platform
+    pty = None  # type: ignore[assignment]
 
 
 def _supports_process_groups():
@@ -55,6 +61,82 @@ class JsonlLiveSessionTests(unittest.TestCase):
 
         self.assertEqual(first, "state 1: first prompt")
         self.assertEqual(second, "state 2: second prompt")
+
+    @unittest.skipUnless(pty is not None and hasattr(pty, "openpty"), "requires POSIX PTY support")
+    def test_terminal_session_keeps_one_pty_process_state_across_prompts(self):
+        script = "\n".join(
+            [
+                "import sys",
+                "count = 0",
+                "for line in sys.stdin:",
+                "    count += 1",
+                "    print(f'Terminal state {count}: {line.strip()}', flush=True)",
+            ]
+        )
+        session = TerminalLiveSession(
+            [sys.executable, "-u", "-c", script],
+            idle_timeout_seconds=0.05,
+        )
+        try:
+            first = session.ask("first prompt", timeout_seconds=2)
+            second = session.ask("second prompt", timeout_seconds=2)
+        finally:
+            session.close()
+
+        self.assertIn("Terminal state 1: first prompt", first)
+        self.assertIn("Terminal state 2: second prompt", second)
+
+    @unittest.skipUnless(pty is not None and hasattr(pty, "openpty"), "requires POSIX PTY support")
+    def test_terminal_session_times_out_instead_of_returning_partial_output(self):
+        script = "\n".join(
+            [
+                "import sys, time",
+                "for line in sys.stdin:",
+                "    print('partial model output', flush=True)",
+                "    time.sleep(5)",
+            ]
+        )
+        session = TerminalLiveSession(
+            [sys.executable, "-u", "-c", script],
+            idle_timeout_seconds=2.0,
+        )
+        try:
+            with self.assertRaisesRegex(TimeoutError, "timed out"):
+                session.ask("prompt", timeout_seconds=0.2)
+        finally:
+            session.close()
+
+    @unittest.skipUnless(pty is not None and hasattr(os, "openpty"), "requires POSIX PTY support")
+    def test_terminal_session_closes_master_fd_when_launch_fails(self):
+        opened = []
+
+        def fake_openpty():
+            fds = os.openpty()
+            opened.append(fds)
+            return fds
+
+        def fail_launch(*args, **kwargs):
+            del args, kwargs
+            raise OSError("launch failed")
+
+        with (
+            patch("agentsassemble.live_session_transport.pty.openpty", side_effect=fake_openpty),
+            patch("agentsassemble.live_session_transport._disable_terminal_echo"),
+        ):
+            with self.assertRaisesRegex(OSError, "launch failed"):
+                TerminalLiveSession(["missing"], popen_factory=fail_launch)
+
+        master_fd, slave_fd = opened[0]
+        for fd in (master_fd, slave_fd):
+            with self.assertRaises(OSError):
+                os.fstat(fd)
+
+    def test_terminal_session_support_check_handles_missing_pty_modules(self):
+        with (
+            patch("agentsassemble.live_session_transport.pty", None),
+            patch("agentsassemble.live_session_transport.termios", None),
+        ):
+            self.assertFalse(terminal_sessions_supported())
 
     def test_jsonl_session_rejects_invalid_json_response(self):
         script = "print('not json', flush=True)"

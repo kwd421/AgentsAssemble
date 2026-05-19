@@ -109,6 +109,74 @@ class LiveAgentPreflightTests(unittest.TestCase):
             self.assertEqual([agent["status"] for agent in report["agents"]], ["ok", "ok"])
             self.assertEqual(report["agents"][0]["command_path"], "/opt/bin/python3")
 
+    def test_preflight_accepts_terminal_session_with_command_and_pty_support(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "server": "http://room.local",
+                        "agents": [
+                            {
+                                "agent_id": "claude-terminal",
+                                "display_name": "Claude Terminal",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "terminal_session",
+                                "command": ["claude"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/claude" if command == "claude" else None,
+            )
+
+            self.assertEqual(report["status"], "ok")
+            self.assertIn(
+                {"id": "terminal_pty", "status": "ok", "message": "PTY terminal sessions are available."},
+                report["agents"][0]["checks"],
+            )
+
+    def test_preflight_rejects_terminal_session_when_pty_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "server": "http://room.local",
+                        "agents": [
+                            {
+                                "agent_id": "claude-terminal",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "terminal_session",
+                                "command": ["claude"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch("agentsassemble.live_agent_preflight.terminal_sessions_supported", return_value=False):
+                report = preflight_live_agent_config(
+                    config_path,
+                    command_resolver=lambda command: "/usr/local/bin/claude" if command == "claude" else None,
+                )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertIn(
+                {
+                    "id": "terminal_pty",
+                    "status": "failed",
+                    "message": "PTY terminal sessions are not available on this host.",
+                },
+                report["agents"][0]["checks"],
+            )
+
     def test_preflight_reports_duplicate_ids_missing_commands_and_unsupported_connections(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"
@@ -148,7 +216,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 {
                     "id": "connection_kind",
                     "status": "failed",
-                    "message": "Resident groups support local_cli, live_session, and remote_bridge connections.",
+                    "message": "Resident groups support local_cli, live_session, terminal_session, and remote_bridge connections.",
                 },
                 first["checks"],
             )
@@ -197,7 +265,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 {
                     "id": "connection_kind",
                     "status": "failed",
-                    "message": "Resident groups support local_cli, live_session, and remote_bridge connections.",
+                    "message": "Resident groups support local_cli, live_session, terminal_session, and remote_bridge connections.",
                 },
                 report["agents"][0]["checks"],
             )

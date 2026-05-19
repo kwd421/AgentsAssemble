@@ -8307,6 +8307,82 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual([event["source_event_id"] for event in replies], [first_event["id"], second_event["id"]])
             self.assertIn("Resident agent stopped after posting 2 replies", result.get("stdout", ""))
 
+    def test_live_agent_run_terminal_session_reuses_one_pty_process_for_multiple_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            first_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "첫 이벤트"})
+            terminal_script = "\n".join(
+                [
+                    "import sys",
+                    "count = 0",
+                    "for line in sys.stdin:",
+                    "    count += 1",
+                    "    print(f'Terminal session state {count}', flush=True)",
+                ]
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            result = {}
+
+            def run_resident():
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    result["exit_code"] = main(
+                        [
+                            "live-agent",
+                            "run",
+                            "--server",
+                            f"http://127.0.0.1:{server.server_port}",
+                            "--agent-id",
+                            "terminal-session",
+                            "--display-name",
+                            "Terminal Session",
+                            "--connection-kind",
+                            "terminal_session",
+                            "--terminal-idle-timeout",
+                            "0.05",
+                            "--poll-interval",
+                            "0.05",
+                            "--cooldown",
+                            "0",
+                            "--max-chain-depth",
+                            "0",
+                            "--max-ticks",
+                            "50",
+                            "--command",
+                            sys.executable,
+                            "-u",
+                            "-c",
+                            terminal_script,
+                        ]
+                    )
+                result["stdout"] = stdout.getvalue()
+
+            resident_thread = threading.Thread(target=run_resident)
+            resident_thread.start()
+            try:
+                deadline = time.time() + 5
+                while time.time() < deadline:
+                    replies = [event for event in read_lobby(root) if event.get("actor_id") == "terminal-session"]
+                    if replies:
+                        break
+                    time.sleep(0.05)
+                else:
+                    self.fail("terminal session resident did not post the first reply")
+                second_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "두 번째 이벤트"})
+                resident_thread.join(timeout=6)
+            finally:
+                server.shutdown()
+                server.server_close()
+            self.assertFalse(resident_thread.is_alive())
+
+            self.assertEqual(result.get("exit_code"), 0)
+            replies = [event for event in read_lobby(root) if event.get("actor_id") == "terminal-session"]
+            self.assertEqual([event["message"] for event in replies], ["Terminal session state 1", "Terminal session state 2"])
+            self.assertEqual([event["source_event_id"] for event in replies], [first_event["id"], second_event["id"]])
+
     def test_live_agent_run_live_session_restarts_after_process_failure_for_new_event(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

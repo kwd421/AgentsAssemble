@@ -47,7 +47,7 @@ from agentsassemble.live_agent_smoke import (
     run_live_agent_smoke,
 )
 from agentsassemble.live_agent_sessions import session_ensure_action
-from agentsassemble.live_session_transport import JsonlLiveSession
+from agentsassemble.live_session_transport import JsonlLiveSession, TerminalLiveSession
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 from agentsassemble.provider_health import provider_health_report
@@ -648,6 +648,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--cooldown", type=parse_nonnegative_float, default=5.0)
     live_run.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
     live_run.add_argument("--max-ticks", type=parse_nonnegative_int, default=0)
+    live_run.add_argument("--terminal-idle-timeout", type=parse_nonnegative_float, default=0.35)
     live_run.add_argument("--command", dest="resident_command", nargs=argparse.REMAINDER, default=[])
 
     live_group = live_agent_subparsers.add_parser("run-group", help="Run multiple resident local CLI live agents.")
@@ -3340,6 +3341,37 @@ class _JsonlLiveSessionCommandRunner:
         session.close()
 
 
+class _TerminalLiveSessionCommandRunner:
+    def __init__(self, *, idle_timeout_seconds: float) -> None:
+        self.idle_timeout_seconds = idle_timeout_seconds
+        self.session: TerminalLiveSession | None = None
+        self._lock = threading.Lock()
+
+    def __call__(self, command: list[str], prompt: str, *, timeout_seconds: int) -> str:
+        with self._lock:
+            if self.session is None:
+                self.session = TerminalLiveSession(command, idle_timeout_seconds=self.idle_timeout_seconds)
+            session = self.session
+        try:
+            return session.ask(prompt, timeout_seconds=timeout_seconds)
+        except Exception:
+            self._close_session(session)
+            raise
+
+    def close(self) -> None:
+        with self._lock:
+            session = self.session
+            self.session = None
+        if session is not None:
+            session.close()
+
+    def _close_session(self, session: TerminalLiveSession) -> None:
+        with self._lock:
+            if self.session is session:
+                self.session = None
+        session.close()
+
+
 class _LocalCliCommandRunner:
     def __init__(self) -> None:
         self.process: subprocess.Popen | None = None
@@ -3456,7 +3488,7 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
         if not config.auth_ref:
             raise ValueError("Remote bridge resident requires --auth-ref.")
         return
-    if config.connection_kind in {"local_cli", "live_session", "codex_resume", "manual"} and not config.command:
+    if config.connection_kind in {"local_cli", "live_session", "terminal_session", "codex_resume", "manual"} and not config.command:
         raise ValueError(f"{config.connection_kind} resident requires --command.")
 
 
@@ -3465,6 +3497,8 @@ def _command_runner_for_config(config: ResidentAgentConfig):
         return CodexResidentCommandRunner(config)
     if config.connection_kind == "live_session":
         return _JsonlLiveSessionCommandRunner()
+    if config.connection_kind == "terminal_session":
+        return _TerminalLiveSessionCommandRunner(idle_timeout_seconds=config.terminal_idle_timeout)
     if config.connection_kind == "remote_bridge":
         return RemoteBridgeResidentCommandRunner(config)
     return _LocalCliCommandRunner()

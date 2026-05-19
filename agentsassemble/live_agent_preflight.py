@@ -14,6 +14,7 @@ from agentsassemble.codex_resident import (
     codex_provider_connection_check,
     default_codex_resident_command,
 )
+from agentsassemble.live_session_transport import terminal_sessions_supported
 from agentsassemble.live_agent_runner import (
     ResidentAgentConfig,
     SUPPORTED_RESIDENT_CONNECTION_KINDS,
@@ -110,6 +111,8 @@ def _preflight_agent(
     else:
         command_check = _command_check(config.command, command_resolver)
         checks.append(command_check)
+        if config.connection_kind == "terminal_session":
+            checks.append(_terminal_pty_check())
         if (
             config.provider_kind == "codex_live_session"
             and config.connection_kind == "live_session"
@@ -159,6 +162,8 @@ def resident_config_setup_error(
         capability_check = codex_checker(_resolved_command(config.command, command_check.get("path", "")))
         if capability_check["status"] != "ok":
             return str(capability_check.get("message") or "Codex command is not ready.")
+    if config.connection_kind == "terminal_session" and not terminal_sessions_supported():
+        return "PTY terminal sessions are not available on this host."
     return ""
 
 
@@ -225,6 +230,11 @@ def _preflight_config_from_mapping(
             "max_chain_depth",
         ),
         max_ticks=live_agent_nonnegative_int(data.get("max_ticks"), defaults["max_ticks"], "max_ticks"),
+        terminal_idle_timeout=live_agent_nonnegative_float(
+            data.get("terminal_idle_timeout"),
+            0.35,
+            "terminal_idle_timeout",
+        ),
     )
 
 
@@ -265,6 +275,16 @@ def _command_check(command: list[str], command_resolver: Callable[[str], str | N
             "path": resolved,
         }
     return {"id": "command", "status": "failed", "message": f"Command not found: {executable}"}
+
+
+def _terminal_pty_check() -> dict[str, str]:
+    if terminal_sessions_supported():
+        return {"id": "terminal_pty", "status": "ok", "message": "PTY terminal sessions are available."}
+    return {
+        "id": "terminal_pty",
+        "status": "failed",
+        "message": "PTY terminal sessions are not available on this host.",
+    }
 
 
 def _codex_command_check(command: list[str]) -> dict[str, str]:

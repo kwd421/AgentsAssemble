@@ -21,7 +21,7 @@ from agentsassemble.remote_bridge_config import (
 )
 
 
-SUPPORTED_RESIDENT_CONNECTION_KINDS = ("local_cli", "live_session", "remote_bridge")
+SUPPORTED_RESIDENT_CONNECTION_KINDS = ("local_cli", "live_session", "terminal_session", "remote_bridge")
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,7 @@ class ResidentAgentConfig:
     cooldown: float
     max_chain_depth: int
     max_ticks: int = 0
+    terminal_idle_timeout: float = 0.35
 
 
 class LiveAgentRunner:
@@ -723,6 +724,7 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         cooldown=float(getattr(args, "cooldown")),
         max_chain_depth=int(getattr(args, "max_chain_depth")),
         max_ticks=int(getattr(args, "max_ticks")),
+        terminal_idle_timeout=float(getattr(args, "terminal_idle_timeout", 0.35)),
     )
 
 
@@ -773,6 +775,11 @@ def _config_from_mapping(
             "max_chain_depth",
         ),
         max_ticks=live_agent_nonnegative_int(data.get("max_ticks"), defaults["max_ticks"], "max_ticks"),
+        terminal_idle_timeout=live_agent_nonnegative_float(
+            data.get("terminal_idle_timeout"),
+            0.35,
+            "terminal_idle_timeout",
+        ),
     )
 
 
@@ -1021,4 +1028,4 @@ def _safe_resident_surface_error(error: Exception, *, fallback_label: str, redac
 
 
 def resident_connection_kind_error() -> str:
-    return "Resident groups support local_cli, live_session, and remote_bridge connections."
+    return "Resident groups support local_cli, live_session, terminal_session, and remote_bridge connections."
