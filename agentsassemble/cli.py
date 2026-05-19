@@ -535,6 +535,15 @@ def build_parser() -> argparse.ArgumentParser:
     live_process_list = live_process_subparsers.add_parser("list", parents=[live_server], help="List supervised live-agent process groups.")
     live_process_list.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON process payload.")
 
+    live_process_events = live_process_subparsers.add_parser(
+        "events",
+        parents=[live_server],
+        help="List recent supervised live-agent process lifecycle events.",
+    )
+    live_process_events.add_argument("--limit", type=parse_positive_int, default=50)
+    live_process_events.add_argument("--group-id", default="")
+    live_process_events.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON event payload.")
+
     live_process_start = live_process_subparsers.add_parser("start", parents=[live_server], help="Start a supervised live-agent run-group.")
     live_process_start.add_argument("--config", required=True, help="Resident group config path.")
     live_process_start.add_argument("--group-id", default="")
@@ -1681,6 +1690,14 @@ def _run_live_agent_processes(args: argparse.Namespace) -> int:
         payload = _request_json(_server_url(args.server, "/api/live-agent-processes"))
         _print_live_agent_process_payload(payload, as_json=args.as_json)
         return 0
+    if args.live_agent_process_command == "events":
+        params = {"limit": args.limit}
+        if args.group_id:
+            params["group_id"] = args.group_id
+        query = urllib.parse.urlencode(params)
+        payload = _request_json(_server_url(args.server, f"/api/live-agent-process-events?{query}"))
+        _print_live_agent_process_events_payload(payload, as_json=args.as_json)
+        return 0
     if args.live_agent_process_command == "start":
         if args.auto_restart and args.max_restarts <= 0:
             raise ValueError("--auto-restart requires --max-restarts greater than 0.")
@@ -1850,6 +1867,47 @@ def _print_live_agent_process_payload(payload: dict[str, object], *, as_json: bo
     for item in groups:
         if isinstance(item, dict):
             print(_format_live_agent_process_group(item))
+
+
+def _print_live_agent_process_events_payload(payload: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    events = payload.get("events") if isinstance(payload.get("events"), list) else []
+    if not events:
+        print("no live-agent process events")
+        return
+    for item in events:
+        if isinstance(item, dict):
+            print(_format_live_agent_process_event(item))
+
+
+def _format_live_agent_process_event(event: dict[str, object]) -> str:
+    timestamp = str(event.get("timestamp") or "-")
+    group_id = str(event.get("group_id") or "unknown")
+    event_type = str(event.get("event_type") or "unknown")
+    status = str(event.get("status") or "unknown")
+    parts = [timestamp, group_id, event_type, status]
+    pid = event.get("pid")
+    if pid not in (None, ""):
+        parts.append(f"pid {pid}")
+    returncode = event.get("returncode")
+    if returncode not in (None, ""):
+        parts.append(f"returncode {returncode}")
+    parts.append(f"restarts {_safe_int(event.get('restart_count'))}/{_safe_int(event.get('max_restarts'))}")
+    next_restart_at = str(event.get("next_restart_at") or "").strip()
+    if next_restart_at:
+        parts.append(f"next restart {next_restart_at}")
+    previous_status = str(event.get("previous_status") or "").strip()
+    if previous_status:
+        parts.append(f"previous {previous_status}")
+    offline = _live_agent_process_offline_summary(event.get("offline"))
+    if offline:
+        parts.append(offline)
+    attention = _format_live_agent_process_offline_attention(event.get("offline"))
+    if attention:
+        parts.append(attention)
+    return " ".join(parts)
 
 
 def _format_live_agent_process_bulk_stop(payload: dict[str, object]) -> str:

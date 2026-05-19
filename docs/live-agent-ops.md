@@ -935,11 +935,38 @@ What to check:
 - The default CLI process list and GUI process rows show the latest lifecycle offline summary beside the last event label, such as `last event restart_scheduled, offline 1/2, wrong_meeting agent-b`, so crash-time roster reconciliation evidence is visible without opening JSON.
 - The GUI `상주 실행` panel reads `/api/live-agent-health` during runtime refresh and shows the backend health snapshot directly: overall status, live/total agents, running/total process groups, connected/expected manifest agents, and the combined attention count. This is the same read-only health summary used by `assemble live-agent health`, so diagnostic smoke artifacts stay excluded and manifest-aware connection gaps remain visible without mentally merging roster and process rows.
 - auto-restart fields in `processes.json`: `auto_restart`, `restart_count`, `max_restarts`, `restart_backoff_seconds`, `stale_restart_after_seconds`, and `next_restart_at`.
-- `.agentsassemble/live-agent-runs/events.jsonl`: safe lifecycle event history for supervised groups. It records bounded operator facts such as `started`, `stopped`, `error`, `restart_scheduled`, `restart_failed`, `stale_watchdog`, `stale_watchdog_stop_failed`, and `recovered_unknown` with `timestamp`, `group_id`, `status`, `pid`, `returncode`, and restart counters. Lifecycle stop, error, `restart_scheduled`, and `restart_failed` events can include offline reconciliation summaries with expected/offline/skipped counts, safe `offline_agent_ids`, and compact attention entries. The process API and GUI expose each group's bounded `recent_events` view. Lifecycle events do not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
+- `.agentsassemble/live-agent-runs/events.jsonl`: safe lifecycle event history for supervised groups. It records bounded operator facts such as `started`, `stopped`, `error`, `restart_scheduled`, `restart_failed`, `stale_watchdog`, `stale_watchdog_stop_failed`, and `recovered_unknown` with `timestamp`, `group_id`, `status`, `pid`, `returncode`, and restart counters. Lifecycle stop, error, `restart_scheduled`, and `restart_failed` events can include offline reconciliation summaries with expected/offline/skipped counts, safe `offline_agent_ids`, and compact attention entries. The process API and GUI expose each group's bounded `recent_events` view, and `/api/live-agent-process-events` exposes a bounded sanitized lifecycle history for scripts. Lifecycle events do not include command arguments, endpoint URLs, auth references, command paths, prompts, log tails, provider output, or environment-derived values.
 - `.agentsassemble/live-agent-runs/operations.jsonl`: safe control-operation history for API, GUI, and CLI operator actions. It records bounded entries for process start/stop/restart, engagement updates, official turn requests/replies, preflight checks, smoke runs, and readiness checks, including success, degraded, and refused/failed attempts. The operation ledger does not include command arguments, endpoint URLs, auth references, prompts, log tails, config paths, environment-derived values, provider secrets, or official turn content. Ordinary heartbeat polling and health reads are intentionally not operation records.
 - `.agentsassemble/live-agent-runs/<group_id>.log`: stdout/stderr for the supervised `run-group` process. Delegate provider subprocess stdout/stderr is captured by the runner, not streamed directly into this file. The GUI and process API expose only a bounded `log_tail`.
 
-Recent operation views read from the JSONL tail and stop after the requested result window. Recent lifecycle views scan the history once per process payload and split bounded `recent_events` by group. Long sessions can keep historical JSONL artifacts without forcing the GUI or CLI to load the whole history file at once or rescan lifecycle history once per group.
+Recent operation views read from the JSONL tail and stop after the requested result window. Recent lifecycle event queries also read from the JSONL tail and stop after the requested result window, with an optional safe group-id filter. Process rows still split bounded `recent_events` by group for compact GUI and CLI status. Long sessions can keep historical JSONL artifacts without forcing operator history queries to load the whole file or rescan lifecycle history once per group.
+
+The recent process lifecycle history is available through HTTP:
+
+```bash
+curl 'http://127.0.0.1:8765/api/live-agent-process-events?limit=20'
+curl 'http://127.0.0.1:8765/api/live-agent-process-events?group_id=local-cli-group&limit=20'
+```
+
+and through the CLI:
+
+```bash
+assemble live-agent processes events \
+  --server http://127.0.0.1:8765 \
+  --group-id local-cli-group \
+  --limit 20
+```
+
+The module form is equivalent when running from a checkout:
+
+```bash
+python3 -m agentsassemble.cli live-agent processes events \
+  --server http://127.0.0.1:8765 \
+  --limit 20 \
+  --json
+```
+
+Use the lifecycle event view to answer what the supervised process did over time without opening `events.jsonl`. The default CLI output shows timestamp, group id, event type, process status, pid or return code, restart counters, next restart time, and compact offline reconciliation evidence when present. Use `--json` when an operator script needs the full sanitized event payload.
 
 The recent operation history is available through the GUI "최근 작업" list, through HTTP:
 

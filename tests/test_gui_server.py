@@ -613,6 +613,84 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("/tmp/secret-a.json", operation_text)
             self.assertNotIn("/tmp/secret-b.json", operation_text)
 
+    def test_live_agent_process_events_endpoint_returns_sanitized_tail_without_operation_record(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "live-agent-runs" / "events.jsonl"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "timestamp": "2026-05-17T12:00:00+00:00",
+                                "group_id": "crew",
+                                "event_type": "started",
+                                "status": "running",
+                                "pid": 1234,
+                                "server": "http://room.local",
+                                "config_path": "/tmp/live-agents.json",
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "timestamp": "2026-05-17T12:01:00+00:00",
+                                "group_id": "other",
+                                "event_type": "started",
+                                "status": "running",
+                                "pid": 2234,
+                            }
+                        ),
+                        json.dumps(
+                            {
+                                "timestamp": "2026-05-17T12:02:00+00:00",
+                                "group_id": "crew",
+                                "event_type": "restart_scheduled",
+                                "status": "restarting",
+                                "returncode": 2,
+                                "offline": {
+                                    "expected": 2,
+                                    "offline": 1,
+                                    "skipped": 1,
+                                    "offline_agent_ids": ["agent-a"],
+                                    "attention": [{"agent_id": "agent-b", "status": "wrong_meeting"}],
+                                },
+                                "prompt": "secret prompt",
+                                "log_tail": "provider output",
+                            }
+                        ),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-process-events?group_id=crew&limit=2",
+                    timeout=4,
+                ) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=10",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual([event["event_type"] for event in payload["events"]], ["started", "restart_scheduled"])
+        self.assertEqual(payload["events"][1]["offline"]["offline_agent_ids"], ["agent-a"])
+        payload_text = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("other", json.dumps([event["group_id"] for event in payload["events"]]))
+        self.assertNotIn("http://room.local", payload_text)
+        self.assertNotIn("config_path", payload_text)
+        self.assertNotIn("prompt", payload_text)
+        self.assertNotIn("log_tail", payload_text)
+        self.assertEqual(operations["operations"], [])
+
     def test_live_agent_process_start_sanitizes_non_finite_backoff(self):
         class FakeSupervisor:
             def __init__(self):

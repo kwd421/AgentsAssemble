@@ -3276,6 +3276,85 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(json.loads(stdout.getvalue()), payload)
 
+    def test_live_agent_processes_events_fetches_filtered_history(self):
+        payload = {
+            "events": [
+                {
+                    "timestamp": "2026-05-17T12:00:00+00:00",
+                    "group_id": "crew one",
+                    "event_type": "started",
+                    "status": "running",
+                    "pid": 1234,
+                    "restart_count": 0,
+                    "max_restarts": 2,
+                },
+                {
+                    "timestamp": "2026-05-17T12:01:00+00:00",
+                    "group_id": "crew one",
+                    "event_type": "restart_scheduled",
+                    "status": "restarting",
+                    "returncode": 2,
+                    "restart_count": 1,
+                    "max_restarts": 2,
+                    "next_restart_at": "2026-05-17T12:01:10+00:00",
+                    "offline": {
+                        "expected": 2,
+                        "offline": 1,
+                        "skipped": 1,
+                        "offline_agent_ids": ["agent-a"],
+                        "attention": [{"agent_id": "agent-b", "status": "wrong_meeting"}],
+                    },
+                },
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "processes",
+                        "events",
+                        "--server",
+                        "http://room.local",
+                        "--group-id",
+                        "crew one",
+                        "--limit",
+                        "2",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-process-events?limit=2&group_id=crew+one")
+        output = stdout.getvalue()
+        self.assertIn("2026-05-17T12:00:00+00:00 crew one started running pid 1234 restarts 0/2", output)
+        self.assertIn("2026-05-17T12:01:00+00:00 crew one restart_scheduled restarting returncode 2 restarts 1/2", output)
+        self.assertIn("next restart 2026-05-17T12:01:10+00:00", output)
+        self.assertIn("offline 1/2", output)
+        self.assertIn("wrong_meeting agent-b", output)
+
+    def test_live_agent_processes_events_json_prints_raw_payload(self):
+        payload = {"events": [{"group_id": "crew", "event_type": "started"}]}
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "processes",
+                        "events",
+                        "--server",
+                        "http://room.local",
+                        "--limit",
+                        "3",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-process-events?limit=3")
+        self.assertEqual(json.loads(stdout.getvalue()), payload)
+
     def test_live_agent_processes_stop_restart_and_recover_quote_group_id(self):
         stop_payload = {
             "group": {

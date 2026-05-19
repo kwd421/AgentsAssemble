@@ -20,7 +20,12 @@ from agentsassemble.meeting_events import clean_lobby_text
 
 
 RECENT_LIFECYCLE_EVENT_LIMIT = 5
+DEFAULT_PROCESS_EVENT_LIMIT = 50
+MAX_PROCESS_EVENT_LIMIT = 200
+JSONL_TAIL_BLOCK_BYTES = 8192
 STALE_WATCHDOG_RETURNCODE = -98
+SAFE_LIFECYCLE_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+SAFE_LIFECYCLE_TIMESTAMP_PATTERN = re.compile(r"^[0-9T:+.\-Z]{1,64}$")
 
 
 class LiveAgentProcessSupervisor:
@@ -743,6 +748,37 @@ class LiveAgentProcessSupervisor:
             file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
 
 
+def read_live_agent_process_events(
+    output_root: Path,
+    *,
+    limit: int = DEFAULT_PROCESS_EVENT_LIMIT,
+    group_id: str = "",
+) -> list[dict[str, object]]:
+    path = output_root / "live-agent-runs" / "events.jsonl"
+    if not path.exists() or not path.is_file():
+        return []
+    safe_limit = _process_event_limit(limit)
+    clean_group_id = _clean_optional_group_id(group_id)
+    events: list[dict[str, object]] = []
+    for line in _jsonl_tail_lines_newest_first(path):
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        event = _safe_lifecycle_event(payload)
+        if not event:
+            continue
+        if clean_group_id and event.get("group_id") != clean_group_id:
+            continue
+        events.append(event)
+        if len(events) >= safe_limit:
+            break
+    events.reverse()
+    return events
+
+
 def clean_live_agent_group_id(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value or "").strip()).strip(".-")
     return cleaned or "live-agents"
@@ -750,6 +786,11 @@ def clean_live_agent_group_id(value: str) -> str:
 
 def _clean_group_id(value: str) -> str:
     return clean_live_agent_group_id(value)
+
+
+def _clean_optional_group_id(value: object) -> str:
+    raw = str(value or "").strip()
+    return clean_live_agent_group_id(raw) if raw else ""
 
 
 def _clean_meeting_id(value: object) -> str:
@@ -908,6 +949,40 @@ def _recent_lifecycle_events_by_group(
     return {group_id: list(group_events) for group_id, group_events in events.items()}
 
 
+def _jsonl_tail_lines_newest_first(path: Path):
+    with path.open("rb") as file:
+        file.seek(0, 2)
+        position = file.tell()
+        buffer = b""
+        while position > 0:
+            read_size = min(JSONL_TAIL_BLOCK_BYTES, position)
+            position -= read_size
+            file.seek(position)
+            chunk = file.read(read_size)
+            parts = (chunk + buffer).split(b"\n")
+            if position > 0:
+                buffer = parts[0]
+                complete_lines = parts[1:]
+            else:
+                buffer = b""
+                complete_lines = parts
+            for line in reversed(complete_lines):
+                if line.strip():
+                    yield line.decode("utf-8", errors="ignore")
+
+
+def _process_event_limit(value: object) -> int:
+    if isinstance(value, bool):
+        return DEFAULT_PROCESS_EVENT_LIMIT
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_PROCESS_EVENT_LIMIT
+    if parsed <= 0:
+        return DEFAULT_PROCESS_EVENT_LIMIT
+    return min(parsed, MAX_PROCESS_EVENT_LIMIT)
+
+
 def _lifecycle_event(
     record: dict[str, object],
     event_type: str,
@@ -945,32 +1020,54 @@ def _safe_lifecycle_event(payload: object) -> dict[str, object]:
     if not isinstance(payload, dict):
         return {}
     group_id = _clean_group_id(str(payload.get("group_id") or ""))
-    event_type = str(payload.get("event_type") or "").strip()
-    if not group_id or not event_type:
+    raw_event_type = str(payload.get("event_type") or "").strip()
+    if not group_id or not raw_event_type:
         return {}
+    event_type = _safe_lifecycle_token(raw_event_type, default="updated")
     event: dict[str, object] = {
-        "timestamp": str(payload.get("timestamp") or ""),
+        "timestamp": _safe_lifecycle_timestamp(payload.get("timestamp")),
         "group_id": group_id,
         "event_type": event_type,
-        "status": str(payload.get("status") or "unknown"),
+        "status": _safe_lifecycle_token(payload.get("status"), default="unknown"),
         "pid": payload.get("pid") if isinstance(payload.get("pid"), int) else None,
         "returncode": payload.get("returncode") if isinstance(payload.get("returncode"), int) else None,
         "restart_count": _nonnegative_int(payload.get("restart_count"), 0),
         "max_restarts": _nonnegative_int(payload.get("max_restarts"), 0),
     }
-    next_restart_at = str(payload.get("next_restart_at") or "")
+    next_restart_at = _safe_lifecycle_timestamp(payload.get("next_restart_at"))
     if next_restart_at:
         event["next_restart_at"] = next_restart_at
     meeting_id = _clean_meeting_id(payload.get("meeting_id"))
     if meeting_id:
         event["meeting_id"] = meeting_id
-    previous_status = str(payload.get("previous_status") or "")
+    previous_status = _safe_optional_lifecycle_token(payload.get("previous_status"))
     if previous_status:
         event["previous_status"] = previous_status
     offline = _safe_offline_reconciliation_summary(payload.get("offline"))
     if offline:
         event["offline"] = offline
     return event
+
+
+def _safe_lifecycle_token(value: object, *, default: str) -> str:
+    raw = str(value or "").strip()
+    if SAFE_LIFECYCLE_TOKEN_PATTERN.fullmatch(raw):
+        return raw
+    return default
+
+
+def _safe_optional_lifecycle_token(value: object) -> str:
+    raw = str(value or "").strip()
+    if SAFE_LIFECYCLE_TOKEN_PATTERN.fullmatch(raw):
+        return raw
+    return ""
+
+
+def _safe_lifecycle_timestamp(value: object) -> str:
+    raw = str(value or "").strip()
+    if SAFE_LIFECYCLE_TIMESTAMP_PATTERN.fullmatch(raw):
+        return raw
+    return ""
 
 
 def _record_returncode(record: dict[str, object]) -> int | None:

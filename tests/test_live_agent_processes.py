@@ -12,7 +12,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
-from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor as _LiveAgentProcessSupervisor
+from agentsassemble.live_agent_processes import (
+    LiveAgentProcessSupervisor as _LiveAgentProcessSupervisor,
+    read_live_agent_process_events,
+)
 
 
 def _ok_preflight(path, *, server_override=None):
@@ -1162,6 +1165,167 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
                 record = supervisor.list_groups()[0]
 
         self.assertEqual(len(record["recent_events"]), 5)
+
+    def test_read_live_agent_process_events_returns_recent_safe_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "live-agent-runs" / "events.jsonl"
+            path.parent.mkdir(parents=True)
+            records = [
+                {
+                    "timestamp": "2026-05-17T12:00:00+00:00",
+                    "group_id": "crew",
+                    "event_type": "started",
+                    "status": "running",
+                    "pid": 1234,
+                    "server": "http://room.local",
+                    "config_path": "/tmp/live-agents.json",
+                    "command": ["fake", "--token", "secret-value"],
+                },
+                {
+                    "timestamp": "2026-05-17T12:01:00+00:00",
+                    "group_id": "other",
+                    "event_type": "started",
+                    "status": "running",
+                    "pid": 2234,
+                },
+                {
+                    "timestamp": "2026-05-17T12:02:00+00:00",
+                    "group_id": "crew",
+                    "event_type": "restart_scheduled",
+                    "status": "restarting",
+                    "returncode": 2,
+                    "restart_count": 1,
+                    "max_restarts": 3,
+                    "next_restart_at": "2026-05-17T12:02:10+00:00",
+                    "offline": {
+                        "expected": 2,
+                        "offline": 1,
+                        "skipped": 1,
+                        "offline_agent_ids": ["agent-a"],
+                        "attention": [{"agent_id": "agent-b", "status": "wrong_meeting"}],
+                    },
+                    "log_tail": "provider output",
+                    "prompt": "secret prompt",
+                    "auth_ref": "env:SECRET_TOKEN",
+                },
+                {"group_id": "crew", "status": "ignored"},
+            ]
+            path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(records[0]),
+                        "not-json",
+                        json.dumps(records[1]),
+                        json.dumps(records[2]),
+                        json.dumps(records[3]),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            events = read_live_agent_process_events(root, limit=2, group_id="crew")
+            events_text = json.dumps(events, ensure_ascii=False)
+
+        self.assertEqual([event["event_type"] for event in events], ["started", "restart_scheduled"])
+        self.assertEqual(events[1]["offline"]["expected"], 2)
+        self.assertEqual(events[1]["offline"]["offline"], 1)
+        self.assertEqual(events[1]["offline"]["offline_agent_ids"], ["agent-a"])
+        self.assertEqual(events[1]["offline"]["attention"], [{"agent_id": "agent-b", "status": "wrong_meeting"}])
+        self.assertNotIn("other", json.dumps([event["group_id"] for event in events]))
+        self.assertNotIn("secret-value", events_text)
+        self.assertNotIn("http://room.local", events_text)
+        self.assertNotIn("config_path", events_text)
+        self.assertNotIn("command", events_text)
+        self.assertNotIn("auth_ref", events_text)
+        self.assertNotIn("prompt", events_text)
+        self.assertNotIn("log_tail", events_text)
+
+    def test_read_live_agent_process_events_sanitizes_whitelisted_string_fields(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "live-agent-runs" / "events.jsonl"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                json.dumps(
+                    {
+                        "timestamp": "literal:SECRET_TOKEN",
+                        "group_id": "crew",
+                        "event_type": "started http://secret.local",
+                        "status": "/tmp/secret.json",
+                        "pid": 1234,
+                        "next_restart_at": "env:SECRET_TOKEN",
+                        "previous_status": "prompt secret",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            events = read_live_agent_process_events(root, limit=1)
+            events_text = json.dumps(events, ensure_ascii=False)
+
+        self.assertEqual(events[0]["event_type"], "updated")
+        self.assertEqual(events[0]["status"], "unknown")
+        self.assertEqual(events[0]["timestamp"], "")
+        self.assertNotIn("next_restart_at", events[0])
+        self.assertNotIn("previous_status", events[0])
+        self.assertNotIn("SECRET_TOKEN", events_text)
+        self.assertNotIn("http://secret.local", events_text)
+        self.assertNotIn("/tmp/secret.json", events_text)
+        self.assertNotIn("prompt secret", events_text)
+
+    def test_read_live_agent_process_events_does_not_load_whole_history_file_at_once(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "live-agent-runs" / "events.jsonl"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "timestamp": f"2026-05-17T12:00:{index:02d}+00:00",
+                            "group_id": "crew",
+                            "event_type": "started",
+                            "status": "running",
+                            "pid": 8000 + index,
+                        }
+                    )
+                    for index in range(5)
+                ),
+                encoding="utf-8",
+            )
+            original_open = Path.open
+
+            class BoundedReadFile:
+                def __init__(self, wrapped):
+                    self.wrapped = wrapped
+
+                def __enter__(self):
+                    self.wrapped.__enter__()
+                    return self
+
+                def __exit__(self, exc_type, exc, traceback):
+                    return self.wrapped.__exit__(exc_type, exc, traceback)
+
+                def __getattr__(self, name):
+                    return getattr(self.wrapped, name)
+
+                def read(self, size=-1):
+                    if size is None or size < 0:
+                        raise AssertionError("unbounded process lifecycle event read")
+                    return self.wrapped.read(size)
+
+            def open_guard(path, *args, **kwargs):
+                mode = str(args[0] if args else kwargs.get("mode", "r"))
+                opened = original_open(path, *args, **kwargs)
+                if path.name == "events.jsonl" and "r" in mode:
+                    return BoundedReadFile(opened)
+                return opened
+
+            with patch.object(Path, "open", open_guard):
+                events = read_live_agent_process_events(root, limit=2)
+
+        self.assertEqual([event["pid"] for event in events], [8003, 8004])
 
     def test_list_groups_reads_lifecycle_history_once_for_all_groups(self):
         with tempfile.TemporaryDirectory() as temp_dir:

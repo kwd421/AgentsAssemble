@@ -1639,6 +1639,47 @@ Document that the default CLI process list and GUI process rows show the latest 
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 51: Scriptable Process Lifecycle Event History
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for safe lifecycle event queries**
+
+Cover a bounded process lifecycle event reader, `GET /api/live-agent-process-events`, and `assemble live-agent processes events`. The reader must ignore corrupt lines, support an optional group filter, preserve sanitized offline summaries, and avoid returning command arguments, endpoint URLs, config paths, auth refs, prompts, provider output, or log tails. It must read from the JSONL tail instead of loading the whole history file for long sessions.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_read_live_agent_process_events_returns_recent_safe_events tests.test_live_agent_processes.LiveAgentProcessSupervisorTests.test_read_live_agent_process_events_does_not_load_whole_history_file_at_once
+python3 -m unittest tests.test_gui_server.GuiServerTests.test_live_agent_process_events_endpoint_returns_sanitized_tail_without_operation_record
+python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_events_fetches_filtered_history tests.test_cli_timeout.CliTimeoutTests.test_live_agent_processes_events_json_prints_raw_payload
+python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path
+```
+
+Expected: fail before implementation because there is no public lifecycle event reader, endpoint, CLI subcommand, or docs entry.
+
+- [x] **Step 2: Expose sanitized bounded lifecycle history**
+
+Add a public tail-reading process lifecycle event reader that reuses the existing lifecycle event sanitizer and clamps limits. Expose it through `GET /api/live-agent-process-events?limit=N&group_id=...` without recording a control operation, and through `assemble live-agent processes events [--group-id ...] [--limit ...] [--json]`.
+
+Run the Step 1 commands.
+Expected: pass.
+
+- [x] **Step 3: Document lifecycle history inspection**
+
+Document that lifecycle event queries read from the JSONL tail, can be filtered by group id, expose only sanitized event facts plus offline reconciliation summaries, and are separate from the control-operation ledger.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification
