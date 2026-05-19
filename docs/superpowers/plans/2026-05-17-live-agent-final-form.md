@@ -2227,6 +2227,37 @@ Document that `restart-session` preflights the persisted restart config and serv
 Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
 Expected: pass.
 
+### Task 68: Recover Session Persisted Config Prevalidation
+
+**Files:**
+- Modify: `agentsassemble/live_agent_sessions.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_sessions.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for drifted persisted recover config**
+
+Cover `recover-session` with a recoverable process snapshot whose current launch-time manifest still matches the meeting, but whose persisted `config_path` now contains duplicate agent ids. Add coverage for a supervisor-specific preflight checker that refuses recovery and for a custom preflight checker that passes before resident manifest validation catches duplicate config ids. Recovery must refuse before calling `recover_group` and before marking bound roster rows offline.
+
+Run:
+`python3 -m unittest tests.test_live_agent_sessions.LiveAgentSessionStartTests.test_recover_session_refuses_changed_persisted_config_before_clearing_stale_roster tests.test_live_agent_sessions.LiveAgentSessionStartTests.test_recover_session_uses_supervisor_preflight_checker_before_clearing_stale_roster tests.test_live_agent_sessions.LiveAgentSessionStartTests.test_recover_session_rejects_duplicate_persisted_config_after_custom_preflight_ok`
+Expected: fail before implementation because recover only validates the current process snapshot before clearing roster rows and lets the supervisor discover persisted config drift later.
+
+- [x] **Step 2: Prevalidate persisted config before recover side effects**
+
+Reuse the persisted group config validator for both restart and recover. When the recoverable process snapshot includes a `config_path`, require a nonblank persisted config and server, run the same live-agent preflight checker configured on the supervisor, and validate the resident config manifest and meeting ids before clearing roster rows or calling `recover_group`.
+
+Run the Step 1 command plus nearby recover safety tests.
+Expected: pass.
+
+- [x] **Step 3: Document recover config prevalidation**
+
+Document that `recover-session` preflights the persisted recover config and server when the process record names one, so manifest drift, duplicate config agents, missing launch evidence, or supervisor-specific preflight refusals are refused before process or roster side effects.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification

@@ -2393,6 +2393,147 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
             self.assertEqual(agents["agent-a"]["status"], "online")
 
+    def test_recover_session_refuses_changed_persisted_config_before_clearing_stale_roster(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a", "agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RecoverSupervisor:
+                def __init__(self) -> None:
+                    self.recovered = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "unknown",
+                            "server": "http://127.0.0.1:8765",
+                            "config_path": str(live_agent_config),
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def recover_group(self, group_id):
+                    self.recovered.append(group_id)
+                    raise AssertionError("must validate persisted recover config before recovery")
+
+            supervisor = RecoverSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                recover_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("Duplicate agent ids", str(raised.exception))
+            self.assertEqual(supervisor.recovered, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_recover_session_uses_supervisor_preflight_checker_before_clearing_stale_roster(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RecoverSupervisor:
+                def __init__(self) -> None:
+                    self.recovered = []
+                    self.preflight_paths = []
+
+                def preflight_checker(self, config_path, *, server_override=None):
+                    self.preflight_paths.append((config_path, server_override))
+                    return {
+                        "status": "failed",
+                        "checks": [{"id": "custom", "status": "failed", "message": "custom recover gate"}],
+                    }
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "unknown",
+                            "server": "http://127.0.0.1:8765",
+                            "config_path": str(live_agent_config),
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def recover_group(self, group_id):
+                    self.recovered.append(group_id)
+                    raise AssertionError("custom preflight must run before recovery")
+
+            supervisor = RecoverSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                recover_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("custom recover gate", str(raised.exception))
+            self.assertEqual(supervisor.preflight_paths, [(live_agent_config, "http://127.0.0.1:8765")])
+            self.assertEqual(supervisor.recovered, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
+    def test_recover_session_rejects_duplicate_persisted_config_after_custom_preflight_ok(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a", "agent-a"])
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RecoverSupervisor:
+                def __init__(self) -> None:
+                    self.recovered = []
+
+                def preflight_checker(self, config_path, *, server_override=None):
+                    return {"status": "ok", "checks": [], "agents": []}
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "unknown",
+                            "server": "http://127.0.0.1:8765",
+                            "config_path": str(live_agent_config),
+                            "agents": [{"agent_id": "agent-a"}],
+                        }
+                    ]
+
+                def recover_group(self, group_id):
+                    self.recovered.append(group_id)
+                    raise AssertionError("manifest validation must run before recovery")
+
+            supervisor = RecoverSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                recover_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+            self.assertIn("duplicate agent-a", str(raised.exception))
+            self.assertEqual(supervisor.recovered, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+
     def test_recover_session_leaves_wrong_meeting_roster_row_untouched(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

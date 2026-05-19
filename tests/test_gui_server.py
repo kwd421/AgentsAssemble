@@ -6418,6 +6418,7 @@ class GuiServerTests(unittest.TestCase):
                         "group_id": "resident-main",
                         "status": "unknown",
                         "config_path": str(self.root / "live-agents.json"),
+                        "server": "http://127.0.0.1:8765",
                         "log_tail": "secret provider output",
                         "agents": [{"agent_id": "agent-a"}],
                     }
@@ -6489,6 +6490,96 @@ class GuiServerTests(unittest.TestCase):
             operation_blob = json.dumps(session_operations, ensure_ascii=False)
             self.assertNotIn(str(live_agent_config), operation_blob)
             self.assertNotIn("/private/live-agents.json", operation_blob)
+            self.assertNotIn("secret provider output", operation_blob)
+
+    def test_live_agent_session_recover_persisted_preflight_failure_records_safe_error_without_roster_reset(self):
+        class RecoverSessionSupervisor:
+            def __init__(self, config_path: Path) -> None:
+                self.config_path = config_path
+                self.recovered = []
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "unknown",
+                        "config_path": str(self.config_path),
+                        "server": "http://127.0.0.1:8765",
+                        "log_tail": "secret provider output",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+            def recover_group(self, group_id):
+                self.recovered.append(group_id)
+                raise AssertionError("recover-session must preflight persisted config before recovery")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": [sys.executable, "-c", "print('ok')"],
+                            },
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A Duplicate",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": [sys.executable, "-c", "print('ok')"],
+                            },
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            supervisor = RecoverSessionSupervisor(live_agent_config)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/recover",
+                    data=json.dumps({"meeting_id": "resident-m1", "group_id": "resident main"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=4)
+                body = raised.exception.read().decode("utf-8")
+                raised.exception.close()
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertIn("Duplicate agent ids", body)
+            self.assertEqual(supervisor.recovered, [])
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
+            self.assertEqual(agents["agent-a"]["status"], "online")
+            session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.recover"]
+            self.assertEqual(session_operations[-1]["status"], "failed")
+            operation_blob = json.dumps(session_operations, ensure_ascii=False)
+            self.assertNotIn(str(live_agent_config), operation_blob)
             self.assertNotIn("secret provider output", operation_blob)
 
     def test_live_agent_session_recover_missing_meeting_returns_safe_error(self):

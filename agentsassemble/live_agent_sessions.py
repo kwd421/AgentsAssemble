@@ -263,11 +263,12 @@ def restart_live_agent_session(
         expected_agent_ids,
         meeting_id=clean_meeting_id,
     )
-    _validate_restart_persisted_config(
+    _validate_persisted_group_config(
         existing_group,
         group_id=clean_group_id,
         expected_agents=expected_agents,
         meeting_id=clean_meeting_id,
+        action="restart",
         preflight_checker=getattr(process_supervisor, "preflight_checker", None),
     )
     existing_status = str(existing_group.get("status") or "unknown")
@@ -329,11 +330,19 @@ def recover_live_agent_session(
     meeting = _read_existing_meeting(meeting_dir)
     expected_agents = _expected_agents_from_meeting(meeting)
     expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
-    _validate_recover_group_matches_meeting(
+    existing_group = _validate_recover_group_matches_meeting(
         process_supervisor,
         clean_group_id,
         expected_agent_ids,
         meeting_id=clean_meeting_id,
+    )
+    _validate_persisted_group_config(
+        existing_group,
+        group_id=clean_group_id,
+        expected_agents=expected_agents,
+        meeting_id=clean_meeting_id,
+        action="recover",
+        preflight_checker=getattr(process_supervisor, "preflight_checker", None),
     )
     offline = _mark_bound_agents_offline(
         output_root,
@@ -523,23 +532,24 @@ def _validate_resident_config_meeting_ids(configs: object, *, meeting_id: str) -
             )
 
 
-def _validate_restart_persisted_config(
+def _validate_persisted_group_config(
     group: dict[str, object],
     *,
     group_id: str,
     expected_agents: list[dict[str, str]],
     meeting_id: str,
+    action: str,
     preflight_checker: Callable[..., dict[str, object]] | None = None,
 ) -> None:
     config_path_value = str(group.get("config_path") or "").strip()
     if not config_path_value and "config_path" not in group:
         return
     if not config_path_value:
-        raise ValueError(f"Live agent group {group_id} has no config to restart.")
+        raise ValueError(f"Live agent group {group_id} has no config to {action}.")
     config_path = Path(config_path_value)
     server = str(group.get("server") or "").strip()
     if not server:
-        raise ValueError(f"Live agent group {group_id} has no server to restart.")
+        raise ValueError(f"Live agent group {group_id} has no server to {action}.")
     checker = preflight_checker if callable(preflight_checker) else preflight_live_agent_config
     preflight = checker(config_path, server_override=server)
     if preflight.get("status") != "ok":
