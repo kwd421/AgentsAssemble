@@ -31,6 +31,7 @@ from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_tim
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
 from agentsassemble.live_agent_sessions import (
     check_live_agent_session,
+    live_agent_session_readiness_summary,
     recover_live_agent_session,
     restart_live_agent_session,
     resume_live_agent_session,
@@ -1327,8 +1328,26 @@ def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentPr
         agents,
         diagnostic_group_ids=diagnostic_group_ids,
     )
-    status = "degraded" if agent_summary["attention"] or process_summary["attention"] or connection_summary["attention"] else "ok"
-    return {"status": status, "agents": agent_summary, "processes": process_summary, "connections": connection_summary}
+    session_summary = _live_agent_session_health_summary(
+        output_root,
+        groups,
+        diagnostic_group_ids=diagnostic_group_ids,
+    )
+    status = (
+        "degraded"
+        if agent_summary["attention"]
+        or process_summary["attention"]
+        or connection_summary["attention"]
+        or session_summary["attention"]
+        else "ok"
+    )
+    return {
+        "status": status,
+        "agents": agent_summary,
+        "processes": process_summary,
+        "connections": connection_summary,
+        "sessions": session_summary,
+    }
 
 
 def _live_agent_health_summary(agents: list[dict[str, object]]) -> dict[str, object]:
@@ -1422,6 +1441,26 @@ def _live_agent_connection_health_summary(
             status = str(item.get("status") or "unknown")
             attention.append(f"{group_id}:{agent_id}:{status}")
     return {"expected": expected, "connected": connected, "attention": attention}
+
+
+def _live_agent_session_health_summary(
+    output_root: Path,
+    groups: list[dict[str, object]],
+    *,
+    diagnostic_group_ids: set[str] | None = None,
+) -> dict[str, object]:
+    diagnostic_group_ids = diagnostic_group_ids or set()
+    visible_groups = [group for group in groups if not _is_diagnostic_process_group(group, diagnostic_group_ids)]
+    summary = live_agent_session_readiness_summary(output_root, visible_groups)
+    reasons_by_group = {
+        str(group.get("group_id") or ""): _live_agent_process_health_reason(group)
+        for group in visible_groups
+    }
+    for item in _as_dict_list(summary.get("items")):
+        reason = reasons_by_group.get(str(item.get("group_id") or ""))
+        if reason:
+            item["process_reason"] = reason
+    return summary
 
 
 def _safe_process_meeting_id(value: object) -> str:

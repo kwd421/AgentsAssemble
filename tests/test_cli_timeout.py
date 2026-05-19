@@ -679,6 +679,12 @@ class CliTimeoutTests(unittest.TestCase):
                 "connected": 1,
                 "attention": ["crew:friend-b:missing"],
             },
+            "sessions": {
+                "total": 2,
+                "ready": 1,
+                "degraded": 1,
+                "attention": ["resident-m1:resident-main:agent-b:missing"],
+            },
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
@@ -697,6 +703,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("process reasons: crashed-group stale_watchdog missing manifest agent agent-a", output)
         self.assertIn("connections: 1 connected / 2 expected", output)
         self.assertIn("connection attention: crew:friend-b:missing", output)
+        self.assertIn("sessions: 1 ready / 2 total", output)
+        self.assertIn("session attention: resident-m1:resident-main:agent-b:missing", output)
 
     def test_live_agent_health_can_emit_json_and_fail_on_degraded(self):
         payload = {"status": "degraded", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}}

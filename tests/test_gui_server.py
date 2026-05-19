@@ -3034,6 +3034,274 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["connections"], {"expected": 0, "connected": 0, "attention": []})
 
+    def test_live_agent_health_reports_meeting_owned_session_readiness(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-ready",
+                        "status": "running",
+                        "meeting_id": "meeting-ready",
+                        "started_at": "2999-01-01T00:00:00+00:00",
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    },
+                    {
+                        "group_id": "resident-missing",
+                        "status": "running",
+                        "meeting_id": "meeting-missing",
+                        "agents": [{"agent_id": "agent-b", "display_name": "Agent B"}],
+                    },
+                    {
+                        "group_id": "resident-error",
+                        "status": "error",
+                        "meeting_id": "meeting-error",
+                        "agents": [{"agent_id": "agent-c", "display_name": "Agent C"}],
+                        "recent_events": [
+                            {
+                                "event_type": "stale_watchdog",
+                                "reason": "missing manifest agent agent-c",
+                            }
+                        ],
+                    },
+                    {
+                        "group_id": "resident-diagnostic",
+                        "status": "error",
+                        "meeting_id": "meeting-diagnostic",
+                        "diagnostic": True,
+                        "agents": [{"agent_id": "agent-d", "display_name": "Agent D"}],
+                    },
+                    {
+                        "group_id": "manual-no-meeting",
+                        "status": "running",
+                        "agents": [{"agent_id": "agent-e", "display_name": "Agent E"}],
+                    },
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for meeting_id, agent_id in (
+                ("meeting-ready", "agent-a"),
+                ("meeting-missing", "agent-b"),
+                ("meeting-error", "agent-c"),
+            ):
+                meeting_dir = root / "meetings" / meeting_id
+                meeting_dir.mkdir(parents=True)
+                write_live_state(
+                    meeting_dir,
+                    {
+                        "meeting_id": meeting_id,
+                        "agent_bindings": [
+                            {"role_id": "resident", "agent_id": agent_id, "provider_id": "local-provider"}
+                        ],
+                        "provider_configs": {"local-provider": {"kind": "local_cli"}},
+                    },
+                )
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "status": "online",
+                                "meeting_id": "meeting-ready",
+                                "last_seen_at": "2999-01-01T00:00:01+00:00",
+                            },
+                            {
+                                "agent_id": "agent-c",
+                                "display_name": "Agent C",
+                                "status": "online",
+                                "meeting_id": "meeting-error",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["sessions"]["total"], 3)
+        self.assertEqual(payload["sessions"]["ready"], 1)
+        self.assertEqual(payload["sessions"]["degraded"], 2)
+        self.assertEqual(
+            payload["sessions"]["attention"],
+            [
+                "meeting-missing:resident-missing:agent-b:missing",
+                "meeting-error:resident-error:group:error",
+            ],
+        )
+        self.assertEqual(
+            payload["sessions"]["items"],
+            [
+                {
+                    "meeting_id": "meeting-ready",
+                    "group_id": "resident-ready",
+                    "status": "ready",
+                    "process_status": "running",
+                    "expected": 1,
+                    "connected": 1,
+                    "process_attention": [],
+                    "connection_attention": [],
+                    "attention": [],
+                },
+                {
+                    "meeting_id": "meeting-missing",
+                    "group_id": "resident-missing",
+                    "status": "degraded",
+                    "process_status": "running",
+                    "expected": 1,
+                    "connected": 0,
+                    "process_attention": [],
+                    "connection_attention": ["agent-b:missing"],
+                    "attention": ["agent-b:missing"],
+                },
+                {
+                    "meeting_id": "meeting-error",
+                    "group_id": "resident-error",
+                    "status": "degraded",
+                    "process_status": "error",
+                    "expected": 1,
+                    "connected": 1,
+                    "process_attention": ["group:error"],
+                    "connection_attention": [],
+                    "attention": ["group:error"],
+                    "process_reason": {
+                        "event_type": "stale_watchdog",
+                        "reason": "missing manifest agent agent-c",
+                    },
+                },
+            ],
+        )
+        session_blob = json.dumps(payload["sessions"], ensure_ascii=False)
+        self.assertNotIn("meeting-diagnostic", session_blob)
+        self.assertNotIn("manual-no-meeting", session_blob)
+
+    def test_live_agent_health_marks_owned_group_with_missing_meeting_degraded(self):
+        class FakeSupervisor:
+            def __init__(self):
+                self.list_called = False
+
+            def list_groups(self):
+                self.list_called = True
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-missing-meeting",
+                        "status": "running",
+                        "meeting_id": "missing-meeting",
+                        "config_path": "/tmp/secret-live-agents.json",
+                        "log_tail": "secret provider output",
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(json.dumps({"agents": []}), encoding="utf-8")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["sessions"]["total"], 1)
+        self.assertEqual(payload["sessions"]["ready"], 0)
+        self.assertEqual(payload["sessions"]["degraded"], 1)
+        self.assertEqual(payload["sessions"]["attention"], ["missing-meeting:resident-missing-meeting:meeting:missing"])
+        self.assertEqual(
+            payload["sessions"]["items"][0],
+            {
+                "meeting_id": "missing-meeting",
+                "group_id": "resident-missing-meeting",
+                "status": "degraded",
+                "process_status": "running",
+                "expected": 1,
+                "connected": 0,
+                "process_attention": [],
+                "connection_attention": [],
+                "attention": ["meeting:missing"],
+            },
+        )
+        session_blob = json.dumps(payload["sessions"], ensure_ascii=False)
+        self.assertNotIn("/tmp/secret-live-agents.json", session_blob)
+        self.assertNotIn("secret provider output", session_blob)
+        self.assertEqual(operations["operations"], [])
+
+    def test_live_agent_health_sanitizes_session_status_attention(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "error live-agents.json /tmp/secret",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "resident-m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "resident-m1",
+                    "agent_bindings": [{"role_id": "resident", "agent_id": "agent-a", "provider_id": "local-provider"}],
+                    "provider_configs": {"local-provider": {"kind": "local_cli"}},
+                },
+            )
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "status": "offline /tmp/secret log_tail",
+                                "meeting_id": "resident-m1",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["sessions"]["items"][0]["process_status"], "unknown")
+        self.assertEqual(payload["sessions"]["items"][0]["process_attention"], ["group:unknown"])
+        self.assertEqual(payload["sessions"]["items"][0]["connection_attention"], ["agent-a:offline"])
+        session_blob = json.dumps(payload["sessions"], ensure_ascii=False)
+        self.assertNotIn("/tmp/secret", session_blob)
+        self.assertNotIn("live-agents.json", session_blob)
+        self.assertNotIn("log_tail", session_blob)
+
     def test_live_agent_probe_endpoint_records_success_without_message_text(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

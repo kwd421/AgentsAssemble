@@ -16,6 +16,21 @@ from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.meeting_setup import prepare_meeting_setup
 
 SUPPORTED_SESSION_CONNECTION_KINDS = frozenset({"local_cli", "live_session", "remote_bridge"})
+SESSION_PROCESS_STATUSES = frozenset({"running", "restarting", "error", "unknown", "stopped"})
+SESSION_AGENT_ATTENTION_STATUSES = frozenset(
+    {
+        "missing",
+        "wrong_meeting",
+        "not_reconnected",
+        "stale",
+        "offline",
+        "error",
+        "not_in_group",
+        "extra_in_group",
+        "duplicate_in_group",
+    }
+)
+SESSION_MEETING_ATTENTION_STATUSES = frozenset({"missing", "invalid", "unavailable"})
 
 
 class LiveAgentSessionStartError(ValueError):
@@ -239,6 +254,145 @@ def check_live_agent_session(
         "process": process,
         "connection": connection,
     }
+
+
+def live_agent_session_readiness_summary(output_root: Path, groups: list[dict[str, object]]) -> dict[str, object]:
+    items = []
+    for group in groups:
+        meeting_id = _safe_optional_meeting_id(group.get("meeting_id"))
+        if not meeting_id:
+            continue
+        item = _live_agent_session_readiness_item(output_root, group, meeting_id=meeting_id)
+        items.append(item)
+    ready_count = sum(1 for item in items if item.get("status") == "ready")
+    degraded_count = len(items) - ready_count
+    return {
+        "total": len(items),
+        "ready": ready_count,
+        "degraded": degraded_count,
+        "attention": _session_readiness_attention(items),
+        "items": items,
+    }
+
+
+def _live_agent_session_readiness_item(
+    output_root: Path,
+    group: dict[str, object],
+    *,
+    meeting_id: str,
+) -> dict[str, object]:
+    group_id = _safe_session_group_id(group.get("group_id"))
+    process_status = _safe_session_process_status(group.get("status"))
+    try:
+        meeting = _read_existing_meeting(_existing_meeting_dir(output_root, meeting_id))
+        expected_agent_ids = [agent["agent_id"] for agent in _expected_agents_from_meeting(meeting)]
+        process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=meeting_id)
+        connection = _connection_snapshot(
+            output_root,
+            meeting_id=meeting_id,
+            expected_agent_ids=expected_agent_ids,
+            process_group=group,
+        )
+        process_attention = _safe_session_attention(process["attention"])
+        connection_attention = _safe_session_attention(connection["attention"])
+        attention = [*process_attention, *connection_attention]
+        status = "ready" if process["ready"] and connection["connected"] == connection["expected"] else "degraded"
+        process_status = _safe_session_process_status(process.get("status") or process_status)
+        expected = int(connection.get("expected") or 0)
+        connected = int(connection.get("connected") or 0)
+    except ValueError as error:
+        process_attention = []
+        connection_attention = []
+        attention = [_session_meeting_error_attention(error)]
+        status = "degraded"
+        expected = len(_process_agent_ids(group.get("agents")))
+        connected = 0
+    except Exception:
+        process_attention = []
+        connection_attention = []
+        attention = ["meeting:unavailable"]
+        status = "degraded"
+        expected = len(_process_agent_ids(group.get("agents")))
+        connected = 0
+    return {
+        "meeting_id": meeting_id,
+        "group_id": group_id,
+        "status": status,
+        "process_status": process_status,
+        "expected": expected,
+        "connected": connected,
+        "process_attention": process_attention,
+        "connection_attention": connection_attention,
+        "attention": attention,
+    }
+
+
+def _session_meeting_error_attention(error: ValueError) -> str:
+    message = str(error)
+    return "meeting:missing" if "was not found" in message else "meeting:invalid"
+
+
+def _safe_session_process_status(value: object) -> str:
+    status = str(value or "unknown").strip()
+    return status if status in SESSION_PROCESS_STATUSES else "unknown"
+
+
+def _safe_session_attention(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    attention = []
+    for item in value:
+        safe_item = _safe_session_attention_item(item)
+        if safe_item:
+            attention.append(safe_item)
+    return attention
+
+
+def _safe_session_attention_item(value: object) -> str:
+    label = clean_lobby_text(value, limit=160)
+    subject, separator, raw_status = label.partition(":")
+    if separator != ":":
+        return ""
+    if subject == "group":
+        if raw_status == "wrong_meeting":
+            return "group:wrong_meeting"
+        return f"group:{_safe_session_process_status(raw_status)}"
+    if subject == "meeting":
+        status = raw_status if raw_status in SESSION_MEETING_ATTENTION_STATUSES else "unavailable"
+        return f"meeting:{status}"
+    agent_id = _safe_session_agent_id(subject)
+    status = raw_status if raw_status in SESSION_AGENT_ATTENTION_STATUSES else "offline"
+    return f"{agent_id}:{status}"
+
+
+def _session_readiness_attention(items: list[dict[str, object]]) -> list[str]:
+    attention = []
+    for item in items:
+        meeting_id = str(item.get("meeting_id") or "unknown")
+        group_id = str(item.get("group_id") or "unknown")
+        for entry in item.get("attention") if isinstance(item.get("attention"), list) else []:
+            label = clean_lobby_text(entry, limit=160)
+            if label:
+                attention.append(f"{meeting_id}:{group_id}:{label}")
+    return attention
+
+
+def _safe_session_group_id(value: object) -> str:
+    group_id = clean_lobby_text(value, limit=128)
+    if not group_id or group_id in {".", ".."}:
+        return "unknown"
+    if "/" in group_id or "\\" in group_id or Path(group_id).name != group_id:
+        return "unknown"
+    return group_id
+
+
+def _safe_session_agent_id(value: object) -> str:
+    agent_id = clean_lobby_text(value, limit=128)
+    if not agent_id or agent_id in {".", ".."}:
+        return "unknown-agent"
+    if "/" in agent_id or "\\" in agent_id or Path(agent_id).name != agent_id:
+        return "unknown-agent"
+    return agent_id
 
 
 def restart_live_agent_session(

@@ -1685,12 +1685,14 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
     agents = payload.get("agents") if isinstance(payload.get("agents"), dict) else {}
     processes = payload.get("processes") if isinstance(payload.get("processes"), dict) else {}
     connections = payload.get("connections") if isinstance(payload.get("connections"), dict) else {}
+    sessions = payload.get("sessions") if isinstance(payload.get("sessions"), dict) else {}
     agent_counts = agents.get("counts") if isinstance(agents.get("counts"), dict) else {}
     process_counts = processes.get("counts") if isinstance(processes.get("counts"), dict) else {}
     agent_attention = agents.get("attention") if isinstance(agents.get("attention"), list) else []
     process_attention = processes.get("attention") if isinstance(processes.get("attention"), list) else []
     process_reasons = _process_reason_summary(processes.get("reasons"))
     connection_attention = connections.get("attention") if isinstance(connections.get("attention"), list) else []
+    session_attention = sessions.get("attention") if isinstance(sessions.get("attention"), list) else []
     lines = [
         f"status: {payload.get('status') or 'unknown'}",
         (
@@ -1713,6 +1715,8 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
         [
             f"connections: {connections.get('connected', 0)} connected / {connections.get('expected', 0)} expected",
             f"connection attention: {_attention_summary(connection_attention)}",
+            f"sessions: {sessions.get('ready', 0)} ready / {sessions.get('total', 0)} total",
+            f"session attention: {_attention_summary(session_attention)}",
         ]
     )
     return "\n".join(lines)

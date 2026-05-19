@@ -653,6 +653,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const agents = health.agents && typeof health.agents === "object" ? health.agents : {};
   const processes = health.processes && typeof health.processes === "object" ? health.processes : {};
   const connections = health.connections && typeof health.connections === "object" ? health.connections : {};
+  const sessions = health.sessions && typeof health.sessions === "object" ? health.sessions : {};
   const processCounts = processes.counts && typeof processes.counts === "object" ? processes.counts : {};
   const agentLive = Math.max(0, Number(agents.live || 0));
   const agentTotal = Math.max(0, Number(agents.total || 0));
@@ -660,6 +661,8 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const processTotal = Math.max(0, Number(processes.total || 0));
   const connected = Math.max(0, Number(connections.connected || 0));
   const expected = Math.max(0, Number(connections.expected || 0));
+  const readySessions = Math.max(0, Number(sessions.ready || 0));
+  const sessionTotal = Math.max(0, Number(sessions.total || 0));
   const attentionCount = liveAgentHealthAttentionCount(health);
   const tone = status === "ok" ? "success" : status === "degraded" ? "warning" : "error";
   return (
@@ -668,13 +671,14 @@ function renderLiveAgentRuntimeHealth(health, loading) {
     `agents ${escapeHtml(`${agentLive}/${agentTotal}`)} live · ` +
     `processes ${escapeHtml(`${runningProcesses}/${processTotal}`)} running · ` +
     `connections ${escapeHtml(`${connected}/${expected}`)} connected · ` +
+    `sessions ${escapeHtml(`${readySessions}/${sessionTotal}`)} ready · ` +
     `attention ${escapeHtml(attentionCount)}` +
     "</p>"
   );
 }
 
 function liveAgentHealthAttentionCount(health) {
-  const sections = [health?.agents, health?.processes, health?.connections];
+  const sections = [health?.agents, health?.processes, health?.connections, health?.sessions];
   return sections.reduce((count, section) => {
     const attention = section && typeof section === "object" && Array.isArray(section.attention) ? section.attention : [];
     return count + attention.length;
