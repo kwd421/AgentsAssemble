@@ -111,7 +111,7 @@ export function renderLobby(options = {}) {
     await runLiveAgentOfficialRoundSmoke(lobby);
   });
   lobby.querySelector("#live-agent-session-smoke")?.addEventListener("click", async () => {
-    await runLiveAgentSessionSmoke();
+    await runLiveAgentSessionSmoke(lobby);
   });
   lobby.querySelector("#live-agent-readiness-check")?.addEventListener("click", async () => {
     await runLiveAgentReadiness(lobby);
@@ -212,6 +212,8 @@ function readLiveAgentProcessDraft(lobby) {
     autoRestart: Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked),
     officialRoundSmoke: Boolean(form.querySelector("#live-agent-readiness-official-round")?.checked),
     sessionSmoke: Boolean(form.querySelector("#live-agent-readiness-session-smoke")?.checked),
+    sessionSmokeSoakCycles: form.querySelector("#live-agent-session-smoke-soak-cycles")?.value ?? "",
+    sessionSmokeSoakInterval: form.querySelector("#live-agent-session-smoke-soak-interval")?.value ?? "",
     maxRestarts: form.querySelector("#live-agent-process-max-restarts")?.value ?? "",
     restartBackoff: form.querySelector("#live-agent-process-restart-backoff")?.value ?? "",
     staleRestartAfter: form.querySelector("#live-agent-process-stale-restart-after")?.value ?? "",
@@ -245,6 +247,8 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const autoRestart = lobby.querySelector("#live-agent-process-auto-restart");
   const officialRoundSmoke = lobby.querySelector("#live-agent-readiness-official-round");
   const sessionSmoke = lobby.querySelector("#live-agent-readiness-session-smoke");
+  const sessionSmokeSoakCycles = lobby.querySelector("#live-agent-session-smoke-soak-cycles");
+  const sessionSmokeSoakInterval = lobby.querySelector("#live-agent-session-smoke-soak-interval");
   const maxRestarts = lobby.querySelector("#live-agent-process-max-restarts");
   const restartBackoff = lobby.querySelector("#live-agent-process-restart-backoff");
   const staleRestartAfter = lobby.querySelector("#live-agent-process-stale-restart-after");
@@ -262,6 +266,8 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   if (autoRestart) autoRestart.checked = draft.autoRestart;
   if (officialRoundSmoke) officialRoundSmoke.checked = draft.officialRoundSmoke;
   if (sessionSmoke) sessionSmoke.checked = draft.sessionSmoke;
+  if (sessionSmokeSoakCycles) sessionSmokeSoakCycles.value = draft.sessionSmokeSoakCycles;
+  if (sessionSmokeSoakInterval) sessionSmokeSoakInterval.value = draft.sessionSmokeSoakInterval;
   if (maxRestarts) maxRestarts.value = draft.maxRestarts;
   if (restartBackoff) restartBackoff.value = draft.restartBackoff;
   if (staleRestartAfter) staleRestartAfter.value = draft.staleRestartAfter;
@@ -534,6 +540,8 @@ function renderLiveAgentProcessControls() {
         <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
         <button type="button" id="live-agent-official-round-smoke" ${processActionsDisabled ? "disabled" : ""}>공식진단</button>
         <button type="button" id="live-agent-session-smoke" ${processActionsDisabled ? "disabled" : ""}>세션진단</button>
+        <input id="live-agent-session-smoke-soak-cycles" type="number" min="0" max="5" step="1" value="0" aria-label="session smoke soak cycles" />
+        <input id="live-agent-session-smoke-soak-interval" type="number" min="0" max="60" step="0.5" value="0" aria-label="session smoke soak interval seconds" />
         <label class="live-agent-process-options">
           <input id="live-agent-readiness-official-round" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
           <span>공식 포함</span>
@@ -1329,7 +1337,7 @@ async function runLiveAgentOfficialRoundSmoke(lobby) {
   }
 }
 
-async function runLiveAgentSessionSmoke() {
+async function runLiveAgentSessionSmoke(lobby) {
   if (liveAgentProcessActionBusy()) return;
   state.liveAgentSessionSmokeRunning = true;
   state.liveAgentProcessStatus = { message: "상주 세션 smoke 진단 중", tone: "info" };
@@ -1338,7 +1346,7 @@ async function runLiveAgentSessionSmoke() {
     const payload = await fetchJson("/api/live-agent-session-smoke", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ timeout: 12 }),
+      body: JSON.stringify(liveAgentSessionSmokeRequestBody(lobby)),
     });
     await refreshLiveAgentSessionSmokeSurfaces();
     const tone = payload.status === "ok" ? "success" : "error";
@@ -1369,7 +1377,14 @@ async function runLiveAgentReadiness(lobby) {
   const includeSessionSmoke = lobby.querySelector("#live-agent-readiness-session-smoke")?.checked === true;
   const requestBody = { group_id: groupId, timeout: 12 };
   if (includeOfficialRound) requestBody.official_round_smoke = true;
-  if (includeSessionSmoke) requestBody.session_smoke = true;
+  if (includeSessionSmoke) {
+    requestBody.session_smoke = true;
+    const soakCycles = liveAgentSessionSmokeSoakCycles(lobby);
+    if (soakCycles > 0) {
+      requestBody.session_smoke_soak_cycle_count = soakCycles;
+      requestBody.session_smoke_soak_interval_seconds = liveAgentSessionSmokeSoakIntervalSeconds(lobby);
+    }
+  }
   state.liveAgentReadinessRunning = true;
   state.liveAgentProcessStatus = { message: "상주 readiness 점검 중", tone: "info" };
   renderLobby({ followLatest: false });
@@ -1428,7 +1443,11 @@ function sessionSmokeStatusLabel(payload) {
   const expectedReplyTotal = expectedReplies * lobbyProbeCount;
   const replies = Math.max(0, Number(payload.reply_count || 0));
   const postRecoverReplies = Math.max(0, Number(payload.post_recover_reply_count || 0));
-  return `${replies}/${expectedReplyTotal} replies, post-recover ${postRecoverReplies}/${expectedReplyTotal}`;
+  const soakCycles = Math.max(0, Number(payload.soak_cycle_count || 0));
+  const soakReplies = Math.max(0, Number(payload.soak_reply_count || 0));
+  const expectedSoakReplies = expectedReplies * soakCycles;
+  const soakLabel = soakCycles > 0 ? `, soak ${soakReplies}/${expectedSoakReplies} over ${soakCycles} cycles` : "";
+  return `${replies}/${expectedReplyTotal} replies, post-recover ${postRecoverReplies}/${expectedReplyTotal}${soakLabel}`;
 }
 
 function liveAgentSessionSmokeStatusMessage(payload) {
@@ -1442,14 +1461,20 @@ function liveAgentSessionSmokeStatusMessage(payload) {
   const expectedReplies = Math.max(0, Number(payload.expected_reply_count || 0));
   const lobbyProbeCount = Math.max(1, Number(payload.lobby_probe_count || 1));
   const expectedReplyTotal = expectedReplies * lobbyProbeCount;
+  const soakCycles = Math.max(0, Number(payload.soak_cycle_count || 0));
+  const soakReplies = Math.max(0, Number(payload.soak_reply_count || 0));
+  const expectedSoakReplies = expectedReplies * soakCycles;
   const probeLabel = lobbyProbeCount > 1 ? `${lobbyProbeCount} probes · ` : "";
+  const soakLabel = soakCycles > 0 ? ` · soak ${soakReplies}/${expectedSoakReplies} replies over ${soakCycles} cycles` : "";
   return (
     `세션 smoke ${status}: ${meetingId} · ` +
     `rounds ${roundsStatus} (${answeredRounds} answered) · ` +
     probeLabel +
     `${replies}/${expectedReplyTotal} replies · ` +
     `post-restart ${postRestartReplies}/${expectedReplyTotal} replies · ` +
-    `post-recover ${postRecoverReplies}/${expectedReplyTotal} replies · ` +
+    `post-recover ${postRecoverReplies}/${expectedReplyTotal} replies` +
+    soakLabel +
+    ` · ` +
     `start ${payload.start_status || "unknown"}, ` +
     `check ${payload.check_status || "unknown"}, ` +
     `resume ${payload.resume_status || "unknown"}, ` +
@@ -1457,6 +1482,28 @@ function liveAgentSessionSmokeStatusMessage(payload) {
     `recover ${payload.recover_status || "unknown"}, ` +
     `stop ${payload.stop_status || "unknown"}`
   );
+}
+
+function liveAgentSessionSmokeRequestBody(lobby) {
+  const requestBody = { timeout: 12 };
+  const soakCycles = liveAgentSessionSmokeSoakCycles(lobby);
+  if (soakCycles > 0) {
+    requestBody.soak_cycle_count = soakCycles;
+    requestBody.soak_interval_seconds = liveAgentSessionSmokeSoakIntervalSeconds(lobby);
+  }
+  return requestBody;
+}
+
+function liveAgentSessionSmokeSoakCycles(lobby) {
+  const value = Number(lobby?.querySelector("#live-agent-session-smoke-soak-cycles")?.value || 0);
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(5, Math.max(0, Math.floor(value)));
+}
+
+function liveAgentSessionSmokeSoakIntervalSeconds(lobby) {
+  const value = Number(lobby?.querySelector("#live-agent-session-smoke-soak-interval")?.value || 0);
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(60, Math.max(0, value));
 }
 
 async function runLiveAgentPreflight(lobby) {

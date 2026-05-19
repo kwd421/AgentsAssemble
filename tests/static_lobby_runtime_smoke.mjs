@@ -551,6 +551,51 @@ test("readiness button sends session smoke and reports the session counts when c
   );
 });
 
+test("readiness button sends bounded session smoke soak controls when configured", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    readinessPayload: {
+      status: "ready",
+      session_smoke: {
+        status: "ok",
+        group_id: "session-smoke",
+        expected_reply_count: 3,
+        lobby_probe_count: 1,
+        reply_count: 3,
+        post_recover_reply_count: 3,
+        soak_cycle_count: 2,
+        soak_reply_count: 6,
+      },
+    },
+  });
+  renderLobby({ followLatest: false });
+  let lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-process-group").value = "doctor-smoke";
+  lobby.querySelector("#live-agent-readiness-session-smoke").checked = true;
+  lobby.querySelector("#live-agent-session-smoke-soak-cycles").value = "2";
+  lobby.querySelector("#live-agent-session-smoke-soak-interval").value = "0.5";
+
+  renderLobby({ followLatest: false });
+  lobby = document.querySelector("#lobby");
+  assert.equal(lobby.querySelector("#live-agent-session-smoke-soak-cycles").value, "2");
+  assert.equal(lobby.querySelector("#live-agent-session-smoke-soak-interval").value, "0.5");
+
+  await lobby.querySelector("#live-agent-readiness-check").click();
+
+  const request = readinessRequest(requests);
+  assert.deepEqual(request.jsonBody, {
+    group_id: "doctor-smoke",
+    timeout: 12,
+    session_smoke: true,
+    session_smoke_soak_cycle_count: 2,
+    session_smoke_soak_interval_seconds: 0.5,
+  });
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "readiness ready · session 3/3 replies, post-recover 3/3, soak 6/6 over 2 cycles"
+  );
+});
+
 test("readiness status shows skipped session smoke reason", async () => {
   await clickReadiness({
     officialRoundSmoke: false,
@@ -961,6 +1006,53 @@ test("session smoke button runs fresh diagnostic session instead of reusing curr
   assert.equal(
     requests.some((request) => request.url === "/api/live-agents"),
     true
+  );
+});
+
+test("session smoke button sends bounded soak controls and reports soak evidence", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    sessionSmokePayload: {
+      status: "ok",
+      meeting_id: "session-smoke-generated",
+      group_id: "session-smoke-generated",
+      rounds_status: "answered",
+      answered_round_count: 1,
+      expected_reply_count: 3,
+      lobby_probe_count: 1,
+      reply_count: 3,
+      post_restart_reply_count: 3,
+      post_recover_reply_count: 3,
+      soak_cycle_count: 2,
+      soak_reply_count: 6,
+      start_status: "ready",
+      check_status: "ready",
+      resume_status: "ready",
+      restart_status: "ready",
+      recover_status: "ready",
+      stop_status: "stopped",
+    },
+  });
+  renderLobby({ followLatest: false });
+  let lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-smoke-soak-cycles").value = "2";
+  lobby.querySelector("#live-agent-session-smoke-soak-interval").value = "0.5";
+
+  renderLobby({ followLatest: false });
+  lobby = document.querySelector("#lobby");
+  assert.equal(lobby.querySelector("#live-agent-session-smoke-soak-cycles").value, "2");
+  assert.equal(lobby.querySelector("#live-agent-session-smoke-soak-interval").value, "0.5");
+
+  await lobby.querySelector("#live-agent-session-smoke").click();
+
+  assert.deepEqual(sessionSmokeRequest(requests).jsonBody, {
+    timeout: 12,
+    soak_cycle_count: 2,
+    soak_interval_seconds: 0.5,
+  });
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "세션 smoke ok: session-smoke-generated · rounds answered (1 answered) · 3/3 replies · post-restart 3/3 replies · post-recover 3/3 replies · soak 6/6 replies over 2 cycles · start ready, check ready, resume ready, restart ready, recover ready, stop stopped"
   );
 });
 

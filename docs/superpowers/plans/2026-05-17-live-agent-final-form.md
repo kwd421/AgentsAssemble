@@ -1367,6 +1367,45 @@ Expected: pass with no soak source ids or reply ids in operation history.
 
 ---
 
+### Task 44: GUI Session Smoke Soak Controls
+
+**Files:**
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for GUI soak controls**
+
+Cover bounded GUI fields for session smoke soak cycles and interval, draft preservation across re-render, `세션진단` posting `soak_cycle_count` and `soak_interval_seconds` only when cycles are positive, `점검` with `세션 포함` posting namespaced readiness soak fields, and status summaries that include soak reply counts without exposing ids or reply text.
+
+Run:
+
+```bash
+node tests/static_lobby_runtime_smoke.mjs
+python3 -m unittest tests.test_static_ui_assets.StaticUiAssetTests.test_lobby_separates_stage_from_activity_feed
+```
+
+Expected: fail before the GUI inputs and payload helpers exist.
+
+- [x] **Step 2: Implement GUI payload and summary wiring**
+
+Add the two bounded numeric controls to the existing `상주 실행` form, preserve them in `readLiveAgentProcessDraft()` / `restoreLiveAgentProcessDraft()`, clamp cycles to `0-5`, clamp interval to `0-60`, send direct session-smoke fields for `세션진단`, send readiness namespaced fields only when `세션 포함` is enabled and cycles are positive, and include soak counts in direct/readiness status labels.
+
+Run the Step 1 commands.
+Expected: pass.
+
+- [x] **Step 3: Document operator behavior**
+
+Document that GUI soak controls share the same bounds as CLI soak options, keep the fast default when cycles are `0`, and feed both direct session smoke and readiness session smoke when enabled.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
