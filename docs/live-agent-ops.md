@@ -444,7 +444,7 @@ The GUI "상주 실행" panel exposes the same check as the `예비점검` butto
 
 Resident runners support only `local_cli`, `live_session`, and `remote_bridge`. Registration-only kinds such as `manual` and `codex_resume` can appear in the roster, but `live-agent run`, `live-agent run-group`, supervised start, and preflight reject them as resident process configs instead of silently treating them like a local CLI command.
 
-Supervised process start and restart run this same preflight gate automatically inside the local GUI supervisor before opening a log file or launching `run-group`. A failed gate returns a GUI/API/CLI error immediately and leaves no new process record behind. The GUI status line shows the refusal reason returned by the API. The check runs in the GUI server environment, so PATH and `env:` auth references are evaluated from the process that would launch the resident group.
+Direct `live-agent run` and `live-agent run-group` also refuse missing `local_cli` or `live_session` command executables before registering any resident agent. Direct `run-group` rejects duplicate agent ids before worker threads start, so one bad local config cannot partially register sibling agents under an ambiguous id. Supervised process start and restart run this same preflight gate automatically inside the local GUI supervisor before opening a log file or launching `run-group`. A failed gate returns a GUI/API/CLI error immediately and leaves no new process record behind. The GUI status line shows the refusal reason returned by the API. The check runs in the launching process environment, so PATH and `env:` auth references are evaluated from the process that would launch the resident group.
 
 ## Provider Runtime Health
 

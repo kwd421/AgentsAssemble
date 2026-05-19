@@ -24,7 +24,7 @@ from agentsassemble.codex_sessions import (
 )
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
-from agentsassemble.live_agent_preflight import preflight_live_agent_config
+from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_command_executable_error
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
@@ -1213,7 +1213,9 @@ def _sequence_result_summary(result: dict[str, object]) -> str:
 
 def _run_live_agent_resident(args: argparse.Namespace) -> int:
     config = config_from_args(args)
-    _validate_resident_config(config)
+    setup_error = _resident_config_setup_error(config)
+    if setup_error:
+        raise ValueError(f"{config.agent_id}: {setup_error}")
     command_runner = _command_runner_for_config(config)
     runner = LiveAgentRunner(
         config,
@@ -1301,16 +1303,38 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
 
 
 def _resident_group_config_errors(configs: list[ResidentAgentConfig]) -> dict[str, str]:
-    errors: dict[str, str] = {}
+    errors = _duplicate_resident_agent_id_errors(configs)
     for config in configs:
+        if config.agent_id in errors:
+            continue
         try:
-            _validate_resident_config(config)
-            if config.connection_kind == "remote_bridge":
-                probe_runner = _command_runner_for_config(config)
-                _close_command_runner(probe_runner)
+            setup_error = _resident_config_setup_error(config)
+            if setup_error:
+                errors[config.agent_id] = setup_error
         except Exception as error:
             errors[config.agent_id] = str(error)
     return errors
+
+
+def _duplicate_resident_agent_id_errors(configs: list[ResidentAgentConfig]) -> dict[str, str]:
+    counts: dict[str, int] = {}
+    for config in configs:
+        if config.agent_id:
+            counts[config.agent_id] = counts.get(config.agent_id, 0) + 1
+    return {
+        agent_id: "Duplicate agent id in resident group config."
+        for agent_id, count in counts.items()
+        if count > 1
+    }
+
+
+def _resident_config_setup_error(config: ResidentAgentConfig) -> str:
+    _validate_resident_config(config)
+    if config.connection_kind == "remote_bridge":
+        probe_runner = _command_runner_for_config(config)
+        _close_command_runner(probe_runner)
+        return ""
+    return resident_command_executable_error(config.command)
 
 
 def _run_live_agent_health(args: argparse.Namespace) -> int:

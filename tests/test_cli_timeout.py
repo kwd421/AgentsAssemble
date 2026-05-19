@@ -3962,6 +3962,84 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual(replies[0]["auto_chain_depth"], 1)
             self.assertIn("Resident agent stopped after posting 1 replies", stdout.getvalue())
 
+    def test_live_agent_run_rejects_missing_local_command_before_registration(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            return {"agent": {"agent_id": "agent-single", "status": "online"}, "lobby_events": []}
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli._request_json", side_effect=request_json),
+            patch("sys.stdout", stdout),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(
+                [
+                    "live-agent",
+                    "run",
+                    "--server",
+                    "http://room.local",
+                    "--agent-id",
+                    "agent-single",
+                    "--display-name",
+                    "Single Agent",
+                    "--poll-interval",
+                    "0",
+                    "--max-ticks",
+                    "1",
+                    "--command",
+                    "definitely-missing-agentsassemble-command",
+                ]
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(calls, [])
+        self.assertIn("agent-single", stderr.getvalue())
+        self.assertIn("Command not found", stderr.getvalue())
+        self.assertNotIn("Resident agent stopped", stdout.getvalue())
+
+    def test_live_agent_run_rejects_missing_live_session_command_before_registration(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            return {"agent": {"agent_id": "agent-session", "status": "online"}, "lobby_events": []}
+
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli._request_json", side_effect=request_json),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(
+                [
+                    "live-agent",
+                    "run",
+                    "--server",
+                    "http://room.local",
+                    "--agent-id",
+                    "agent-session",
+                    "--display-name",
+                    "Agent Session",
+                    "--connection-kind",
+                    "live_session",
+                    "--poll-interval",
+                    "0",
+                    "--max-ticks",
+                    "1",
+                    "--command",
+                    "definitely-missing-live-session-command",
+                ]
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(calls, [])
+        self.assertIn("agent-session", stderr.getvalue())
+        self.assertIn("Command not found", stderr.getvalue())
+
     def test_live_agent_run_restores_persisted_cursor_over_http(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
@@ -4115,6 +4193,137 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertIn("friend-bridge", stderr.getvalue())
             self.assertIn("available auth_ref", stderr.getvalue())
             self.assertNotIn("Resident group stopped", stdout.getvalue())
+
+    def test_live_agent_run_group_rejects_missing_local_and_live_session_commands_before_launch(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="missing-local",
+                display_name="Missing Local",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["definitely-missing-local-cli"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=1,
+            ),
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="missing-live-session",
+                display_name="Missing Live Session",
+                provider_kind="local_cli",
+                connection_kind="live_session",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["definitely-missing-live-session-cli"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=1,
+            ),
+        ]
+        constructed = []
+
+        class RecordingRunner:
+            def __init__(self, *args, **kwargs):
+                constructed.append((args, kwargs))
+
+            def run(self):
+                return 0
+
+        stdout = StringIO()
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.LiveAgentRunner", RecordingRunner),
+            patch("sys.stdout", stdout),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(constructed, [])
+        self.assertIn("missing-local", stderr.getvalue())
+        self.assertIn("missing-live-session", stderr.getvalue())
+        self.assertIn("Command not found", stderr.getvalue())
+        self.assertNotIn("Resident group stopped", stdout.getvalue())
+
+    def test_live_agent_run_group_rejects_duplicate_agent_ids_before_launch(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="duplicate-agent",
+                display_name="Duplicate A",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=[sys.executable],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=1,
+            ),
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="duplicate-agent",
+                display_name="Duplicate B",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=[sys.executable],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=1,
+            ),
+        ]
+        constructed = []
+
+        class RecordingRunner:
+            def __init__(self, *args, **kwargs):
+                constructed.append((args, kwargs))
+
+            def run(self):
+                return 0
+
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.LiveAgentRunner", RecordingRunner),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(constructed, [])
+        self.assertIn("duplicate-agent", stderr.getvalue())
+        self.assertIn("Duplicate agent id", stderr.getvalue())
 
     def test_live_agent_run_group_does_not_register_any_agent_when_setup_fails(self):
         configs = [
@@ -4464,6 +4673,7 @@ class CliTimeoutTests(unittest.TestCase):
         stderr = StringIO()
         with (
             patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.resident_command_executable_error", return_value=""),
             patch("agentsassemble.cli.LiveAgentRunner", ShutdownAwareRunner),
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", stderr),
@@ -4555,6 +4765,7 @@ class CliTimeoutTests(unittest.TestCase):
         stderr = StringIO()
         with (
             patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.resident_command_executable_error", return_value=""),
             patch("agentsassemble.cli._command_runner_for_config", side_effect=command_runner_for_config),
             patch("agentsassemble.cli.LiveAgentRunner", BlockingSiblingRunner),
             patch("sys.stdout", StringIO()),

@@ -198,6 +198,17 @@ def _command_check(command: list[str], command_resolver: Callable[[str], str | N
     return {"id": "command", "status": "failed", "message": f"Command not found: {executable}"}
 
 
+def resident_command_executable_error(
+    command: list[str],
+    *,
+    command_resolver: Callable[[str], str | None] | None = None,
+) -> str:
+    check = _command_check(command, command_resolver or _resolve_command_path)
+    if check.get("status") == "ok":
+        return ""
+    return str(check.get("message") or "Command is not executable.")
+
+
 def _remote_bridge_endpoint_check(endpoint: str) -> dict[str, str]:
     error = remote_bridge_endpoint_error(endpoint)
     if not error:

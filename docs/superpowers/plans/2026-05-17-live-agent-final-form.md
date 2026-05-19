@@ -1754,6 +1754,40 @@ Document that a failed final offline heartbeat does not turn a completed bounded
 Run: `python3 -m unittest tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_success_when_final_offline_heartbeat_fails tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_command_error_when_final_offline_heartbeat_fails tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_room_failure_when_final_offline_heartbeat_fails tests.test_live_agent_runner.LiveAgentRunnerTests.test_runner_does_not_mask_lobby_post_failure_when_final_offline_heartbeat_fails`
 Expected: pass.
 
+### Task 54: Direct CLI Resident Setup Gate
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/live_agent_preflight.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED coverage for direct CLI setup gaps**
+
+Cover direct `live-agent run` with missing `local_cli` and `live_session` command executables, direct `run-group` with missing `local_cli` and `live_session` command executables, and direct `run-group` with duplicate resident agent ids. These failures must happen before resident registration or worker thread construction.
+
+Run:
+
+```bash
+python3 -m unittest tests.test_cli_timeout.CliTimeoutTests.test_live_agent_run_rejects_missing_local_command_before_registration tests.test_cli_timeout.CliTimeoutTests.test_live_agent_run_rejects_missing_live_session_command_before_registration tests.test_cli_timeout.CliTimeoutTests.test_live_agent_run_group_rejects_missing_local_and_live_session_commands_before_launch tests.test_cli_timeout.CliTimeoutTests.test_live_agent_run_group_rejects_duplicate_agent_ids_before_launch
+```
+
+Expected: fail before implementation because direct resident CLI paths validate only command presence, not executable availability or duplicate group ids.
+
+- [x] **Step 2: Share the command executable setup check**
+
+Expose the preflight command resolver as a small reusable setup check, call it from direct `live-agent run` and from `run-group` before threads are started, and keep remote bridge setup validation at the same pre-start boundary.
+
+Run the Step 1 command plus existing run-group shutdown tests.
+Expected: pass.
+
+- [x] **Step 3: Document direct CLI refusal semantics**
+
+Document that direct resident CLI starts refuse missing local/live-session executables and duplicate group ids before registration, while supervised starts continue to use the GUI server environment for the same preflight class.
+
+Run: `python3 -m unittest tests.test_docs_architecture.DocsArchitectureTests.test_live_agent_ops_documents_operator_smoke_path`
+Expected: pass.
+
 ---
 
 ## Full Verification
