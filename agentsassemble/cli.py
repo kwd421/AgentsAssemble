@@ -379,7 +379,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_session_smoke = live_agent_subparsers.add_parser(
         "session-smoke",
         parents=[live_server],
-        help="Run a credential-free resident session start/reply/check/resume/restart/stop smoke.",
+        help="Run a credential-free resident session start/reply/check/resume/restart/recover/stop smoke.",
     )
     live_session_smoke.add_argument("--group-id", default="", help="Optional supervised process group id for the smoke run.")
     live_session_smoke.add_argument("--meeting-id", default="", help="Optional resident meeting id for the smoke run.")
@@ -389,7 +389,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=parse_session_smoke_lobby_probe_count,
         default=1,
         dest="lobby_probe_count",
-        help="Human lobby probes to verify before and after restart, 1-5.",
+        help="Human lobby probes to verify before restart, after restart, and after recover, 1-5.",
     )
     live_session_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable session smoke result.")
 
@@ -1348,10 +1348,12 @@ def _format_live_agent_session_smoke(result: dict[str, object]) -> str:
         f"{lobby_probe_count} lobby probes; "
         f"{result.get('reply_count', 0)}/{expected_reply_total} replies; "
         f"post-restart {result.get('post_restart_reply_count', 0)}/{expected_reply_total} replies; "
+        f"post-recover {result.get('post_recover_reply_count', 0)}/{expected_reply_total} replies; "
         f"start {result.get('start_status') or 'unknown'}, "
         f"check {result.get('check_status') or 'unknown'}, "
         f"resume {result.get('resume_status') or 'unknown'}, "
         f"restart {result.get('restart_status') or 'unknown'}, "
+        f"recover {result.get('recover_status') or 'unknown'}, "
         f"stop {result.get('stop_status') or 'unknown'}"
     )
 
@@ -2070,6 +2072,9 @@ def _session_smoke_http_timeout(wait_seconds: float, *, lobby_probe_count: int =
         + (timeout * probes)
         + 10.0
         + _operation_http_timeout(timeout)
+        + _operation_http_timeout(timeout)
+        + (timeout * probes)
+        + timeout
         + _operation_http_timeout(timeout)
         + (timeout * probes)
         + 20.0

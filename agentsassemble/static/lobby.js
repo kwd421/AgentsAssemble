@@ -1408,6 +1408,7 @@ function liveAgentSessionSmokeStatusMessage(payload) {
   const answeredRounds = Math.max(0, Number(payload.answered_round_count || 0));
   const replies = Math.max(0, Number(payload.reply_count || 0));
   const postRestartReplies = Math.max(0, Number(payload.post_restart_reply_count || 0));
+  const postRecoverReplies = Math.max(0, Number(payload.post_recover_reply_count || 0));
   const expectedReplies = Math.max(0, Number(payload.expected_reply_count || 0));
   const lobbyProbeCount = Math.max(1, Number(payload.lobby_probe_count || 1));
   const expectedReplyTotal = expectedReplies * lobbyProbeCount;
@@ -1418,10 +1419,12 @@ function liveAgentSessionSmokeStatusMessage(payload) {
     probeLabel +
     `${replies}/${expectedReplyTotal} replies · ` +
     `post-restart ${postRestartReplies}/${expectedReplyTotal} replies · ` +
+    `post-recover ${postRecoverReplies}/${expectedReplyTotal} replies · ` +
     `start ${payload.start_status || "unknown"}, ` +
     `check ${payload.check_status || "unknown"}, ` +
     `resume ${payload.resume_status || "unknown"}, ` +
     `restart ${payload.restart_status || "unknown"}, ` +
+    `recover ${payload.recover_status || "unknown"}, ` +
     `stop ${payload.stop_status || "unknown"}`
   );
 }

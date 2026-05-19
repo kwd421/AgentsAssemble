@@ -2518,10 +2518,12 @@ class CliTimeoutTests(unittest.TestCase):
             "lobby_probe_count": 2,
             "reply_count": 6,
             "post_restart_reply_count": 6,
+            "post_recover_reply_count": 6,
             "start_status": "ready",
             "check_status": "ready",
             "resume_status": "ready",
             "restart_status": "ready",
+            "recover_status": "ready",
             "stop_status": "stopped",
         }
         stdout = StringIO()
@@ -2549,7 +2551,7 @@ class CliTimeoutTests(unittest.TestCase):
             "http://room.local/api/live-agent-session-smoke",
             method="POST",
             payload={"group_id": "session-smoke", "meeting_id": "session-smoke-meeting", "timeout": 8.0, "lobby_probe_count": 2},
-            timeout_seconds=142.0,
+            timeout_seconds=180.0,
         )
         output = stdout.getvalue()
         self.assertIn("resident session smoke ok: session-smoke-meeting", output)
@@ -2557,7 +2559,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("2 lobby probes", output)
         self.assertIn("6/6 replies", output)
         self.assertIn("post-restart 6/6 replies", output)
-        self.assertIn("start ready, check ready, resume ready, restart ready, stop stopped", output)
+        self.assertIn("post-recover 6/6 replies", output)
+        self.assertIn("start ready, check ready, resume ready, restart ready, recover ready, stop stopped", output)
 
     def test_live_agent_session_smoke_returns_failure_for_non_ok_status(self):
         payload = {
@@ -2569,10 +2572,12 @@ class CliTimeoutTests(unittest.TestCase):
             "expected_reply_count": 3,
             "reply_count": 1,
             "post_restart_reply_count": 0,
+            "post_recover_reply_count": 0,
             "start_status": "ready",
             "check_status": "ready",
             "resume_status": "",
             "restart_status": "",
+            "recover_status": "",
             "stop_status": "stopped",
         }
         stdout = StringIO()

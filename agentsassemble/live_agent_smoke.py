@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import signal
 import sys
 import tempfile
 import threading
@@ -21,6 +23,7 @@ OFFICIAL_ROUND_SMOKE_ROUND_ID = "official_round_smoke"
 SESSION_SMOKE_ROUND_ID = "session_smoke_round"
 SMOKE_GROUP_ID_LIMIT = 48
 MAX_SESSION_SMOKE_LOBBY_PROBES = 5
+SESSION_SMOKE_RECOVERABLE_PROCESS_STATUSES = frozenset({"error", "unknown"})
 
 
 class LiveAgentSmokeFailed(Exception):
@@ -292,6 +295,7 @@ def run_live_agent_session_smoke(
     sleep_fn: Callable[[float], None] = time.sleep,
     python_executable: str = sys.executable,
     temp_dir_factory: Callable[[], object] = tempfile.TemporaryDirectory,
+    process_killer: Callable[[int], None] | None = None,
 ) -> dict[str, object]:
     clean_lobby_probe_count = _session_smoke_lobby_probe_count(lobby_probe_count)
     clean_group_id = smoke_group_id(group_id) if group_id else smoke_group_id(f"session-smoke-{int(time.time() * 1000)}")
@@ -316,11 +320,14 @@ def run_live_agent_session_smoke(
     check_result: dict[str, object] = {}
     resume_result: dict[str, object] = {}
     restart_result: dict[str, object] = {}
+    recover_result: dict[str, object] = {}
     stop_result: dict[str, object] = {}
     replies: list[dict[str, object]] = []
     post_restart_replies: list[dict[str, object]] = []
+    post_recover_replies: list[dict[str, object]] = []
     probe_event_ids: list[str] = []
     post_restart_probe_event_ids: list[str] = []
+    post_recover_probe_event_ids: list[str] = []
     with _SmokeRemoteBridgeServer(response_message=expected_messages[agent_ids["remote_bridge"]]) as bridge:
         with temp_dir_factory() as temp_dir:
             temp_root = Path(temp_dir).resolve()
@@ -427,6 +434,39 @@ def run_live_agent_session_smoke(
                     timeout_seconds=float(timeout_seconds),
                     phase="restart",
                 )
+                _make_session_smoke_group_recoverable(
+                    server,
+                    clean_group_id,
+                    meeting_id=clean_meeting_id,
+                    expected_agent_ids=list(agent_ids.values()),
+                    request_json=request_json,
+                    sleep_fn=sleep_fn,
+                    timeout_seconds=float(timeout_seconds),
+                    process_killer=process_killer or _kill_session_smoke_process_group,
+                )
+                recover_result = request_json(
+                    _server_url(server, "/api/live-agent-sessions/recover"),
+                    method="POST",
+                    payload={
+                        "meeting_id": clean_meeting_id,
+                        "group_id": clean_group_id,
+                        "connect_timeout_seconds": float(timeout_seconds),
+                    },
+                    timeout_seconds=_smoke_operation_http_timeout(float(timeout_seconds)),
+                )
+                if recover_result.get("status") != "ready":
+                    raise LiveAgentSmokeFailed("Session smoke recover did not become ready.")
+                _set_session_smoke_engagement(server, agent_ids.values(), request_json=request_json)
+                post_recover_probe_event_ids, post_recover_replies = _session_smoke_lobby_probe_replies(
+                    server,
+                    clean_group_id=clean_group_id,
+                    expected_messages=expected_messages,
+                    lobby_probe_count=clean_lobby_probe_count,
+                    request_json=request_json,
+                    sleep_fn=sleep_fn,
+                    timeout_seconds=float(timeout_seconds),
+                    phase="recover",
+                )
             finally:
                 try:
                     stop_result = request_json(
@@ -439,24 +479,9 @@ def run_live_agent_session_smoke(
                     if start_result:
                         raise
 
-    safe_replies = [
-        {
-            "id": str(reply.get("id") or ""),
-            "actor_id": str(reply.get("actor_id") or ""),
-            "source_event_id": str(reply.get("source_event_id") or ""),
-            "live_agent_endpoint": reply.get("live_agent_endpoint") is True,
-        }
-        for reply in replies
-    ]
-    safe_post_restart_replies = [
-        {
-            "id": str(reply.get("id") or ""),
-            "actor_id": str(reply.get("actor_id") or ""),
-            "source_event_id": str(reply.get("source_event_id") or ""),
-            "live_agent_endpoint": reply.get("live_agent_endpoint") is True,
-        }
-        for reply in post_restart_replies
-    ]
+    safe_replies = _safe_session_smoke_replies(replies)
+    safe_post_restart_replies = _safe_session_smoke_replies(post_restart_replies)
+    safe_post_recover_replies = _safe_session_smoke_replies(post_recover_replies)
     return {
         "status": "ok" if stop_result.get("status") == "stopped" else "failed",
         "meeting_id": clean_meeting_id,
@@ -467,6 +492,8 @@ def run_live_agent_session_smoke(
         "source_event_ids": probe_event_ids,
         "post_restart_source_event_id": post_restart_probe_event_ids[0] if post_restart_probe_event_ids else "",
         "post_restart_source_event_ids": post_restart_probe_event_ids,
+        "post_recover_source_event_id": post_recover_probe_event_ids[0] if post_recover_probe_event_ids else "",
+        "post_recover_source_event_ids": post_recover_probe_event_ids,
         "rounds_status": str(rounds_result.get("status") or ""),
         "round_count": _nonnegative_int(rounds_result.get("round_count")),
         "answered_round_count": _nonnegative_int(rounds_result.get("answered_round_count")),
@@ -477,12 +504,15 @@ def run_live_agent_session_smoke(
         "expected_reply_count": len(expected_messages),
         "reply_count": len(safe_replies),
         "post_restart_reply_count": len(safe_post_restart_replies),
+        "post_recover_reply_count": len(safe_post_recover_replies),
         "replies": safe_replies,
         "post_restart_replies": safe_post_restart_replies,
+        "post_recover_replies": safe_post_recover_replies,
         "start_status": str(start_result.get("status") or ""),
         "check_status": str(check_result.get("status") or ""),
         "resume_status": str(resume_result.get("status") or ""),
         "restart_status": str(restart_result.get("status") or ""),
+        "recover_status": str(recover_result.get("status") or ""),
         "stop_status": str(stop_result.get("status") or ""),
     }
 
@@ -822,6 +852,124 @@ def _session_smoke_lobby_probe_replies(
             )
         )
     return probe_event_ids, replies
+
+
+def _make_session_smoke_group_recoverable(
+    server: str,
+    group_id: str,
+    *,
+    meeting_id: str,
+    expected_agent_ids: list[str],
+    request_json: RequestJson,
+    sleep_fn: Callable[[float], None],
+    timeout_seconds: float,
+    process_killer: Callable[[int], None],
+) -> dict[str, object]:
+    payload = request_json(_server_url(server, "/api/live-agent-processes"))
+    group = find_process_group(payload, group_id)
+    if group is None:
+        raise LiveAgentSmokeFailed("Session smoke process group was not found before recover.")
+    _validate_session_smoke_recoverable_group(group, meeting_id=meeting_id, expected_agent_ids=expected_agent_ids)
+    status = str(group.get("status") or "unknown")
+    if status in SESSION_SMOKE_RECOVERABLE_PROCESS_STATUSES:
+        return group
+    if status not in {"running", "restarting"}:
+        raise LiveAgentSmokeFailed(f"Session smoke process group is {status}; cannot verify recover-session.")
+    pid = group.get("pid")
+    if not isinstance(pid, int) or pid <= 0:
+        raise LiveAgentSmokeFailed("Session smoke process group has no pid to make recoverable.")
+    process_killer(pid)
+    return _wait_for_session_smoke_recoverable_group(
+        server,
+        group_id,
+        meeting_id=meeting_id,
+        expected_agent_ids=expected_agent_ids,
+        request_json=request_json,
+        sleep_fn=sleep_fn,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _wait_for_session_smoke_recoverable_group(
+    server: str,
+    group_id: str,
+    *,
+    meeting_id: str,
+    expected_agent_ids: list[str],
+    request_json: RequestJson,
+    sleep_fn: Callable[[float], None],
+    timeout_seconds: float,
+) -> dict[str, object]:
+    deadline = time.monotonic() + timeout_seconds
+    last_status = "missing"
+    while time.monotonic() < deadline:
+        payload = request_json(_server_url(server, "/api/live-agent-processes"))
+        group = find_process_group(payload, group_id)
+        if group is None:
+            last_status = "missing"
+        else:
+            _validate_session_smoke_recoverable_group(group, meeting_id=meeting_id, expected_agent_ids=expected_agent_ids)
+            last_status = str(group.get("status") or "unknown")
+            if last_status in SESSION_SMOKE_RECOVERABLE_PROCESS_STATUSES:
+                return group
+        sleep_fn(0.05)
+    raise LiveAgentSmokeFailed(f"Session smoke process group did not become recoverable; last status {last_status}.")
+
+
+def _validate_session_smoke_recoverable_group(
+    group: dict[str, object],
+    *,
+    meeting_id: str,
+    expected_agent_ids: list[str],
+) -> None:
+    if group.get("diagnostic") is not True:
+        raise LiveAgentSmokeFailed("Session smoke process group is not diagnostic; refusing recover-session smoke.")
+    if str(group.get("meeting_id") or "") != meeting_id:
+        raise LiveAgentSmokeFailed("Session smoke process group belongs to a different meeting; refusing recover-session smoke.")
+    actual_agent_ids = _session_smoke_group_agent_ids(group.get("agents"))
+    expected = sorted(str(agent_id) for agent_id in expected_agent_ids)
+    if sorted(actual_agent_ids) != expected or len(actual_agent_ids) != len(set(actual_agent_ids)):
+        raise LiveAgentSmokeFailed("Session smoke process group manifest does not match expected smoke agents.")
+
+
+def _session_smoke_group_agent_ids(agents: object) -> list[str]:
+    if not isinstance(agents, list):
+        return []
+    return [
+        str(agent.get("agent_id") or "")
+        for agent in agents
+        if isinstance(agent, dict) and str(agent.get("agent_id") or "")
+    ]
+
+
+def _kill_session_smoke_process_group(pid: int) -> None:
+    try:
+        os.killpg(pid, signal.SIGTERM)
+        return
+    except AttributeError:
+        pass
+    except ProcessLookupError:
+        pass
+    except PermissionError as error:
+        raise LiveAgentSmokeFailed("Session smoke could not stop process group for recover.") from error
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except PermissionError as error:
+        raise LiveAgentSmokeFailed("Session smoke could not stop process for recover.") from error
+
+
+def _safe_session_smoke_replies(replies: list[dict[str, object]]) -> list[dict[str, object]]:
+    return [
+        {
+            "id": str(reply.get("id") or ""),
+            "actor_id": str(reply.get("actor_id") or ""),
+            "source_event_id": str(reply.get("source_event_id") or ""),
+            "live_agent_endpoint": reply.get("live_agent_endpoint") is True,
+        }
+        for reply in replies
+    ]
 
 
 def seed_official_round_smoke_agents(

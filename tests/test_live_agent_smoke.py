@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from agentsassemble.live_agent_smoke import (
     LiveAgentSmokeFailed,
+    _make_session_smoke_group_recoverable,
     build_live_agent_official_round_smoke_config,
     build_live_agent_smoke_config,
     run_live_agent_session_smoke,
@@ -130,6 +131,33 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "group_id": payload["group_id"],
                     "connection": {"expected": 3, "connected": 3, "attention": []},
                 }
+            if url.endswith("/api/live-agent-processes"):
+                return {
+                    "groups": [
+                        {
+                            "group_id": "session-smoke",
+                            "status": "error",
+                            "meeting_id": "session-smoke-meeting",
+                            "diagnostic": True,
+                            "agents": [
+                                {"agent_id": "session-smoke-local-cli"},
+                                {"agent_id": "session-smoke-live-session"},
+                                {"agent_id": "session-smoke-remote-bridge"},
+                            ],
+                        }
+                    ]
+                }
+            if url.endswith("/api/live-agent-sessions/recover"):
+                self.assertEqual(
+                    payload,
+                    {"meeting_id": "session-smoke-meeting", "group_id": "session-smoke", "connect_timeout_seconds": 8.0},
+                )
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                }
             if url.endswith("/api/live-agent-sessions/stop"):
                 return {
                     "status": "stopped",
@@ -163,13 +191,14 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertIn("http://room.local/api/live-agent-sessions/check", urls)
         self.assertIn("http://room.local/api/live-agent-sessions/resume", urls)
         self.assertIn("http://room.local/api/live-agent-sessions/restart", urls)
+        self.assertIn("http://room.local/api/live-agent-sessions/recover", urls)
         self.assertIn("http://room.local/api/live-agent-sessions/stop", urls)
         lobby_post_indexes = [
             index
             for index, (url, method, payload, timeout_seconds) in enumerate(calls)
             if url == "http://room.local/api/lobby" and method == "POST"
         ]
-        self.assertEqual(len(lobby_post_indexes), 2)
+        self.assertEqual(len(lobby_post_indexes), 3)
         self.assertLess(
             urls.index("http://room.local/api/live-agent-sessions/check"),
             urls.index("http://room.local/api/live-agent-sessions/resume"),
@@ -182,6 +211,14 @@ class LiveAgentSmokeTests(unittest.TestCase):
             urls.index("http://room.local/api/live-agent-sessions/restart"),
             lobby_post_indexes[1],
         )
+        self.assertLess(
+            lobby_post_indexes[1],
+            urls.index("http://room.local/api/live-agent-sessions/recover"),
+        )
+        self.assertLess(
+            urls.index("http://room.local/api/live-agent-sessions/recover"),
+            lobby_post_indexes[2],
+        )
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["meeting_id"], "session-smoke-meeting")
         self.assertEqual(result["group_id"], "session-smoke")
@@ -192,16 +229,20 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertEqual(result["reply_count"], 3)
         self.assertEqual(result["post_restart_reply_count"], 3)
         self.assertEqual(result["post_restart_source_event_id"], "session-probe-2")
+        self.assertEqual(result["post_recover_reply_count"], 3)
+        self.assertEqual(result["post_recover_source_event_id"], "session-probe-3")
         self.assertEqual(result["start_status"], "ready")
         self.assertEqual(result["check_status"], "ready")
         self.assertEqual(result["resume_status"], "ready")
         self.assertEqual(result["restart_status"], "ready")
+        self.assertEqual(result["recover_status"], "ready")
         self.assertEqual(result["stop_status"], "stopped")
         self.assertEqual(
             {reply["actor_id"] for reply in result["replies"]},
             {"session-smoke-local-cli", "session-smoke-live-session", "session-smoke-remote-bridge"},
         )
         self.assertEqual({reply["source_event_id"] for reply in result["post_restart_replies"]}, {"session-probe-2"})
+        self.assertEqual({reply["source_event_id"] for reply in result["post_recover_replies"]}, {"session-probe-3"})
         serialized = json.dumps(result, ensure_ascii=False)
         self.assertNotIn(str(Path(temp_dir)), serialized)
         self.assertNotIn("session smoke local_cli ok", serialized)
@@ -279,12 +320,29 @@ class LiveAgentSmokeTests(unittest.TestCase):
                 url.endswith("/api/live-agent-sessions/check")
                 or url.endswith("/api/live-agent-sessions/resume")
                 or url.endswith("/api/live-agent-sessions/restart")
+                or url.endswith("/api/live-agent-sessions/recover")
             ):
                 return {
                     "status": "ready",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
                     "connection": {"expected": 3, "connected": 3, "attention": []},
+                }
+            if url.endswith("/api/live-agent-processes"):
+                return {
+                    "groups": [
+                        {
+                            "group_id": "session-smoke",
+                            "status": "error",
+                            "meeting_id": "session-smoke-meeting",
+                            "diagnostic": True,
+                            "agents": [
+                                {"agent_id": "session-smoke-local-cli"},
+                                {"agent_id": "session-smoke-live-session"},
+                                {"agent_id": "session-smoke-remote-bridge"},
+                            ],
+                        }
+                    ]
                 }
             if url.endswith("/api/live-agent-sessions/stop"):
                 return {
@@ -315,16 +373,21 @@ class LiveAgentSmokeTests(unittest.TestCase):
             for index, (url, method, payload, timeout_seconds) in enumerate(calls)
             if url == "http://room.local/api/lobby" and method == "POST"
         ]
-        self.assertEqual(len(lobby_post_indexes), 4)
+        self.assertEqual(len(lobby_post_indexes), 6)
         self.assertLess(lobby_post_indexes[1], urls.index("http://room.local/api/live-agent-sessions/check"))
         self.assertLess(urls.index("http://room.local/api/live-agent-sessions/restart"), lobby_post_indexes[2])
+        self.assertLess(lobby_post_indexes[3], urls.index("http://room.local/api/live-agent-sessions/recover"))
+        self.assertLess(urls.index("http://room.local/api/live-agent-sessions/recover"), lobby_post_indexes[4])
         self.assertEqual(result["lobby_probe_count"], 2)
         self.assertEqual(result["source_event_ids"], ["probe-1", "probe-2"])
         self.assertEqual(result["post_restart_source_event_ids"], ["probe-3", "probe-4"])
+        self.assertEqual(result["post_recover_source_event_ids"], ["probe-5", "probe-6"])
         self.assertEqual(result["reply_count"], 6)
         self.assertEqual(result["post_restart_reply_count"], 6)
+        self.assertEqual(result["post_recover_reply_count"], 6)
         self.assertEqual({reply["source_event_id"] for reply in result["replies"]}, {"probe-1", "probe-2"})
         self.assertEqual({reply["source_event_id"] for reply in result["post_restart_replies"]}, {"probe-3", "probe-4"})
+        self.assertEqual({reply["source_event_id"] for reply in result["post_recover_replies"]}, {"probe-5", "probe-6"})
 
     def test_session_smoke_bounds_lobby_probe_count_before_side_effects(self):
         calls = []
@@ -421,12 +484,29 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     url.endswith("/api/live-agent-sessions/check")
                     or url.endswith("/api/live-agent-sessions/resume")
                     or url.endswith("/api/live-agent-sessions/restart")
+                    or url.endswith("/api/live-agent-sessions/recover")
                 ):
                     return {
                         "status": "ready",
                         "meeting_id": payload["meeting_id"],
                         "group_id": payload["group_id"],
                         "connection": {"expected": 3, "connected": 3, "attention": []},
+                    }
+                if url.endswith("/api/live-agent-processes"):
+                    return {
+                        "groups": [
+                            {
+                                "group_id": state["group_id"],
+                                "status": "error",
+                                "meeting_id": state["meeting_id"],
+                                "diagnostic": True,
+                                "agents": [
+                                    {"agent_id": f"{state['group_id']}-local-cli"},
+                                    {"agent_id": f"{state['group_id']}-live-session"},
+                                    {"agent_id": f"{state['group_id']}-remote-bridge"},
+                                ],
+                            }
+                        ]
                     }
                 if url.endswith("/api/live-agent-sessions/stop"):
                     return {
@@ -449,7 +529,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
             root = Path(temp_dir) / "room"
             with patch(
                 "agentsassemble.live_agent_smoke.time.time",
-                side_effect=[1000.001, 1000.002, 1000.003, 1001.001, 1001.002, 1001.003],
+                side_effect=[1000.001, 1000.002, 1000.003, 1000.004, 1001.001, 1001.002, 1001.003, 1001.004],
             ):
                 first = run_once(root)
                 second = run_once(root)
@@ -459,6 +539,115 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertNotEqual(first["group_id"], second["group_id"])
         self.assertNotEqual(first["meeting_id"], second["meeting_id"])
         self.assertEqual(start_group_ids, [first["group_id"], second["group_id"]])
+
+    def test_session_smoke_recoverable_guard_kills_only_valid_diagnostic_group(self):
+        calls = []
+        killed = []
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            calls.append(url)
+            status = "error" if killed else "running"
+            return {
+                "groups": [
+                    {
+                        "group_id": "session-smoke",
+                        "status": status,
+                        "pid": 1234,
+                        "meeting_id": "session-smoke-meeting",
+                        "diagnostic": True,
+                        "agents": [
+                            {"agent_id": "session-smoke-local-cli"},
+                            {"agent_id": "session-smoke-live-session"},
+                            {"agent_id": "session-smoke-remote-bridge"},
+                        ],
+                    }
+                ]
+            }
+
+        group = _make_session_smoke_group_recoverable(
+            "http://room.local",
+            "session-smoke",
+            meeting_id="session-smoke-meeting",
+            expected_agent_ids=[
+                "session-smoke-local-cli",
+                "session-smoke-live-session",
+                "session-smoke-remote-bridge",
+            ],
+            request_json=request_json,
+            sleep_fn=lambda seconds: None,
+            timeout_seconds=8,
+            process_killer=lambda pid: killed.append(pid),
+        )
+
+        self.assertEqual(killed, [1234])
+        self.assertEqual(group["status"], "error")
+        self.assertEqual(calls, ["http://room.local/api/live-agent-processes", "http://room.local/api/live-agent-processes"])
+
+    def test_session_smoke_recoverable_guard_refuses_unsafe_group_before_kill(self):
+        expected_agent_ids = [
+            "session-smoke-local-cli",
+            "session-smoke-live-session",
+            "session-smoke-remote-bridge",
+        ]
+
+        unsafe_groups = [
+            (
+                "not diagnostic",
+                {
+                    "group_id": "session-smoke",
+                    "status": "running",
+                    "pid": 1234,
+                    "meeting_id": "session-smoke-meeting",
+                    "diagnostic": False,
+                    "agents": [{"agent_id": agent_id} for agent_id in expected_agent_ids],
+                },
+                "not diagnostic",
+            ),
+            (
+                "wrong meeting",
+                {
+                    "group_id": "session-smoke",
+                    "status": "running",
+                    "pid": 1234,
+                    "meeting_id": "real-meeting",
+                    "diagnostic": True,
+                    "agents": [{"agent_id": agent_id} for agent_id in expected_agent_ids],
+                },
+                "different meeting",
+            ),
+            (
+                "wrong manifest",
+                {
+                    "group_id": "session-smoke",
+                    "status": "running",
+                    "pid": 1234,
+                    "meeting_id": "session-smoke-meeting",
+                    "diagnostic": True,
+                    "agents": [{"agent_id": "real-agent"}],
+                },
+                "does not match",
+            ),
+        ]
+
+        for label, group, pattern in unsafe_groups:
+            killed = []
+
+            def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+                return {"groups": [group]}
+
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(LiveAgentSmokeFailed, pattern):
+                    _make_session_smoke_group_recoverable(
+                        "http://room.local",
+                        "session-smoke",
+                        meeting_id="session-smoke-meeting",
+                        expected_agent_ids=expected_agent_ids,
+                        request_json=request_json,
+                        sleep_fn=lambda seconds: None,
+                        timeout_seconds=8,
+                        process_killer=lambda pid: killed.append(pid),
+                    )
+                self.assertEqual(killed, [])
 
     def test_builds_credential_free_group_config_with_all_resident_connection_kinds(self):
         config = build_live_agent_smoke_config(
