@@ -143,7 +143,7 @@ python3 -m agentsassemble.cli sessions live-agent-config \
   --json
 ```
 
-The generated resident config uses `provider_kind: "codex_live_session"` and `connection_kind: "live_session"` for each Codex binding, preserves configured session ids, and omits command arguments so the resident runner applies its default safe Codex command shape. This conversion writes a local config only; it does not start resident sessions, execute Codex, or append operation records.
+The generated resident config uses `provider_kind: "codex_live_session"` and `connection_kind: "live_session"` for each Codex binding, preserves configured session ids, and omits command arguments so the resident runner applies its default safe Codex command shape. With `--json`, the response also includes `next_commands.preflight` and `next_commands.ensure_session` arrays so another local agent or wrapper can run the next control-plane checks without parsing prose. Compact output shell-quotes those next commands for copy/paste. `ensure-session` is emitted with the generated resident config path and the same normalized process `group_id` that a supervised start would derive from that config filename, so it can target the same meeting/process pair and no-op, start, resume, restart, or recover depending on the current state. This conversion writes a local config only; it does not start resident sessions, execute Codex, or append operation records.
 
 External or manually driven agents can also post a linked lobby reply through the live-agent endpoint:
 

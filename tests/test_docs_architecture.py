@@ -117,6 +117,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("configs/live-agents.codex-session.example.json", doc)
         self.assertIn("python3 -m agentsassemble.cli sessions invite", doc)
         self.assertIn("python3 -m agentsassemble.cli sessions live-agent-config", doc)
+        self.assertIn("next_commands", doc)
+        self.assertIn("next_commands.ensure_session", doc)
         self.assertIn("codex exec resume", doc)
         self.assertIn("codex_session.invite", doc)
         self.assertIn("failed invite attempts", doc)

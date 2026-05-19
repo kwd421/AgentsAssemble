@@ -326,7 +326,87 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual(written["agents"][0]["connection_kind"], "live_session")
             self.assertEqual(written["agents"][0]["meeting_id"], "resident-m1")
             self.assertEqual(written["agents"][0]["engagement_mode"], "moderator_called")
-            self.assertEqual(json.loads(stdout.getvalue())["output"], str(output_path))
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["output"], str(output_path))
+            self.assertEqual(
+                payload["next_commands"]["preflight"],
+                [
+                    "python3",
+                    "-m",
+                    "agentsassemble.cli",
+                    "live-agent",
+                    "preflight",
+                    "--config",
+                    str(output_path),
+                ],
+            )
+            self.assertEqual(
+                payload["next_commands"]["ensure_session"],
+                [
+                    "python3",
+                    "-m",
+                    "agentsassemble.cli",
+                    "live-agent",
+                    "ensure-session",
+                    "--server",
+                    "http://room.local",
+                    "--meeting-id",
+                    "resident-m1",
+                    "--group-id",
+                    "live-agents.codex-session.local",
+                    "--agent-config",
+                    str(invite_path),
+                    "--live-agent-config",
+                    str(output_path),
+                ],
+            )
+
+    def test_sessions_live_agent_config_compact_output_quotes_next_commands(self):
+        with tempfile.TemporaryDirectory(prefix="codex path ") as temp_dir:
+            root = Path(temp_dir)
+            invite_path = root / "codex invite.json"
+            output_path = root / "live agents.json"
+            invite_path.write_text(
+                json.dumps(
+                    {
+                        "agent_bindings": [
+                            {
+                                "agent_id": "codex-live-lore",
+                                "role_id": "lore_lawyer",
+                                "provider_id": "codex-live",
+                                "session_id": "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "sessions",
+                        "live-agent-config",
+                        "--input",
+                        str(invite_path),
+                        "--output",
+                        str(output_path),
+                        "--server",
+                        "http://room.local/with space",
+                        "--meeting-id",
+                        "resident m1",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            output = stdout.getvalue()
+            self.assertIn("Next preflight: python3 -m agentsassemble.cli live-agent preflight --config", output)
+            self.assertIn(f"'{output_path}'", output)
+            self.assertIn(f"'{invite_path}'", output)
+            self.assertIn("'http://room.local/with space'", output)
+            self.assertIn("'resident m1'", output)
+            self.assertIn("--group-id live-agents", output)
 
     def test_live_agent_register_posts_connection_payload(self):
         stdout = StringIO()

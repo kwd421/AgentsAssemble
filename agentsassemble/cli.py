@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -3707,12 +3708,68 @@ def run_sessions_command(args: argparse.Namespace) -> int:
         except (OSError, ValueError, json.JSONDecodeError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
+        next_commands = _codex_live_agent_config_next_commands(
+            input_path=str(args.input_path),
+            output_path=str(output_path),
+            server=str(args.server),
+            meeting_id=str(args.meeting_id),
+        )
         if args.as_json:
-            print(json.dumps({"output": str(output_path), "config": config}, ensure_ascii=False, indent=2))
+            print(
+                json.dumps(
+                    {"output": str(output_path), "config": config, "next_commands": next_commands},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
         else:
             print(f"Wrote {output_path}")
+            print("Next preflight: " + shlex.join(next_commands["preflight"]))
+            print("Next ensure-session: " + shlex.join(next_commands["ensure_session"]))
         return 0
     return 1
+
+
+def _codex_live_agent_config_next_commands(
+    *,
+    input_path: str,
+    output_path: str,
+    server: str,
+    meeting_id: str,
+) -> dict[str, list[str]]:
+    group_id = clean_live_agent_group_id(Path(output_path).stem)
+    ensure_session = [
+        "python3",
+        "-m",
+        "agentsassemble.cli",
+        "live-agent",
+        "ensure-session",
+        "--server",
+        server,
+    ]
+    if meeting_id:
+        ensure_session.extend(["--meeting-id", meeting_id])
+    ensure_session.extend(["--group-id", group_id])
+    ensure_session.extend(
+        [
+            "--agent-config",
+            input_path,
+            "--live-agent-config",
+            output_path,
+        ]
+    )
+    return {
+        "preflight": [
+            "python3",
+            "-m",
+            "agentsassemble.cli",
+            "live-agent",
+            "preflight",
+            "--config",
+            output_path,
+        ],
+        "ensure_session": ensure_session,
+    }
 
 
 if __name__ == "__main__":
