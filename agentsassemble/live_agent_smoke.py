@@ -20,6 +20,7 @@ SMOKE_BRIDGE_TOKEN = "agentsassemble-smoke-token"
 OFFICIAL_ROUND_SMOKE_ROUND_ID = "official_round_smoke"
 SESSION_SMOKE_ROUND_ID = "session_smoke_round"
 SMOKE_GROUP_ID_LIMIT = 48
+MAX_SESSION_SMOKE_LOBBY_PROBES = 5
 
 
 class LiveAgentSmokeFailed(Exception):
@@ -285,12 +286,14 @@ def run_live_agent_session_smoke(
     group_id: str = "",
     meeting_id: str = "",
     timeout_seconds: float = 12.0,
+    lobby_probe_count: int = 1,
     request_json: RequestJson,
     output_root: Path | None = None,
     sleep_fn: Callable[[float], None] = time.sleep,
     python_executable: str = sys.executable,
     temp_dir_factory: Callable[[], object] = tempfile.TemporaryDirectory,
 ) -> dict[str, object]:
+    clean_lobby_probe_count = _session_smoke_lobby_probe_count(lobby_probe_count)
     clean_group_id = smoke_group_id(group_id) if group_id else smoke_group_id(f"session-smoke-{int(time.time() * 1000)}")
     clean_meeting_id = smoke_group_id(meeting_id) if meeting_id else smoke_group_id(f"session-{clean_group_id}")
     agent_ids = {
@@ -316,8 +319,8 @@ def run_live_agent_session_smoke(
     stop_result: dict[str, object] = {}
     replies: list[dict[str, object]] = []
     post_restart_replies: list[dict[str, object]] = []
-    probe_event_id = ""
-    post_restart_probe_event_id = ""
+    probe_event_ids: list[str] = []
+    post_restart_probe_event_ids: list[str] = []
     with _SmokeRemoteBridgeServer(response_message=expected_messages[agent_ids["remote_bridge"]]) as bridge:
         with temp_dir_factory() as temp_dir:
             temp_root = Path(temp_dir).resolve()
@@ -371,23 +374,15 @@ def run_live_agent_session_smoke(
                 if rounds_result.get("status") != "answered" or _nonnegative_int(rounds_result.get("answered_round_count")) < 1:
                     raise LiveAgentSmokeFailed("Session smoke official round did not answer.")
                 _set_session_smoke_engagement(server, agent_ids.values(), request_json=request_json)
-                probe_response = request_json(
-                    _server_url(server, "/api/lobby"),
-                    method="POST",
-                    payload={
-                        "name": "AgentsAssemble Session Smoke",
-                        "side": "mine",
-                        "message": f"live-agent session-smoke {clean_group_id} {int(time.time() * 1000)}",
-                    },
-                )
-                probe_event_id = _event_id(probe_response)
-                replies = wait_for_smoke_replies(
+                probe_event_ids, replies = _session_smoke_lobby_probe_replies(
                     server,
+                    clean_group_id=clean_group_id,
                     expected_messages=expected_messages,
-                    source_event_id=probe_event_id,
+                    lobby_probe_count=clean_lobby_probe_count,
                     request_json=request_json,
                     sleep_fn=sleep_fn,
                     timeout_seconds=float(timeout_seconds),
+                    phase="",
                 )
                 check_result = request_json(
                     _server_url(server, "/api/live-agent-sessions/check"),
@@ -422,23 +417,15 @@ def run_live_agent_session_smoke(
                 )
                 if restart_result.get("status") != "ready":
                     raise LiveAgentSmokeFailed("Session smoke restart did not become ready.")
-                post_restart_probe_response = request_json(
-                    _server_url(server, "/api/lobby"),
-                    method="POST",
-                    payload={
-                        "name": "AgentsAssemble Session Smoke",
-                        "side": "mine",
-                        "message": f"live-agent session-smoke restart {clean_group_id} {int(time.time() * 1000)}",
-                    },
-                )
-                post_restart_probe_event_id = _event_id(post_restart_probe_response)
-                post_restart_replies = wait_for_smoke_replies(
+                post_restart_probe_event_ids, post_restart_replies = _session_smoke_lobby_probe_replies(
                     server,
+                    clean_group_id=clean_group_id,
                     expected_messages=expected_messages,
-                    source_event_id=post_restart_probe_event_id,
+                    lobby_probe_count=clean_lobby_probe_count,
                     request_json=request_json,
                     sleep_fn=sleep_fn,
                     timeout_seconds=float(timeout_seconds),
+                    phase="restart",
                 )
             finally:
                 try:
@@ -475,8 +462,11 @@ def run_live_agent_session_smoke(
         "meeting_id": clean_meeting_id,
         "group_id": clean_group_id,
         "agent_ids": list(agent_ids.values()),
-        "source_event_id": probe_event_id,
-        "post_restart_source_event_id": post_restart_probe_event_id,
+        "lobby_probe_count": clean_lobby_probe_count,
+        "source_event_id": probe_event_ids[0] if probe_event_ids else "",
+        "source_event_ids": probe_event_ids,
+        "post_restart_source_event_id": post_restart_probe_event_ids[0] if post_restart_probe_event_ids else "",
+        "post_restart_source_event_ids": post_restart_probe_event_ids,
         "rounds_status": str(rounds_result.get("status") or ""),
         "round_count": _nonnegative_int(rounds_result.get("round_count")),
         "answered_round_count": _nonnegative_int(rounds_result.get("answered_round_count")),
@@ -778,6 +768,60 @@ def _set_session_smoke_engagement(
             method="POST",
             payload={"engagement_mode": "always"},
         )
+
+
+def _session_smoke_lobby_probe_count(value: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"Session smoke lobby_probe_count must be between 1 and {MAX_SESSION_SMOKE_LOBBY_PROBES}."
+        ) from error
+    if parsed < 1 or parsed > MAX_SESSION_SMOKE_LOBBY_PROBES:
+        raise ValueError(f"Session smoke lobby_probe_count must be between 1 and {MAX_SESSION_SMOKE_LOBBY_PROBES}.")
+    return parsed
+
+
+def _session_smoke_lobby_probe_replies(
+    server: str,
+    *,
+    clean_group_id: str,
+    expected_messages: dict[str, str],
+    lobby_probe_count: int,
+    request_json: RequestJson,
+    sleep_fn: Callable[[float], None],
+    timeout_seconds: float,
+    phase: str,
+) -> tuple[list[str], list[dict[str, object]]]:
+    probe_event_ids = []
+    replies = []
+    phase_label = f" {phase}" if phase else ""
+    for index in range(lobby_probe_count):
+        probe_response = request_json(
+            _server_url(server, "/api/lobby"),
+            method="POST",
+            payload={
+                "name": "AgentsAssemble Session Smoke",
+                "side": "mine",
+                "message": (
+                    f"live-agent session-smoke{phase_label} "
+                    f"{clean_group_id} {index + 1}/{lobby_probe_count} {int(time.time() * 1000)}"
+                ),
+            },
+        )
+        probe_event_id = _event_id(probe_response)
+        probe_event_ids.append(probe_event_id)
+        replies.extend(
+            wait_for_smoke_replies(
+                server,
+                expected_messages=expected_messages,
+                source_event_id=probe_event_id,
+                request_json=request_json,
+                sleep_fn=sleep_fn,
+                timeout_seconds=float(timeout_seconds),
+            )
+        )
+    return probe_event_ids, replies
 
 
 def seed_official_round_smoke_agents(

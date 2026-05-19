@@ -83,6 +83,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("/api/live-agent-session-smoke", doc)
         self.assertIn("pre-restart and post-restart lobby reply counts", doc)
         self.assertIn("auto lobby reply before and after restart", doc)
+        self.assertIn("--lobby-probes", doc)
+        self.assertIn("repeated auto lobby reply before and after restart", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent health", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent preflight", doc)
         self.assertIn("Resident runners support only `local_cli`, `live_session`, and `remote_bridge`", doc)

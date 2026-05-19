@@ -679,6 +679,8 @@ class CliTimeoutTests(unittest.TestCase):
                 "session-smoke-meeting",
                 "--timeout",
                 "8",
+                "--lobby-probes",
+                "2",
                 "--json",
             ]
         )
@@ -688,7 +690,12 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.group_id, "session-smoke")
         self.assertEqual(args.meeting_id, "session-smoke-meeting")
         self.assertEqual(args.timeout, 8.0)
+        self.assertEqual(args.lobby_probe_count, 2)
         self.assertTrue(args.as_json)
+
+    def test_live_agent_session_smoke_rejects_unbounded_lobby_probes(self):
+        with self.assertRaises(SystemExit):
+            build_parser().parse_args(["live-agent", "session-smoke", "--lobby-probes", "6"])
 
     def test_live_agent_doctor_parses_operator_options(self):
         args = build_parser().parse_args(
@@ -2413,8 +2420,9 @@ class CliTimeoutTests(unittest.TestCase):
             "rounds_status": "answered",
             "answered_round_count": 1,
             "expected_reply_count": 3,
-            "reply_count": 3,
-            "post_restart_reply_count": 3,
+            "lobby_probe_count": 2,
+            "reply_count": 6,
+            "post_restart_reply_count": 6,
             "start_status": "ready",
             "check_status": "ready",
             "resume_status": "ready",
@@ -2436,6 +2444,8 @@ class CliTimeoutTests(unittest.TestCase):
                         "session-smoke-meeting",
                         "--timeout",
                         "8",
+                        "--lobby-probes",
+                        "2",
                     ]
                 )
 
@@ -2443,14 +2453,15 @@ class CliTimeoutTests(unittest.TestCase):
         request_json.assert_called_once_with(
             "http://room.local/api/live-agent-session-smoke",
             method="POST",
-            payload={"group_id": "session-smoke", "meeting_id": "session-smoke-meeting", "timeout": 8.0},
-            timeout_seconds=126.0,
+            payload={"group_id": "session-smoke", "meeting_id": "session-smoke-meeting", "timeout": 8.0, "lobby_probe_count": 2},
+            timeout_seconds=142.0,
         )
         output = stdout.getvalue()
         self.assertIn("resident session smoke ok: session-smoke-meeting", output)
         self.assertIn("rounds answered (1 answered)", output)
-        self.assertIn("3/3 replies", output)
-        self.assertIn("post-restart 3/3 replies", output)
+        self.assertIn("2 lobby probes", output)
+        self.assertIn("6/6 replies", output)
+        self.assertIn("post-restart 6/6 replies", output)
         self.assertIn("start ready, check ready, resume ready, restart ready, stop stopped", output)
 
     def test_live_agent_session_smoke_returns_failure_for_non_ok_status(self):

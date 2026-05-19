@@ -959,9 +959,12 @@ class GuiServerTests(unittest.TestCase):
             "timeout_round_count": 0,
             "skipped_round_count": 0,
             "expected_reply_count": 3,
-            "reply_count": 3,
+            "lobby_probe_count": 2,
+            "source_event_ids": ["probe-secret", "probe-secret-2"],
+            "reply_count": 6,
             "post_restart_source_event_id": "post-restart-secret",
-            "post_restart_reply_count": 3,
+            "post_restart_source_event_ids": ["post-restart-secret", "post-restart-secret-2"],
+            "post_restart_reply_count": 6,
             "replies": [
                 {"id": "reply-local", "actor_id": "session-smoke-local-cli", "source_event_id": "probe-secret"},
                 {"id": "reply-session", "actor_id": "session-smoke-live-session", "source_event_id": "probe-secret"},
@@ -1000,7 +1003,14 @@ class GuiServerTests(unittest.TestCase):
                 with patch("agentsassemble.gui.run_live_agent_session_smoke", return_value=smoke_result) as session_smoke:
                     request = Request(
                         f"http://127.0.0.1:{server.server_port}/api/live-agent-session-smoke",
-                        data=json.dumps({"group_id": "session-smoke", "meeting_id": "session-smoke-meeting", "timeout": 8}).encode("utf-8"),
+                        data=json.dumps(
+                            {
+                                "group_id": "session-smoke",
+                                "meeting_id": "session-smoke-meeting",
+                                "timeout": 8,
+                                "lobby_probe_count": 2,
+                            }
+                        ).encode("utf-8"),
                         headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
                         method="POST",
                     )
@@ -1021,6 +1031,7 @@ class GuiServerTests(unittest.TestCase):
             group_id="session-smoke",
             meeting_id="session-smoke-meeting",
             timeout_seconds=8.0,
+            lobby_probe_count=2,
             request_json=ANY,
             output_root=root,
         )
@@ -1030,12 +1041,15 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(session_operations[-1]["details"]["meeting_id"], "session-smoke-meeting")
         self.assertEqual(session_operations[-1]["details"]["rounds_status"], "answered")
         self.assertEqual(session_operations[-1]["details"]["answered_round_count"], 1)
-        self.assertEqual(session_operations[-1]["details"]["reply_count"], 3)
-        self.assertEqual(session_operations[-1]["details"]["post_restart_reply_count"], 3)
+        self.assertEqual(session_operations[-1]["details"]["lobby_probe_count"], 2)
+        self.assertEqual(session_operations[-1]["details"]["reply_count"], 6)
+        self.assertEqual(session_operations[-1]["details"]["post_restart_reply_count"], 6)
         self.assertEqual(session_operations[-1]["details"]["resume_status"], "ready")
         operation_blob = json.dumps(session_operations, ensure_ascii=False)
         self.assertNotIn("probe-secret", operation_blob)
+        self.assertNotIn("probe-secret-2", operation_blob)
         self.assertNotIn("post-restart-secret", operation_blob)
+        self.assertNotIn("post-restart-secret-2", operation_blob)
         self.assertNotIn("reply-local", operation_blob)
         self.assertNotIn("reply-session", operation_blob)
         self.assertNotIn("reply-bridge", operation_blob)

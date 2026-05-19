@@ -762,8 +762,9 @@ test("session smoke button runs fresh diagnostic session instead of reusing curr
       round_count: 1,
       answered_round_count: 1,
       expected_reply_count: 3,
-      reply_count: 3,
-      post_restart_reply_count: 3,
+      lobby_probe_count: 2,
+      reply_count: 6,
+      post_restart_reply_count: 6,
       start_status: "ready",
       check_status: "ready",
       resume_status: "ready",
@@ -782,7 +783,7 @@ test("session smoke button runs fresh diagnostic session instead of reusing curr
   assert.deepEqual(sessionSmokeRequest(requests).jsonBody, { timeout: 12 });
   assert.equal(
     state.liveAgentProcessStatus.message,
-    "세션 smoke ok: session-smoke-generated · rounds answered (1 answered) · 3/3 replies · post-restart 3/3 replies · start ready, check ready, resume ready, restart ready, stop stopped"
+    "세션 smoke ok: session-smoke-generated · rounds answered (1 answered) · 2 probes · 6/6 replies · post-restart 6/6 replies · start ready, check ready, resume ready, restart ready, stop stopped"
   );
   assert.equal(
     requests.some((request) => request.url === "/api/live-agent-processes"),

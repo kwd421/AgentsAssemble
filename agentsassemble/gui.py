@@ -1129,6 +1129,7 @@ def live_agent_session_smoke_payload(
         group_id=str(payload.get("group_id") or ""),
         meeting_id=str(payload.get("meeting_id") or ""),
         timeout_seconds=_payload_nonnegative_float(payload.get("timeout"), 12.0),
+        lobby_probe_count=_payload_nonnegative_int(payload.get("lobby_probe_count"), 1),
         request_json=_request_json,
         output_root=output_root,
     )
@@ -2311,6 +2312,7 @@ def _session_smoke_operation_details(smoke: dict[str, object]) -> dict[str, obje
         "completed_round_count": _payload_nonnegative_int(smoke.get("completed_round_count"), 0),
         "timeout_round_count": _payload_nonnegative_int(smoke.get("timeout_round_count"), 0),
         "skipped_round_count": _payload_nonnegative_int(smoke.get("skipped_round_count"), 0),
+        "lobby_probe_count": _payload_nonnegative_int(smoke.get("lobby_probe_count"), 1),
         "expected_reply_count": _payload_nonnegative_int(smoke.get("expected_reply_count"), 0),
         "reply_count": _payload_nonnegative_int(smoke.get("reply_count"), 0),
         "post_restart_reply_count": _payload_nonnegative_int(smoke.get("post_restart_reply_count"), 0),

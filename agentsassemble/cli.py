@@ -34,7 +34,7 @@ from agentsassemble.live_agent_runner import (
     load_group_configs,
     resident_connection_kind_error,
 )
-from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed, run_live_agent_smoke
+from agentsassemble.live_agent_smoke import MAX_SESSION_SMOKE_LOBBY_PROBES, LiveAgentSmokeFailed, run_live_agent_smoke
 from agentsassemble.live_session_transport import JsonlLiveSession
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
@@ -69,6 +69,13 @@ def parse_positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
+    return parsed
+
+
+def parse_session_smoke_lobby_probe_count(value: str) -> int:
+    parsed = parse_positive_int(value)
+    if parsed > MAX_SESSION_SMOKE_LOBBY_PROBES:
+        raise argparse.ArgumentTypeError(f"value must be at most {MAX_SESSION_SMOKE_LOBBY_PROBES}")
     return parsed
 
 
@@ -367,6 +374,13 @@ def build_parser() -> argparse.ArgumentParser:
     live_session_smoke.add_argument("--group-id", default="", help="Optional supervised process group id for the smoke run.")
     live_session_smoke.add_argument("--meeting-id", default="", help="Optional resident meeting id for the smoke run.")
     live_session_smoke.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait for fake session readiness and replies.")
+    live_session_smoke.add_argument(
+        "--lobby-probes",
+        type=parse_session_smoke_lobby_probe_count,
+        default=1,
+        dest="lobby_probe_count",
+        help="Human lobby probes to verify before and after restart, 1-5.",
+    )
     live_session_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable session smoke result.")
 
     live_official_round_smoke = live_agent_subparsers.add_parser(
@@ -1260,8 +1274,9 @@ def _run_live_agent_session_smoke(args: argparse.Namespace) -> int:
             "group_id": str(args.group_id or ""),
             "meeting_id": str(args.meeting_id or ""),
             "timeout": float(args.timeout),
+            "lobby_probe_count": int(args.lobby_probe_count),
         },
-        timeout_seconds=_session_smoke_http_timeout(float(args.timeout)),
+        timeout_seconds=_session_smoke_http_timeout(float(args.timeout), lobby_probe_count=int(args.lobby_probe_count)),
     )
     if args.as_json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -1292,14 +1307,17 @@ def _run_live_agent_official_round_smoke(args: argparse.Namespace) -> int:
 
 def _format_live_agent_session_smoke(result: dict[str, object]) -> str:
     expected_replies = result.get("expected_reply_count", 0)
+    lobby_probe_count = max(1, int(result.get("lobby_probe_count") or 1))
+    expected_reply_total = int(expected_replies) * lobby_probe_count
     return (
         f"resident session smoke {result.get('status') or 'unknown'}: "
         f"{result.get('meeting_id') or 'session-smoke'} "
         f"group {result.get('group_id') or 'session-smoke'}; "
         f"rounds {result.get('rounds_status') or 'unknown'} "
         f"({result.get('answered_round_count', 0)} answered); "
-        f"{result.get('reply_count', 0)}/{expected_replies} replies; "
-        f"post-restart {result.get('post_restart_reply_count', 0)}/{expected_replies} replies; "
+        f"{lobby_probe_count} lobby probes; "
+        f"{result.get('reply_count', 0)}/{expected_reply_total} replies; "
+        f"post-restart {result.get('post_restart_reply_count', 0)}/{expected_reply_total} replies; "
         f"start {result.get('start_status') or 'unknown'}, "
         f"check {result.get('check_status') or 'unknown'}, "
         f"resume {result.get('resume_status') or 'unknown'}, "
@@ -2013,16 +2031,17 @@ def _operation_http_timeout(wait_seconds: float, *, windows: int = 1) -> float:
     return max(10.0, float(wait_seconds) * max(1, int(windows)) + 6.0)
 
 
-def _session_smoke_http_timeout(wait_seconds: float) -> float:
+def _session_smoke_http_timeout(wait_seconds: float, *, lobby_probe_count: int = 1) -> float:
     timeout = max(0.0, float(wait_seconds))
+    probes = max(1, int(lobby_probe_count))
     return (
         _operation_http_timeout(timeout)
         + _operation_http_timeout(timeout, windows=4)
-        + timeout
+        + (timeout * probes)
         + 10.0
         + _operation_http_timeout(timeout)
         + _operation_http_timeout(timeout)
-        + timeout
+        + (timeout * probes)
         + 20.0
     )
 

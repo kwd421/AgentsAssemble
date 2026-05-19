@@ -1405,11 +1405,15 @@ function liveAgentSessionSmokeStatusMessage(payload) {
   const replies = Math.max(0, Number(payload.reply_count || 0));
   const postRestartReplies = Math.max(0, Number(payload.post_restart_reply_count || 0));
   const expectedReplies = Math.max(0, Number(payload.expected_reply_count || 0));
+  const lobbyProbeCount = Math.max(1, Number(payload.lobby_probe_count || 1));
+  const expectedReplyTotal = expectedReplies * lobbyProbeCount;
+  const probeLabel = lobbyProbeCount > 1 ? `${lobbyProbeCount} probes · ` : "";
   return (
     `세션 smoke ${status}: ${meetingId} · ` +
     `rounds ${roundsStatus} (${answeredRounds} answered) · ` +
-    `${replies}/${expectedReplies} replies · ` +
-    `post-restart ${postRestartReplies}/${expectedReplies} replies · ` +
+    probeLabel +
+    `${replies}/${expectedReplyTotal} replies · ` +
+    `post-restart ${postRestartReplies}/${expectedReplyTotal} replies · ` +
     `start ${payload.start_status || "unknown"}, ` +
     `check ${payload.check_status || "unknown"}, ` +
     `resume ${payload.resume_status || "unknown"}, ` +
