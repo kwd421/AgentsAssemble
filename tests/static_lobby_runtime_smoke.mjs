@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { renderLobby } from "../agentsassemble/static/lobby.js";
+import { refreshLiveAgentRuntimeSurfaces, renderLobby } from "../agentsassemble/static/lobby.js";
 import { state } from "../agentsassemble/static/shared.js";
 
 class FakeElement {
@@ -173,6 +173,9 @@ function resetState() {
     liveAgentsLoading: false,
     liveAgentStatus: null,
     liveAgentProbeRunning: "",
+    liveAgentHealth: null,
+    liveAgentHealthLoaded: true,
+    liveAgentHealthLoading: false,
     liveAgentProcesses: [],
     liveAgentProcessesLoaded: true,
     liveAgentProcessesLoading: false,
@@ -201,6 +204,8 @@ function resetState() {
 
 function installHarness({
   readinessPayload,
+  healthPayload = null,
+  healthResponse = null,
   processStartPayload = null,
   sessionStartPayload = null,
   sessionResumePayload = null,
@@ -244,6 +249,21 @@ function installHarness({
       jsonBody: options.body ? JSON.parse(options.body) : null,
     });
     if (url === "/api/live-agent-readiness") return jsonResponse(readinessPayload);
+    if (url === "/api/live-agent-health") {
+      return jsonResponse(
+        healthResponse?.payload ||
+          healthPayload || {
+          status: "ok",
+          agents: { total: 0, live: 0, counts: { online: 0, working: 0, error: 0, stale: 0, offline: 0 }, attention: [] },
+          processes: { total: 0, counts: { running: 0, restarting: 0, error: 0, unknown: 0, stopped: 0 }, attention: [] },
+          connections: { expected: 0, connected: 0, attention: [] },
+        },
+        {
+          ok: healthResponse?.ok ?? true,
+          status: healthResponse?.status ?? 200,
+        }
+      );
+    }
     if (url === "/api/live-agent-processes/start") {
       return jsonResponse(processStartPayload || { group: { group_id: "crew", status: "running" }, groups: [] });
     }
@@ -769,6 +789,53 @@ test("session smoke button runs fresh diagnostic session instead of reusing curr
     requests.some((request) => request.url === "/api/live-agents"),
     true
   );
+});
+
+test("runtime refresh renders authoritative live-agent health snapshot", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    healthPayload: {
+      status: "degraded",
+      agents: { total: 2, live: 1, counts: { online: 1, working: 0, error: 0, stale: 1, offline: 0 }, attention: ["agent-b"] },
+      processes: { total: 2, counts: { running: 1, restarting: 0, error: 1, unknown: 0, stopped: 0 }, attention: ["resident-main"] },
+      connections: { expected: 2, connected: 1, attention: ["resident-main:agent-b:stale"] },
+    },
+  });
+
+  await refreshLiveAgentRuntimeSurfaces();
+  renderLobby({ followLatest: false });
+
+  const health = document.querySelector(".live-agent-runtime-health");
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-health"),
+    true
+  );
+  assert.equal(state.liveAgentHealth.status, "degraded");
+  assert.match(health.textContent, /runtime health degraded/);
+  assert.match(health.textContent, /agents 1\/2 live/);
+  assert.match(health.textContent, /processes 1\/2 running/);
+  assert.match(health.textContent, /connections 1\/2 connected/);
+  assert.match(health.textContent, /attention 3/);
+  assert.equal(health.attributes["data-tone"], "warning");
+});
+
+test("runtime health load failure renders unknown snapshot without crashing", async () => {
+  resetState();
+  const { document } = installHarness({
+    healthResponse: {
+      ok: false,
+      status: 503,
+      payload: { error: "health unavailable" },
+    },
+  });
+
+  await refreshLiveAgentRuntimeSurfaces();
+  renderLobby({ followLatest: false });
+
+  const health = document.querySelector(".live-agent-runtime-health");
+  assert.equal(state.liveAgentHealth.status, "unknown");
+  assert.match(health.textContent, /runtime health unknown/);
+  assert.equal(health.attributes["data-tone"], "error");
 });
 
 test("session smoke failure still refreshes lobby and runtime surfaces", async () => {

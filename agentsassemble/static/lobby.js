@@ -97,8 +97,10 @@ export function renderLobby(options = {}) {
   });
   lobby.querySelector("#live-agent-refresh")?.addEventListener("click", () => {
     loadLiveAgents({ force: true });
+    loadLiveAgentHealth({ force: true });
   });
   lobby.querySelector("#live-agent-process-refresh")?.addEventListener("click", () => {
+    loadLiveAgentHealth({ force: true });
     loadLiveAgentProcesses({ force: true });
     loadLiveAgentOperations({ force: true });
   });
@@ -173,6 +175,9 @@ export function renderLobby(options = {}) {
   }
   if (!state.liveAgentsLoaded && !state.liveAgentsLoading) {
     loadLiveAgents();
+  }
+  if (!state.liveAgentHealthLoaded && !state.liveAgentHealthLoading) {
+    loadLiveAgentHealth();
   }
   if (!state.liveAgentProcessesLoaded && !state.liveAgentProcessesLoading) {
     loadLiveAgentProcesses();
@@ -483,6 +488,7 @@ function renderLiveAgentProcessControls() {
         <strong>상주 실행</strong>
         <span>${counts.running} running · ${counts.restarting} restarting · ${counts.error} error · ${counts.total} groups</span>
       </div>
+      ${renderLiveAgentRuntimeHealth(state.liveAgentHealth, state.liveAgentHealthLoading)}
       ${renderProcessGroupHealthStrip(counts)}
       <form id="live-agent-process-form" class="live-agent-process-form">
         <input id="live-agent-process-config" maxlength="240" value="configs/live-agents.start-session.example.json" />
@@ -613,6 +619,43 @@ function renderProcessGroupHealthStrip(counts) {
 
 function renderHealthPill(status, label, count) {
   return `<span class="live-agent-health-pill live-agent-health-${escapeHtml(status)}"><strong>${escapeHtml(count)}</strong>${escapeHtml(label)}</span>`;
+}
+
+function renderLiveAgentRuntimeHealth(health, loading) {
+  if (!health || typeof health !== "object") {
+    const label = loading ? "runtime health loading" : "runtime health not loaded";
+    return `<p class="live-agent-runtime-health" data-tone="info">${label}</p>`;
+  }
+  const status = String(health.status || "unknown");
+  const agents = health.agents && typeof health.agents === "object" ? health.agents : {};
+  const processes = health.processes && typeof health.processes === "object" ? health.processes : {};
+  const connections = health.connections && typeof health.connections === "object" ? health.connections : {};
+  const processCounts = processes.counts && typeof processes.counts === "object" ? processes.counts : {};
+  const agentLive = Math.max(0, Number(agents.live || 0));
+  const agentTotal = Math.max(0, Number(agents.total || 0));
+  const runningProcesses = Math.max(0, Number(processCounts.running || 0));
+  const processTotal = Math.max(0, Number(processes.total || 0));
+  const connected = Math.max(0, Number(connections.connected || 0));
+  const expected = Math.max(0, Number(connections.expected || 0));
+  const attentionCount = liveAgentHealthAttentionCount(health);
+  const tone = status === "ok" ? "success" : status === "degraded" ? "warning" : "error";
+  return (
+    `<p class="live-agent-runtime-health" data-tone="${escapeHtml(tone)}">` +
+    `runtime health ${escapeHtml(status)} · ` +
+    `agents ${escapeHtml(`${agentLive}/${agentTotal}`)} live · ` +
+    `processes ${escapeHtml(`${runningProcesses}/${processTotal}`)} running · ` +
+    `connections ${escapeHtml(`${connected}/${expected}`)} connected · ` +
+    `attention ${escapeHtml(attentionCount)}` +
+    "</p>"
+  );
+}
+
+function liveAgentHealthAttentionCount(health) {
+  const sections = [health?.agents, health?.processes, health?.connections];
+  return sections.reduce((count, section) => {
+    const attention = section && typeof section === "object" && Array.isArray(section.attention) ? section.attention : [];
+    return count + attention.length;
+  }, 0);
 }
 
 function renderLiveAgentProcessCard(group) {
@@ -1142,10 +1185,32 @@ async function loadLiveAgentProcesses(options = {}) {
 
 export function refreshLiveAgentRuntimeSurfaces() {
   return Promise.all([
+    loadLiveAgentHealth({ background: true }),
     loadLiveAgents({ background: true }),
     loadLiveAgentProcesses({ background: true }),
     loadLiveAgentOperations({ background: true }),
   ]);
+}
+
+async function loadLiveAgentHealth(options = {}) {
+  if (state.liveAgentHealthLoading && !options.force) return;
+  const previousSignature = JSON.stringify(state.liveAgentHealth || null);
+  let shouldRender = !options.background;
+  state.liveAgentHealthLoading = true;
+  if (!options.background) renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-health");
+    state.liveAgentHealth = payload;
+    state.liveAgentHealthLoaded = true;
+    shouldRender = shouldRender || JSON.stringify(payload) !== previousSignature;
+  } catch {
+    state.liveAgentHealth = { status: "unknown" };
+    state.liveAgentHealthLoaded = true;
+    shouldRender = true;
+  } finally {
+    state.liveAgentHealthLoading = false;
+    if (shouldRender) renderLobby({ followLatest: false });
+  }
 }
 
 async function loadLiveAgentOperations(options = {}) {

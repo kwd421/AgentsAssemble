@@ -581,6 +581,32 @@
   gap: 5px;
 }
 
+.live-agent-runtime-health {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  padding: 7px 8px;
+}
+
+.live-agent-runtime-health[data-tone="success"] {
+  border-color: rgba(130, 209, 115, 0.34);
+  color: #bdf2b4;
+}
+
+.live-agent-runtime-health[data-tone="warning"] {
+  border-color: rgba(255, 183, 96, 0.34);
+  color: #ffd89a;
+}
+
+.live-agent-runtime-health[data-tone="error"] {
+  border-color: rgba(255, 123, 123, 0.36);
+  color: #ffc3c3;
+}
+
 .live-agent-health-pill {
   align-items: center;
   background: rgba(255, 255, 255, 0.045);
