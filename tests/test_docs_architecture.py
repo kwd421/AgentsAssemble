@@ -147,6 +147,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("When the live cursor event is no longer in the bounded room snapshot", doc)
         self.assertIn("last_observed_live_event_id", doc)
         self.assertIn("reply_command", doc)
+        self.assertIn("include the `--` option boundary before `<reply>`", doc)
         self.assertIn("bounded CLI polling surface", doc)
         self.assertIn("not Claude Code Channels", doc)
         self.assertIn("Resident runners support only `local_cli`, `live_session`, `terminal_session`, `remote_bridge`, and `self_service`", doc)

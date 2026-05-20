@@ -189,7 +189,7 @@ python3 -m agentsassemble.cli live-agent wait-next \
   --json
 ```
 
-`wait-next` reads one room snapshot per poll, prefers a targeted unanswered official turn request, and falls back to a non-self lobby event. The JSON payload includes `action: "official_turn"` with an `official-reply` `reply_command`, or `action: "lobby"` with a `say` `reply_command`. Timeout payloads include both `last_observed_event_id` and `last_observed_live_event_id`, so a terminal loop can keep lobby and official cursors separate.
+`wait-next` reads one room snapshot per poll, prefers a targeted unanswered official turn request, and falls back to a non-self lobby event. The JSON payload includes `action: "official_turn"` with an `official-reply` `reply_command`, or `action: "lobby"` with a `say` `reply_command`. Those `reply_command` arrays include the `--` option boundary before `<reply>`, so terminal/self-service loops can safely replace `<reply>` even when the reply text starts with `-` or `--`. Timeout payloads include both `last_observed_event_id` and `last_observed_live_event_id`, so a terminal loop can keep lobby and official cursors separate.
 
 Wait for the next non-self lobby event:
 

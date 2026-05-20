@@ -3701,6 +3701,7 @@ def _wait_room_event_payload(
             event_id,
             "--auto-chain-depth",
             str(auto_chain_depth),
+            "--",
             "<reply>",
         ],
         "room": {
@@ -3814,6 +3815,7 @@ def _wait_turn_request_payload(
             meeting_id,
             "--source-event-id",
             event_id,
+            "--",
             "<reply>",
         ],
         "room": {

@@ -6300,6 +6300,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["event"]["id"], "evt-next")
         self.assertEqual(payload["source_event_id"], "evt-next")
         self.assertEqual(payload["reply_command"][0:7], ["python3", "-m", "agentsassemble.cli", "live-agent", "say", "--server", "http://room.local"])
+        self.assertEqual(payload["reply_command"][-2:], ["--", "<reply>"])
 
     def test_live_agent_wait_room_event_treats_actor_id_as_authoritative_for_self_check(self):
         stdout = StringIO()
@@ -6553,6 +6554,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["meeting_id"], "meeting-1")
         self.assertEqual(payload["source_event_id"], "live-next")
         self.assertEqual(payload["reply_command"][0:7], ["python3", "-m", "agentsassemble.cli", "live-agent", "official-reply", "--server", "http://room.local"])
+        self.assertEqual(payload["reply_command"][-2:], ["--", "<reply>"])
 
     def test_live_agent_wait_official_turn_uses_visible_tail_when_cursor_is_missing(self):
         stdout = StringIO()
