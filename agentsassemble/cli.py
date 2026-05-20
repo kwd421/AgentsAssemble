@@ -148,6 +148,14 @@ def _add_session_auto_restart_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--stale-restart-after-seconds", type=parse_nonnegative_float, default=0.0)
 
 
+def _add_session_finalize_after_rounds_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--finalize-after-rounds",
+        action="store_true",
+        help="After successful remaining rounds, finalize resident meeting artifacts.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="assemble")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -306,6 +314,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_call_remaining_rounds.add_argument("--timeout", type=parse_nonnegative_float, default=30.0, help="Default seconds to wait per turn.")
     live_call_remaining_rounds.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
     live_call_remaining_rounds.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
+    _add_session_finalize_after_rounds_arg(live_call_remaining_rounds)
     live_call_remaining_rounds.add_argument("--json", action="store_true", dest="as_json", help="Print the raw remaining-round result payload.")
 
     live_start_meeting = live_agent_subparsers.add_parser(
@@ -348,6 +357,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_start_session.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
     live_start_session.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
     live_start_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
+    _add_session_finalize_after_rounds_arg(live_start_session)
     live_start_session.add_argument(
         "--probe-bound-agents",
         action="store_true",
@@ -375,6 +385,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_resume_session.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
     live_resume_session.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
     live_resume_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
+    _add_session_finalize_after_rounds_arg(live_resume_session)
     live_resume_session.add_argument(
         "--probe-bound-agents",
         action="store_true",
@@ -400,6 +411,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_restart_session.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
     live_restart_session.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
     live_restart_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
+    _add_session_finalize_after_rounds_arg(live_restart_session)
     live_restart_session.add_argument(
         "--probe-bound-agents",
         action="store_true",
@@ -425,6 +437,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_recover_session.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
     live_recover_session.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
     live_recover_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
+    _add_session_finalize_after_rounds_arg(live_recover_session)
     live_recover_session.add_argument(
         "--probe-bound-agents",
         action="store_true",
@@ -455,6 +468,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_ensure_session.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
     live_ensure_session.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
     live_ensure_session.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining rounds after the first timeout.")
+    _add_session_finalize_after_rounds_arg(live_ensure_session)
     live_ensure_session.add_argument(
         "--probe-bound-agents",
         action="store_true",
@@ -1269,6 +1283,8 @@ def _run_live_agent_call_remaining_rounds(args: argparse.Namespace) -> int:
         "stop_on_timeout": bool(args.stop_on_timeout),
         "max_rounds": max_rounds,
     }
+    if getattr(args, "finalize_after_rounds", False):
+        payload["finalize_after_rounds"] = True
     response = _request_json(
         _server_url(args.server, f"/api/meetings/{meeting_id}/live-agent-turns/rounds"),
         method="POST",
@@ -1281,6 +1297,13 @@ def _run_live_agent_call_remaining_rounds(args: argparse.Namespace) -> int:
     if args.as_json:
         print(json.dumps(response, ensure_ascii=False, indent=2))
     else:
+        finalization = response.get("finalization") if isinstance(response.get("finalization"), dict) else None
+        finalization_suffix = ""
+        if finalization is not None:
+            finalization_suffix = (
+                f"; finalization {finalization.get('status') or 'unknown'}: "
+                f"{finalization.get('official_event_count', 0)} official events"
+            )
         print(
             "Official remaining rounds "
             f"{response.get('status') or 'unknown'}: "
@@ -1289,12 +1312,18 @@ def _run_live_agent_call_remaining_rounds(args: argparse.Namespace) -> int:
             f"{response.get('completed_round_count', 0)} already complete, "
             f"{response.get('timeout_round_count', 0)} timed out, "
             f"{response.get('skipped_round_count', 0)} skipped"
+            f"{finalization_suffix}"
         )
         for result in response.get("results", []):
             if not isinstance(result, dict):
                 continue
             print(f"- {result.get('round_id') or 'unknown'}: {result.get('status') or 'unknown'}")
-    return 0 if response.get("status") in {"answered", "complete"} else 1
+    if response.get("status") not in {"answered", "complete"}:
+        return 1
+    finalization = response.get("finalization") if isinstance(response.get("finalization"), dict) else None
+    if finalization is not None and finalization.get("status") not in {"finalized", "already_finalized"}:
+        return 1
+    return 0
 
 
 def _run_live_agent_start_meeting(args: argparse.Namespace) -> int:
@@ -1455,6 +1484,8 @@ def _session_remaining_rounds_request(
                 "round_stop_on_timeout": bool(getattr(args, "stop_on_timeout")),
             }
         )
+        if getattr(args, "finalize_after_rounds", False):
+            payload["finalize_after_rounds"] = True
         round_timeout_seconds = _operation_http_timeout(
             float(getattr(args, "round_timeout")),
             windows=max_rounds * MAX_LIVE_AGENT_SEQUENCE_TURNS,
@@ -1473,9 +1504,12 @@ def _session_command_exit_code(response: dict[str, object]) -> int:
     if reply_probe is not None and reply_probe.get("status") != "ok":
         return 1
     auto_rounds = response.get("auto_rounds") if isinstance(response.get("auto_rounds"), dict) else None
-    if auto_rounds is None:
-        return 0
-    return 0 if auto_rounds.get("status") in {"answered", "complete"} else 1
+    if auto_rounds is not None and auto_rounds.get("status") not in {"answered", "complete"}:
+        return 1
+    finalization = response.get("finalization") if isinstance(response.get("finalization"), dict) else None
+    if finalization is not None and finalization.get("status") not in {"finalized", "already_finalized"}:
+        return 1
+    return 0
 
 
 def _maybe_wait_for_live_agent_session_ready(
@@ -1712,7 +1746,7 @@ def _attach_session_post_ready_results(
     if not isinstance(response, dict) or not isinstance(source, dict):
         return response
     merged = response
-    for key in ("reply_probe", "auto_rounds"):
+    for key in ("reply_probe", "auto_rounds", "finalization"):
         value = source.get(key)
         if isinstance(value, dict):
             if merged is response:
@@ -1788,6 +1822,12 @@ def _format_live_agent_session_start(response: dict[str, object]) -> str:
             f"{auto_rounds.get('completed_round_count', 0)} already complete, "
             f"{auto_rounds.get('timeout_round_count', 0)} timed out, "
             f"{auto_rounds.get('skipped_round_count', 0)} skipped"
+        )
+    finalization = response.get("finalization") if isinstance(response.get("finalization"), dict) else None
+    if finalization is not None:
+        suffix += (
+            f"; finalization {finalization.get('status') or 'unknown'}: "
+            f"{finalization.get('official_event_count', 0)} official events"
         )
     return f"Resident session {meeting_id} {status}; group {group_id}; {connected}/{expected} connected{suffix}"
 

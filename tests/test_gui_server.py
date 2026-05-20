@@ -38,6 +38,7 @@ from agentsassemble.gui import (
     _readiness_health_operation_details,
     live_agents_payload,
     live_agent_session_ensure_payload,
+    _attach_session_auto_rounds_if_requested,
     send_lobby_message_to_remote_bridge,
     append_side_chat_event,
 )
@@ -6164,6 +6165,188 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(rounds_operations[0]["details"]["round_ids"], ["round_2"])
             self.assertEqual(rounds_operations[0]["details"]["statuses"], ["answered"])
 
+    def test_live_agent_official_turn_rounds_can_finalize_after_success(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "topic": "runtime",
+                    "live_status": "running",
+                    "roles": [{"id": "architect", "display_name": "Architect"}],
+                    "meeting_template": {
+                        "rounds": [
+                            {"id": "round_1", "instruction": "Next", "turn_control": {"selection": "all_roles"}},
+                        ]
+                    },
+                    "agent_bindings": [{"role_id": "architect", "agent_id": "agent-a"}],
+                    "debate_rounds": [],
+                },
+            )
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            finalized = {
+                "status": "finalized",
+                "meeting_id": "m1",
+                "official_event_count": 1,
+                "artifact_event_id": "artifact-1",
+            }
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            errors = []
+            answered_request_ids = set()
+
+            def answer_remaining_round_requests():
+                try:
+                    deadline = time.time() + 4
+                    while time.time() < deadline and len(answered_request_ids) < 1:
+                        for event in read_live_events(meeting_dir, limit=None):
+                            if event.get("kind") != "live_agent_turn_request" or event["id"] in answered_request_ids:
+                                continue
+                            reply_request = Request(
+                                f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/official-turn",
+                                data=json.dumps(
+                                    {
+                                        "meeting_id": "m1",
+                                        "source_event_id": event["id"],
+                                        "content": "agent-a remaining reply",
+                                    }
+                                ).encode("utf-8"),
+                                headers={"Content-Type": "application/json"},
+                                method="POST",
+                            )
+                            with urlopen(reply_request, timeout=4) as response:
+                                response.read()
+                            answered_request_ids.add(event["id"])
+                        time.sleep(0.01)
+                except Exception as error:  # pragma: no cover - failure is asserted below
+                    errors.append(error)
+
+            responder = threading.Thread(target=answer_remaining_round_requests, daemon=True)
+            responder.start()
+            try:
+                with patch("agentsassemble.gui.finalize_live_agent_meeting", return_value=finalized) as finalize_meeting:
+                    rounds_request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/meetings/m1/live-agent-turns/rounds",
+                        data=json.dumps({"timeout_seconds": 2, "max_rounds": 1, "finalize_after_rounds": True}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(rounds_request, timeout=6) as response:
+                        rounds_result = json.loads(response.read().decode("utf-8"))
+                    responder.join(timeout=2)
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            if errors:
+                raise errors[0]
+            finalize_meeting.assert_called_once_with((root / "meetings" / "m1").resolve())
+            self.assertEqual(rounds_result["status"], "answered")
+            self.assertEqual(rounds_result["finalization"]["status"], "finalized")
+            self.assertEqual(rounds_result["finalization"]["official_event_count"], 1)
+            rounds_operations = [item for item in operations["operations"] if item["operation"] == "official_turn.rounds"]
+            self.assertEqual(rounds_operations[0]["status"], "success")
+            self.assertEqual(rounds_operations[0]["details"]["finalization_status"], "finalized")
+            self.assertEqual(rounds_operations[0]["details"]["finalization_official_event_count"], 1)
+            operations_text = json.dumps(operations["operations"], ensure_ascii=False)
+            self.assertNotIn("remaining reply", operations_text)
+
+    def test_live_agent_official_turn_rounds_skip_finalization_when_template_rounds_remain(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "topic": "runtime",
+                    "live_status": "running",
+                    "roles": [{"id": "architect", "display_name": "Architect"}],
+                    "meeting_template": {
+                        "rounds": [
+                            {"id": "round_1", "instruction": "First", "turn_control": {"selection": "all_roles"}},
+                            {"id": "round_2", "instruction": "Second", "turn_control": {"selection": "all_roles"}},
+                        ]
+                    },
+                    "agent_bindings": [{"role_id": "architect", "agent_id": "agent-a"}],
+                    "debate_rounds": [],
+                },
+            )
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            errors = []
+            answered_request_ids = set()
+
+            def answer_first_request():
+                try:
+                    deadline = time.time() + 4
+                    while time.time() < deadline and not answered_request_ids:
+                        for event in read_live_events(meeting_dir, limit=None):
+                            if event.get("kind") != "live_agent_turn_request":
+                                continue
+                            reply_request = Request(
+                                f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/official-turn",
+                                data=json.dumps(
+                                    {
+                                        "meeting_id": "m1",
+                                        "source_event_id": event["id"],
+                                        "content": "round one reply",
+                                    }
+                                ).encode("utf-8"),
+                                headers={"Content-Type": "application/json"},
+                                method="POST",
+                            )
+                            with urlopen(reply_request, timeout=4) as response:
+                                response.read()
+                            answered_request_ids.add(event["id"])
+                            break
+                        time.sleep(0.01)
+                except Exception as error:  # pragma: no cover - failure is asserted below
+                    errors.append(error)
+
+            responder = threading.Thread(target=answer_first_request, daemon=True)
+            responder.start()
+            try:
+                with patch(
+                    "agentsassemble.gui.finalize_live_agent_meeting",
+                    return_value={"status": "finalized", "meeting_id": "m1", "official_event_count": 1},
+                ) as finalize_meeting:
+                    rounds_request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/meetings/m1/live-agent-turns/rounds",
+                        data=json.dumps({"timeout_seconds": 2, "max_rounds": 1, "finalize_after_rounds": True}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(rounds_request, timeout=6) as response:
+                        rounds_result = json.loads(response.read().decode("utf-8"))
+                    responder.join(timeout=2)
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            if errors:
+                raise errors[0]
+            finalize_meeting.assert_not_called()
+            self.assertEqual(rounds_result["status"], "answered")
+            self.assertEqual(rounds_result["finalization"]["status"], "skipped")
+            self.assertEqual(rounds_result["finalization"]["reason"], "rounds_still_remaining")
+            self.assertFalse((meeting_dir / "meeting.json").exists())
+            rounds_operations = [item for item in operations["operations"] if item["operation"] == "official_turn.rounds"]
+            self.assertEqual(rounds_operations[0]["status"], "degraded")
+            self.assertEqual(rounds_operations[0]["details"]["finalization_status"], "skipped")
+            self.assertEqual(rounds_operations[0]["details"]["finalization_reason"], "rounds_still_remaining")
+
     def test_live_agent_official_turn_rounds_does_not_duplicate_concurrent_remaining_round(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -8521,6 +8704,137 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(session_operations[-1]["details"]["ensure_action"], "none")
         self.assertEqual(session_operations[-1]["details"]["reply_probe_status"], "ok")
         self.assertEqual(session_operations[-1]["details"]["auto_rounds_status"], "answered")
+
+    def test_live_agent_session_ensure_can_finalize_after_answered_remaining_rounds(self):
+        class EnsureSessionSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+            def list_groups(self):
+                return self.snapshot_groups()
+
+            def start_group(self, **kwargs):
+                raise AssertionError("ready ensure with post-ready checks must not start a group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            meeting_dir = root / "meetings" / "resident-m1"
+            live_state = json.loads((meeting_dir / "live_state.json").read_text(encoding="utf-8"))
+            live_state["debate_rounds"] = [
+                {"id": round_item["id"], "status": "answered"}
+                for round_item in live_state["meeting_template"]["rounds"]
+            ]
+            write_live_state(meeting_dir, live_state)
+            heartbeat_live_agent(root, "agent-a", status="online")
+            auto_rounds = {
+                "status": "answered",
+                "meeting_id": "resident-m1",
+                "round_count": 1,
+                "answered_round_count": 1,
+                "completed_round_count": 0,
+                "timeout_round_count": 0,
+                "skipped_round_count": 0,
+                "stopped_round_count": 0,
+                "stopped": False,
+                "results": [{"round_id": "round_1", "status": "answered"}],
+            }
+            finalized = {
+                "status": "finalized",
+                "meeting_id": "resident-m1",
+                "official_event_count": 1,
+                "artifact_event_id": "artifact-1",
+            }
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=EnsureSessionSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with (
+                    patch("agentsassemble.gui.live_agent_turn_rounds_payload", return_value=auto_rounds) as rounds_payload,
+                    patch("agentsassemble.gui.finalize_live_agent_meeting", return_value=finalized) as finalize_meeting,
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/ensure",
+                        data=json.dumps(
+                            {
+                                "meeting_id": "resident-m1",
+                                "group_id": "resident-main",
+                                "live_agent_config_path": str(live_agent_config),
+                                "run_remaining_rounds": True,
+                                "round_timeout_seconds": 2,
+                                "round_max_rounds": 1,
+                                "finalize_after_rounds": True,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=4) as response:
+                        session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        rounds_payload.assert_called_once()
+        finalize_meeting.assert_called_once_with((root / "meetings" / "resident-m1").resolve())
+        self.assertEqual(session_payload["auto_rounds"]["status"], "answered")
+        self.assertEqual(session_payload["finalization"]["status"], "finalized")
+        self.assertEqual(session_payload["finalization"]["official_event_count"], 1)
+        session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.ensure"]
+        self.assertEqual(session_operations[-1]["status"], "success")
+        self.assertEqual(session_operations[-1]["details"]["auto_rounds_status"], "answered")
+        self.assertEqual(session_operations[-1]["details"]["finalization_status"], "finalized")
+        self.assertEqual(session_operations[-1]["details"]["finalization_official_event_count"], 1)
+        operations_text = json.dumps(operations["operations"], ensure_ascii=False)
+        self.assertNotIn("round_1 instruction", operations_text)
+
+    def test_live_agent_session_finalize_after_rounds_skips_when_rounds_timeout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session = {"status": "ready", "meeting_id": "resident-m1"}
+            with patch(
+                "agentsassemble.gui.live_agent_turn_rounds_payload",
+                return_value={
+                    "status": "timeout",
+                    "meeting_id": "resident-m1",
+                    "round_count": 1,
+                    "answered_round_count": 0,
+                    "timeout_round_count": 1,
+                    "results": [{"round_id": "round_1", "status": "timeout"}],
+                },
+            ):
+                result = _attach_session_auto_rounds_if_requested(
+                    root,
+                    session,
+                    {
+                        "run_remaining_rounds": True,
+                        "finalize_after_rounds": True,
+                        "round_timeout_seconds": 1,
+                        "round_max_rounds": 1,
+                    },
+                )
+
+        self.assertEqual(result["auto_rounds"]["status"], "timeout")
+        self.assertEqual(result["finalization"]["status"], "skipped")
+        self.assertEqual(result["finalization"]["reason"], "rounds_not_ready")
 
     def test_live_agent_session_ensure_resumes_existing_meeting_when_group_is_missing(self):
         class EnsureSessionSupervisor:

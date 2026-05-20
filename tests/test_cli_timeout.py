@@ -2298,6 +2298,81 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("Official remaining rounds answered: 1 rounds, 1 answered, 0 already complete, 0 timed out, 0 skipped", stdout.getvalue())
         self.assertIn("- round_2: answered", stdout.getvalue())
 
+    def test_live_agent_call_remaining_rounds_can_finalize_after_success(self):
+        response = {
+            "status": "answered",
+            "round_count": 1,
+            "answered_round_count": 1,
+            "timeout_round_count": 0,
+            "skipped_round_count": 0,
+            "results": [{"round_id": "round_2", "status": "answered"}],
+            "finalization": {
+                "status": "finalized",
+                "meeting_id": "m1",
+                "official_event_count": 2,
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "call-remaining-rounds",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--timeout",
+                        "8",
+                        "--max-rounds",
+                        "1",
+                        "--finalize-after-rounds",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/meetings/m1/live-agent-turns/rounds",
+            method="POST",
+            payload={
+                "timeout_seconds": 8.0,
+                "stop_on_timeout": False,
+                "max_rounds": 1,
+                "finalize_after_rounds": True,
+            },
+            timeout_seconds=102.0,
+        )
+        self.assertIn("finalization finalized: 2 official events", stdout.getvalue())
+
+    def test_live_agent_call_remaining_rounds_finalize_failure_exits_nonzero(self):
+        response = {
+            "status": "answered",
+            "round_count": 1,
+            "answered_round_count": 1,
+            "timeout_round_count": 0,
+            "skipped_round_count": 0,
+            "results": [{"round_id": "round_2", "status": "answered"}],
+            "finalization": {"status": "failed", "reason": "pending_turn_request"},
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "call-remaining-rounds",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--finalize-after-rounds",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("finalization failed", stdout.getvalue())
+
     def test_live_agent_call_remaining_rounds_returns_one_when_partial(self):
         response = {
             "status": "stopped",
@@ -2744,6 +2819,43 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("Resident session resident-m1 starting", stdout.getvalue())
         self.assertIn("rounds answered: 1 rounds, 1 answered", stdout.getvalue())
 
+    def test_live_agent_start_session_wait_ready_preserves_finalization_failure(self):
+        start_response = {
+            "status": "ready",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "connection": {"expected": 1, "connected": 1, "attention": []},
+            "auto_rounds": {"status": "answered", "round_count": 1, "answered_round_count": 1},
+            "finalization": {"status": "failed", "reason": "pending_turn_request"},
+        }
+        ready_snapshot = {
+            "status": "ready",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "connection": {"expected": 1, "connected": 1, "attention": []},
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=[start_response, ready_snapshot]):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "start-session",
+                        "--server",
+                        "http://room.local",
+                        "--live-agent-config",
+                        "configs/live-agents.start-session.example.json",
+                        "--wait-ready",
+                        "--wait-timeout",
+                        "0",
+                        "--run-remaining-rounds",
+                        "--finalize-after-rounds",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("finalization failed", stdout.getvalue())
+
     def test_live_agent_start_session_can_run_remaining_rounds_after_ready_connection(self):
         response = {
             "status": "ready",
@@ -2818,6 +2930,105 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("Resident session resident-m1 ready", stdout.getvalue())
         self.assertIn("rounds answered: 1 rounds, 1 answered", stdout.getvalue())
+
+    def test_live_agent_start_session_can_finalize_after_remaining_rounds(self):
+        response = {
+            "status": "ready",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "connection": {"expected": 1, "connected": 1, "attention": []},
+            "auto_rounds": {
+                "status": "answered",
+                "round_count": 1,
+                "answered_round_count": 1,
+                "completed_round_count": 0,
+                "timeout_round_count": 0,
+                "skipped_round_count": 0,
+            },
+            "finalization": {
+                "status": "finalized",
+                "meeting_id": "resident-m1",
+                "official_event_count": 1,
+            },
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "start-session",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                        "--live-agent-config",
+                        "configs/live-agents.example.json",
+                        "--connect-timeout",
+                        "3",
+                        "--run-remaining-rounds",
+                        "--round-timeout",
+                        "8",
+                        "--max-rounds",
+                        "1",
+                        "--finalize-after-rounds",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-sessions/start",
+            method="POST",
+            payload={
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "council_config_path": "",
+                "agent_config_path": "",
+                "live_agent_config_path": "configs/live-agents.example.json",
+                "connect_timeout_seconds": 3.0,
+                "auto_restart": False,
+                "max_restarts": 0,
+                "restart_backoff_seconds": 5.0,
+                "stale_restart_after_seconds": 0.0,
+                "run_remaining_rounds": True,
+                "round_timeout_seconds": 8.0,
+                "round_max_rounds": 1,
+                "round_stop_on_timeout": False,
+                "finalize_after_rounds": True,
+            },
+            timeout_seconds=105.0,
+        )
+        self.assertIn("finalization finalized: 1 official events", stdout.getvalue())
+
+    def test_live_agent_start_session_finalize_after_rounds_failure_exits_nonzero(self):
+        response = {
+            "status": "ready",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "connection": {"expected": 1, "connected": 1, "attention": []},
+            "auto_rounds": {"status": "answered", "round_count": 1, "answered_round_count": 1},
+            "finalization": {"status": "failed", "reason": "pending_turn_request"},
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "start-session",
+                        "--server",
+                        "http://room.local",
+                        "--live-agent-config",
+                        "configs/live-agents.example.json",
+                        "--run-remaining-rounds",
+                        "--finalize-after-rounds",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("finalization failed", stdout.getvalue())
 
     def test_live_agent_start_session_can_probe_bound_agents_before_rounds(self):
         response = {
@@ -3969,6 +4180,7 @@ class CliTimeoutTests(unittest.TestCase):
                         "--max-rounds",
                         "1",
                         "--stop-on-timeout",
+                        "--finalize-after-rounds",
                     ]
                 )
 
@@ -3999,6 +4211,7 @@ class CliTimeoutTests(unittest.TestCase):
                 "round_timeout_seconds": 2.0,
                 "round_max_rounds": 1,
                 "round_stop_on_timeout": True,
+                "finalize_after_rounds": True,
             },
             timeout_seconds=expected_timeout,
         )

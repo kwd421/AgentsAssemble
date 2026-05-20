@@ -734,7 +734,7 @@ def _live_agent_session_ensured_readiness_payload(
         )
     else:
         ensured = dict(session)
-    for key in ("reply_probe", "auto_rounds"):
+    for key in ("reply_probe", "auto_rounds", "finalization"):
         value = session.get(key)
         if isinstance(value, dict):
             ensured[key] = value
@@ -891,6 +891,11 @@ def _attach_session_auto_rounds_if_requested(
         reply_probe = _session_bound_agent_reply_probe_payload(output_root, session, payload)
         session["reply_probe"] = reply_probe
     if not _payload_bool(payload.get("run_remaining_rounds")):
+        if _payload_bool(payload.get("finalize_after_rounds")):
+            session["finalization"] = _skipped_rounds_finalization_result(
+                str(session.get("meeting_id") or ""),
+                reason="rounds_not_requested",
+            )
         return session
     auto_rounds_options = _session_auto_rounds_options(payload)
     if _operation_result_status(session.get("status")) != "ready":
@@ -911,7 +916,63 @@ def _attach_session_auto_rounds_if_requested(
             str(session.get("meeting_id") or ""),
             auto_rounds_options,
         )
+    finalization = _rounds_finalization_result_if_requested(
+        output_root,
+        str(session.get("meeting_id") or ""),
+        session["auto_rounds"],
+        payload,
+    )
+    if finalization is not None:
+        session["finalization"] = finalization
     return session
+
+
+def _rounds_finalization_result_if_requested(
+    output_root: Path,
+    meeting_id: str,
+    rounds_result: dict[str, object],
+    payload: dict[str, object],
+) -> dict[str, object] | None:
+    if not _payload_bool(payload.get("finalize_after_rounds")):
+        return None
+    clean_meeting_id = clean_lobby_text(rounds_result.get("meeting_id") or meeting_id, limit=128)
+    if _operation_result_status(rounds_result.get("status")) not in {"answered", "complete"}:
+        return _skipped_rounds_finalization_result(clean_meeting_id, reason="rounds_not_ready")
+    try:
+        meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
+        meeting = _read_meeting_record(meeting_dir)
+    except ValueError as error:
+        reason = clean_lobby_text(str(error), limit=256) or "finalization_failed"
+        return _failed_rounds_finalization_result(clean_meeting_id, reason=reason)
+    except (OSError, json.JSONDecodeError):
+        return _failed_rounds_finalization_result(clean_meeting_id, reason="finalization_failed")
+    if remaining_official_round_ids(meeting, max_rounds=None):
+        return _skipped_rounds_finalization_result(clean_meeting_id, reason="rounds_still_remaining")
+    try:
+        return finalize_live_agent_meeting(meeting_dir)
+    except ValueError as error:
+        reason = clean_lobby_text(str(error), limit=256) or "finalization_failed"
+        return _failed_rounds_finalization_result(clean_meeting_id, reason=reason)
+    except (OSError, json.JSONDecodeError):
+        return _failed_rounds_finalization_result(clean_meeting_id, reason="finalization_failed")
+
+
+def _skipped_rounds_finalization_result(meeting_id: str, *, reason: str) -> dict[str, object]:
+    return {
+        "status": "skipped",
+        "reason": clean_lobby_text(reason, limit=128),
+        "meeting_id": clean_lobby_text(meeting_id, limit=128),
+        "official_event_count": 0,
+    }
+
+
+def _failed_rounds_finalization_result(meeting_id: str, *, reason: str) -> dict[str, object]:
+    return {
+        "status": "failed",
+        "reason": clean_lobby_text(reason, limit=256) or "finalization_failed",
+        "meeting_id": clean_lobby_text(meeting_id, limit=128),
+        "official_event_count": 0,
+    }
 
 
 def _session_bound_agent_reply_probe_payload(
@@ -3402,7 +3463,7 @@ def _turn_rounds_operation_details(rounds_result: dict[str, object], meeting_id:
         if item.get("status"):
             statuses.append(clean_lobby_text(item.get("status"), limit=32))
         role_ids.extend(_safe_payload_role_ids(item.get("role_ids")))
-    return {
+    details = {
         "meeting_id": meeting_id,
         "round_count": _payload_nonnegative_int(rounds_result.get("round_count"), 0),
         "answered_round_count": _payload_nonnegative_int(rounds_result.get("answered_round_count"), 0),
@@ -3416,6 +3477,20 @@ def _turn_rounds_operation_details(rounds_result: dict[str, object], meeting_id:
         "role_ids": role_ids,
         "timeout_seconds": _payload_nonnegative_float(rounds_result.get("timeout_seconds"), 0.0),
         "max_rounds": _payload_nonnegative_int(rounds_result.get("max_rounds"), 0),
+    }
+    finalization = rounds_result.get("finalization") if isinstance(rounds_result.get("finalization"), dict) else None
+    if finalization is not None:
+        details.update(_rounds_finalization_operation_details(finalization, meeting_id))
+    return details
+
+
+def _rounds_finalization_operation_details(finalization: dict[str, object], meeting_id: str) -> dict[str, object]:
+    return {
+        "finalization_status": _operation_result_status(finalization.get("status")),
+        "finalization_reason": clean_lobby_text(finalization.get("reason"), limit=256),
+        "finalization_meeting_id": clean_lobby_text(finalization.get("meeting_id") or meeting_id, limit=128),
+        "finalization_official_event_count": _payload_nonnegative_int(finalization.get("official_event_count"), 0),
+        "finalization_artifact_event_id": clean_lobby_text(finalization.get("artifact_event_id"), limit=128),
     }
 
 
@@ -3511,6 +3586,9 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
     auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
     if auto_rounds is not None:
         details.update(_session_auto_rounds_operation_details(auto_rounds, str(session.get("meeting_id") or "")))
+    finalization = session.get("finalization") if isinstance(session.get("finalization"), dict) else None
+    if finalization is not None:
+        details.update(_rounds_finalization_operation_details(finalization, str(session.get("meeting_id") or "")))
     return details
 
 
@@ -3588,9 +3666,12 @@ def _session_start_operation_status(session: dict[str, object]) -> str:
     if reply_probe is not None and _operation_result_status(reply_probe.get("status")) != "ok":
         return "degraded"
     auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
-    if auto_rounds is None:
-        return "success"
-    return "success" if _operation_result_status(auto_rounds.get("status")) in {"answered", "complete"} else "degraded"
+    if auto_rounds is not None and _operation_result_status(auto_rounds.get("status")) not in {"answered", "complete"}:
+        return "degraded"
+    finalization = session.get("finalization") if isinstance(session.get("finalization"), dict) else None
+    if finalization is not None and _operation_result_status(finalization.get("status")) not in {"finalized", "already_finalized"}:
+        return "degraded"
+    return "success"
 
 
 def _session_start_operation_summary(session: dict[str, object]) -> str:
@@ -4372,6 +4453,14 @@ def _make_handler(
                     return
                 try:
                     rounds_result = live_agent_turn_rounds_payload(output_root, turn_rounds_meeting_id, payload)
+                    finalization = _rounds_finalization_result_if_requested(
+                        output_root,
+                        turn_rounds_meeting_id,
+                        rounds_result,
+                        payload,
+                    )
+                    if finalization is not None:
+                        rounds_result["finalization"] = finalization
                 except ValueError as error:
                     record_live_agent_operation(
                         output_root,
@@ -4383,14 +4472,22 @@ def _make_handler(
                     )
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
+                finalization_result = rounds_result.get("finalization") if isinstance(rounds_result.get("finalization"), dict) else None
+                rounds_success = rounds_result.get("status") in {"answered", "complete"}
+                finalization_success = (
+                    finalization_result is None
+                    or finalization_result.get("status") in {"finalized", "already_finalized"}
+                )
                 record_live_agent_operation(
                     output_root,
                     operation="official_turn.rounds",
-                    status="success" if rounds_result.get("status") in {"answered", "complete"} else "degraded",
+                    status="success" if rounds_success and finalization_success else "degraded",
                     target_id=turn_rounds_meeting_id,
                     summary=(
                         "completed live-agent remaining official rounds"
-                        if rounds_result.get("status") in {"answered", "complete"}
+                        if rounds_success and finalization_success
+                        else "completed live-agent remaining official rounds with degraded finalization"
+                        if rounds_success
                         else "live-agent remaining official rounds had timeouts"
                     ),
                     details=_turn_rounds_operation_details(rounds_result, turn_rounds_meeting_id),
