@@ -195,6 +195,7 @@ function resetState() {
     liveAgentReadinessRunning: false,
     liveAgentProcessRowActionRunning: "",
     liveAgentProcessBulkStopRunning: false,
+    liveAgentDiscoveryRunning: false,
     liveAgentRoundCallRunning: false,
     liveAgentProcessStatus: null,
     codexSessions: [],
@@ -223,6 +224,7 @@ function installHarness({
   processActionGate = null,
   roundPayload = null,
   codexInvitePayload = null,
+  liveAgentDiscoveryPayload = null,
   liveAgentOperationsPayload = null,
 } = {}) {
   const requests = [];
@@ -407,6 +409,17 @@ function installHarness({
         status: sessionSmokeResponse?.status ?? 200,
       });
     }
+    if (url === "/api/live-agent-discovery") {
+      return jsonResponse(
+        liveAgentDiscoveryPayload || {
+          status: "ok",
+          written: true,
+          output: ".agentsassemble/live-agents.discovered.local.json",
+          config: { agents: [] },
+          discoveries: [],
+        }
+      );
+    }
     if (url === "/api/meetings/resident-gui/live-agent-turns/round") {
       return jsonResponse(
         roundPayload || {
@@ -503,6 +516,10 @@ function sessionCheckRequest(requests) {
 
 function sessionSmokeRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-session-smoke");
+}
+
+function liveAgentDiscoveryRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-discovery");
 }
 
 function roundRequest(requests) {
@@ -792,6 +809,47 @@ test("process start form preserves and posts stale watchdog seconds", async () =
     restart_backoff_seconds: 1.5,
     stale_restart_after_seconds: 240,
   });
+});
+
+test("live agent discovery writes a local config and fills the resident config path", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  const { document, requests } = installHarness({
+    liveAgentDiscoveryPayload: {
+      status: "ok",
+      written: true,
+      output: ".agentsassemble/live-agents.discovered.local.json",
+      config: {
+        agents: [
+          { agent_id: "claude-local", provider_kind: "claude" },
+          { agent_id: "codex-live", provider_kind: "codex_live_session" },
+        ],
+      },
+      discoveries: [
+        { provider_kind: "claude", available: true },
+        { provider_kind: "codex", available: true },
+      ],
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  await lobby.querySelector("#live-agent-discover").click();
+
+  assert.deepEqual(liveAgentDiscoveryRequest(requests).jsonBody, {
+    meeting_id: "resident-gui",
+    engagement_mode: "mentioned",
+    write_config: true,
+  });
+  assert.equal(
+    document.querySelector("#live-agent-process-config").value,
+    ".agentsassemble/live-agents.discovered.local.json"
+  );
+  assert.equal(
+    state.liveAgentProcessStatus.message,
+    "CLI 자동 발견 완료: 2 agents -> .agentsassemble/live-agents.discovered.local.json"
+  );
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-operations?limit=20"));
 });
 
 test("session start button posts matching meeting and resident config payload", async () => {

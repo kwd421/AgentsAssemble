@@ -119,6 +119,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-preflight-check")?.addEventListener("click", async () => {
     await runLiveAgentPreflight(lobby);
   });
+  lobby.querySelector("#live-agent-discover")?.addEventListener("click", async () => {
+    await runLiveAgentDiscovery(lobby);
+  });
   lobby.querySelector("#live-agent-process-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     await startLiveAgentProcessGroup(event.currentTarget);
@@ -556,6 +559,7 @@ function renderLiveAgentProcessControls() {
         <button type="button" id="live-agent-session-stop" ${processActionsDisabled ? "disabled" : ""}>세션중지</button>
         <button type="button" id="live-agent-call-round" ${processActionsDisabled ? "disabled" : ""}>라운드호출</button>
         <button type="button" id="live-agent-call-remaining-rounds" ${processActionsDisabled ? "disabled" : ""}>남은라운드</button>
+        <button type="button" id="live-agent-discover" ${processActionsDisabled ? "disabled" : ""}>CLI발견</button>
         <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
         <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
         <button type="button" id="live-agent-official-round-smoke" ${processActionsDisabled ? "disabled" : ""}>공식진단</button>
@@ -587,7 +591,7 @@ function renderLiveAgentProcessControls() {
 }
 
 function liveAgentProcessActionBusy() {
-  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || Boolean(state.liveAgentProcessRowActionRunning) || state.liveAgentProcessBulkStopRunning;
+  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || state.liveAgentDiscoveryRunning || Boolean(state.liveAgentProcessRowActionRunning) || state.liveAgentProcessBulkStopRunning;
 }
 
 function defaultOfficialRoundId(meeting) {
@@ -1686,6 +1690,44 @@ async function runLiveAgentPreflight(lobby) {
     state.liveAgentProcessStatus = { message: "preflight 예비점검 실패", tone: "error" };
   } finally {
     state.liveAgentPreflightRunning = false;
+    await loadLiveAgentOperations({ background: true, force: true });
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function runLiveAgentDiscovery(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
+  state.liveAgentDiscoveryRunning = true;
+  state.liveAgentProcessStatus = { message: "CLI 자동 발견 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-discovery", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        meeting_id: meetingId,
+        engagement_mode: "mentioned",
+        write_config: true,
+      }),
+    });
+    const outputPath = String(payload.output || "");
+    if (outputPath) {
+      const configInput = document.querySelector("#live-agent-process-config");
+      if (configInput) configInput.value = outputPath;
+    }
+    const agents = Array.isArray(payload.config?.agents) ? payload.config.agents.length : 0;
+    const status = payload.status || "unknown";
+    const statusLabel = status === "ok" ? "완료" : status;
+    const outputLabel = outputPath ? ` -> ${outputPath}` : "";
+    state.liveAgentProcessStatus = {
+      message: `CLI 자동 발견 ${statusLabel}: ${agents} agents${outputLabel}`,
+      tone: status === "ok" ? "success" : "error",
+    };
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `CLI 자동 발견 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    state.liveAgentDiscoveryRunning = false;
     await loadLiveAgentOperations({ background: true, force: true });
     renderLobby({ followLatest: false });
   }
