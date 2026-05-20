@@ -4129,6 +4129,7 @@ class _LocalCliCommandRunner:
 
 def _self_service_process_env(config: ResidentAgentConfig) -> dict[str, str]:
     env = dict(os.environ)
+    command_env = _self_service_room_command_env(config)
     env.update(
         {
             "AGENTSASSEMBLE_SERVER": config.server,
@@ -4143,7 +4144,76 @@ def _self_service_process_env(config: ResidentAgentConfig) -> dict[str, str]:
             "AGENTSASSEMBLE_HEARTBEAT_INTERVAL": str(config.heartbeat_interval),
         }
     )
+    env.update(command_env)
     return env
+
+
+def _self_service_room_command_env(config: ResidentAgentConfig) -> dict[str, str]:
+    base = [sys.executable, "-m", "agentsassemble.cli", "live-agent"]
+    identity = ["--server", config.server, "--agent-id", config.agent_id]
+    return {
+        "AGENTSASSEMBLE_ROOM_COMMAND": shlex.join([*base, "room", *identity]),
+        "AGENTSASSEMBLE_WAIT_NEXT_COMMAND": shlex.join(
+            [
+                *base,
+                "wait-next",
+                *identity,
+                "--max-chain-depth",
+                str(config.max_chain_depth),
+                "--poll-interval",
+                str(config.poll_interval),
+                "--json",
+            ]
+        ),
+        "AGENTSASSEMBLE_WAIT_ROOM_EVENT_COMMAND": shlex.join(
+            [
+                *base,
+                "wait-room-event",
+                *identity,
+                "--max-chain-depth",
+                str(config.max_chain_depth),
+                "--poll-interval",
+                str(config.poll_interval),
+                "--json",
+            ]
+        ),
+        "AGENTSASSEMBLE_WAIT_OFFICIAL_TURN_COMMAND": shlex.join(
+            [
+                *base,
+                "wait-official-turn",
+                *identity,
+                "--poll-interval",
+                str(config.poll_interval),
+                "--json",
+            ]
+        ),
+        "AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE": shlex.join(
+            [
+                *base,
+                "say",
+                *identity,
+                "--source-event-id",
+                "{source_event_id}",
+                "--auto-chain-depth",
+                "{auto_chain_depth}",
+                "--",
+                "{message}",
+            ]
+        ),
+        "AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE": shlex.join(
+            [
+                *base,
+                "official-reply",
+                *identity,
+                "--meeting-id",
+                "{meeting_id}",
+                "--source-event-id",
+                "{source_event_id}",
+                "--",
+                "{message}",
+            ]
+        ),
+    }
 
 
 def _self_service_exit_error(return_code: int) -> str:

@@ -1,6 +1,7 @@
 import unittest
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -7863,7 +7864,73 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(popen_calls[0]["kwargs"]["env"]["AGENTSASSEMBLE_SERVER"], "http://room.local")
         self.assertEqual(popen_calls[0]["kwargs"]["env"]["AGENTSASSEMBLE_AGENT_ID"], "selfer")
         self.assertEqual(popen_calls[0]["kwargs"]["env"]["AGENTSASSEMBLE_CONNECTION_KIND"], "self_service")
+        env = popen_calls[0]["kwargs"]["env"]
+        wait_next = shlex.split(env["AGENTSASSEMBLE_WAIT_NEXT_COMMAND"])
+        self.assertEqual(wait_next[:4], [sys.executable, "-m", "agentsassemble.cli", "live-agent"])
+        self.assertIn("wait-next", wait_next)
+        self.assertIn("--agent-id", wait_next)
+        self.assertIn("selfer", wait_next)
+        self.assertIn("--max-chain-depth", wait_next)
+        self.assertIn("1", wait_next)
+        self.assertIn("--json", wait_next)
+        self.assertIn("wait-room-event", shlex.split(env["AGENTSASSEMBLE_WAIT_ROOM_EVENT_COMMAND"]))
+        self.assertIn("wait-official-turn", shlex.split(env["AGENTSASSEMBLE_WAIT_OFFICIAL_TURN_COMMAND"]))
+        say_template = shlex.split(env["AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE"])
+        self.assertIn("say", say_template)
+        self.assertIn("{source_event_id}", say_template)
+        self.assertIn("{auto_chain_depth}", say_template)
+        self.assertIn("{message}", say_template)
+        official_template = shlex.split(env["AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE"])
+        self.assertIn("official-reply", official_template)
+        self.assertIn("{meeting_id}", official_template)
+        self.assertIn("{source_event_id}", official_template)
+        self.assertIn("{message}", official_template)
         self.assertFalse(any(call["url"].endswith("/room") for call in calls))
+
+    def test_self_service_room_command_templates_round_trip_shell_escaping(self):
+        config = ResidentAgentConfig(
+            server="http://room.local/path with space?x=1&y=$two",
+            agent_id="agent with spaces;$",
+            display_name="Self Service",
+            provider_kind="antigravity_cli",
+            connection_kind="self_service",
+            session_id="",
+            endpoint="",
+            auth_ref="",
+            meeting_id="",
+            engagement_mode="always",
+            command=["agent"],
+            timeout_seconds=120,
+            poll_interval=0.5,
+            heartbeat_interval=30,
+            cooldown=5,
+            max_chain_depth=2,
+        )
+
+        env = cli_module._self_service_process_env(config)
+        wait_next = shlex.split(env["AGENTSASSEMBLE_WAIT_NEXT_COMMAND"])
+        self.assertIn("http://room.local/path with space?x=1&y=$two", wait_next)
+        self.assertIn("agent with spaces;$", wait_next)
+        self.assertIn("2", wait_next)
+        official_template = shlex.split(env["AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE"])
+        self.assertIn("{meeting_id}", official_template)
+        self.assertNotIn("", official_template)
+        say_template = shlex.split(env["AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE"])
+        self.assertIn("{message}", say_template)
+        self.assertLess(say_template.index("--"), say_template.index("{message}"))
+        self.assertLess(official_template.index("--"), official_template.index("{message}"))
+        say_argv = [
+            "-h" if item == "{message}" else "evt-1" if item == "{source_event_id}" else "1" if item == "{auto_chain_depth}" else item
+            for item in say_template
+        ]
+        official_argv = [
+            "-h" if item == "{message}" else "meeting-1" if item == "{meeting_id}" else "live-1" if item == "{source_event_id}" else item
+            for item in official_template
+        ]
+        say_args = build_parser().parse_args(say_argv[3:])
+        official_args = build_parser().parse_args(official_argv[3:])
+        self.assertEqual(say_args.message, ["-h"])
+        self.assertEqual(official_args.message, ["-h"])
 
     def test_live_agent_run_uses_codex_resident_runner_for_codex_live_session_provider(self):
         args = build_parser().parse_args(

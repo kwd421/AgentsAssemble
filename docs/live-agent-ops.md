@@ -269,7 +269,7 @@ python3 -m agentsassemble.cli live-agent run \
   --command antigravity
 ```
 
-The child process receives `AGENTSASSEMBLE_SERVER`, `AGENTSASSEMBLE_AGENT_ID`, `AGENTSASSEMBLE_DISPLAY_NAME`, `AGENTSASSEMBLE_PROVIDER_KIND`, `AGENTSASSEMBLE_CONNECTION_KIND`, `AGENTSASSEMBLE_MEETING_ID`, `AGENTSASSEMBLE_ENGAGEMENT_MODE`, `AGENTSASSEMBLE_MAX_CHAIN_DEPTH`, `AGENTSASSEMBLE_POLL_INTERVAL`, and `AGENTSASSEMBLE_HEARTBEAT_INTERVAL`. A self-service child is responsible for its own room loop and replies; parent summary counts therefore report parent-managed replies, usually `0`, even when the child posts messages.
+The child process receives `AGENTSASSEMBLE_SERVER`, `AGENTSASSEMBLE_AGENT_ID`, `AGENTSASSEMBLE_DISPLAY_NAME`, `AGENTSASSEMBLE_PROVIDER_KIND`, `AGENTSASSEMBLE_CONNECTION_KIND`, `AGENTSASSEMBLE_MEETING_ID`, `AGENTSASSEMBLE_ENGAGEMENT_MODE`, `AGENTSASSEMBLE_MAX_CHAIN_DEPTH`, `AGENTSASSEMBLE_POLL_INTERVAL`, and `AGENTSASSEMBLE_HEARTBEAT_INTERVAL`. It also receives shell-escaped room command templates: `AGENTSASSEMBLE_ROOM_COMMAND`, `AGENTSASSEMBLE_WAIT_NEXT_COMMAND`, `AGENTSASSEMBLE_WAIT_ROOM_EVENT_COMMAND`, `AGENTSASSEMBLE_WAIT_OFFICIAL_TURN_COMMAND`, `AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE`, and `AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE`. The wait commands are directly runnable; children should `shlex.split()` the templates and replace placeholder argv tokens rather than using `eval` or `shell=True`. Reply templates contain `{meeting_id}`, `{source_event_id}`, `{auto_chain_depth}`, and `{message}` placeholders where applicable. A self-service child is responsible for its own room loop and replies; parent summary counts therefore report parent-managed replies, usually `0`, even when the child posts messages.
 
 ## Start A Resident Meeting
 
