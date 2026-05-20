@@ -660,6 +660,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_auto_join.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
     live_auto_join.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
     live_auto_join.add_argument("--stop-on-timeout", action="store_true")
+    _add_session_finalize_after_rounds_arg(live_auto_join)
     live_auto_join.add_argument(
         "--probe-bound-agents",
         action="store_true",
@@ -3196,16 +3197,34 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
             "reply_probe_statuses",
             "auto_rounds_status",
             "auto_rounds_reason",
+            "finalization_status",
+            "finalization_reason",
+            "finalization_official_event_count",
             "auto_rounds_answered_round_count",
             "auto_rounds_round_count",
+        ]
+    if operation_name == "official_turn.rounds":
+        return [
+            "finalization_status",
+            "finalization_reason",
+            "finalization_official_event_count",
+            "round_count",
+            "answered_round_count",
+            "completed_round_count",
+            "timeout_round_count",
+            "skipped_round_count",
+            "stopped_round_count",
+            "statuses",
         ]
     return []
 
 
 def _live_agent_operation_detail_limit(operation_name: str) -> int:
     if operation_name == "session.ensure":
-        return 9
+        return 11
     if operation_name in {"session.start", "session.resume", "session.restart", "session.recover"}:
+        return 10
+    if operation_name == "official_turn.rounds":
         return 8
     return 7
 

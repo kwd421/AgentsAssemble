@@ -376,6 +376,168 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(payload["discovery"]["session_bundle"]["group_id"], "live-agents.discovered")
             self.assertEqual(payload["session"]["connection"]["connected"], 2)
 
+    def test_live_agent_auto_join_can_finalize_after_remaining_rounds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+            requests = []
+            readiness_seen = {"count": 0}
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "codex"} else None
+
+            def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+                requests.append(
+                    {
+                        "url": url,
+                        "method": method,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    }
+                )
+                if url.startswith("http://room.local/api/live-agent-sessions/readiness?"):
+                    readiness_seen["count"] += 1
+                    if readiness_seen["count"] == 1:
+                        raise ValueError("Meeting resident-m1 was not found.")
+                    return {
+                        "status": "ready",
+                        "meeting_id": "resident-m1",
+                        "group_id": "live-agents.discovered",
+                        "connection": {"expected": 2, "connected": 2, "attention": []},
+                        "process": {"status": "running", "attention": []},
+                    }
+                if url == "http://room.local/api/live-agent-sessions/start":
+                    return {
+                        "status": "ready",
+                        "meeting_id": "resident-m1",
+                        "group_id": "live-agents.discovered",
+                        "connection": {"expected": 2, "connected": 2, "attention": []},
+                        "process": {"status": "running", "attention": []},
+                        "auto_rounds": {
+                            "status": "answered",
+                            "round_count": 2,
+                            "answered_round_count": 2,
+                            "completed_round_count": 0,
+                            "timeout_round_count": 0,
+                            "skipped_round_count": 0,
+                        },
+                        "finalization": {
+                            "status": "finalized",
+                            "meeting_id": "resident-m1",
+                            "official_event_count": 4,
+                        },
+                    }
+                raise AssertionError(f"unexpected request: {url}")
+
+            stdout = StringIO()
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+            ):
+                with patch("agentsassemble.cli._request_json", side_effect=request_json):
+                    with patch("sys.stdout", stdout):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "auto-join",
+                                "--server",
+                                "http://room.local",
+                                "--meeting-id",
+                                "resident-m1",
+                                "--output",
+                                str(output_path),
+                                "--run-remaining-rounds",
+                                "--finalize-after-rounds",
+                                "--round-timeout",
+                                "11",
+                                "--max-rounds",
+                                "3",
+                                "--stop-on-timeout",
+                                "--json",
+                            ]
+                        )
+
+            self.assertEqual(exit_code, 0)
+            start_request = next(request for request in requests if request["url"] == "http://room.local/api/live-agent-sessions/start")
+            self.assertEqual(start_request["payload"]["run_remaining_rounds"], True)
+            self.assertEqual(start_request["payload"]["finalize_after_rounds"], True)
+            self.assertEqual(start_request["payload"]["round_timeout_seconds"], 11.0)
+            self.assertEqual(start_request["payload"]["round_max_rounds"], 3)
+            self.assertEqual(start_request["payload"]["round_stop_on_timeout"], True)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["session"]["finalization"]["status"], "finalized")
+            self.assertEqual(payload["session"]["finalization"]["official_event_count"], 4)
+
+    def test_live_agent_auto_join_reports_finalization_failure_as_session_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+            readiness_seen = {"count": 0}
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "codex"} else None
+
+            def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+                if url.startswith("http://room.local/api/live-agent-sessions/readiness?"):
+                    readiness_seen["count"] += 1
+                    if readiness_seen["count"] == 1:
+                        raise ValueError("Meeting resident-m1 was not found.")
+                    return {
+                        "status": "ready",
+                        "meeting_id": "resident-m1",
+                        "group_id": "live-agents.discovered",
+                        "connection": {"expected": 2, "connected": 2, "attention": []},
+                        "process": {"status": "running", "attention": []},
+                    }
+                if url == "http://room.local/api/live-agent-sessions/start":
+                    return {
+                        "status": "ready",
+                        "meeting_id": "resident-m1",
+                        "group_id": "live-agents.discovered",
+                        "connection": {"expected": 2, "connected": 2, "attention": []},
+                        "process": {"status": "running", "attention": []},
+                        "auto_rounds": {
+                            "status": "answered",
+                            "round_count": 1,
+                            "answered_round_count": 1,
+                            "completed_round_count": 0,
+                            "timeout_round_count": 0,
+                            "skipped_round_count": 0,
+                        },
+                        "finalization": {
+                            "status": "failed",
+                            "meeting_id": "resident-m1",
+                            "reason": "pending_turn_request",
+                            "official_event_count": 2,
+                        },
+                    }
+                raise AssertionError(f"unexpected request: {url}")
+
+            stdout = StringIO()
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+            ):
+                with patch("agentsassemble.cli._request_json", side_effect=request_json):
+                    with patch("sys.stdout", stdout):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "auto-join",
+                                "--server",
+                                "http://room.local",
+                                "--meeting-id",
+                                "resident-m1",
+                                "--output",
+                                str(output_path),
+                                "--run-remaining-rounds",
+                                "--finalize-after-rounds",
+                            ]
+                        )
+
+            self.assertEqual(exit_code, 1)
+            self.assertIn("Auto-joined via start", stdout.getvalue())
+            self.assertIn("finalization failed: 2 official events", stdout.getvalue())
+
     def test_live_agent_auto_join_returns_one_when_no_supported_cli_is_found(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "live-agents.discovered.json"

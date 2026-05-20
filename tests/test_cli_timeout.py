@@ -1385,6 +1385,97 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("auto_rounds_answered_round_count=1", output)
         self.assertNotIn("agent_ids=agent-a,agent-b,agent-c", output)
 
+    def test_live_agent_operations_list_prioritizes_session_finalization_result(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "session.ensure",
+                    "status": "degraded",
+                    "target_id": "council-session",
+                    "summary": "",
+                    "details": {
+                        "ensure_action": "none",
+                        "result_status": "ready",
+                        "meeting_id": "main-room",
+                        "group_id": "council",
+                        "connected_agent_count": 3,
+                        "auto_rounds_status": "answered",
+                        "auto_rounds_answered_round_count": 2,
+                        "auto_rounds_round_count": 2,
+                        "finalization_status": "failed",
+                        "finalization_reason": "pending_turn_request",
+                        "finalization_official_event_count": 0,
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "operations",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("session.ensure", output)
+        self.assertIn("auto_rounds_status=answered", output)
+        self.assertIn("finalization_status=failed", output)
+        self.assertIn("finalization_reason=pending_turn_request", output)
+        self.assertIn("finalization_official_event_count=0", output)
+
+    def test_live_agent_operations_list_prioritizes_remaining_rounds_finalization_result(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "official_turn.rounds",
+                    "status": "degraded",
+                    "target_id": "main-room",
+                    "summary": "",
+                    "details": {
+                        "meeting_id": "main-room",
+                        "round_count": 1,
+                        "answered_round_count": 1,
+                        "completed_round_count": 0,
+                        "timeout_round_count": 0,
+                        "skipped_round_count": 0,
+                        "round_ids": ["round_1"],
+                        "statuses": ["answered"],
+                        "finalization_status": "skipped",
+                        "finalization_reason": "rounds_still_remaining",
+                        "finalization_official_event_count": 0,
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "operations",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("official_turn.rounds", output)
+        self.assertIn("finalization_status=skipped", output)
+        self.assertIn("finalization_reason=rounds_still_remaining", output)
+        self.assertIn("answered_round_count=1", output)
+
     def test_live_agent_engagement_updates_real_http_endpoint_without_refreshing_heartbeat(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
