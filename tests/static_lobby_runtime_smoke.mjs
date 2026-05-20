@@ -201,6 +201,7 @@ function resetState() {
     liveAgentProcessBulkStopRunning: false,
     liveAgentDiscoveryRunning: false,
     liveAgentAutoJoinRunning: false,
+    liveAgentDiscoveryReport: null,
     liveAgentRoundCallRunning: false,
     liveAgentProcessStatus: null,
     codexSessions: [],
@@ -230,6 +231,7 @@ function installHarness({
   roundPayload = null,
   codexInvitePayload = null,
   liveAgentDiscoveryPayload = null,
+  liveAgentDiscoveryResponse = null,
   liveAgentPreflightPayload = null,
   liveAgentProcessEventsPayload = null,
   liveAgentOperationsPayload = null,
@@ -418,12 +420,17 @@ function installHarness({
     }
     if (url === "/api/live-agent-discovery") {
       return jsonResponse(
-        liveAgentDiscoveryPayload || {
+        liveAgentDiscoveryResponse?.payload ||
+          liveAgentDiscoveryPayload || {
           status: "ok",
           written: true,
           output: ".agentsassemble/live-agents.discovered.local.json",
           config: { agents: [] },
           discoveries: [],
+        },
+        {
+          ok: liveAgentDiscoveryResponse?.ok ?? true,
+          status: liveAgentDiscoveryResponse?.status ?? 200,
         }
       );
     }
@@ -883,6 +890,95 @@ test("live agent discovery writes a local config and fills the resident config p
     "CLI 자동 발견 완료: 2 agents -> .agentsassemble/live-agents.discovered.local.json"
   );
   assert.ok(requests.some((request) => request.url === "/api/live-agent-operations?limit=20"));
+});
+
+test("live agent discovery renders safe candidate evidence without executable paths", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  const { document } = installHarness({
+    liveAgentDiscoveryPayload: {
+      status: "ok",
+      written: true,
+      output: ".agentsassemble/live-agents.discovered.local.json",
+      config: {
+        agents: [
+          { agent_id: "claude-code-live", provider_kind: "claude_code" },
+          { agent_id: "codex-live", provider_kind: "codex_live_session" },
+        ],
+      },
+      discoveries: [
+        {
+          command: "claude",
+          provider_kind: "claude_code",
+          available: true,
+          included: true,
+          path: "/Users/friend/secret/bin/claude",
+          reason: "included",
+        },
+        {
+          command: "codex",
+          provider_kind: "codex_live_session",
+          available: true,
+          included: true,
+          path: "/Users/friend/secret/bin/codex",
+          reason: "included",
+        },
+        {
+          command: "gemini",
+          provider_kind: "gemini_cli_legacy",
+          available: true,
+          included: false,
+          path: "/Users/friend/secret/bin/gemini",
+          reason: "legacy",
+        },
+      ],
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  await document.querySelector("#live-agent-discover").click();
+
+  const reportText = document.querySelector(".live-agent-discovery-report").textContent;
+  assert.match(reportText, /included 2\/3/);
+  assert.match(reportText, /found 3/);
+  assert.match(reportText, /claude/);
+  assert.match(reportText, /claude_code/);
+  assert.match(reportText, /included/);
+  assert.match(reportText, /gemini/);
+  assert.match(reportText, /legacy/);
+  assert.match(reportText, /codex/);
+  assert.match(reportText, /codex_live_session/);
+  assert.doesNotMatch(reportText, /Users|secret|bin/);
+});
+
+test("live agent discovery clears stale candidate evidence when the request fails", async () => {
+  resetState();
+  state.liveAgentDiscoveryReport = {
+    discoveries: [
+      {
+        command: "claude",
+        provider_kind: "claude_code",
+        available: true,
+        included: true,
+        reason: "included",
+      },
+    ],
+  };
+  const { document } = installHarness({
+    liveAgentDiscoveryResponse: {
+      ok: false,
+      status: 500,
+      payload: { error: "discovery offline" },
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  assert.ok(document.querySelector(".live-agent-discovery-report"));
+
+  await document.querySelector("#live-agent-discover").click();
+
+  assert.equal(state.liveAgentProcessStatus.message, "CLI 자동 발견 실패: discovery offline");
+  assert.equal(document.querySelector(".live-agent-discovery-report"), null);
 });
 
 test("auto join discovers local CLIs preflights the generated config and ensures the resident session", async () => {

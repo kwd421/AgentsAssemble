@@ -585,6 +585,7 @@ function renderLiveAgentProcessControls() {
         <button type="button" id="live-agent-readiness-check" ${processActionsDisabled ? "disabled" : ""}>점검</button>
         <button type="button" id="live-agent-process-refresh">상태</button>
       </form>
+      ${renderLiveAgentDiscoveryReport(state.liveAgentDiscoveryReport)}
       <div class="live-agent-process-list">
         ${
           groups.length
@@ -760,6 +761,40 @@ function liveAgentSessionProcessReasonLabel(reason) {
   const text = String(reason.reason || "").trim();
   if (!eventType && !text) return "";
   return `reason ${[eventType, text].filter(Boolean).join(" ")}`;
+}
+
+function renderLiveAgentDiscoveryReport(report) {
+  if (!report || typeof report !== "object") return "";
+  const discoveries = Array.isArray(report.discoveries) ? report.discoveries : [];
+  if (!discoveries.length) return "";
+  const included = discoveries.filter((item) => item && item.included).length;
+  const found = discoveries.filter((item) => item && item.available).length;
+  return `
+    <section class="live-agent-discovery-report" aria-label="Live agent CLI discovery report">
+      <div>
+        <strong>CLI discovery</strong>
+        <span>included ${escapeHtml(`${included}/${discoveries.length}`)} · found ${escapeHtml(found)}</span>
+      </div>
+      ${discoveries.map(renderLiveAgentDiscoveryRow).join("")}
+    </section>
+  `;
+}
+
+function renderLiveAgentDiscoveryRow(discovery) {
+  const command = String(discovery?.command || "unknown");
+  const providerKind = String(discovery?.provider_kind || "unknown");
+  const reason = String(discovery?.reason || "");
+  const status = discovery?.included ? "included" : discovery?.available ? "skipped" : "missing";
+  const detail = reason ? `${providerKind} · ${reason}` : providerKind;
+  return `
+    <article class="live-agent-discovery-row live-agent-discovery-${escapeHtml(status)}">
+      <div>
+        <strong>${escapeHtml(command)}</strong>
+        <small>${escapeHtml(detail)}</small>
+      </div>
+      <em>${escapeHtml(status)}</em>
+    </article>
+  `;
 }
 
 function liveAgentHealthAttentionCount(health) {
@@ -1881,6 +1916,7 @@ async function runLiveAgentDiscovery(lobby) {
   if (liveAgentProcessActionBusy()) return;
   const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
   state.liveAgentDiscoveryRunning = true;
+  state.liveAgentDiscoveryReport = null;
   state.liveAgentProcessStatus = { message: "CLI 자동 발견 중", tone: "info" };
   renderLobby({ followLatest: false });
   try {
@@ -1893,6 +1929,7 @@ async function runLiveAgentDiscovery(lobby) {
         write_config: true,
       }),
     });
+    state.liveAgentDiscoveryReport = payload;
     const outputPath = String(payload.output || "");
     if (outputPath) {
       const configInput = document.querySelector("#live-agent-process-config");
@@ -1919,6 +1956,7 @@ async function runLiveAgentAutoJoin(lobby) {
   if (liveAgentProcessActionBusy()) return;
   const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
   state.liveAgentAutoJoinRunning = true;
+  state.liveAgentDiscoveryReport = null;
   state.liveAgentProcessStatus = { message: "자동입장: CLI 발견 중", tone: "info" };
   renderLobby({ followLatest: false });
   try {
@@ -1931,6 +1969,7 @@ async function runLiveAgentAutoJoin(lobby) {
         write_config: true,
       }),
     });
+    state.liveAgentDiscoveryReport = discovery;
     const outputPath = String(discovery.output || "");
     const agentCount = Array.isArray(discovery.config?.agents) ? discovery.config.agents.length : 0;
     if (discovery.status !== "ok" || !outputPath) {

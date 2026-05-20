@@ -670,6 +670,82 @@
   color: #ffc3c3;
 }
 
+.live-agent-discovery-report {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(212, 225, 255, 0.1);
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+}
+
+.live-agent-discovery-report > div {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.live-agent-discovery-report > div span {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.live-agent-discovery-row {
+  align-items: center;
+  background: rgba(8, 11, 17, 0.48);
+  border: 1px solid rgba(212, 225, 255, 0.1);
+  border-left: 4px solid rgba(212, 225, 255, 0.24);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 40px;
+  padding: 6px 8px;
+}
+
+.live-agent-discovery-row strong,
+.live-agent-discovery-row small,
+.live-agent-discovery-row em {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-agent-discovery-row small {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.live-agent-discovery-row em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.live-agent-discovery-included {
+  border-left-color: rgba(130, 209, 115, 0.72);
+}
+
+.live-agent-discovery-included em {
+  color: #bdf2b4;
+}
+
+.live-agent-discovery-skipped {
+  border-left-color: rgba(255, 183, 96, 0.58);
+}
+
+.live-agent-discovery-skipped em {
+  color: #ffd89a;
+}
+
 .live-agent-health-pill {
   align-items: center;
   background: rgba(255, 255, 255, 0.045);

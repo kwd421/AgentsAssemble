@@ -42,6 +42,7 @@ export const state = {
   liveAgentProcessBulkStopRunning: false,
   liveAgentDiscoveryRunning: false,
   liveAgentAutoJoinRunning: false,
+  liveAgentDiscoveryReport: null,
   liveAgentProcessStatus: null,
   liveAgentRoundCallRunning: false,
   codexSessions: [],
