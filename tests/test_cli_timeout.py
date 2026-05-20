@@ -8273,6 +8273,69 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("--last-observed-live-event-id={last_observed_live_event_id}", heartbeat_template)
         self.assertFalse(any(call["url"].endswith("/room") for call in calls))
 
+    def test_live_agent_run_group_keeps_self_service_child_in_group_process_session(self):
+        config = ResidentAgentConfig(
+            server="http://room.local",
+            agent_id="selfer",
+            display_name="Self Service",
+            provider_kind="antigravity_cli",
+            connection_kind="self_service",
+            session_id="",
+            endpoint="",
+            auth_ref="",
+            meeting_id="resident-m1",
+            engagement_mode="always",
+            command=[sys.executable, "-c", "pass"],
+            timeout_seconds=120,
+            poll_interval=0,
+            heartbeat_interval=30,
+            cooldown=5,
+            max_chain_depth=1,
+            max_ticks=1,
+        )
+
+        class FakeSelfServiceProcess:
+            pid = 4321
+            returncode = 0
+
+            def poll(self):
+                return self.returncode
+
+            def wait(self, timeout=None):
+                del timeout
+                return self.returncode
+
+            def terminate(self):
+                self.returncode = -15
+
+            def kill(self):
+                self.returncode = -9
+
+        popen_calls = []
+
+        def fake_popen(command, **kwargs):
+            popen_calls.append({"command": command, "kwargs": kwargs})
+            return FakeSelfServiceProcess()
+
+        def request_json(url, *, method="GET", payload=None, **kwargs):
+            del url, method, kwargs
+            return {"agent": {"agent_id": "selfer", "status": (payload or {}).get("status", "online")}}
+
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=[config]),
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
+            patch("agentsassemble.cli._request_json", side_effect=request_json),
+            patch("agentsassemble.cli._supports_process_groups", return_value=True),
+            patch("agentsassemble.cli.subprocess.Popen", side_effect=fake_popen),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", StringIO()),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(popen_calls), 1)
+        self.assertIs(popen_calls[0]["kwargs"]["start_new_session"], False)
+
     def test_self_service_parent_liveness_heartbeat_preserves_child_status(self):
         config = ResidentAgentConfig(
             server="http://room.local",

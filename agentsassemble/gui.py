@@ -593,6 +593,7 @@ def live_agent_session_ensure_payload(
     *,
     default_server: str,
 ) -> dict[str, object]:
+    payload = _live_agent_session_payload_with_group_owner(process_supervisor, payload)
     current = _live_agent_session_optional_readiness_payload(output_root, process_supervisor, payload)
     action = session_ensure_action(current)
     if action == "none" and _ready_session_requires_restart_for_resident_session_drift(
@@ -626,6 +627,34 @@ def live_agent_session_ensure_payload(
     ensured = _live_agent_session_ensured_readiness_payload(output_root, process_supervisor, payload, session)
     ensured["action"] = action
     return ensured
+
+
+def _live_agent_session_payload_with_group_owner(
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    if str(payload.get("meeting_id") or "").strip():
+        return payload
+    group_id = str(payload.get("group_id") or "").strip()
+    if not group_id:
+        return payload
+    group = _find_session_process_group(_session_process_groups_snapshot(process_supervisor), group_id)
+    owned_meeting_id = _safe_process_group_meeting_id(group.get("meeting_id") if group else "")
+    if not owned_meeting_id:
+        return payload
+    resolved = payload
+    resolved["meeting_id"] = owned_meeting_id
+    resolved["_meeting_id_resolved_from_group"] = True
+    return resolved
+
+
+def _safe_process_group_meeting_id(value: object) -> str:
+    meeting_id = clean_lobby_text(value, limit=128)
+    if not meeting_id or meeting_id in {".", ".."}:
+        return ""
+    if "/" in meeting_id or "\\" in meeting_id or Path(meeting_id).name != meeting_id:
+        return ""
+    return meeting_id
 
 
 def _ready_session_requires_restart_for_resident_session_drift(
@@ -713,6 +742,8 @@ def _live_agent_session_optional_readiness_payload(
         )
     except ValueError as error:
         if "was not found" in str(error):
+            if payload.get("_meeting_id_resolved_from_group"):
+                raise
             return None
         raise
 

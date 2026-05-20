@@ -1653,6 +1653,23 @@ def _run_live_agent_ensure_session(args: argparse.Namespace) -> int:
 def _ensure_live_agent_session(args: argparse.Namespace) -> tuple[str, dict[str, object]]:
     initial = _initial_live_agent_session_readiness(args)
     action = session_ensure_action(initial)
+    if action == "start" and _server_side_ensure_required_for_blank_meeting(args):
+        payload = _session_start_payload(args)
+        timeout_seconds = _session_remaining_rounds_request(
+            args,
+            payload,
+            connect_timeout_seconds=float(args.connect_timeout),
+        )
+        response = _request_json(
+            _server_url(str(args.server), "/api/live-agent-sessions/ensure"),
+            method="POST",
+            payload=payload,
+            timeout_seconds=timeout_seconds,
+        )
+        ensured_action = str(response.get("action") or action)
+        if ensured_action != "none":
+            response = _wait_for_live_agent_session_ready_after_control(args, response)
+        return ensured_action, response
     if action == "none":
         payload = _session_start_payload(args)
         timeout_seconds = _session_remaining_rounds_request(
@@ -1684,6 +1701,12 @@ def _ensure_live_agent_session(args: argparse.Namespace) -> tuple[str, dict[str,
     )
     response = _wait_for_live_agent_session_ready_after_control(args, response)
     return action, response
+
+
+def _server_side_ensure_required_for_blank_meeting(args: argparse.Namespace) -> bool:
+    return not str(getattr(args, "meeting_id", "") or "").strip() and bool(
+        str(getattr(args, "group_id", "") or "").strip()
+    )
 
 
 def _wait_for_live_agent_session_ready_after_control(
@@ -1972,6 +1995,7 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
                     request_json=_request_json,
                     sleep_fn=sleep,
                     stop_event=stop_event,
+                    isolate_process_group=False,
                 )
             else:
                 command_runner = _command_runner_for_config(config)
@@ -4061,11 +4085,13 @@ class _SelfServiceResidentSupervisor:
         request_json,
         sleep_fn,
         stop_event: threading.Event | None = None,
+        isolate_process_group: bool = True,
     ) -> None:
         self.config = config
         self.request_json = request_json
         self.sleep_fn = sleep_fn
         self.stop_event = stop_event or threading.Event()
+        self.isolate_process_group = isolate_process_group
         self.process: subprocess.Popen | None = None
         self.closed = False
         self.last_heartbeat_at = 0.0
@@ -4102,9 +4128,9 @@ class _SelfServiceResidentSupervisor:
             self.config.command,
             stdin=subprocess.DEVNULL,
             env=_self_service_process_env(self.config),
-            start_new_session=_supports_process_groups(),
+            start_new_session=self.isolate_process_group and _supports_process_groups(),
         )
-        if _supports_process_groups():
+        if self.isolate_process_group and _supports_process_groups():
             process_group_pid = getattr(process, "pid", None)
             if isinstance(process_group_pid, int) and process_group_pid > 0:
                 setattr(process, "_agentsassemble_process_group_pid", process_group_pid)

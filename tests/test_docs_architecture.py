@@ -359,6 +359,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("post-ready checks", doc)
         self.assertIn("the CLI still posts once to `/api/live-agent-sessions/ensure`", doc)
         self.assertIn("ready-session drift guard", doc)
+        self.assertIn("process-owned meeting id", doc)
+        self.assertIn("does not create a replacement meeting", doc)
         self.assertIn("while preserving any `reply_probe` and `auto_rounds` evidence", doc)
         self.assertIn("session.recover", doc)
         self.assertIn("post-recover", doc)

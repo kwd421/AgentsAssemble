@@ -468,6 +468,87 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(payload["session"]["finalization"]["status"], "finalized")
             self.assertEqual(payload["session"]["finalization"]["official_event_count"], 4)
 
+    def test_live_agent_auto_join_without_meeting_id_uses_server_ensure_for_existing_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+            requests = []
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "codex"} else None
+
+            def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+                requests.append(
+                    {
+                        "url": url,
+                        "method": method,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    }
+                )
+                if url == "http://room.local/api/live-agent-sessions/ensure":
+                    return {
+                        "status": "ready",
+                        "action": "none",
+                        "meeting_id": "resident-existing",
+                        "group_id": "live-agents.discovered",
+                        "connection": {"expected": 2, "connected": 2, "attention": []},
+                        "process": {"status": "running", "attention": []},
+                        "auto_rounds": {
+                            "status": "answered",
+                            "round_count": 1,
+                            "answered_round_count": 1,
+                            "completed_round_count": 0,
+                            "timeout_round_count": 0,
+                            "skipped_round_count": 0,
+                        },
+                        "finalization": {
+                            "status": "finalized",
+                            "meeting_id": "resident-existing",
+                            "official_event_count": 2,
+                        },
+                    }
+                if url == "http://room.local/api/live-agent-sessions/start":
+                    raise AssertionError("auto-join without a meeting id should let server ensure adopt owned groups")
+                raise AssertionError(f"unexpected request: {url}")
+
+            stdout = StringIO()
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+            ):
+                with patch("agentsassemble.cli._request_json", side_effect=request_json):
+                    with patch("sys.stdout", stdout):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "auto-join",
+                                "--server",
+                                "http://room.local",
+                                "--output",
+                                str(output_path),
+                                "--run-remaining-rounds",
+                                "--finalize-after-rounds",
+                                "--round-timeout",
+                                "11",
+                                "--max-rounds",
+                                "3",
+                                "--json",
+                            ]
+                        )
+
+            self.assertEqual(exit_code, 0)
+            ensure_request = next(request for request in requests if request["url"] == "http://room.local/api/live-agent-sessions/ensure")
+            self.assertEqual(ensure_request["payload"]["meeting_id"], "")
+            self.assertEqual(ensure_request["payload"]["group_id"], "live-agents.discovered")
+            self.assertEqual(ensure_request["payload"]["live_agent_config_path"], str(output_path))
+            self.assertEqual(ensure_request["payload"]["run_remaining_rounds"], True)
+            self.assertEqual(ensure_request["payload"]["finalize_after_rounds"], True)
+            self.assertFalse(any(request["url"] == "http://room.local/api/live-agent-sessions/start" for request in requests))
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["action"], "none")
+            self.assertEqual(payload["session"]["meeting_id"], "resident-existing")
+
     def test_live_agent_auto_join_reports_finalization_failure_as_session_failure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "live-agents.discovered.json"
