@@ -182,7 +182,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning", script)
         self.assertIn("state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning", script)
         self.assertIn("state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning", script)
-        self.assertIn("state.liveAgentReadinessRunning || state.liveAgentDiscoveryRunning || Boolean(state.liveAgentProcessRowActionRunning)", script)
+        self.assertIn("state.liveAgentReadinessRunning || state.liveAgentDiscoveryRunning || state.liveAgentAutoJoinRunning || Boolean(state.liveAgentProcessRowActionRunning)", script)
         self.assertIn("state.liveAgentProcessesLoading || liveAgentProcessActionBusy()", script)
         self.assertIn('state.liveAgentProcessStatus = { message: "상주 smoke 진단 중", tone: "info" };', script)
         self.assertIn('state.liveAgentProcessStatus = { message: `smoke 진단 통과: ${payload.group_id || "live-agent-smoke"}`, tone: "success" };', script)

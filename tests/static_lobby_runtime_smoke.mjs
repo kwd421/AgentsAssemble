@@ -196,6 +196,7 @@ function resetState() {
     liveAgentProcessRowActionRunning: "",
     liveAgentProcessBulkStopRunning: false,
     liveAgentDiscoveryRunning: false,
+    liveAgentAutoJoinRunning: false,
     liveAgentRoundCallRunning: false,
     liveAgentProcessStatus: null,
     codexSessions: [],
@@ -225,6 +226,7 @@ function installHarness({
   roundPayload = null,
   codexInvitePayload = null,
   liveAgentDiscoveryPayload = null,
+  liveAgentPreflightPayload = null,
   liveAgentOperationsPayload = null,
 } = {}) {
   const requests = [];
@@ -420,6 +422,15 @@ function installHarness({
         }
       );
     }
+    if (url === "/api/live-agent-preflight") {
+      return jsonResponse(
+        liveAgentPreflightPayload || {
+          status: "ok",
+          summary: { agents: 0 },
+          agents: [],
+        }
+      );
+    }
     if (url === "/api/meetings/resident-gui/live-agent-turns/round") {
       return jsonResponse(
         roundPayload || {
@@ -520,6 +531,10 @@ function sessionSmokeRequest(requests) {
 
 function liveAgentDiscoveryRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-discovery");
+}
+
+function liveAgentPreflightRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-preflight");
 }
 
 function roundRequest(requests) {
@@ -850,6 +865,138 @@ test("live agent discovery writes a local config and fills the resident config p
     "CLI 자동 발견 완료: 2 agents -> .agentsassemble/live-agents.discovered.local.json"
   );
   assert.ok(requests.some((request) => request.url === "/api/live-agent-operations?limit=20"));
+});
+
+test("auto join discovers local CLIs preflights the generated config and ensures the resident session", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  const { document, requests, events } = installHarness({
+    liveAgentDiscoveryPayload: {
+      status: "ok",
+      written: true,
+      output: ".agentsassemble/live-agents.discovered.local.json",
+      config: {
+        agents: [
+          { agent_id: "claude-local", provider_kind: "claude" },
+          { agent_id: "codex-live", provider_kind: "codex_live_session" },
+        ],
+      },
+      discoveries: [
+        { provider_kind: "claude", available: true },
+        { provider_kind: "codex", available: true },
+      ],
+    },
+    liveAgentPreflightPayload: {
+      status: "ok",
+      summary: { agents: 2 },
+      agents: [
+        { agent_id: "claude-local", status: "ok" },
+        { agent_id: "codex-live", status: "ok" },
+      ],
+    },
+    sessionEnsurePayload: {
+      status: "ready",
+      action: "start",
+      meeting_id: "resident-gui",
+      group_id: "resident-main",
+      connection: { expected: 2, connected: 2, attention: [] },
+      process: { status: "running", attention: [] },
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-process-group").value = "resident-main";
+  lobby.querySelector("#live-agent-session-council-config").value = "configs/demo-council.json";
+  lobby.querySelector("#live-agent-session-agent-config").value = "configs/agents.start-session.example.json";
+  lobby.querySelector("#live-agent-session-connect-timeout").value = "7";
+  lobby.querySelector("#live-agent-process-auto-restart").checked = true;
+  lobby.querySelector("#live-agent-process-max-restarts").value = "4";
+  lobby.querySelector("#live-agent-process-restart-backoff").value = "2";
+  lobby.querySelector("#live-agent-process-stale-restart-after").value = "300";
+
+  await lobby.querySelector("#live-agent-auto-join").click();
+
+  assert.deepEqual(liveAgentDiscoveryRequest(requests).jsonBody, {
+    meeting_id: "resident-gui",
+    engagement_mode: "mentioned",
+    write_config: true,
+  });
+  assert.deepEqual(liveAgentPreflightRequest(requests).jsonBody, {
+    config_path: ".agentsassemble/live-agents.discovered.local.json",
+  });
+  assert.deepEqual(sessionEnsureRequest(requests).jsonBody, {
+    meeting_id: "resident-gui",
+    group_id: "resident-main",
+    council_config_path: "configs/demo-council.json",
+    agent_config_path: "configs/agents.start-session.example.json",
+    live_agent_config_path: ".agentsassemble/live-agents.discovered.local.json",
+    connect_timeout_seconds: 7,
+    auto_restart: true,
+    max_restarts: 4,
+    restart_backoff_seconds: 2,
+    stale_restart_after_seconds: 300,
+  });
+  assert.ok(
+    requests.findIndex((request) => request.url === "/api/live-agent-discovery") <
+      requests.findIndex((request) => request.url === "/api/live-agent-preflight")
+  );
+  assert.ok(
+    requests.findIndex((request) => request.url === "/api/live-agent-preflight") <
+      requests.findIndex((request) => request.url === "/api/live-agent-sessions/ensure")
+  );
+  assert.equal(
+    document.querySelector("#live-agent-process-config").value,
+    ".agentsassemble/live-agents.discovered.local.json"
+  );
+  assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 2/2 connected");
+  assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
+  assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+});
+
+test("auto join stops before ensuring the session when preflight fails", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  const { document, requests } = installHarness({
+    liveAgentDiscoveryPayload: {
+      status: "ok",
+      written: true,
+      output: ".agentsassemble/live-agents.discovered.local.json",
+      config: { agents: [{ agent_id: "claude-local", provider_kind: "claude" }] },
+      discoveries: [{ provider_kind: "claude", available: true }],
+    },
+    liveAgentPreflightPayload: {
+      status: "failed",
+      summary: { agents: 1 },
+      agents: [{ agent_id: "claude-local", status: "failed" }],
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  await lobby.querySelector("#live-agent-auto-join").click();
+
+  assert.deepEqual(liveAgentPreflightRequest(requests).jsonBody, {
+    config_path: ".agentsassemble/live-agents.discovered.local.json",
+  });
+  assert.equal(sessionEnsureRequest(requests), undefined);
+  assert.equal(
+    document.querySelector("#live-agent-process-config").value,
+    ".agentsassemble/live-agents.discovered.local.json"
+  );
+  assert.equal(state.liveAgentProcessStatus.message, "자동입장 중단: preflight failed · 1 agents");
+  assert.equal(state.liveAgentProcessStatus.tone, "error");
+});
+
+test("auto join is guarded while another live-agent action is busy", async () => {
+  resetState();
+  state.liveAgentAutoJoinRunning = true;
+  const { document, requests } = installHarness();
+
+  renderLobby({ followLatest: false });
+  await document.querySelector("#live-agent-auto-join").click();
+
+  assert.equal(liveAgentDiscoveryRequest(requests), undefined);
 });
 
 test("session start button posts matching meeting and resident config payload", async () => {

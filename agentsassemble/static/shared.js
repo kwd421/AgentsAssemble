@@ -37,6 +37,7 @@ export const state = {
   liveAgentProcessRowActionRunning: "",
   liveAgentProcessBulkStopRunning: false,
   liveAgentDiscoveryRunning: false,
+  liveAgentAutoJoinRunning: false,
   liveAgentProcessStatus: null,
   liveAgentRoundCallRunning: false,
   codexSessions: [],
