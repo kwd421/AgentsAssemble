@@ -200,9 +200,12 @@ def write_room_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
     write_json(meeting_dir / "meeting.json", meeting)
 
 
-def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any]) -> None:
+def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any], *, transcript_text: str | None = None) -> None:
     write_agenda(meeting_dir, meeting)
-    (meeting_dir / "transcript.md").write_text(render_transcript(meeting), encoding="utf-8")
+    (meeting_dir / "transcript.md").write_text(
+        transcript_text if transcript_text is not None else render_transcript(meeting),
+        encoding="utf-8",
+    )
     (meeting_dir / "decision.md").write_text(render_decision(meeting), encoding="utf-8")
 
     tasks_dir = meeting_dir / "tasks"

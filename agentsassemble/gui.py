@@ -38,6 +38,7 @@ from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
+from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
 from agentsassemble.live_agent_processes import (
     LiveAgentProcessSupervisor,
     clean_live_agent_group_id,
@@ -521,6 +522,11 @@ def live_agent_meeting_start_payload(output_root: Path, payload: dict[str, objec
         agent_config_path=Path(agent_config_path) if agent_config_path else None,
         meeting_id=str(payload.get("meeting_id") or ""),
     )
+
+
+def live_agent_finalize_meeting_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
+    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
+    return finalize_live_agent_meeting(meeting_dir, force=_payload_bool(payload.get("force")))
 
 
 def live_agent_session_start_payload(
@@ -2584,6 +2590,13 @@ def _meeting_live_agent_turn_round_path(path: str) -> str | None:
     return _meeting_live_agent_turn_action_path(path, "round")
 
 
+def _meeting_finalize_path(path: str) -> str | None:
+    parts = path.strip("/").split("/")
+    if len(parts) == 4 and parts[0] == "api" and parts[1] == "meetings" and parts[3] == "finalize":
+        return unquote(parts[2])
+    return None
+
+
 def _meeting_live_agent_turn_action_path(path: str, action: str) -> str | None:
     parts = path.strip("/").split("/")
     if (
@@ -3519,6 +3532,15 @@ def _session_stop_operation_details(session: dict[str, object]) -> dict[str, obj
     }
 
 
+def _meeting_finalize_operation_details(result: dict[str, object], meeting_id: str) -> dict[str, object]:
+    return {
+        "result_status": _operation_result_status(result.get("status")),
+        "meeting_id": clean_lobby_text(result.get("meeting_id") or meeting_id, limit=128),
+        "official_event_count": _payload_nonnegative_int(result.get("official_event_count"), 0),
+        "artifact_event_id": clean_lobby_text(result.get("artifact_event_id"), limit=128),
+    }
+
+
 def _session_check_operation_details(session: dict[str, object]) -> dict[str, object]:
     return _session_start_operation_details(session)
 
@@ -4293,6 +4315,38 @@ def _make_handler(
                     },
                 )
                 self._send_json(started)
+                return
+            finalize_meeting_id = _meeting_finalize_path(parsed.path)
+            if finalize_meeting_id is not None:
+                payload = self._operation_json_payload(
+                    operation="meeting.finalize",
+                    target_id=finalize_meeting_id,
+                    details={"meeting_id": clean_lobby_text(finalize_meeting_id, limit=128)},
+                )
+                if payload is None:
+                    return
+                try:
+                    finalized = live_agent_finalize_meeting_payload(output_root, finalize_meeting_id, payload)
+                except (OSError, ValueError, json.JSONDecodeError) as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="meeting.finalize",
+                        status="failed",
+                        target_id=finalize_meeting_id,
+                        error=str(error),
+                        details={"meeting_id": clean_lobby_text(finalize_meeting_id, limit=128)},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="meeting.finalize",
+                    status="success" if finalized.get("status") in {"finalized", "already_finalized"} else "degraded",
+                    target_id=finalize_meeting_id,
+                    summary="finalized resident live-agent meeting artifacts",
+                    details=_meeting_finalize_operation_details(finalized, finalize_meeting_id),
+                )
+                self._send_json(finalized)
                 return
             if parsed.path == "/api/live-agents":
                 length = int(self.headers.get("Content-Length", "0") or "0")

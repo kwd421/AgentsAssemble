@@ -9310,6 +9310,185 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(transcript.count("첫 공식 답변"), 1)
             self.assertNotIn("중복 공식 답변", transcript)
 
+    def test_live_agent_finalize_meeting_endpoint_writes_artifacts_and_operation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "question": "Finalize resident meeting?",
+                    "display_question": "Finalize resident meeting?",
+                    "topic": "runtime",
+                    "display_topic": "runtime",
+                    "meeting_mode": "debate",
+                    "moderator": {"enabled": True},
+                    "roles": [{"id": "architect", "display_name": "Architect", "lens": "shape"}],
+                    "meeting_template": {
+                        "display_name": "Resident live",
+                        "rounds": [
+                            {
+                                "id": "round_1",
+                                "title": "Round 1",
+                                "instruction": "Answer.",
+                                "turn_control": {"selection": "all_roles"},
+                            }
+                        ],
+                    },
+                    "research_depth": {"name": "resident_live"},
+                    "research_steering": {"prompt": None},
+                    "memory_context": {"recent_episodes": [], "agent_memories": {}},
+                    "memory_input": {"research_summaries": []},
+                    "agent_bindings": [{"role_id": "architect", "agent_id": "agent-a", "provider_id": "local-cli"}],
+                    "provider_configs": {"local-cli": {"kind": "local_cli", "display_name": "Local CLI"}},
+                    "debate_rounds": [],
+                    "moderator_synthesis": {},
+                    "decision_gate": {},
+                    "artifacts": {"agenda": "agenda.md"},
+                    "live_status": "running",
+                },
+            )
+            request_event = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "content": "private prompt",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                },
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "m1",
+                    "actor_id": "agent-a",
+                    "target_agent_id": "agent-a",
+                    "source_event_id": request_event["id"],
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "content": "official answer for final artifacts",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                finalize_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/finalize",
+                    data=json.dumps({}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(finalize_request, timeout=4) as response:
+                    finalized = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(finalized["status"], "finalized")
+            self.assertEqual(finalized["official_event_count"], 1)
+            payload = build_meeting_payload(meeting_dir)
+            self.assertIn("official answer for final artifacts", payload["artifacts"]["transcript.md"])
+            self.assertNotIn("private prompt", payload["artifacts"]["transcript.md"])
+            self.assertEqual(payload["meeting"]["live_status"], "complete")
+            self.assertTrue((meeting_dir / "decision.md").exists())
+            self.assertEqual(operations["operations"][0]["operation"], "meeting.finalize")
+            self.assertEqual(operations["operations"][0]["status"], "success")
+            self.assertEqual(operations["operations"][0]["details"]["official_event_count"], 1)
+            operations_text = json.dumps(operations["operations"], ensure_ascii=False)
+            self.assertNotIn("official answer for final artifacts", operations_text)
+            self.assertNotIn("private prompt", operations_text)
+
+    def test_live_agent_finalize_meeting_endpoint_failure_operation_omits_prompt_content(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "question": "Finalize resident meeting?",
+                    "display_question": "Finalize resident meeting?",
+                    "topic": "runtime",
+                    "display_topic": "runtime",
+                    "meeting_mode": "debate",
+                    "moderator": {"enabled": True},
+                    "roles": [{"id": "architect", "display_name": "Architect", "lens": "shape"}],
+                    "meeting_template": {
+                        "display_name": "Resident live",
+                        "rounds": [
+                            {
+                                "id": "round_1",
+                                "title": "Round 1",
+                                "instruction": "Answer.",
+                                "turn_control": {"selection": "all_roles"},
+                            }
+                        ],
+                    },
+                    "research_depth": {"name": "resident_live"},
+                    "research_steering": {"prompt": None},
+                    "memory_context": {"recent_episodes": [], "agent_memories": {}},
+                    "memory_input": {"research_summaries": []},
+                    "agent_bindings": [{"role_id": "architect", "agent_id": "agent-a", "provider_id": "local-cli"}],
+                    "provider_configs": {"local-cli": {"kind": "local_cli", "display_name": "Local CLI"}},
+                    "debate_rounds": [],
+                    "moderator_synthesis": {},
+                    "decision_gate": {},
+                    "artifacts": {"agenda": "agenda.md"},
+                    "live_status": "running",
+                },
+            )
+            request_event = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "content": "secret pending prompt",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                finalize_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/finalize",
+                    data=json.dumps({}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as context:
+                    urlopen(finalize_request, timeout=4)
+                context.exception.read()
+                context.exception.close()
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(operations["operations"][0]["operation"], "meeting.finalize")
+            self.assertEqual(operations["operations"][0]["status"], "failed")
+            self.assertIn(request_event["id"], operations["operations"][0]["error"])
+            operations_text = json.dumps(operations["operations"], ensure_ascii=False)
+            self.assertNotIn("secret pending prompt", operations_text)
+
     def test_live_agent_official_turn_reply_ignores_explicit_nonofficial_same_source_message(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

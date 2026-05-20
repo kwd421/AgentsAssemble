@@ -318,6 +318,15 @@ def build_parser() -> argparse.ArgumentParser:
     live_start_meeting.add_argument("--agent-config", default="", help="Agent runtime config with approved resident bindings.")
     live_start_meeting.add_argument("--json", action="store_true", dest="as_json", help="Print the raw meeting start payload.")
 
+    live_finalize_meeting = live_agent_subparsers.add_parser(
+        "finalize-meeting",
+        parents=[live_server],
+        help="Finalize a resident live-agent meeting into durable artifacts.",
+    )
+    live_finalize_meeting.add_argument("--meeting-id", required=True, help="Resident meeting id to finalize.")
+    live_finalize_meeting.add_argument("--force", action="store_true", help="Overwrite existing final artifacts.")
+    live_finalize_meeting.add_argument("--json", action="store_true", dest="as_json", help="Print the raw finalization payload.")
+
     live_start_session = live_agent_subparsers.add_parser(
         "start-session",
         parents=[live_server],
@@ -1018,6 +1027,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_call_remaining_rounds(args)
         if args.live_agent_command == "start-meeting":
             return _run_live_agent_start_meeting(args)
+        if args.live_agent_command == "finalize-meeting":
+            return _run_live_agent_finalize_meeting(args)
         if args.live_agent_command == "start-session":
             return _run_live_agent_start_session(args)
         if args.live_agent_command == "resume-session":
@@ -1309,6 +1320,29 @@ def _run_live_agent_start_meeting(args: argparse.Namespace) -> int:
         f"{len(roles)} roles, {len(bindings)} bound agents"
     )
     return 0
+
+
+def _run_live_agent_finalize_meeting(args: argparse.Namespace) -> int:
+    meeting_id = urllib.parse.quote(str(args.meeting_id or ""), safe="")
+    response = _request_json(
+        _server_url(args.server, f"/api/meetings/{meeting_id}/finalize"),
+        method="POST",
+        payload={"force": bool(args.force)},
+        timeout_seconds=20.0,
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_finalize_meeting(response))
+    return 0 if response.get("status") in {"finalized", "already_finalized"} else 1
+
+
+def _format_live_agent_finalize_meeting(response: dict[str, object]) -> str:
+    status = str(response.get("status") or "unknown")
+    meeting_id = str(response.get("meeting_id") or "unknown")
+    official_count = response.get("official_event_count", 0)
+    prefix = "Already finalized" if status == "already_finalized" else "Finalized"
+    return f"{prefix} {meeting_id}: {official_count} official events"
 
 
 def _run_live_agent_start_session(args: argparse.Namespace) -> int:

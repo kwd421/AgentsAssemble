@@ -3181,6 +3181,54 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("1/2 offline", stdout.getvalue())
         self.assertIn("agent-b:wrong_meeting", stdout.getvalue())
 
+    def test_live_agent_finalize_meeting_parser_accepts_meeting_id_and_force(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "finalize-meeting",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "resident-m1",
+                "--force",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "finalize-meeting")
+        self.assertEqual(args.meeting_id, "resident-m1")
+        self.assertTrue(args.force)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_finalize_meeting_posts_request_and_prints_summary(self):
+        response = {
+            "status": "finalized",
+            "meeting_id": "resident-m1",
+            "official_event_count": 2,
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "finalize-meeting",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/meetings/resident-m1/finalize",
+            method="POST",
+            payload={"force": False},
+            timeout_seconds=20.0,
+        )
+        self.assertIn("Finalized resident-m1: 2 official events", stdout.getvalue())
+
     def test_live_agent_check_session_parser_accepts_meeting_group_and_fail_flag(self):
         args = build_parser().parse_args(
             [
