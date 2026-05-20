@@ -39,6 +39,17 @@ SESSION_SMOKE_MESSAGES = {
 }
 
 
+def _argv_option_value(argv: list[str], option: str) -> str:
+    if option in argv:
+        index = argv.index(option)
+        return argv[index + 1] if index + 1 < len(argv) else ""
+    prefix = f"{option}="
+    for part in argv:
+        if part.startswith(prefix):
+            return part[len(prefix) :]
+    raise AssertionError(f"{option} not present in argv {argv!r}")
+
+
 def _session_smoke_lobby_reply_events(probe_id: str, *, group_id: str = "session-smoke") -> list[dict[str, object]]:
     return [
         {
@@ -368,14 +379,10 @@ class LiveAgentSmokeTests(unittest.TestCase):
                             "heartbeat",
                             "--status",
                             "{status}",
-                            "--last-error",
-                            "{last_error}",
-                            "--last-reply-at",
-                            "{last_reply_at}",
-                            "--last-observed-event-id",
-                            "{last_observed_event_id}",
-                            "--last-observed-live-event-id",
-                            "{last_observed_live_event_id}",
+                            "--last-error={last_error}",
+                            "--last-reply-at={last_reply_at}",
+                            "--last-observed-event-id={last_observed_event_id}",
+                            "--last-observed-live-event-id={last_observed_live_event_id}",
                             "--json",
                         ]
                     ),
@@ -428,6 +435,13 @@ class LiveAgentSmokeTests(unittest.TestCase):
             self.assertIn("--json", say_call)
             self.assertIn("--", say_call)
             self.assertLess(say_call.index("--json"), say_call.index("--"))
+            heartbeat_after_say = next(
+                call
+                for index, call in enumerate(calls)
+                if call and call[0] == "heartbeat" and index > calls.index(say_call)
+            )
+            self.assertIn("--last-reply-at=", " ".join(heartbeat_after_say))
+            self.assertIn("--last-observed-event-id=evt-1", heartbeat_after_say)
             self.assertEqual(say_call[say_call.index("--") + 1], "-h")
             say_index = calls.index(say_call)
             heartbeat_calls = [call for call in calls if call and call[0] == "heartbeat"]
@@ -435,9 +449,9 @@ class LiveAgentSmokeTests(unittest.TestCase):
             self.assertLess(calls.index(heartbeat_calls[0]), say_index)
             self.assertGreater(calls.index(heartbeat_calls[-1]), say_index)
             self.assertEqual(heartbeat_calls[0][heartbeat_calls[0].index("--status") + 1], "working")
-            self.assertEqual(heartbeat_calls[0][heartbeat_calls[0].index("--last-observed-event-id") + 1], "evt-1")
+            self.assertEqual(_argv_option_value(heartbeat_calls[0], "--last-observed-event-id"), "evt-1")
             self.assertEqual(heartbeat_calls[-1][heartbeat_calls[-1].index("--status") + 1], "online")
-            self.assertEqual(heartbeat_calls[-1][heartbeat_calls[-1].index("--last-error") + 1], "")
+            self.assertEqual(_argv_option_value(heartbeat_calls[-1], "--last-error"), "")
 
     def test_session_smoke_self_service_script_keeps_replying_when_heartbeat_template_is_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -620,14 +634,10 @@ class LiveAgentSmokeTests(unittest.TestCase):
                             "heartbeat",
                             "--status",
                             "{status}",
-                            "--last-error",
-                            "{last_error}",
-                            "--last-reply-at",
-                            "{last_reply_at}",
-                            "--last-observed-event-id",
-                            "{last_observed_event_id}",
-                            "--last-observed-live-event-id",
-                            "{last_observed_live_event_id}",
+                            "--last-error={last_error}",
+                            "--last-reply-at={last_reply_at}",
+                            "--last-observed-event-id={last_observed_event_id}",
+                            "--last-observed-live-event-id={last_observed_live_event_id}",
                             "--json",
                         ]
                     ),
@@ -671,8 +681,8 @@ class LiveAgentSmokeTests(unittest.TestCase):
                 if process.stderr is not None:
                     process.stderr.close()
 
-            self.assertEqual(error_heartbeat[error_heartbeat.index("--last-error") + 1], "lobby reply failed")
-            self.assertEqual(error_heartbeat[error_heartbeat.index("--last-observed-event-id") + 1], "evt-1")
+            self.assertIn("--last-error=lobby reply failed", error_heartbeat)
+            self.assertIn("--last-observed-event-id=evt-1", error_heartbeat)
 
     def test_session_smoke_can_repeat_lobby_probes_before_and_after_restart(self):
         calls = []

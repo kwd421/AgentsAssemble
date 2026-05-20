@@ -141,6 +141,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE", doc)
         self.assertIn("AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE", doc)
         self.assertIn("AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE", doc)
+        self.assertIn("`--last-error={last_error}` style argv tokens", doc)
         self.assertIn("Parent liveness heartbeats refresh `last_seen_at` without downgrading", doc)
         self.assertIn("wait-turn-request", doc)
         self.assertIn("answer-turn", doc)
