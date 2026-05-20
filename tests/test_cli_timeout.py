@@ -7894,6 +7894,45 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("{last_observed_live_event_id}", heartbeat_template)
         self.assertFalse(any(call["url"].endswith("/room") for call in calls))
 
+    def test_self_service_parent_liveness_heartbeat_preserves_child_status(self):
+        config = ResidentAgentConfig(
+            server="http://room.local",
+            agent_id="selfer",
+            display_name="Self Service",
+            provider_kind="antigravity_cli",
+            connection_kind="self_service",
+            session_id="",
+            endpoint="",
+            auth_ref="",
+            meeting_id="resident-m1",
+            engagement_mode="always",
+            command=["agent"],
+            timeout_seconds=120,
+            poll_interval=0.5,
+            heartbeat_interval=1,
+            cooldown=5,
+            max_chain_depth=1,
+        )
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, **kwargs):
+            del kwargs
+            calls.append({"url": url, "method": method, "payload": payload})
+            return {"agent": {"agent_id": "selfer", "status": "working"}}
+
+        supervisor = cli_module._SelfServiceResidentSupervisor(
+            config,
+            request_json=request_json,
+            sleep_fn=lambda seconds: None,
+        )
+        supervisor.last_heartbeat_at = 0
+
+        supervisor._heartbeat_if_due()
+
+        self.assertEqual(calls[-1]["url"], "http://room.local/api/live-agents/selfer/heartbeat")
+        self.assertEqual(calls[-1]["method"], "POST")
+        self.assertEqual(calls[-1]["payload"], {"status": "online", "preserve_status": True})
+
     def test_self_service_room_command_templates_round_trip_shell_escaping(self):
         config = ResidentAgentConfig(
             server="http://room.local/path with space?x=1&y=$two",

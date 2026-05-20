@@ -170,6 +170,98 @@ class LiveAgentPresenceTests(unittest.TestCase):
             self.assertEqual(agent["status"], "working")
             self.assertEqual(agent["last_seen_at"], "2026-05-17T12:00:45+00:00")
 
+    def test_heartbeat_can_preserve_child_reported_active_status_for_liveness_ping(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            started = datetime(2026, 5, 17, 12, 0, tzinfo=UTC)
+            working_at = started + timedelta(seconds=10)
+            liveness_at = started + timedelta(seconds=40)
+
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "self-service",
+                    "display_name": "Self Service",
+                    "connection_kind": "self_service",
+                },
+                now=started,
+            )
+            heartbeat_live_agent(root, "self-service", status="working", now=working_at)
+            agent = heartbeat_live_agent(
+                root,
+                "self-service",
+                status="online",
+                metadata={"preserve_status": True},
+                now=liveness_at,
+            )
+
+            self.assertEqual(agent["status"], "working")
+            self.assertEqual(agent["last_seen_at"], "2026-05-17T12:00:40+00:00")
+            persisted = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))
+            self.assertNotIn("preserve_status", persisted["agents"][0])
+
+    def test_heartbeat_can_preserve_child_reported_error_for_liveness_ping(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            started = datetime(2026, 5, 17, 12, 0, tzinfo=UTC)
+            errored_at = started + timedelta(seconds=10)
+            liveness_at = started + timedelta(seconds=40)
+
+            connect_live_agent(root, {"agent_id": "self-service", "connection_kind": "self_service"}, now=started)
+            heartbeat_live_agent(
+                root,
+                "self-service",
+                status="error",
+                metadata={"last_error": "command failed"},
+                now=errored_at,
+            )
+            agent = heartbeat_live_agent(
+                root,
+                "self-service",
+                status="online",
+                metadata={"preserve_status": True},
+                now=liveness_at,
+            )
+
+            self.assertEqual(agent["status"], "error")
+            self.assertEqual(agent["last_error"], "command failed")
+            self.assertEqual(agent["last_seen_at"], "2026-05-17T12:00:40+00:00")
+
+    def test_preserve_status_applies_only_to_self_service_liveness_without_error_clear(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            started = datetime(2026, 5, 17, 12, 0, tzinfo=UTC)
+
+            connect_live_agent(root, {"agent_id": "terminal", "connection_kind": "terminal_session"}, now=started)
+            heartbeat_live_agent(root, "terminal", status="working", now=started + timedelta(seconds=5))
+            terminal = heartbeat_live_agent(
+                root,
+                "terminal",
+                status="online",
+                metadata={"preserve_status": True},
+                now=started + timedelta(seconds=10),
+            )
+
+            connect_live_agent(root, {"agent_id": "selfer", "connection_kind": "self_service"}, now=started)
+            heartbeat_live_agent(
+                root,
+                "selfer",
+                status="error",
+                metadata={"last_error": "command failed"},
+                now=started + timedelta(seconds=5),
+            )
+            selfer = heartbeat_live_agent(
+                root,
+                "selfer",
+                status="online",
+                metadata={"preserve_status": True, "last_error": ""},
+                now=started + timedelta(seconds=10),
+            )
+
+            self.assertEqual(terminal["status"], "online")
+            self.assertEqual(selfer["status"], "online")
+            self.assertEqual(selfer["last_error"], "")
+
     def test_heartbeat_can_refresh_session_id_from_runner_metadata(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

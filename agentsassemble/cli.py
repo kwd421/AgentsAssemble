@@ -4063,7 +4063,7 @@ class _SelfServiceResidentSupervisor:
         if self.config.heartbeat_interval <= 0:
             return
         if time.monotonic() - self.last_heartbeat_at >= self.config.heartbeat_interval:
-            self._heartbeat_safely("online")
+            self._heartbeat_safely("online", preserve_status=True)
 
     def _heartbeat_safely(self, status: str, **metadata: object) -> None:
         try:

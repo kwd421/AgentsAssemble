@@ -183,9 +183,10 @@ def heartbeat_live_agent(
         state = _read_state(output_root)
         agents = _agent_entries(state)
         existing = next((agent for agent in agents if agent.get("agent_id") == clean_agent_id), {})
+        normalized_status = _normalize_persisted_status(status)
         if existing:
             agent = _without_output_only_freshness(existing)
-            agent["status"] = _normalize_persisted_status(status)
+            agent["status"] = _heartbeat_status(existing, requested_status=normalized_status, metadata=metadata)
             agent["updated_at"] = timestamp
             agent["last_seen_at"] = timestamp
         else:
@@ -194,7 +195,7 @@ def heartbeat_live_agent(
                 "display_name": clean_agent_id,
                 "provider_kind": "manual",
                 "connection_kind": "manual",
-                "status": _normalize_persisted_status(status),
+                "status": normalized_status,
                 "engagement_mode": "mentioned",
                 "meeting_id": "",
                 "session_id": "",
@@ -226,6 +227,24 @@ def heartbeat_live_agent(
         _upsert_agent(agents, agent)
         _write_state(output_root, {"agents": agents})
         return agent
+
+
+def _heartbeat_status(
+    existing: dict[str, object],
+    *,
+    requested_status: str,
+    metadata: dict[str, object],
+) -> str:
+    current_status = clean_lobby_text(existing.get("status"), limit=32)
+    if (
+        requested_status == "online"
+        and _bool_value(metadata.get("preserve_status"))
+        and clean_lobby_text(existing.get("connection_kind"), limit=64) == "self_service"
+        and "last_error" not in metadata
+        and current_status in {"working", "error"}
+    ):
+        return current_status
+    return requested_status
 
 
 def _read_state(output_root: Path) -> dict[str, Any]:
