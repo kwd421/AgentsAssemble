@@ -230,6 +230,7 @@ function installHarness({
   processActionGate = null,
   roundPayload = null,
   codexInvitePayload = null,
+  codexJoinPayload = null,
   liveAgentDiscoveryPayload = null,
   liveAgentDiscoveryResponse = null,
   liveAgentPreflightPayload = null,
@@ -499,6 +500,9 @@ function installHarness({
         }
       );
     }
+    if (url === "/api/codex-sessions/join") {
+      return jsonResponse(codexJoinPayload || { status: "ready", action: "resume" });
+    }
     return jsonResponse({});
   };
   return { document, requests, events };
@@ -639,6 +643,78 @@ test("codex invite refreshes operation history after writing the invite", async 
   const rowText = document.querySelector(".live-agent-operation-row").textContent;
   assert.match(rowText, /codex_session\.invite/);
   assert.match(rowText, /role_id=lore_lawyer/);
+});
+
+test("codex join posts the selected session and role to the resident join endpoint", async () => {
+  resetState();
+  const { document, requests, events } = installHarness({
+    codexJoinPayload: {
+      status: "ready",
+      action: "resume",
+      meeting_id: "resident-gui",
+      group_id: "live-agents.codex-session.local",
+      invite: {
+        binding: {
+          agent_id: "codex-live-lore-lawyer",
+          role_id: "lore_lawyer",
+          provider_id: "codex-live",
+          join_mode: "current_session",
+          session_id: "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+        },
+      },
+    },
+    liveAgentOperationsPayload: {
+      operations: [
+        {
+          timestamp: "2026-05-18T01:02:03+00:00",
+          operation: "codex_session.join",
+          status: "success",
+          target_id: "lore_lawyer",
+          summary: "joined Codex live session",
+          details: {
+            meeting_id: "resident-gui",
+            role_id: "lore_lawyer",
+            agent_id: "codex-live-lore-lawyer",
+            group_id: "live-agents.codex-session.local",
+            result_status: "ready",
+            ensure_action: "resume",
+          },
+        },
+      ],
+    },
+  });
+  state.payload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      roles: [{ id: "lore_lawyer", display_name: "설정충" }],
+    },
+  };
+  state.codexSessions = [
+    {
+      id: "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+      thread_name: "handoff",
+      updated_at: "2026-05-17T00:00:00Z",
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#codex-session-select").value = "019e02af-c287-7cd1-aab7-c1e059c5ed44";
+  lobby.querySelector("#codex-role-select").value = "lore_lawyer";
+  await lobby.querySelector("#codex-session-join").click();
+
+  const joinRequest = requests.find((request) => request.url === "/api/codex-sessions/join");
+  assert.deepEqual(joinRequest.jsonBody, {
+    meeting_id: "resident-gui",
+    role_id: "lore_lawyer",
+    session_id: "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+  });
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-operations?limit=20"));
+  assert.ok(events.some((event) => event.type === "agentsassemble:meeting-refresh-requested" && event.detail.meetingId === "resident-gui"));
+  const rowText = document.querySelector(".live-agent-operation-row").textContent;
+  assert.match(rowText, /codex_session\.join/);
+  assert.match(rowText, /group_id=live-agents\.codex-session\.local/);
+  assert.doesNotMatch(rowText, /019e02af/);
 });
 
 test("readiness button sends official round smoke and reports the official counts when checked", async () => {

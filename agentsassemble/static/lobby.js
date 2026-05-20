@@ -182,6 +182,9 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#codex-session-refresh")?.addEventListener("click", () => {
     loadCodexSessions({ force: true });
   });
+  lobby.querySelector("#codex-session-join")?.addEventListener("click", async () => {
+    await sendCodexSessionJoin(lobby.querySelector("#codex-invite-form"));
+  });
   lobby.querySelector("#codex-invite-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     await sendCodexSessionInvite(event.currentTarget);
@@ -1312,6 +1315,7 @@ function renderCodexSessionInvite(meeting) {
           ${roles.map((role) => `<option value="${escapeHtml(role.id)}">${escapeHtml(role.display_name || role.id)}</option>`).join("")}
         </select>
         <button type="submit" ${disabled ? "disabled" : ""}>초대</button>
+        <button type="button" id="codex-session-join" ${disabled ? "disabled" : ""}>입장</button>
         <button type="button" id="codex-session-refresh">갱신</button>
       </form>
       ${status ? `<p class="codex-invite-status" data-tone="${escapeHtml(status.tone || "info")}">${escapeHtml(status.message)}</p>` : ""}
@@ -2751,6 +2755,42 @@ async function sendCodexSessionInvite(form) {
     await loadLiveAgentOperations({ background: true, force: true });
   } catch {
     state.codexInviteStatus = { message: "Codex 세션 초대 실패", tone: "error" };
+  }
+  renderLobby({ followLatest: false });
+}
+
+async function sendCodexSessionJoin(form) {
+  const sessionId = form?.querySelector("#codex-session-select")?.value || "";
+  const roleId = form?.querySelector("#codex-role-select")?.value || "";
+  if (!sessionId || !roleId) return;
+  state.codexInviteStatus = { message: "Codex 세션 입장 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/codex-sessions/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        meeting_id: state.payload?.meeting?.meeting_id,
+        role_id: roleId,
+        session_id: sessionId,
+      }),
+    });
+    const role = (state.payload?.meeting?.roles || []).find((candidate) => candidate.id === roleId);
+    const roleLabel = role?.display_name || roleId;
+    const action = payload.action || "ensure";
+    state.codexInviteStatus = {
+      message: `${roleLabel} · ${shortSessionId(sessionId)} 입장됨 · ${action}`,
+      tone: payload.status === "ready" ? "success" : "info",
+    };
+    notifyMeetingRefreshRequested(payload.meeting_id || state.payload?.meeting?.meeting_id);
+    await Promise.all([
+      loadLiveAgents({ background: true, force: true }),
+      loadLiveAgentHealth({ background: true, force: true }),
+      loadLiveAgentProcesses({ background: true, force: true }),
+      loadLiveAgentOperations({ background: true, force: true }),
+    ]);
+  } catch {
+    state.codexInviteStatus = { message: "Codex 세션 입장 실패", tone: "error" };
   }
   renderLobby({ followLatest: false });
 }

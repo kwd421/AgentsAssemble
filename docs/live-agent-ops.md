@@ -119,6 +119,14 @@ POST /api/codex-sessions/invite
 
 The endpoint writes `.agentsassemble/codex-live-session.local.json` with a `codex_live_session` provider binding for the selected role. It also records sanitized successful and failed invite attempts as `codex_session.invite` operations, so another operator or automation can verify what happened from `/api/live-agent-operations`. Successful records include the safe role id, generated agent id, join mode, and provider id. Failed records include only the safe role id and a generic invite failure. The operation record does not include the Codex session id, local config path, command arguments, auth refs, prompts, provider output, or log tails.
 
+The GUI panel also exposes `입장`, which uses the same current-session selection but performs the resident join in one server-side operation:
+
+```text
+POST /api/codex-sessions/join
+```
+
+`join` is intentionally narrower than a generic meeting rebinder. It only accepts an existing live pre-round meeting, refuses meetings that already have debate rounds or official-turn events, writes both `codex-live-session.local.json` and `live-agents.codex-session.local.json`, updates the live meeting's role bindings to the generated Codex live bindings, and then calls the existing `ensure-session` policy for the generated resident group. The selected role keeps the chosen Codex session id; the other meeting roles receive fresh Codex live bindings so the resident manifest still covers the whole meeting. The operation record is `codex_session.join` and includes only safe meeting, role, agent, group, result, and ensure-action evidence. It does not include the Codex session id or local config paths.
+
 The same operation-recorded invite path is available from the CLI when the GUI room is running:
 
 ```bash

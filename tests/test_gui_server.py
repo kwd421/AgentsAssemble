@@ -510,6 +510,492 @@ class GuiServerTests(unittest.TestCase):
                 self.assertNotIn("019e02af-c287-7cd1-aab7-c1e059c5ed44", blob)
                 self.assertNotIn("codex-live-session.local.json", blob)
 
+    def test_codex_session_join_http_endpoint_binds_pre_round_meeting_and_ensures_session(self):
+        class JoinSupervisor:
+            def __init__(self, output_root: Path) -> None:
+                self.output_root = output_root
+                self.started = []
+                self.groups = []
+
+            def snapshot_groups(self):
+                return list(self.groups)
+
+            def list_groups(self):
+                return list(self.groups)
+
+            def start_group(self, **kwargs):
+                self.started.append(kwargs)
+                config = json.loads(Path(kwargs["config_path"]).read_text(encoding="utf-8"))
+                agents = [{"agent_id": agent["agent_id"]} for agent in config["agents"]]
+                for agent in config["agents"]:
+                    connect_live_agent_payload(
+                        self.output_root,
+                        {
+                            "agent_id": agent["agent_id"],
+                            "display_name": agent.get("display_name", agent["agent_id"]),
+                            "provider_kind": agent.get("provider_kind", "codex_live_session"),
+                            "connection_kind": agent.get("connection_kind", "live_session"),
+                            "meeting_id": kwargs["meeting_id"],
+                            "session_id": agent.get("session_id", ""),
+                        },
+                    )
+                    heartbeat_live_agent(
+                        self.output_root,
+                        agent["agent_id"],
+                        status="online",
+                        metadata={"session_id": agent.get("session_id", "")},
+                    )
+                group = {
+                    "group_id": kwargs["group_id"],
+                    "status": "running",
+                    "meeting_id": kwargs["meeting_id"],
+                    "agents": agents,
+                }
+                self.groups = [group]
+                return group
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "topic": "runtime",
+                    "question": "Can Codex join now?",
+                    "roles": [
+                        {"id": "lore_lawyer", "display_name": "설정충"},
+                        {"id": "show_me_the_feats", "display_name": "근거충"},
+                    ],
+                    "provider_configs": {
+                        "mock": {"id": "mock", "kind": "mock", "display_name": "Mock Demo"}
+                    },
+                    "permission_profiles": {
+                        "meeting_read_only": {"id": "meeting_read_only", "meeting_read": True}
+                    },
+                    "agent_bindings": [
+                        {
+                            "agent_id": "lore-agent",
+                            "role_id": "lore_lawyer",
+                            "provider_id": "mock",
+                            "permission_profile_id": "meeting_read_only",
+                        },
+                        {
+                            "agent_id": "feats-agent",
+                            "role_id": "show_me_the_feats",
+                            "provider_id": "mock",
+                            "permission_profile_id": "meeting_read_only",
+                        },
+                    ],
+                    "debate_rounds": [],
+                    "live_status": "running",
+                },
+            )
+            supervisor = JoinSupervisor(root)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/codex-sessions/join",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "role_id": "lore_lawyer",
+                            "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+                            "connect_timeout_seconds": 0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch(
+                    "agentsassemble.live_agent_sessions.preflight_live_agent_config",
+                    return_value={"status": "ok", "summary": {"agents": 2}},
+                ):
+                    with urlopen(request, timeout=4) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["action"], "resume")
+            self.assertEqual(payload["meeting_id"], "m1")
+            self.assertEqual(payload["group_id"], "live-agents.codex-session.local")
+            self.assertTrue((root / "codex-live-session.local.json").exists())
+            self.assertTrue((root / "live-agents.codex-session.local.json").exists())
+            self.assertEqual(supervisor.started[0]["meeting_id"], "m1")
+            self.assertEqual(supervisor.started[0]["group_id"], "live-agents.codex-session.local")
+
+            live_state = json.loads((meeting_dir / "live_state.json").read_text(encoding="utf-8"))
+            bindings = {binding["role_id"]: binding for binding in live_state["agent_bindings"]}
+            self.assertEqual(bindings["lore_lawyer"]["join_mode"], "current_session")
+            self.assertEqual(bindings["lore_lawyer"]["session_id"], "019e02af-c287-7cd1-aab7-c1e059c5ed44")
+            self.assertEqual(bindings["show_me_the_feats"]["join_mode"], "fresh")
+            self.assertEqual(live_state["provider_configs"]["codex-live"]["kind"], "codex_live_session")
+            self.assertEqual(live_state["permission_profiles"]["codex_live_meeting_readonly"]["official_turn"], True)
+
+            resident_config = json.loads((root / "live-agents.codex-session.local.json").read_text(encoding="utf-8"))
+            self.assertEqual([agent["agent_id"] for agent in resident_config["agents"]], ["codex-live-lore-lawyer", "codex-live-show-me-the-feats"])
+            self.assertEqual(resident_config["agents"][0]["session_id"], "019e02af-c287-7cd1-aab7-c1e059c5ed44")
+            self.assertEqual(resident_config["agents"][0]["meeting_id"], "m1")
+
+            join_operations = [operation for operation in operations["operations"] if operation["operation"] == "codex_session.join"]
+            self.assertEqual(len(join_operations), 1)
+            self.assertEqual(join_operations[0]["status"], "success")
+            self.assertEqual(join_operations[0]["target_id"], "lore_lawyer")
+            persisted_operations = (root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8")
+            operation_blob = json.dumps(operations, ensure_ascii=False)
+            for blob in (operation_blob, persisted_operations):
+                self.assertNotIn("019e02af-c287-7cd1-aab7-c1e059c5ed44", blob)
+                self.assertNotIn("codex-live-session.local.json", blob)
+                self.assertNotIn("live-agents.codex-session.local.json", blob)
+
+    def test_codex_session_join_refuses_meeting_with_official_progress_before_writing(self):
+        class JoinSupervisor:
+            def __init__(self) -> None:
+                self.started = []
+
+            def snapshot_groups(self):
+                return []
+
+            def list_groups(self):
+                return []
+
+            def start_group(self, **kwargs):
+                self.started.append(kwargs)
+                raise AssertionError("join should refuse before starting a group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "topic": "runtime",
+                    "roles": [{"id": "lore_lawyer", "display_name": "설정충"}],
+                    "debate_rounds": [{"id": "round_1", "status": "answered"}],
+                    "live_status": "running",
+                },
+            )
+            supervisor = JoinSupervisor()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/codex-sessions/join",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "role_id": "lore_lawyer",
+                            "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as caught:
+                    urlopen(request, timeout=4)
+                error_payload = json.loads(caught.exception.read().decode("utf-8"))
+                caught.exception.close()
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(caught.exception.code, 400)
+            self.assertEqual(error_payload["error"], "Codex live session join failed.")
+            self.assertEqual(error_payload["details"], {"meeting_id": "m1", "role_id": "lore_lawyer"})
+            self.assertEqual(supervisor.started, [])
+            self.assertFalse((root / "codex-live-session.local.json").exists())
+            self.assertFalse((root / "live-agents.codex-session.local.json").exists())
+            operation_blob = json.dumps(operations, ensure_ascii=False)
+            self.assertNotIn("019e02af-c287-7cd1-aab7-c1e059c5ed44", operation_blob)
+            self.assertNotIn("codex-live-session.local.json", operation_blob)
+
+    def test_codex_session_join_restarts_ready_group_when_selected_session_changes(self):
+        class ReadyGroupSupervisor:
+            def __init__(self, output_root: Path, config_path: Path) -> None:
+                self.output_root = output_root
+                self.stopped = []
+                self.restarted = []
+                self.groups = [
+                    {
+                        "group_id": "live-agents.codex-session.local",
+                        "status": "running",
+                        "meeting_id": "m1",
+                        "config_path": str(config_path),
+                        "server": "http://127.0.0.1:8765",
+                        "agents": [{"agent_id": "codex-live-lore-lawyer"}],
+                    }
+                ]
+
+            def snapshot_groups(self):
+                return list(self.groups)
+
+            def list_groups(self):
+                return list(self.groups)
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                self.groups[0]["status"] = "stopped"
+
+            def restart_group(self, group_id):
+                self.restarted.append(group_id)
+                config = json.loads(Path(self.groups[0]["config_path"]).read_text(encoding="utf-8"))
+                agent = config["agents"][0]
+                connect_live_agent_payload(
+                    self.output_root,
+                    {
+                        "agent_id": agent["agent_id"],
+                        "display_name": agent.get("display_name", agent["agent_id"]),
+                        "provider_kind": agent.get("provider_kind", "codex_live_session"),
+                        "connection_kind": agent.get("connection_kind", "live_session"),
+                        "meeting_id": "m1",
+                        "session_id": agent.get("session_id", ""),
+                    },
+                )
+                heartbeat_live_agent(self.output_root, agent["agent_id"], status="online", metadata={"session_id": agent.get("session_id", "")})
+                self.groups[0]["status"] = "running"
+                return dict(self.groups[0])
+
+            def start_group(self, **kwargs):
+                raise AssertionError("ready session drift should restart, not start")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "topic": "runtime",
+                    "roles": [{"id": "lore_lawyer", "display_name": "설정충"}],
+                    "provider_configs": {"codex-live": {"id": "codex-live", "kind": "codex_live_session"}},
+                    "permission_profiles": {"codex_live_meeting_readonly": {"id": "codex_live_meeting_readonly", "meeting_read": True}},
+                    "agent_bindings": [
+                        {
+                            "agent_id": "codex-live-lore-lawyer",
+                            "role_id": "lore_lawyer",
+                            "provider_id": "codex-live",
+                            "permission_profile_id": "codex_live_meeting_readonly",
+                            "join_mode": "current_session",
+                            "session_id": "old-session",
+                        }
+                    ],
+                    "debate_rounds": [],
+                    "live_status": "running",
+                },
+            )
+            live_agent_config = root / "live-agents.codex-session.local.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "codex-live-lore-lawyer",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "live_session",
+                                "meeting_id": "m1",
+                                "session_id": "old-session",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "codex-live-lore-lawyer",
+                    "display_name": "Codex Lore",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                    "meeting_id": "m1",
+                    "session_id": "old-session",
+                },
+            )
+            heartbeat_live_agent(root, "codex-live-lore-lawyer", status="online", metadata={"session_id": "old-session"})
+            supervisor = ReadyGroupSupervisor(root, live_agent_config)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/codex-sessions/join",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "role_id": "lore_lawyer",
+                            "session_id": "new-session",
+                            "connect_timeout_seconds": 0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch(
+                    "agentsassemble.live_agent_sessions.preflight_live_agent_config",
+                    return_value={"status": "ok", "summary": {"agents": 1}},
+                ):
+                    with urlopen(request, timeout=4) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "ready")
+            self.assertEqual(payload["action"], "restart")
+            self.assertEqual(supervisor.stopped, ["live-agents.codex-session.local"])
+            self.assertEqual(supervisor.restarted, ["live-agents.codex-session.local"])
+            live_agent = next(agent for agent in read_live_agents(root) if agent["agent_id"] == "codex-live-lore-lawyer")
+            self.assertEqual(live_agent["session_id"], "new-session")
+
+    def test_codex_session_join_refuses_existing_official_event_before_writing(self):
+        class JoinSupervisor:
+            def start_group(self, **kwargs):
+                raise AssertionError("join should refuse before starting a group")
+
+            def snapshot_groups(self):
+                return []
+
+            def list_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            original_state = {
+                "meeting_id": "m1",
+                "topic": "runtime",
+                "roles": [{"id": "lore_lawyer", "display_name": "설정충"}],
+                "debate_rounds": [],
+                "live_status": "running",
+            }
+            write_live_state(meeting_dir, original_state)
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "codex-live-lore-lawyer",
+                    "content": "official turn already started",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=JoinSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/codex-sessions/join",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "role_id": "lore_lawyer",
+                            "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as caught:
+                    urlopen(request, timeout=4)
+                error_payload = json.loads(caught.exception.read().decode("utf-8"))
+                caught.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(caught.exception.code, 400)
+            self.assertEqual(error_payload["error"], "Codex live session join failed.")
+            self.assertEqual(json.loads((meeting_dir / "live_state.json").read_text(encoding="utf-8")), original_state)
+            self.assertFalse((root / "codex-live-session.local.json").exists())
+            self.assertFalse((root / "live-agents.codex-session.local.json").exists())
+
+    def test_codex_session_join_failure_records_safe_operation_without_session_or_config_paths(self):
+        class FailingJoinSupervisor:
+            def snapshot_groups(self):
+                return []
+
+            def list_groups(self):
+                return []
+
+            def start_group(self, **kwargs):
+                raise ValueError(
+                    "failed for 019e02af-c287-7cd1-aab7-c1e059c5ed44 "
+                    "codex-live-session.local.json live-agents.codex-session.local.json"
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "topic": "runtime",
+                    "roles": [{"id": "lore_lawyer", "display_name": "설정충"}],
+                    "debate_rounds": [],
+                    "live_status": "running",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FailingJoinSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/codex-sessions/join",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "role_id": "lore_lawyer",
+                            "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+                            "connect_timeout_seconds": 0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch(
+                    "agentsassemble.live_agent_sessions.preflight_live_agent_config",
+                    return_value={"status": "ok", "summary": {"agents": 1}},
+                ):
+                    with self.assertRaises(HTTPError) as caught:
+                        urlopen(request, timeout=4)
+                error_payload = json.loads(caught.exception.read().decode("utf-8"))
+                caught.exception.close()
+                persisted_operations = (root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8")
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(caught.exception.code, 400)
+            self.assertEqual(error_payload["error"], "Codex live session join failed.")
+            self.assertEqual(error_payload["details"], {"meeting_id": "m1", "role_id": "lore_lawyer"})
+            response_blob = json.dumps(error_payload, ensure_ascii=False)
+            for blob in (response_blob, persisted_operations):
+                self.assertNotIn("019e02af-c287-7cd1-aab7-c1e059c5ed44", blob)
+                self.assertNotIn("codex-live-session.local.json", blob)
+                self.assertNotIn("live-agents.codex-session.local.json", blob)
+
     def test_live_agent_process_endpoints_start_list_and_stop_group(self):
         class FakeSupervisor:
             def __init__(self):
