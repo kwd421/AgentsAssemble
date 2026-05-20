@@ -227,6 +227,7 @@ function readLiveAgentProcessDraft(lobby) {
     sessionRunRemainingRounds: Boolean(form.querySelector("#live-agent-session-run-remaining-rounds")?.checked),
     sessionProbeBoundAgents: Boolean(form.querySelector("#live-agent-session-probe-bound-agents")?.checked),
     sessionProbeTimeout: form.querySelector("#live-agent-session-probe-timeout")?.value ?? "",
+    discoverySessionBundle: Boolean(form.querySelector("#live-agent-discovery-session-bundle")?.checked),
     autoRestart: Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked),
     officialRoundSmoke: Boolean(form.querySelector("#live-agent-readiness-official-round")?.checked),
     sessionSmoke: Boolean(form.querySelector("#live-agent-readiness-session-smoke")?.checked),
@@ -264,6 +265,7 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const sessionRunRemainingRounds = lobby.querySelector("#live-agent-session-run-remaining-rounds");
   const sessionProbeBoundAgents = lobby.querySelector("#live-agent-session-probe-bound-agents");
   const sessionProbeTimeout = lobby.querySelector("#live-agent-session-probe-timeout");
+  const discoverySessionBundle = lobby.querySelector("#live-agent-discovery-session-bundle");
   const autoRestart = lobby.querySelector("#live-agent-process-auto-restart");
   const officialRoundSmoke = lobby.querySelector("#live-agent-readiness-official-round");
   const sessionSmoke = lobby.querySelector("#live-agent-readiness-session-smoke");
@@ -285,6 +287,7 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   if (sessionRunRemainingRounds) sessionRunRemainingRounds.checked = draft.sessionRunRemainingRounds;
   if (sessionProbeBoundAgents) sessionProbeBoundAgents.checked = draft.sessionProbeBoundAgents;
   if (sessionProbeTimeout) sessionProbeTimeout.value = draft.sessionProbeTimeout;
+  if (discoverySessionBundle) discoverySessionBundle.checked = draft.discoverySessionBundle;
   if (autoRestart) autoRestart.checked = draft.autoRestart;
   if (officialRoundSmoke) officialRoundSmoke.checked = draft.officialRoundSmoke;
   if (sessionSmoke) sessionSmoke.checked = draft.sessionSmoke;
@@ -566,6 +569,10 @@ function renderLiveAgentProcessControls() {
         <button type="button" id="live-agent-session-stop" ${processActionsDisabled ? "disabled" : ""}>세션중지</button>
         <button type="button" id="live-agent-call-round" ${processActionsDisabled ? "disabled" : ""}>라운드호출</button>
         <button type="button" id="live-agent-call-remaining-rounds" ${processActionsDisabled ? "disabled" : ""}>남은라운드</button>
+        <label class="live-agent-process-options">
+          <input id="live-agent-discovery-session-bundle" type="checkbox" checked ${processActionsDisabled ? "disabled" : ""} />
+          <span>세션번들</span>
+        </label>
         <button type="button" id="live-agent-discover" ${processActionsDisabled ? "disabled" : ""}>CLI발견</button>
         <button type="button" id="live-agent-auto-join" ${processActionsDisabled ? "disabled" : ""}>자동입장</button>
         <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
@@ -776,8 +783,34 @@ function renderLiveAgentDiscoveryReport(report) {
         <span>included ${escapeHtml(`${included}/${discoveries.length}`)} · found ${escapeHtml(found)}</span>
       </div>
       ${discoveries.map(renderLiveAgentDiscoveryRow).join("")}
+      ${renderLiveAgentDiscoverySessionBundle(report)}
+      ${renderLiveAgentDiscoveryNextCommands(report)}
     </section>
   `;
+}
+
+function renderLiveAgentDiscoverySessionBundle(report) {
+  const sessionBundle = report?.session_bundle && typeof report.session_bundle === "object" ? report.session_bundle : null;
+  if (!sessionBundle) return "";
+  const parts = [
+    sessionBundle.group_id ? `group ${sessionBundle.group_id}` : "",
+    sessionBundle.council_config_path ? `council ${sessionBundle.council_config_path}` : "",
+    sessionBundle.agent_config_path ? `agents ${sessionBundle.agent_config_path}` : "",
+  ].filter(Boolean);
+  if (!parts.length) return "";
+  return `<small>${escapeHtml(parts.join(" · "))}</small>`;
+}
+
+function renderLiveAgentDiscoveryNextCommands(report) {
+  const nextCommands = report?.next_commands && typeof report.next_commands === "object" ? report.next_commands : {};
+  const entries = [
+    ["ensure_session", nextCommands.ensure_session],
+    ...Object.entries(nextCommands).filter(([name]) => name !== "ensure_session"),
+  ].filter(([, command]) => Array.isArray(command) && command.length);
+  if (!entries.length) return "";
+  return entries
+    .map(([name, command]) => `<small>${escapeHtml(name)}: ${escapeHtml(command.join(" "))}</small>`)
+    .join("");
 }
 
 function renderLiveAgentDiscoveryRow(discovery) {
@@ -1915,6 +1948,7 @@ async function runLiveAgentPreflight(lobby) {
 async function runLiveAgentDiscovery(lobby) {
   if (liveAgentProcessActionBusy()) return;
   const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
+  const includeSessionBundle = lobby.querySelector("#live-agent-discovery-session-bundle")?.checked === true;
   state.liveAgentDiscoveryRunning = true;
   state.liveAgentDiscoveryReport = null;
   state.liveAgentProcessStatus = { message: "CLI 자동 발견 중", tone: "info" };
@@ -1927,14 +1961,11 @@ async function runLiveAgentDiscovery(lobby) {
         meeting_id: meetingId,
         engagement_mode: "mentioned",
         write_config: true,
+        session_bundle: includeSessionBundle,
       }),
     });
     state.liveAgentDiscoveryReport = payload;
-    const outputPath = String(payload.output || "");
-    if (outputPath) {
-      const configInput = document.querySelector("#live-agent-process-config");
-      if (configInput) configInput.value = outputPath;
-    }
+    const outputPath = applyLiveAgentDiscoveryOutputs(payload);
     const agents = Array.isArray(payload.config?.agents) ? payload.config.agents.length : 0;
     const status = payload.status || "unknown";
     const statusLabel = status === "ok" ? "완료" : status;
@@ -1967,17 +1998,20 @@ async function runLiveAgentAutoJoin(lobby) {
         meeting_id: meetingId,
         engagement_mode: "mentioned",
         write_config: true,
+        session_bundle: true,
       }),
     });
     state.liveAgentDiscoveryReport = discovery;
-    const outputPath = String(discovery.output || "");
+    const outputPath = applyLiveAgentDiscoveryOutputs(discovery);
     const agentCount = Array.isArray(discovery.config?.agents) ? discovery.config.agents.length : 0;
     if (discovery.status !== "ok" || !outputPath) {
       state.liveAgentProcessStatus = { message: `자동입장 중단: discovery ${discovery.status || "unknown"} · ${agentCount} agents`, tone: "error" };
       return;
     }
-    const configInput = document.querySelector("#live-agent-process-config");
-    if (configInput) configInput.value = outputPath;
+    if (!liveAgentDiscoveryHasSessionBundle(discovery)) {
+      state.liveAgentProcessStatus = { message: `자동입장 중단: discovery bundle 없음 · ${agentCount} agents`, tone: "error" };
+      return;
+    }
     state.liveAgentProcessStatus = { message: `자동입장: preflight ${agentCount} agents`, tone: "info" };
     renderLobby({ followLatest: false });
 
@@ -2009,6 +2043,30 @@ async function runLiveAgentAutoJoin(lobby) {
     await loadLiveAgentOperations({ background: true, force: true });
     renderLobby({ followLatest: false });
   }
+}
+
+function liveAgentDiscoveryHasSessionBundle(discovery) {
+  const sessionBundle = discovery?.session_bundle && typeof discovery.session_bundle === "object" ? discovery.session_bundle : {};
+  return Boolean(
+    sessionBundle.live_agent_config_path &&
+      sessionBundle.group_id &&
+      sessionBundle.council_config_path &&
+      sessionBundle.agent_config_path
+  );
+}
+
+function applyLiveAgentDiscoveryOutputs(discovery) {
+  const sessionBundle = discovery?.session_bundle && typeof discovery.session_bundle === "object" ? discovery.session_bundle : {};
+  const outputPath = String(sessionBundle.live_agent_config_path || discovery?.output || "");
+  const configInput = document.querySelector("#live-agent-process-config");
+  const groupInput = document.querySelector("#live-agent-process-group");
+  const councilInput = document.querySelector("#live-agent-session-council-config");
+  const agentInput = document.querySelector("#live-agent-session-agent-config");
+  if (outputPath && configInput) configInput.value = outputPath;
+  if (sessionBundle.group_id && groupInput) groupInput.value = String(sessionBundle.group_id);
+  if (sessionBundle.council_config_path && councilInput) councilInput.value = String(sessionBundle.council_config_path);
+  if (sessionBundle.agent_config_path && agentInput) agentInput.value = String(sessionBundle.agent_config_path);
+  return outputPath;
 }
 
 async function startLiveAgentProcessGroup(form) {

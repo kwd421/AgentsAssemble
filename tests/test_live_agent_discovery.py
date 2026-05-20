@@ -43,6 +43,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         self.assertTrue(gemini["available"])
         self.assertFalse(gemini["included"])
         self.assertEqual(gemini["reason"], "legacy")
+        self.assertTrue(all("path" not in discovery for discovery in report["discoveries"]))
 
     def test_build_discovered_config_can_include_legacy_gemini_when_requested(self):
         def resolver(command):
@@ -125,6 +126,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             payload = json.loads(stdout.getvalue())
             session_bundle = payload["session_bundle"]
+            self.assertEqual(session_bundle["group_id"], "live-agents.discovered")
             council_path = Path(session_bundle["council_config_path"])
             agent_path = Path(session_bundle["agent_config_path"])
             self.assertTrue(council_path.exists())
@@ -334,6 +336,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertTrue((root / "live-agents.discovered.local.json").exists())
             self.assertTrue((root / "council.discovered.local.json").exists())
             self.assertTrue((root / "agents.discovered.local.json").exists())
+            self.assertEqual(payload["session_bundle"]["group_id"], "live-agents.discovered.local")
             self.assertEqual(payload["session_bundle"]["agent_config_path"], str(root / "agents.discovered.local.json"))
             self.assertIn("ensure_session", payload["next_commands"])
 

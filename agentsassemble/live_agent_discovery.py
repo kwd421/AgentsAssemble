@@ -32,7 +32,6 @@ def build_discovered_live_agent_config(
                 "connection_kind": spec["connection_kind"],
                 "available": available,
                 "included": included,
-                "path": path or "",
                 "reason": reason,
             }
         )
@@ -262,6 +261,7 @@ def add_session_bundle_outputs(
         "live_agent_config_path": live_agent_output,
         "council_config_path": council_output,
         "agent_config_path": agent_output,
+        "group_id": group_id,
     }
     next_commands = report.setdefault("next_commands", {})
     if isinstance(next_commands, dict):

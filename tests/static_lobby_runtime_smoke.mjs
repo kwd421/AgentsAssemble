@@ -869,6 +869,12 @@ test("live agent discovery writes a local config and fills the resident config p
         { provider_kind: "claude", available: true },
         { provider_kind: "codex", available: true },
       ],
+      session_bundle: {
+        live_agent_config_path: ".agentsassemble/live-agents.discovered.local.json",
+        council_config_path: ".agentsassemble/council.discovered.local.json",
+        agent_config_path: ".agentsassemble/agents.discovered.local.json",
+        group_id: "live-agents.discovered.local",
+      },
     },
   });
 
@@ -880,11 +886,15 @@ test("live agent discovery writes a local config and fills the resident config p
     meeting_id: "resident-gui",
     engagement_mode: "mentioned",
     write_config: true,
+    session_bundle: true,
   });
   assert.equal(
     document.querySelector("#live-agent-process-config").value,
     ".agentsassemble/live-agents.discovered.local.json"
   );
+  assert.equal(document.querySelector("#live-agent-process-group").value, "live-agents.discovered.local");
+  assert.equal(document.querySelector("#live-agent-session-council-config").value, ".agentsassemble/council.discovered.local.json");
+  assert.equal(document.querySelector("#live-agent-session-agent-config").value, ".agentsassemble/agents.discovered.local.json");
   assert.equal(
     state.liveAgentProcessStatus.message,
     "CLI 자동 발견 완료: 2 agents -> .agentsassemble/live-agents.discovered.local.json"
@@ -999,6 +1009,12 @@ test("auto join discovers local CLIs preflights the generated config and ensures
         { provider_kind: "claude", available: true },
         { provider_kind: "codex", available: true },
       ],
+      session_bundle: {
+        live_agent_config_path: ".agentsassemble/live-agents.discovered.local.json",
+        council_config_path: ".agentsassemble/council.discovered.local.json",
+        agent_config_path: ".agentsassemble/agents.discovered.local.json",
+        group_id: "live-agents.discovered.local",
+      },
     },
     liveAgentPreflightPayload: {
       status: "ok",
@@ -1020,7 +1036,7 @@ test("auto join discovers local CLIs preflights the generated config and ensures
 
   renderLobby({ followLatest: false });
   const lobby = document.querySelector("#lobby");
-  lobby.querySelector("#live-agent-process-group").value = "resident-main";
+  lobby.querySelector("#live-agent-process-group").value = "stale-group";
   lobby.querySelector("#live-agent-session-council-config").value = "configs/demo-council.json";
   lobby.querySelector("#live-agent-session-agent-config").value = "configs/agents.start-session.example.json";
   lobby.querySelector("#live-agent-session-connect-timeout").value = "7";
@@ -1035,15 +1051,16 @@ test("auto join discovers local CLIs preflights the generated config and ensures
     meeting_id: "resident-gui",
     engagement_mode: "mentioned",
     write_config: true,
+    session_bundle: true,
   });
   assert.deepEqual(liveAgentPreflightRequest(requests).jsonBody, {
     config_path: ".agentsassemble/live-agents.discovered.local.json",
   });
   assert.deepEqual(sessionEnsureRequest(requests).jsonBody, {
     meeting_id: "resident-gui",
-    group_id: "resident-main",
-    council_config_path: "configs/demo-council.json",
-    agent_config_path: "configs/agents.start-session.example.json",
+    group_id: "live-agents.discovered.local",
+    council_config_path: ".agentsassemble/council.discovered.local.json",
+    agent_config_path: ".agentsassemble/agents.discovered.local.json",
     live_agent_config_path: ".agentsassemble/live-agents.discovered.local.json",
     connect_timeout_seconds: 7,
     auto_restart: true,
@@ -1063,9 +1080,73 @@ test("auto join discovers local CLIs preflights the generated config and ensures
     document.querySelector("#live-agent-process-config").value,
     ".agentsassemble/live-agents.discovered.local.json"
   );
+  assert.equal(document.querySelector("#live-agent-process-group").value, "live-agents.discovered.local");
+  assert.equal(document.querySelector("#live-agent-session-council-config").value, ".agentsassemble/council.discovered.local.json");
+  assert.equal(document.querySelector("#live-agent-session-agent-config").value, ".agentsassemble/agents.discovered.local.json");
   assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 2/2 connected");
   assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+});
+
+test("auto join stops before preflight when discovery omits the session bundle", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  const { document, requests } = installHarness({
+    liveAgentDiscoveryPayload: {
+      status: "ok",
+      written: true,
+      output: ".agentsassemble/live-agents.discovered.local.json",
+      config: { agents: [{ agent_id: "claude-local", provider_kind: "claude" }] },
+      discoveries: [{ provider_kind: "claude", available: true }],
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-council-config").value = "configs/demo-council.json";
+  lobby.querySelector("#live-agent-session-agent-config").value = "configs/agents.start-session.example.json";
+
+  await lobby.querySelector("#live-agent-auto-join").click();
+
+  assert.deepEqual(liveAgentDiscoveryRequest(requests).jsonBody, {
+    meeting_id: "resident-gui",
+    engagement_mode: "mentioned",
+    write_config: true,
+    session_bundle: true,
+  });
+  assert.equal(liveAgentPreflightRequest(requests), undefined);
+  assert.equal(sessionEnsureRequest(requests), undefined);
+  assert.equal(state.liveAgentProcessStatus.message, "자동입장 중단: discovery bundle 없음 · 1 agents");
+  assert.equal(state.liveAgentProcessStatus.tone, "error");
+  assert.equal(document.querySelector("#live-agent-session-council-config").value, "configs/demo-council.json");
+  assert.equal(document.querySelector("#live-agent-session-agent-config").value, "configs/agents.start-session.example.json");
+});
+
+test("auto join stops before preflight when discovery bundle omits the live-agent config path", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  const { document, requests } = installHarness({
+    liveAgentDiscoveryPayload: {
+      status: "ok",
+      written: true,
+      output: ".agentsassemble/live-agents.discovered.local.json",
+      config: { agents: [{ agent_id: "claude-local", provider_kind: "claude" }] },
+      discoveries: [{ provider_kind: "claude", available: true }],
+      session_bundle: {
+        council_config_path: ".agentsassemble/council.discovered.local.json",
+        agent_config_path: ".agentsassemble/agents.discovered.local.json",
+        group_id: "live-agents.discovered.local",
+      },
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  await document.querySelector("#live-agent-auto-join").click();
+
+  assert.equal(liveAgentPreflightRequest(requests), undefined);
+  assert.equal(sessionEnsureRequest(requests), undefined);
+  assert.equal(state.liveAgentProcessStatus.message, "자동입장 중단: discovery bundle 없음 · 1 agents");
+  assert.equal(state.liveAgentProcessStatus.tone, "error");
 });
 
 test("auto join stops before ensuring the session when preflight fails", async () => {
@@ -1078,6 +1159,12 @@ test("auto join stops before ensuring the session when preflight fails", async (
       output: ".agentsassemble/live-agents.discovered.local.json",
       config: { agents: [{ agent_id: "claude-local", provider_kind: "claude" }] },
       discoveries: [{ provider_kind: "claude", available: true }],
+      session_bundle: {
+        live_agent_config_path: ".agentsassemble/live-agents.discovered.local.json",
+        council_config_path: ".agentsassemble/council.discovered.local.json",
+        agent_config_path: ".agentsassemble/agents.discovered.local.json",
+        group_id: "live-agents.discovered.local",
+      },
     },
     liveAgentPreflightPayload: {
       status: "failed",

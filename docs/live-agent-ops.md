@@ -674,9 +674,9 @@ python3 -m agentsassemble.cli live-agent discover \
   --json
 ```
 
-This writes companion `council.discovered...json` and `agents.discovered...json` files beside the resident config, and the JSON response adds `session_bundle` paths plus `next_commands.ensure_session`. The generated council and agent bindings use the discovered agent ids exactly, so `ensure-session` can start, resume, restart, or recover the matching meeting/process pair without the operator hand-authoring role bindings. Like base discovery, this is config generation only: it does not start agents, run preflight, contact the room as an agent, execute provider CLIs, or call model services.
+This writes companion `council.discovered...json` and `agents.discovered...json` files beside the resident config, and the JSON response adds `session_bundle` paths, `session_bundle.group_id`, plus `next_commands.ensure_session`. The generated council and agent bindings use the discovered agent ids exactly, so `ensure-session` can start, resume, restart, or recover the matching meeting/process pair without the operator hand-authoring role bindings. Like base discovery, this is config generation only: it does not start agents, run preflight, contact the room as an agent, execute provider CLIs, or call model services.
 
-The GUI server exposes the same local discovery path for future UI controls:
+The GUI `상주 실행` panel exposes this same local discovery path. `CLI발견` sends `session_bundle: true` when the `세션번들` checkbox is enabled, then fills the live-agent, council, agent, and group fields from the discovery response. `자동입장` always requests the session bundle before preflight and session ensure, so discovered Claude/Codex/Antigravity residents can enter a matching visible resident meeting without hand-editing those config paths.
 
 ```text
 POST /api/live-agent-discovery
