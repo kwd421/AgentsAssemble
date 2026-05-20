@@ -179,6 +179,10 @@ function resetState() {
     liveAgentProcesses: [],
     liveAgentProcessesLoaded: true,
     liveAgentProcessesLoading: false,
+    liveAgentProcessEvents: [],
+    liveAgentProcessEventsLoaded: true,
+    liveAgentProcessEventsLoading: false,
+    liveAgentProcessEventsMeta: null,
     liveAgentOperations: [],
     liveAgentOperationsLoaded: true,
     liveAgentOperationsLoading: false,
@@ -227,6 +231,7 @@ function installHarness({
   codexInvitePayload = null,
   liveAgentDiscoveryPayload = null,
   liveAgentPreflightPayload = null,
+  liveAgentProcessEventsPayload = null,
   liveAgentOperationsPayload = null,
 } = {}) {
   const requests = [];
@@ -458,6 +463,18 @@ function installHarness({
     if (url === "/api/lobby") return jsonResponse({ events: [] });
     if (url === "/api/live-agents") return jsonResponse({ agents: [] });
     if (url === "/api/live-agent-processes") return jsonResponse({ groups: [] });
+    if (url === "/api/live-agent-process-events?limit=20") {
+      return jsonResponse(
+        liveAgentProcessEventsPayload || {
+          events: [],
+          limit: 20,
+          group_id: "",
+          scan_limit: 200,
+          scanned_event_count: 0,
+          truncated: false,
+        }
+      );
+    }
     if (url === "/api/live-agent-operations?limit=20") {
       return jsonResponse(liveAgentOperationsPayload || { operations: [] });
     }
@@ -824,6 +841,7 @@ test("process start form preserves and posts stale watchdog seconds", async () =
     restart_backoff_seconds: 1.5,
     stale_restart_after_seconds: 240,
   });
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-process-events?limit=20"));
 });
 
 test("live agent discovery writes a local config and fills the resident config path", async () => {
@@ -1525,6 +1543,90 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.equal(health.attributes["data-tone"], "warning");
 });
 
+test("runtime refresh renders recent lifecycle events with reason and offline evidence", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    liveAgentProcessEventsPayload: {
+      events: [
+        {
+          timestamp: "2026-05-20T01:02:03+00:00",
+          group_id: "resident-main",
+          event_type: "stale_watchdog",
+          status: "restarting",
+          pid: 1234,
+          returncode: 97,
+          restart_count: 1,
+          max_restarts: 3,
+          reason: "stale manifest agent claude-local",
+          offline: {
+            expected: 2,
+            offline: 1,
+            attention: [{ agent_id: "claude-local", status: "stale" }],
+          },
+        },
+      ],
+      limit: 20,
+      group_id: "",
+      scan_limit: 20,
+      scanned_event_count: 20,
+      truncated: true,
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  await refreshLiveAgentRuntimeSurfaces();
+
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-process-events?limit=20"));
+  const rowText = document.querySelector(".live-agent-lifecycle-row").textContent;
+  assert.match(rowText, /resident-main/);
+  assert.match(rowText, /stale_watchdog/);
+  assert.match(rowText, /2026-05-20T01:02:03\+00:00/);
+  assert.match(rowText, /restarting/);
+  assert.match(rowText, /pid 1234/);
+  assert.match(rowText, /returncode 97/);
+  assert.match(rowText, /restart 1\/3/);
+  assert.match(rowText, /reason stale manifest agent claude-local/);
+  assert.match(rowText, /offline 1\/2/);
+  assert.match(rowText, /stale claude-local/);
+  assert.match(document.querySelector(".live-agent-lifecycle-meta").textContent, /searched recent 20 lifecycle events/);
+});
+
+test("runtime refresh renders every lifecycle event returned by the bounded query", async () => {
+  resetState();
+  const events = Array.from({ length: 8 }, (_, index) => ({
+    timestamp: `2026-05-20T01:0${index}:00+00:00`,
+    group_id: `crew-${index}`,
+    event_type: index === 0 ? "started" : "updated",
+    status: "running",
+    pid: 2000 + index,
+  }));
+  const { document } = installHarness({
+    liveAgentProcessEventsPayload: {
+      events,
+      limit: 20,
+      group_id: "",
+      scan_limit: 20,
+      scanned_event_count: 8,
+      truncated: false,
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  await refreshLiveAgentRuntimeSurfaces();
+
+  assert.equal(document.querySelectorAll(".live-agent-lifecycle-row").length, 8);
+});
+
+test("process panel refresh reloads lifecycle history", async () => {
+  resetState();
+  const { document, requests } = installHarness();
+
+  renderLobby({ followLatest: false });
+  await document.querySelector("#live-agent-process-refresh").click();
+
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-process-events?limit=20"));
+});
+
 test("live-agent roster renders lobby and official cursors separately", () => {
   resetState();
   const { document } = installHarness({});
@@ -1673,6 +1775,10 @@ test("process row action keeps the panel busy while the request is in flight", a
     requests.some((request) => request.url === "/api/live-agent-processes/running-crew/stop"),
     true
   );
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-process-events?limit=20"),
+    true
+  );
 });
 
 test("bulk stop button posts stop-running and updates process status", async () => {
@@ -1700,6 +1806,10 @@ test("bulk stop button posts stop-running and updates process status", async () 
   );
   assert.equal(state.liveAgentProcesses[0].status, "stopped");
   assert.equal(state.liveAgentProcessStatus.message, "실행 그룹 2개 중지됨 · skipped 1");
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-process-events?limit=20"),
+    true
+  );
 });
 
 test("official round button posts selected meeting round and requests meeting refresh", async () => {
@@ -2105,6 +2215,10 @@ test("process row recover button posts recover endpoint and updates status", asy
   assert.deepEqual(recoverRequest.jsonBody, {});
   assert.equal(state.liveAgentProcessStatus.message, "crew 복구됨");
   assert.equal(state.liveAgentProcesses[0].status, "running");
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-process-events?limit=20"),
+    true
+  );
 });
 
 test("process row omits disabled recovery fields", () => {

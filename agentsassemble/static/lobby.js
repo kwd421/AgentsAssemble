@@ -102,6 +102,7 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-process-refresh")?.addEventListener("click", () => {
     loadLiveAgentHealth({ force: true });
     loadLiveAgentProcesses({ force: true });
+    loadLiveAgentProcessEvents({ force: true });
     loadLiveAgentOperations({ force: true });
   });
   lobby.querySelector("#live-agent-process-smoke")?.addEventListener("click", async () => {
@@ -196,6 +197,9 @@ export function renderLobby(options = {}) {
   }
   if (!state.liveAgentProcessesLoaded && !state.liveAgentProcessesLoading) {
     loadLiveAgentProcesses();
+  }
+  if (!state.liveAgentProcessEventsLoaded && !state.liveAgentProcessEventsLoading) {
+    loadLiveAgentProcessEvents();
   }
   if (!state.liveAgentOperationsLoaded && !state.liveAgentOperationsLoading) {
     loadLiveAgentOperations();
@@ -588,6 +592,7 @@ function renderLiveAgentProcessControls() {
             : '<p class="roster-empty">실행 중인 상주 그룹이 없습니다.</p>'
         }
       </div>
+      ${renderLiveAgentProcessEvents()}
       ${renderLiveAgentOperations()}
       ${status ? `<p class="live-agent-status" data-tone="${escapeHtml(status.tone || "info")}">${escapeHtml(status.message)}</p>` : ""}
     </section>
@@ -768,6 +773,79 @@ function renderLiveAgentOperations() {
       }
     </div>
   `;
+}
+
+function renderLiveAgentProcessEvents() {
+  const events = state.liveAgentProcessEvents || [];
+  const meta = state.liveAgentProcessEventsMeta;
+  return `
+    <div class="live-agent-lifecycle-list" aria-label="최근 프로세스 lifecycle">
+      <strong>최근 lifecycle</strong>
+      ${
+        events.length
+          ? events.slice().reverse().map(renderLiveAgentProcessEvent).join("")
+          : '<p class="roster-empty">기록된 lifecycle 이벤트가 없습니다.</p>'
+      }
+      ${meta?.truncated ? `<small class="live-agent-lifecycle-meta">${escapeHtml(liveAgentProcessEventsTruncatedLabel(meta))}</small>` : ""}
+    </div>
+  `;
+}
+
+function renderLiveAgentProcessEvent(event) {
+  const eventType = String(event.event_type || "updated");
+  const status = String(event.status || "unknown");
+  const groupId = String(event.group_id || "-");
+  const summary = [
+    liveAgentProcessEventPidLabel(event),
+    liveAgentProcessEventRestartLabel(event),
+    liveAgentProcessEventReasonLabel(event.reason) ? `reason ${liveAgentProcessEventReasonLabel(event.reason)}` : "",
+    liveAgentProcessEventOfflineLabel(event.offline),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `
+    <article class="live-agent-lifecycle-row live-agent-lifecycle-${escapeHtml(status)}">
+      <div>
+        <strong>${escapeHtml(eventType)}</strong>
+        <span>${escapeHtml(groupId)} · ${escapeHtml(event.timestamp || "")}</span>
+        ${summary ? `<small>${escapeHtml(summary)}</small>` : ""}
+      </div>
+      <em>${escapeHtml(status)}</em>
+    </article>
+  `;
+}
+
+function liveAgentProcessEventPidLabel(event) {
+  const labels = [];
+  const pid = Number(event.pid);
+  if (event.pid !== null && event.pid !== undefined && String(event.pid).trim() !== "" && Number.isFinite(pid) && pid > 0) {
+    labels.push(`pid ${pid}`);
+  }
+  const returncode = Number(event.returncode);
+  if (
+    event.returncode !== null &&
+    event.returncode !== undefined &&
+    String(event.returncode).trim() !== "" &&
+    Number.isFinite(returncode)
+  ) {
+    labels.push(`returncode ${returncode}`);
+  }
+  return labels.join(" · ");
+}
+
+function liveAgentProcessEventRestartLabel(event) {
+  const restartCount = Number(event.restart_count);
+  const maxRestarts = Number(event.max_restarts);
+  if (!Number.isFinite(restartCount) && !Number.isFinite(maxRestarts)) return "";
+  const count = Number.isFinite(restartCount) ? Math.max(0, restartCount) : 0;
+  const max = Number.isFinite(maxRestarts) ? Math.max(0, maxRestarts) : 0;
+  const nextRestart = String(event.next_restart_at || "").trim();
+  return `restart ${count}/${max}${nextRestart ? ` next ${nextRestart}` : ""}`;
+}
+
+function liveAgentProcessEventsTruncatedLabel(meta) {
+  const scanned = Math.max(0, Number(meta.scannedEventCount || 0));
+  return `searched recent ${scanned} lifecycle events; older matches may exist`;
 }
 
 function renderLiveAgentOperation(operation) {
@@ -1377,6 +1455,7 @@ export function refreshLiveAgentRuntimeSurfaces() {
     loadLiveAgentHealth({ background: true }),
     loadLiveAgents({ background: true }),
     loadLiveAgentProcesses({ background: true }),
+    loadLiveAgentProcessEvents({ background: true }),
     loadLiveAgentOperations({ background: true }),
   ]);
 }
@@ -1419,6 +1498,51 @@ async function loadLiveAgentOperations(options = {}) {
     state.liveAgentOperationsLoading = false;
     if (shouldRender) renderLobby({ followLatest: false });
   }
+}
+
+function refreshLiveAgentProcessHistory() {
+  return Promise.all([
+    loadLiveAgentProcessEvents({ background: true, force: true }),
+    loadLiveAgentOperations({ background: true, force: true }),
+  ]);
+}
+
+async function loadLiveAgentProcessEvents(options = {}) {
+  if (state.liveAgentProcessEventsLoading && !options.force) return;
+  const previousSignature = JSON.stringify({
+    events: state.liveAgentProcessEvents || [],
+    meta: state.liveAgentProcessEventsMeta || null,
+  });
+  let shouldRender = !options.background;
+  state.liveAgentProcessEventsLoading = true;
+  try {
+    const payload = await fetchJson("/api/live-agent-process-events?limit=20");
+    const events = Array.isArray(payload.events) ? payload.events : [];
+    state.liveAgentProcessEvents = events;
+    state.liveAgentProcessEventsMeta = liveAgentProcessEventsMeta(payload);
+    state.liveAgentProcessEventsLoaded = true;
+    shouldRender =
+      shouldRender ||
+      JSON.stringify({
+        events: state.liveAgentProcessEvents,
+        meta: state.liveAgentProcessEventsMeta,
+      }) !== previousSignature;
+  } catch {
+    state.liveAgentProcessEventsLoaded = true;
+  } finally {
+    state.liveAgentProcessEventsLoading = false;
+    if (shouldRender) renderLobby({ followLatest: false });
+  }
+}
+
+function liveAgentProcessEventsMeta(payload) {
+  return {
+    limit: Math.max(0, Number(payload.limit || 0)),
+    groupId: String(payload.group_id || "").trim(),
+    scanLimit: Math.max(0, Number(payload.scan_limit || 0)),
+    scannedEventCount: Math.max(0, Number(payload.scanned_event_count || 0)),
+    truncated: Boolean(payload.truncated),
+  };
 }
 
 async function runProviderHealthCheck() {
@@ -1826,7 +1950,7 @@ async function startLiveAgentProcessGroup(form) {
     state.liveAgentProcessStatus = { message: `상주 그룹 시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   } finally {
     state.liveAgentProcessStartRunning = false;
-    await loadLiveAgentOperations({ background: true, force: true });
+    await refreshLiveAgentProcessHistory();
     renderLobby({ followLatest: false });
   }
 }
@@ -2016,7 +2140,7 @@ async function stopRunningLiveAgentProcessGroups() {
   } catch (error) {
     state.liveAgentProcessStatus = { message: `실행 그룹 중지 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   } finally {
-    await loadLiveAgentOperations({ background: true, force: true });
+    await refreshLiveAgentProcessHistory();
     state.liveAgentProcessBulkStopRunning = false;
     renderLobby({ followLatest: false });
   }
@@ -2294,7 +2418,7 @@ async function stopLiveAgentProcessGroup(groupId) {
   } catch {
     state.liveAgentProcessStatus = { message: `${groupId} 중지 실패`, tone: "error" };
   } finally {
-    await loadLiveAgentOperations({ background: true, force: true });
+    await refreshLiveAgentProcessHistory();
     state.liveAgentProcessRowActionRunning = "";
     renderLobby({ followLatest: false });
   }
@@ -2317,7 +2441,7 @@ async function restartLiveAgentProcessGroup(groupId) {
   } catch (error) {
     state.liveAgentProcessStatus = { message: `${groupId} 재시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   } finally {
-    await loadLiveAgentOperations({ background: true, force: true });
+    await refreshLiveAgentProcessHistory();
     state.liveAgentProcessRowActionRunning = "";
     renderLobby({ followLatest: false });
   }
@@ -2340,7 +2464,7 @@ async function recoverLiveAgentProcessGroup(groupId) {
   } catch (error) {
     state.liveAgentProcessStatus = { message: `${groupId} 복구 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   } finally {
-    await loadLiveAgentOperations({ background: true, force: true });
+    await refreshLiveAgentProcessHistory();
     state.liveAgentProcessRowActionRunning = "";
     renderLobby({ followLatest: false });
   }
