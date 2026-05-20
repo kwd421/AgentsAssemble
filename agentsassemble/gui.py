@@ -22,6 +22,7 @@ from agentsassemble.codex_sessions import (
     write_agent_config,
 )
 from agentsassemble.config import load_agent_runtime_config, load_council_config, providers_from_config
+from agentsassemble.live_agent_discovery import build_discovered_live_agent_config, fill_discovery_next_command_output
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
@@ -1466,6 +1467,31 @@ def live_agent_preflight_payload(payload: dict[str, object], *, default_server: 
     config_path = Path(str(payload.get("config_path") or "configs/live-agents.example.json"))
     server = str(payload.get("server") or default_server)
     return preflight_live_agent_config(config_path, server_override=server)
+
+
+def live_agent_discovery_payload(
+    output_root: Path,
+    payload: dict[str, object],
+    *,
+    default_server: str,
+) -> dict[str, object]:
+    report = build_discovered_live_agent_config(
+        server=str(payload.get("server") or default_server),
+        meeting_id=str(payload.get("meeting_id") or ""),
+        engagement_mode=str(payload.get("engagement_mode") or "mentioned"),
+        include_legacy_gemini=_payload_bool(payload.get("include_legacy_gemini")),
+    )
+    output_path = output_root / "live-agents.discovered.local.json"
+    should_write = not ("write_config" in payload and not _payload_bool(payload.get("write_config")))
+    if report.get("status") == "ok" and should_write:
+        write_agent_config(output_path, report["config"])
+        fill_discovery_next_command_output(report, str(output_path))
+        report["output"] = str(output_path)
+        report["written"] = True
+    else:
+        report["output"] = ""
+        report["written"] = False
+    return report
 
 
 def live_agent_smoke_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
@@ -4317,6 +4343,28 @@ def _make_handler(
                     },
                 )
                 self._send_json(_safe_diagnostic_report_payload(preflight))
+                return
+            if parsed.path == "/api/live-agent-discovery":
+                payload = self._operation_json_payload(operation="discovery.run")
+                if payload is None:
+                    return
+                discovery = live_agent_discovery_payload(output_root, payload, default_server=self._request_server_url())
+                result_status = _operation_result_status(discovery.get("status"))
+                discoveries = discovery.get("discoveries") if isinstance(discovery.get("discoveries"), list) else []
+                agents = (discovery.get("config") or {}).get("agents", []) if isinstance(discovery.get("config"), dict) else []
+                record_live_agent_operation(
+                    output_root,
+                    operation="discovery.run",
+                    status=_operation_success_for_result(result_status, success_values={"ok"}),
+                    target_id="live-agent-discovery",
+                    summary="discovered local live-agent CLIs",
+                    details={
+                        "result_status": result_status,
+                        "agents": len(agents) if isinstance(agents, list) else 0,
+                        "discovered": sum(1 for item in discoveries if isinstance(item, dict) and item.get("available")),
+                    },
+                )
+                self._send_json(discovery)
                 return
             if parsed.path == "/api/provider-health":
                 length = int(self.headers.get("Content-Length", "0") or "0")

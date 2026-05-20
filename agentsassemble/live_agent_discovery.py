@@ -142,3 +142,15 @@ def _next_commands(*, server: str) -> dict[str, list[str]]:
             "<output>",
         ],
     }
+
+
+def fill_discovery_next_command_output(report: dict[str, Any], output: str) -> None:
+    next_commands = report.get("next_commands")
+    if not isinstance(next_commands, dict):
+        return
+    for command in next_commands.values():
+        if not isinstance(command, list):
+            continue
+        for index, part in enumerate(command):
+            if part == "<output>":
+                command[index] = output

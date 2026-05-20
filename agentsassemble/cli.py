@@ -30,7 +30,7 @@ from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
-from agentsassemble.live_agent_discovery import build_discovered_live_agent_config
+from agentsassemble.live_agent_discovery import build_discovered_live_agent_config, fill_discovery_next_command_output
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
@@ -2003,24 +2003,12 @@ def _run_live_agent_discover(args: argparse.Namespace) -> int:
     output_path = Path(args.output) if args.output else None
     if report.get("status") == "ok" and output_path is not None:
         write_agent_config(output_path, report["config"])
-        _fill_discovery_next_command_output(report, str(output_path))
+        fill_discovery_next_command_output(report, str(output_path))
     if args.as_json:
         print(json.dumps({"output": str(output_path or ""), **report}, ensure_ascii=False, indent=2))
     else:
         print(_format_live_agent_discovery(report, output_path=output_path))
     return 0 if report.get("status") == "ok" else 1
-
-
-def _fill_discovery_next_command_output(report: dict[str, object], output: str) -> None:
-    next_commands = report.get("next_commands")
-    if not isinstance(next_commands, dict):
-        return
-    for command in next_commands.values():
-        if not isinstance(command, list):
-            continue
-        for index, part in enumerate(command):
-            if part == "<output>":
-                command[index] = output
 
 
 def _format_live_agent_discovery(report: dict[str, object], *, output_path: Path | None) -> str:

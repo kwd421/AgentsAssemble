@@ -663,6 +663,14 @@ python3 -m agentsassemble.cli live-agent discover \
 
 Discovery writes `.agentsassemble/live-agents.discovered.local.json` by default. It only checks whether known executables are on `PATH`; it does not run Claude, Codex, Antigravity, Gemini, model prompts, login checks, network calls, or billing-affecting operations. Detected `claude` becomes a `terminal_session` resident, detected `codex` becomes a `codex_live_session` resident that omits `command` so the existing Codex default and safety preflight remain centralized, and detected `antigravity` becomes a `self_service` resident. Detected `gemini` is reported as legacy and skipped unless `--include-legacy-gemini` is set. Discovery defaults generated agents to `engagement_mode: "mentioned"` so a discovered real-provider group does not answer every lobby message unless the operator explicitly chooses `--engagement-mode always`. A successful JSON response includes the generated resident config plus `next_commands.preflight` and `next_commands.run_group`.
 
+The GUI server exposes the same local discovery path for future UI controls:
+
+```text
+POST /api/live-agent-discovery
+```
+
+The API writes `live-agents.discovered.local.json` under the GUI output root by default and returns `written: true`, or returns only the report with `written: false` when `write_config` is `false` or no supported CLI is found. Like the CLI, it only checks `PATH` and does not start agents, contact the room as an agent, execute provider commands, or call model services.
+
 Before starting a real provider group, run a local preflight:
 
 ```bash

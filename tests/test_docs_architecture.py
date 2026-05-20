@@ -114,6 +114,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("python3 -m agentsassemble.cli live-agent health", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent discover", doc)
         self.assertIn("It only checks whether known executables are on `PATH`", doc)
+        self.assertIn("POST /api/live-agent-discovery", doc)
+        self.assertIn("write_config", doc)
         self.assertIn("--include-legacy-gemini", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent preflight", doc)
         self.assertIn("Terminal Self-Service Room Tools", doc)
