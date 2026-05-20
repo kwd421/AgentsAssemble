@@ -1570,21 +1570,22 @@ def _ensure_live_agent_session(args: argparse.Namespace) -> tuple[str, dict[str,
     initial = _initial_live_agent_session_readiness(args)
     action = session_ensure_action(initial)
     if action == "none":
-        if _session_post_ready_checks_requested(args):
-            payload = _session_start_payload(args)
-            timeout_seconds = _session_remaining_rounds_request(
-                args,
-                payload,
-                connect_timeout_seconds=float(args.connect_timeout),
-            )
-            response = _request_json(
-                _server_url(str(args.server), "/api/live-agent-sessions/ensure"),
-                method="POST",
-                payload=payload,
-                timeout_seconds=timeout_seconds,
-            )
-            return str(response.get("action") or action), response
-        return action, initial if isinstance(initial, dict) else {}
+        payload = _session_start_payload(args)
+        timeout_seconds = _session_remaining_rounds_request(
+            args,
+            payload,
+            connect_timeout_seconds=float(args.connect_timeout),
+        )
+        response = _request_json(
+            _server_url(str(args.server), "/api/live-agent-sessions/ensure"),
+            method="POST",
+            payload=payload,
+            timeout_seconds=timeout_seconds,
+        )
+        ensured_action = str(response.get("action") or action)
+        if ensured_action != "none":
+            response = _wait_for_live_agent_session_ready_after_control(args, response)
+        return ensured_action, response
     payload = _ensure_live_agent_session_payload(args, action)
     timeout_seconds = _session_remaining_rounds_request(
         args,
@@ -1597,13 +1598,21 @@ def _ensure_live_agent_session(args: argparse.Namespace) -> tuple[str, dict[str,
         payload=payload,
         timeout_seconds=timeout_seconds,
     )
+    response = _wait_for_live_agent_session_ready_after_control(args, response)
+    return action, response
+
+
+def _wait_for_live_agent_session_ready_after_control(
+    args: argparse.Namespace,
+    response: dict[str, object],
+) -> dict[str, object]:
     meeting_id = str(response.get("meeting_id") or getattr(args, "meeting_id", "") or "").strip()
     group_id = str(response.get("group_id") or getattr(args, "group_id", "") or "").strip()
     if meeting_id and group_id:
         wait_initial_response = response
         if response.get("status") == "ready":
             wait_initial_response = {**response, "status": "starting"}
-        response = _wait_for_live_agent_session_ready(
+        waited = _wait_for_live_agent_session_ready(
             server=str(args.server),
             meeting_id=meeting_id,
             group_id=group_id,
@@ -1611,8 +1620,8 @@ def _ensure_live_agent_session(args: argparse.Namespace) -> tuple[str, dict[str,
             poll_interval_seconds=float(args.wait_poll_interval),
             initial_response=wait_initial_response,
         )
-        response = _attach_session_post_ready_results(response, wait_initial_response)
-    return action, response
+        return _attach_session_post_ready_results(waited, response)
+    return response
 
 
 def _initial_live_agent_session_readiness(args: argparse.Namespace) -> dict[str, object] | None:

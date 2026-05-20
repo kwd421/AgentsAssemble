@@ -34,6 +34,7 @@ from agentsassemble.live_agent_discovery import (
     validate_distinct_session_bundle_paths,
 )
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
+from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
@@ -588,6 +589,14 @@ def live_agent_session_ensure_payload(
 ) -> dict[str, object]:
     current = _live_agent_session_optional_readiness_payload(output_root, process_supervisor, payload)
     action = session_ensure_action(current)
+    if action == "none" and _ready_session_requires_restart_for_resident_session_drift(
+        output_root,
+        process_supervisor,
+        payload,
+        current,
+        default_server=default_server,
+    ):
+        action = "restart"
     if action == "none":
         session = _attach_session_auto_rounds_if_requested(output_root, dict(current) if isinstance(current, dict) else {}, payload)
     elif action == "start":
@@ -611,6 +620,73 @@ def live_agent_session_ensure_payload(
     ensured = _live_agent_session_ensured_readiness_payload(output_root, process_supervisor, payload, session)
     ensured["action"] = action
     return ensured
+
+
+def _ready_session_requires_restart_for_resident_session_drift(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+    current: dict[str, object] | None,
+    *,
+    default_server: str,
+) -> bool:
+    if not isinstance(current, dict) or _operation_result_status(current.get("status")) != "ready":
+        return False
+    live_agent_config_path = str(payload.get("live_agent_config_path") or payload.get("live_agent_config") or "").strip()
+    if not live_agent_config_path:
+        return False
+    group_id = str(current.get("group_id") or payload.get("group_id") or "").strip()
+    if not group_id:
+        return False
+    group = _find_session_process_group(_session_process_groups_snapshot(process_supervisor), group_id)
+    if str(group.get("status") or "") not in {"running", "restarting"}:
+        return False
+    if not _process_group_uses_requested_config(group, live_agent_config_path):
+        return False
+    meeting_id = str(current.get("meeting_id") or payload.get("meeting_id") or "").strip()
+    requested_session_ids = _resident_session_ids_by_agent(
+        live_agent_config_path,
+        server=str(payload.get("server") or default_server),
+        meeting_id=meeting_id,
+    )
+    if not requested_session_ids:
+        return False
+    agents_by_id = {str(agent.get("agent_id") or ""): agent for agent in read_live_agents(output_root)}
+    for agent_id, requested_session_id in requested_session_ids.items():
+        current_agent = agents_by_id.get(agent_id)
+        if not current_agent:
+            continue
+        if str(current_agent.get("meeting_id") or "").strip() != meeting_id:
+            continue
+        if str(current_agent.get("session_id") or "").strip() != requested_session_id:
+            return True
+    return False
+
+
+def _process_group_uses_requested_config(group: dict[str, object], live_agent_config_path: str) -> bool:
+    persisted_config_path = str(group.get("config_path") or "").strip()
+    if not persisted_config_path:
+        return False
+    return Path(persisted_config_path).resolve(strict=False) == Path(live_agent_config_path).resolve(strict=False)
+
+
+def _resident_session_ids_by_agent(
+    live_agent_config_path: str,
+    *,
+    server: str,
+    meeting_id: str,
+) -> dict[str, str]:
+    configs = load_group_configs(Path(live_agent_config_path), server_override=server)
+    result: dict[str, str] = {}
+    for config in configs:
+        config_meeting_id = str(getattr(config, "meeting_id", "") or "").strip()
+        if config_meeting_id and meeting_id and config_meeting_id != meeting_id:
+            continue
+        agent_id = str(getattr(config, "agent_id", "") or "").strip()
+        session_id = str(getattr(config, "session_id", "") or "").strip()
+        if agent_id and session_id:
+            result[agent_id] = session_id
+    return result
 
 
 def _live_agent_session_optional_readiness_payload(

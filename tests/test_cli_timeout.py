@@ -3749,7 +3749,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(args.stop_on_timeout)
         self.assertTrue(args.as_json)
 
-    def test_live_agent_ensure_session_returns_ready_without_control_post(self):
+    def test_live_agent_ensure_session_posts_ready_snapshot_to_server_for_drift_check(self):
         ready_snapshot = {
             "status": "ready",
             "meeting_id": "resident-m1",
@@ -3757,8 +3757,9 @@ class CliTimeoutTests(unittest.TestCase):
             "process": {"status": "running", "attention": []},
             "connection": {"expected": 2, "connected": 2, "attention": []},
         }
+        ensured_response = {**ready_snapshot, "action": "none"}
         stdout = StringIO()
-        with patch("agentsassemble.cli._request_json", return_value=ready_snapshot) as request_json:
+        with patch("agentsassemble.cli._request_json", side_effect=[ready_snapshot, ensured_response]) as request_json:
             with patch("sys.stdout", stdout):
                 exit_code = main(
                     [
@@ -3776,11 +3777,84 @@ class CliTimeoutTests(unittest.TestCase):
                 )
 
         self.assertEqual(exit_code, 0)
-        request_json.assert_called_once_with(
+        self.assertEqual(request_json.call_count, 2)
+        request_json.assert_any_call(
             "http://room.local/api/live-agent-sessions/readiness?meeting_id=resident-m1&group_id=resident-main",
             timeout_seconds=10.0,
         )
+        request_json.assert_any_call(
+            "http://room.local/api/live-agent-sessions/ensure",
+            method="POST",
+            payload={
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "council_config_path": "",
+                "agent_config_path": "",
+                "live_agent_config_path": "configs/live-agents.example.json",
+                "connect_timeout_seconds": 5.0,
+                "auto_restart": False,
+                "max_restarts": 0,
+                "restart_backoff_seconds": 5.0,
+                "stale_restart_after_seconds": 0.0,
+            },
+            timeout_seconds=11.0,
+        )
         self.assertIn("Ensured via none", stdout.getvalue())
+        self.assertIn("Resident session resident-m1 ready", stdout.getvalue())
+
+    def test_live_agent_ensure_session_waits_when_ready_snapshot_restarts_for_drift(self):
+        ready_snapshot = {
+            "status": "ready",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "process": {"status": "running", "attention": []},
+            "connection": {"expected": 2, "connected": 2, "attention": []},
+        }
+        restart_response = {
+            "status": "starting",
+            "action": "restart",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "process": {"status": "restarting", "attention": []},
+            "connection": {"expected": 2, "connected": 1, "attention": ["agent-a:not_reconnected"]},
+        }
+        final_ready = {
+            "status": "ready",
+            "meeting_id": "resident-m1",
+            "group_id": "resident-main",
+            "process": {"status": "running", "attention": []},
+            "connection": {"expected": 2, "connected": 2, "attention": []},
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=[ready_snapshot, restart_response, final_ready]) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "ensure-session",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                        "--live-agent-config",
+                        "configs/live-agents.example.json",
+                        "--wait-timeout",
+                        "3",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(request_json.call_count, 3)
+        self.assertEqual(
+            request_json.call_args_list[2].args,
+            (
+                "http://room.local/api/live-agent-sessions/readiness?"
+                "meeting_id=resident-m1&group_id=resident-main",
+            ),
+        )
+        self.assertIn("Ensured via restart", stdout.getvalue())
         self.assertIn("Resident session resident-m1 ready", stdout.getvalue())
 
     def test_live_agent_ensure_session_ready_noop_can_probe_and_run_remaining_rounds(self):

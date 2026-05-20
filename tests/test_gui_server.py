@@ -8290,6 +8290,147 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(session_operations[-1]["status"], "success")
             self.assertEqual(session_operations[-1]["details"]["ensure_action"], "none")
 
+    def test_live_agent_session_ensure_restarts_ready_session_when_resident_session_id_drifted(self):
+        class EnsureSessionSupervisor:
+            def __init__(self, output_root: Path, live_agent_config: Path) -> None:
+                self.output_root = output_root
+                self.live_agent_config = live_agent_config
+                self.started = []
+                self.stopped = []
+                self.restarted = []
+                self.group = {
+                    "group_id": "resident-main",
+                    "status": "running",
+                    "meeting_id": "resident-m1",
+                    "config_path": str(live_agent_config),
+                    "server": "http://127.0.0.1:8765",
+                    "agents": [{"agent_id": "agent-a"}],
+                }
+
+            def snapshot_groups(self):
+                return [dict(self.group)]
+
+            def list_groups(self):
+                return self.snapshot_groups()
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                self.group["status"] = "stopped"
+
+            def restart_group(self, group_id):
+                self.restarted.append(group_id)
+                config = json.loads(self.live_agent_config.read_text(encoding="utf-8"))
+                agent = config["agents"][0]
+                connect_live_agent_payload(
+                    self.output_root,
+                    {
+                        "agent_id": agent["agent_id"],
+                        "display_name": "Agent A",
+                        "provider_kind": agent.get("provider_kind", "codex_live_session"),
+                        "connection_kind": agent.get("connection_kind", "live_session"),
+                        "meeting_id": "resident-m1",
+                        "session_id": agent.get("session_id", ""),
+                    },
+                )
+                heartbeat_live_agent(self.output_root, agent["agent_id"], status="online", metadata={"session_id": agent.get("session_id", "")})
+                self.group["status"] = "running"
+                return dict(self.group)
+
+            def start_group(self, **kwargs):
+                self.started.append(kwargs)
+                raise AssertionError("drifted ready ensure should restart the existing group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "resident-m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "resident-m1",
+                    "roles": [{"id": "architect", "display_name": "Architect"}],
+                    "provider_configs": {"codex-live": {"id": "codex-live", "kind": "codex_live_session"}},
+                    "permission_profiles": {"meeting_readonly": {"id": "meeting_readonly", "meeting_read": True}},
+                    "agent_bindings": [
+                        {
+                            "agent_id": "agent-a",
+                            "role_id": "architect",
+                            "provider_id": "codex-live",
+                            "permission_profile_id": "meeting_readonly",
+                            "session_id": "new-session",
+                        }
+                    ],
+                    "debate_rounds": [],
+                    "live_status": "running",
+                },
+            )
+            live_agent_config = root / "live-agents.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "live_session",
+                                "meeting_id": "resident-m1",
+                                "session_id": "new-session",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                    "meeting_id": "resident-m1",
+                    "session_id": "old-session",
+                },
+            )
+            heartbeat_live_agent(root, "agent-a", status="online", metadata={"session_id": "old-session"})
+            supervisor = EnsureSessionSupervisor(root, live_agent_config)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/ensure",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                            "live_agent_config_path": str(live_agent_config),
+                            "connect_timeout_seconds": 0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch(
+                    "agentsassemble.live_agent_sessions.preflight_live_agent_config",
+                    return_value={"status": "ok", "summary": {"agents": 1}},
+                ):
+                    with urlopen(request, timeout=4) as response:
+                        session_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(session_payload["status"], "ready")
+            self.assertEqual(session_payload["action"], "restart")
+            self.assertEqual(supervisor.started, [])
+            self.assertEqual(supervisor.stopped, ["resident-main"])
+            self.assertEqual(supervisor.restarted, ["resident-main"])
+            agent = next(agent for agent in read_live_agents(root) if agent["agent_id"] == "agent-a")
+            self.assertEqual(agent["session_id"], "new-session")
+
     def test_live_agent_session_ensure_ready_noop_can_probe_and_run_remaining_rounds(self):
         class EnsureSessionSupervisor:
             def snapshot_groups(self):
