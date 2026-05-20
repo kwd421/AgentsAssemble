@@ -21,6 +21,8 @@ ProviderKind = Literal[
     "local_cli",
     "cursor",
     "claude_code",
+    "antigravity_cli",
+    "gemini_cli_legacy",
     "local_openai_compatible",
     "hermes_memory",
     "openclaw_memory",

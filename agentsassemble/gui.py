@@ -22,12 +22,23 @@ from agentsassemble.codex_sessions import (
     write_agent_config,
 )
 from agentsassemble.config import load_agent_runtime_config, load_council_config, providers_from_config
-from agentsassemble.live_agent_discovery import build_discovered_live_agent_config, fill_discovery_next_command_output
+from agentsassemble.live_agent_discovery import (
+    add_session_bundle_outputs,
+    build_discovered_live_agent_config,
+    build_discovered_session_bundle,
+    discovered_session_bundle_paths,
+    fill_discovery_next_command_output,
+    validate_distinct_session_bundle_paths,
+)
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
-from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor, read_live_agent_process_event_history
+from agentsassemble.live_agent_processes import (
+    LiveAgentProcessSupervisor,
+    clean_live_agent_group_id,
+    read_live_agent_process_event_history,
+)
 from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
 from agentsassemble.live_agent_sessions import (
@@ -1521,6 +1532,21 @@ def live_agent_discovery_payload(
         fill_discovery_next_command_output(report, str(output_path))
         report["output"] = str(output_path)
         report["written"] = True
+        if _payload_bool(payload.get("session_bundle")):
+            council_output, agent_output = discovered_session_bundle_paths(output_path)
+            validate_distinct_session_bundle_paths(output_path, council_output, agent_output)
+            bundle = build_discovered_session_bundle(report["config"])
+            write_agent_config(council_output, bundle["council_config"])
+            write_agent_config(agent_output, bundle["agent_config"])
+            add_session_bundle_outputs(
+                report,
+                live_agent_output=str(output_path),
+                council_output=str(council_output),
+                agent_output=str(agent_output),
+                server=str(payload.get("server") or default_server),
+                meeting_id=str(payload.get("meeting_id") or ""),
+                group_id=clean_live_agent_group_id(output_path.stem),
+            )
     else:
         report["output"] = ""
         report["written"] = False

@@ -264,6 +264,30 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
             ),
             "Claude Code meeting-mode integration is planned; implementation permissions stay gated until after a decision artifact exists.",
         ),
+        "antigravity_cli": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=True,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=False,
+                cost_class="subscription",
+            ),
+            "Antigravity CLI meeting-mode integration is planned through self-service resident sessions.",
+        ),
+        "gemini_cli_legacy": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=True,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=False,
+                cost_class="subscription",
+            ),
+            "Legacy Gemini CLI resident integration is supported only for explicit compatibility testing.",
+        ),
         "hermes_memory": (
             ProviderCapabilities(
                 supports_research=False,
@@ -308,7 +332,9 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
             capabilities,
             status="planned",
             reason=reason,
-            preferred_phase="implementation" if kind in {"cursor", "claude_code"} else "memory",
+            preferred_phase="implementation"
+            if kind in {"cursor", "claude_code", "antigravity_cli", "gemini_cli_legacy"}
+            else "memory",
         )
 
 

@@ -10,9 +10,11 @@ import subprocess
 import urllib.request
 
 from agentsassemble.cli import main
+from agentsassemble.config import load_agent_runtime_config, load_council_config
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_agent_discovery import build_discovered_live_agent_config
 from agentsassemble.live_agent_runner import load_group_configs
+from agentsassemble.live_agent_sessions import start_live_agent_session
 
 
 class LiveAgentDiscoveryTests(unittest.TestCase):
@@ -93,6 +95,145 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["next_commands"]["preflight"][-1], str(output_path))
 
+    def test_live_agent_discover_can_write_session_bundle_and_ensure_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "codex", "antigravity"} else None
+
+            with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
+                with patch("agentsassemble.cli.subprocess.Popen", side_effect=AssertionError("agent process started")):
+                    with patch("agentsassemble.cli.subprocess.run", side_effect=AssertionError("command executed")):
+                        with patch("agentsassemble.cli._request_json", side_effect=AssertionError("room contacted")):
+                            with patch("sys.stdout", StringIO()) as stdout:
+                                exit_code = main(
+                                    [
+                                        "live-agent",
+                                        "discover",
+                                        "--server",
+                                        "http://room.local",
+                                        "--meeting-id",
+                                        "resident-m1",
+                                        "--output",
+                                        str(output_path),
+                                        "--session-bundle",
+                                        "--json",
+                                    ]
+                                )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(stdout.getvalue())
+            session_bundle = payload["session_bundle"]
+            council_path = Path(session_bundle["council_config_path"])
+            agent_path = Path(session_bundle["agent_config_path"])
+            self.assertTrue(council_path.exists())
+            self.assertTrue(agent_path.exists())
+            council = json.loads(council_path.read_text(encoding="utf-8"))
+            agent_config = json.loads(agent_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                [role["id"] for role in council["roles"]],
+                ["claude_code_live", "codex_live", "antigravity_cli_live"],
+            )
+            self.assertEqual(
+                [binding["agent_id"] for binding in agent_config["agent_bindings"]],
+                ["claude-code-live", "codex-live", "antigravity-cli-live"],
+            )
+            self.assertEqual(
+                [provider["kind"] for provider in agent_config["providers"]],
+                ["claude_code", "codex_live_session", "antigravity_cli"],
+            )
+            ensure = payload["next_commands"]["ensure_session"]
+            self.assertIn("--council-config", ensure)
+            self.assertIn(str(council_path), ensure)
+            self.assertIn("--agent-config", ensure)
+            self.assertIn(str(agent_path), ensure)
+            self.assertIn("--live-agent-config", ensure)
+            self.assertIn(str(output_path), ensure)
+            self.assertIn("--meeting-id", ensure)
+            self.assertIn("resident-m1", ensure)
+
+    def test_live_agent_discover_refuses_session_bundle_path_collisions_before_writing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command == "claude" else None
+
+            with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
+                with patch("sys.stderr", StringIO()) as stderr:
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "discover",
+                            "--output",
+                            str(output_path),
+                            "--session-bundle",
+                            "--session-agent-output",
+                            str(output_path),
+                            "--json",
+                        ]
+                    )
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("session bundle output paths must be distinct", stderr.getvalue())
+            self.assertFalse(output_path.exists())
+            self.assertFalse((Path(temp_dir) / "council.discovered.json").exists())
+
+    def test_discovered_session_bundle_can_start_visible_session_with_manifest_match(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            output_path = root / "live-agents.discovered.json"
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "codex", "antigravity"} else None
+
+            with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
+                with patch("sys.stdout", StringIO()) as stdout:
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "discover",
+                            "--server",
+                            "http://room.local",
+                            "--meeting-id",
+                            "resident-m1",
+                            "--output",
+                            str(output_path),
+                            "--session-bundle",
+                            "--json",
+                        ]
+                    )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(stdout.getvalue())
+            council_path = Path(payload["session_bundle"]["council_config_path"])
+            agent_path = Path(payload["session_bundle"]["agent_config_path"])
+            council = load_council_config(council_path)
+            runtime = load_agent_runtime_config(agent_path)
+            resident_configs = load_group_configs(output_path)
+            supervisor = _DiscoverySessionSupervisor(resident_configs)
+
+            session = start_live_agent_session(
+                root,
+                supervisor,
+                server="http://room.local",
+                council_config_path=council_path,
+                agent_config_path=agent_path,
+                live_agent_config_path=output_path,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+                preflight_checker=lambda *args, **kwargs: {"status": "ok"},
+            )
+
+            self.assertEqual([role.id for role in council.roles], ["claude_code_live", "codex_live", "antigravity_cli_live"])
+            self.assertEqual([provider["kind"] for provider in runtime["providers"]], ["claude_code", "codex_live_session", "antigravity_cli"])
+            self.assertEqual(session["status"], "starting")
+            self.assertEqual(session["process"]["expected"], 3)
+            self.assertEqual(session["connection"]["expected"], 3)
+            self.assertEqual(supervisor.started[0]["meeting_id"], "resident-m1")
+
     def test_live_agent_discover_returns_one_when_no_supported_cli_is_found(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "live-agents.discovered.json"
@@ -160,6 +301,42 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(written["agents"][0]["meeting_id"], "resident-m1")
             self.assertEqual(payload["next_commands"]["preflight"][-1], str(output_path))
 
+    def test_gui_discovery_api_can_write_session_bundle_without_running_agents(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "codex"} else None
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                url = f"http://127.0.0.1:{server.server_port}/api/live-agent-discovery"
+                request = urllib.request.Request(
+                    url,
+                    method="POST",
+                    data=json.dumps({"meeting_id": "resident-m1", "session_bundle": True}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
+                    with patch.object(subprocess, "Popen", side_effect=AssertionError("agent process started")):
+                        with patch.object(subprocess, "run", side_effect=AssertionError("command executed")):
+                            with patch("agentsassemble.gui._request_json", side_effect=AssertionError("room contacted")):
+                                with urllib.request.urlopen(request) as response:
+                                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                thread.join(timeout=2)
+                server.server_close()
+
+            self.assertEqual(payload["status"], "ok")
+            self.assertTrue((root / "live-agents.discovered.local.json").exists())
+            self.assertTrue((root / "council.discovered.local.json").exists())
+            self.assertTrue((root / "agents.discovered.local.json").exists())
+            self.assertEqual(payload["session_bundle"]["agent_config_path"], str(root / "agents.discovered.local.json"))
+            self.assertIn("ensure_session", payload["next_commands"])
+
     def test_gui_discovery_api_can_return_report_without_writing_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -214,3 +391,29 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertFalse(payload["written"])
             self.assertEqual(payload["output"], "")
             self.assertFalse((root / "live-agents.discovered.local.json").exists())
+
+
+class _DiscoverySessionSupervisor:
+    def __init__(self, resident_configs):
+        self.resident_configs = resident_configs
+        self.started = []
+
+    def list_groups(self):
+        return {"groups": []}
+
+    def start_group(self, **kwargs):
+        self.started.append(kwargs)
+        return {
+            "group_id": kwargs.get("group_id") or "resident-main",
+            "status": "running",
+            "started_at": "2026-05-20T00:00:00+00:00",
+            "agents": [
+                {
+                    "agent_id": config.agent_id,
+                    "display_name": config.display_name,
+                    "provider_kind": config.provider_kind,
+                    "connection_kind": config.connection_kind,
+                }
+                for config in self.resident_configs
+            ],
+        }

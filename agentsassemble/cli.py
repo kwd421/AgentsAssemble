@@ -30,7 +30,14 @@ from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
-from agentsassemble.live_agent_discovery import build_discovered_live_agent_config, fill_discovery_next_command_output
+from agentsassemble.live_agent_discovery import (
+    add_session_bundle_outputs,
+    build_discovered_live_agent_config,
+    build_discovered_session_bundle,
+    discovered_session_bundle_paths,
+    fill_discovery_next_command_output,
+    validate_distinct_session_bundle_paths,
+)
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
@@ -576,6 +583,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_discover.add_argument("--meeting-id", default="")
     live_discover.add_argument("--engagement-mode", default="mentioned")
+    live_discover.add_argument(
+        "--session-bundle",
+        action="store_true",
+        help="Also write council and agent configs plus an ensure-session next command for the discovered residents.",
+    )
+    live_discover.add_argument("--session-council-output", default="")
+    live_discover.add_argument("--session-agent-output", default="")
     live_discover.add_argument(
         "--include-legacy-gemini",
         action="store_true",
@@ -2002,8 +2016,30 @@ def _run_live_agent_discover(args: argparse.Namespace) -> int:
     )
     output_path = Path(args.output) if args.output else None
     if report.get("status") == "ok" and output_path is not None:
+        session_bundle_paths = None
+        if args.session_bundle:
+            session_bundle_paths = discovered_session_bundle_paths(
+                output_path,
+                council_output=args.session_council_output,
+                agent_output=args.session_agent_output,
+            )
+            validate_distinct_session_bundle_paths(output_path, *session_bundle_paths)
         write_agent_config(output_path, report["config"])
         fill_discovery_next_command_output(report, str(output_path))
+        if args.session_bundle and session_bundle_paths is not None:
+            council_output, agent_output = session_bundle_paths
+            bundle = build_discovered_session_bundle(report["config"])
+            write_agent_config(council_output, bundle["council_config"])
+            write_agent_config(agent_output, bundle["agent_config"])
+            add_session_bundle_outputs(
+                report,
+                live_agent_output=str(output_path),
+                council_output=str(council_output),
+                agent_output=str(agent_output),
+                server=args.server,
+                meeting_id=args.meeting_id,
+                group_id=clean_live_agent_group_id(output_path.stem),
+            )
     if args.as_json:
         print(json.dumps({"output": str(output_path or ""), **report}, ensure_ascii=False, indent=2))
     else:
