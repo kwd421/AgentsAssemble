@@ -650,6 +650,19 @@ Operation history for `official_turn.call` records safe ids, result status, and 
 
 ## Config Preflight
 
+If you do not want to hand-author a resident config, ask AgentsAssemble to discover installed local CLIs first:
+
+```bash
+python3 -m agentsassemble.cli live-agent discover \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1 \
+  --engagement-mode mentioned \
+  --output .agentsassemble/live-agents.discovered.json \
+  --json
+```
+
+Discovery writes `.agentsassemble/live-agents.discovered.local.json` by default. It only checks whether known executables are on `PATH`; it does not run Claude, Codex, Antigravity, Gemini, model prompts, login checks, network calls, or billing-affecting operations. Detected `claude` becomes a `terminal_session` resident, detected `codex` becomes a `codex_live_session` resident that omits `command` so the existing Codex default and safety preflight remain centralized, and detected `antigravity` becomes a `self_service` resident. Detected `gemini` is reported as legacy and skipped unless `--include-legacy-gemini` is set. Discovery defaults generated agents to `engagement_mode: "mentioned"` so a discovered real-provider group does not answer every lobby message unless the operator explicitly chooses `--engagement-mode always`. A successful JSON response includes the generated resident config plus `next_commands.preflight` and `next_commands.run_group`.
+
 Before starting a real provider group, run a local preflight:
 
 ```bash

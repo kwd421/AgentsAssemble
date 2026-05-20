@@ -30,6 +30,7 @@ from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
+from agentsassemble.live_agent_discovery import build_discovered_live_agent_config
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
@@ -563,6 +564,25 @@ def build_parser() -> argparse.ArgumentParser:
     live_preflight.add_argument("--server", default=None, help="Optional room server URL override for the config.")
     live_preflight.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable preflight report.")
 
+    live_discover = live_agent_subparsers.add_parser(
+        "discover",
+        parents=[live_server],
+        help="Discover installed local agent CLIs and build a resident run-group config draft.",
+    )
+    live_discover.add_argument(
+        "--output",
+        default=".agentsassemble/live-agents.discovered.local.json",
+        help="Path to write the discovered resident config.",
+    )
+    live_discover.add_argument("--meeting-id", default="")
+    live_discover.add_argument("--engagement-mode", default="mentioned")
+    live_discover.add_argument(
+        "--include-legacy-gemini",
+        action="store_true",
+        help="Include a detected legacy Gemini CLI entry in the generated config.",
+    )
+    live_discover.add_argument("--json", action="store_true", dest="as_json", help="Print the machine-readable discovery report.")
+
     live_smoke = live_agent_subparsers.add_parser(
         "smoke",
         parents=[live_server],
@@ -987,6 +1007,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_health(args)
         if args.live_agent_command == "preflight":
             return _run_live_agent_preflight(args)
+        if args.live_agent_command == "discover":
+            return _run_live_agent_discover(args)
         if args.live_agent_command == "smoke":
             return _run_live_agent_smoke(args)
         if args.live_agent_command == "session-smoke":
@@ -1969,6 +1991,59 @@ def _run_live_agent_preflight(args: argparse.Namespace) -> int:
     else:
         print(_format_live_agent_preflight(report))
     return 0 if report.get("status") == "ok" else 1
+
+
+def _run_live_agent_discover(args: argparse.Namespace) -> int:
+    report = build_discovered_live_agent_config(
+        server=args.server,
+        meeting_id=args.meeting_id,
+        engagement_mode=args.engagement_mode,
+        include_legacy_gemini=args.include_legacy_gemini,
+    )
+    output_path = Path(args.output) if args.output else None
+    if report.get("status") == "ok" and output_path is not None:
+        write_agent_config(output_path, report["config"])
+        _fill_discovery_next_command_output(report, str(output_path))
+    if args.as_json:
+        print(json.dumps({"output": str(output_path or ""), **report}, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_discovery(report, output_path=output_path))
+    return 0 if report.get("status") == "ok" else 1
+
+
+def _fill_discovery_next_command_output(report: dict[str, object], output: str) -> None:
+    next_commands = report.get("next_commands")
+    if not isinstance(next_commands, dict):
+        return
+    for command in next_commands.values():
+        if not isinstance(command, list):
+            continue
+        for index, part in enumerate(command):
+            if part == "<output>":
+                command[index] = output
+
+
+def _format_live_agent_discovery(report: dict[str, object], *, output_path: Path | None) -> str:
+    status = str(report.get("status") or "empty")
+    lines = [f"discover: {status}"]
+    config = report.get("config") if isinstance(report.get("config"), dict) else {}
+    agents = config.get("agents") if isinstance(config.get("agents"), list) else []
+    if output_path is not None and status == "ok":
+        lines.append(f"wrote {output_path}")
+    if agents:
+        labels = [str(agent.get("agent_id") or "") for agent in agents if isinstance(agent, dict)]
+        lines.append("agents " + ", ".join(label for label in labels if label))
+    discoveries = report.get("discoveries") if isinstance(report.get("discoveries"), list) else []
+    skipped = [
+        f"{item.get('command')}:{item.get('reason')}"
+        for item in discoveries
+        if isinstance(item, dict) and item.get("available") and not item.get("included")
+    ]
+    if skipped:
+        lines.append("skipped " + ", ".join(skipped))
+    if status != "ok":
+        lines.append("No supported local agent CLIs found.")
+    return "\n".join(lines)
 
 
 def _run_provider_health(args: argparse.Namespace) -> int:
