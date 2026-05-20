@@ -138,6 +138,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("AGENTSASSEMBLE_WAIT_NEXT_COMMAND", doc)
         self.assertIn("AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE", doc)
         self.assertIn("AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE", doc)
+        self.assertIn("AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE", doc)
         self.assertIn("wait-turn-request", doc)
         self.assertIn("answer-turn", doc)
         self.assertIn("When the live cursor event is no longer in the bounded room snapshot", doc)

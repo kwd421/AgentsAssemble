@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -1099,9 +1100,15 @@ def _heartbeat_payload(args: argparse.Namespace) -> dict[str, object]:
         "last_observed_live_event_id": getattr(args, "last_observed_live_event_id", None),
     }
     for key, value in optional_fields.items():
-        if value is not None:
+        if value is not None and not _is_unreplaced_template_placeholder(value):
             payload[key] = value
     return payload
+
+
+def _is_unreplaced_template_placeholder(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    return bool(re.fullmatch(r"\{[A-Za-z0-9_]+\}", value.strip()))
 
 
 def _run_live_agent_engagement(args: argparse.Namespace) -> int:
@@ -4211,6 +4218,24 @@ def _self_service_room_command_env(config: ResidentAgentConfig) -> dict[str, str
                 "{source_event_id}",
                 "--",
                 "{message}",
+            ]
+        ),
+        "AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE": shlex.join(
+            [
+                *base,
+                "heartbeat",
+                *identity,
+                "--status",
+                "{status}",
+                "--last-error",
+                "{last_error}",
+                "--last-reply-at",
+                "{last_reply_at}",
+                "--last-observed-event-id",
+                "{last_observed_event_id}",
+                "--last-observed-live-event-id",
+                "{last_observed_live_event_id}",
+                "--json",
             ]
         ),
     }

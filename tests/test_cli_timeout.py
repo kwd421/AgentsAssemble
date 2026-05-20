@@ -7885,6 +7885,13 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("{meeting_id}", official_template)
         self.assertIn("{source_event_id}", official_template)
         self.assertIn("{message}", official_template)
+        heartbeat_template = shlex.split(env["AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE"])
+        self.assertIn("heartbeat", heartbeat_template)
+        self.assertIn("{status}", heartbeat_template)
+        self.assertIn("{last_error}", heartbeat_template)
+        self.assertIn("{last_reply_at}", heartbeat_template)
+        self.assertIn("{last_observed_event_id}", heartbeat_template)
+        self.assertIn("{last_observed_live_event_id}", heartbeat_template)
         self.assertFalse(any(call["url"].endswith("/room") for call in calls))
 
     def test_self_service_room_command_templates_round_trip_shell_escaping(self):
@@ -7915,6 +7922,14 @@ class CliTimeoutTests(unittest.TestCase):
         official_template = shlex.split(env["AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE"])
         self.assertIn("{meeting_id}", official_template)
         self.assertNotIn("", official_template)
+        heartbeat_template = shlex.split(env["AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE"])
+        self.assertIn("http://room.local/path with space?x=1&y=$two", heartbeat_template)
+        self.assertIn("agent with spaces;$", heartbeat_template)
+        self.assertIn("{status}", heartbeat_template)
+        self.assertIn("{last_error}", heartbeat_template)
+        self.assertIn("{last_reply_at}", heartbeat_template)
+        self.assertIn("{last_observed_event_id}", heartbeat_template)
+        self.assertIn("{last_observed_live_event_id}", heartbeat_template)
         say_template = shlex.split(env["AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE"])
         self.assertIn("{message}", say_template)
         self.assertLess(say_template.index("--"), say_template.index("{message}"))
@@ -7927,10 +7942,56 @@ class CliTimeoutTests(unittest.TestCase):
             "-h" if item == "{message}" else "meeting-1" if item == "{meeting_id}" else "live-1" if item == "{source_event_id}" else item
             for item in official_template
         ]
+        heartbeat_argv = [
+            "command failed"
+            if item == "{last_error}"
+            else "error"
+            if item == "{status}"
+            else "2026-05-20T00:00:00+00:00"
+            if item == "{last_reply_at}"
+            else "evt-1"
+            if item == "{last_observed_event_id}"
+            else "live-1"
+            if item == "{last_observed_live_event_id}"
+            else item
+            for item in heartbeat_template
+        ]
         say_args = build_parser().parse_args(say_argv[3:])
         official_args = build_parser().parse_args(official_argv[3:])
+        heartbeat_args = build_parser().parse_args(heartbeat_argv[3:])
         self.assertEqual(say_args.message, ["-h"])
         self.assertEqual(official_args.message, ["-h"])
+        self.assertEqual(heartbeat_args.status, "error")
+        self.assertEqual(heartbeat_args.last_error, "command failed")
+        self.assertEqual(heartbeat_args.last_reply_at, "2026-05-20T00:00:00+00:00")
+        self.assertEqual(heartbeat_args.last_observed_event_id, "evt-1")
+        self.assertEqual(heartbeat_args.last_observed_live_event_id, "live-1")
+
+    def test_heartbeat_payload_ignores_unreplaced_optional_template_placeholders(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "heartbeat",
+                "--server",
+                "http://room.local",
+                "--agent-id",
+                "selfer",
+                "--status",
+                "online",
+                "--last-error",
+                "{last_error}",
+                "--last-reply-at",
+                "{last_reply_at}",
+                "--last-observed-event-id",
+                "{last_observed_event_id}",
+                "--last-observed-live-event-id",
+                "{last_observed_live_event_id}",
+            ]
+        )
+
+        payload = cli_module._heartbeat_payload(args)
+
+        self.assertEqual(payload, {"status": "online"})
 
     def test_live_agent_run_uses_codex_resident_runner_for_codex_live_session_provider(self):
         args = build_parser().parse_args(
