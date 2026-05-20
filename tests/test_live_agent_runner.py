@@ -2202,6 +2202,32 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(loaded[0].command, ["claude"])
         self.assertEqual(loaded[0].terminal_idle_timeout, 0.2)
 
+    def test_group_config_preserves_self_service_connection_kind(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "antigravity-live",
+                                "display_name": "Antigravity Live",
+                                "provider_kind": "antigravity_cli",
+                                "connection_kind": "self_service",
+                                "command": ["antigravity"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        self.assertEqual(loaded[0].provider_kind, "antigravity_cli")
+        self.assertEqual(loaded[0].connection_kind, "self_service")
+        self.assertEqual(loaded[0].command, ["antigravity"])
+
     def test_group_config_accepts_remote_bridge_without_local_command(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "live-agents.json"
@@ -2275,7 +2301,7 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 ValueError,
-                "Resident groups support local_cli, live_session, terminal_session, and remote_bridge connections.",
+                "Resident groups support local_cli, live_session, terminal_session, remote_bridge, and self_service connections.",
             ):
                 load_group_configs(path)
 

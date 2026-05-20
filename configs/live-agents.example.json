@@ -16,13 +16,12 @@
       "timeout_seconds": 120
     },
     {
-      "agent_id": "gemini-cli-live",
-      "display_name": "Gemini CLI",
-      "provider_kind": "gemini",
-      "connection_kind": "terminal_session",
+      "agent_id": "antigravity-cli-live",
+      "display_name": "Antigravity CLI",
+      "provider_kind": "antigravity_cli",
+      "connection_kind": "self_service",
       "engagement_mode": "always",
-      "command": ["gemini"],
-      "terminal_idle_timeout": 0.75,
+      "command": ["antigravity"],
       "timeout_seconds": 120
     }
   ]

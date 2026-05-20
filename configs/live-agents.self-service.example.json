@@ -1,0 +1,27 @@
+{
+  "server": "http://127.0.0.1:8765",
+  "poll_interval": 2,
+  "heartbeat_interval": 30,
+  "cooldown": 5,
+  "max_chain_depth": 1,
+  "agents": [
+    {
+      "agent_id": "antigravity-cli-live",
+      "display_name": "Antigravity CLI",
+      "provider_kind": "antigravity_cli",
+      "connection_kind": "self_service",
+      "meeting_id": "",
+      "engagement_mode": "always",
+      "command": ["antigravity"]
+    },
+    {
+      "agent_id": "custom-cli-live",
+      "display_name": "Custom CLI",
+      "provider_kind": "local_cli",
+      "connection_kind": "self_service",
+      "meeting_id": "",
+      "engagement_mode": "always",
+      "command": ["python3", "scripts/my_self_service_agent.py"]
+    }
+  ]
+}

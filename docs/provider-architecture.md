@@ -135,16 +135,16 @@ Do not report a friend bridge as fully verified unless the health probe, local e
 
 ### Local CLI Meeting Providers
 
-Use `local_cli` when a local command can accept a prompt on stdin and return a JSON response on stdout. This is the local "delegate session" foundation for Codex-like, Claude Code-like, Gemini CLI-like, or other shell-driven participants when they are used as read-only council speakers.
+Use `local_cli` when a local command can accept a prompt on stdin and return a JSON response on stdout. This is the local "delegate session" foundation for Codex-like, Claude Code-like, legacy Gemini CLI-like, or other shell-driven participants when they are used as read-only council speakers.
 
 Example provider config:
 
 ```json
 {
-  "id": "gemini-cli",
+  "id": "custom-cli",
   "kind": "local_cli",
-  "display_name": "Gemini CLI",
-  "command": ["gemini", "--prompt"],
+  "display_name": "Custom CLI",
+  "command": ["python3", "scripts/provider_prompt.py"],
   "timeout_seconds": 300
 }
 ```
@@ -153,7 +153,9 @@ Local readiness can be verified with a fake command runner or a local smoke scri
 
 `local_cli` is one-shot/delegate style. It can test provider connectivity and opinion mode, but it should not be presented as the final live teammate experience.
 
-Resident `terminal_session` is the first local PTY-backed slice for Claude/Gemini-like CLIs. It keeps one interactive terminal process alive, injects each room prompt as a terminal submission, and captures output after the terminal has been idle. This is closer to the Stoops-style live room shape than one-shot `local_cli`, but it is still not Claude Code Channels, Gemini SDK sessions, tmux ownership, or OS-level sandboxing.
+Resident `terminal_session` is the first local PTY-backed slice for Claude-like or legacy Gemini-like CLIs. It keeps one interactive terminal process alive, injects each room prompt as a terminal submission, and captures output after the terminal has been idle. This is closer to the Stoops-style live room shape than one-shot `local_cli`, but it is still not Claude Code Channels, Antigravity native sessions, tmux ownership, or OS-level sandboxing.
+
+Resident `self_service` is the first local process-supervision slice that stops AgentsAssemble from injecting each room prompt into the provider process. The supervisor registers the live agent, starts the configured command with `stdin` closed, exports `AGENTSASSEMBLE_*` environment variables, and lets the child call `wait-next`, `say`, and `official-reply` itself. Use it for Antigravity CLI or custom wrappers that can own their own room loop.
 
 `codex_live_session` is the first Codex-specific live-session slice. Meeting turns use Codex CLI session ids and `codex exec resume` so repeated turns can continue the same Codex session history. Resident live-agent configs use `provider_kind: "codex_live_session"` with `connection_kind: "live_session"`; both the meeting adapter and resident runner call Codex CLI through `codex exec --sandbox read-only --ignore-rules` / `codex exec --sandbox read-only --ignore-rules resume` rather than through the JSONL fake-session protocol. The explicit `--sandbox read-only` flag is the safety input, `--ignore-rules` keeps repository `.rules` files from participating in the launch, and Codex CLI still owns the actual enforcement. This is not native Codex/Claude channel injection, OS-level sandboxing, or a substitute for a future constrained launch path for arbitrary CLIs.
 

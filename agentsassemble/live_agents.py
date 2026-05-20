@@ -14,7 +14,7 @@ from agentsassemble.remote_bridge_config import remote_bridge_endpoint_error
 
 LIVE_AGENT_STATE = "live_agents.json"
 PERSISTED_STATUSES = {"online", "working", "offline", "error"}
-LIVE_AGENT_CONNECTION_KINDS = {"codex_resume", "local_cli", "live_session", "remote_bridge", "manual"}
+LIVE_AGENT_CONNECTION_KINDS = {"codex_resume", "local_cli", "live_session", "remote_bridge", "self_service", "manual"}
 DEFAULT_STALE_AFTER_SECONDS = 180
 OUTPUT_ONLY_FRESHNESS_FIELDS = {"heartbeat_age_seconds", "stale_after_seconds"}
 LIVE_AGENT_STATE_LOCK = threading.Lock()

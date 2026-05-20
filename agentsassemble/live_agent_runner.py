@@ -21,7 +21,13 @@ from agentsassemble.remote_bridge_config import (
 )
 
 
-SUPPORTED_RESIDENT_CONNECTION_KINDS = ("local_cli", "live_session", "terminal_session", "remote_bridge")
+SUPPORTED_RESIDENT_CONNECTION_KINDS = (
+    "local_cli",
+    "live_session",
+    "terminal_session",
+    "remote_bridge",
+    "self_service",
+)
 
 
 @dataclass(frozen=True)
@@ -1031,4 +1037,4 @@ def _safe_resident_surface_error(error: Exception, *, fallback_label: str, redac
 
 
 def resident_connection_kind_error() -> str:
-    return "Resident groups support local_cli, live_session, terminal_session, and remote_bridge connections."
+    return "Resident groups support local_cli, live_session, terminal_session, remote_bridge, and self_service connections."

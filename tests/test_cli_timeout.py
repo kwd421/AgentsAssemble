@@ -2,6 +2,7 @@ import unittest
 import json
 import os
 import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -7702,6 +7703,93 @@ class CliTimeoutTests(unittest.TestCase):
         )
 
         self.assertEqual(args.connection_kind, "live_session")
+
+    def test_live_agent_run_accepts_self_service_connection_kind(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run",
+                "--agent-id",
+                "antigravity-live",
+                "--provider-kind",
+                "antigravity_cli",
+                "--connection-kind",
+                "self_service",
+                "--command",
+                "antigravity",
+            ]
+        )
+
+        self.assertEqual(args.connection_kind, "self_service")
+        self.assertEqual(args.provider_kind, "antigravity_cli")
+        self.assertEqual(args.resident_command, ["antigravity"])
+
+    def test_live_agent_run_self_service_starts_process_without_prompt_injection(self):
+        class FakeSelfServiceProcess:
+            pid = 4321
+            returncode = 0
+
+            def poll(self):
+                return self.returncode
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+            def terminate(self):
+                self.returncode = -15
+
+            def kill(self):
+                self.returncode = -9
+
+        calls = []
+        popen_calls = []
+
+        def request_json(url, *, method="GET", payload=None, **kwargs):
+            del kwargs
+            calls.append({"url": url, "method": method, "payload": payload})
+            if url.endswith("/api/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "selfer", "status": "online"}}
+            return {"agent": {"agent_id": "selfer", "status": (payload or {}).get("status", "online")}}
+
+        def fake_popen(command, **kwargs):
+            popen_calls.append({"command": command, "kwargs": kwargs})
+            return FakeSelfServiceProcess()
+
+        with patch("agentsassemble.cli._request_json", side_effect=request_json):
+            with patch("agentsassemble.cli.subprocess.Popen", side_effect=fake_popen):
+                with patch("agentsassemble.cli.LiveAgentRunner", side_effect=AssertionError("prompt-injection runner used")):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "run",
+                            "--server",
+                            "http://room.local",
+                            "--agent-id",
+                            "selfer",
+                            "--display-name",
+                            "Self Service",
+                            "--provider-kind",
+                            "antigravity_cli",
+                            "--connection-kind",
+                            "self_service",
+                            "--meeting-id",
+                            "resident-m1",
+                            "--max-ticks",
+                            "1",
+                            "--command",
+                            sys.executable,
+                            "-c",
+                            "pass",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(popen_calls), 1)
+        self.assertEqual(popen_calls[0]["kwargs"]["stdin"], subprocess.DEVNULL)
+        self.assertEqual(popen_calls[0]["kwargs"]["env"]["AGENTSASSEMBLE_SERVER"], "http://room.local")
+        self.assertEqual(popen_calls[0]["kwargs"]["env"]["AGENTSASSEMBLE_AGENT_ID"], "selfer")
+        self.assertEqual(popen_calls[0]["kwargs"]["env"]["AGENTSASSEMBLE_CONNECTION_KIND"], "self_service")
+        self.assertFalse(any(call["url"].endswith("/room") for call in calls))
 
     def test_live_agent_run_uses_codex_resident_runner_for_codex_live_session_provider(self):
         args = build_parser().parse_args(

@@ -109,6 +109,40 @@ class LiveAgentPreflightTests(unittest.TestCase):
             self.assertEqual([agent["status"] for agent in report["agents"]], ["ok", "ok"])
             self.assertEqual(report["agents"][0]["command_path"], "/opt/bin/python3")
 
+    def test_preflight_accepts_self_service_without_running_command_or_extra_transport_checks(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "server": "http://room.local",
+                        "agents": [
+                            {
+                                "agent_id": "antigravity-live",
+                                "display_name": "Antigravity Live",
+                                "provider_kind": "antigravity_cli",
+                                "connection_kind": "self_service",
+                                "command": ["antigravity"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            calls = []
+
+            def resolver(command):
+                calls.append(command)
+                return "/opt/bin/antigravity" if command == "antigravity" else None
+
+            report = preflight_live_agent_config(config_path, command_resolver=resolver)
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(calls, ["antigravity"])
+            checks = report["agents"][0]["checks"]
+            self.assertEqual([check["id"] for check in checks], ["agent_id", "connection_kind", "command"])
+            self.assertEqual(report["agents"][0]["connection_kind"], "self_service")
+
     def test_preflight_accepts_terminal_session_with_command_and_pty_support(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"
@@ -216,7 +250,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 {
                     "id": "connection_kind",
                     "status": "failed",
-                    "message": "Resident groups support local_cli, live_session, terminal_session, and remote_bridge connections.",
+                    "message": "Resident groups support local_cli, live_session, terminal_session, remote_bridge, and self_service connections.",
                 },
                 first["checks"],
             )
@@ -265,7 +299,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 {
                     "id": "connection_kind",
                     "status": "failed",
-                    "message": "Resident groups support local_cli, live_session, terminal_session, and remote_bridge connections.",
+                    "message": "Resident groups support local_cli, live_session, terminal_session, remote_bridge, and self_service connections.",
                 },
                 report["agents"][0]["checks"],
             )

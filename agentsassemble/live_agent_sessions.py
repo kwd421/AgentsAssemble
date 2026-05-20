@@ -15,7 +15,7 @@ from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent,
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.meeting_setup import prepare_meeting_setup
 
-SUPPORTED_SESSION_CONNECTION_KINDS = frozenset({"local_cli", "live_session", "terminal_session", "remote_bridge"})
+SUPPORTED_SESSION_CONNECTION_KINDS = frozenset({"local_cli", "live_session", "terminal_session", "remote_bridge", "self_service"})
 SESSION_PROCESS_STATUSES = frozenset({"running", "restarting", "error", "unknown", "stopped"})
 SESSION_ACTIVE_PROCESS_STATUSES = frozenset({"running", "restarting"})
 SESSION_AGENT_ATTENTION_STATUSES = frozenset(
@@ -755,7 +755,7 @@ def _allowed_resident_connection_kinds(provider_kind: str) -> frozenset[str]:
     if provider_kind == "codex_live_session":
         return frozenset({"live_session"})
     if provider_kind == "local_cli":
-        return frozenset({"local_cli", "live_session", "terminal_session"})
+        return frozenset({"local_cli", "live_session", "terminal_session", "self_service"})
     return SUPPORTED_SESSION_CONNECTION_KINDS
 
 

@@ -30,7 +30,7 @@ Session-owned supervised groups persist the safe `meeting_id` in `live-agent-run
 
 Session controls also enforce that ownership. `start-session` with an explicit meeting id, `resume-session`, `restart-session`, `recover-session`, and `stop-session` refuse to reuse or mutate an existing process group that already belongs to a different meeting. `check-session` stays read-only and reports `degraded` with `group:wrong_meeting` instead of treating that group as ready. A non-empty but unsafe stored owner id is treated as a different meeting without echoing the unsafe value.
 
-The real-provider `configs/live-agents.example.json` contains real `claude` and `gemini` commands. Do not start it until the real-provider checklist below is satisfied.
+The real-provider `configs/live-agents.example.json` contains real `claude` and `antigravity` commands. Do not start it until the real-provider checklist below is satisfied.
 
 ## GUI Startup Autostart
 
@@ -161,7 +161,7 @@ The live-agent lobby endpoint fills in the agent identity and server-issued `liv
 
 ## Terminal Self-Service Room Tools
 
-A terminal agent can observe the room through the same live-agent control plane instead of waiting for the resident runner to inject every prompt into its terminal. Register the terminal participant first, then let the agent call the room tools from inside its own Claude, Gemini, Cursor, or other CLI session.
+A terminal agent can observe the room through the same live-agent control plane instead of waiting for the resident runner to inject every prompt into its terminal. Register the terminal participant first, then let the agent call the room tools from inside its own Claude, Antigravity, Cursor, or other CLI session.
 
 Read the current room snapshot:
 
@@ -243,7 +243,25 @@ python3 -m agentsassemble.cli live-agent official-reply \
 
 Successful official replies advance `last_observed_live_event_id` separately from the lobby cursor, so a terminal agent can move between official meeting turns and lobby chat without mixing the two streams.
 
-This is closer to direct room participation than the PTY prompt-injection path: the model running inside the terminal can pull the room snapshot, wait for a fresh lobby event or official turn request, and publish its own linked reply. It is still a bounded CLI polling surface, not Claude Code Channels, Gemini native sessions, a tmux subscription protocol, or OS-level sandbox enforcement.
+This is closer to direct room participation than the PTY prompt-injection path: the model running inside the terminal can pull the room snapshot, wait for a fresh lobby event or official turn request, and publish its own linked reply. It is still a bounded CLI polling surface, not Claude Code Channels, Antigravity native sessions, a tmux subscription protocol, or OS-level sandbox enforcement.
+
+## Self-Service Resident Processes
+
+Use `--connection-kind self_service` when the provider process should stay resident and call `wait-next`, `say`, and `official-reply` by itself. In this mode AgentsAssemble registers the agent, starts the configured command with `stdin` closed, exports the live-agent environment variables, sends parent liveness heartbeats, and stops the process on resident shutdown. It does not read room events, build `delegate_prompt` or `official_turn_prompt`, or write event prompts into the child process.
+
+```bash
+python3 -m agentsassemble.cli live-agent run \
+  --server http://127.0.0.1:8765 \
+  --agent-id antigravity-cli-live \
+  --display-name "Antigravity CLI" \
+  --provider-kind antigravity_cli \
+  --connection-kind self_service \
+  --meeting-id resident-1 \
+  --engagement-mode always \
+  --command antigravity
+```
+
+The child process receives `AGENTSASSEMBLE_SERVER`, `AGENTSASSEMBLE_AGENT_ID`, `AGENTSASSEMBLE_DISPLAY_NAME`, `AGENTSASSEMBLE_PROVIDER_KIND`, `AGENTSASSEMBLE_CONNECTION_KIND`, `AGENTSASSEMBLE_MEETING_ID`, `AGENTSASSEMBLE_ENGAGEMENT_MODE`, `AGENTSASSEMBLE_MAX_CHAIN_DEPTH`, `AGENTSASSEMBLE_POLL_INTERVAL`, and `AGENTSASSEMBLE_HEARTBEAT_INTERVAL`. A self-service child is responsible for its own room loop and replies; parent summary counts therefore report parent-managed replies, usually `0`, even when the child posts messages.
 
 ## Start A Resident Meeting
 
@@ -640,11 +658,11 @@ python3 -m agentsassemble.cli live-agent preflight \
   --config configs/live-agents.example.json
 ```
 
-The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not send prompts, start resident sessions, call remote bridges, or execute model turns. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, local command executables are present for `local_cli`, `live_session`, and `terminal_session`, that PTY support is available for `terminal_session`, `codex_live_session` residents use the `live_session` connection kind with a resolvable command executable named `codex` and no extra pre-`exec` arguments, that the resolved Codex command parses the required `codex exec --sandbox read-only --ignore-rules resume --skip-git-repo-check --help` safety-flag probe, and remote bridge agents have an endpoint plus an available `auth_ref`. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint except that browser-visible GUI/API config-load failures redact the local `config_path` and raw loader detail. It cannot prove Claude, Gemini, Cursor, account login, billing, subscription, model availability, network access, bridge command execution, Codex login/model execution, or provider-specific terminal readiness.
+The GUI "상주 실행" panel exposes the same check as the `예비점검` button through `POST /api/live-agent-preflight`. Preflight is credential-free and does not send prompts, start resident sessions, call remote bridges, or execute model turns. It checks that the config can be read, agent ids are unique, resident connection kinds are supported, local command executables are present for `local_cli`, `live_session`, `terminal_session`, and `self_service`, that PTY support is available for `terminal_session`, `codex_live_session` residents use the `live_session` connection kind with a resolvable command executable named `codex` and no extra pre-`exec` arguments, that the resolved Codex command parses the required `codex exec --sandbox read-only --ignore-rules resume --skip-git-repo-check --help` safety-flag probe, and remote bridge agents have an endpoint plus an available `auth_ref`. The CLI exits `0` for `status: ok`, exits `1` for failed checks, and `--json` prints the same machine-readable report shape returned by the GUI endpoint except that browser-visible GUI/API config-load failures redact the local `config_path` and raw loader detail. It cannot prove Claude, Antigravity, legacy Gemini CLI, Cursor, account login, billing, subscription, model availability, network access, bridge command execution, Codex login/model execution, or provider-specific terminal readiness.
 
-Resident runners support only `local_cli`, `live_session`, `terminal_session`, and `remote_bridge`. Registration-only kinds such as `manual` and `codex_resume` can appear in the roster, but `live-agent run`, `live-agent run-group`, supervised start, and preflight reject them as resident process configs instead of silently treating them like a local CLI command.
+Resident runners support only `local_cli`, `live_session`, `terminal_session`, `remote_bridge`, and `self_service`. Registration-only kinds such as `manual` and `codex_resume` can appear in the roster, but `live-agent run`, `live-agent run-group`, supervised start, and preflight reject them as resident process configs instead of silently treating them like a local CLI command.
 
-Direct `live-agent run` and `live-agent run-group` also refuse missing `local_cli`, `live_session`, or `terminal_session` command executables before registering any resident agent. For `provider_kind: "codex_live_session"` plus `connection_kind: "live_session"`, omitting `command` defaults to `["codex"]`; preflight and direct resident starts both verify that the resolved Codex CLI accepts the resident safety flags before any supervised process, resident registration, or worker thread is launched. Direct `run-group` rejects duplicate agent ids before worker threads start, so one bad local config cannot partially register sibling agents under an ambiguous id. Supervised process start, restart, and recovery run this same preflight gate automatically inside the local GUI supervisor before opening a log file, launching `run-group`, or clearing meeting roster evidence. A failed gate returns a GUI/API/CLI error immediately and leaves no new process record behind. The GUI status line shows the refusal reason returned by the API. The check runs in the launching process environment, so PATH and `env:` auth references are evaluated from the process that would launch the resident group.
+Direct `live-agent run` and `live-agent run-group` also refuse missing `local_cli`, `live_session`, `terminal_session`, or `self_service` command executables before registering any resident agent. For `provider_kind: "codex_live_session"` plus `connection_kind: "live_session"`, omitting `command` defaults to `["codex"]`; preflight and direct resident starts both verify that the resolved Codex CLI accepts the resident safety flags before any supervised process, resident registration, or worker thread is launched. Direct `run-group` rejects duplicate agent ids before worker threads start, so one bad local config cannot partially register sibling agents under an ambiguous id. Supervised process start, restart, and recovery run this same preflight gate automatically inside the local GUI supervisor before opening a log file, launching `run-group`, or clearing meeting roster evidence. A failed gate returns a GUI/API/CLI error immediately and leaves no new process record behind. The GUI status line shows the refusal reason returned by the API. The check runs in the launching process environment, so PATH and `env:` auth references are evaluated from the process that would launch the resident group.
 
 ## Provider Runtime Health
 
@@ -924,7 +942,7 @@ If the JSONL subprocess exits, times out, stops reading stdin, or returns invali
 
 ## Fake Terminal Session Smoke
 
-Use `--connection-kind terminal_session` when the resident command is an interactive terminal program that should stay alive across multiple room events. The runner starts one PTY-backed process, compacts each generated room prompt into one terminal submission, writes it to the PTY, then reads terminal output until it has been idle for `--terminal-idle-timeout` seconds. This is the first Stoops-style local terminal slice for Claude/Gemini-like CLIs; it is still not Claude Code Channels, Gemini SDK sessions, tmux ownership, or OS-level sandboxing.
+Use `--connection-kind terminal_session` when the resident command is an interactive terminal program that should stay alive across multiple room events. The runner starts one PTY-backed process, compacts each generated room prompt into one terminal submission, writes it to the PTY, then reads terminal output until it has been idle for `--terminal-idle-timeout` seconds. This is the first Stoops-style local terminal slice for Claude-like or legacy Gemini-like CLIs; it is still not Claude Code Channels, Antigravity native sessions, tmux ownership, or OS-level sandboxing.
 
 Post a human lobby message first, then run a bounded fake terminal session:
 
@@ -1349,7 +1367,7 @@ python3 -m agentsassemble.cli live-agent heartbeat \
 
 That command writes the same `last_error`, `last_observed_event_id`, `last_observed_live_event_id`, and `last_reply_at` fields used by resident runners, so non-runner agents can stay visible in the roster without inventing a separate status path. Presence `last_error` is sanitized before persistence/readback; URLs, scheme-less host/path endpoints, auth/token assignments, env/literal refs, config paths, prompt refs, absolute paths, and common secret-looking values are replaced with `Live-agent presence error details redacted.` before the roster or GUI can expose them. Safe short labels such as `command failed`, `oauth failed`, or `configuration failed` remain visible for operators. Use `--json` when an external agent wrapper needs to verify the persisted heartbeat acknowledgement, including both cursor fields, instead of parsing the compact `agent-id: status` line.
 
-## Claude And Gemini CLI Smoke
+## Claude And Antigravity CLI Smoke
 
 Only run real provider smoke when the CLI is installed, authenticated, and you have explicit approval for any cost, network, account, or external side effect.
 
@@ -1357,17 +1375,17 @@ Check local availability:
 
 ```bash
 command -v claude
-command -v gemini
+command -v antigravity
 ```
 
 If approved and installed, `configs/live-agents.example.json` shows the expected command shape:
 
 ```json
 ["claude"]
-["gemini"]
+["antigravity"]
 ```
 
-Both example entries use `connection_kind: "terminal_session"` so they stay alive behind a PTY instead of using one-shot stdin/stdout delegation. Tune `terminal_idle_timeout` if the provider prints in bursts after the first output.
+The Claude example uses `connection_kind: "terminal_session"` so it stays alive behind a PTY instead of using one-shot stdin/stdout delegation. The Antigravity example uses `connection_kind: "self_service"` so AgentsAssemble supervises the process but does not inject room prompts into it. Gemini CLI is now legacy for consumer use after Google's May 19, 2026 transition announcement; prefer Antigravity CLI for new Google-backed terminal residents unless you are deliberately testing an enterprise-supported Gemini CLI path.
 
 For the first Codex resident shape, use `configs/live-agents.codex-session.example.json`. It uses `provider_kind: "codex_live_session"` with `connection_kind: "live_session"` and may omit `command`, in which case the resident runner defaults to `["codex"]`:
 
@@ -1398,4 +1416,4 @@ After restarting the GUI:
 - restarted resident runners reuse `last_observed_event_id` from their live-agent presence so they do not answer the same lobby event again, and they recover when that cursor has aged out of the bounded room tail;
 - existing presence rows in `.agentsassemble/live_agents.json` can remain until heartbeat age makes them `stale`; restarting the GUI does not resume old resident agents except pending auto-restart records, which can start a fresh process after `next_restart_at`.
 
-This slice is not native Claude Code Channels, Gemini SDK sessions, tmux ownership, Cursor terminal persistence, or OS-level sandboxing. The JSONL `live_session` transport is not a native Claude, Gemini, or Cursor PTY protocol. The `terminal_session` transport is a local PTY bridge, but provider-specific channel injection and stronger sandboxed launch paths remain future backend variants behind the same room and supervisor shape.
+This slice is not native Claude Code Channels, Antigravity native sessions, tmux ownership, Cursor terminal persistence, or OS-level sandboxing. The JSONL `live_session` transport is not a native Claude, legacy Gemini, or Cursor PTY protocol. The `terminal_session` transport is a local PTY bridge, and `self_service` supervises a child process without injecting room prompts, but provider-specific channel injection and stronger sandboxed launch paths remain future backend variants behind the same room and supervisor shape.

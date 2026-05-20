@@ -1739,6 +1739,15 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
     setup_error = _resident_config_setup_error(config)
     if setup_error:
         raise ValueError(f"{config.agent_id}: {setup_error}")
+    if config.connection_kind == "self_service":
+        runner = _SelfServiceResidentSupervisor(
+            config,
+            request_json=_request_json,
+            sleep_fn=time.sleep,
+        )
+        replies = runner.run()
+        print(f"Self-service resident agent stopped after posting {replies} parent-managed replies")
+        return 0
     command_runner = _command_runner_for_config(config)
     runner = LiveAgentRunner(
         config,
@@ -1781,17 +1790,28 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
         command_runner = None
         try:
             _validate_resident_config(config)
-            command_runner = _command_runner_for_config(config)
+            if config.connection_kind == "self_service":
+                command_runner = _SelfServiceResidentSupervisor(
+                    config,
+                    request_json=_request_json,
+                    sleep_fn=sleep,
+                    stop_event=stop_event,
+                )
+            else:
+                command_runner = _command_runner_for_config(config)
             with active_command_runners_lock:
                 active_command_runners.append(command_runner)
-            runner = LiveAgentRunner(
-                config,
-                request_json=_request_json,
-                command_runner=command_runner,
-                sleep_fn=sleep,
-                stop_event=stop_event,
-            )
-            results[config.agent_id] = runner.run()
+            if config.connection_kind == "self_service":
+                results[config.agent_id] = command_runner.run()
+            else:
+                runner = LiveAgentRunner(
+                    config,
+                    request_json=_request_json,
+                    command_runner=command_runner,
+                    sleep_fn=sleep,
+                    stop_event=stop_event,
+                )
+                results[config.agent_id] = runner.run()
         except BaseException as error:  # pragma: no cover - surfaced through CLI status in integration use
             if isinstance(error, KeyboardInterrupt):
                 stop_event.set()
@@ -3717,6 +3737,131 @@ class _TerminalLiveSessionCommandRunner:
         session.close()
 
 
+class _SelfServiceResidentSupervisor:
+    def __init__(
+        self,
+        config: ResidentAgentConfig,
+        *,
+        request_json,
+        sleep_fn,
+        stop_event: threading.Event | None = None,
+    ) -> None:
+        self.config = config
+        self.request_json = request_json
+        self.sleep_fn = sleep_fn
+        self.stop_event = stop_event or threading.Event()
+        self.process: subprocess.Popen | None = None
+        self.closed = False
+        self.last_heartbeat_at = 0.0
+        self._lock = threading.Lock()
+
+    def run(self) -> int:
+        self._register()
+        self._heartbeat("online")
+        try:
+            process = self._start_process()
+            return self._supervise(process)
+        except subprocess.CalledProcessError as error:
+            if not self.stop_event.is_set():
+                self._heartbeat_safely("error", last_error=_self_service_exit_error(error.returncode))
+            raise
+        finally:
+            self.close()
+            self._heartbeat_final_offline()
+
+    def close(self) -> None:
+        with self._lock:
+            self.closed = True
+            process = self.process
+        if process is not None:
+            _terminate_process(process)
+
+    def _start_process(self) -> subprocess.Popen:
+        if not self.config.command:
+            raise ValueError("self_service resident requires --command.")
+        with self._lock:
+            if self.closed:
+                raise RuntimeError("Self-service resident supervisor is closed.")
+        process = subprocess.Popen(
+            self.config.command,
+            stdin=subprocess.DEVNULL,
+            env=_self_service_process_env(self.config),
+            start_new_session=_supports_process_groups(),
+        )
+        if _supports_process_groups():
+            process_group_pid = getattr(process, "pid", None)
+            if isinstance(process_group_pid, int) and process_group_pid > 0:
+                setattr(process, "_agentsassemble_process_group_pid", process_group_pid)
+        with self._lock:
+            if self.closed:
+                should_close = True
+            else:
+                self.process = process
+                should_close = False
+        if should_close:
+            _terminate_process(process)
+            raise RuntimeError("Self-service resident supervisor is closed.")
+        return process
+
+    def _supervise(self, process: subprocess.Popen) -> int:
+        ticks = 0
+        while not self.stop_event.is_set():
+            return_code = process.poll()
+            if return_code is not None:
+                if return_code:
+                    raise subprocess.CalledProcessError(return_code, self.config.command)
+                return 0
+            ticks += 1
+            if self.config.max_ticks and ticks >= self.config.max_ticks:
+                return 0
+            self._heartbeat_if_due()
+            self.sleep_fn(self.config.poll_interval)
+        return 0
+
+    def _register(self) -> None:
+        self.request_json(
+            _server_url(self.config.server, "/api/live-agents"),
+            method="POST",
+            payload={
+                "agent_id": self.config.agent_id,
+                "display_name": self.config.display_name,
+                "provider_kind": self.config.provider_kind,
+                "connection_kind": self.config.connection_kind,
+                "session_id": self.config.session_id,
+                "endpoint": self.config.endpoint,
+                "meeting_id": self.config.meeting_id,
+                "engagement_mode": self.config.engagement_mode,
+                "capabilities": ["room_chat", "mentions", "self_service"],
+            },
+        )
+
+    def _heartbeat(self, status: str, **metadata: object) -> None:
+        payload = {"status": status, **metadata}
+        if self.config.session_id:
+            payload.setdefault("session_id", self.config.session_id)
+        self.request_json(
+            _server_url(self.config.server, f"/api/live-agents/{urllib.parse.quote(self.config.agent_id, safe='')}/heartbeat"),
+            method="POST",
+            payload=payload,
+        )
+        self.last_heartbeat_at = time.monotonic()
+
+    def _heartbeat_if_due(self) -> None:
+        if self.config.heartbeat_interval <= 0:
+            return
+        if time.monotonic() - self.last_heartbeat_at >= self.config.heartbeat_interval:
+            self._heartbeat_safely("online")
+
+    def _heartbeat_safely(self, status: str, **metadata: object) -> None:
+        try:
+            self._heartbeat(status, **metadata)
+        except Exception:
+            return
+
+    def _heartbeat_final_offline(self) -> None:
+        self._heartbeat_safely("offline")
+
+
 class _LocalCliCommandRunner:
     def __init__(self) -> None:
         self.process: subprocess.Popen | None = None
@@ -3776,6 +3921,29 @@ class _LocalCliCommandRunner:
             _terminate_process(process)
 
 
+def _self_service_process_env(config: ResidentAgentConfig) -> dict[str, str]:
+    env = dict(os.environ)
+    env.update(
+        {
+            "AGENTSASSEMBLE_SERVER": config.server,
+            "AGENTSASSEMBLE_AGENT_ID": config.agent_id,
+            "AGENTSASSEMBLE_DISPLAY_NAME": config.display_name,
+            "AGENTSASSEMBLE_PROVIDER_KIND": config.provider_kind,
+            "AGENTSASSEMBLE_CONNECTION_KIND": config.connection_kind,
+            "AGENTSASSEMBLE_MEETING_ID": config.meeting_id,
+            "AGENTSASSEMBLE_ENGAGEMENT_MODE": config.engagement_mode,
+            "AGENTSASSEMBLE_MAX_CHAIN_DEPTH": str(config.max_chain_depth),
+            "AGENTSASSEMBLE_POLL_INTERVAL": str(config.poll_interval),
+            "AGENTSASSEMBLE_HEARTBEAT_INTERVAL": str(config.heartbeat_interval),
+        }
+    )
+    return env
+
+
+def _self_service_exit_error(return_code: int) -> str:
+    return f"Self-service command exited with return code {return_code}."
+
+
 def _terminate_process(process: subprocess.Popen) -> None:
     if process.poll() is not None:
         return
@@ -3833,11 +4001,13 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
         if not config.auth_ref:
             raise ValueError("Remote bridge resident requires --auth-ref.")
         return
-    if config.connection_kind in {"local_cli", "live_session", "terminal_session", "codex_resume", "manual"} and not config.command:
+    if config.connection_kind in {"local_cli", "live_session", "terminal_session", "self_service", "codex_resume", "manual"} and not config.command:
         raise ValueError(f"{config.connection_kind} resident requires --command.")
 
 
 def _command_runner_for_config(config: ResidentAgentConfig):
+    if config.connection_kind == "self_service":
+        raise ValueError("self_service residents are supervised directly and do not use prompt-injection command runners.")
     if config.provider_kind == "codex_live_session" and config.connection_kind == "live_session":
         return CodexResidentCommandRunner(config)
     if config.connection_kind == "live_session":

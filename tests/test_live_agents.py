@@ -404,6 +404,20 @@ class LiveAgentPresenceTests(unittest.TestCase):
 
         self.assertEqual(agent["connection_kind"], "live_session")
 
+    def test_connect_live_agent_preserves_self_service_connection_kind(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = connect_live_agent(
+                Path(temp_dir),
+                {
+                    "agent_id": "antigravity-live",
+                    "display_name": "Antigravity Live",
+                    "provider_kind": "antigravity_cli",
+                    "connection_kind": "self_service",
+                },
+            )
+
+        self.assertEqual(agent["connection_kind"], "self_service")
+
     def test_connect_live_agent_rejects_unsafe_remote_bridge_endpoint(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

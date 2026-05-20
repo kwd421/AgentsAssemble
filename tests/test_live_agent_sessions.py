@@ -352,6 +352,35 @@ class LiveAgentSessionStartTests(unittest.TestCase):
         self.assertEqual(session["meeting_id"], "resident-m1")
         self.assertEqual(supervisor.started[0]["config_path"], live_agent_config)
 
+    def test_start_session_accepts_local_provider_with_self_service_transport(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"], provider_kind="local_cli")
+            live_agent_config = _write_live_agent_config(
+                root,
+                ["agent-a"],
+                provider_kind="local_cli",
+                connection_kind="self_service",
+            )
+            supervisor = FakeSessionSupervisor(root)
+
+            session = start_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+                preflight_checker=lambda *args, **kwargs: {"status": "ok"},
+            )
+
+        self.assertEqual(session["meeting_id"], "resident-m1")
+        self.assertEqual(supervisor.started[0]["config_path"], live_agent_config)
+
     def test_start_session_allows_remote_bridge_provider_label_behind_bridge_transport(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
