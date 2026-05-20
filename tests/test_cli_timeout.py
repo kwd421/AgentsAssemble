@@ -6598,6 +6598,202 @@ class CliTimeoutTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["event"]["id"], "reply-next")
 
+    def test_live_agent_wait_next_parses_lobby_and_official_cursor_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "wait-next",
+                "--server",
+                "http://room.local",
+                "--agent-id",
+                "claude-terminal",
+                "--after-event-id",
+                "evt-old",
+                "--after-live-event-id",
+                "live-old",
+                "--max-chain-depth",
+                "2",
+                "--timeout",
+                "3",
+                "--poll-interval",
+                "0.5",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "wait-next")
+        self.assertEqual(args.agent_id, "claude-terminal")
+        self.assertEqual(args.after_event_id, "evt-old")
+        self.assertEqual(args.after_live_event_id, "live-old")
+        self.assertEqual(args.max_chain_depth, 2)
+        self.assertEqual(args.timeout, 3.0)
+        self.assertEqual(args.poll_interval, 0.5)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_wait_next_prefers_official_turn_over_lobby_event(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "meeting_id": "meeting-1",
+                "last_observed_event_id": "evt-old",
+                "last_observed_live_event_id": "live-old",
+            },
+            "lobby_events": [
+                {"id": "evt-old", "name": "나", "message": "old"},
+                {"id": "evt-next", "name": "나", "message": "lobby question"},
+            ],
+            "live_events": [
+                {"id": "live-old", "kind": "message", "content": "old"},
+                {
+                    "id": "live-next",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "meeting-1",
+                    "target_agent_id": "claude-terminal",
+                    "content": "official question",
+                },
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-next",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["action"], "official_turn")
+        self.assertEqual(payload["event"]["id"], "live-next")
+        self.assertEqual(payload["reply_command"][4], "official-reply")
+
+    def test_live_agent_wait_next_returns_lobby_event_when_no_official_turn_is_pending(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "display_name": "Claude Terminal",
+                "last_observed_event_id": "evt-old",
+            },
+            "lobby_events": [
+                {"id": "evt-old", "name": "나", "message": "old"},
+                {"id": "evt-next", "name": "나", "message": "lobby question"},
+            ],
+            "live_events": [],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-next",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["action"], "lobby")
+        self.assertEqual(payload["event"]["id"], "evt-next")
+        self.assertEqual(payload["reply_command"][4], "say")
+
+    def test_live_agent_wait_next_does_not_use_lobby_cursor_for_official_turns(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "meeting_id": "meeting-1",
+                "last_observed_event_id": "evt-lobby",
+                "last_observed_live_event_id": "live-newer",
+            },
+            "lobby_events": [{"id": "evt-lobby", "name": "나", "message": "old lobby"}],
+            "live_events": [
+                {
+                    "id": "live-old-request",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "meeting-1",
+                    "target_agent_id": "claude-terminal",
+                    "content": "old official request",
+                },
+                {"id": "live-newer", "kind": "message", "channel": "official", "content": "newer marker"},
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-next",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--after-event-id",
+                        "evt-lobby",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "timeout")
+        self.assertEqual(payload["last_observed_event_id"], "evt-lobby")
+        self.assertEqual(payload["last_observed_live_event_id"], "live-newer")
+
+    def test_live_agent_wait_next_times_out_with_both_cursors(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "last_observed_event_id": "evt-old",
+                "last_observed_live_event_id": "live-old",
+            },
+            "lobby_events": [{"id": "evt-old", "name": "나", "message": "old"}],
+            "live_events": [{"id": "live-old", "kind": "message", "content": "old"}],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-next",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "timeout")
+        self.assertEqual(payload["last_observed_event_id"], "evt-old")
+        self.assertEqual(payload["last_observed_live_event_id"], "live-old")
+
     def test_live_agent_official_self_service_round_trip_against_gui_server(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
