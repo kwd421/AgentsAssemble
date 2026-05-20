@@ -310,16 +310,19 @@ def run_live_agent_session_smoke(
         "local_cli": f"{clean_group_id}-local-cli",
         "live_session": f"{clean_group_id}-live-session",
         "remote_bridge": f"{clean_group_id}-remote-bridge",
+        "self_service": f"{clean_group_id}-self-service",
     }
     role_ids = {
         "local_cli": "session_smoke_local_cli",
         "live_session": "session_smoke_live_session",
         "remote_bridge": "session_smoke_remote_bridge",
+        "self_service": "session_smoke_self_service",
     }
     expected_messages = {
         agent_ids["local_cli"]: "session smoke local_cli ok",
         agent_ids["live_session"]: "session smoke live_session ok",
         agent_ids["remote_bridge"]: "session smoke remote_bridge ok",
+        agent_ids["self_service"]: "session smoke self_service ok",
     }
     start_result: dict[str, object] = {}
     rounds_result: dict[str, object] = {}
@@ -627,6 +630,12 @@ def _write_session_smoke_configs(
                         "lens": "Credential-free resident session smoke through a loopback remote bridge.",
                         "research_focus": "Verify a remote_bridge resident participates without exposing bridge credentials.",
                     },
+                    {
+                        "id": role_ids["self_service"],
+                        "display_name": "Session Smoke Self Service",
+                        "lens": "Credential-free resident session smoke through a supervised self-service process.",
+                        "research_focus": "Verify self_service observes the room and replies without prompt injection.",
+                    },
                 ],
                 "meeting_template": {
                     "id": "session_smoke",
@@ -708,6 +717,15 @@ def _write_session_smoke_configs(
                         "permission_profile_id": "meeting_readonly",
                         "join_mode": "fresh",
                     },
+                    {
+                        "agent_id": agent_ids["self_service"],
+                        "role_id": role_ids["self_service"],
+                        "owner_id": "session-smoke",
+                        "provider_id": "session-smoke-local",
+                        "model_id": "self-service",
+                        "permission_profile_id": "meeting_readonly",
+                        "join_mode": "fresh",
+                    },
                 ],
             },
             ensure_ascii=False,
@@ -752,6 +770,15 @@ def _write_session_smoke_configs(
                         python_executable=python_executable,
                         bridge_endpoint=bridge_endpoint,
                         bridge_auth_ref=bridge_auth_ref,
+                    ),
+                    _session_smoke_agent_config(
+                        agent_id=agent_ids["self_service"],
+                        display_name="Session Smoke Self Service",
+                        provider_kind="local_cli",
+                        connection_kind="self_service",
+                        meeting_id=meeting_id,
+                        message=expected_messages[agent_ids["self_service"]],
+                        python_executable=python_executable,
                     ),
                 ],
             },
@@ -813,6 +840,8 @@ def _session_smoke_agent_config(
             ]
         )
         command = [python_executable, "-u", "-c", script]
+    elif connection_kind == "self_service":
+        command = [python_executable, "-u", "-c", _session_smoke_self_service_script(message)]
     else:
         script = f"import sys; sys.stdin.read(); print({message!r})"
         command = [python_executable, "-c", script]
@@ -826,6 +855,71 @@ def _session_smoke_agent_config(
         "command": command,
         "timeout_seconds": 5,
     }
+
+
+def _session_smoke_self_service_script(message: str) -> str:
+    return "\n".join(
+        [
+            "import json, os, subprocess, sys, time",
+            "SERVER = os.environ['AGENTSASSEMBLE_SERVER']",
+            "AGENT_ID = os.environ['AGENTSASSEMBLE_AGENT_ID']",
+            "MEETING_ID = os.environ.get('AGENTSASSEMBLE_MEETING_ID', '')",
+            "MESSAGE = " + repr(message),
+            "POLL = max(float(os.environ.get('AGENTSASSEMBLE_POLL_INTERVAL') or 0.05), 0.05)",
+            "MAX_CHAIN_DEPTH = os.environ.get('AGENTSASSEMBLE_MAX_CHAIN_DEPTH') or '0'",
+            "BASE = [sys.executable, '-m', 'agentsassemble.cli', 'live-agent']",
+            "",
+            "def cli(args, timeout=5):",
+            "    return subprocess.run(BASE + args, capture_output=True, text=True, timeout=timeout)",
+            "",
+            "def current_engagement_mode():",
+            "    room = cli(['room', '--server', SERVER, '--agent-id', AGENT_ID], timeout=3)",
+            "    if room.returncode != 0:",
+            "        return ''",
+            "    try:",
+            "        payload = json.loads(room.stdout or '{}')",
+            "    except json.JSONDecodeError:",
+            "        return ''",
+            "    agent = payload.get('agent') if isinstance(payload.get('agent'), dict) else {}",
+            "    return str(agent.get('engagement_mode') or '')",
+            "",
+            "while True:",
+            "    wait = cli([",
+            "        'wait-next', '--server', SERVER, '--agent-id', AGENT_ID,",
+            "        '--timeout', '1', '--poll-interval', str(POLL),",
+            "        '--max-chain-depth', MAX_CHAIN_DEPTH, '--json',",
+            "    ], timeout=3)",
+            "    if wait.returncode != 0:",
+            "        time.sleep(POLL)",
+            "        continue",
+            "    try:",
+            "        payload = json.loads(wait.stdout or '{}')",
+            "    except json.JSONDecodeError:",
+            "        time.sleep(POLL)",
+            "        continue",
+            "    if payload.get('status') != 'event':",
+            "        time.sleep(POLL)",
+            "        continue",
+            "    action = payload.get('action')",
+            "    source_event_id = str(payload.get('source_event_id') or '')",
+            "    if action == 'official_turn' and source_event_id:",
+            "        meeting_id = str(payload.get('meeting_id') or MEETING_ID)",
+            "        if meeting_id:",
+            "            cli([",
+            "                'official-reply', '--server', SERVER, '--agent-id', AGENT_ID,",
+            "                '--meeting-id', meeting_id, '--source-event-id', source_event_id,",
+            "                '--json', MESSAGE,",
+            "            ])",
+            "    elif action == 'lobby' and source_event_id and current_engagement_mode() == 'always':",
+            "        auto_chain_depth = str(payload.get('auto_chain_depth') or '1')",
+            "        cli([",
+            "            'say', '--server', SERVER, '--agent-id', AGENT_ID,",
+            "            '--source-event-id', source_event_id, '--auto-chain-depth', auto_chain_depth,",
+            "            '--json', MESSAGE,",
+            "        ])",
+            "    time.sleep(POLL)",
+        ]
+    )
 
 
 def _set_session_smoke_engagement(

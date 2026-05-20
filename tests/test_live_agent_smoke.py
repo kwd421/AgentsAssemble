@@ -16,6 +16,56 @@ from agentsassemble.live_agent_smoke import (
 )
 
 
+SESSION_SMOKE_AGENT_IDS = [
+    "session-smoke-local-cli",
+    "session-smoke-live-session",
+    "session-smoke-remote-bridge",
+    "session-smoke-self-service",
+]
+
+SESSION_SMOKE_CONNECTION_KINDS = ["local_cli", "live_session", "remote_bridge", "self_service"]
+
+SESSION_SMOKE_MESSAGES = {
+    "session-smoke-local-cli": "session smoke local_cli ok",
+    "session-smoke-live-session": "session smoke live_session ok",
+    "session-smoke-remote-bridge": "session smoke remote_bridge ok",
+    "session-smoke-self-service": "session smoke self_service ok",
+}
+
+
+def _session_smoke_lobby_reply_events(probe_id: str, *, group_id: str = "session-smoke") -> list[dict[str, object]]:
+    return [
+        {
+            "id": f"reply-local-{probe_id}",
+            "actor_id": f"{group_id}-local-cli",
+            "message": "session smoke local_cli ok",
+            "source_event_id": probe_id,
+            "live_agent_endpoint": True,
+        },
+        {
+            "id": f"reply-session-{probe_id}",
+            "actor_id": f"{group_id}-live-session",
+            "message": "session smoke live_session ok",
+            "source_event_id": probe_id,
+            "live_agent_endpoint": True,
+        },
+        {
+            "id": f"reply-bridge-{probe_id}",
+            "actor_id": f"{group_id}-remote-bridge",
+            "message": "session smoke remote_bridge ok",
+            "source_event_id": probe_id,
+            "live_agent_endpoint": True,
+        },
+        {
+            "id": f"reply-self-service-{probe_id}",
+            "actor_id": f"{group_id}-self-service",
+            "message": "session smoke self_service ok",
+            "source_event_id": probe_id,
+            "live_agent_endpoint": True,
+        },
+    ]
+
+
 class LiveAgentSmokeTests(unittest.TestCase):
     def test_session_smoke_runs_start_reply_check_resume_restart_and_stop_sequence(self):
         calls = []
@@ -32,19 +82,25 @@ class LiveAgentSmokeTests(unittest.TestCase):
                 live_config = json.loads(Path(payload["live_agent_config_path"]).read_text(encoding="utf-8"))
                 self.assertEqual(
                     [agent["agent_id"] for agent in live_config["agents"]],
-                    ["session-smoke-local-cli", "session-smoke-live-session", "session-smoke-remote-bridge"],
+                    SESSION_SMOKE_AGENT_IDS,
                 )
                 self.assertEqual(
                     [agent["connection_kind"] for agent in live_config["agents"]],
-                    ["local_cli", "live_session", "remote_bridge"],
+                    SESSION_SMOKE_CONNECTION_KINDS,
                 )
+                self_service_command = " ".join(str(part) for part in live_config["agents"][3]["command"])
+                self.assertIn("wait-next", self_service_command)
+                self.assertIn("official-reply", self_service_command)
+                self.assertIn("'say'", self_service_command)
+                self.assertIn("'room'", self_service_command)
+                self.assertNotIn("stdin.read", self_service_command)
                 self.assertEqual(live_config["max_chain_depth"], 0)
                 agent_config = json.loads(Path(payload["agent_config_path"]).read_text(encoding="utf-8"))
                 self.assertEqual(
                     [provider["kind"] for provider in agent_config["providers"]],
                     ["local_cli", "remote_http_bridge"],
                 )
-                self.assertEqual(len(agent_config["agent_bindings"]), 3)
+                self.assertEqual(len(agent_config["agent_bindings"]), 4)
                 meeting_dir = state["root"] / "meetings" / payload["meeting_id"]
                 meeting_dir.mkdir(parents=True, exist_ok=True)
                 (meeting_dir / "live_state.json").write_text(
@@ -56,7 +112,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "status": "ready",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
                 }
             if url.endswith("/live-agent-turns/rounds"):
                 self.assertEqual(payload["max_rounds"], 1)
@@ -84,52 +140,28 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     return {"events": [{"id": "old", "message": "old chatter"}]}
                 events = []
                 for probe_id in state["probe_ids"]:
-                    events.extend(
-                        [
-                            {
-                                "id": f"reply-local-{probe_id}",
-                                "actor_id": "session-smoke-local-cli",
-                                "message": "session smoke local_cli ok",
-                                "source_event_id": probe_id,
-                                "live_agent_endpoint": True,
-                            },
-                            {
-                                "id": f"reply-session-{probe_id}",
-                                "actor_id": "session-smoke-live-session",
-                                "message": "session smoke live_session ok",
-                                "source_event_id": probe_id,
-                                "live_agent_endpoint": True,
-                            },
-                            {
-                                "id": f"reply-bridge-{probe_id}",
-                                "actor_id": "session-smoke-remote-bridge",
-                                "message": "session smoke remote_bridge ok",
-                                "source_event_id": probe_id,
-                                "live_agent_endpoint": True,
-                            },
-                        ]
-                    )
+                    events.extend(_session_smoke_lobby_reply_events(probe_id))
                 return {"events": events}
             if url.endswith("/api/live-agent-sessions/check"):
                 return {
                     "status": "ready",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
                 }
             if url.endswith("/api/live-agent-sessions/resume"):
                 return {
                     "status": "ready",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
                 }
             if url.endswith("/api/live-agent-sessions/restart"):
                 return {
                     "status": "ready",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
                 }
             if url.endswith("/api/live-agent-processes"):
                 return {
@@ -143,6 +175,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                                 {"agent_id": "session-smoke-local-cli"},
                                 {"agent_id": "session-smoke-live-session"},
                                 {"agent_id": "session-smoke-remote-bridge"},
+                                {"agent_id": "session-smoke-self-service"},
                             ],
                         }
                     ]
@@ -156,14 +189,14 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "status": "ready",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
                 }
             if url.endswith("/api/live-agent-sessions/stop"):
                 return {
                     "status": "stopped",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "offline": {"expected": 3, "offline": 3, "attention": []},
+                    "offline": {"expected": 4, "offline": 4, "attention": []},
                 }
             return {}
 
@@ -225,11 +258,11 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertEqual(result["rounds_status"], "answered")
         self.assertEqual(result["round_count"], 1)
         self.assertEqual(result["answered_round_count"], 1)
-        self.assertEqual(result["expected_reply_count"], 3)
-        self.assertEqual(result["reply_count"], 3)
-        self.assertEqual(result["post_restart_reply_count"], 3)
+        self.assertEqual(result["expected_reply_count"], 4)
+        self.assertEqual(result["reply_count"], 4)
+        self.assertEqual(result["post_restart_reply_count"], 4)
         self.assertEqual(result["post_restart_source_event_id"], "session-probe-2")
-        self.assertEqual(result["post_recover_reply_count"], 3)
+        self.assertEqual(result["post_recover_reply_count"], 4)
         self.assertEqual(result["post_recover_source_event_id"], "session-probe-3")
         self.assertEqual(result["start_status"], "ready")
         self.assertEqual(result["check_status"], "ready")
@@ -239,7 +272,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertEqual(result["stop_status"], "stopped")
         self.assertEqual(
             {reply["actor_id"] for reply in result["replies"]},
-            {"session-smoke-local-cli", "session-smoke-live-session", "session-smoke-remote-bridge"},
+            set(SESSION_SMOKE_AGENT_IDS),
         )
         self.assertEqual({reply["source_event_id"] for reply in result["post_restart_replies"]}, {"session-probe-2"})
         self.assertEqual({reply["source_event_id"] for reply in result["post_recover_replies"]}, {"session-probe-3"})
@@ -248,6 +281,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertNotIn("session smoke local_cli ok", serialized)
         self.assertNotIn("session smoke live_session ok", serialized)
         self.assertNotIn("session smoke remote_bridge ok", serialized)
+        self.assertNotIn("session smoke self_service ok", serialized)
         self.assertNotIn("agentsassemble-smoke-token", serialized)
         self.assertNotIn("command", serialized)
 
@@ -268,7 +302,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "status": "ready",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
                 }
             if url.endswith("/live-agent-turns/rounds"):
                 return {
@@ -290,31 +324,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
             if url.endswith("/api/lobby") and method == "GET":
                 events = []
                 for probe_id in state["probe_ids"]:
-                    events.extend(
-                        [
-                            {
-                                "id": f"reply-local-{probe_id}",
-                                "actor_id": "session-smoke-local-cli",
-                                "message": "session smoke local_cli ok",
-                                "source_event_id": probe_id,
-                                "live_agent_endpoint": True,
-                            },
-                            {
-                                "id": f"reply-session-{probe_id}",
-                                "actor_id": "session-smoke-live-session",
-                                "message": "session smoke live_session ok",
-                                "source_event_id": probe_id,
-                                "live_agent_endpoint": True,
-                            },
-                            {
-                                "id": f"reply-bridge-{probe_id}",
-                                "actor_id": "session-smoke-remote-bridge",
-                                "message": "session smoke remote_bridge ok",
-                                "source_event_id": probe_id,
-                                "live_agent_endpoint": True,
-                            },
-                        ]
-                    )
+                    events.extend(_session_smoke_lobby_reply_events(probe_id))
                 return {"events": events}
             if (
                 url.endswith("/api/live-agent-sessions/check")
@@ -326,7 +336,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "status": "ready",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
                 }
             if url.endswith("/api/live-agent-processes"):
                 return {
@@ -340,6 +350,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                                 {"agent_id": "session-smoke-local-cli"},
                                 {"agent_id": "session-smoke-live-session"},
                                 {"agent_id": "session-smoke-remote-bridge"},
+                                {"agent_id": "session-smoke-self-service"},
                             ],
                         }
                     ]
@@ -349,7 +360,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "status": "stopped",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "offline": {"expected": 3, "offline": 3, "attention": []},
+                    "offline": {"expected": 4, "offline": 4, "attention": []},
                 }
             return {}
 
@@ -382,9 +393,9 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertEqual(result["source_event_ids"], ["probe-1", "probe-2"])
         self.assertEqual(result["post_restart_source_event_ids"], ["probe-3", "probe-4"])
         self.assertEqual(result["post_recover_source_event_ids"], ["probe-5", "probe-6"])
-        self.assertEqual(result["reply_count"], 6)
-        self.assertEqual(result["post_restart_reply_count"], 6)
-        self.assertEqual(result["post_recover_reply_count"], 6)
+        self.assertEqual(result["reply_count"], 8)
+        self.assertEqual(result["post_restart_reply_count"], 8)
+        self.assertEqual(result["post_recover_reply_count"], 8)
         self.assertEqual({reply["source_event_id"] for reply in result["replies"]}, {"probe-1", "probe-2"})
         self.assertEqual({reply["source_event_id"] for reply in result["post_restart_replies"]}, {"probe-3", "probe-4"})
         self.assertEqual({reply["source_event_id"] for reply in result["post_recover_replies"]}, {"probe-5", "probe-6"})
@@ -406,7 +417,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "status": "ready",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
                 }
             if url.endswith("/live-agent-turns/rounds"):
                 return {
@@ -428,31 +439,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
             if url.endswith("/api/lobby") and method == "GET":
                 events = []
                 for probe_id in state["probe_ids"]:
-                    events.extend(
-                        [
-                            {
-                                "id": f"reply-local-{probe_id}",
-                                "actor_id": "session-smoke-local-cli",
-                                "message": "session smoke local_cli ok",
-                                "source_event_id": probe_id,
-                                "live_agent_endpoint": True,
-                            },
-                            {
-                                "id": f"reply-session-{probe_id}",
-                                "actor_id": "session-smoke-live-session",
-                                "message": "session smoke live_session ok",
-                                "source_event_id": probe_id,
-                                "live_agent_endpoint": True,
-                            },
-                            {
-                                "id": f"reply-bridge-{probe_id}",
-                                "actor_id": "session-smoke-remote-bridge",
-                                "message": "session smoke remote_bridge ok",
-                                "source_event_id": probe_id,
-                                "live_agent_endpoint": True,
-                            },
-                        ]
-                    )
+                    events.extend(_session_smoke_lobby_reply_events(probe_id))
                 return {"events": events}
             if url.endswith("/api/live-agent-sessions/check"):
                 state["check_count"] += 1
@@ -460,7 +447,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "status": "ready",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
                 }
             if (
                 url.endswith("/api/live-agent-sessions/resume")
@@ -471,7 +458,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "status": "ready",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "connection": {"expected": 3, "connected": 3, "attention": []},
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
                 }
             if url.endswith("/api/live-agent-processes"):
                 return {
@@ -485,6 +472,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                                 {"agent_id": "session-smoke-local-cli"},
                                 {"agent_id": "session-smoke-live-session"},
                                 {"agent_id": "session-smoke-remote-bridge"},
+                                {"agent_id": "session-smoke-self-service"},
                             ],
                         }
                     ]
@@ -494,7 +482,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "status": "stopped",
                     "meeting_id": payload["meeting_id"],
                     "group_id": payload["group_id"],
-                    "offline": {"expected": 3, "offline": 3, "attention": []},
+                    "offline": {"expected": 4, "offline": 4, "attention": []},
                 }
             return {}
 
@@ -531,7 +519,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertEqual(result["soak_interval_seconds"], 0.5)
         self.assertEqual(result["soak_check_statuses"], ["ready", "ready"])
         self.assertEqual(result["soak_source_event_ids"], ["probe-4", "probe-5"])
-        self.assertEqual(result["soak_reply_count"], 6)
+        self.assertEqual(result["soak_reply_count"], 8)
         self.assertEqual({reply["source_event_id"] for reply in result["soak_replies"]}, {"probe-4", "probe-5"})
 
     def test_session_smoke_bounds_lobby_probe_count_before_side_effects(self):
@@ -603,20 +591,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
             if url.endswith("/api/lobby") and method == "GET":
                 events = []
                 for probe_id in state["probe_ids"]:
-                    for agent_id, message in [
-                        ("session-smoke-local-cli", "session smoke local_cli ok"),
-                        ("session-smoke-live-session", "session smoke live_session ok"),
-                        ("session-smoke-remote-bridge", "session smoke remote_bridge ok"),
-                    ]:
-                        events.append(
-                            {
-                                "id": f"reply-{agent_id}-{probe_id}",
-                                "actor_id": agent_id,
-                                "message": message,
-                                "source_event_id": probe_id,
-                                "live_agent_endpoint": True,
-                            }
-                        )
+                    events.extend(_session_smoke_lobby_reply_events(probe_id))
                 return {"events": events}
             if url.endswith("/api/live-agent-sessions/check"):
                 state["check_count"] += 1
@@ -638,6 +613,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                                 {"agent_id": "session-smoke-local-cli"},
                                 {"agent_id": "session-smoke-live-session"},
                                 {"agent_id": "session-smoke-remote-bridge"},
+                                {"agent_id": "session-smoke-self-service"},
                             ],
                         }
                     ]
@@ -687,7 +663,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                         "status": "ready",
                         "meeting_id": payload["meeting_id"],
                         "group_id": payload["group_id"],
-                        "connection": {"expected": 3, "connected": 3, "attention": []},
+                        "connection": {"expected": 4, "connected": 4, "attention": []},
                     }
                 if url.endswith("/live-agent-turns/rounds"):
                     return {
@@ -713,31 +689,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     group_id = state["group_id"]
                     events = []
                     for probe_id in state["probe_ids"]:
-                        events.extend(
-                            [
-                                {
-                                    "id": f"reply-{group_id}-local-{probe_id}",
-                                    "actor_id": f"{group_id}-local-cli",
-                                    "message": "session smoke local_cli ok",
-                                    "source_event_id": probe_id,
-                                    "live_agent_endpoint": True,
-                                },
-                                {
-                                    "id": f"reply-{group_id}-session-{probe_id}",
-                                    "actor_id": f"{group_id}-live-session",
-                                    "message": "session smoke live_session ok",
-                                    "source_event_id": probe_id,
-                                    "live_agent_endpoint": True,
-                                },
-                                {
-                                    "id": f"reply-{group_id}-bridge-{probe_id}",
-                                    "actor_id": f"{group_id}-remote-bridge",
-                                    "message": "session smoke remote_bridge ok",
-                                    "source_event_id": probe_id,
-                                    "live_agent_endpoint": True,
-                                },
-                            ]
-                        )
+                        events.extend(_session_smoke_lobby_reply_events(probe_id, group_id=group_id))
                     return {"events": events}
                 if (
                     url.endswith("/api/live-agent-sessions/check")
@@ -749,7 +701,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                         "status": "ready",
                         "meeting_id": payload["meeting_id"],
                         "group_id": payload["group_id"],
-                        "connection": {"expected": 3, "connected": 3, "attention": []},
+                        "connection": {"expected": 4, "connected": 4, "attention": []},
                     }
                 if url.endswith("/api/live-agent-processes"):
                     return {
@@ -763,6 +715,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                                     {"agent_id": f"{state['group_id']}-local-cli"},
                                     {"agent_id": f"{state['group_id']}-live-session"},
                                     {"agent_id": f"{state['group_id']}-remote-bridge"},
+                                    {"agent_id": f"{state['group_id']}-self-service"},
                                 ],
                             }
                         ]
@@ -772,7 +725,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                         "status": "stopped",
                         "meeting_id": payload["meeting_id"],
                         "group_id": payload["group_id"],
-                        "offline": {"expected": 3, "offline": 3, "attention": []},
+                        "offline": {"expected": 4, "offline": 4, "attention": []},
                     }
                 return {}
 
@@ -818,6 +771,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                             {"agent_id": "session-smoke-local-cli"},
                             {"agent_id": "session-smoke-live-session"},
                             {"agent_id": "session-smoke-remote-bridge"},
+                            {"agent_id": "session-smoke-self-service"},
                         ],
                     }
                 ]
@@ -831,6 +785,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                 "session-smoke-local-cli",
                 "session-smoke-live-session",
                 "session-smoke-remote-bridge",
+                "session-smoke-self-service",
             ],
             request_json=request_json,
             sleep_fn=lambda seconds: None,
@@ -847,6 +802,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
             "session-smoke-local-cli",
             "session-smoke-live-session",
             "session-smoke-remote-bridge",
+            "session-smoke-self-service",
         ]
 
         unsafe_groups = [

@@ -147,13 +147,13 @@ class MeetingEventLog:
         return [event.to_dict() for event in self._events]
 
 
-def read_lobby_events(path: Path, limit: int = 80) -> list[dict[str, object]]:
+def read_lobby_events(path: Path, limit: int | None = 80) -> list[dict[str, object]]:
     if not path.exists():
         return []
     return _read_lobby_event_tail(path, limit=limit, default_channel="lobby")
 
 
-def read_side_chat_events(path: Path, limit: int = 120) -> list[dict[str, object]]:
+def read_side_chat_events(path: Path, limit: int | None = 120) -> list[dict[str, object]]:
     if not path.exists():
         return []
     return _read_lobby_event_tail(path, limit=limit, default_channel="side_chat")
@@ -250,10 +250,10 @@ def read_live_events_after(meeting_dir: Path, last_event_id: str | None, limit: 
 def _read_lobby_event_tail(
     path: Path,
     *,
-    limit: int,
+    limit: int | None,
     default_channel: Literal["lobby", "side_chat"],
 ) -> list[dict[str, object]]:
-    if limit <= 0:
+    if limit is not None and limit <= 0:
         return []
     entries: list[dict[str, object]] = []
     for line in _jsonl_tail_lines_newest_first(path):
@@ -261,7 +261,7 @@ def _read_lobby_event_tail(
         if event is None:
             continue
         entries.append(event.to_dict())
-        if len(entries) >= limit:
+        if limit is not None and len(entries) >= limit:
             break
     entries.reverse()
     return entries

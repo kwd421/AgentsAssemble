@@ -1529,7 +1529,12 @@ class GuiServerTests(unittest.TestCase):
             "status": "ok",
             "meeting_id": "session-smoke-meeting",
             "group_id": "session-smoke",
-            "agent_ids": ["session-smoke-local-cli", "session-smoke-live-session", "session-smoke-remote-bridge"],
+            "agent_ids": [
+                "session-smoke-local-cli",
+                "session-smoke-live-session",
+                "session-smoke-remote-bridge",
+                "session-smoke-self-service",
+            ],
             "source_event_id": "probe-secret",
             "rounds_status": "answered",
             "round_count": 1,
@@ -1537,30 +1542,32 @@ class GuiServerTests(unittest.TestCase):
             "completed_round_count": 0,
             "timeout_round_count": 0,
             "skipped_round_count": 0,
-            "expected_reply_count": 3,
+            "expected_reply_count": 4,
             "lobby_probe_count": 2,
             "source_event_ids": ["probe-secret", "probe-secret-2"],
-            "reply_count": 6,
+            "reply_count": 8,
             "post_restart_source_event_id": "post-restart-secret",
             "post_restart_source_event_ids": ["post-restart-secret", "post-restart-secret-2"],
-            "post_restart_reply_count": 6,
+            "post_restart_reply_count": 8,
             "post_recover_source_event_id": "post-recover-secret",
             "post_recover_source_event_ids": ["post-recover-secret", "post-recover-secret-2"],
-            "post_recover_reply_count": 6,
+            "post_recover_reply_count": 8,
             "soak_cycle_count": 2,
             "soak_interval_seconds": 0.5,
             "soak_check_statuses": ["ready", "ready"],
             "soak_source_event_ids": ["soak-secret", "soak-secret-2"],
-            "soak_reply_count": 6,
+            "soak_reply_count": 8,
             "soak_replies": [
                 {"id": "reply-soak-local", "actor_id": "session-smoke-local-cli", "source_event_id": "soak-secret"},
                 {"id": "reply-soak-session", "actor_id": "session-smoke-live-session", "source_event_id": "soak-secret"},
                 {"id": "reply-soak-bridge", "actor_id": "session-smoke-remote-bridge", "source_event_id": "soak-secret"},
+                {"id": "reply-soak-self-service", "actor_id": "session-smoke-self-service", "source_event_id": "soak-secret"},
             ],
             "replies": [
                 {"id": "reply-local", "actor_id": "session-smoke-local-cli", "source_event_id": "probe-secret"},
                 {"id": "reply-session", "actor_id": "session-smoke-live-session", "source_event_id": "probe-secret"},
                 {"id": "reply-bridge", "actor_id": "session-smoke-remote-bridge", "source_event_id": "probe-secret"},
+                {"id": "reply-self-service", "actor_id": "session-smoke-self-service", "source_event_id": "probe-secret"},
             ],
             "post_restart_replies": [
                 {
@@ -1578,6 +1585,11 @@ class GuiServerTests(unittest.TestCase):
                     "actor_id": "session-smoke-remote-bridge",
                     "source_event_id": "post-restart-secret",
                 },
+                {
+                    "id": "reply-post-self-service",
+                    "actor_id": "session-smoke-self-service",
+                    "source_event_id": "post-restart-secret",
+                },
             ],
             "post_recover_replies": [
                 {
@@ -1593,6 +1605,11 @@ class GuiServerTests(unittest.TestCase):
                 {
                     "id": "reply-recover-bridge",
                     "actor_id": "session-smoke-remote-bridge",
+                    "source_event_id": "post-recover-secret",
+                },
+                {
+                    "id": "reply-recover-self-service",
+                    "actor_id": "session-smoke-self-service",
                     "source_event_id": "post-recover-secret",
                 },
             ],
@@ -1656,11 +1673,11 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(session_operations[-1]["details"]["rounds_status"], "answered")
         self.assertEqual(session_operations[-1]["details"]["answered_round_count"], 1)
         self.assertEqual(session_operations[-1]["details"]["lobby_probe_count"], 2)
-        self.assertEqual(session_operations[-1]["details"]["reply_count"], 6)
-        self.assertEqual(session_operations[-1]["details"]["post_restart_reply_count"], 6)
-        self.assertEqual(session_operations[-1]["details"]["post_recover_reply_count"], 6)
+        self.assertEqual(session_operations[-1]["details"]["reply_count"], 8)
+        self.assertEqual(session_operations[-1]["details"]["post_restart_reply_count"], 8)
+        self.assertEqual(session_operations[-1]["details"]["post_recover_reply_count"], 8)
         self.assertEqual(session_operations[-1]["details"]["soak_cycle_count"], 2)
-        self.assertEqual(session_operations[-1]["details"]["soak_reply_count"], 6)
+        self.assertEqual(session_operations[-1]["details"]["soak_reply_count"], 8)
         self.assertEqual(session_operations[-1]["details"]["soak_check_statuses"], ["ready", "ready"])
         self.assertEqual(session_operations[-1]["details"]["resume_status"], "ready")
         self.assertEqual(session_operations[-1]["details"]["recover_status"], "ready")
@@ -1676,15 +1693,19 @@ class GuiServerTests(unittest.TestCase):
         self.assertNotIn("reply-local", operation_blob)
         self.assertNotIn("reply-session", operation_blob)
         self.assertNotIn("reply-bridge", operation_blob)
+        self.assertNotIn("reply-self-service", operation_blob)
         self.assertNotIn("reply-post-local", operation_blob)
         self.assertNotIn("reply-post-session", operation_blob)
         self.assertNotIn("reply-post-bridge", operation_blob)
+        self.assertNotIn("reply-post-self-service", operation_blob)
         self.assertNotIn("reply-recover-local", operation_blob)
         self.assertNotIn("reply-recover-session", operation_blob)
         self.assertNotIn("reply-recover-bridge", operation_blob)
+        self.assertNotIn("reply-recover-self-service", operation_blob)
         self.assertNotIn("reply-soak-local", operation_blob)
         self.assertNotIn("reply-soak-session", operation_blob)
         self.assertNotIn("reply-soak-bridge", operation_blob)
+        self.assertNotIn("reply-soak-self-service", operation_blob)
 
     def test_live_agent_session_smoke_endpoint_records_safe_failure(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1788,10 +1809,10 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["rounds_status"], "answered")
             self.assertEqual(payload["round_count"], 1)
             self.assertEqual(payload["answered_round_count"], 1)
-            self.assertEqual(payload["expected_reply_count"], 3)
-            self.assertEqual(payload["reply_count"], 3)
-            self.assertEqual(payload["post_restart_reply_count"], 3)
-            self.assertEqual(payload["post_recover_reply_count"], 3)
+            self.assertEqual(payload["expected_reply_count"], 4)
+            self.assertEqual(payload["reply_count"], 4)
+            self.assertEqual(payload["post_restart_reply_count"], 4)
+            self.assertEqual(payload["post_recover_reply_count"], 4)
             self.assertEqual(payload["recover_status"], "ready")
             self.assertNotEqual(payload["post_restart_source_event_id"], payload["source_event_id"])
             self.assertNotEqual(payload["post_recover_source_event_id"], payload["post_restart_source_event_id"])
@@ -1809,20 +1830,20 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(meeting["diagnostic_kind"], "session_smoke")
             live_events = read_live_events(meeting_dir, limit=None)
             official_replies = [event for event in live_events if event.get("kind") == "message" and event.get("official_record") is True]
-            self.assertEqual(len(official_replies), 3)
+            self.assertEqual(len(official_replies), 4)
             lobby_replies = [event for event in read_lobby(root) if event.get("actor_id") in payload["agent_ids"]]
-            self.assertEqual(len(lobby_replies), 9)
+            self.assertEqual(len(lobby_replies), 12)
             self.assertEqual(
                 len([event for event in lobby_replies if event.get("source_event_id") == payload["source_event_id"]]),
-                3,
+                4,
             )
             self.assertEqual(
                 len([event for event in lobby_replies if event.get("source_event_id") == payload["post_restart_source_event_id"]]),
-                3,
+                4,
             )
             self.assertEqual(
                 len([event for event in lobby_replies if event.get("source_event_id") == payload["post_recover_source_event_id"]]),
-                3,
+                4,
             )
             agents = read_live_agents(root)
             self.assertEqual({agent["diagnostic"] for agent in agents if agent["agent_id"] in payload["agent_ids"]}, {True})
@@ -1837,6 +1858,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("session smoke local_cli ok", operation_blob)
             self.assertNotIn("session smoke live_session ok", operation_blob)
             self.assertNotIn("session smoke remote_bridge ok", operation_blob)
+            self.assertNotIn("session smoke self_service ok", operation_blob)
             self.assertNotIn("agentsassemble-smoke-token", operation_blob)
             self.assertNotIn("auth_ref", operation_blob)
             self.assertNotIn("config_path", operation_blob)
@@ -9026,6 +9048,136 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(persisted_agent["last_error"], "")
         self.assertEqual(persisted_agent["last_observed_event_id"], "evt1")
         self.assertEqual(persisted_agent["last_observed_live_event_id"], "live-evt0")
+
+    def test_live_agent_lobby_message_is_idempotent_for_same_actor_and_source(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(root, {"agent_id": "gemini-cli", "display_name": "Gemini CLI"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request_body = json.dumps(
+                    {"message": "자동 반응", "source_event_id": "evt1", "auto_chain_depth": 1}
+                ).encode("utf-8")
+                first_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/gemini-cli/lobby",
+                    data=request_body,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(first_request, timeout=4) as response:
+                    first = json.loads(response.read().decode("utf-8"))
+                second_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/gemini-cli/lobby",
+                    data=request_body,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(second_request, timeout=4) as response:
+                    second = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            matching_events = [
+                event
+                for event in read_lobby(root)
+                if event.get("actor_id") == "gemini-cli" and event.get("source_event_id") == "evt1"
+            ]
+
+        self.assertEqual(first["event"]["id"], second["event"]["id"])
+        self.assertEqual(len(matching_events), 1)
+
+    def test_live_agent_lobby_message_idempotency_checks_full_lobby_history(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(root, {"agent_id": "gemini-cli", "display_name": "Gemini CLI"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                first_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/gemini-cli/lobby",
+                    data=json.dumps({"message": "자동 반응", "source_event_id": "evt1"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(first_request, timeout=4) as response:
+                    first = json.loads(response.read().decode("utf-8"))
+                for index in range(81):
+                    append_lobby_event(root, {"name": "human", "message": f"filler {index}"})
+                second_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/gemini-cli/lobby",
+                    data=json.dumps({"message": "자동 반응", "source_event_id": "evt1"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(second_request, timeout=4) as response:
+                    second = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            matching_events = [
+                event
+                for event in read_lobby(root, limit=200)
+                if event.get("actor_id") == "gemini-cli" and event.get("source_event_id") == "evt1"
+            ]
+
+        self.assertEqual(first["event"]["id"], second["event"]["id"])
+        self.assertEqual(len(matching_events), 1)
+
+    def test_live_agent_lobby_message_idempotency_is_thread_safe(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(root, {"agent_id": "gemini-cli", "display_name": "Gemini CLI"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            original_append = append_lobby_event
+
+            def slow_append(*args, **kwargs):
+                time.sleep(0.05)
+                return original_append(*args, **kwargs)
+
+            responses: list[dict[str, object]] = []
+            errors: list[BaseException] = []
+
+            def post_reply() -> None:
+                try:
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agents/gemini-cli/lobby",
+                        data=json.dumps({"message": "자동 반응", "source_event_id": "evt1"}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=4) as response:
+                        responses.append(json.loads(response.read().decode("utf-8")))
+                except BaseException as error:
+                    errors.append(error)
+
+            try:
+                with patch("agentsassemble.gui.append_lobby_event", side_effect=slow_append):
+                    threads = [threading.Thread(target=post_reply), threading.Thread(target=post_reply)]
+                    for worker in threads:
+                        worker.start()
+                    for worker in threads:
+                        worker.join(timeout=4)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            matching_events = [
+                event
+                for event in read_lobby(root)
+                if event.get("actor_id") == "gemini-cli" and event.get("source_event_id") == "evt1"
+            ]
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(responses), 2)
+        self.assertEqual(responses[0]["event"]["id"], responses[1]["event"]["id"])
+        self.assertEqual(len(matching_events), 1)
 
     def test_live_agent_lobby_message_without_source_preserves_existing_cursors(self):
         with tempfile.TemporaryDirectory() as temp_dir:

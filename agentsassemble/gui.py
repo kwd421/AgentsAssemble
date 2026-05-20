@@ -77,6 +77,7 @@ MAX_READINESS_PROBE_AGENTS = 10
 OFFICIAL_ROUND_SMOKE_ERROR = "official round smoke could not be run"
 SESSION_SMOKE_ERROR = "session smoke could not be run"
 LIVE_AGENT_TURN_LOCK = threading.Lock()
+LIVE_AGENT_LOBBY_LOCK = threading.Lock()
 MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
 MAX_LIVE_AGENT_ROUND_BATCH = 8
 LIVE_AGENT_ROUND_SCHEDULER_LOCKS: dict[str, threading.RLock] = {}
@@ -334,7 +335,7 @@ def _read_optional(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
-def read_lobby(output_root: Path, limit: int = 80) -> list[dict[str, object]]:
+def read_lobby(output_root: Path, limit: int | None = 80) -> list[dict[str, object]]:
     return read_lobby_events(output_root / "lobby.jsonl", limit=limit)
 
 
@@ -1030,33 +1031,65 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
     message = str(payload.get("message") or "").strip()
     if not message:
         raise ValueError("Message is required.")
-    event = append_lobby_event(
-        output_root,
-        {
-            "name": agent.get("display_name") or agent.get("agent_id") or agent_id,
-            "side": "other-agent",
-            "kind": payload.get("kind") or "message",
-            "message": message,
-            "actor_id": agent.get("agent_id") or agent_id,
-            "source_event_id": payload.get("source_event_id") or "",
-            "auto_chain_depth": payload.get("auto_chain_depth") or 0,
-        },
-        live_agent_endpoint=True,
-    )
-    reply_metadata: dict[str, object] = {
-        "last_error": "",
-        "last_reply_at": event.get("created_at") or datetime.now(UTC).isoformat(),
-    }
-    source_event_id = clean_lobby_text(event.get("source_event_id"), limit=128)
-    if source_event_id:
-        reply_metadata["last_observed_event_id"] = source_event_id
-    updated_agent = heartbeat_live_agent(
-        output_root,
-        str(agent.get("agent_id") or agent_id),
-        status="online",
-        metadata=reply_metadata,
-    )
-    return {"agent": updated_agent, "event": event, "events": read_lobby(output_root)}
+    actor_id = str(agent.get("agent_id") or agent_id)
+    source_event_id = clean_lobby_text(payload.get("source_event_id"), limit=128)
+    with LIVE_AGENT_LOBBY_LOCK:
+        existing_event = _existing_live_agent_lobby_reply(output_root, actor_id=actor_id, source_event_id=source_event_id)
+        if existing_event is not None:
+            updated_agent = heartbeat_live_agent(
+                output_root,
+                actor_id,
+                status="online",
+                metadata={
+                    "last_error": "",
+                    "last_reply_at": existing_event.get("created_at") or datetime.now(UTC).isoformat(),
+                    "last_observed_event_id": source_event_id,
+                },
+            )
+            return {"agent": updated_agent, "event": existing_event, "events": read_lobby(output_root)}
+        event = append_lobby_event(
+            output_root,
+            {
+                "name": agent.get("display_name") or agent.get("agent_id") or agent_id,
+                "side": "other-agent",
+                "kind": payload.get("kind") or "message",
+                "message": message,
+                "actor_id": actor_id,
+                "source_event_id": source_event_id,
+                "auto_chain_depth": payload.get("auto_chain_depth") or 0,
+            },
+            live_agent_endpoint=True,
+        )
+        reply_metadata: dict[str, object] = {
+            "last_error": "",
+            "last_reply_at": event.get("created_at") or datetime.now(UTC).isoformat(),
+        }
+        event_source_id = clean_lobby_text(event.get("source_event_id"), limit=128)
+        if event_source_id:
+            reply_metadata["last_observed_event_id"] = event_source_id
+        updated_agent = heartbeat_live_agent(
+            output_root,
+            actor_id,
+            status="online",
+            metadata=reply_metadata,
+        )
+        return {"agent": updated_agent, "event": event, "events": read_lobby(output_root)}
+
+
+def _existing_live_agent_lobby_reply(output_root: Path, *, actor_id: str, source_event_id: str) -> dict[str, object] | None:
+    if not source_event_id:
+        return None
+    for event in reversed(read_lobby(output_root, limit=None)):
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("actor_id") or "") != actor_id:
+            continue
+        if clean_lobby_text(event.get("source_event_id"), limit=128) != source_event_id:
+            continue
+        if event.get("live_agent_endpoint") is not True:
+            continue
+        return event
+    return None
 
 
 def live_agent_turn_request_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
