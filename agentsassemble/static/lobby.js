@@ -819,9 +819,16 @@ function renderLiveAgentDiscoveryNextCommands(report) {
 function renderLiveAgentDiscoveryRow(discovery) {
   const command = String(discovery?.command || "unknown");
   const providerKind = String(discovery?.provider_kind || "unknown");
+  const entryMode = String(discovery?.entry_mode || discovery?.connection_kind || "");
+  const entryStatus = String(discovery?.entry_status || "");
+  const operatorAction = String(discovery?.operator_action || "");
+  const approval = discovery?.requires_approval ? "approval required" : "";
+  const safetyNote = String(discovery?.safety_note || "");
   const reason = String(discovery?.reason || "");
   const status = discovery?.included ? "included" : discovery?.available ? "skipped" : "missing";
-  const detail = reason ? `${providerKind} · ${reason}` : providerKind;
+  const detail = [providerKind, entryMode, entryStatus || reason, operatorAction, approval, safetyNote]
+    .filter(Boolean)
+    .join(" · ");
   return `
     <article class="live-agent-discovery-row live-agent-discovery-${escapeHtml(status)}">
       <div>

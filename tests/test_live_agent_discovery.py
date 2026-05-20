@@ -45,6 +45,40 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         self.assertEqual(gemini["reason"], "legacy")
         self.assertTrue(all("path" not in discovery for discovery in report["discoveries"]))
 
+    def test_discovery_explains_each_entry_mode_and_operator_action(self):
+        def resolver(command):
+            return f"/opt/bin/{command}" if command in {"claude", "codex", "gemini"} else None
+
+        report = build_discovered_live_agent_config(
+            server="http://room.local",
+            meeting_id="resident-m1",
+            command_resolver=resolver,
+        )
+
+        discoveries = {item["command"]: item for item in report["discoveries"]}
+        self.assertEqual(discoveries["claude"]["entry_status"], "ready")
+        self.assertEqual(discoveries["claude"]["entry_mode"], "terminal_session")
+        self.assertEqual(discoveries["claude"]["operator_action"], "auto_join")
+        self.assertTrue(discoveries["claude"]["requires_approval"])
+        self.assertIn("preflight", discoveries["claude"]["safety_note"])
+
+        self.assertEqual(discoveries["codex"]["entry_status"], "ready")
+        self.assertEqual(discoveries["codex"]["entry_mode"], "codex_live_session")
+        self.assertEqual(discoveries["codex"]["operator_action"], "auto_join")
+        self.assertTrue(discoveries["codex"]["requires_approval"])
+        self.assertIn("Codex", discoveries["codex"]["safety_note"])
+
+        self.assertEqual(discoveries["antigravity"]["entry_status"], "missing")
+        self.assertEqual(discoveries["antigravity"]["entry_mode"], "self_service")
+        self.assertEqual(discoveries["antigravity"]["operator_action"], "install_cli")
+        self.assertFalse(discoveries["antigravity"]["requires_approval"])
+
+        self.assertEqual(discoveries["gemini"]["entry_status"], "legacy")
+        self.assertEqual(discoveries["gemini"]["entry_mode"], "terminal_session")
+        self.assertEqual(discoveries["gemini"]["operator_action"], "include_legacy_gemini")
+        self.assertFalse(discoveries["gemini"]["requires_approval"])
+        self.assertIn("legacy", discoveries["gemini"]["safety_note"])
+
     def test_build_discovered_config_can_include_legacy_gemini_when_requested(self):
         def resolver(command):
             return f"/opt/bin/{command}" if command == "gemini" else None
@@ -95,6 +129,34 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(loaded[1].command, ["codex"])
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["next_commands"]["preflight"][-1], str(output_path))
+
+    def test_live_agent_discover_compact_output_shows_entry_decisions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "gemini"} else None
+
+            with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
+                with patch("sys.stdout", StringIO()) as stdout:
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "discover",
+                            "--server",
+                            "http://room.local",
+                            "--meeting-id",
+                            "resident-m1",
+                            "--output",
+                            str(output_path),
+                        ]
+                    )
+
+            self.assertEqual(exit_code, 0)
+            output = stdout.getvalue()
+            self.assertIn("entry claude ready terminal_session auto_join approval required", output)
+            self.assertIn("entry gemini legacy terminal_session include_legacy_gemini", output)
+            self.assertIn("entry codex missing codex_live_session install_cli", output)
 
     def test_live_agent_discover_can_write_session_bundle_and_ensure_command(self):
         with tempfile.TemporaryDirectory() as temp_dir:

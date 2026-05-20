@@ -2148,6 +2148,12 @@ def _format_live_agent_discovery(report: dict[str, object], *, output_path: Path
         labels = [str(agent.get("agent_id") or "") for agent in agents if isinstance(agent, dict)]
         lines.append("agents " + ", ".join(label for label in labels if label))
     discoveries = report.get("discoveries") if isinstance(report.get("discoveries"), list) else []
+    for item in discoveries:
+        if not isinstance(item, dict):
+            continue
+        entry = _format_live_agent_discovery_entry(item)
+        if entry:
+            lines.append(entry)
     skipped = [
         f"{item.get('command')}:{item.get('reason')}"
         for item in discoveries
@@ -2158,6 +2164,17 @@ def _format_live_agent_discovery(report: dict[str, object], *, output_path: Path
     if status != "ok":
         lines.append("No supported local agent CLIs found.")
     return "\n".join(lines)
+
+
+def _format_live_agent_discovery_entry(item: dict[str, object]) -> str:
+    command = str(item.get("command") or "").strip()
+    entry_status = str(item.get("entry_status") or "").strip()
+    entry_mode = str(item.get("entry_mode") or item.get("connection_kind") or "").strip()
+    operator_action = str(item.get("operator_action") or "").strip()
+    approval = "approval required" if item.get("requires_approval") else ""
+    parts = [command, entry_status, entry_mode, operator_action, approval]
+    clean = [part for part in parts if part]
+    return "entry " + " ".join(clean) if clean else ""
 
 
 def _run_provider_health(args: argparse.Namespace) -> int:

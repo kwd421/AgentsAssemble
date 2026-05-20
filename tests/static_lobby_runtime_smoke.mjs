@@ -996,6 +996,11 @@ test("live agent discovery renders safe candidate evidence without executable pa
         {
           command: "claude",
           provider_kind: "claude_code",
+          entry_mode: "terminal_session",
+          entry_status: "ready",
+          operator_action: "auto_join",
+          requires_approval: true,
+          safety_note: "PATH only; run preflight before auto join",
           available: true,
           included: true,
           path: "/Users/friend/secret/bin/claude",
@@ -1004,6 +1009,11 @@ test("live agent discovery renders safe candidate evidence without executable pa
         {
           command: "codex",
           provider_kind: "codex_live_session",
+          entry_mode: "codex_live_session",
+          entry_status: "ready",
+          operator_action: "auto_join",
+          requires_approval: true,
+          safety_note: "Codex defaults stay centralized in preflight",
           available: true,
           included: true,
           path: "/Users/friend/secret/bin/codex",
@@ -1012,6 +1022,11 @@ test("live agent discovery renders safe candidate evidence without executable pa
         {
           command: "gemini",
           provider_kind: "gemini_cli_legacy",
+          entry_mode: "terminal_session",
+          entry_status: "legacy",
+          operator_action: "include_legacy_gemini",
+          requires_approval: false,
+          safety_note: "Legacy Gemini is skipped unless explicitly included",
           available: true,
           included: false,
           path: "/Users/friend/secret/bin/gemini",
@@ -1032,6 +1047,10 @@ test("live agent discovery renders safe candidate evidence without executable pa
   assert.match(reportText, /included/);
   assert.match(reportText, /gemini/);
   assert.match(reportText, /legacy/);
+  assert.match(reportText, /terminal_session/);
+  assert.match(reportText, /auto_join/);
+  assert.match(reportText, /approval required/);
+  assert.match(reportText, /include_legacy_gemini/);
   assert.match(reportText, /codex/);
   assert.match(reportText, /codex_live_session/);
   assert.doesNotMatch(reportText, /Users|secret|bin/);

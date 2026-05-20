@@ -25,11 +25,17 @@ def build_discovered_live_agent_config(
         available = bool(path)
         included = available and (not spec.get("legacy") or include_legacy_gemini)
         reason = "included" if included else _discovery_skip_reason(available=available, legacy=bool(spec.get("legacy")))
+        entry_status = _entry_status(available=available, included=included, legacy=bool(spec.get("legacy")))
         discoveries.append(
             {
                 "command": spec["command"],
                 "provider_kind": spec["provider_kind"],
                 "connection_kind": spec["connection_kind"],
+                "entry_mode": _entry_mode(spec),
+                "entry_status": entry_status,
+                "operator_action": _operator_action(entry_status),
+                "requires_approval": _requires_approval(entry_status),
+                "safety_note": _safety_note(spec, entry_status),
                 "available": available,
                 "included": included,
                 "reason": reason,
@@ -117,6 +123,50 @@ def _discovery_skip_reason(*, available: bool, legacy: bool) -> str:
     if legacy:
         return "legacy"
     return "not_included"
+
+
+def _entry_status(*, available: bool, included: bool, legacy: bool) -> str:
+    if included:
+        return "ready"
+    if available and legacy:
+        return "legacy"
+    if available:
+        return "skipped"
+    return "missing"
+
+
+def _entry_mode(spec: dict[str, Any]) -> str:
+    if spec["provider_kind"] == "codex_live_session":
+        return "codex_live_session"
+    return str(spec["connection_kind"])
+
+
+def _operator_action(entry_status: str) -> str:
+    if entry_status == "ready":
+        return "auto_join"
+    if entry_status == "legacy":
+        return "include_legacy_gemini"
+    if entry_status == "missing":
+        return "install_cli"
+    return "preflight"
+
+
+def _requires_approval(entry_status: str) -> bool:
+    return entry_status == "ready"
+
+
+def _safety_note(spec: dict[str, Any], entry_status: str) -> str:
+    if entry_status == "missing":
+        return "CLI executable was not found on PATH."
+    if entry_status == "legacy":
+        return "legacy Gemini is skipped unless explicitly included."
+    if spec["provider_kind"] == "codex_live_session":
+        return "Codex defaults and safety checks stay centralized in preflight."
+    if spec["connection_kind"] == "self_service":
+        return "Self-service process is supervised; it owns its own room loop after preflight."
+    if spec["connection_kind"] == "terminal_session":
+        return "PATH only; run preflight before auto join starts the terminal session."
+    return "PATH only; run preflight before auto join starts the resident."
 
 
 def _next_commands(*, server: str) -> dict[str, list[str]]:
