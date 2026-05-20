@@ -119,6 +119,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("session_bundle.group_id", doc)
         self.assertIn("`세션번들` checkbox", doc)
         self.assertIn("`자동입장` always requests the session bundle", doc)
+        self.assertIn("python3 -m agentsassemble.cli live-agent auto-join", doc)
+        self.assertIn("Unlike `discover`, this is an explicit start/resume/restart/recover operation", doc)
         self.assertIn("--include-legacy-gemini", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent preflight", doc)
         self.assertIn("Terminal Self-Service Room Tools", doc)

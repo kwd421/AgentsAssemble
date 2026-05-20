@@ -678,6 +678,19 @@ This writes companion `council.discovered...json` and `agents.discovered...json`
 
 The GUI `상주 실행` panel exposes this same local discovery path. `CLI발견` sends `session_bundle: true` when the `세션번들` checkbox is enabled, then fills the live-agent, council, agent, and group fields from the discovery response. `자동입장` always requests the session bundle before preflight and session ensure, so discovered Claude/Codex/Antigravity residents can enter a matching visible resident meeting without hand-editing those config paths.
 
+The CLI has the same explicit one-command entrypoint when automation should discover and then immediately ensure the generated resident session:
+
+```bash
+python3 -m agentsassemble.cli live-agent auto-join \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1 \
+  --output .agentsassemble/live-agents.discovered.json \
+  --connect-timeout 7 \
+  --wait-timeout 30
+```
+
+`auto-join` always writes the session bundle, derives the normalized `group_id` from the discovered resident config filename, and then calls the same `ensure-session` policy used by the GUI and CLI `세션보장` path. Unlike `discover`, this is an explicit start/resume/restart/recover operation: after the local PATH-only discovery step succeeds, the ensure step may start the supervised resident group and therefore may execute the configured provider CLIs through the normal preflight-gated session path. It returns `1` without writing configs or contacting the room when no supported CLI is found.
+
 ```text
 POST /api/live-agent-discovery
 ```

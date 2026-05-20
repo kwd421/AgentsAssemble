@@ -597,6 +597,45 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_discover.add_argument("--json", action="store_true", dest="as_json", help="Print the machine-readable discovery report.")
 
+    live_auto_join = live_agent_subparsers.add_parser(
+        "auto-join",
+        parents=[live_server],
+        help="Discover local CLIs, write a session bundle, and ensure the resident session.",
+    )
+    live_auto_join.add_argument(
+        "--output",
+        default=".agentsassemble/live-agents.discovered.local.json",
+        help="Path to write the discovered resident config.",
+    )
+    live_auto_join.add_argument("--meeting-id", default="", help="Resident meeting id to ensure; blank starts a new session.")
+    live_auto_join.add_argument("--engagement-mode", default="mentioned")
+    live_auto_join.add_argument("--session-council-output", default="")
+    live_auto_join.add_argument("--session-agent-output", default="")
+    live_auto_join.add_argument(
+        "--include-legacy-gemini",
+        action="store_true",
+        help="Include a detected legacy Gemini CLI entry in the generated config.",
+    )
+    live_auto_join.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0)
+    live_auto_join.add_argument("--wait-timeout", type=parse_nonnegative_float, default=30.0)
+    live_auto_join.add_argument("--wait-poll-interval", type=parse_nonnegative_float, default=2.0)
+    _add_session_auto_restart_args(live_auto_join)
+    live_auto_join.add_argument(
+        "--run-remaining-rounds",
+        action="store_true",
+        help="After the ensured session is ready, run remaining official template rounds.",
+    )
+    live_auto_join.add_argument("--round-timeout", type=parse_nonnegative_float, default=30.0)
+    live_auto_join.add_argument("--max-rounds", type=parse_positive_int, default=MAX_LIVE_AGENT_ROUND_BATCH)
+    live_auto_join.add_argument("--stop-on-timeout", action="store_true")
+    live_auto_join.add_argument(
+        "--probe-bound-agents",
+        action="store_true",
+        help="Before optional remaining rounds, require each bound live agent to answer a lobby probe.",
+    )
+    live_auto_join.add_argument("--probe-timeout", type=parse_nonnegative_float, default=12.0)
+    live_auto_join.add_argument("--json", action="store_true", dest="as_json", help="Print the machine-readable auto-join result.")
+
     live_smoke = live_agent_subparsers.add_parser(
         "smoke",
         parents=[live_server],
@@ -1023,6 +1062,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_preflight(args)
         if args.live_agent_command == "discover":
             return _run_live_agent_discover(args)
+        if args.live_agent_command == "auto-join":
+            return _run_live_agent_auto_join(args)
         if args.live_agent_command == "smoke":
             return _run_live_agent_smoke(args)
         if args.live_agent_command == "session-smoke":
@@ -2007,7 +2048,11 @@ def _run_live_agent_preflight(args: argparse.Namespace) -> int:
     return 0 if report.get("status") == "ok" else 1
 
 
-def _run_live_agent_discover(args: argparse.Namespace) -> int:
+def _write_live_agent_discovery_outputs(
+    args: argparse.Namespace,
+    *,
+    session_bundle: bool,
+) -> tuple[Path | None, dict[str, object]]:
     report = build_discovered_live_agent_config(
         server=args.server,
         meeting_id=args.meeting_id,
@@ -2017,7 +2062,7 @@ def _run_live_agent_discover(args: argparse.Namespace) -> int:
     output_path = Path(args.output) if args.output else None
     if report.get("status") == "ok" and output_path is not None:
         session_bundle_paths = None
-        if args.session_bundle:
+        if session_bundle:
             session_bundle_paths = discovered_session_bundle_paths(
                 output_path,
                 council_output=args.session_council_output,
@@ -2026,7 +2071,7 @@ def _run_live_agent_discover(args: argparse.Namespace) -> int:
             validate_distinct_session_bundle_paths(output_path, *session_bundle_paths)
         write_agent_config(output_path, report["config"])
         fill_discovery_next_command_output(report, str(output_path))
-        if args.session_bundle and session_bundle_paths is not None:
+        if session_bundle and session_bundle_paths is not None:
             council_output, agent_output = session_bundle_paths
             bundle = build_discovered_session_bundle(report["config"])
             write_agent_config(council_output, bundle["council_config"])
@@ -2040,11 +2085,47 @@ def _run_live_agent_discover(args: argparse.Namespace) -> int:
                 meeting_id=args.meeting_id,
                 group_id=clean_live_agent_group_id(output_path.stem),
             )
+    return output_path, report
+
+
+def _run_live_agent_discover(args: argparse.Namespace) -> int:
+    output_path, report = _write_live_agent_discovery_outputs(args, session_bundle=bool(args.session_bundle))
     if args.as_json:
         print(json.dumps({"output": str(output_path or ""), **report}, ensure_ascii=False, indent=2))
     else:
         print(_format_live_agent_discovery(report, output_path=output_path))
     return 0 if report.get("status") == "ok" else 1
+
+
+def _run_live_agent_auto_join(args: argparse.Namespace) -> int:
+    _validate_session_auto_restart_args(args)
+    output_path, report = _write_live_agent_discovery_outputs(args, session_bundle=True)
+    discovery_payload = {"output": str(output_path or ""), **report}
+    if report.get("status") != "ok":
+        result = {"status": report.get("status") or "empty", "action": "none", "discovery": discovery_payload, "session": {}}
+        if args.as_json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(_format_live_agent_discovery(report, output_path=output_path))
+        return 1
+    session_bundle = report.get("session_bundle") if isinstance(report.get("session_bundle"), dict) else {}
+    ensure_args = argparse.Namespace(**vars(args))
+    ensure_args.group_id = str(session_bundle.get("group_id") or "")
+    ensure_args.council_config = str(session_bundle.get("council_config_path") or "")
+    ensure_args.agent_config = str(session_bundle.get("agent_config_path") or "")
+    ensure_args.live_agent_config = str(session_bundle.get("live_agent_config_path") or output_path or "")
+    action, response = _ensure_live_agent_session(ensure_args)
+    result = {
+        "status": response.get("status") or "unknown",
+        "action": action,
+        "discovery": discovery_payload,
+        "session": response,
+    }
+    if args.as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"Auto-joined via {action}: {_format_live_agent_session_start(response)}")
+    return _session_command_exit_code(response)
 
 
 def _format_live_agent_discovery(report: dict[str, object], *, output_path: Path | None) -> str:
