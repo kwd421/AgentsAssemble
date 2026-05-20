@@ -704,8 +704,62 @@ function renderLiveAgentRuntimeHealth(health, loading) {
     `sessions ${escapeHtml(`${readySessions}/${sessionTotal}`)} ready · ` +
     `attention ${escapeHtml(attentionCount)}` +
     (sessionAttention ? `<br><small>${escapeHtml(sessionAttention)}</small>` : "") +
-    "</p>"
+    "</p>" +
+    renderLiveAgentSessionReadiness(sessions)
   );
+}
+
+function renderLiveAgentSessionReadiness(sessions) {
+  const items = sessions && typeof sessions === "object" && Array.isArray(sessions.items) ? sessions.items : [];
+  if (!items.length) return "";
+  return `
+    <div class="live-agent-session-readiness" aria-label="상주 세션 readiness">
+      ${items.map(renderLiveAgentSessionReadinessRow).join("")}
+    </div>
+  `;
+}
+
+function renderLiveAgentSessionReadinessRow(session) {
+  const status = String(session.status || "unknown");
+  const meetingId = String(session.meeting_id || "-");
+  const groupId = String(session.group_id || "-");
+  const processStatus = String(session.process_status || "unknown");
+  const expected = Math.max(0, Number(session.expected || 0));
+  const connected = Math.max(0, Number(session.connected || 0));
+  const details = [
+    `process ${processStatus}`,
+    `connected ${connected}/${expected}`,
+    liveAgentSessionAttentionLabel("ownership", session.ownership_attention),
+    liveAgentSessionAttentionLabel("process", session.process_attention),
+    liveAgentSessionAttentionLabel("connection", session.connection_attention),
+    liveAgentSessionProcessReasonLabel(session.process_reason),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `
+    <article class="live-agent-session-row live-agent-session-${escapeHtml(status)}">
+      <div>
+        <strong>${escapeHtml(meetingId)}</strong>
+        <span>${escapeHtml(groupId)}</span>
+        <small>${escapeHtml(details)}</small>
+      </div>
+      <em>${escapeHtml(status)}</em>
+    </article>
+  `;
+}
+
+function liveAgentSessionAttentionLabel(label, value) {
+  if (!Array.isArray(value) || !value.length) return "";
+  const clean = value.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 5);
+  return clean.length ? `${label} ${clean.join(", ")}` : "";
+}
+
+function liveAgentSessionProcessReasonLabel(reason) {
+  if (!reason || typeof reason !== "object") return "";
+  const eventType = String(reason.event_type || "").trim();
+  const text = String(reason.reason || "").trim();
+  if (!eventType && !text) return "";
+  return `reason ${[eventType, text].filter(Boolean).join(" ")}`;
 }
 
 function liveAgentHealthAttentionCount(health) {

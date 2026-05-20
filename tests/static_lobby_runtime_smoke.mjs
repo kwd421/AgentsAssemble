@@ -1543,6 +1543,114 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.equal(health.attributes["data-tone"], "warning");
 });
 
+test("runtime health renders meeting-owned session readiness details", async () => {
+  resetState();
+  const { document } = installHarness({
+    healthPayload: {
+      status: "degraded",
+      agents: { total: 2, live: 1, counts: { online: 1, working: 0, error: 0, stale: 1, offline: 0 }, attention: [] },
+      processes: {
+        total: 1,
+        counts: { running: 1, restarting: 0, error: 0, unknown: 0, stopped: 0 },
+        attention: [],
+        reasons: {
+          "resident-main": {
+            event_type: "stale_watchdog",
+            reason: "stale manifest agent agent-b",
+          },
+        },
+      },
+      connections: { expected: 2, connected: 1, attention: ["resident-main:agent-b:stale"] },
+      sessions: {
+        total: 1,
+        ready: 0,
+        degraded: 1,
+        attention: ["resident-m1:resident-main:agent-b:stale"],
+        items: [
+          {
+            meeting_id: "resident-m1",
+            group_id: "resident-main",
+            status: "degraded",
+            process_status: "running",
+            expected: 2,
+            connected: 1,
+            ownership_attention: ["meeting:duplicate_active_group"],
+            process_attention: ["group:running"],
+            connection_attention: ["agent-b:stale"],
+            attention: ["meeting:duplicate_active_group", "agent-b:stale"],
+            process_reason: {
+              event_type: "stale_watchdog",
+              reason: "stale manifest agent agent-b",
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  await refreshLiveAgentRuntimeSurfaces();
+  renderLobby({ followLatest: false });
+
+  const rowText = document.querySelector(".live-agent-session-row").textContent;
+  assert.match(rowText, /resident-m1/);
+  assert.match(rowText, /resident-main/);
+  assert.match(rowText, /degraded/);
+  assert.match(rowText, /process running/);
+  assert.match(rowText, /connected 1\/2/);
+  assert.match(rowText, /ownership meeting:duplicate_active_group/);
+  assert.match(rowText, /process group:running/);
+  assert.match(rowText, /connection agent-b:stale/);
+  assert.match(rowText, /reason stale_watchdog stale manifest agent agent-b/);
+});
+
+test("runtime health session readiness renders only safe escaped evidence", async () => {
+  resetState();
+  const { document } = installHarness({
+    healthPayload: {
+      status: "degraded",
+      agents: { total: 1, live: 0, counts: {}, attention: [] },
+      processes: { total: 1, counts: { running: 0 }, attention: [] },
+      connections: { expected: 1, connected: 0, attention: [] },
+      sessions: {
+        total: 1,
+        ready: 0,
+        items: [
+          {
+            meeting_id: "resident-<script>alert(1)</script>",
+            group_id: "resident-main",
+            status: "degraded",
+            process_status: "error",
+            expected: 1,
+            connected: 0,
+            ownership_attention: ["meeting:<img src=x onerror=alert(1)>"],
+            process_attention: ["group:error"],
+            connection_attention: ["agent-a:offline"],
+            process_reason: {
+              event_type: "failed_start",
+              reason: "provider <b>offline</b>",
+            },
+            command: ["claude", "--danger"],
+            endpoint: "https://example.invalid/private",
+            auth_ref: "env:SECRET",
+            prompt: "hidden prompt",
+            log_tail: "hidden log",
+          },
+        ],
+      },
+    },
+  });
+
+  await refreshLiveAgentRuntimeSurfaces();
+  renderLobby({ followLatest: false });
+
+  const rowText = document.querySelector(".live-agent-session-row").textContent;
+  assert.match(rowText, /resident-<script>alert\(1\)<\/script>/);
+  assert.match(rowText, /meeting:<img src=x onerror=alert\(1\)>/);
+  assert.match(rowText, /provider <b>offline<\/b>/);
+  assert.doesNotMatch(document.querySelector("#lobby").innerHTML, /<script>|<img|<b>/);
+  assert.doesNotMatch(rowText, /--danger|example\.invalid|env:SECRET|hidden prompt|hidden log/);
+});
+
 test("runtime refresh renders recent lifecycle events with reason and offline evidence", async () => {
   resetState();
   const { document, requests } = installHarness({

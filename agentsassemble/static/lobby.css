@@ -607,6 +607,69 @@
   color: #ffc3c3;
 }
 
+.live-agent-session-readiness {
+  display: grid;
+  gap: 7px;
+}
+
+.live-agent-session-row {
+  align-items: center;
+  background: rgba(8, 11, 17, 0.48);
+  border: 1px solid rgba(212, 225, 255, 0.1);
+  border-left: 4px solid rgba(212, 225, 255, 0.26);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 46px;
+  padding: 7px 8px;
+}
+
+.live-agent-session-row strong,
+.live-agent-session-row span,
+.live-agent-session-row small,
+.live-agent-session-row em {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-agent-session-row span,
+.live-agent-session-row small {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.live-agent-session-row em {
+  color: #bdf2b4;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.live-agent-session-degraded,
+.live-agent-session-starting {
+  border-left-color: rgba(255, 183, 96, 0.58);
+}
+
+.live-agent-session-degraded em,
+.live-agent-session-starting em {
+  color: #ffd89a;
+}
+
+.live-agent-session-refused,
+.live-agent-session-error {
+  border-left-color: rgba(255, 123, 123, 0.72);
+}
+
+.live-agent-session-refused em,
+.live-agent-session-error em {
+  color: #ffc3c3;
+}
+
 .live-agent-health-pill {
   align-items: center;
   background: rgba(255, 255, 255, 0.045);

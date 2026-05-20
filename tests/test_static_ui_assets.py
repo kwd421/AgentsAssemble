@@ -373,6 +373,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('title="${escapeHtml(binding.session_id)}"', script)
         self.assertIn(".live-agent-connections", css)
         self.assertIn(".live-agent-runtime-health", css)
+        self.assertIn(".live-agent-session-readiness", css)
+        self.assertIn(".live-agent-session-row", css)
         self.assertIn(".live-agent-health-strip", css)
         self.assertIn(".live-agent-health-pill", css)
         self.assertIn(".live-agent-process-health-strip", css)
@@ -394,6 +396,9 @@ class StaticUiAssetTests(unittest.TestCase):
         process_row_text_css = css[css.index(".live-agent-process-row span,") : css.index(".live-agent-process-row button")]
         self.assertIn("overflow-wrap: anywhere;", process_row_text_css)
         self.assertIn("white-space: normal;", process_row_text_css)
+        session_row_text_css = css[css.index(".live-agent-session-row strong,") : css.index(".live-agent-health-pill")]
+        self.assertIn("overflow-wrap: anywhere;", session_row_text_css)
+        self.assertIn("white-space: normal;", session_row_text_css)
         self.assertIn(".live-agent-error", css)
         self.assertIn(".live-agent-status", css)
         self.assertIn('if (status === "error") return "오류";', script)
