@@ -99,6 +99,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                 self.assertIn("AGENTSASSEMBLE_WAIT_NEXT_COMMAND", self_service_command)
                 self.assertIn("AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE", self_service_command)
                 self.assertIn("AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE", self_service_command)
+                self.assertIn("AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE", self_service_command)
                 self.assertIn("shlex.split", self_service_command)
                 self.assertIn("replace_tokens", self_service_command)
                 self.assertNotIn("BASE = [sys.executable", self_service_command)
@@ -318,7 +319,151 @@ class LiveAgentSmokeTests(unittest.TestCase):
                         "    else:",
                         "        open(state_path, 'w', encoding='utf-8').write('seen')",
                         "        print(json.dumps({'status': 'event', 'action': 'lobby', 'source_event_id': 'evt-1'}))",
-                        "elif command in {'say', 'official-reply'}:",
+                        "elif command in {'say', 'official-reply', 'heartbeat'}:",
+                        "    print(json.dumps({'status': 'ok'}))",
+                        "else:",
+                        "    sys.exit(2)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            base = [sys.executable, str(fake_cli)]
+            env = os.environ.copy()
+            env.update(
+                {
+                    "SELF_SERVICE_CALLS_PATH": str(calls_path),
+                    "SELF_SERVICE_STATE_PATH": str(state_path),
+                    "AGENTSASSEMBLE_MEETING_ID": "meeting-1",
+                    "AGENTSASSEMBLE_POLL_INTERVAL": "0.05",
+                    "AGENTSASSEMBLE_ROOM_COMMAND": shlex.join([*base, "room"]),
+                    "AGENTSASSEMBLE_WAIT_NEXT_COMMAND": shlex.join([*base, "wait-next", "--json"]),
+                    "AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "say",
+                            "--source-event-id",
+                            "{source_event_id}",
+                            "--auto-chain-depth",
+                            "{auto_chain_depth}",
+                            "--",
+                            "{message}",
+                        ]
+                    ),
+                    "AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "official-reply",
+                            "--meeting-id",
+                            "{meeting_id}",
+                            "--source-event-id",
+                            "{source_event_id}",
+                            "--",
+                            "{message}",
+                        ]
+                    ),
+                    "AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "heartbeat",
+                            "--status",
+                            "{status}",
+                            "--last-error",
+                            "{last_error}",
+                            "--last-reply-at",
+                            "{last_reply_at}",
+                            "--last-observed-event-id",
+                            "{last_observed_event_id}",
+                            "--last-observed-live-event-id",
+                            "{last_observed_live_event_id}",
+                            "--json",
+                        ]
+                    ),
+                }
+            )
+            process = subprocess.Popen(
+                [sys.executable, "-u", "-c", _session_smoke_self_service_script("-h")],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 3
+                say_call = None
+                calls = []
+                while time.monotonic() < deadline:
+                    if calls_path.exists():
+                        calls = [
+                            json.loads(line)
+                            for line in calls_path.read_text(encoding="utf-8").splitlines()
+                            if line.strip()
+                        ]
+                        say_call = next((call for call in calls if call and call[0] == "say"), None)
+                        if say_call:
+                            say_index = calls.index(say_call)
+                            heartbeat_after_say = any(
+                                call and call[0] == "heartbeat" and index > say_index
+                                for index, call in enumerate(calls)
+                            )
+                        else:
+                            heartbeat_after_say = False
+                        if say_call and heartbeat_after_say:
+                            break
+                    time.sleep(0.05)
+                if say_call is None:
+                    stderr = process.stderr.read() if process.poll() is not None and process.stderr is not None else ""
+                    self.fail(f"self_service script did not post a lobby reply; stderr={stderr}")
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=1)
+                if process.stderr is not None:
+                    process.stderr.close()
+
+            self.assertIn("--json", say_call)
+            self.assertIn("--", say_call)
+            self.assertLess(say_call.index("--json"), say_call.index("--"))
+            self.assertEqual(say_call[say_call.index("--") + 1], "-h")
+            say_index = calls.index(say_call)
+            heartbeat_calls = [call for call in calls if call and call[0] == "heartbeat"]
+            self.assertGreaterEqual(len(heartbeat_calls), 2)
+            self.assertLess(calls.index(heartbeat_calls[0]), say_index)
+            self.assertGreater(calls.index(heartbeat_calls[-1]), say_index)
+            self.assertEqual(heartbeat_calls[0][heartbeat_calls[0].index("--status") + 1], "working")
+            self.assertEqual(heartbeat_calls[0][heartbeat_calls[0].index("--last-observed-event-id") + 1], "evt-1")
+            self.assertEqual(heartbeat_calls[-1][heartbeat_calls[-1].index("--status") + 1], "online")
+            self.assertEqual(heartbeat_calls[-1][heartbeat_calls[-1].index("--last-error") + 1], "")
+
+    def test_session_smoke_self_service_script_keeps_replying_when_heartbeat_template_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            fake_cli = root / "fake_cli.py"
+            calls_path = root / "calls.jsonl"
+            state_path = root / "state.txt"
+            fake_cli.write_text(
+                "\n".join(
+                    [
+                        "import json, os, sys",
+                        "calls_path = os.environ['SELF_SERVICE_CALLS_PATH']",
+                        "state_path = os.environ['SELF_SERVICE_STATE_PATH']",
+                        "args = sys.argv[1:]",
+                        "with open(calls_path, 'a', encoding='utf-8') as handle:",
+                        "    handle.write(json.dumps(args) + '\\n')",
+                        "command = args[0] if args else ''",
+                        "if command == 'room':",
+                        "    print(json.dumps({'agent': {'engagement_mode': 'always'}}))",
+                        "elif command == 'wait-next':",
+                        "    if os.path.exists(state_path):",
+                        "        print(json.dumps({'status': 'idle'}))",
+                        "    else:",
+                        "        open(state_path, 'w', encoding='utf-8').write('seen')",
+                        "        print(json.dumps({'status': 'event', 'action': 'lobby', 'source_event_id': 'evt-1'}))",
+                        "elif command == 'say':",
                         "    print(json.dumps({'status': 'ok'}))",
                         "else:",
                         "    sys.exit(2)",
@@ -364,7 +509,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                 }
             )
             process = subprocess.Popen(
-                [sys.executable, "-u", "-c", _session_smoke_self_service_script("-h")],
+                [sys.executable, "-u", "-c", _session_smoke_self_service_script("ok")],
                 env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
@@ -386,7 +531,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     time.sleep(0.05)
                 if say_call is None:
                     stderr = process.stderr.read() if process.poll() is not None and process.stderr is not None else ""
-                    self.fail(f"self_service script did not post a lobby reply; stderr={stderr}")
+                    self.fail(f"self_service script did not post after heartbeat failure; stderr={stderr}")
             finally:
                 if process.poll() is None:
                     process.terminate()
@@ -398,10 +543,136 @@ class LiveAgentSmokeTests(unittest.TestCase):
                 if process.stderr is not None:
                     process.stderr.close()
 
-            self.assertIn("--json", say_call)
-            self.assertIn("--", say_call)
-            self.assertLess(say_call.index("--json"), say_call.index("--"))
-            self.assertEqual(say_call[say_call.index("--") + 1], "-h")
+            self.assertEqual(say_call[0], "say")
+
+    def test_session_smoke_self_service_script_reports_error_when_lobby_reply_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            fake_cli = root / "fake_cli.py"
+            calls_path = root / "calls.jsonl"
+            state_path = root / "state.txt"
+            fake_cli.write_text(
+                "\n".join(
+                    [
+                        "import json, os, sys",
+                        "calls_path = os.environ['SELF_SERVICE_CALLS_PATH']",
+                        "state_path = os.environ['SELF_SERVICE_STATE_PATH']",
+                        "args = sys.argv[1:]",
+                        "with open(calls_path, 'a', encoding='utf-8') as handle:",
+                        "    handle.write(json.dumps(args) + '\\n')",
+                        "command = args[0] if args else ''",
+                        "if command == 'room':",
+                        "    print(json.dumps({'agent': {'engagement_mode': 'always'}}))",
+                        "elif command == 'wait-next':",
+                        "    if os.path.exists(state_path):",
+                        "        print(json.dumps({'status': 'idle'}))",
+                        "    else:",
+                        "        open(state_path, 'w', encoding='utf-8').write('seen')",
+                        "        print(json.dumps({'status': 'event', 'action': 'lobby', 'source_event_id': 'evt-1'}))",
+                        "elif command == 'say':",
+                        "    sys.exit(7)",
+                        "elif command == 'heartbeat':",
+                        "    print(json.dumps({'status': 'ok'}))",
+                        "else:",
+                        "    sys.exit(2)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            base = [sys.executable, str(fake_cli)]
+            env = os.environ.copy()
+            env.update(
+                {
+                    "SELF_SERVICE_CALLS_PATH": str(calls_path),
+                    "SELF_SERVICE_STATE_PATH": str(state_path),
+                    "AGENTSASSEMBLE_MEETING_ID": "meeting-1",
+                    "AGENTSASSEMBLE_POLL_INTERVAL": "0.05",
+                    "AGENTSASSEMBLE_ROOM_COMMAND": shlex.join([*base, "room"]),
+                    "AGENTSASSEMBLE_WAIT_NEXT_COMMAND": shlex.join([*base, "wait-next", "--json"]),
+                    "AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "say",
+                            "--source-event-id",
+                            "{source_event_id}",
+                            "--auto-chain-depth",
+                            "{auto_chain_depth}",
+                            "--",
+                            "{message}",
+                        ]
+                    ),
+                    "AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "official-reply",
+                            "--meeting-id",
+                            "{meeting_id}",
+                            "--source-event-id",
+                            "{source_event_id}",
+                            "--",
+                            "{message}",
+                        ]
+                    ),
+                    "AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "heartbeat",
+                            "--status",
+                            "{status}",
+                            "--last-error",
+                            "{last_error}",
+                            "--last-reply-at",
+                            "{last_reply_at}",
+                            "--last-observed-event-id",
+                            "{last_observed_event_id}",
+                            "--last-observed-live-event-id",
+                            "{last_observed_live_event_id}",
+                            "--json",
+                        ]
+                    ),
+                }
+            )
+            process = subprocess.Popen(
+                [sys.executable, "-u", "-c", _session_smoke_self_service_script("ok")],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 3
+                error_heartbeat = None
+                while time.monotonic() < deadline:
+                    if calls_path.exists():
+                        calls = [
+                            json.loads(line)
+                            for line in calls_path.read_text(encoding="utf-8").splitlines()
+                            if line.strip()
+                        ]
+                        for call in calls:
+                            if call and call[0] == "heartbeat" and call[call.index("--status") + 1] == "error":
+                                error_heartbeat = call
+                                break
+                        if error_heartbeat:
+                            break
+                    time.sleep(0.05)
+                if error_heartbeat is None:
+                    stderr = process.stderr.read() if process.poll() is not None and process.stderr is not None else ""
+                    self.fail(f"self_service script did not report reply failure; stderr={stderr}")
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=1)
+                if process.stderr is not None:
+                    process.stderr.close()
+
+            self.assertEqual(error_heartbeat[error_heartbeat.index("--last-error") + 1], "lobby reply failed")
+            self.assertEqual(error_heartbeat[error_heartbeat.index("--last-observed-event-id") + 1], "evt-1")
 
     def test_session_smoke_can_repeat_lobby_probes_before_and_after_restart(self):
         calls = []
