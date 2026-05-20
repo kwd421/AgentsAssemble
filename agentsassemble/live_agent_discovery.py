@@ -5,6 +5,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from agentsassemble.live_session_transport import terminal_sessions_supported
+
 
 DEFAULT_DISCOVERY_SERVER = "http://127.0.0.1:8765"
 
@@ -16,16 +18,20 @@ def build_discovered_live_agent_config(
     engagement_mode: str = "mentioned",
     include_legacy_gemini: bool = False,
     command_resolver: Callable[[str], str | None] | None = None,
+    terminal_session_supported: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     resolver = command_resolver or shutil.which
+    terminal_supported = (terminal_session_supported or terminal_sessions_supported)()
     discoveries = []
     agents = []
     for spec in _candidate_specs():
         path = resolver(spec["command"])
         available = bool(path)
-        included = available and (not spec.get("legacy") or include_legacy_gemini)
-        reason = "included" if included else _discovery_skip_reason(available=available, legacy=bool(spec.get("legacy")))
-        entry_status = _entry_status(available=available, included=included, legacy=bool(spec.get("legacy")))
+        supported = _candidate_supported(spec, terminal_supported=terminal_supported)
+        legacy = bool(spec.get("legacy"))
+        included = available and supported and (not legacy or include_legacy_gemini)
+        reason = "included" if included else _discovery_skip_reason(available=available, supported=supported, legacy=legacy)
+        entry_status = _entry_status(available=available, supported=supported, included=included, legacy=legacy)
         discoveries.append(
             {
                 "command": spec["command"],
@@ -117,22 +123,32 @@ def _agent_entry(spec: dict[str, Any], *, meeting_id: str, engagement_mode: str)
     return entry
 
 
-def _discovery_skip_reason(*, available: bool, legacy: bool) -> str:
+def _discovery_skip_reason(*, available: bool, supported: bool, legacy: bool) -> str:
     if not available:
         return "not_found"
+    if not supported:
+        return "terminal_unsupported"
     if legacy:
         return "legacy"
     return "not_included"
 
 
-def _entry_status(*, available: bool, included: bool, legacy: bool) -> str:
+def _entry_status(*, available: bool, supported: bool, included: bool, legacy: bool) -> str:
     if included:
         return "ready"
+    if available and not supported:
+        return "unsupported"
     if available and legacy:
         return "legacy"
     if available:
         return "skipped"
     return "missing"
+
+
+def _candidate_supported(spec: dict[str, Any], *, terminal_supported: bool) -> bool:
+    if spec.get("connection_kind") == "terminal_session":
+        return terminal_supported
+    return True
 
 
 def _entry_mode(spec: dict[str, Any]) -> str:
@@ -148,6 +164,8 @@ def _operator_action(entry_status: str) -> str:
         return "include_legacy_gemini"
     if entry_status == "missing":
         return "install_cli"
+    if entry_status == "unsupported":
+        return "unsupported_terminal"
     return "preflight"
 
 
@@ -158,6 +176,8 @@ def _requires_approval(entry_status: str) -> bool:
 def _safety_note(spec: dict[str, Any], entry_status: str) -> str:
     if entry_status == "missing":
         return "CLI executable was not found on PATH."
+    if entry_status == "unsupported":
+        return "PTY terminal sessions are not available on this host."
     if entry_status == "legacy":
         return "legacy Gemini is skipped unless explicitly included."
     if spec["provider_kind"] == "codex_live_session":

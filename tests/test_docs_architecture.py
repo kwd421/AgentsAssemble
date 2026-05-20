@@ -119,6 +119,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("operator_action", doc)
         self.assertIn("requires_approval", doc)
         self.assertIn("safety_note", doc)
+        self.assertIn("unsupported_terminal", doc)
+        self.assertIn("PTY terminal sessions are unavailable", doc)
         self.assertIn("POST /api/live-agent-discovery", doc)
         self.assertIn("write_config", doc)
         self.assertIn("session_bundle.group_id", doc)

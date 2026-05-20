@@ -520,6 +520,31 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(args.connection_kind, "live_session")
 
+    def test_live_agent_register_accepts_terminal_and_self_service_connection_kinds(self):
+        terminal_args = build_parser().parse_args(
+            [
+                "live-agent",
+                "register",
+                "--agent-id",
+                "claude-terminal",
+                "--connection-kind",
+                "terminal_session",
+            ]
+        )
+        self_service_args = build_parser().parse_args(
+            [
+                "live-agent",
+                "register",
+                "--agent-id",
+                "antigravity-live",
+                "--connection-kind",
+                "self_service",
+            ]
+        )
+
+        self.assertEqual(terminal_args.connection_kind, "terminal_session")
+        self.assertEqual(self_service_args.connection_kind, "self_service")
+
     def test_live_agent_say_posts_lobby_message(self):
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value={"event": {"id": "evt1"}}) as request_json:

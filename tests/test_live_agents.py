@@ -496,6 +496,20 @@ class LiveAgentPresenceTests(unittest.TestCase):
 
         self.assertEqual(agent["connection_kind"], "live_session")
 
+    def test_connect_live_agent_preserves_terminal_session_connection_kind(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            agent = connect_live_agent(
+                Path(temp_dir),
+                {
+                    "agent_id": "claude-terminal",
+                    "display_name": "Claude Terminal",
+                    "provider_kind": "claude_code",
+                    "connection_kind": "terminal_session",
+                },
+            )
+
+        self.assertEqual(agent["connection_kind"], "terminal_session")
+
     def test_connect_live_agent_preserves_self_service_connection_kind(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             agent = connect_live_agent(

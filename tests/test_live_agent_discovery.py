@@ -26,6 +26,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             server="http://room.local",
             meeting_id="resident-m1",
             command_resolver=resolver,
+            terminal_session_supported=lambda: True,
         )
 
         self.assertEqual(report["status"], "ok")
@@ -53,6 +54,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             server="http://room.local",
             meeting_id="resident-m1",
             command_resolver=resolver,
+            terminal_session_supported=lambda: True,
         )
 
         discoveries = {item["command"]: item for item in report["discoveries"]}
@@ -89,11 +91,36 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             engagement_mode="always",
             include_legacy_gemini=True,
             command_resolver=resolver,
+            terminal_session_supported=lambda: True,
         )
 
         self.assertEqual(report["status"], "ok")
         self.assertEqual(report["config"]["agents"][0]["agent_id"], "gemini-cli-legacy-live")
         self.assertEqual(report["config"]["agents"][0]["provider_kind"], "gemini_cli_legacy")
+
+    def test_discovery_skips_terminal_session_candidates_when_pty_is_unavailable(self):
+        def resolver(command):
+            return f"/opt/bin/{command}" if command in {"claude", "gemini"} else None
+
+        report = build_discovered_live_agent_config(
+            server="http://room.local",
+            meeting_id="resident-m1",
+            include_legacy_gemini=True,
+            command_resolver=resolver,
+            terminal_session_supported=lambda: False,
+        )
+
+        self.assertEqual(report["status"], "empty")
+        self.assertEqual(report["config"]["agents"], [])
+        discoveries = {item["command"]: item for item in report["discoveries"]}
+        self.assertEqual(discoveries["claude"]["entry_status"], "unsupported")
+        self.assertFalse(discoveries["claude"]["included"])
+        self.assertEqual(discoveries["claude"]["reason"], "terminal_unsupported")
+        self.assertEqual(discoveries["claude"]["operator_action"], "unsupported_terminal")
+        self.assertFalse(discoveries["claude"]["requires_approval"])
+        self.assertIn("PTY", discoveries["claude"]["safety_note"])
+        self.assertEqual(discoveries["gemini"]["entry_status"], "unsupported")
+        self.assertEqual(discoveries["gemini"]["reason"], "terminal_unsupported")
 
     def test_live_agent_discover_writes_config_and_next_commands(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -102,23 +129,26 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             def resolver(command):
                 return f"/opt/bin/{command}" if command in {"claude", "codex"} else None
 
-            with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
-                with patch("sys.stdout", StringIO()) as stdout:
-                    exit_code = main(
-                        [
-                            "live-agent",
-                            "discover",
-                            "--server",
-                            "http://room.local",
-                            "--meeting-id",
-                            "resident-m1",
-                            "--engagement-mode",
-                            "always",
-                            "--output",
-                            str(output_path),
-                            "--json",
-                        ]
-                    )
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("sys.stdout", StringIO()) as stdout,
+            ):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "discover",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--engagement-mode",
+                        "always",
+                        "--output",
+                        str(output_path),
+                        "--json",
+                    ]
+                )
 
             self.assertEqual(exit_code, 0)
             written = json.loads(output_path.read_text(encoding="utf-8"))
@@ -137,26 +167,60 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             def resolver(command):
                 return f"/opt/bin/{command}" if command in {"claude", "gemini"} else None
 
-            with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
-                with patch("sys.stdout", StringIO()) as stdout:
-                    exit_code = main(
-                        [
-                            "live-agent",
-                            "discover",
-                            "--server",
-                            "http://room.local",
-                            "--meeting-id",
-                            "resident-m1",
-                            "--output",
-                            str(output_path),
-                        ]
-                    )
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("sys.stdout", StringIO()) as stdout,
+            ):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "discover",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--output",
+                        str(output_path),
+                    ]
+                )
 
             self.assertEqual(exit_code, 0)
             output = stdout.getvalue()
             self.assertIn("entry claude ready terminal_session auto_join approval required", output)
             self.assertIn("entry gemini legacy terminal_session include_legacy_gemini", output)
             self.assertIn("entry codex missing codex_live_session install_cli", output)
+
+    def test_live_agent_discover_compact_output_shows_terminal_unsupported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command == "claude" else None
+
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=False),
+                patch("sys.stdout", StringIO()) as stdout,
+            ):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "discover",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--output",
+                        str(output_path),
+                    ]
+                )
+
+            self.assertEqual(exit_code, 1)
+            self.assertFalse(output_path.exists())
+            output = stdout.getvalue()
+            self.assertIn("entry claude unsupported terminal_session unsupported_terminal", output)
+            self.assertIn("No supported local agent CLIs found.", output)
 
     def test_live_agent_discover_can_write_session_bundle_and_ensure_command(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -165,7 +229,10 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             def resolver(command):
                 return f"/opt/bin/{command}" if command in {"claude", "codex", "antigravity"} else None
 
-            with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+            ):
                 with patch("agentsassemble.cli.subprocess.Popen", side_effect=AssertionError("agent process started")):
                     with patch("agentsassemble.cli.subprocess.run", side_effect=AssertionError("command executed")):
                         with patch("agentsassemble.cli._request_json", side_effect=AssertionError("room contacted")):
@@ -257,7 +324,10 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 raise AssertionError(f"unexpected request: {url}")
 
             stdout = StringIO()
-            with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+            ):
                 with patch("agentsassemble.cli._request_json", side_effect=request_json):
                     with patch("sys.stdout", stdout):
                         exit_code = main(
@@ -329,7 +399,10 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             def resolver(command):
                 return f"/opt/bin/{command}" if command == "claude" else None
 
-            with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+            ):
                 with patch("sys.stderr", StringIO()) as stderr:
                     exit_code = main(
                         [
@@ -357,22 +430,25 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             def resolver(command):
                 return f"/opt/bin/{command}" if command in {"claude", "codex", "antigravity"} else None
 
-            with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
-                with patch("sys.stdout", StringIO()) as stdout:
-                    exit_code = main(
-                        [
-                            "live-agent",
-                            "discover",
-                            "--server",
-                            "http://room.local",
-                            "--meeting-id",
-                            "resident-m1",
-                            "--output",
-                            str(output_path),
-                            "--session-bundle",
-                            "--json",
-                        ]
-                    )
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("sys.stdout", StringIO()) as stdout,
+            ):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "discover",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--output",
+                        str(output_path),
+                        "--session-bundle",
+                        "--json",
+                    ]
+                )
 
             self.assertEqual(exit_code, 0)
             payload = json.loads(stdout.getvalue())
@@ -449,7 +525,10 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                     data=json.dumps({"meeting_id": "resident-m1"}).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                 )
-                with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
+                with (
+                    patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                    patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                ):
                     with patch.object(subprocess, "Popen", side_effect=AssertionError("agent process started")):
                         with patch.object(subprocess, "run", side_effect=AssertionError("command executed")):
                             with patch("agentsassemble.gui._request_json", side_effect=AssertionError("room contacted")):
@@ -488,7 +567,10 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                     data=json.dumps({"meeting_id": "resident-m1", "session_bundle": True}).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                 )
-                with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver):
+                with (
+                    patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                    patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                ):
                     with patch.object(subprocess, "Popen", side_effect=AssertionError("agent process started")):
                         with patch.object(subprocess, "run", side_effect=AssertionError("command executed")):
                             with patch("agentsassemble.gui._request_json", side_effect=AssertionError("room contacted")):
@@ -521,7 +603,10 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                     data=json.dumps({"write_config": False}).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
                 )
-                with patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=lambda command: "/opt/bin/claude" if command == "claude" else None):
+                with (
+                    patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=lambda command: "/opt/bin/claude" if command == "claude" else None),
+                    patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                ):
                     with urllib.request.urlopen(request) as response:
                         payload = json.loads(response.read().decode("utf-8"))
             finally:

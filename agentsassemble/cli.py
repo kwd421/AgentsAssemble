@@ -63,7 +63,15 @@ from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 from agentsassemble.provider_health import provider_health_report
 
 
-LIVE_AGENT_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "live_session", "remote_bridge", "manual"]
+LIVE_AGENT_CONNECTION_KIND_CHOICES = [
+    "codex_resume",
+    "local_cli",
+    "live_session",
+    "terminal_session",
+    "remote_bridge",
+    "self_service",
+    "manual",
+]
 LIVE_AGENT_DELEGATE_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "remote_bridge", "manual"]
 LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES = list(SUPPORTED_RESIDENT_CONNECTION_KINDS)
 MAX_READINESS_PROBE_AGENTS = 10
