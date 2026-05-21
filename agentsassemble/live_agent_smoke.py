@@ -14,6 +14,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from agentsassemble.live_session_transport import terminal_sessions_supported
 from agentsassemble.meeting_events import write_live_state
 
 
@@ -26,6 +27,65 @@ MAX_SESSION_SMOKE_LOBBY_PROBES = 5
 MAX_SESSION_SMOKE_SOAK_CYCLES = 5
 MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS = 60.0
 SESSION_SMOKE_RECOVERABLE_PROCESS_STATUSES = frozenset({"error", "unknown"})
+SESSION_SMOKE_TRANSPORT_ORDER = ("local_cli", "live_session", "terminal_session", "remote_bridge", "self_service")
+SESSION_SMOKE_AGENT_SUFFIXES = {
+    "local_cli": "local-cli",
+    "live_session": "live-session",
+    "terminal_session": "terminal-session",
+    "remote_bridge": "remote-bridge",
+    "self_service": "self-service",
+}
+SESSION_SMOKE_GROUP_ID_LIMIT = 64 - 1 - len(SESSION_SMOKE_AGENT_SUFFIXES["terminal_session"])
+SESSION_SMOKE_ROLE_IDS = {
+    "local_cli": "session_smoke_local_cli",
+    "live_session": "session_smoke_live_session",
+    "terminal_session": "session_smoke_terminal_session",
+    "remote_bridge": "session_smoke_remote_bridge",
+    "self_service": "session_smoke_self_service",
+}
+SESSION_SMOKE_DISPLAY_NAMES = {
+    "local_cli": "Session Smoke Local CLI",
+    "live_session": "Session Smoke Live Session",
+    "terminal_session": "Session Smoke Terminal Session",
+    "remote_bridge": "Session Smoke Remote Bridge",
+    "self_service": "Session Smoke Self Service",
+}
+SESSION_SMOKE_PROVIDER_KINDS = {
+    "local_cli": "local_cli",
+    "live_session": "local_cli",
+    "terminal_session": "local_cli",
+    "remote_bridge": "remote_http_bridge",
+    "self_service": "local_cli",
+}
+SESSION_SMOKE_MODEL_IDS = {
+    "local_cli": "local-cli",
+    "live_session": "local-cli",
+    "terminal_session": "terminal-session",
+    "remote_bridge": "remote-bridge",
+    "self_service": "self-service",
+}
+SESSION_SMOKE_ROLE_TEXT = {
+    "local_cli": {
+        "lens": "Credential-free resident session smoke through a local CLI process.",
+        "research_focus": "Verify resident session start, official turn, and lobby auto-reply through local_cli.",
+    },
+    "live_session": {
+        "lens": "Credential-free resident session smoke through a persistent JSONL live session.",
+        "research_focus": "Verify the resident live_session transport survives official and lobby turns.",
+    },
+    "terminal_session": {
+        "lens": "Credential-free resident session smoke through a PTY-backed terminal session.",
+        "research_focus": "Verify the terminal_session transport stays alive across official and lobby turns.",
+    },
+    "remote_bridge": {
+        "lens": "Credential-free resident session smoke through a loopback remote bridge.",
+        "research_focus": "Verify a remote_bridge resident participates without exposing bridge credentials.",
+    },
+    "self_service": {
+        "lens": "Credential-free resident session smoke through a supervised self-service process.",
+        "research_focus": "Verify self_service observes the room and replies without prompt injection.",
+    },
+}
 
 
 class LiveAgentSmokeFailed(Exception):
@@ -304,26 +364,13 @@ def run_live_agent_session_smoke(
     clean_lobby_probe_count = _session_smoke_lobby_probe_count(lobby_probe_count)
     clean_soak_cycle_count = _session_smoke_soak_cycle_count(soak_cycle_count)
     clean_soak_interval_seconds = _session_smoke_soak_interval_seconds(soak_interval_seconds)
-    clean_group_id = smoke_group_id(group_id) if group_id else smoke_group_id(f"session-smoke-{int(time.time() * 1000)}")
+    clean_group_id = session_smoke_group_id(group_id) if group_id else session_smoke_group_id(f"session-smoke-{int(time.time() * 1000)}")
     clean_meeting_id = smoke_group_id(meeting_id) if meeting_id else smoke_group_id(f"session-{clean_group_id}")
-    agent_ids = {
-        "local_cli": f"{clean_group_id}-local-cli",
-        "live_session": f"{clean_group_id}-live-session",
-        "remote_bridge": f"{clean_group_id}-remote-bridge",
-        "self_service": f"{clean_group_id}-self-service",
-    }
-    role_ids = {
-        "local_cli": "session_smoke_local_cli",
-        "live_session": "session_smoke_live_session",
-        "remote_bridge": "session_smoke_remote_bridge",
-        "self_service": "session_smoke_self_service",
-    }
-    expected_messages = {
-        agent_ids["local_cli"]: "session smoke local_cli ok",
-        agent_ids["live_session"]: "session smoke live_session ok",
-        agent_ids["remote_bridge"]: "session smoke remote_bridge ok",
-        agent_ids["self_service"]: "session smoke self_service ok",
-    }
+    terminal_session_supported = _session_smoke_terminal_session_supported()
+    transport_keys = _session_smoke_transport_keys(include_terminal_session=terminal_session_supported)
+    agent_ids = _session_smoke_agent_ids(clean_group_id, transport_keys)
+    role_ids = _session_smoke_role_ids(transport_keys)
+    expected_messages = _session_smoke_expected_messages(agent_ids, transport_keys)
     start_result: dict[str, object] = {}
     rounds_result: dict[str, object] = {}
     check_result: dict[str, object] = {}
@@ -535,6 +582,10 @@ def run_live_agent_session_smoke(
         "meeting_id": clean_meeting_id,
         "group_id": clean_group_id,
         "agent_ids": list(agent_ids.values()),
+        "terminal_session_supported": terminal_session_supported,
+        "terminal_session_included": "terminal_session" in agent_ids,
+        "terminal_session_status": "covered" if "terminal_session" in agent_ids else "skipped",
+        "terminal_session_reason": "" if "terminal_session" in agent_ids else "pty_unavailable",
         "lobby_probe_count": clean_lobby_probe_count,
         "source_event_id": probe_event_ids[0] if probe_event_ids else "",
         "source_event_ids": probe_event_ids,
@@ -601,6 +652,52 @@ def build_live_agent_official_round_smoke_config(
     return config
 
 
+def _session_smoke_terminal_session_supported() -> bool:
+    return terminal_sessions_supported()
+
+
+def _session_smoke_transport_keys(*, include_terminal_session: bool) -> list[str]:
+    return [
+        key
+        for key in SESSION_SMOKE_TRANSPORT_ORDER
+        if include_terminal_session or key != "terminal_session"
+    ]
+
+
+def _session_smoke_agent_ids(clean_group_id: str, transport_keys: list[str]) -> dict[str, str]:
+    return {key: f"{clean_group_id}-{SESSION_SMOKE_AGENT_SUFFIXES[key]}" for key in transport_keys}
+
+
+def _session_smoke_role_ids(transport_keys: list[str]) -> dict[str, str]:
+    return {key: SESSION_SMOKE_ROLE_IDS[key] for key in transport_keys}
+
+
+def _session_smoke_expected_messages(agent_ids: dict[str, str], transport_keys: list[str]) -> dict[str, str]:
+    return {agent_ids[key]: f"session smoke {key} ok" for key in transport_keys}
+
+
+def _session_smoke_role_config(key: str, role_id: str) -> dict[str, str]:
+    text = SESSION_SMOKE_ROLE_TEXT[key]
+    return {
+        "id": role_id,
+        "display_name": SESSION_SMOKE_DISPLAY_NAMES[key],
+        "lens": text["lens"],
+        "research_focus": text["research_focus"],
+    }
+
+
+def _session_smoke_agent_binding(key: str, agent_id: str, role_id: str) -> dict[str, str]:
+    return {
+        "agent_id": agent_id,
+        "role_id": role_id,
+        "owner_id": "session-smoke",
+        "provider_id": "session-smoke-bridge" if key == "remote_bridge" else "session-smoke-local",
+        "model_id": SESSION_SMOKE_MODEL_IDS[key],
+        "permission_profile_id": "meeting_readonly",
+        "join_mode": "fresh",
+    }
+
+
 def _write_session_smoke_configs(
     *,
     council_config_path: Path,
@@ -615,38 +712,14 @@ def _write_session_smoke_configs(
     bridge_endpoint: str,
     bridge_auth_ref: str,
 ) -> None:
+    transport_keys = [key for key in SESSION_SMOKE_TRANSPORT_ORDER if key in agent_ids]
     council_config_path.parent.mkdir(parents=True, exist_ok=True)
     council_config_path.write_text(
         json.dumps(
             {
                 "topic": "Resident session smoke",
                 "question": "Can credential-free resident agents start, auto-reply, resume, restart, and stop?",
-                "roles": [
-                    {
-                        "id": role_ids["local_cli"],
-                        "display_name": "Session Smoke Local CLI",
-                        "lens": "Credential-free resident session smoke through a local CLI process.",
-                        "research_focus": "Verify resident session start, official turn, and lobby auto-reply through local_cli.",
-                    },
-                    {
-                        "id": role_ids["live_session"],
-                        "display_name": "Session Smoke Live Session",
-                        "lens": "Credential-free resident session smoke through a persistent JSONL live session.",
-                        "research_focus": "Verify the resident live_session transport survives official and lobby turns.",
-                    },
-                    {
-                        "id": role_ids["remote_bridge"],
-                        "display_name": "Session Smoke Remote Bridge",
-                        "lens": "Credential-free resident session smoke through a loopback remote bridge.",
-                        "research_focus": "Verify a remote_bridge resident participates without exposing bridge credentials.",
-                    },
-                    {
-                        "id": role_ids["self_service"],
-                        "display_name": "Session Smoke Self Service",
-                        "lens": "Credential-free resident session smoke through a supervised self-service process.",
-                        "research_focus": "Verify self_service observes the room and replies without prompt injection.",
-                    },
-                ],
+                "roles": [_session_smoke_role_config(key, role_ids[key]) for key in transport_keys],
                 "meeting_template": {
                     "id": "session_smoke",
                     "display_name": "Session Smoke",
@@ -700,42 +773,7 @@ def _write_session_smoke_configs(
                     }
                 ],
                 "agent_bindings": [
-                    {
-                        "agent_id": agent_ids["local_cli"],
-                        "role_id": role_ids["local_cli"],
-                        "owner_id": "session-smoke",
-                        "provider_id": "session-smoke-local",
-                        "model_id": "local-cli",
-                        "permission_profile_id": "meeting_readonly",
-                        "join_mode": "fresh",
-                    },
-                    {
-                        "agent_id": agent_ids["live_session"],
-                        "role_id": role_ids["live_session"],
-                        "owner_id": "session-smoke",
-                        "provider_id": "session-smoke-local",
-                        "model_id": "local-cli",
-                        "permission_profile_id": "meeting_readonly",
-                        "join_mode": "fresh",
-                    },
-                    {
-                        "agent_id": agent_ids["remote_bridge"],
-                        "role_id": role_ids["remote_bridge"],
-                        "owner_id": "session-smoke",
-                        "provider_id": "session-smoke-bridge",
-                        "model_id": "remote-bridge",
-                        "permission_profile_id": "meeting_readonly",
-                        "join_mode": "fresh",
-                    },
-                    {
-                        "agent_id": agent_ids["self_service"],
-                        "role_id": role_ids["self_service"],
-                        "owner_id": "session-smoke",
-                        "provider_id": "session-smoke-local",
-                        "model_id": "self-service",
-                        "permission_profile_id": "meeting_readonly",
-                        "join_mode": "fresh",
-                    },
+                    _session_smoke_agent_binding(key, agent_ids[key], role_ids[key]) for key in transport_keys
                 ],
             },
             ensure_ascii=False,
@@ -753,43 +791,17 @@ def _write_session_smoke_configs(
                 "max_chain_depth": 0,
                 "agents": [
                     _session_smoke_agent_config(
-                        agent_id=agent_ids["local_cli"],
-                        display_name="Session Smoke Local CLI",
-                        provider_kind="local_cli",
-                        connection_kind="local_cli",
+                        agent_id=agent_ids[key],
+                        display_name=SESSION_SMOKE_DISPLAY_NAMES[key],
+                        provider_kind=SESSION_SMOKE_PROVIDER_KINDS[key],
+                        connection_kind=key,
                         meeting_id=meeting_id,
-                        message=expected_messages[agent_ids["local_cli"]],
-                        python_executable=python_executable,
-                    ),
-                    _session_smoke_agent_config(
-                        agent_id=agent_ids["live_session"],
-                        display_name="Session Smoke Live Session",
-                        provider_kind="local_cli",
-                        connection_kind="live_session",
-                        meeting_id=meeting_id,
-                        message=expected_messages[agent_ids["live_session"]],
-                        python_executable=python_executable,
-                    ),
-                    _session_smoke_agent_config(
-                        agent_id=agent_ids["remote_bridge"],
-                        display_name="Session Smoke Remote Bridge",
-                        provider_kind="remote_http_bridge",
-                        connection_kind="remote_bridge",
-                        meeting_id=meeting_id,
-                        message=expected_messages[agent_ids["remote_bridge"]],
+                        message=expected_messages[agent_ids[key]],
                         python_executable=python_executable,
                         bridge_endpoint=bridge_endpoint,
                         bridge_auth_ref=bridge_auth_ref,
-                    ),
-                    _session_smoke_agent_config(
-                        agent_id=agent_ids["self_service"],
-                        display_name="Session Smoke Self Service",
-                        provider_kind="local_cli",
-                        connection_kind="self_service",
-                        meeting_id=meeting_id,
-                        message=expected_messages[agent_ids["self_service"]],
-                        python_executable=python_executable,
-                    ),
+                    )
+                    for key in transport_keys
                 ],
             },
             ensure_ascii=False,
@@ -850,12 +862,21 @@ def _session_smoke_agent_config(
             ]
         )
         command = [python_executable, "-u", "-c", script]
+    elif connection_kind == "terminal_session":
+        script = "\n".join(
+            [
+                "import sys",
+                "for line in sys.stdin:",
+                f"    print({message!r}, flush=True)",
+            ]
+        )
+        command = [python_executable, "-u", "-c", script]
     elif connection_kind == "self_service":
         command = [python_executable, "-u", "-c", _session_smoke_self_service_script(message)]
     else:
         script = f"import sys; sys.stdin.read(); print({message!r})"
         command = [python_executable, "-c", script]
-    return {
+    config: dict[str, object] = {
         "agent_id": agent_id,
         "display_name": display_name,
         "provider_kind": provider_kind,
@@ -865,6 +886,9 @@ def _session_smoke_agent_config(
         "command": command,
         "timeout_seconds": 5,
     }
+    if connection_kind == "terminal_session":
+        config["terminal_idle_timeout"] = 0.1
+    return config
 
 
 def _session_smoke_self_service_script(message: str) -> str:
@@ -1338,6 +1362,15 @@ def smoke_group_id(value: object) -> str:
     if not cleaned:
         cleaned = f"smoke-{int(time.time() * 1000)}"
     return cleaned[:SMOKE_GROUP_ID_LIMIT].strip(".-") or f"smoke-{int(time.time() * 1000)}"
+
+
+def session_smoke_group_id(value: object) -> str:
+    cleaned = smoke_group_id(value)
+    bounded = cleaned[:SESSION_SMOKE_GROUP_ID_LIMIT].strip(".-")
+    if bounded:
+        return bounded
+    fallback = f"session-smoke-{int(time.time() * 1000)}"
+    return fallback[:SESSION_SMOKE_GROUP_ID_LIMIT].strip(".-")
 
 
 def _matching_smoke_replies(

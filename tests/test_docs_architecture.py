@@ -68,6 +68,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("python3 -m agentsassemble.cli live-agent run", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent run-group", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent session-smoke", doc)
+        self.assertIn("five resident transports when PTY terminal sessions are available", doc)
+        self.assertIn("skips the `terminal_session` fake and reports `terminal_session_reason: pty_unavailable`", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent processes start", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent processes list", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent processes wait", doc)

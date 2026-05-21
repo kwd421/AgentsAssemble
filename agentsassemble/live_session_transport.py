@@ -516,7 +516,11 @@ def _select_fds(readers: list[int], writers: list[int], timeout: float) -> tuple
 def _disable_terminal_echo(fd: int) -> None:
     assert termios is not None
     attrs = termios.tcgetattr(fd)
-    attrs[3] = attrs[3] & ~termios.ECHO
+    # Long resident prompts are pasted as one terminal submission. Canonical
+    # line buffering can overflow before a child process reads the newline.
+    attrs[3] = attrs[3] & ~(termios.ECHO | termios.ICANON)
+    attrs[6][termios.VMIN] = 1
+    attrs[6][termios.VTIME] = 0
     termios.tcsetattr(fd, termios.TCSANOW, attrs)
 
 

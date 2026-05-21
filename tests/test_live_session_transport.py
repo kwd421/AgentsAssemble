@@ -87,6 +87,27 @@ class JsonlLiveSessionTests(unittest.TestCase):
         self.assertIn("Terminal state 2: second prompt", second)
 
     @unittest.skipUnless(pty is not None and hasattr(pty, "openpty"), "requires POSIX PTY support")
+    def test_terminal_session_delivers_long_submission_without_line_discipline_bells(self):
+        script = "\n".join(
+            [
+                "import sys",
+                "for line in sys.stdin:",
+                "    print(f'long terminal prompt {len(line.strip())}', flush=True)",
+            ]
+        )
+        session = TerminalLiveSession(
+            [sys.executable, "-u", "-c", script],
+            idle_timeout_seconds=0.05,
+        )
+        try:
+            response = session.ask("x" * 10_000, timeout_seconds=5)
+        finally:
+            session.close()
+
+        self.assertIn("long terminal prompt 10000", response)
+        self.assertNotIn("\x07", response)
+
+    @unittest.skipUnless(pty is not None and hasattr(pty, "openpty"), "requires POSIX PTY support")
     def test_terminal_session_times_out_instead_of_returning_partial_output(self):
         script = "\n".join(
             [

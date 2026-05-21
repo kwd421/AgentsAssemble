@@ -50,6 +50,7 @@ from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
+from agentsassemble.live_session_transport import terminal_sessions_supported
 
 
 def _read_sse_frame(response, timeout: float = 3.0) -> str:
@@ -2299,10 +2300,18 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["rounds_status"], "answered")
             self.assertEqual(payload["round_count"], 1)
             self.assertEqual(payload["answered_round_count"], 1)
-            self.assertEqual(payload["expected_reply_count"], 4)
-            self.assertEqual(payload["reply_count"], 4)
-            self.assertEqual(payload["post_restart_reply_count"], 4)
-            self.assertEqual(payload["post_recover_reply_count"], 4)
+            expected_agent_count = len(payload["agent_ids"])
+            self.assertEqual(payload["terminal_session_supported"], terminal_sessions_supported())
+            self.assertEqual(payload["terminal_session_included"], payload["terminal_session_supported"])
+            self.assertEqual(payload["terminal_session_status"], "covered" if payload["terminal_session_included"] else "skipped")
+            if payload["terminal_session_included"]:
+                self.assertIn("session-smoke-api-terminal-session", payload["agent_ids"])
+            else:
+                self.assertEqual(payload["terminal_session_reason"], "pty_unavailable")
+            self.assertEqual(payload["expected_reply_count"], expected_agent_count)
+            self.assertEqual(payload["reply_count"], expected_agent_count)
+            self.assertEqual(payload["post_restart_reply_count"], expected_agent_count)
+            self.assertEqual(payload["post_recover_reply_count"], expected_agent_count)
             self.assertEqual(payload["recover_status"], "ready")
             self.assertNotEqual(payload["post_restart_source_event_id"], payload["source_event_id"])
             self.assertNotEqual(payload["post_recover_source_event_id"], payload["post_restart_source_event_id"])
@@ -2320,20 +2329,20 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(meeting["diagnostic_kind"], "session_smoke")
             live_events = read_live_events(meeting_dir, limit=None)
             official_replies = [event for event in live_events if event.get("kind") == "message" and event.get("official_record") is True]
-            self.assertEqual(len(official_replies), 4)
+            self.assertEqual(len(official_replies), expected_agent_count)
             lobby_replies = [event for event in read_lobby(root) if event.get("actor_id") in payload["agent_ids"]]
-            self.assertEqual(len(lobby_replies), 12)
+            self.assertEqual(len(lobby_replies), expected_agent_count * 3)
             self.assertEqual(
                 len([event for event in lobby_replies if event.get("source_event_id") == payload["source_event_id"]]),
-                4,
+                expected_agent_count,
             )
             self.assertEqual(
                 len([event for event in lobby_replies if event.get("source_event_id") == payload["post_restart_source_event_id"]]),
-                4,
+                expected_agent_count,
             )
             self.assertEqual(
                 len([event for event in lobby_replies if event.get("source_event_id") == payload["post_recover_source_event_id"]]),
-                4,
+                expected_agent_count,
             )
             agents = read_live_agents(root)
             self.assertEqual({agent["diagnostic"] for agent in agents if agent["agent_id"] in payload["agent_ids"]}, {True})
@@ -2347,6 +2356,7 @@ class GuiServerTests(unittest.TestCase):
             operation_blob = json.dumps(operations["operations"], ensure_ascii=False)
             self.assertNotIn("session smoke local_cli ok", operation_blob)
             self.assertNotIn("session smoke live_session ok", operation_blob)
+            self.assertNotIn("session smoke terminal_session ok", operation_blob)
             self.assertNotIn("session smoke remote_bridge ok", operation_blob)
             self.assertNotIn("session smoke self_service ok", operation_blob)
             self.assertNotIn("agentsassemble-smoke-token", operation_blob)
@@ -2837,6 +2847,10 @@ class GuiServerTests(unittest.TestCase):
                 "meeting_id": "session-smoke-meeting",
                 "group_id": "session-smoke",
                 "agent_ids": ["session-smoke-local-cli"],
+                "terminal_session_supported": False,
+                "terminal_session_included": False,
+                "terminal_session_status": "skipped",
+                "terminal_session_reason": "pty_unavailable",
                 "lobby_probe_count": 1,
                 "expected_reply_count": 3,
                 "reply_count": 3,
@@ -2903,6 +2917,10 @@ class GuiServerTests(unittest.TestCase):
                 "meeting_id": "session-smoke-meeting",
                 "group_id": "session-smoke",
                 "agent_ids": ["session-smoke-local-cli"],
+                "terminal_session_supported": False,
+                "terminal_session_included": False,
+                "terminal_session_status": "skipped",
+                "terminal_session_reason": "pty_unavailable",
                 "rounds_status": "answered",
                 "answered_round_count": 1,
                 "lobby_probe_count": 1,
@@ -2941,6 +2959,8 @@ class GuiServerTests(unittest.TestCase):
         ]
         self.assertEqual(readiness_operations[-1]["status"], "success")
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke"], "ok")
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_terminal_session_status"], "skipped")
+        self.assertFalse(readiness_operations[-1]["details"]["session_smoke_terminal_session_included"])
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_reply_count"], 3)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_post_recover_reply_count"], 3)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_soak_cycle_count"], 2)

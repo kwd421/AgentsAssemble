@@ -32,11 +32,28 @@ SESSION_SMOKE_AGENT_IDS = [
     "session-smoke-self-service",
 ]
 
+SESSION_SMOKE_AGENT_IDS_WITH_TERMINAL = [
+    "session-smoke-local-cli",
+    "session-smoke-live-session",
+    "session-smoke-terminal-session",
+    "session-smoke-remote-bridge",
+    "session-smoke-self-service",
+]
+
 SESSION_SMOKE_CONNECTION_KINDS = ["local_cli", "live_session", "remote_bridge", "self_service"]
+
+SESSION_SMOKE_CONNECTION_KINDS_WITH_TERMINAL = [
+    "local_cli",
+    "live_session",
+    "terminal_session",
+    "remote_bridge",
+    "self_service",
+]
 
 SESSION_SMOKE_MESSAGES = {
     "session-smoke-local-cli": "session smoke local_cli ok",
     "session-smoke-live-session": "session smoke live_session ok",
+    "session-smoke-terminal-session": "session smoke terminal_session ok",
     "session-smoke-remote-bridge": "session smoke remote_bridge ok",
     "session-smoke-self-service": "session smoke self_service ok",
 }
@@ -53,8 +70,13 @@ def _argv_option_value(argv: list[str], option: str) -> str:
     raise AssertionError(f"{option} not present in argv {argv!r}")
 
 
-def _session_smoke_lobby_reply_events(probe_id: str, *, group_id: str = "session-smoke") -> list[dict[str, object]]:
-    return [
+def _session_smoke_lobby_reply_events(
+    probe_id: str,
+    *,
+    group_id: str = "session-smoke",
+    include_terminal_session: bool = False,
+) -> list[dict[str, object]]:
+    events = [
         {
             "id": f"reply-local-{probe_id}",
             "actor_id": f"{group_id}-local-cli",
@@ -69,24 +91,48 @@ def _session_smoke_lobby_reply_events(probe_id: str, *, group_id: str = "session
             "source_event_id": probe_id,
             "live_agent_endpoint": True,
         },
-        {
-            "id": f"reply-bridge-{probe_id}",
-            "actor_id": f"{group_id}-remote-bridge",
-            "message": "session smoke remote_bridge ok",
-            "source_event_id": probe_id,
-            "live_agent_endpoint": True,
-        },
-        {
-            "id": f"reply-self-service-{probe_id}",
-            "actor_id": f"{group_id}-self-service",
-            "message": "session smoke self_service ok",
-            "source_event_id": probe_id,
-            "live_agent_endpoint": True,
-        },
     ]
+    if include_terminal_session:
+        events.append(
+            {
+                "id": f"reply-terminal-{probe_id}",
+                "actor_id": f"{group_id}-terminal-session",
+                "message": "session smoke terminal_session ok",
+                "source_event_id": probe_id,
+                "live_agent_endpoint": True,
+            }
+        )
+    events.extend(
+        [
+            {
+                "id": f"reply-bridge-{probe_id}",
+                "actor_id": f"{group_id}-remote-bridge",
+                "message": "session smoke remote_bridge ok",
+                "source_event_id": probe_id,
+                "live_agent_endpoint": True,
+            },
+            {
+                "id": f"reply-self-service-{probe_id}",
+                "actor_id": f"{group_id}-self-service",
+                "message": "session smoke self_service ok",
+                "source_event_id": probe_id,
+                "live_agent_endpoint": True,
+            },
+        ]
+    )
+    return events
 
 
 class LiveAgentSmokeTests(unittest.TestCase):
+    def setUp(self):
+        terminal_support = patch(
+            "agentsassemble.live_agent_smoke.terminal_sessions_supported",
+            return_value=False,
+            create=True,
+        )
+        terminal_support.start()
+        self.addCleanup(terminal_support.stop)
+
     def test_session_smoke_recover_killer_uses_non_graceful_signal(self):
         with patch("agentsassemble.live_agent_smoke.os.killpg") as killpg:
             _kill_session_smoke_process_group(1234)
@@ -295,6 +341,8 @@ class LiveAgentSmokeTests(unittest.TestCase):
             lobby_post_indexes[2],
         )
         self.assertEqual(result["status"], "ok")
+        self.assertFalse(result["terminal_session_supported"])
+        self.assertFalse(result["terminal_session_included"])
         self.assertEqual(result["meeting_id"], "session-smoke-meeting")
         self.assertEqual(result["group_id"], "session-smoke")
         self.assertEqual(result["rounds_status"], "answered")
@@ -326,6 +374,166 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertNotIn("session smoke self_service ok", serialized)
         self.assertNotIn("agentsassemble-smoke-token", serialized)
         self.assertNotIn("command", serialized)
+
+    def test_session_smoke_includes_terminal_session_when_pty_is_supported(self):
+        calls = []
+        state = {"probe_ids": []}
+
+        def ready_response(payload):
+            return {
+                "status": "ready",
+                "meeting_id": payload["meeting_id"],
+                "group_id": payload["group_id"],
+                "connection": {"expected": 5, "connected": 5, "attention": []},
+            }
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            calls.append((url, method, payload, timeout_seconds))
+            if url.endswith("/api/live-agent-sessions/start"):
+                live_config = json.loads(Path(payload["live_agent_config_path"]).read_text(encoding="utf-8"))
+                self.assertEqual(
+                    [agent["agent_id"] for agent in live_config["agents"]],
+                    SESSION_SMOKE_AGENT_IDS_WITH_TERMINAL,
+                )
+                self.assertEqual(
+                    [agent["connection_kind"] for agent in live_config["agents"]],
+                    SESSION_SMOKE_CONNECTION_KINDS_WITH_TERMINAL,
+                )
+                terminal_config = live_config["agents"][2]
+                self.assertEqual(terminal_config["provider_kind"], "local_cli")
+                self.assertEqual(terminal_config["display_name"], "Session Smoke Terminal Session")
+                terminal_command = " ".join(str(part) for part in terminal_config["command"])
+                self.assertIn("for line in sys.stdin", terminal_command)
+                self.assertNotIn("stdin.read", terminal_command)
+                council_config = json.loads(Path(payload["council_config_path"]).read_text(encoding="utf-8"))
+                self.assertIn("session_smoke_terminal_session", [role["id"] for role in council_config["roles"]])
+                agent_config = json.loads(Path(payload["agent_config_path"]).read_text(encoding="utf-8"))
+                self.assertEqual(len(agent_config["agent_bindings"]), 5)
+                self.assertIn(
+                    {
+                        "agent_id": "session-smoke-terminal-session",
+                        "role_id": "session_smoke_terminal_session",
+                        "owner_id": "session-smoke",
+                        "provider_id": "session-smoke-local",
+                        "model_id": "terminal-session",
+                        "permission_profile_id": "meeting_readonly",
+                        "join_mode": "fresh",
+                    },
+                    agent_config["agent_bindings"],
+                )
+                meeting_dir = state["root"] / "meetings" / payload["meeting_id"]
+                meeting_dir.mkdir(parents=True, exist_ok=True)
+                (meeting_dir / "live_state.json").write_text(
+                    json.dumps({"meeting_id": payload["meeting_id"], "live_status": "running"}),
+                    encoding="utf-8",
+                )
+                return ready_response(payload)
+            if url.endswith("/live-agent-turns/rounds"):
+                return {
+                    "status": "answered",
+                    "meeting_id": "session-smoke-meeting",
+                    "round_count": 1,
+                    "answered_round_count": 1,
+                    "completed_round_count": 0,
+                    "timeout_round_count": 0,
+                    "skipped_round_count": 0,
+                    "stopped_round_count": 0,
+                }
+            if url.endswith("/engagement"):
+                return {"agent": {"agent_id": url.rsplit("/", 2)[-2], "engagement_mode": "always"}}
+            if url.endswith("/api/lobby") and method == "POST":
+                probe_id = f"terminal-probe-{len(state['probe_ids']) + 1}"
+                state["probe_ids"].append(probe_id)
+                return {"event": {"id": probe_id}}
+            if url.endswith("/api/lobby") and method == "GET":
+                events = []
+                for probe_id in state["probe_ids"]:
+                    events.extend(_session_smoke_lobby_reply_events(probe_id, include_terminal_session=True))
+                return {"events": events}
+            if (
+                url.endswith("/api/live-agent-sessions/check")
+                or url.endswith("/api/live-agent-sessions/resume")
+                or url.endswith("/api/live-agent-sessions/restart")
+                or url.endswith("/api/live-agent-sessions/recover")
+            ):
+                return ready_response(payload)
+            if url.endswith("/api/live-agent-processes"):
+                return {
+                    "groups": [
+                        {
+                            "group_id": "session-smoke",
+                            "status": "error",
+                            "meeting_id": "session-smoke-meeting",
+                            "diagnostic": True,
+                            "agents": [{"agent_id": agent_id} for agent_id in SESSION_SMOKE_AGENT_IDS_WITH_TERMINAL],
+                        }
+                    ]
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                return {
+                    "status": "stopped",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "offline": {"expected": 5, "offline": 5, "attention": []},
+                }
+            return {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state["root"] = Path(temp_dir) / "room"
+            with patch("agentsassemble.live_agent_smoke.terminal_sessions_supported", return_value=True, create=True):
+                result = run_live_agent_session_smoke(
+                    server="http://room.local",
+                    group_id="session-smoke",
+                    meeting_id="session-smoke-meeting",
+                    timeout_seconds=8,
+                    request_json=request_json,
+                    output_root=state["root"],
+                    sleep_fn=lambda seconds: None,
+                    temp_dir_factory=lambda: _FixedTemporaryDirectory(Path(temp_dir) / "config"),
+                )
+
+        self.assertTrue(result["terminal_session_supported"])
+        self.assertTrue(result["terminal_session_included"])
+        self.assertEqual(result["expected_reply_count"], 5)
+        self.assertEqual(result["reply_count"], 5)
+        self.assertEqual(result["post_restart_reply_count"], 5)
+        self.assertEqual(result["post_recover_reply_count"], 5)
+        self.assertIn("session-smoke-terminal-session", result["agent_ids"])
+        self.assertEqual({reply["actor_id"] for reply in result["replies"]}, set(SESSION_SMOKE_AGENT_IDS_WITH_TERMINAL))
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("session smoke terminal_session ok", serialized)
+
+    def test_session_smoke_bounds_agent_ids_when_terminal_session_is_supported(self):
+        long_group_id = "x" * 80
+        seen_agent_ids = []
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            del method, timeout_seconds
+            if url.endswith("/api/live-agent-sessions/start"):
+                live_config = json.loads(Path(payload["live_agent_config_path"]).read_text(encoding="utf-8"))
+                seen_agent_ids.extend(agent["agent_id"] for agent in live_config["agents"])
+                return {"status": "halt"}
+            if url.endswith("/api/live-agent-sessions/stop"):
+                return {"status": "stopped"}
+            return {"groups": []}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("agentsassemble.live_agent_smoke.terminal_sessions_supported", return_value=True, create=True):
+                with self.assertRaisesRegex(LiveAgentSmokeFailed, "start did not become ready"):
+                    run_live_agent_session_smoke(
+                        server="http://room.local",
+                        group_id=long_group_id,
+                        meeting_id="session-smoke-meeting",
+                        timeout_seconds=8,
+                        request_json=request_json,
+                        output_root=Path(temp_dir) / "room",
+                        sleep_fn=lambda seconds: None,
+                        temp_dir_factory=lambda: _FixedTemporaryDirectory(Path(temp_dir) / "config"),
+                    )
+
+        self.assertTrue(seen_agent_ids)
+        self.assertLessEqual(max(len(agent_id) for agent_id in seen_agent_ids), 64)
+        self.assertIn("-terminal-session", seen_agent_ids[2])
 
     def test_session_smoke_self_service_script_executes_env_command_templates_as_argv(self):
         with tempfile.TemporaryDirectory() as temp_dir:
