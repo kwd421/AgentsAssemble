@@ -490,6 +490,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("/api/meetings/<meeting_id>/live-agent-turns/rounds", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent review-checkpoint", doc)
         self.assertIn("/api/meetings/<meeting_id>/review-checkpoints", doc)
+        self.assertIn("GUI Lobby `상주 실행` panel exposes this same path as `리뷰요청`", doc)
         self.assertIn("review.checkpoint", doc)
         self.assertIn("does not include prompt or reply content", doc)
         self.assertIn("--wait", doc)

@@ -4596,6 +4596,35 @@ Operator docs now state that background refresh remains live while volatile hear
 
 ---
 
+### Task 133: GUI Resident Review Checkpoint Control
+
+**Goal:** Let the operator request a resident-agent review checkpoint directly from the live room GUI.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `agentsassemble/static/shared.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED GUI checkpoint coverage**
+
+Cover the `상주 실행` panel posting a review checkpoint to `/api/meetings/<meeting_id>/review-checkpoints` with the current meeting id, group id, review message, optional checkpoint id, and bounded timeout. The GUI must refresh operation history and request a meeting refresh after the checkpoint returns.
+
+- [x] **Step 2: Add GUI control and status plumbing**
+
+The panel now exposes review message, checkpoint id, timeout, and `리뷰요청` controls. The action participates in the shared busy gate, preserves drafts across re-renders, posts the checkpoint request, and reports answered/timed-out/skipped counts in the existing live-agent process status surface.
+
+- [x] **Step 3: Document the GUI operator path**
+
+Operator docs now state that the GUI `리뷰요청` button uses the same resident review-checkpoint path as the CLI/API and refreshes the visible operation/meeting state when it completes.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

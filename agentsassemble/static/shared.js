@@ -38,6 +38,7 @@ export const state = {
   liveAgentSessionRecoverRunning: false,
   liveAgentSessionCheckRunning: false,
   liveAgentSessionStopRunning: false,
+  liveAgentReviewCheckpointRunning: false,
   liveAgentPreflightRunning: false,
   liveAgentSmokeRunning: false,
   liveAgentOfficialRoundSmokeRunning: false,

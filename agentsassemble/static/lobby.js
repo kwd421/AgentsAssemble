@@ -165,6 +165,16 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-call-remaining-rounds")?.addEventListener("click", async () => {
     await callLiveAgentRemainingRounds(lobby);
   });
+  lobby.querySelector("#live-agent-review-checkpoint")?.addEventListener("click", async () => {
+    await callLiveAgentReviewCheckpoint(lobby);
+  });
+  lobby.querySelectorAll("[data-live-agent-review-checkpoint-input]").forEach((input) => {
+    input.addEventListener("keydown", async (event) => {
+      if (event.key !== "Enter" || event.isComposing) return;
+      event.preventDefault();
+      await callLiveAgentReviewCheckpoint(lobby);
+    });
+  });
   lobby.querySelectorAll("[data-live-agent-process-stop]").forEach((button) => {
     button.addEventListener("click", () => stopLiveAgentProcessGroup(button.dataset.liveAgentProcessStop));
   });
@@ -247,6 +257,9 @@ function readLiveAgentProcessDraft(lobby) {
     roundTimeout: form.querySelector("#live-agent-round-timeout")?.value ?? "",
     roundMaxRounds: form.querySelector("#live-agent-round-max-rounds")?.value ?? "",
     roundStopOnTimeout: Boolean(form.querySelector("#live-agent-round-stop-on-timeout")?.checked),
+    reviewCheckpointMessage: form.querySelector("#live-agent-review-checkpoint-message")?.value ?? "",
+    reviewCheckpointId: form.querySelector("#live-agent-review-checkpoint-id")?.value ?? "",
+    reviewCheckpointTimeout: form.querySelector("#live-agent-review-checkpoint-timeout")?.value ?? "",
     sessionRunRemainingRounds: Boolean(form.querySelector("#live-agent-session-run-remaining-rounds")?.checked),
     sessionProbeBoundAgents: Boolean(form.querySelector("#live-agent-session-probe-bound-agents")?.checked),
     sessionProbeTimeout: form.querySelector("#live-agent-session-probe-timeout")?.value ?? "",
@@ -286,6 +299,9 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const roundTimeout = lobby.querySelector("#live-agent-round-timeout");
   const roundMaxRounds = lobby.querySelector("#live-agent-round-max-rounds");
   const roundStopOnTimeout = lobby.querySelector("#live-agent-round-stop-on-timeout");
+  const reviewCheckpointMessage = lobby.querySelector("#live-agent-review-checkpoint-message");
+  const reviewCheckpointId = lobby.querySelector("#live-agent-review-checkpoint-id");
+  const reviewCheckpointTimeout = lobby.querySelector("#live-agent-review-checkpoint-timeout");
   const sessionRunRemainingRounds = lobby.querySelector("#live-agent-session-run-remaining-rounds");
   const sessionProbeBoundAgents = lobby.querySelector("#live-agent-session-probe-bound-agents");
   const sessionProbeTimeout = lobby.querySelector("#live-agent-session-probe-timeout");
@@ -309,6 +325,9 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   if (roundTimeout) roundTimeout.value = draft.roundTimeout;
   if (roundMaxRounds) roundMaxRounds.value = draft.roundMaxRounds;
   if (roundStopOnTimeout) roundStopOnTimeout.checked = draft.roundStopOnTimeout;
+  if (reviewCheckpointMessage) reviewCheckpointMessage.value = draft.reviewCheckpointMessage;
+  if (reviewCheckpointId) reviewCheckpointId.value = draft.reviewCheckpointId;
+  if (reviewCheckpointTimeout) reviewCheckpointTimeout.value = draft.reviewCheckpointTimeout;
   if (sessionRunRemainingRounds) sessionRunRemainingRounds.checked = draft.sessionRunRemainingRounds;
   if (sessionProbeBoundAgents) sessionProbeBoundAgents.checked = draft.sessionProbeBoundAgents;
   if (sessionProbeTimeout) sessionProbeTimeout.value = draft.sessionProbeTimeout;
@@ -596,6 +615,10 @@ function renderLiveAgentProcessControls() {
         <button type="button" id="live-agent-session-stop" ${processActionsDisabled ? "disabled" : ""}>세션중지</button>
         <button type="button" id="live-agent-call-round" ${processActionsDisabled ? "disabled" : ""}>라운드호출</button>
         <button type="button" id="live-agent-call-remaining-rounds" ${processActionsDisabled ? "disabled" : ""}>남은라운드</button>
+        <input id="live-agent-review-checkpoint-message" data-live-agent-review-checkpoint-input maxlength="240" value="Review this resident slice before commit." aria-label="review checkpoint message" />
+        <input id="live-agent-review-checkpoint-id" data-live-agent-review-checkpoint-input maxlength="128" placeholder="checkpoint id" aria-label="review checkpoint id" />
+        <input id="live-agent-review-checkpoint-timeout" data-live-agent-review-checkpoint-input type="number" min="0" max="600" step="1" value="30" aria-label="review checkpoint timeout seconds" />
+        <button type="button" id="live-agent-review-checkpoint" ${processActionsDisabled ? "disabled" : ""}>리뷰요청</button>
         <label class="live-agent-process-options">
           <input id="live-agent-discovery-session-bundle" type="checkbox" checked ${processActionsDisabled ? "disabled" : ""} />
           <span>세션번들</span>
@@ -640,7 +663,7 @@ function renderLiveAgentProcessControls() {
 }
 
 function liveAgentProcessActionBusy() {
-  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || state.liveAgentDiscoveryRunning || state.liveAgentAutoJoinRunning || Boolean(state.liveAgentProcessRowActionRunning) || state.liveAgentProcessBulkStopRunning || Boolean(state.liveAgentSessionRunRetryNowRunning) || Boolean(state.liveAgentSessionRunActionRunning);
+  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentReviewCheckpointRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || state.liveAgentDiscoveryRunning || state.liveAgentAutoJoinRunning || Boolean(state.liveAgentProcessRowActionRunning) || state.liveAgentProcessBulkStopRunning || Boolean(state.liveAgentSessionRunRetryNowRunning) || Boolean(state.liveAgentSessionRunActionRunning);
 }
 
 function defaultOfficialRoundId(meeting) {
@@ -2774,6 +2797,44 @@ async function callLiveAgentRemainingRounds(lobby) {
   }
 }
 
+async function callLiveAgentReviewCheckpoint(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  const meetingId = liveAgentOfficialRoundMeetingId(lobby);
+  const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
+  const content = lobby.querySelector("#live-agent-review-checkpoint-message")?.value.trim() || "";
+  if (!meetingId || !groupId || !content) {
+    state.liveAgentProcessStatus = { message: "리뷰 checkpoint 요청 실패: meeting id, group id, 메시지가 필요합니다", tone: "error" };
+    renderLobby({ followLatest: false });
+    return;
+  }
+  state.liveAgentReviewCheckpointRunning = true;
+  state.liveAgentProcessStatus = { message: "리뷰 checkpoint 요청 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const requestBody = {
+      group_id: groupId,
+      content,
+      timeout_seconds: liveAgentReviewCheckpointTimeoutSeconds(lobby),
+    };
+    const checkpointId = lobby.querySelector("#live-agent-review-checkpoint-id")?.value.trim() || "";
+    if (checkpointId) requestBody.checkpoint_id = checkpointId;
+    const payload = await fetchJson(`/api/meetings/${encodeURIComponent(meetingId)}/review-checkpoints`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const tone = payload.status === "answered" ? "success" : "error";
+    state.liveAgentProcessStatus = { message: liveAgentReviewCheckpointStatusMessage(payload), tone };
+    notifyMeetingRefreshRequested(meetingId);
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `리뷰 checkpoint 요청 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    state.liveAgentReviewCheckpointRunning = false;
+    await loadLiveAgentOperations({ background: true, force: true });
+    renderLobby({ followLatest: false });
+  }
+}
+
 function liveAgentOfficialRoundMeetingId(lobby) {
   return lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
 }
@@ -2788,6 +2849,12 @@ function liveAgentRoundMaxRounds(lobby) {
   const value = Number(lobby.querySelector("#live-agent-round-max-rounds")?.value || 8);
   if (!Number.isFinite(value)) return 8;
   return Math.min(8, Math.max(1, value));
+}
+
+function liveAgentReviewCheckpointTimeoutSeconds(lobby) {
+  const value = Number(lobby.querySelector("#live-agent-review-checkpoint-timeout")?.value || 30);
+  if (!Number.isFinite(value)) return 30;
+  return Math.min(600, Math.max(0, value));
 }
 
 function liveAgentRoundStatusMessage(payload) {
@@ -2808,6 +2875,16 @@ function liveAgentRemainingRoundsStatusMessage(payload) {
   const skipped = Math.max(0, Number(payload.skipped_round_count || 0));
   const completedText = completed ? `, ${completed} already complete` : "";
   return `남은 공식 라운드 ${status}: ${roundCount} rounds · ${answered} answered${completedText}, ${timedOut} timed out, ${skipped} skipped`;
+}
+
+function liveAgentReviewCheckpointStatusMessage(payload) {
+  const status = payload.status || "unknown";
+  const checkpointId = payload.checkpoint_id || "checkpoint";
+  const turnCount = Math.max(0, Number(payload.turn_count || 0));
+  const answered = Math.max(0, Number(payload.answered_count || 0));
+  const timedOut = Math.max(0, Number(payload.timeout_count || 0));
+  const skipped = Math.max(0, Number(payload.skipped_count || 0));
+  return `리뷰 checkpoint ${status}: ${checkpointId} · ${answered}/${turnCount} answered, ${timedOut} timed out, ${skipped} skipped`;
 }
 
 function liveAgentSessionConnectTimeoutSeconds(lobby) {

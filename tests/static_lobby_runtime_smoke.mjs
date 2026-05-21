@@ -199,6 +199,7 @@ function resetState() {
     liveAgentSessionRecoverRunning: false,
     liveAgentSessionCheckRunning: false,
     liveAgentSessionStopRunning: false,
+    liveAgentReviewCheckpointRunning: false,
     liveAgentPreflightRunning: false,
     liveAgentSmokeRunning: false,
     liveAgentOfficialRoundSmokeRunning: false,
@@ -243,6 +244,7 @@ function installHarness({
   liveAgentDiscoveryPayload = null,
   liveAgentDiscoveryResponse = null,
   liveAgentPreflightPayload = null,
+  reviewCheckpointPayload = null,
   liveAgentsPayload = null,
   liveAgentProcessEventsPayload = null,
   liveAgentOperationsPayload = null,
@@ -569,6 +571,19 @@ function installHarness({
         results: [{ round_id: "round_2", status: "answered" }],
       });
     }
+    if (url === "/api/meetings/resident-gui/review-checkpoints") {
+      return jsonResponse(
+        reviewCheckpointPayload || {
+          status: "answered",
+          checkpoint_id: "checkpoint-gui",
+          turn_count: 2,
+          answered_count: 2,
+          timeout_count: 0,
+          skipped_count: 0,
+          results: [],
+        }
+      );
+    }
     if (url === "/api/lobby") return jsonResponse({ events: [] });
     if (url === "/api/live-agents") return jsonResponse(payloadValue(liveAgentsPayload) || { agents: [] });
     if (url === "/api/live-agent-processes") return jsonResponse({ groups: [] });
@@ -699,6 +714,10 @@ function roundRequest(requests) {
 
 function remainingRoundsRequest(requests) {
   return requests.find((request) => request.url === "/api/meetings/resident-gui/live-agent-turns/rounds");
+}
+
+function reviewCheckpointRequest(requests) {
+  return requests.find((request) => request.url === "/api/meetings/resident-gui/review-checkpoints");
 }
 
 async function clickReadiness({ officialRoundSmoke, sessionSmoke = false, readinessPayload }) {
@@ -3034,6 +3053,60 @@ test("remaining rounds button posts bounded meeting batch and requests meeting r
   assert.equal(state.liveAgentProcessStatus.message, "남은 공식 라운드 answered: 1 rounds · 1 answered, 0 timed out, 0 skipped");
   assert.equal(events.at(-1)?.type, "agentsassemble:meeting-refresh-requested");
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+});
+
+test("review checkpoint button posts resident review request and refreshes operations", async () => {
+  resetState();
+  const { document, requests, events } = installHarness();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-process-group").value = "resident-main";
+  lobby.querySelector("#live-agent-review-checkpoint-message").value = "Review this slice before commit.";
+  lobby.querySelector("#live-agent-review-checkpoint-id").value = "checkpoint-gui";
+  lobby.querySelector("#live-agent-review-checkpoint-timeout").value = "8";
+
+  await lobby.querySelector("#live-agent-review-checkpoint").click();
+
+  assert.deepEqual(reviewCheckpointRequest(requests).jsonBody, {
+    group_id: "resident-main",
+    content: "Review this slice before commit.",
+    checkpoint_id: "checkpoint-gui",
+    timeout_seconds: 8,
+  });
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-operations?limit=20"),
+    true
+  );
+  assert.equal(events.at(-1)?.type, "agentsassemble:meeting-refresh-requested");
+  assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+  assert.equal(state.liveAgentProcessStatus.message, "리뷰 checkpoint answered: checkpoint-gui · 2/2 answered, 0 timed out, 0 skipped");
+});
+
+test("review checkpoint message enter posts resident review request instead of starting process", async () => {
+  resetState();
+  const { document, requests } = installHarness();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-process-group").value = "resident-main";
+  const messageInput = lobby.querySelector("#live-agent-review-checkpoint-message");
+  messageInput.value = "Review from keyboard.";
+
+  let prevented = false;
+  for (const listener of messageInput.listeners.get("keydown") || []) {
+    await listener({
+      key: "Enter",
+      isComposing: false,
+      preventDefault() {
+        prevented = true;
+      },
+    });
+  }
+
+  assert.equal(prevented, true);
+  assert.equal(processStartRequest(requests), undefined);
+  assert.equal(reviewCheckpointRequest(requests).jsonBody.content, "Review from keyboard.");
 });
 
 test("generated official round defaults refresh when stale draft was only the old default", () => {
