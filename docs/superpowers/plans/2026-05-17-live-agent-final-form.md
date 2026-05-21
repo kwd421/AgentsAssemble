@@ -4840,6 +4840,36 @@ Operator docs and roadmap now state that parent-managed runners continue polling
 
 ---
 
+### Task 141: Self-Service Ack Launch Failures Leave Presence Evidence
+
+**Goal:** Keep self-service resident wrappers from crashing without roster evidence when server-returned ack commands cannot be launched.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `scripts/my_self_service_agent.py`
+- Modify: `agentsassemble/live_agent_smoke.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_self_service_example.py`
+- Test: `tests/test_live_agent_smoke.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED ack launch failure coverage**
+
+Cover the checked-in self-service wrapper receiving `return_packet` and `observe_lobby` actions whose returned `ack_command` cannot be launched. Cover the credential-free smoke child receiving `observe_lobby` with a blank executable ack command. The resident must not post a lobby or official reply, and it must report `status: "error"` with the relevant lobby or live cursor.
+
+- [x] **Step 2: Run server-returned ack commands through a safe command boundary**
+
+`scripts/my_self_service_agent.py` and the generated session-smoke self-service child now treat ack-command launch exceptions, timeouts, and non-zero exits as the existing ack failure labels: `return packet ack failed` or `lobby observation ack failed`. The same safe command boundary is used for return-packet reads and the follow-up ack commands.
+
+- [x] **Step 3: Keep docs aligned with self-service failure evidence**
+
+Operator docs and roadmap now state that self-service wrappers report ack-command failures with cursor-bearing `error` heartbeats instead of silently crashing or acknowledging delivery.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

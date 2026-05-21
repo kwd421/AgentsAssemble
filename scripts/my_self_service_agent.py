@@ -119,17 +119,8 @@ def _handle_event(payload: dict[str, object], *, message: str, default_meeting_i
                 command_timeout=command_timeout,
             )
             return False
-        try:
-            packet = _run(read_command, command_timeout)
-        except (OSError, ValueError, subprocess.SubprocessError):
-            _heartbeat(
-                "error",
-                last_error="return packet read failed",
-                last_observed_live_event_id=source_event_id,
-                command_timeout=command_timeout,
-            )
-            return False
-        if packet.returncode != 0:
+        packet = _run_optional(read_command, command_timeout)
+        if packet is None or packet.returncode != 0:
             _heartbeat(
                 "error",
                 last_error="return packet read failed",
@@ -139,8 +130,8 @@ def _handle_event(payload: dict[str, object], *, message: str, default_meeting_i
             return False
         ack_command = _command_list(payload.get("ack_command"))
         if ack_command:
-            ack = _run(ack_command, command_timeout)
-            if ack.returncode == 0:
+            ack = _run_optional(ack_command, command_timeout)
+            if ack is not None and ack.returncode == 0:
                 return True
             _heartbeat(
                 "error",
@@ -160,8 +151,8 @@ def _handle_event(payload: dict[str, object], *, message: str, default_meeting_i
     if action == "observe_lobby":
         ack_command = _command_list(payload.get("ack_command"))
         if ack_command:
-            ack = _run(ack_command, command_timeout)
-            if ack.returncode == 0:
+            ack = _run_optional(ack_command, command_timeout)
+            if ack is not None and ack.returncode == 0:
                 return True
             _heartbeat(
                 "error",
@@ -229,6 +220,13 @@ def _insert_before_message_separator(command: list[str], *args: str) -> list[str
 
 def _run(command: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+
+
+def _run_optional(command: list[str], timeout: float) -> subprocess.CompletedProcess[str] | None:
+    try:
+        return _run(command, timeout)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
 
 
 def _json_object(text: str) -> dict[str, object]:

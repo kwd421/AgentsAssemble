@@ -986,6 +986,269 @@ class LiveAgentSmokeTests(unittest.TestCase):
             ]
             self.assertEqual(online_acks, [])
 
+    def test_session_smoke_self_service_script_reports_error_when_return_packet_ack_launch_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            fake_cli = root / "fake_cli.py"
+            calls_path = root / "calls.jsonl"
+            state_path = root / "state.txt"
+            fake_cli.write_text(
+                "\n".join(
+                    [
+                        "import json, os, sys",
+                        "calls_path = os.environ['SELF_SERVICE_CALLS_PATH']",
+                        "state_path = os.environ['SELF_SERVICE_STATE_PATH']",
+                        "args = sys.argv[1:]",
+                        "with open(calls_path, 'a', encoding='utf-8') as handle:",
+                        "    handle.write(json.dumps(args) + '\\n')",
+                        "command = args[0] if args else ''",
+                        "if command == 'wait-next':",
+                        "    if os.path.exists(state_path):",
+                        "        print(json.dumps({'status': 'idle'}))",
+                        "    else:",
+                        "        open(state_path, 'w', encoding='utf-8').write('seen')",
+                        "        read = [sys.executable, __file__, 'return-packet', '--source-event-id', 'packet-1', '--json']",
+                        "        ack = ['']",
+                        "        print(json.dumps({'status': 'event', 'action': 'return_packet', 'source_event_id': 'packet-1', 'read_command': read, 'ack_command': ack}))",
+                        "elif command == 'return-packet':",
+                        "    print(json.dumps({'status': 'ok', 'markdown': 'Architect private return packet.'}))",
+                        "elif command == 'heartbeat':",
+                        "    print(json.dumps({'status': 'ok'}))",
+                        "elif command in {'say', 'official-reply'}:",
+                        "    sys.exit(9)",
+                        "elif command == 'room':",
+                        "    print(json.dumps({'agent': {'engagement_mode': 'always'}}))",
+                        "else:",
+                        "    sys.exit(2)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            base = [sys.executable, str(fake_cli)]
+            env = os.environ.copy()
+            env.update(
+                {
+                    "SELF_SERVICE_CALLS_PATH": str(calls_path),
+                    "SELF_SERVICE_STATE_PATH": str(state_path),
+                    "AGENTSASSEMBLE_MEETING_ID": "meeting-1",
+                    "AGENTSASSEMBLE_POLL_INTERVAL": "0.05",
+                    "AGENTSASSEMBLE_ROOM_COMMAND": shlex.join([*base, "room"]),
+                    "AGENTSASSEMBLE_WAIT_NEXT_COMMAND": shlex.join([*base, "wait-next", "--json"]),
+                    "AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "say",
+                            "--source-event-id",
+                            "{source_event_id}",
+                            "--auto-chain-depth",
+                            "{auto_chain_depth}",
+                            "--",
+                            "{message}",
+                        ]
+                    ),
+                    "AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "official-reply",
+                            "--meeting-id",
+                            "{meeting_id}",
+                            "--source-event-id",
+                            "{source_event_id}",
+                            "--",
+                            "{message}",
+                        ]
+                    ),
+                    "AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "heartbeat",
+                            "--status",
+                            "{status}",
+                            "--last-error={last_error}",
+                            "--last-reply-at={last_reply_at}",
+                            "--last-observed-event-id={last_observed_event_id}",
+                            "--last-observed-live-event-id={last_observed_live_event_id}",
+                            "--json",
+                        ]
+                    ),
+                }
+            )
+            process = subprocess.Popen(
+                [sys.executable, "-u", "-c", _session_smoke_self_service_script("ok")],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 3
+                error_heartbeat = None
+                calls = []
+                while time.monotonic() < deadline:
+                    if calls_path.exists():
+                        calls = [
+                            json.loads(line)
+                            for line in calls_path.read_text(encoding="utf-8").splitlines()
+                            if line.strip()
+                        ]
+                        for call in calls:
+                            if call and call[0] == "heartbeat" and call[call.index("--status") + 1] == "error":
+                                error_heartbeat = call
+                                break
+                        if error_heartbeat:
+                            break
+                    time.sleep(0.05)
+                if error_heartbeat is None:
+                    stderr = process.stderr.read() if process.poll() is not None and process.stderr is not None else ""
+                    self.fail(f"self_service script did not report return packet ack launch failure; stderr={stderr}")
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=1)
+                if process.stderr is not None:
+                    process.stderr.close()
+
+            self.assertIn("--last-error=return packet ack failed", error_heartbeat)
+            self.assertIn("--last-observed-live-event-id=packet-1", error_heartbeat)
+            read_call = next(call for call in calls if call and call[0] == "return-packet")
+            self.assertLess(calls.index(read_call), calls.index(error_heartbeat))
+            self.assertNotIn("say", {call[0] for call in calls if call})
+            self.assertNotIn("official-reply", {call[0] for call in calls if call})
+
+    def test_session_smoke_self_service_script_reports_error_when_observe_lobby_ack_launch_fails(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            fake_cli = root / "fake_cli.py"
+            calls_path = root / "calls.jsonl"
+            state_path = root / "state.txt"
+            fake_cli.write_text(
+                "\n".join(
+                    [
+                        "import json, os, sys",
+                        "calls_path = os.environ['SELF_SERVICE_CALLS_PATH']",
+                        "state_path = os.environ['SELF_SERVICE_STATE_PATH']",
+                        "args = sys.argv[1:]",
+                        "with open(calls_path, 'a', encoding='utf-8') as handle:",
+                        "    handle.write(json.dumps(args) + '\\n')",
+                        "command = args[0] if args else ''",
+                        "if command == 'wait-next':",
+                        "    if os.path.exists(state_path):",
+                        "        print(json.dumps({'status': 'idle'}))",
+                        "    else:",
+                        "        open(state_path, 'w', encoding='utf-8').write('seen')",
+                        "        ack = ['']",
+                        "        print(json.dumps({'status': 'event', 'action': 'observe_lobby', 'source_event_id': 'evt-observe', 'ack_command': ack}))",
+                        "elif command == 'heartbeat':",
+                        "    print(json.dumps({'status': 'ok'}))",
+                        "elif command in {'say', 'official-reply', 'return-packet'}:",
+                        "    sys.exit(9)",
+                        "elif command == 'room':",
+                        "    print(json.dumps({'agent': {'engagement_mode': 'always'}}))",
+                        "else:",
+                        "    sys.exit(2)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            base = [sys.executable, str(fake_cli)]
+            env = os.environ.copy()
+            env.update(
+                {
+                    "SELF_SERVICE_CALLS_PATH": str(calls_path),
+                    "SELF_SERVICE_STATE_PATH": str(state_path),
+                    "AGENTSASSEMBLE_MEETING_ID": "meeting-1",
+                    "AGENTSASSEMBLE_POLL_INTERVAL": "0.05",
+                    "AGENTSASSEMBLE_ROOM_COMMAND": shlex.join([*base, "room"]),
+                    "AGENTSASSEMBLE_WAIT_NEXT_COMMAND": shlex.join([*base, "wait-next", "--json"]),
+                    "AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "say",
+                            "--source-event-id",
+                            "{source_event_id}",
+                            "--auto-chain-depth",
+                            "{auto_chain_depth}",
+                            "--",
+                            "{message}",
+                        ]
+                    ),
+                    "AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "official-reply",
+                            "--meeting-id",
+                            "{meeting_id}",
+                            "--source-event-id",
+                            "{source_event_id}",
+                            "--",
+                            "{message}",
+                        ]
+                    ),
+                    "AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "heartbeat",
+                            "--status",
+                            "{status}",
+                            "--last-error={last_error}",
+                            "--last-reply-at={last_reply_at}",
+                            "--last-observed-event-id={last_observed_event_id}",
+                            "--last-observed-live-event-id={last_observed_live_event_id}",
+                            "--json",
+                        ]
+                    ),
+                }
+            )
+            process = subprocess.Popen(
+                [sys.executable, "-u", "-c", _session_smoke_self_service_script("ok")],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 3
+                error_heartbeat = None
+                calls = []
+                while time.monotonic() < deadline:
+                    if calls_path.exists():
+                        calls = [
+                            json.loads(line)
+                            for line in calls_path.read_text(encoding="utf-8").splitlines()
+                            if line.strip()
+                        ]
+                        for call in calls:
+                            if call and call[0] == "heartbeat" and call[call.index("--status") + 1] == "error":
+                                error_heartbeat = call
+                                break
+                        if error_heartbeat:
+                            break
+                    time.sleep(0.05)
+                if error_heartbeat is None:
+                    stderr = process.stderr.read() if process.poll() is not None and process.stderr is not None else ""
+                    self.fail(f"self_service script did not report observe_lobby ack launch failure; stderr={stderr}")
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=1)
+                if process.stderr is not None:
+                    process.stderr.close()
+
+            self.assertIn("--last-error=lobby observation ack failed", error_heartbeat)
+            self.assertIn("--last-observed-event-id=evt-observe", error_heartbeat)
+            self.assertNotIn("say", {call[0] for call in calls if call})
+            self.assertNotIn("official-reply", {call[0] for call in calls if call})
+
     def test_session_smoke_self_service_script_keeps_replying_when_heartbeat_template_is_missing(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
