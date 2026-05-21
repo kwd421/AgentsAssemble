@@ -44,7 +44,7 @@ from agentsassemble.live_agent_processes import (
     clean_live_agent_group_id,
     read_live_agent_process_event_history,
 )
-from agentsassemble.live_agent_probe import run_live_agent_probe, safe_probe_timeout
+from agentsassemble.live_agent_probe import PROBE_REPLY_EVENT_TAIL_LIMIT, run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
 from agentsassemble.live_agent_sessions import (
     check_live_agent_session,
@@ -88,6 +88,7 @@ from agentsassemble.models import ProviderConfig, Role
 TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
 TABS = ["lobby", "live", "board", "archive"]
 STALE_RUNNING_SECONDS = 300
+LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT = PROBE_REPLY_EVENT_TAIL_LIMIT
 SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
 MAX_READINESS_PROBE_AGENTS = 10
@@ -1307,7 +1308,7 @@ def live_agent_room_payload(output_root: Path, agent_id: str) -> dict[str, objec
         "meetings": list_meetings(output_root),
         "meeting_id": meeting_id,
         "live_events": live_events,
-        "lobby_events": read_lobby(output_root),
+        "lobby_events": read_lobby(output_root, limit=LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT),
         "side_chat_events": read_side_chat(output_root),
     }
 

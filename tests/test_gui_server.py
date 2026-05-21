@@ -36,6 +36,7 @@ from agentsassemble.gui import (
     _live_agent_turn_rounds_payload_locked,
     _run_session_bound_agent_probe,
     _readiness_health_operation_details,
+    LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT,
     live_agents_payload,
     live_agent_session_ensure_payload,
     _attach_session_auto_rounds_if_requested,
@@ -5301,6 +5302,37 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(payload["agent"]["display_name"], "Claude Code Live")
             self.assertEqual(payload["lobby_events"][0]["message"], "방 상태 보여?")
+
+    def test_live_agent_room_endpoint_keeps_probe_sized_lobby_tail(self):
+        expected_room_tail_limit = LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A"})
+            buried_event = append_lobby_event(root, {"name": "나", "side": "mine", "message": "probe buried by busy room"})
+            for index in range(expected_room_tail_limit - 1):
+                append_lobby_event(
+                    root,
+                    {
+                        "name": "Busy Agent",
+                        "side": "other-agent",
+                        "message": f"busy chatter {index}",
+                        "actor_id": f"busy-{index}",
+                    },
+                )
+            self.assertNotIn(buried_event["id"], {event["id"] for event in read_lobby(root)})
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(len(payload["lobby_events"]), expected_room_tail_limit)
+            self.assertEqual(payload["lobby_events"][0]["id"], buried_event["id"])
 
     def test_live_agent_room_endpoint_returns_meeting_live_events_for_agent_meeting(self):
         with tempfile.TemporaryDirectory() as temp_dir:

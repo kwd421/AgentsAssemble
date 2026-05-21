@@ -347,6 +347,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("source_event_id", doc)
         self.assertIn("live_agent_endpoint", doc)
         self.assertIn("bounded 1000-event recent lobby tail", doc)
+        self.assertIn("Resident room snapshots use the same 1000-event lobby tail", doc)
         self.assertIn("capped at 60 seconds", doc)
         self.assertIn("/api/live-agents/<agent_id>/engagement", doc)
         self.assertIn("assemble live-agent engagement", doc)
