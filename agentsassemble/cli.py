@@ -947,6 +947,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="List durable live-agent session runs.",
     )
     live_session_runs_list.add_argument("--limit", type=parse_positive_int, default=50)
+    live_session_runs_list.add_argument("--run-id", default="", help="Filter durable session runs by exact run id.")
     live_session_runs_list.add_argument("--meeting-id", default="", help="Filter durable session runs by meeting id.")
     live_session_runs_list.add_argument("--group-id", default="", help="Filter durable session runs by group id.")
     live_session_runs_list.add_argument(

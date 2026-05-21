@@ -351,6 +351,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("without the exact run id", doc)
         self.assertIn("latest matching meeting/group session-run", doc)
         self.assertIn("/api/live-agent-session-runs?limit=N&run_id=...", doc)
+        self.assertIn("Add `--run-id` when an operator or handoff script already knows the exact durable run id", doc)
         self.assertIn("filters that exact session-run before applying the limit window", doc)
         self.assertIn("/api/live-agent-session-runs?limit=N&meeting_id=...&group_id=...", doc)
         self.assertIn("filters matching meeting/group session-runs before applying the limit window", doc)

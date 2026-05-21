@@ -1293,6 +1293,15 @@ python3 -m agentsassemble.cli live-agent session-runs list \
   --include-readiness
 ```
 
+Add `--run-id` when an operator or handoff script already knows the exact durable run id and wants that single run filtered before the bounded result limit:
+
+```bash
+python3 -m agentsassemble.cli live-agent session-runs list \
+  --server http://127.0.0.1:8765 \
+  --run-id <session-run-id> \
+  --include-readiness
+```
+
 Add `--meeting-id` and `--group-id` when an operator or handoff script wants only the durable run tail for one resident meeting/group instead of the global tail:
 
 ```bash

@@ -4338,6 +4338,33 @@ The exact-id list filter still composes with `include_readiness=1`; the overlay 
 
 ---
 
+### Task 124: Exact Session-Run List CLI Filter
+
+**Goal:** Let terminal operators and handoff scripts inspect a known durable session-run by exact run id through the same server-filtered public list surface used by wait gates.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED exact-id list coverage**
+
+Cover `assemble live-agent session-runs list --run-id <id>` parser acceptance and URL construction with `include_readiness=1`.
+
+- [x] **Step 2: Reuse exact-id URL precedence**
+
+The list command now accepts `--run-id` and reuses `_live_agent_session_runs_path(... include_target_filters=True)`, so exact id requests send `run_id` and do not inherit meeting/group filters.
+
+- [x] **Step 3: Document handoff inspection**
+
+Docs now show `session-runs list --run-id <session-run-id> --include-readiness` as the immediate inspection companion to exact run-id waits.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
