@@ -743,6 +743,234 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["agent"]["last_observed_event_id"], "evt1")
         self.assertEqual(payload["agent"]["last_observed_live_event_id"], "live-evt1")
 
+    def test_live_agent_list_parses_json_and_fail_on_attention(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "list",
+                "--server",
+                "http://room.local",
+                "--json",
+                "--fail-on-attention",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "list")
+        self.assertTrue(args.as_json)
+        self.assertTrue(args.fail_on_attention)
+
+    def test_live_agent_list_fetches_roster_and_prints_safe_presence(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "claude_code",
+                    "connection_kind": "terminal_session",
+                    "status": "online",
+                    "engagement_mode": "always",
+                    "meeting_id": "resident-m1",
+                    "endpoint": "http://secret.local/bridge",
+                    "heartbeat_age_seconds": 7,
+                    "stale_after_seconds": 180,
+                    "last_observed_event_id": "evt-1",
+                    "last_observed_live_event_id": "live-1",
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "list", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agents")
+        output = stdout.getvalue()
+        self.assertIn("agent-a Agent A claude_code/terminal_session online meeting=resident-m1", output)
+        self.assertIn("engagement=always", output)
+        self.assertIn("heartbeat_age=7s", output)
+        self.assertIn("stale_after=180s", output)
+        self.assertIn("cursor=evt-1", output)
+        self.assertIn("official_cursor=live-1", output)
+        self.assertNotIn("secret.local", output)
+        self.assertNotIn("endpoint", output)
+
+    def test_live_agent_list_json_prints_safe_roster_projection(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "remote_bridge",
+                    "connection_kind": "remote_bridge",
+                    "status": "error",
+                    "meeting_id": "resident-m1",
+                    "endpoint": "http://secret.local/bridge",
+                    "auth_ref": "literal:secret-token",
+                    "config_path": "/Users/me/private/live-agents.json",
+                    "session_id": "private-session-id",
+                    "last_error": "failed with token=secret-token in /Users/me/private/live-agents.json",
+                    "last_observed_event_id": "evt-1",
+                    "last_observed_live_event_id": "live-1",
+                    "heartbeat_age_seconds": 7,
+                    "stale_after_seconds": 180,
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "list", "--server", "http://room.local", "--json"])
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        loaded = json.loads(output)
+        agent = loaded["agents"][0]
+        self.assertEqual(agent["agent_id"], "agent-a")
+        self.assertEqual(agent["last_error"], "Live-agent presence error details redacted.")
+        self.assertNotIn("endpoint", agent)
+        self.assertNotIn("auth_ref", agent)
+        self.assertNotIn("config_path", agent)
+        self.assertNotIn("session_id", agent)
+        self.assertNotIn("secret.local", output)
+        self.assertNotIn("secret-token", output)
+        self.assertNotIn("live-agents.json", output)
+
+    def test_live_agent_list_compact_output_redacts_sensitive_display_fields(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "http://secret.local/agent",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "online",
+                    "meeting_id": "/Users/me/private/live-agents.json",
+                    "engagement_mode": "always",
+                    "last_observed_event_id": "token=secret-token",
+                    "last_observed_live_event_id": "live-1",
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "list", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("agent-a [redacted] local_cli/local_cli online meeting=[redacted]", output)
+        self.assertIn("cursor=[redacted]", output)
+        self.assertNotIn("secret.local", output)
+        self.assertNotIn("secret-token", output)
+        self.assertNotIn("live-agents.json", output)
+
+    def test_live_agent_list_fetch_failure_redacts_server_error(self):
+        stderr = StringIO()
+        with patch(
+            "agentsassemble.cli._request_json",
+            side_effect=ValueError(
+                "failed reading /Users/me/private/live-agents.json with token=secret-token at http://secret.local"
+            ),
+        ):
+            with patch("sys.stderr", stderr):
+                exit_code = main(["live-agent", "list", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 2)
+        error = stderr.getvalue()
+        self.assertIn("Live-agent roster fetch failed: details redacted.", error)
+        self.assertNotIn("secret.local", error)
+        self.assertNotIn("secret-token", error)
+        self.assertNotIn("live-agents.json", error)
+
+    def test_live_agent_list_fail_on_attention_exits_one_after_printing_summary(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-online",
+                    "display_name": "Agent Online",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "online",
+                },
+                {
+                    "agent_id": "agent-stale",
+                    "display_name": "Agent Stale",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "stale",
+                    "heartbeat_age_seconds": 181,
+                    "stale_after_seconds": 180,
+                },
+                {
+                    "agent_id": "agent-error",
+                    "display_name": "Agent Error",
+                    "provider_kind": "remote_bridge",
+                    "connection_kind": "remote_bridge",
+                    "status": "error",
+                },
+                {
+                    "agent_id": "agent-offline",
+                    "display_name": "Agent Offline",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "status": "offline",
+                },
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--fail-on-attention",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        output = stdout.getvalue()
+        self.assertIn("agent-online Agent Online local_cli/local_cli online", output)
+        self.assertIn("agent-stale Agent Stale local_cli/local_cli stale", output)
+        self.assertIn("agent-error Agent Error remote_bridge/remote_bridge error", output)
+        self.assertIn("agent-offline Agent Offline manual/manual offline", output)
+
+    def test_live_agent_list_fail_on_attention_accepts_online_and_working(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-online",
+                    "display_name": "Agent Online",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "online",
+                },
+                {
+                    "agent_id": "agent-working",
+                    "display_name": "Agent Working",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "working",
+                },
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--fail-on-attention",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+
     def test_live_agent_heartbeat_can_clear_stale_error_metadata(self):
         with patch(
             "agentsassemble.cli._request_json",

@@ -288,6 +288,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("health process reasons and attention", doc)
         self.assertIn("recent_events", doc)
         self.assertIn("live-agent heartbeat", doc)
+        self.assertIn("assemble live-agent list", doc)
+        self.assertIn("live-agent list --fail-on-attention", doc)
         self.assertIn("heartbeat_age_seconds", doc)
         self.assertIn("stale_after_seconds", doc)
         self.assertIn("last_observed_live_event_id", doc)

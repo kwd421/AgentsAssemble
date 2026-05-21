@@ -29,8 +29,10 @@ from agentsassemble.codex_sessions import (
 )
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
+from agentsassemble.live_agents import PRESENCE_ERROR_REDACTED, _looks_sensitive_presence_error
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
+from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.live_agent_discovery import (
     add_session_bundle_outputs,
     build_discovered_live_agent_config,
@@ -74,6 +76,25 @@ LIVE_AGENT_CONNECTION_KIND_CHOICES = [
 ]
 LIVE_AGENT_DELEGATE_CONNECTION_KIND_CHOICES = ["codex_resume", "local_cli", "remote_bridge", "manual"]
 LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES = list(SUPPORTED_RESIDENT_CONNECTION_KINDS)
+LIVE_AGENT_LIST_SAFE_AGENT_FIELDS = (
+    "agent_id",
+    "display_name",
+    "provider_kind",
+    "connection_kind",
+    "status",
+    "meeting_id",
+    "engagement_mode",
+    "engagement_mode_updated_at",
+    "last_seen_at",
+    "last_error",
+    "last_reply_at",
+    "last_observed_event_id",
+    "last_observed_live_event_id",
+    "heartbeat_age_seconds",
+    "stale_after_seconds",
+    "capabilities",
+)
+LIVE_AGENT_LIST_NUMERIC_FIELDS = {"heartbeat_age_seconds", "stale_after_seconds"}
 MAX_READINESS_PROBE_AGENTS = 10
 SESSION_BOUND_PROBE_HTTP_WINDOWS = 25
 MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
@@ -249,6 +270,14 @@ def build_parser() -> argparse.ArgumentParser:
     live_register.add_argument("--meeting-id", default="")
     live_register.add_argument("--engagement-mode", default="mentioned")
     live_register.add_argument("--json", action="store_true", dest="as_json", help="Print the raw registration response.")
+
+    live_list = live_agent_subparsers.add_parser("list", parents=[live_server], help="List live agent roster presence.")
+    live_list.add_argument("--json", action="store_true", dest="as_json", help="Print the safe roster response.")
+    live_list.add_argument(
+        "--fail-on-attention",
+        action="store_true",
+        help="Exit 1 when any returned live agent is not online or working.",
+    )
 
     live_heartbeat = live_agent_subparsers.add_parser("heartbeat", parents=[live_server], help="Update live agent presence.")
     live_heartbeat.add_argument("--agent-id", required=True)
@@ -1118,6 +1147,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             else:
                 print(f"Registered {agent.get('agent_id') or args.agent_id}")
             return 0
+        if args.live_agent_command == "list":
+            return _run_live_agent_list(args)
         if args.live_agent_command == "heartbeat":
             agent_id = urllib.parse.quote(args.agent_id, safe="")
             response = _request_json(
@@ -1248,6 +1279,149 @@ def _is_unreplaced_template_placeholder(value: object) -> bool:
     if not isinstance(value, str):
         return False
     return bool(re.fullmatch(r"\{[A-Za-z0-9_]+\}", value.strip()))
+
+
+def _run_live_agent_list(args: argparse.Namespace) -> int:
+    try:
+        payload = _request_json(_server_url(args.server, "/api/live-agents"))
+    except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError(_live_agent_list_fetch_error(error)) from error
+    _print_live_agent_list_payload(payload, as_json=args.as_json)
+    if args.fail_on_attention and _live_agent_list_payload_needs_attention(payload):
+        return 1
+    return 0
+
+
+def _live_agent_list_fetch_error(error: Exception) -> str:
+    message = clean_lobby_text(error, limit=500)
+    if message and not _looks_sensitive_presence_error(message):
+        return f"Live-agent roster fetch failed: {message}"
+    return "Live-agent roster fetch failed: details redacted."
+
+
+def _print_live_agent_list_payload(payload: dict[str, object], *, as_json: bool) -> None:
+    safe_payload = _safe_live_agent_list_payload(payload)
+    if as_json:
+        print(json.dumps(safe_payload, ensure_ascii=False, indent=2))
+        return
+    agents = safe_payload.get("agents") if isinstance(safe_payload.get("agents"), list) else []
+    if not agents:
+        print("no live agents")
+        return
+    for item in agents:
+        if isinstance(item, dict):
+            print(_format_live_agent_roster_agent(item))
+
+
+def _safe_live_agent_list_payload(payload: dict[str, object]) -> dict[str, object]:
+    agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
+    return {
+        "agents": [
+            _safe_live_agent_roster_agent(item)
+            for item in agents
+            if isinstance(item, dict)
+        ]
+    }
+
+
+def _safe_live_agent_roster_agent(agent: dict[str, object]) -> dict[str, object]:
+    safe_agent: dict[str, object] = {}
+    for field in LIVE_AGENT_LIST_SAFE_AGENT_FIELDS:
+        if field not in agent:
+            continue
+        value = agent.get(field)
+        if field in LIVE_AGENT_LIST_NUMERIC_FIELDS:
+            safe_agent[field] = _safe_live_agent_roster_number(value)
+        elif field == "capabilities":
+            safe_agent[field] = _safe_live_agent_roster_capabilities(value)
+        elif field == "last_error":
+            safe_agent[field] = _safe_live_agent_roster_error(value)
+        else:
+            safe_agent[field] = _safe_live_agent_roster_text(value, limit=_live_agent_roster_field_limit(field))
+    return safe_agent
+
+
+def _safe_live_agent_roster_capabilities(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    capabilities = []
+    for item in value:
+        capability = _safe_live_agent_roster_text(item, limit=64)
+        if capability:
+            capabilities.append(capability)
+    return capabilities
+
+
+def _safe_live_agent_roster_error(value: object) -> str:
+    text = clean_lobby_text(value, limit=500)
+    if not text:
+        return ""
+    if _looks_sensitive_presence_error(text):
+        return PRESENCE_ERROR_REDACTED
+    return text
+
+
+def _safe_live_agent_roster_text(value: object, *, limit: int, default: str = "") -> str:
+    text = clean_lobby_text(value, limit=limit)
+    if not text:
+        return default
+    if _looks_sensitive_presence_error(text):
+        return "[redacted]"
+    return text
+
+
+def _safe_live_agent_roster_number(value: object) -> int | float:
+    number = _safe_nonnegative_float(value)
+    return int(number) if number.is_integer() else number
+
+
+def _live_agent_roster_field_limit(field: str) -> int:
+    if field in {"agent_id", "provider_kind", "connection_kind", "status", "engagement_mode"}:
+        return 64
+    if field in {"display_name", "meeting_id", "last_observed_event_id", "last_observed_live_event_id"}:
+        return 128
+    return 240
+
+
+def _format_live_agent_roster_agent(agent: dict[str, object]) -> str:
+    agent_id = _safe_live_agent_roster_text(agent.get("agent_id"), limit=64, default="-")
+    display_name = _safe_live_agent_roster_text(agent.get("display_name"), limit=128, default="-")
+    provider_kind = _safe_live_agent_roster_text(agent.get("provider_kind"), limit=64, default="unknown")
+    connection_kind = _safe_live_agent_roster_text(agent.get("connection_kind"), limit=64, default="unknown")
+    status = _safe_live_agent_roster_text(agent.get("status"), limit=64, default="unknown")
+    parts = [agent_id, display_name, f"{provider_kind}/{connection_kind}", status]
+    suffix_parts = []
+    _append_live_agent_roster_text(suffix_parts, "meeting", agent.get("meeting_id"))
+    _append_live_agent_roster_text(suffix_parts, "engagement", agent.get("engagement_mode"))
+    _append_live_agent_roster_seconds(suffix_parts, "heartbeat_age", agent.get("heartbeat_age_seconds"))
+    _append_live_agent_roster_seconds(suffix_parts, "stale_after", agent.get("stale_after_seconds"))
+    _append_live_agent_roster_text(suffix_parts, "cursor", agent.get("last_observed_event_id"))
+    _append_live_agent_roster_text(suffix_parts, "official_cursor", agent.get("last_observed_live_event_id"))
+    suffix = f" {' '.join(suffix_parts)}" if suffix_parts else ""
+    return f"{' '.join(parts)}{suffix}"
+
+
+def _append_live_agent_roster_text(parts: list[str], label: str, value: object) -> None:
+    text = _safe_live_agent_roster_text(value, limit=128)
+    if text:
+        parts.append(f"{label}={text}")
+
+
+def _append_live_agent_roster_seconds(parts: list[str], label: str, value: object) -> None:
+    if value in (None, ""):
+        return
+    seconds = _safe_nonnegative_float(value)
+    parts.append(f"{label}={_format_seconds(seconds)}")
+
+
+def _live_agent_list_payload_needs_attention(payload: dict[str, object]) -> bool:
+    agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
+    return any(isinstance(item, dict) and _live_agent_roster_agent_needs_attention(item) for item in agents)
+
+
+def _live_agent_roster_agent_needs_attention(agent: dict[str, object]) -> bool:
+    status = str(agent.get("status") or "").strip().casefold()
+    return status not in {"online", "working"}
 
 
 def _run_live_agent_engagement(args: argparse.Namespace) -> int:

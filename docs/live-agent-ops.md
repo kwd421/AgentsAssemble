@@ -115,6 +115,23 @@ python3 -m agentsassemble.cli live-agent register \
 
 Use `--json` when a wrapper needs the registration acknowledgement, including the server-preserved meeting, session, and engagement fields, instead of parsing the compact `Registered <agent-id>` line.
 
+Inspect the current roster from a terminal with:
+
+```bash
+assemble live-agent list --server http://127.0.0.1:8765
+```
+
+The checkout module form is equivalent:
+
+```bash
+python3 -m agentsassemble.cli live-agent list \
+  --server http://127.0.0.1:8765
+```
+
+The compact roster output shows each agent's id, display name, provider/connection kind, status, meeting, engagement mode, heartbeat age, stale threshold, lobby cursor, and official cursor. It intentionally does not print endpoint URLs, auth references, command arguments, config paths, provider output, or presence error text. `--json` uses the same safe roster projection for local wrappers; it does not expose endpoint URLs, auth refs, command arguments, config paths, session ids, or raw presence errors.
+
+For scriptable roster gates, use `live-agent list --fail-on-attention`. The command prints the normal roster summary first, then exits `1` if any returned agent is not `online` or `working`, including `stale`, `offline`, `error`, or unknown statuses. An empty roster exits `0` because there is no agent row claiming unhealthy presence.
+
 The GUI "Codex 세션 초대" panel can bind a current Codex CLI session to a meeting role through:
 
 ```text

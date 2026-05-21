@@ -4392,6 +4392,33 @@ Docs now describe `session-runs list --fail-on-attention` as a scriptable durabl
 
 ---
 
+### Task 126: Live-Agent Roster CLI Inspection Gate
+
+**Goal:** Let terminal operators and automation inspect live-agent presence directly from the CLI and fail fast when a roster row needs attention.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED roster-list coverage**
+
+Cover `assemble live-agent list --json --fail-on-attention` parser acceptance, safe compact roster output, non-leakage of endpoint fields in compact output, and gate exits for stale/error/offline rows.
+
+- [x] **Step 2: Add safe roster list command**
+
+The list command reads `/api/live-agents`, prints either a safe JSON projection or compact safe presence rows, redacts sensitive-looking displayed values and fetch failures, and returns `1` with `--fail-on-attention` when any returned agent is not `online` or `working`.
+
+- [x] **Step 3: Document operator usage**
+
+Docs now show `assemble live-agent list`, the checkout module form, and `live-agent list --fail-on-attention` exit semantics for scripts.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
