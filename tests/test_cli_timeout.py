@@ -3419,6 +3419,14 @@ class CliTimeoutTests(unittest.TestCase):
                     }
                 ],
             },
+            "session_run_monitor": {
+                "running": True,
+                "interval_seconds": 30,
+                "last_tick_at": "2026-05-21T10:08:00+00:00",
+                "last_status": "ok",
+                "last_result_count": 1,
+                "last_error_type": "",
+            },
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
@@ -3453,6 +3461,9 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("retry backoff 120s", output)
         self.assertIn("next retry 2026-05-21T10:07:00+00:00", output)
         self.assertIn("session-run attention: resident-m1:resident-main:run-1:degraded:retrying", output)
+        self.assertIn("session-run monitor: running true", output)
+        self.assertIn("last ok", output)
+        self.assertIn("last tick 2026-05-21T10:08:00+00:00", output)
 
     def test_live_agent_health_can_emit_json_and_fail_on_degraded(self):
         payload = {"status": "degraded", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}}
@@ -3463,6 +3474,16 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertEqual(json.loads(stdout.getvalue())["status"], "degraded")
+
+    def test_live_agent_health_omits_monitor_summary_when_payload_is_missing(self):
+        payload = {"status": "ok", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}}
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "health", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("session-run monitor:", stdout.getvalue())
 
     def test_live_agent_health_fail_on_degraded_allows_ok_status(self):
         payload = {"status": "ok", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}}

@@ -2117,6 +2117,14 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
           },
         ],
       },
+      session_run_monitor: {
+        running: true,
+        interval_seconds: 2.5,
+        last_tick_at: "2026-05-21T10:08:00+00:00",
+        last_status: "ok",
+        last_result_count: 1,
+        last_error_type: "",
+      },
     },
   });
 
@@ -2139,6 +2147,10 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.match(health.textContent, /retry failures 2/);
   assert.match(health.textContent, /retry backoff 120s/);
   assert.match(health.textContent, /next retry 2026-05-21T10:07:00\+00:00/);
+  assert.match(health.textContent, /session-run monitor running/);
+  assert.match(health.textContent, /interval 2\.5s/);
+  assert.match(health.textContent, /last tick 2026-05-21T10:08:00\+00:00/);
+  assert.match(health.textContent, /last ok/);
   assert.match(health.textContent, /session attention resident-m1:resident-main:meeting:duplicate_active_group/);
   assert.match(health.textContent, /session-run attention resident-m1:resident-main:run-1:degraded:retrying/);
   assert.equal(health.attributes["data-tone"], "warning");

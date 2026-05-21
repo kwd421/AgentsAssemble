@@ -277,15 +277,23 @@ def serve_gui(
     root = output_root or Path(".agentsassemble")
     process_supervisor = LiveAgentProcessSupervisor(root)
     session_run_controller = LiveAgentSessionRunController(root)
+    session_run_monitor = LiveAgentSessionRunMonitor(
+        root,
+        process_supervisor,
+        session_run_controller,
+        default_server="",
+    )
     handler = _make_handler(
         root,
         process_supervisor=process_supervisor,
         session_run_controller=session_run_controller,
+        session_run_monitor=session_run_monitor,
     )
     server = ThreadingHTTPServer((host, port), handler)
     try:
         process_supervisor.start_monitor()
         server_url = _local_server_url(server.server_address)
+        session_run_monitor.default_server = server_url
         if live_agent_config is not None:
             _autostart_live_agent_group(
                 root,
@@ -298,20 +306,13 @@ def serve_gui(
                 restart_backoff_seconds=live_agent_restart_backoff_seconds,
                 stale_restart_after_seconds=live_agent_stale_restart_after_seconds,
             )
-        session_run_monitor = LiveAgentSessionRunMonitor(
-            root,
-            process_supervisor,
-            session_run_controller,
-            default_server=server_url,
-        )
         session_run_monitor.start()
         print(f"AgentsAssemble GUI: {server_url}")
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping AgentsAssemble GUI")
     finally:
-        if "session_run_monitor" in locals():
-            session_run_monitor.stop()
+        session_run_monitor.stop()
         process_supervisor.close()
         server.server_close()
 
@@ -482,6 +483,10 @@ class LiveAgentSessionRunMonitor:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._last_tick_at = ""
+        self._last_status = "not_started"
+        self._last_result_count = 0
+        self._last_error_type = ""
 
     def start(self) -> None:
         with self._lock:
@@ -512,13 +517,27 @@ class LiveAgentSessionRunMonitor:
         return True
 
     def run_once(self) -> list[dict[str, object]]:
-        return _reconcile_live_agent_session_runs(
+        results = _reconcile_live_agent_session_runs(
             self.output_root,
             self.process_supervisor,
             self.session_run_controller,
             default_server=self.default_server,
             summary="reconciled durable live-agent session runs during GUI runtime",
         )
+        self._record_success(results)
+        return results
+
+    def snapshot(self) -> dict[str, object]:
+        with self._lock:
+            thread = self._thread
+            return {
+                "running": bool(thread is not None and thread.is_alive()),
+                "interval_seconds": self.interval_seconds,
+                "last_tick_at": self._last_tick_at,
+                "last_status": self._last_status,
+                "last_result_count": self._last_result_count,
+                "last_error_type": self._last_error_type,
+            }
 
     def _loop(self, stop_event: threading.Event) -> None:
         while not stop_event.is_set():
@@ -530,14 +549,39 @@ class LiveAgentSessionRunMonitor:
                 break
 
     def _record_failure(self, error: Exception) -> None:
+        with self._lock:
+            self._last_tick_at = datetime.now(UTC).isoformat()
+            self._last_status = "failed"
+            self._last_result_count = 0
+            self._last_error_type = _safe_session_run_monitor_error_type(error)
         record_live_agent_operation(
             self.output_root,
             operation="session_run.monitor",
             status="failed",
             summary="live-agent session-run monitor failed",
             error=SESSION_RUN_MONITOR_ERROR,
-            details={"error_type": type(error).__name__},
+            details={"error_type": _safe_session_run_monitor_error_type(error)},
         )
+
+    def _record_success(self, results: list[dict[str, object]]) -> None:
+        with self._lock:
+            self._last_tick_at = datetime.now(UTC).isoformat()
+            self._last_status = _session_run_monitor_result_status(results)
+            self._last_result_count = len(results)
+            self._last_error_type = ""
+
+
+def _session_run_monitor_result_status(results: list[dict[str, object]]) -> str:
+    if any(str(item.get("status") or "") == "failed" for item in results):
+        return "failed"
+    if any(str(item.get("status") or "") in {"running", "recovering", "starting", "degraded"} for item in results):
+        return "degraded"
+    return "ok"
+
+
+def _safe_session_run_monitor_error_type(error: Exception) -> str:
+    error_type = clean_lobby_text(type(error).__name__, limit=80)
+    return error_type if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,79}", error_type) else "Exception"
 
 
 def _session_run_monitor_interval(value: object) -> float:
@@ -2177,8 +2221,9 @@ def live_agent_readiness_payload(
     payload: dict[str, object],
     *,
     default_server: str,
+    session_run_monitor: LiveAgentSessionRunMonitor | None = None,
 ) -> dict[str, object]:
-    health = live_agent_health_payload(output_root, process_supervisor)
+    health = live_agent_health_payload(output_root, process_supervisor, session_run_monitor=session_run_monitor)
     checks = [{"id": "health", "status": health.get("status") or "unknown"}]
     invalid_probe_payload = _invalid_probe_id_payload(payload.get("probe_agent_ids")) or _invalid_probe_id_payload(
         payload.get("probe_group_ids")
@@ -2314,7 +2359,12 @@ def live_agent_readiness_payload(
     return result
 
 
-def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentProcessSupervisor) -> dict[str, object]:
+def live_agent_health_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    *,
+    session_run_monitor: LiveAgentSessionRunMonitor | None = None,
+) -> dict[str, object]:
     agents = read_live_agents(output_root)
     groups = process_supervisor.snapshot_groups()
     diagnostic_group_ids = _diagnostic_agent_group_ids(agents)
@@ -2331,6 +2381,12 @@ def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentPr
         diagnostic_group_ids=diagnostic_group_ids,
     )
     session_run_summary = _live_agent_session_run_health_summary(output_root)
+    session_run_monitor_summary = _live_agent_session_run_monitor_health_summary(session_run_monitor)
+    session_run_monitor_attention = (
+        session_run_monitor_summary.get("attention")
+        if isinstance(session_run_monitor_summary.get("attention"), list)
+        else []
+    )
     status = (
         "degraded"
         if agent_summary["attention"]
@@ -2338,9 +2394,10 @@ def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentPr
         or connection_summary["attention"]
         or session_summary["attention"]
         or session_run_summary["attention"]
+        or session_run_monitor_attention
         else "ok"
     )
-    return {
+    payload = {
         "status": status,
         "agents": agent_summary,
         "processes": process_summary,
@@ -2348,6 +2405,9 @@ def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentPr
         "sessions": session_summary,
         "session_runs": session_run_summary,
     }
+    if session_run_monitor_summary:
+        payload["session_run_monitor"] = session_run_monitor_summary
+    return payload
 
 
 def _live_agent_health_summary(agents: list[dict[str, object]]) -> dict[str, object]:
@@ -2544,6 +2604,48 @@ def _live_agent_session_run_health_summary(output_root: Path) -> dict[str, objec
         "attention": attention,
         "items": items,
     }
+
+
+def _live_agent_session_run_monitor_health_summary(
+    monitor: LiveAgentSessionRunMonitor | None,
+) -> dict[str, object]:
+    if monitor is None:
+        return {}
+    raw = monitor.snapshot()
+    last_status = _safe_session_run_monitor_status(raw.get("last_status"))
+    last_error_type = _safe_session_run_monitor_error_type_value(raw.get("last_error_type"))
+    attention = []
+    if last_status == "failed":
+        attention.append(f"failed:{last_error_type or 'Exception'}")
+    return {
+        "running": raw.get("running") is True,
+        "interval_seconds": _safe_session_run_monitor_interval_value(raw.get("interval_seconds")),
+        "last_tick_at": _safe_session_run_health_timestamp(raw.get("last_tick_at")),
+        "last_status": last_status,
+        "last_result_count": _safe_session_run_health_int(raw.get("last_result_count")),
+        "last_error_type": last_error_type,
+        "attention": attention,
+    }
+
+
+def _safe_session_run_monitor_status(value: object) -> str:
+    status = clean_lobby_text(value, limit=64)
+    return status if status in {"not_started", "ok", "degraded", "failed"} else "unknown"
+
+
+def _safe_session_run_monitor_error_type_value(value: object) -> str:
+    error_type = clean_lobby_text(value, limit=80)
+    return error_type if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,79}", error_type) else ""
+
+
+def _safe_session_run_monitor_interval_value(value: object) -> float:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS
+    if not math.isfinite(seconds):
+        return DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS
+    return max(MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS, seconds)
 
 
 def _live_agent_session_run_retrying(run: dict[str, object]) -> bool:
@@ -4688,6 +4790,7 @@ def _make_handler(
     *,
     process_supervisor: LiveAgentProcessSupervisor | None = None,
     session_run_controller: LiveAgentSessionRunController | None = None,
+    session_run_monitor: LiveAgentSessionRunMonitor | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     static_root = Path(__file__).parent / "static"
     live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
@@ -4731,7 +4834,13 @@ def _make_handler(
                 self._send_json(live_agents_payload(output_root))
                 return
             if path == "/api/live-agent-health":
-                self._send_json(live_agent_health_payload(output_root, live_agent_process_supervisor))
+                self._send_json(
+                    live_agent_health_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        session_run_monitor=session_run_monitor,
+                    )
+                )
                 return
             if path == "/api/live-agent-sessions/readiness":
                 try:
@@ -5909,6 +6018,7 @@ def _make_handler(
                         live_agent_process_supervisor,
                         payload,
                         default_server=self._local_server_url(),
+                        session_run_monitor=session_run_monitor,
                     )
                 except (ValueError, urllib.error.URLError) as error:
                     record_live_agent_operation(

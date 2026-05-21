@@ -4136,7 +4136,7 @@ Document that `session-runs stop` stops only the selected durable run, records s
 
 **Goal:** Make the backend durable session-run monitor itself visible through health/operator surfaces, so multi-hour resident sessions can prove that stored intent is actively being watched.
 
-**Status:** Planned next slice.
+**Status:** Implemented in this slice.
 
 **Candidate files:**
 - Modify: `agentsassemble/gui.py`
@@ -4152,6 +4152,18 @@ Document that `session-runs stop` stops only the selected durable run, records s
 - Monitor failure records a safe `last_error_type` without raw exception details.
 - Healthy monitor ticks do not append operation spam.
 - GUI renders compact monitor evidence near existing health/process status.
+
+- [x] **Step 1: Add monitor-owned liveness snapshot**
+
+`LiveAgentSessionRunMonitor` now keeps thread-safe `running`, `interval_seconds`, `last_tick_at`, `last_status`, `last_result_count`, and safe `last_error_type` evidence. Successful ticks clear stale failure type; monitor exceptions keep writing the existing sanitized `session_run.monitor` operation row.
+
+- [x] **Step 2: Expose monitor evidence without mutating health**
+
+`/api/live-agent-health` includes the GUI-owned monitor snapshot as `session_run_monitor` when the GUI lifecycle owns one. A failed monitor snapshot degrades health through compact attention, while health reads remain read-only and do not tick the monitor, call providers, or append operation rows.
+
+- [x] **Step 3: Render and document compact operator proof**
+
+The GUI runtime health line and `assemble live-agent health` summary show compact session-run monitor evidence beside durable session-run retry state. Docs now distinguish monitor liveness from provider readiness and current session readiness.
 
 ---
 

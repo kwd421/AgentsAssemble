@@ -2848,6 +2848,7 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
     connections = payload.get("connections") if isinstance(payload.get("connections"), dict) else {}
     sessions = payload.get("sessions") if isinstance(payload.get("sessions"), dict) else {}
     session_runs = payload.get("session_runs") if isinstance(payload.get("session_runs"), dict) else {}
+    session_run_monitor = payload.get("session_run_monitor") if isinstance(payload.get("session_run_monitor"), dict) else {}
     agent_counts = agents.get("counts") if isinstance(agents.get("counts"), dict) else {}
     process_counts = processes.get("counts") if isinstance(processes.get("counts"), dict) else {}
     agent_attention = agents.get("attention") if isinstance(agents.get("attention"), list) else []
@@ -2895,6 +2896,9 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
         )
         if retry_summary:
             lines.append(f"session-run retries: {retry_summary}")
+    monitor_summary = _session_run_monitor_summary(session_run_monitor)
+    if monitor_summary:
+        lines.append(f"session-run monitor: {monitor_summary}")
     return "\n".join(lines)
 
 
@@ -4348,6 +4352,47 @@ def _format_live_agent_process_offline_attention(value: object) -> str:
         if agent_id and status:
             labels.append(f"{status} {agent_id}")
     return ", ".join(labels)
+
+
+def _session_run_monitor_summary(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    monitor_fields = {"running", "interval_seconds", "last_tick_at", "last_status", "last_result_count", "last_error_type"}
+    if not any(field in value for field in monitor_fields):
+        return ""
+    running = "true" if value.get("running") is True else "false"
+    parts = [f"running {running}"]
+    interval_seconds = _safe_nonnegative_float(value.get("interval_seconds"))
+    if interval_seconds > 0:
+        parts.append(f"interval {_format_seconds(interval_seconds)}")
+    last_status = str(value.get("last_status") or "").strip()
+    if last_status:
+        parts.append(f"last {last_status}")
+    last_result_count = _safe_int(value.get("last_result_count"))
+    parts.append(f"results {last_result_count}")
+    last_tick_at = str(value.get("last_tick_at") or "").strip()
+    if last_tick_at:
+        parts.append(f"last tick {last_tick_at}")
+    last_error_type = str(value.get("last_error_type") or "").strip()
+    if last_error_type:
+        parts.append(f"error {last_error_type}")
+    return "; ".join(parts)
+
+
+def _safe_nonnegative_float(value: object) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return number if math.isfinite(number) and number >= 0 else 0.0
+
+
+def _format_seconds(value: float) -> str:
+    if value.is_integer():
+        return f"{int(value)}s"
+    return f"{value:g}s"
 
 
 def _safe_int(value: object) -> int:

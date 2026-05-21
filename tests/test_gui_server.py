@@ -3996,6 +3996,47 @@ class GuiServerTests(unittest.TestCase):
         self.assertNotIn("configs/private.json", serialized)
         self.assertNotIn("secret.example", serialized)
 
+    def test_live_agent_health_endpoint_includes_session_run_monitor_liveness(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor
+
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            monitor = LiveAgentSessionRunMonitor(
+                root,
+                FakeSupervisor(),
+                LiveAgentSessionRunController(root),
+                default_server="http://room.local",
+                interval_seconds=2.5,
+            )
+            monitor.run_once()
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, process_supervisor=FakeSupervisor(), session_run_monitor=monitor),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        monitor_payload = payload["session_run_monitor"]
+        self.assertEqual(monitor_payload["running"], False)
+        self.assertEqual(monitor_payload["interval_seconds"], 2.5)
+        self.assertEqual(monitor_payload["last_status"], "ok")
+        self.assertEqual(monitor_payload["last_result_count"], 0)
+        self.assertRegex(monitor_payload["last_tick_at"], r"^\d{4}-\d{2}-\d{2}T")
+        self.assertEqual(monitor_payload["last_error_type"], "")
+
     def test_live_agent_health_keeps_old_active_session_runs_outside_recent_tail(self):
         class FakeSupervisor:
             def list_groups(self):
@@ -10056,7 +10097,7 @@ class GuiServerTests(unittest.TestCase):
         self.assertTrue(all(seconds >= 1.0 for seconds in stop.waits))
 
     def test_live_agent_session_run_monitor_records_safe_failure_and_keeps_loop_alive(self):
-        from agentsassemble.gui import LiveAgentSessionRunMonitor, live_agent_operations_payload
+        from agentsassemble.gui import LiveAgentSessionRunMonitor, live_agent_health_payload, live_agent_operations_payload
 
         class RaisingController:
             def __init__(self):
@@ -10080,12 +10121,17 @@ class GuiServerTests(unittest.TestCase):
                 self.waits += 1
                 return self.waits >= 2
 
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return []
+
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             controller = RaisingController()
+            supervisor = FakeSupervisor()
             monitor = LiveAgentSessionRunMonitor(
                 root,
-                object(),
+                supervisor,
                 controller,
                 default_server="http://room.local",
                 interval_seconds=1,
@@ -10093,6 +10139,7 @@ class GuiServerTests(unittest.TestCase):
 
             monitor._loop(TwoTickStop())
             operations = live_agent_operations_payload(root, limit=10)["operations"]
+            health = live_agent_health_payload(root, supervisor, session_run_monitor=monitor)
 
         self.assertEqual(controller.calls, 2)
         self.assertEqual(len(operations), 2)
@@ -10100,6 +10147,11 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(operations[-1]["status"], "failed")
         self.assertEqual(operations[-1]["error"], "Live-agent session run monitor failed.")
         self.assertNotIn("/Users/me/private", str(operations))
+        self.assertEqual(health["status"], "degraded")
+        self.assertEqual(health["session_run_monitor"]["last_status"], "failed")
+        self.assertEqual(health["session_run_monitor"]["last_result_count"], 0)
+        self.assertEqual(health["session_run_monitor"]["last_error_type"], "RuntimeError")
+        self.assertNotIn("/Users/me/private", json.dumps(health, ensure_ascii=False))
 
     def test_live_agent_session_run_monitor_records_degraded_reconcile_summary(self):
         from agentsassemble.gui import LiveAgentSessionRunMonitor, live_agent_operations_payload
@@ -10207,11 +10259,15 @@ class GuiServerTests(unittest.TestCase):
                 results = monitor.run_once()
             operations = live_agent_operations_payload(root, limit=10)["operations"]
             stored_run = controller.list_runs()[0]
+            snapshot = monitor.snapshot()
 
         self.assertEqual(results, [])
         self.assertEqual(operations, [])
         self.assertEqual(stored_run["status"], "ready")
         self.assertEqual(stored_run["reconcile_count"], 0)
+        self.assertEqual(snapshot["last_status"], "ok")
+        self.assertEqual(snapshot["last_result_count"], 0)
+        self.assertEqual(snapshot["last_error_type"], "")
 
     def test_live_agent_session_run_monitor_stop_waits_until_in_flight_tick_finishes(self):
         from agentsassemble.gui import LiveAgentSessionRunMonitor

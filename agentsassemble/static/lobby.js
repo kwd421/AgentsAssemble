@@ -721,6 +721,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const connections = health.connections && typeof health.connections === "object" ? health.connections : {};
   const sessions = health.sessions && typeof health.sessions === "object" ? health.sessions : {};
   const sessionRuns = health.session_runs && typeof health.session_runs === "object" ? health.session_runs : {};
+  const sessionRunMonitor = health.session_run_monitor && typeof health.session_run_monitor === "object" ? health.session_run_monitor : {};
   const processCounts = processes.counts && typeof processes.counts === "object" ? processes.counts : {};
   const agentLive = Math.max(0, Number(agents.live || 0));
   const agentTotal = Math.max(0, Number(agents.total || 0));
@@ -736,6 +737,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const sessionAttention = liveAgentHealthAttentionSummary(sessions.attention, "session attention");
   const sessionRunAttention = liveAgentHealthAttentionSummary(sessionRuns.attention, "session-run attention");
   const sessionRunRetry = liveAgentHealthSessionRunRetrySummary(sessionRuns.items);
+  const sessionRunMonitorSummary = liveAgentHealthSessionRunMonitorSummary(sessionRunMonitor);
   const tone = status === "ok" ? "success" : status === "degraded" ? "warning" : "error";
   return (
     `<p class="live-agent-runtime-health" data-tone="${escapeHtml(tone)}">` +
@@ -749,6 +751,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
     (sessionAttention ? `<br><small>${escapeHtml(sessionAttention)}</small>` : "") +
     (sessionRunAttention ? `<br><small>${escapeHtml(sessionRunAttention)}</small>` : "") +
     (sessionRunRetry ? `<br><small>${escapeHtml(sessionRunRetry)}</small>` : "") +
+    (sessionRunMonitorSummary ? `<br><small>${escapeHtml(sessionRunMonitorSummary)}</small>` : "") +
     "</p>" +
     renderLiveAgentSessionReadiness(sessions)
   );
@@ -875,7 +878,7 @@ function renderLiveAgentDiscoveryRow(discovery) {
 }
 
 function liveAgentHealthAttentionCount(health) {
-  const sections = [health?.agents, health?.processes, health?.connections, health?.sessions, health?.session_runs];
+  const sections = [health?.agents, health?.processes, health?.connections, health?.sessions, health?.session_runs, health?.session_run_monitor];
   return sections.reduce((count, section) => {
     const attention = section && typeof section === "object" && Array.isArray(section.attention) ? section.attention : [];
     return count + attention.length;
@@ -906,6 +909,28 @@ function liveAgentHealthSessionRunRetrySummary(value) {
     if (parts.length) labels.push(parts.join(" · "));
   }
   return labels.length ? `session-run retries ${labels.slice(0, 3).join(", ")}` : "";
+}
+
+function liveAgentHealthSessionRunMonitorSummary(value) {
+  if (!value || typeof value !== "object" || !("running" in value || "last_status" in value || "last_tick_at" in value)) return "";
+  const parts = [`session-run monitor ${value.running === true ? "running" : "stopped"}`];
+  const intervalSeconds = Number(value.interval_seconds || 0);
+  const lastStatus = String(value.last_status || "").trim();
+  const lastResultCount = Number(value.last_result_count || 0);
+  const lastTickAt = String(value.last_tick_at || "").trim();
+  const lastErrorType = String(value.last_error_type || "").trim();
+  const intervalLabel = liveAgentHealthSecondsLabel(intervalSeconds);
+  if (intervalLabel) parts.push(`interval ${intervalLabel}`);
+  if (/^[a-z_]{1,32}$/.test(lastStatus)) parts.push(`last ${lastStatus}`);
+  if (Number.isFinite(lastResultCount)) parts.push(`results ${Math.max(0, Math.floor(lastResultCount))}`);
+  if (/^[0-9T:+.\-Z]{1,64}$/.test(lastTickAt)) parts.push(`last tick ${lastTickAt}`);
+  if (/^[A-Za-z_][A-Za-z0-9_.]{0,79}$/.test(lastErrorType)) parts.push(`error ${lastErrorType}`);
+  return parts.join(" · ");
+}
+
+function liveAgentHealthSecondsLabel(value) {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  return `${Number.isInteger(value) ? value : Number(value.toFixed(3))}s`;
 }
 
 function renderLiveAgentProcessCard(group) {
