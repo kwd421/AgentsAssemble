@@ -3554,6 +3554,15 @@ def _format_live_agent_session_run(run: dict[str, object]) -> str:
         suffix_parts.append(f"phase={phase}")
     if reconcile_count:
         suffix_parts.append(f"reconcile_count={reconcile_count}")
+    reconcile_failure_count = _safe_int(run.get("reconcile_failure_count"))
+    if reconcile_failure_count:
+        suffix_parts.append(f"reconcile_failures={reconcile_failure_count}")
+    reconcile_backoff_seconds = _safe_int(run.get("reconcile_backoff_seconds"))
+    if reconcile_backoff_seconds:
+        suffix_parts.append(f"reconcile_backoff={reconcile_backoff_seconds}s")
+    next_reconcile_at = str(run.get("next_reconcile_at") or "").strip()
+    if next_reconcile_at:
+        suffix_parts.append(f"next_reconcile={next_reconcile_at}")
     readiness = run.get("readiness") if isinstance(run.get("readiness"), dict) else {}
     readiness_status = str(readiness.get("status") or "").strip()
     if readiness_status:

@@ -8949,6 +8949,48 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(operations[-1]["error"], "Live-agent session run monitor failed.")
         self.assertNotIn("/Users/me/private", str(operations))
 
+    def test_live_agent_session_run_monitor_records_degraded_reconcile_summary(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor, live_agent_operations_payload
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": "configs/live-agents.example.json",
+                    "server": "http://room.local",
+                },
+            )
+
+            def degraded_ensure(output_root, process_supervisor, payload, *, default_server):
+                del output_root, process_supervisor, default_server
+                return {
+                    "status": "degraded",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "action": "recover",
+                }
+
+            monitor = LiveAgentSessionRunMonitor(
+                root,
+                object(),
+                controller,
+                default_server="http://room.local",
+            )
+            with patch("agentsassemble.gui.live_agent_session_ensure_payload", side_effect=degraded_ensure):
+                results = monitor.run_once()
+            operations = live_agent_operations_payload(root, limit=10)["operations"]
+
+        self.assertEqual(results[0]["status"], "degraded")
+        self.assertEqual(operations[-1]["operation"], "session_run.reconcile")
+        self.assertEqual(operations[-1]["status"], "degraded")
+        self.assertEqual(operations[-1]["details"]["session_run_count"], 1)
+        self.assertEqual(operations[-1]["details"]["session_run_failed_count"], 0)
+        self.assertEqual(operations[-1]["details"]["session_run_degraded_count"], 1)
+
     def test_live_agent_session_run_monitor_skips_mutating_ensure_for_current_ready_run(self):
         from agentsassemble.gui import LiveAgentSessionRunMonitor, live_agent_operations_payload
 

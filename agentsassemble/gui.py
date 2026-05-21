@@ -409,14 +409,21 @@ def _reconcile_live_agent_session_runs(
     )
     if results:
         failed_count = sum(1 for item in results if str(item.get("status") or "") == "failed")
+        degraded_count = sum(
+            1
+            for item in results
+            if str(item.get("status") or "") in {"running", "recovering", "starting", "degraded"}
+        )
+        status = "failed" if failed_count else "degraded" if degraded_count else "success"
         record_live_agent_operation(
             output_root,
             operation="session_run.reconcile",
-            status="failed" if failed_count else "success",
+            status=status,
             summary=summary,
             details={
                 "session_run_count": len(results),
                 "session_run_failed_count": failed_count,
+                "session_run_degraded_count": degraded_count,
             },
         )
     return results

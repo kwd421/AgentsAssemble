@@ -4,7 +4,7 @@ import json
 import re
 import threading
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,6 +15,8 @@ DEFAULT_SESSION_RUN_LIMIT = 50
 MAX_SESSION_RUN_LIMIT = 200
 SESSION_RUN_TEXT_LIMIT = 500
 SESSION_RUN_FIELD_LIMIT = 128
+DEFAULT_RECONCILE_BACKOFF_SECONDS = 60
+MAX_RECONCILE_BACKOFF_SECONDS = 300
 ACTIVE_SESSION_RUN_STATUSES = {"running", "recovering", "ready", "starting", "degraded"}
 TERMINAL_SESSION_RUN_STATUSES = {"failed", "stopped"}
 POST_READY_REQUEST_KEYS = {
@@ -102,7 +104,10 @@ class LiveAgentSessionRunController:
             "updated_at": now,
             "finished_at": "",
             "last_reconciled_at": "",
+            "next_reconcile_at": "",
             "reconcile_count": 0,
+            "reconcile_failure_count": 0,
+            "reconcile_backoff_seconds": 0,
         }
         with self._lock:
             self._records[run_id] = record
@@ -137,6 +142,7 @@ class LiveAgentSessionRunController:
                 record["status"] = "stopped"
                 record["active"] = False
                 record["phase"] = _safe_phase(reason) or "stopped"
+                self._clear_reconcile_retry(record)
                 record["updated_at"] = now
                 record["finished_at"] = now
                 stopped.append(_public_record(record))
@@ -162,6 +168,8 @@ class LiveAgentSessionRunController:
                 record = self._record_or_raise(run_id)
                 if str(record.get("status") or "") not in ACTIVE_SESSION_RUN_STATUSES:
                     results.append(_public_record(record))
+                    continue
+                if not _reconcile_due(record, self.now_fn()):
                     continue
                 pending_record = dict(record)
                 pending_record["request"] = dict(record.get("request") if isinstance(record.get("request"), dict) else {})
@@ -201,9 +209,14 @@ class LiveAgentSessionRunController:
             record = self._record_or_raise(run_id)
             if str(record.get("status") or "") not in ACTIVE_SESSION_RUN_STATUSES:
                 return _public_record(record)
-            return self._fail_record(record, error)
+            return self._degrade_reconciled_record(record, error)
 
-    def _finish_record(self, record: dict[str, object], *, session: dict[str, object]) -> dict[str, object]:
+    def _finish_record(
+        self,
+        record: dict[str, object],
+        *,
+        session: dict[str, object],
+    ) -> dict[str, object]:
         now = self.now_fn().isoformat()
         status = _session_run_status(session)
         record["status"] = status
@@ -216,11 +229,49 @@ class LiveAgentSessionRunController:
             record["request"] = _request_without_post_ready_fields(
                 record.get("request") if isinstance(record.get("request"), dict) else {}
             )
+            self._clear_reconcile_retry(record)
+        elif status in TERMINAL_SESSION_RUN_STATUSES:
+            self._clear_reconcile_retry(record)
+        elif status in ACTIVE_SESSION_RUN_STATUSES:
+            self._schedule_reconcile_retry(record)
         record["last_error"] = ""
         record["updated_at"] = now
         record["finished_at"] = now
         self._write_records()
         return _public_record(record)
+
+    def _degrade_reconciled_record(self, record: dict[str, object], error: object) -> dict[str, object]:
+        now = self.now_fn().isoformat()
+        record["status"] = "degraded"
+        record["active"] = True
+        record["phase"] = "reconcile_failed"
+        record["result"] = _public_result(
+            {
+                **(record.get("result") if isinstance(record.get("result"), dict) else {}),
+                "status": "degraded",
+                "action": "reconcile_failed",
+                "meeting_id": record.get("meeting_id"),
+                "group_id": record.get("group_id"),
+            }
+        )
+        record["last_error"] = _safe_error(error)
+        record["updated_at"] = now
+        record["finished_at"] = now
+        self._schedule_reconcile_retry(record)
+        self._write_records()
+        return _public_record(record)
+
+    def _schedule_reconcile_retry(self, record: dict[str, object]) -> None:
+        failure_count = _nonnegative_int(record.get("reconcile_failure_count"), 0) + 1
+        backoff_seconds = _reconcile_backoff_seconds(failure_count)
+        record["reconcile_failure_count"] = failure_count
+        record["reconcile_backoff_seconds"] = backoff_seconds
+        record["next_reconcile_at"] = (self.now_fn() + timedelta(seconds=backoff_seconds)).isoformat()
+
+    def _clear_reconcile_retry(self, record: dict[str, object]) -> None:
+        record["next_reconcile_at"] = ""
+        record["reconcile_failure_count"] = 0
+        record["reconcile_backoff_seconds"] = 0
 
     def _fail_record(self, record: dict[str, object], error: object) -> dict[str, object]:
         now = self.now_fn().isoformat()
@@ -228,6 +279,7 @@ class LiveAgentSessionRunController:
         record["active"] = False
         record["phase"] = "failed"
         record["last_error"] = _safe_error(error)
+        self._clear_reconcile_retry(record)
         record["updated_at"] = now
         record["finished_at"] = now
         self._write_records()
@@ -311,7 +363,7 @@ def _safe_record(value: object) -> dict[str, object]:
     request = _request_payload(value.get("request") if isinstance(value.get("request"), dict) else {})
     result = _public_result(value.get("result") if isinstance(value.get("result"), dict) else {})
     status = _safe_status(value.get("status"))
-    if status in ACTIVE_SESSION_RUN_STATUSES and result:
+    if status == "ready" and result:
         status = _session_run_status({**result, "status": result.get("status", status)})
     if status == "ready":
         request = _request_without_post_ready_fields(request)
@@ -330,7 +382,10 @@ def _safe_record(value: object) -> dict[str, object]:
         "updated_at": _safe_timestamp(value.get("updated_at")),
         "finished_at": _safe_timestamp(value.get("finished_at")),
         "last_reconciled_at": _safe_timestamp(value.get("last_reconciled_at")),
+        "next_reconcile_at": "" if status == "ready" or status in TERMINAL_SESSION_RUN_STATUSES else _safe_timestamp(value.get("next_reconcile_at")),
         "reconcile_count": _nonnegative_int(value.get("reconcile_count"), 0),
+        "reconcile_failure_count": 0 if status == "ready" or status in TERMINAL_SESSION_RUN_STATUSES else _nonnegative_int(value.get("reconcile_failure_count"), 0),
+        "reconcile_backoff_seconds": 0 if status == "ready" or status in TERMINAL_SESSION_RUN_STATUSES else _nonnegative_int(value.get("reconcile_backoff_seconds"), 0),
     }
 
 
@@ -351,7 +406,10 @@ def _public_record(record: dict[str, object]) -> dict[str, object]:
         "updated_at": _safe_timestamp(record.get("updated_at")),
         "finished_at": _safe_timestamp(record.get("finished_at")),
         "last_reconciled_at": _safe_timestamp(record.get("last_reconciled_at")),
+        "next_reconcile_at": "" if status == "ready" or status in TERMINAL_SESSION_RUN_STATUSES else _safe_timestamp(record.get("next_reconcile_at")),
         "reconcile_count": _nonnegative_int(record.get("reconcile_count"), 0),
+        "reconcile_failure_count": 0 if status == "ready" or status in TERMINAL_SESSION_RUN_STATUSES else _nonnegative_int(record.get("reconcile_failure_count"), 0),
+        "reconcile_backoff_seconds": 0 if status == "ready" or status in TERMINAL_SESSION_RUN_STATUSES else _nonnegative_int(record.get("reconcile_backoff_seconds"), 0),
     }
 
 
@@ -474,6 +532,38 @@ def _result_status(value: object) -> str:
 
 def _request_without_post_ready_fields(request: dict[str, object]) -> dict[str, object]:
     return {key: value for key, value in request.items() if key not in POST_READY_REQUEST_KEYS}
+
+
+def _reconcile_due(record: dict[str, object], now: datetime) -> bool:
+    next_reconcile_at = _safe_datetime(record.get("next_reconcile_at"))
+    if next_reconcile_at is None:
+        return True
+    return _utc_datetime(now) >= next_reconcile_at
+
+
+def _safe_datetime(value: object) -> datetime | None:
+    timestamp = _safe_timestamp(value)
+    if not timestamp:
+        return None
+    try:
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return _utc_datetime(parsed)
+
+
+def _utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _reconcile_backoff_seconds(failure_count: int) -> int:
+    attempts = max(1, _nonnegative_int(failure_count, 1))
+    return min(
+        MAX_RECONCILE_BACKOFF_SECONDS,
+        DEFAULT_RECONCILE_BACKOFF_SECONDS * (2 ** (attempts - 1)),
+    )
 
 
 def _safe_phase(value: object) -> str:
