@@ -2600,6 +2600,8 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
             if stop_event.is_set():
                 return
             errors[config.agent_id] = str(error)
+            if _should_heartbeat_resident_worker_error(config, error):
+                _heartbeat_resident_worker_error(config, error)
         finally:
             if command_runner is not None:
                 _close_command_runner(command_runner)
@@ -2629,6 +2631,32 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
     summary = ", ".join(f"{config.agent_id}={results.get(config.agent_id, 0)}" for config in configs)
     print(f"Resident group stopped after posting {total} replies ({summary})")
     return 0
+
+
+def _should_heartbeat_resident_worker_error(config: ResidentAgentConfig, error: BaseException) -> bool:
+    return not (config.connection_kind == "self_service" and isinstance(error, subprocess.CalledProcessError))
+
+
+def _heartbeat_resident_worker_error(config: ResidentAgentConfig, error: BaseException) -> None:
+    try:
+        _request_json(
+            _server_url(config.server, f"/api/live-agents/{urllib.parse.quote(config.agent_id, safe='')}/heartbeat"),
+            method="POST",
+            payload={"status": "error", "last_error": _resident_worker_error_message(error)},
+            timeout_seconds=2.0,
+        )
+    except Exception:
+        return
+
+
+def _resident_worker_error_message(error: BaseException) -> str:
+    message = str(error).strip()
+    if message and _looks_sensitive_presence_error(message):
+        return "Resident worker error details redacted."
+    error_type = type(error).__name__
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", error_type):
+        return f"Resident worker failed with {error_type}."
+    return "Resident worker failed."
 
 
 def _resident_group_config_errors(configs: list[ResidentAgentConfig]) -> dict[str, str]:

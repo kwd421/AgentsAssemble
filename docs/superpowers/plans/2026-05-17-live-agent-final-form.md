@@ -4540,6 +4540,62 @@ Operator docs now state that non-shutdown worker failures are isolated to the fa
 
 ---
 
+### Task 131: Run-Group Worker Crash Presence Evidence
+
+**Goal:** Make isolated worker crashes visible in the live-agent roster without leaking raw local diagnostics.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED crash-presence coverage**
+
+Cover a `run-group` worker that raises a non-shutdown exception containing token-like and path-like details. Also cover a plain-looking exception whose text could still be provider output. The group must still return `2`, and it must send a best-effort `error` heartbeat for that agent with a sanitized `last_error`.
+
+- [x] **Step 2: Add bounded best-effort error heartbeat**
+
+The worker exception path now posts `status: "error"` to that agent's heartbeat endpoint with a pre-redacted resident worker error label. Sensitive-looking failures use a fixed redacted marker; otherwise the heartbeat carries only a compact exception category, not raw exception text. The heartbeat is best-effort, bounded, and cannot mask the original group stderr/exit-code report.
+
+- [x] **Step 3: Document the roster evidence**
+
+Operator docs now explain that isolated worker failures still surface as safe roster error evidence while raw local exception text remains local diagnostics.
+
+---
+
+### Task 132: Quiet Volatile GUI Runtime Refreshes
+
+**Goal:** Keep the lobby live without visually resetting the frontend every 5-second runtime poll.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_static_lobby_runtime.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED refresh-signature coverage**
+
+Cover the lobby runtime refresh path with explicit render-signature helpers for live-agent presence and runtime health, plus a Node runtime smoke that verifies a second background refresh does not rewrite the lobby when only heartbeat age and monitor tick timestamps changed. The signatures must exclude those volatile fields so they do not force a full lobby re-render.
+
+- [x] **Step 2: Gate background render decisions on stable state**
+
+`loadLiveAgents` now compares agent snapshots without `heartbeat_age_seconds`, and `loadLiveAgentHealth` compares health snapshots without monitor `last_tick_at` fields. Polling continues every 5 seconds, but the lobby re-renders only when stable status, counts, errors, cursors, or process/session state change.
+
+- [x] **Step 3: Document the operator contract**
+
+Operator docs now state that background refresh remains live while volatile heartbeat age and monitor tick timestamps are ignored for re-render decisions.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

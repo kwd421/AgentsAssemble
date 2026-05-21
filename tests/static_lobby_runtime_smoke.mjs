@@ -18,9 +18,11 @@ class FakeElement {
     this.scrollTop = 0;
     this.scrollHeight = 100;
     this.clientHeight = 100;
+    this.innerHTMLWriteCount = 0;
   }
 
   set innerHTML(html) {
+    this.innerHTMLWriteCount += 1;
     this._innerHTML = html;
     this.ownerDocument?.loadInnerHtml(html);
   }
@@ -241,6 +243,7 @@ function installHarness({
   liveAgentDiscoveryPayload = null,
   liveAgentDiscoveryResponse = null,
   liveAgentPreflightPayload = null,
+  liveAgentsPayload = null,
   liveAgentProcessEventsPayload = null,
   liveAgentOperationsPayload = null,
   liveAgentSessionRunsPayload = null,
@@ -278,8 +281,8 @@ function installHarness({
     if (url === "/api/live-agent-readiness") return jsonResponse(readinessPayload);
     if (url === "/api/live-agent-health") {
       return jsonResponse(
-        healthResponse?.payload ||
-          healthPayload || {
+        payloadValue(healthResponse?.payload) ||
+          payloadValue(healthPayload) || {
           status: "ok",
           agents: { total: 0, live: 0, counts: { online: 0, working: 0, error: 0, stale: 0, offline: 0 }, attention: [] },
           processes: { total: 0, counts: { running: 0, restarting: 0, error: 0, unknown: 0, stopped: 0 }, attention: [] },
@@ -567,7 +570,7 @@ function installHarness({
       });
     }
     if (url === "/api/lobby") return jsonResponse({ events: [] });
-    if (url === "/api/live-agents") return jsonResponse({ agents: [] });
+    if (url === "/api/live-agents") return jsonResponse(payloadValue(liveAgentsPayload) || { agents: [] });
     if (url === "/api/live-agent-processes") return jsonResponse({ groups: [] });
     if (url === "/api/live-agent-process-events?limit=20") {
       return jsonResponse(
@@ -607,6 +610,10 @@ function installHarness({
     throw new Error(`Unhandled test fetch: ${url}`);
   };
   return { document, requests, events };
+}
+
+function payloadValue(value) {
+  return typeof value === "function" ? value() : value;
 }
 
 function jsonResponse(payload, { ok = true, status = 200 } = {}) {
@@ -2198,6 +2205,65 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.match(health.textContent, /session attention resident-m1:resident-main:meeting:duplicate_active_group/);
   assert.match(health.textContent, /session-run attention resident-m1:resident-main:run-1:degraded:retrying/);
   assert.equal(health.attributes["data-tone"], "warning");
+});
+
+test("runtime refresh does not re-render for volatile heartbeat age and monitor ticks only", async () => {
+  resetState();
+  let agentAge = 0;
+  let healthTick = 0;
+  const { document } = installHarness({
+    liveAgentsPayload: () => ({
+      agents: [
+        {
+          agent_id: "agent-a",
+          display_name: "Agent A",
+          status: "online",
+          heartbeat_age_seconds: (agentAge += 5),
+          stale_after_seconds: 30,
+          provider_kind: "local_cli",
+          connection_kind: "local_cli",
+        },
+      ],
+    }),
+    healthPayload: () => ({
+      status: "ok",
+      agents: {
+        total: 1,
+        live: 1,
+        counts: { online: 1, working: 0, error: 0, stale: 0, offline: 0 },
+        attention: [],
+      },
+      processes: {
+        total: 0,
+        counts: { running: 0, restarting: 0, error: 0, unknown: 0, stopped: 0 },
+        attention: [],
+      },
+      connections: { expected: 1, connected: 1, attention: [] },
+      process_monitor: {
+        running: true,
+        interval_seconds: 5,
+        last_status: "ok",
+        last_tick_at: `2026-05-21T10:00:0${++healthTick}+00:00`,
+        last_group_count: 0,
+      },
+      session_run_monitor: {
+        running: true,
+        interval_seconds: 5,
+        last_status: "ok",
+        last_tick_at: `2026-05-21T10:00:0${healthTick}+00:00`,
+        last_result_count: 0,
+      },
+    }),
+  });
+
+  await refreshLiveAgentRuntimeSurfaces();
+  const renderCountAfterInitialLoad = document.lobby.innerHTMLWriteCount;
+
+  await refreshLiveAgentRuntimeSurfaces();
+
+  assert.equal(state.liveAgents[0].heartbeat_age_seconds, 10);
+  assert.equal(state.liveAgentHealth.process_monitor.last_tick_at, "2026-05-21T10:00:02+00:00");
+  assert.equal(document.lobby.innerHTMLWriteCount, renderCountAfterInitialLoad);
 });
 
 test("runtime health renders meeting-owned session readiness details", async () => {

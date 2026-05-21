@@ -1781,9 +1781,29 @@ async function sendLobbyRemote(message, speakerName, options = {}) {
   document.querySelector("#lobby-message")?.focus();
 }
 
+function liveAgentListRenderSignature(agents) {
+  return JSON.stringify((agents || []).map((agent) => {
+    const copy = { ...agent };
+    delete copy.heartbeat_age_seconds;
+    return copy;
+  }));
+}
+
+function liveAgentHealthRenderSignature(payload) {
+  const clone = cloneJson(payload || null);
+  if (clone?.process_monitor) delete clone.process_monitor.last_tick_at;
+  if (clone?.session_run_monitor) delete clone.session_run_monitor.last_tick_at;
+  return JSON.stringify(clone);
+}
+
+function cloneJson(value) {
+  if (value === null || value === undefined) return value;
+  return JSON.parse(JSON.stringify(value));
+}
+
 async function loadLiveAgents(options = {}) {
   if (state.liveAgentsLoading && !options.force) return;
-  const previousSignature = JSON.stringify(state.liveAgents || []);
+  const previousSignature = liveAgentListRenderSignature(state.liveAgents || []);
   let shouldRender = !options.background;
   state.liveAgentsLoading = true;
   if (options.force) state.liveAgentStatus = { message: "살아있는 에이전트 갱신 중", tone: "info" };
@@ -1793,7 +1813,7 @@ async function loadLiveAgents(options = {}) {
     const agents = payload.agents || [];
     setLiveAgents(agents);
     state.liveAgentsLoaded = true;
-    shouldRender = shouldRender || JSON.stringify(agents) !== previousSignature;
+    shouldRender = shouldRender || liveAgentListRenderSignature(agents) !== previousSignature;
     if (
       state.liveAgentStatus?.message === "살아있는 에이전트 갱신 중" ||
       state.liveAgentStatus?.message === "살아있는 에이전트 목록을 불러오지 못했습니다."
@@ -1854,7 +1874,7 @@ export function refreshLiveAgentRuntimeSurfaces() {
 
 async function loadLiveAgentHealth(options = {}) {
   if (state.liveAgentHealthLoading && !options.force) return;
-  const previousSignature = JSON.stringify(state.liveAgentHealth || null);
+  const previousSignature = liveAgentHealthRenderSignature(state.liveAgentHealth || null);
   let shouldRender = !options.background;
   state.liveAgentHealthLoading = true;
   if (!options.background) renderLobby({ followLatest: false });
@@ -1862,7 +1882,7 @@ async function loadLiveAgentHealth(options = {}) {
     const payload = await fetchJson("/api/live-agent-health");
     state.liveAgentHealth = payload;
     state.liveAgentHealthLoaded = true;
-    shouldRender = shouldRender || JSON.stringify(payload) !== previousSignature;
+    shouldRender = shouldRender || liveAgentHealthRenderSignature(payload) !== previousSignature;
   } catch {
     state.liveAgentHealth = { status: "unknown" };
     state.liveAgentHealthLoaded = true;

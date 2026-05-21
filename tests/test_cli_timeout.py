@@ -11175,6 +11175,42 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(len(popen_calls), 1)
         self.assertIs(popen_calls[0]["kwargs"]["start_new_session"], False)
 
+    def test_live_agent_run_group_self_service_child_failure_keeps_single_safe_error_heartbeat(self):
+        config = _self_service_resident_config(command=["/private/fake-self-service"], max_ticks=1)
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, **kwargs):
+            del method, kwargs
+            calls.append({"url": url, "payload": payload})
+            return {"agent": {"agent_id": "selfer", "status": (payload or {}).get("status", "online")}}
+
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=[config]),
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
+            patch("agentsassemble.cli._request_json", side_effect=request_json),
+            patch("agentsassemble.cli.subprocess.Popen", return_value=_FailingSelfServiceProcess()),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", StringIO()),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 2)
+        heartbeat_payloads = [
+            call["payload"]
+            for call in calls
+            if call["url"] == "http://room.local/api/live-agents/selfer/heartbeat"
+        ]
+        self.assertEqual(
+            heartbeat_payloads,
+            [
+                {"status": "online"},
+                {"status": "error", "last_error": "Self-service command exited with return code 7."},
+            ],
+        )
+        heartbeat_blob = json.dumps(heartbeat_payloads)
+        self.assertNotIn("/private/fake-self-service", heartbeat_blob)
+        self.assertNotIn("returned non-zero exit status", heartbeat_blob)
+
     def test_self_service_parent_liveness_heartbeat_preserves_child_status(self):
         config = ResidentAgentConfig(
             server="http://room.local",
@@ -12713,6 +12749,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("agentsassemble.cli.load_group_configs", return_value=configs),
             patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
             patch("agentsassemble.cli.LiveAgentRunner", ExitingRunner),
+            patch("agentsassemble.cli._request_json", return_value={}),
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", stderr),
         ):
@@ -12720,6 +12757,124 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 2)
         self.assertIn("exiting-agent: runner exited unexpectedly", stderr.getvalue())
+
+    def test_live_agent_run_group_worker_failure_reports_safe_presence_error(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="crashing-agent",
+                display_name="Crashing Agent",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            )
+        ]
+        requests = []
+
+        class CrashingRunner:
+            def __init__(self, *args, **kwargs):
+                del args, kwargs
+
+            def run(self):
+                raise RuntimeError("worker failed with token=secret-token in /Users/me/private/live-agents.json")
+
+        def request_json(url, **kwargs):
+            requests.append((url, kwargs))
+            return {"agent": {"agent_id": "crashing-agent"}}
+
+        stderr = StringIO()
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
+            patch("agentsassemble.cli.LiveAgentRunner", CrashingRunner),
+            patch("agentsassemble.cli._request_json", side_effect=request_json),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", stderr),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("crashing-agent", stderr.getvalue())
+        heartbeat_requests = [
+            kwargs["payload"]
+            for url, kwargs in requests
+            if url == "http://room.local/api/live-agents/crashing-agent/heartbeat"
+        ]
+        self.assertEqual(
+            heartbeat_requests,
+            [{"status": "error", "last_error": "Resident worker error details redacted."}],
+        )
+        self.assertNotIn("secret-token", json.dumps(heartbeat_requests))
+        self.assertNotIn("/Users/me/private/live-agents.json", json.dumps(heartbeat_requests))
+
+    def test_live_agent_run_group_worker_failure_keeps_plain_exception_text_out_of_presence(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="plain-crash",
+                display_name="Plain Crash",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            )
+        ]
+        requests = []
+
+        class CrashingRunner:
+            def __init__(self, *args, **kwargs):
+                del args, kwargs
+
+            def run(self):
+                raise RuntimeError("provider output: model returned confidential draft")
+
+        def request_json(url, **kwargs):
+            requests.append((url, kwargs))
+            return {"agent": {"agent_id": "plain-crash"}}
+
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
+            patch("agentsassemble.cli.LiveAgentRunner", CrashingRunner),
+            patch("agentsassemble.cli._request_json", side_effect=request_json),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", StringIO()),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 2)
+        heartbeat_requests = [
+            kwargs["payload"]
+            for url, kwargs in requests
+            if url == "http://room.local/api/live-agents/plain-crash/heartbeat"
+        ]
+        self.assertEqual(
+            heartbeat_requests,
+            [{"status": "error", "last_error": "Resident worker failed with RuntimeError."}],
+        )
+        self.assertNotIn("provider output", json.dumps(heartbeat_requests))
+        self.assertNotIn("confidential draft", json.dumps(heartbeat_requests))
 
     def test_live_agent_run_group_closes_sibling_runners_after_worker_keyboard_interrupt(self):
         configs = [
@@ -12898,6 +13053,7 @@ class CliTimeoutTests(unittest.TestCase):
             patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
             patch("agentsassemble.cli._command_runner_for_config", side_effect=command_runner_for_config),
             patch("agentsassemble.cli.LiveAgentRunner", BlockingSiblingRunner),
+            patch("agentsassemble.cli._request_json", return_value={}),
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", stderr),
         ):
