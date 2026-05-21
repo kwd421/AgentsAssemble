@@ -313,6 +313,16 @@ def build_parser() -> argparse.ArgumentParser:
     live_heartbeat.add_argument("--last-observed-live-event-id", default=None)
     live_heartbeat.add_argument("--json", action="store_true", dest="as_json", help="Print the raw heartbeat response.")
 
+    live_return_packet = live_agent_subparsers.add_parser(
+        "return-packet",
+        parents=[live_server],
+        help="Read this live agent's targeted return packet.",
+    )
+    live_return_packet.add_argument("--agent-id", required=True)
+    live_return_packet.add_argument("--meeting-id", default="")
+    live_return_packet.add_argument("--source-event-id", required=True)
+    live_return_packet.add_argument("--json", action="store_true", dest="as_json", help="Print the raw return-packet payload.")
+
     live_engagement = live_agent_subparsers.add_parser("engagement", parents=[live_server], help="Update a live agent engagement mode.")
     live_engagement.add_argument("--agent-id", required=True)
     live_engagement.add_argument("--mode", choices=ENGAGEMENT_MODE_CHOICES, required=True, dest="engagement_mode")
@@ -1194,6 +1204,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             else:
                 print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('status') or args.status}")
             return 0
+        if args.live_agent_command == "return-packet":
+            return _run_live_agent_return_packet(args)
         if args.live_agent_command == "engagement":
             return _run_live_agent_engagement(args)
         if args.live_agent_command == "call":
@@ -1501,6 +1513,21 @@ def _run_live_agent_engagement(args: argparse.Namespace) -> int:
     else:
         agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
         print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('engagement_mode') or args.engagement_mode}")
+    return 0
+
+
+def _run_live_agent_return_packet(args: argparse.Namespace) -> int:
+    agent_id = urllib.parse.quote(args.agent_id, safe="")
+    query_values = {}
+    if args.meeting_id:
+        query_values["meeting_id"] = args.meeting_id
+    query_values["source_event_id"] = args.source_event_id
+    query = urllib.parse.urlencode(query_values)
+    response = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/return-packet?{query}"))
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(str(response.get("markdown") or "").strip())
     return 0
 
 
@@ -5240,6 +5267,20 @@ def _wait_return_packet_payload(
 ) -> dict[str, object]:
     event_id = str(event.get("id") or "")
     meeting_id = _wait_turn_request_meeting_id(room, event)
+    read_command = [
+        "python3",
+        "-m",
+        "agentsassemble.cli",
+        "live-agent",
+        "return-packet",
+        "--server",
+        str(args.server),
+        "--agent-id",
+        str(args.agent_id),
+    ]
+    if meeting_id:
+        read_command.extend(["--meeting-id", meeting_id])
+    read_command.extend(["--source-event-id", event_id, "--json"])
     return {
         "status": "event",
         "agent_id": args.agent_id,
@@ -5248,6 +5289,7 @@ def _wait_return_packet_payload(
         "event": event,
         "artifact_path": str(event.get("artifact_path") or ""),
         "artifact_json_path": str(event.get("artifact_json_path") or ""),
+        "read_command": read_command,
         "ack_command": [
             "python3",
             "-m",

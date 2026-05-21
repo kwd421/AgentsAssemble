@@ -80,7 +80,7 @@ def build_live_agent_join_brief(
             "For lobby actions, replace templates.say placeholders and run it once.",
             "For observe_lobby actions, run the returned ack_command and do not post a reply.",
             "For official_turn actions, replace templates.official_reply placeholders and run it once.",
-            "For return_packet actions, run the returned ack_command and do not post a reply.",
+            "For return_packet actions, run the returned read_command before the ack_command and do not post a reply.",
             "Use templates.heartbeat to report online, working, error, or cursor-only observation.",
         ],
         "safety": {

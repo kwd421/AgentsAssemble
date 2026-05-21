@@ -4752,6 +4752,36 @@ The checked-in self-service wrapper and credential-free smoke child now run `obs
 
 ---
 
+### Task 138: Agent-Scoped Return Packet Read Path
+
+**Goal:** Let terminal, self-service, and external/manual live agents read only their own return packet before acknowledging it.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/live_agent_join_brief.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED return-packet read coverage**
+
+Cover `wait-next` returning a `read_command` for `action: "return_packet"`, the CLI `live-agent return-packet` command hitting the agent-scoped endpoint, and the GUI endpoint returning agent A's packet without leaking agent B's packet.
+
+- [x] **Step 2: Add source-event scoped read behavior**
+
+`GET /api/live-agents/<agent_id>/return-packet?meeting_id=<meeting_id>&source_event_id=<event_id>` validates the current live-agent row's meeting, role binding, source event or projected event id, and expected `return_packets/<role>.md` plus `.json` paths before reading. It rejects cross-meeting reuse of the same `agent_id`, does not accept caller-supplied artifact paths, mutate cursors, heartbeat, acknowledge, append operation records, or post replies.
+
+- [x] **Step 3: Document read-before-ack workflow**
+
+Join brief and operator docs now tell external agents to run `read_command` before `ack_command` for return packets, keeping packet body access separate from cursor acknowledgement.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -1830,6 +1830,56 @@ def live_agent_room_payload(output_root: Path, agent_id: str) -> dict[str, objec
     }
 
 
+def live_agent_return_packet_payload(
+    output_root: Path,
+    agent_id: str,
+    *,
+    meeting_id: str = "",
+    source_event_id: str = "",
+) -> dict[str, object]:
+    agent = _live_agent_for_id(output_root, agent_id)
+    clean_source_event_id = clean_lobby_text(source_event_id, limit=128)
+    requested_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
+    if not clean_source_event_id or not agent_meeting_id:
+        raise ValueError("Return packet not found.")
+    if requested_meeting_id and requested_meeting_id != agent_meeting_id:
+        raise ValueError("Return packet not found.")
+    clean_meeting_id = agent_meeting_id
+    try:
+        meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
+        meeting = _read_meeting_record(meeting_dir)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError("Return packet not found.") from error
+    candidate = _return_packet_read_candidate(
+        meeting_dir,
+        meeting=meeting,
+        agent_id=clean_lobby_text(agent.get("agent_id"), limit=64),
+        source_event_id=clean_source_event_id,
+    )
+    if candidate is None:
+        raise ValueError("Return packet not found.")
+    packet_path = candidate["packet_path"]
+    packet_json_path = candidate["packet_json_path"]
+    try:
+        packet_markdown = packet_path.read_text(encoding="utf-8")
+        packet_json = json.loads(packet_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("Return packet not found.") from error
+    return {
+        "status": "ok",
+        "agent_id": clean_lobby_text(agent.get("agent_id"), limit=64),
+        "meeting_id": clean_meeting_id,
+        "source_event_id": clean_source_event_id,
+        "role_id": candidate["role_id"],
+        "artifact_path": candidate["artifact_path"],
+        "artifact_json_path": candidate["artifact_json_path"],
+        "markdown": packet_markdown,
+        "json": packet_json,
+        "event": candidate["event"],
+    }
+
+
 def live_agent_heartbeat_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
     agent = heartbeat_live_agent(output_root, agent_id, status=str(payload.get("status") or "online"), metadata=payload)
     return {"agent": agent, "agents": read_live_agents(output_root)}
@@ -3965,6 +4015,82 @@ def _projected_return_packet_events(
     return events
 
 
+def _return_packet_read_candidate(
+    meeting_dir: Path,
+    *,
+    meeting: dict[str, object],
+    agent_id: str,
+    source_event_id: str,
+) -> dict[str, object] | None:
+    if not agent_id or not source_event_id:
+        return None
+    meeting_id = clean_lobby_text(meeting.get("meeting_id"), limit=128) or meeting_dir.name
+    full_events = read_live_events(meeting_dir, limit=None)
+    for binding in _as_dict_list(meeting.get("agent_bindings")):
+        if clean_lobby_text(binding.get("agent_id"), limit=64) != agent_id:
+            continue
+        role_id = clean_lobby_text(binding.get("role_id"), limit=128)
+        paths = _return_packet_role_paths(meeting_dir, role_id)
+        if paths is None:
+            continue
+        packet_path, packet_json_path, artifact_path, artifact_json_path = paths
+        if not packet_path.exists() or not packet_json_path.exists():
+            continue
+        fallback_event_id = _projected_return_packet_event_id(
+            meeting_id=meeting_id,
+            agent_id=agent_id,
+            role_id=role_id,
+            artifact_path=artifact_path,
+        )
+        original_event = _return_packet_artifact_event(
+            full_events,
+            agent_id=agent_id,
+            artifact_path=artifact_path,
+            artifact_json_path=artifact_json_path,
+        )
+        original_event_id = clean_lobby_text(original_event.get("id") if original_event else "", limit=128)
+        if source_event_id not in {original_event_id, fallback_event_id}:
+            continue
+        event = original_event or {
+            "id": fallback_event_id,
+            "kind": "artifact",
+            "meeting_id": meeting_id,
+            "channel": "system",
+            "audience": f"agent:{agent_id}",
+            "official_record": False,
+            "target_agent_id": agent_id,
+            "role_id": role_id,
+            "artifact_kind": "return_packet",
+            "artifact_path": artifact_path,
+            "artifact_json_path": artifact_json_path,
+            "projected": True,
+        }
+        return {
+            "role_id": role_id,
+            "artifact_path": artifact_path,
+            "artifact_json_path": artifact_json_path,
+            "packet_path": packet_path,
+            "packet_json_path": packet_json_path,
+            "event": event,
+        }
+    return None
+
+
+def _return_packet_role_paths(meeting_dir: Path, role_id: str) -> tuple[Path, Path, str, str] | None:
+    if not role_id:
+        return None
+    markdown_name = f"{role_id}.md"
+    json_name = f"{role_id}.json"
+    if Path(markdown_name).name != markdown_name or Path(json_name).name != json_name:
+        return None
+    packet_dir = (meeting_dir / "return_packets").resolve()
+    packet_path = (packet_dir / markdown_name).resolve()
+    packet_json_path = (packet_dir / json_name).resolve()
+    if packet_path.parent != packet_dir or packet_json_path.parent != packet_dir:
+        return None
+    return packet_path, packet_json_path, f"return_packets/{markdown_name}", f"return_packets/{json_name}"
+
+
 def _visible_live_events_pending_for_agent(
     events: list[dict[str, object]],
     agent_id: str,
@@ -5789,6 +5915,20 @@ def _make_handler(
                     self._send_json(live_agent_room_payload(output_root, live_agent_room_id))
                 except ValueError as error:
                     self._send_error(HTTPStatus.NOT_FOUND, str(error))
+                return
+            live_agent_return_packet_id = _live_agent_action_path(path, "return-packet")
+            if live_agent_return_packet_id is not None:
+                try:
+                    self._send_json(
+                        live_agent_return_packet_payload(
+                            output_root,
+                            live_agent_return_packet_id,
+                            meeting_id=str(query.get("meeting_id", [""])[0] or ""),
+                            source_event_id=str(query.get("source_event_id", [""])[0] or ""),
+                        )
+                    )
+                except ValueError:
+                    self._send_error(HTTPStatus.NOT_FOUND, "Return packet not found")
                 return
             if path == "/api/codex-sessions":
                 self._send_json(codex_sessions_payload(limit=self._limit(query, default=20)))

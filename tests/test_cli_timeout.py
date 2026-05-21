@@ -669,7 +669,10 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["commands"]["roster_gate"][-3:], ["--require-match", "--fail-on-attention", "--json"])
         self.assertIn("Read room.shared_memory as official-only background context when present.", payload["instructions"])
         self.assertIn("For observe_lobby actions, run the returned ack_command and do not post a reply.", payload["instructions"])
-        self.assertIn("For return_packet actions, run the returned ack_command and do not post a reply.", payload["instructions"])
+        self.assertIn(
+            "For return_packet actions, run the returned read_command before the ack_command and do not post a reply.",
+            payload["instructions"],
+        )
         self.assertEqual(payload["templates"]["say"][-2:], ["--", "{message}"])
         self.assertIn("{source_event_id}", payload["templates"]["say"])
         self.assertIn("{auto_chain_depth}", payload["templates"]["say"])
@@ -10426,12 +10429,58 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["event"]["id"], "packet-next")
         self.assertEqual(payload["artifact_path"], "return_packets/architect.md")
         self.assertEqual(payload["artifact_json_path"], "return_packets/architect.json")
+        self.assertIn("return-packet", payload["read_command"])
+        self.assertIn("--meeting-id", payload["read_command"])
+        self.assertIn("meeting-1", payload["read_command"])
+        self.assertIn("--source-event-id", payload["read_command"])
+        self.assertIn("packet-next", payload["read_command"])
         self.assertIn("--status", payload["ack_command"])
         self.assertIn("online", payload["ack_command"])
         self.assertIn("--last-error=", payload["ack_command"])
         self.assertIn("--last-observed-live-event-id=packet-next", payload["ack_command"])
         self.assertNotIn("other.md", json.dumps(payload, ensure_ascii=False))
         self.assertNotIn("broadcast.md", json.dumps(payload, ensure_ascii=False))
+
+    def test_live_agent_return_packet_cli_reads_targeted_packet(self):
+        stdout = StringIO()
+        response = {
+            "status": "ok",
+            "agent_id": "claude-terminal",
+            "meeting_id": "meeting-1",
+            "source_event_id": "packet-next",
+            "artifact_path": "return_packets/architect.md",
+            "artifact_json_path": "return_packets/architect.json",
+            "markdown": "Architect private return packet.",
+            "json": {"role_id": "architect"},
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "return-packet",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--meeting-id",
+                        "meeting-1",
+                        "--source-event-id",
+                        "packet-next",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once()
+        self.assertEqual(
+            request_json.call_args.args[0],
+            "http://room.local/api/live-agents/claude-terminal/return-packet?meeting_id=meeting-1&source_event_id=packet-next",
+        )
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["markdown"], "Architect private return packet.")
+        self.assertEqual(payload["json"]["role_id"], "architect")
 
     def test_live_agent_wait_next_does_not_use_lobby_cursor_for_official_turns(self):
         stdout = StringIO()
