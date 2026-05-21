@@ -958,6 +958,7 @@ class CliTimeoutTests(unittest.TestCase):
                         "active": True,
                         "meeting_id": "resident-m1",
                         "group_id": "resident-main",
+                        "readiness": {"status": "ready"},
                     }
                 ]
             },
@@ -989,7 +990,7 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(request_json.call_count, 2)
-        self.assertEqual(request_json.call_args_list[-1].args, ("http://room.local/api/live-agent-session-runs?limit=5",))
+        self.assertEqual(request_json.call_args_list[-1].args, ("http://room.local/api/live-agent-session-runs?limit=5&include_readiness=1",))
         self.assertIn("timeout_seconds", request_json.call_args_list[-1].kwargs)
         self.assertEqual(sleep.call_count, 1)
         result = json.loads(stdout.getvalue())
@@ -1017,6 +1018,7 @@ class CliTimeoutTests(unittest.TestCase):
                         "active": True,
                         "meeting_id": "resident-m1",
                         "group_id": "resident-main",
+                        "readiness": {"status": "ready"},
                     },
                 ]
             },
@@ -1037,6 +1039,7 @@ class CliTimeoutTests(unittest.TestCase):
                         "active": True,
                         "meeting_id": "resident-m1",
                         "group_id": "resident-main",
+                        "readiness": {"status": "ready"},
                     },
                 ]
             },
@@ -1084,6 +1087,7 @@ class CliTimeoutTests(unittest.TestCase):
                     "active": True,
                     "meeting_id": "resident-m1",
                     "group_id": "resident-main",
+                    "readiness": {"status": "ready"},
                 }
             ]
         }
@@ -1117,6 +1121,156 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(query["meeting_id"], ["resident-m1"])
         self.assertEqual(query["group_id"], ["resident-main"])
 
+    def test_live_agent_session_runs_wait_ready_requires_current_readiness(self):
+        payloads = [
+            {
+                "runs": [
+                    {
+                        "run_id": "run-target",
+                        "action": "ensure",
+                        "status": "ready",
+                        "active": True,
+                        "meeting_id": "resident-m1",
+                        "group_id": "resident-main",
+                        "readiness": {"status": "degraded"},
+                    }
+                ]
+            },
+            {
+                "runs": [
+                    {
+                        "run_id": "run-target",
+                        "action": "ensure",
+                        "status": "ready",
+                        "active": True,
+                        "meeting_id": "resident-m1",
+                        "group_id": "resident-main",
+                        "readiness": {"status": "ready"},
+                    }
+                ]
+            },
+        ]
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=payloads) as request_json:
+            with patch("agentsassemble.cli.time.sleep"):
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "session-runs",
+                            "wait",
+                            "--server",
+                            "http://room.local",
+                            "--meeting-id",
+                            "resident-m1",
+                            "--group-id",
+                            "resident-main",
+                            "--status",
+                            "ready",
+                            "--limit",
+                            "5",
+                            "--timeout",
+                            "3",
+                            "--poll-interval",
+                            "0.1",
+                            "--json",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(request_json.call_count, 2)
+        first_url = request_json.call_args_list[0].args[0]
+        first_query = urllib.parse.parse_qs(urllib.parse.urlparse(first_url).query)
+        self.assertEqual(first_query["include_readiness"], ["1"])
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(result["status"], "observed")
+        self.assertEqual(result["run_id"], "run-target")
+        self.assertEqual(result["run"]["readiness"]["status"], "ready")
+
+    def test_live_agent_session_runs_wait_ready_times_out_without_current_readiness(self):
+        payload = {
+            "runs": [
+                {
+                    "run_id": "run-1",
+                    "action": "ensure",
+                    "status": "ready",
+                    "active": True,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "readiness": {"status": "degraded"},
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("agentsassemble.cli.time.monotonic", side_effect=[0.0, 0.0, 1.1, 1.1]):
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "session-runs",
+                            "wait",
+                            "--server",
+                            "http://room.local",
+                            "--run-id",
+                            "run-1",
+                            "--status",
+                            "ready",
+                            "--timeout",
+                            "1",
+                            "--poll-interval",
+                            "0.1",
+                            "--json",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 1)
+        requested_url = request_json.call_args.args[0]
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(requested_url).query)
+        self.assertEqual(query["include_readiness"], ["1"])
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(result["status"], "timeout")
+        self.assertEqual(result["runs"][0]["readiness"]["status"], "degraded")
+
+    def test_live_agent_session_runs_wait_ready_timeout_prints_current_readiness(self):
+        payload = {
+            "runs": [
+                {
+                    "run_id": "run-1",
+                    "action": "ensure",
+                    "status": "ready",
+                    "active": True,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "readiness": {"status": "degraded"},
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("agentsassemble.cli.time.monotonic", side_effect=[0.0, 0.0, 1.1, 1.1]):
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "session-runs",
+                            "wait",
+                            "--server",
+                            "http://room.local",
+                            "--run-id",
+                            "run-1",
+                            "--status",
+                            "ready",
+                            "--timeout",
+                            "1",
+                            "--poll-interval",
+                            "0.1",
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("last run: run-1 ensure ready resident-m1 resident-main active · readiness=degraded", stdout.getvalue())
+
     def test_live_agent_session_runs_wait_run_id_takes_precedence_over_meeting_group_target(self):
         payload = {
             "runs": [
@@ -1127,6 +1281,7 @@ class CliTimeoutTests(unittest.TestCase):
                     "active": True,
                     "meeting_id": "resident-m1",
                     "group_id": "resident-main",
+                    "readiness": {"status": "ready"},
                 },
                 {
                     "run_id": "run-by-group-latest",

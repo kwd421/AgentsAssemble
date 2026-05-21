@@ -3043,7 +3043,12 @@ def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
     return 1
 
 
-def _live_agent_session_runs_path(args: argparse.Namespace, *, include_target_filters: bool = False) -> str:
+def _live_agent_session_runs_path(
+    args: argparse.Namespace,
+    *,
+    include_target_filters: bool = False,
+    include_readiness: bool = False,
+) -> str:
     query: dict[str, object] = {"limit": args.limit}
     if include_target_filters and not str(args.run_id or "").strip():
         meeting_id = str(args.meeting_id or "").strip()
@@ -3051,6 +3056,8 @@ def _live_agent_session_runs_path(args: argparse.Namespace, *, include_target_fi
         if meeting_id and group_id:
             query["meeting_id"] = meeting_id
             query["group_id"] = group_id
+    if include_readiness:
+        query["include_readiness"] = "1"
     return f"/api/live-agent-session-runs?{urllib.parse.urlencode(query)}"
 
 
@@ -3073,7 +3080,14 @@ def _run_live_agent_session_runs_wait(args: argparse.Namespace) -> int:
         attempts += 1
         try:
             payload = _request_json(
-                _server_url(args.server, _live_agent_session_runs_path(args, include_target_filters=True)),
+                _server_url(
+                    args.server,
+                    _live_agent_session_runs_path(
+                        args,
+                        include_target_filters=True,
+                        include_readiness=_live_agent_session_runs_wait_requires_readiness(args),
+                    ),
+                ),
                 timeout_seconds=remaining_before_poll,
             )
         except (TimeoutError, urllib.error.URLError) as error:
@@ -3147,6 +3161,10 @@ def _validate_live_agent_session_runs_wait_target(args: argparse.Namespace) -> N
     raise ValueError("live-agent session-runs wait requires --run-id or both --meeting-id and --group-id.")
 
 
+def _live_agent_session_runs_wait_requires_readiness(args: argparse.Namespace) -> bool:
+    return str(args.status or "").strip() == "ready"
+
+
 def _find_live_agent_session_run(
     payload: dict[str, object],
     *,
@@ -3164,6 +3182,8 @@ def _find_live_agent_session_run(
                 continue
             if status and str(item.get("status") or "") != status:
                 continue
+            if not _live_agent_session_run_readiness_allows_status(item, status=status):
+                continue
             return item
         return None
     latest = _latest_live_agent_session_run_for_target(runs, meeting_id=meeting_id, group_id=group_id)
@@ -3171,7 +3191,16 @@ def _find_live_agent_session_run(
         return None
     if status and str(latest.get("status") or "") != status:
         return None
+    if not _live_agent_session_run_readiness_allows_status(latest, status=status):
+        return None
     return latest
+
+
+def _live_agent_session_run_readiness_allows_status(run: dict[str, object], *, status: str = "") -> bool:
+    if str(status or "").strip() != "ready":
+        return True
+    readiness = run.get("readiness") if isinstance(run.get("readiness"), dict) else {}
+    return str(readiness.get("status") or "") == "ready"
 
 
 def _latest_live_agent_session_run_for_target(
@@ -3426,6 +3455,10 @@ def _format_live_agent_session_run(run: dict[str, object]) -> str:
         suffix_parts.append(f"phase={phase}")
     if reconcile_count:
         suffix_parts.append(f"reconcile_count={reconcile_count}")
+    readiness = run.get("readiness") if isinstance(run.get("readiness"), dict) else {}
+    readiness_status = str(readiness.get("status") or "").strip()
+    if readiness_status:
+        suffix_parts.append(f"readiness={readiness_status}")
     suffix = f" · {' · '.join(suffix_parts)}" if suffix_parts else ""
     return f"{run_id} {action} {status} {meeting_id} {group_id} {activity}{suffix}"
 

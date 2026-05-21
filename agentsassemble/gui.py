@@ -554,8 +554,56 @@ def live_agent_session_runs_payload(
     limit: int = 50,
     meeting_id: str = "",
     group_id: str = "",
+    include_readiness: bool = False,
+    output_root: Path | None = None,
+    process_supervisor: LiveAgentProcessSupervisor | None = None,
 ) -> dict[str, object]:
-    return {"runs": session_run_controller.list_runs(limit=limit, meeting_id=meeting_id, group_id=group_id)}
+    runs = session_run_controller.list_runs(limit=limit, meeting_id=meeting_id, group_id=group_id)
+    if include_readiness and output_root is not None and process_supervisor is not None:
+        runs = _session_runs_with_readiness(runs, output_root=output_root, process_supervisor=process_supervisor)
+    return {"runs": runs}
+
+
+def _session_runs_with_readiness(
+    runs: list[dict[str, object]],
+    *,
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+) -> list[dict[str, object]]:
+    groups = _session_process_groups_snapshot(process_supervisor)
+    summary = live_agent_session_readiness_summary(output_root, groups)
+    items = summary.get("items") if isinstance(summary.get("items"), list) else []
+    readiness_by_target = {
+        (str(item.get("meeting_id") or ""), str(item.get("group_id") or "")): item
+        for item in items
+        if isinstance(item, dict)
+    }
+    return [
+        {
+            **run,
+            "readiness": _session_run_readiness_overlay(run, readiness_by_target),
+        }
+        for run in runs
+    ]
+
+
+def _session_run_readiness_overlay(
+    run: dict[str, object],
+    readiness_by_target: dict[tuple[str, str], dict[str, object]],
+) -> dict[str, object]:
+    meeting_id = str(run.get("meeting_id") or "").strip()
+    group_id = str(run.get("group_id") or "").strip()
+    if not meeting_id or not group_id:
+        return {"status": "degraded", "attention": ["session_run:missing_target"]}
+    readiness = readiness_by_target.get((meeting_id, group_id))
+    if readiness is None:
+        return {
+            "meeting_id": meeting_id,
+            "group_id": group_id,
+            "status": "degraded",
+            "attention": ["session_run:no_current_readiness"],
+        }
+    return dict(readiness)
 
 
 def live_agent_process_events_payload(
@@ -4150,6 +4198,9 @@ def _make_handler(
                         limit=self._limit(query, default=50),
                         meeting_id=str(query.get("meeting_id", [""])[0] or ""),
                         group_id=str(query.get("group_id", [""])[0] or ""),
+                        include_readiness=_payload_bool(query.get("include_readiness", [""])[0]),
+                        output_root=output_root,
+                        process_supervisor=live_agent_process_supervisor,
                     )
                 )
                 return

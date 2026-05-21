@@ -3903,6 +3903,33 @@ Add a unit assertion for the non-graceful signal and rerun the credential-free G
 
 ---
 
+### Task 108: Fresh Session-Run Readiness Gate
+
+**Goal:** Make durable session-run `ready` waits prove current live readiness instead of accepting only a historical persisted `ready` intent.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for fresh readiness**
+
+Cover `/api/live-agent-session-runs?include_readiness=1` returning a safe current readiness overlay without appending operation records, and cover `session-runs wait --status ready` refusing a persisted ready run whose overlay is degraded.
+
+- [x] **Step 2: Add the read-only overlay**
+
+Attach `readiness` only when requested, computed from the existing session readiness snapshot. Do not mutate durable run state, start providers, run probes, stop groups, or append operation history.
+
+- [x] **Step 3: Require fresh readiness for ready waits**
+
+Have CLI ready waits request `include_readiness=1` and match only runs whose persisted status is `ready` and current readiness overlay is also `ready`.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
