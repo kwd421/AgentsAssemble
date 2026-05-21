@@ -919,6 +919,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_session_runs_list.add_argument("--limit", type=parse_positive_int, default=50)
     live_session_runs_list.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON session-run payload.")
+    live_session_runs_wait = live_session_runs_subparsers.add_parser(
+        "wait",
+        parents=[live_server],
+        help="Wait for a durable live-agent session run to reach a status.",
+    )
+    live_session_runs_wait.add_argument("--run-id", required=True, help="Durable session-run id to wait for.")
+    live_session_runs_wait.add_argument("--status", required=True, help="Session-run status to observe, such as ready, failed, or stopped.")
+    live_session_runs_wait.add_argument("--limit", type=parse_positive_int, default=50)
+    live_session_runs_wait.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
+    live_session_runs_wait.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_session_runs_wait.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable wait result.")
 
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
     session_subparsers = sessions.add_subparsers(dest="sessions_command", required=True)
@@ -3025,7 +3036,98 @@ def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
         payload = _request_json(_server_url(args.server, f"/api/live-agent-session-runs?limit={args.limit}"))
         _print_live_agent_session_runs_payload(payload, as_json=args.as_json)
         return 0
+    if args.live_agent_session_runs_command == "wait":
+        return _run_live_agent_session_runs_wait(args)
     return 1
+
+
+def _run_live_agent_session_runs_wait(args: argparse.Namespace) -> int:
+    timeout_seconds = float(args.timeout)
+    poll_interval = max(0.01, float(args.poll_interval))
+    deadline = time.monotonic() + timeout_seconds
+    attempts = 0
+    last_payload: dict[str, object] | None = None
+    while True:
+        now = time.monotonic()
+        if attempts > 0 and now >= deadline:
+            _print_live_agent_session_runs_wait_result(
+                _live_agent_session_runs_wait_result("timeout", args, timeout_seconds, attempts, None, last_payload),
+                as_json=args.as_json,
+            )
+            return 1
+        remaining_before_poll = max(0.01, deadline - now)
+        attempts += 1
+        try:
+            payload = _request_json(
+                _server_url(args.server, f"/api/live-agent-session-runs?limit={args.limit}"),
+                timeout_seconds=remaining_before_poll,
+            )
+        except (TimeoutError, urllib.error.URLError) as error:
+            if not _is_live_agent_wait_timeout(error):
+                raise
+            _print_live_agent_session_runs_wait_result(
+                _live_agent_session_runs_wait_result(
+                    "timeout",
+                    args,
+                    timeout_seconds,
+                    attempts,
+                    None,
+                    last_payload,
+                    error=str(error) or error.__class__.__name__,
+                ),
+                as_json=args.as_json,
+            )
+            return 1
+        last_payload = payload
+        run = _find_live_agent_session_run(payload, args.run_id, args.status)
+        if run is not None:
+            _print_live_agent_session_runs_wait_result(
+                _live_agent_session_runs_wait_result("observed", args, timeout_seconds, attempts, run, payload),
+                as_json=args.as_json,
+            )
+            return 0
+        remaining_after_poll = max(0.0, deadline - time.monotonic())
+        if remaining_after_poll > 0:
+            time.sleep(min(poll_interval, remaining_after_poll))
+
+
+def _live_agent_session_runs_wait_result(
+    status: str,
+    args: argparse.Namespace,
+    timeout_seconds: float,
+    attempts: int,
+    run: dict[str, object] | None,
+    payload: dict[str, object] | None,
+    *,
+    error: str = "",
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "status": status,
+        "run_id": args.run_id,
+        "wanted_status": args.status,
+        "run_status": str(run.get("status") or "") if isinstance(run, dict) else "",
+        "timeout_seconds": timeout_seconds,
+        "attempts": attempts,
+        "run": run,
+    }
+    if status == "timeout":
+        result["runs"] = payload.get("runs") if isinstance(payload, dict) and isinstance(payload.get("runs"), list) else []
+    if error:
+        result["error"] = error
+    return result
+
+
+def _find_live_agent_session_run(payload: dict[str, object], run_id: str, status: str = "") -> dict[str, object] | None:
+    runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
+    for item in runs:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("run_id") or "") != run_id:
+            continue
+        if status and str(item.get("status") or "") != status:
+            continue
+        return item
+    return None
 
 
 def _run_live_agent_operations_wait(args: argparse.Namespace) -> int:
@@ -3219,6 +3321,27 @@ def _print_live_agent_session_runs_payload(payload: dict[str, object], *, as_jso
     for item in runs:
         if isinstance(item, dict):
             print(_format_live_agent_session_run(item))
+
+
+def _print_live_agent_session_runs_wait_result(result: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    run_id = str(result.get("run_id") or "unknown")
+    wanted_status = str(result.get("wanted_status") or "unknown")
+    timeout_seconds = _safe_float(result.get("timeout_seconds"))
+    run = result.get("run") if isinstance(result.get("run"), dict) else None
+    if result.get("status") == "observed":
+        suffix = f": {_format_live_agent_session_run(run)}" if run is not None else ""
+        print(f"Observed live-agent session run {run_id} status {wanted_status}{suffix}")
+        return
+    print(f"Timed out waiting for live-agent session run {run_id} status {wanted_status} after {timeout_seconds:.1f}s")
+    runs = result.get("runs") if isinstance(result.get("runs"), list) else []
+    last_run = next((item for item in reversed(runs) if isinstance(item, dict) and str(item.get("run_id") or "") == run_id), None)
+    if last_run is None:
+        last_run = next((item for item in reversed(runs) if isinstance(item, dict)), None)
+    if last_run is not None:
+        print(f"last run: {_format_live_agent_session_run(last_run)}")
 
 
 def _format_live_agent_session_run(run: dict[str, object]) -> str:

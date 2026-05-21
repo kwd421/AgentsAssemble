@@ -308,6 +308,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("/api/live-agent-session-runs?limit=20", doc)
         self.assertIn("It does not render saved config paths", doc)
         self.assertIn("assemble live-agent session-runs list", doc)
+        self.assertIn("assemble live-agent session-runs wait", doc)
+        self.assertIn("durable session-run status gate", doc)
         self.assertIn("reconciles active durable runs on startup", doc)
         self.assertIn("Recent operation views read from the JSONL tail", doc)
         self.assertIn("prioritize high-signal liveness evidence", doc)

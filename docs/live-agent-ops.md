@@ -1257,6 +1257,19 @@ python3 -m agentsassemble.cli live-agent session-runs list \
   --server http://127.0.0.1:8765
 ```
 
+Use `assemble live-agent session-runs wait` when another script or agent needs a durable session-run status gate after starting a long-running ensure operation from the GUI, CLI, or auto-join path:
+
+```bash
+python3 -m agentsassemble.cli live-agent session-runs wait \
+  --server http://127.0.0.1:8765 \
+  --run-id <session-run-id> \
+  --status ready \
+  --timeout 30 \
+  --poll-interval 2
+```
+
+The wait path polls `/api/live-agent-session-runs?limit=N` until the named run reaches the requested status or the timeout expires. It exits `0` when the target run/status is observed and exits `1` on timeout with the last observed safe run summary. It exits `2` for non-timeout transport, parsing, validation, or HTTP errors. Use `--json` when automation needs the machine-readable `status`, requested run id, requested status, attempts, matched run, or timeout run tail.
+
 The public session-run API and CLI intentionally omit server URLs, config paths, commands, auth refs, prompts, log tails, and provider output. The durable controller keeps enough local request state to reconcile active runs, while the exposed status is limited to safe identifiers, requested toggles, readiness/result summaries, timestamps, `active`, `phase`, and `reconcile_count`.
 
 The process CLI uses exit code `0` for successful supervisor requests, even when a listed group is `stopped`, `error`, or `unknown`, unless `--fail-on-attention`, `processes wait`, or `processes wait-event` is used as an explicit scriptable gate. It uses exit code `2` for argument validation, connection failures, invalid JSON, HTTP errors, missing config files, unknown group ids, and refused restarts.

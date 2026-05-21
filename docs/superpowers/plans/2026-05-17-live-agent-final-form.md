@@ -3800,6 +3800,31 @@ Document that `세션중지` stops matching active session-runs, refreshes the G
 
 ---
 
+### Task 104: Durable Session-Run Wait Gate
+
+**Goal:** Give scripts and other agents a durable session-run status gate, so long-running resident session intent can be observed without scraping the GUI or conflating process lifecycle events with high-level session intent.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for session-run wait**
+
+Cover parser acceptance for `assemble live-agent session-runs wait --run-id <id> --status ready`, a successful polling wait that observes the target run status through `/api/live-agent-session-runs?limit=N`, and a timeout that prints the last safe run summary.
+
+- [x] **Step 2: Implement the wait gate**
+
+Add `session-runs wait` beside the existing `session-runs list` command. Reuse the public session-run list API, keep each HTTP poll bounded by the remaining timeout, exit `0` only when the requested run id has the requested status, and exit `1` on timeout with safe evidence.
+
+- [x] **Step 3: Document automation semantics**
+
+Document the durable session-run status gate, exit-code contract, and redaction boundary so other agents can wait on session-run intent without reading private recovery payloads.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
