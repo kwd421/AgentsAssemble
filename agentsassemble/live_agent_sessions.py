@@ -496,6 +496,7 @@ def restart_live_agent_session(
     meeting_id: str,
     group_id: str,
     connect_timeout_seconds: float = 5.0,
+    restart_count: int | None = None,
 ) -> dict[str, object]:
     clean_meeting_id = _clean_existing_meeting_id(meeting_id)
     if not str(group_id or "").strip():
@@ -535,7 +536,8 @@ def restart_live_agent_session(
         expected_agent_ids=expected_agent_ids,
     )
     try:
-        group = process_supervisor.restart_group(clean_group_id)
+        restart_kwargs = {"restart_count": restart_count} if restart_count is not None else {}
+        group = process_supervisor.restart_group(clean_group_id, **restart_kwargs)
     except Exception as error:
         raise LiveAgentSessionRestartError(
             _restart_group_failure_message(error, group_id=clean_group_id),

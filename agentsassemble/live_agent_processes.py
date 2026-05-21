@@ -152,7 +152,7 @@ class LiveAgentProcessSupervisor:
                 "skipped": skipped,
             }
 
-    def restart_group(self, group_id: str) -> dict[str, object]:
+    def restart_group(self, group_id: str, *, restart_count: int | None = None) -> dict[str, object]:
         with self._lock:
             self._refresh_running_groups()
             clean_group_id = _clean_group_id(group_id)
@@ -173,6 +173,7 @@ class LiveAgentProcessSupervisor:
                 max_restarts=_nonnegative_int(record.get("max_restarts"), 0),
                 restart_backoff_seconds=_nonnegative_float(record.get("restart_backoff_seconds"), 5.0),
                 stale_restart_after_seconds=_nonnegative_float(record.get("stale_restart_after_seconds"), 0.0),
+                restart_count=_nonnegative_int(restart_count, 0) if restart_count is not None else 0,
                 diagnostic=_bool_value(record.get("diagnostic")),
                 last_error=str(record.get("last_error") or ""),
             )

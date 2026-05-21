@@ -10566,6 +10566,216 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(snapshot["last_result_count"], 0)
         self.assertEqual(snapshot["last_error_type"], "")
 
+    def test_live_agent_session_run_monitor_reconciles_ready_run_with_stale_observation_lag(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor, live_agent_operations_payload
+
+        class ObservationLagSupervisor:
+            def __init__(self, output_root: Path) -> None:
+                self.output_root = output_root
+                self.stopped = []
+                self.restarted = []
+                self.group = {
+                    "group_id": "resident-main",
+                    "status": "running",
+                    "meeting_id": "resident-m1",
+                    "agents": [{"agent_id": "agent-a"}],
+                    "auto_restart": True,
+                    "max_restarts": 3,
+                    "restart_count": 0,
+                    "stale_restart_after_seconds": 1,
+                }
+
+            def snapshot_groups(self):
+                return [dict(self.group)]
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                self.group["status"] = "stopped"
+                return dict(self.group)
+
+            def restart_group(self, group_id, *, restart_count=None):
+                self.restarted.append(group_id)
+                self.group["status"] = "running"
+                if restart_count is not None:
+                    self.group["restart_count"] = restart_count
+                connect_live_agent(
+                    self.output_root,
+                    {
+                        "agent_id": "agent-a",
+                        "display_name": "Agent A",
+                        "provider_kind": "local_cli",
+                        "connection_kind": "local_cli",
+                        "status": "online",
+                        "meeting_id": "resident-m1",
+                        "last_observed_event_id": "lobby-old",
+                    },
+                )
+                return dict(self.group)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            _write_lobby_jsonl_event(root, event_id="lobby-old", actor_id="human", created_at="2000-01-01T00:00:00+00:00")
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_event_id": "older-event",
+                },
+            )
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "connect_timeout_seconds": 0,
+                },
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={"status": "ready", "meeting_id": "resident-m1", "group_id": "resident-main", "action": "none"},
+            )
+            supervisor = ObservationLagSupervisor(root)
+            monitor = LiveAgentSessionRunMonitor(root, supervisor, controller, default_server="http://room.local")
+
+            results = monitor.run_once()
+            operations = live_agent_operations_payload(root, limit=10)["operations"]
+            stored_run = controller.list_runs()[0]
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["status"], "ready")
+        self.assertEqual(stored_run["phase"], "restart")
+        self.assertEqual(stored_run["reconcile_count"], 1)
+        self.assertEqual(supervisor.stopped, ["resident-main"])
+        self.assertEqual(supervisor.restarted, ["resident-main"])
+        self.assertEqual(operations[-1]["operation"], "session_run.reconcile")
+
+    def test_live_agent_session_run_monitor_stops_stale_observation_restart_after_budget(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor
+
+        class BudgetSupervisor:
+            def __init__(self, output_root: Path) -> None:
+                self.output_root = output_root
+                self.restart_counts = []
+                self.group = {
+                    "group_id": "resident-main",
+                    "status": "running",
+                    "meeting_id": "resident-m1",
+                    "agents": [{"agent_id": "agent-a"}],
+                    "auto_restart": True,
+                    "max_restarts": 1,
+                    "restart_count": 0,
+                    "stale_restart_after_seconds": 1,
+                }
+
+            def snapshot_groups(self):
+                return [dict(self.group)]
+
+            def stop_group(self, group_id):
+                self.group["status"] = "stopped"
+                return dict(self.group)
+
+            def restart_group(self, group_id, *, restart_count=None):
+                self.restart_counts.append(restart_count)
+                self.group["status"] = "running"
+                self.group["restart_count"] = restart_count if restart_count is not None else 0
+                heartbeat_live_agent(self.output_root, "agent-a", status="online")
+                return dict(self.group)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            _write_lobby_jsonl_event(root, event_id="lobby-old", actor_id="human", created_at="2000-01-01T00:00:00+00:00")
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_event_id": "older-event",
+                },
+            )
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "connect_timeout_seconds": 0,
+                },
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={"status": "ready", "meeting_id": "resident-m1", "group_id": "resident-main", "action": "none"},
+            )
+            monitor = LiveAgentSessionRunMonitor(root, BudgetSupervisor(root), controller, default_server="http://room.local")
+
+            first_results = monitor.run_once()
+            second_results = monitor.run_once()
+
+        self.assertEqual(len(first_results), 1)
+        self.assertEqual(second_results, [])
+        self.assertEqual(monitor.process_supervisor.restart_counts, [1])
+
+    def test_live_agent_session_run_monitor_replays_current_run_target_when_original_request_was_blank(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor
+
+        class ObservationLagSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                        "auto_restart": True,
+                        "max_restarts": 3,
+                        "restart_count": 0,
+                        "stale_restart_after_seconds": 1,
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            _write_lobby_jsonl_event(root, event_id="lobby-old", actor_id="human", created_at="2000-01-01T00:00:00+00:00")
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_event_id": "older-event",
+                },
+            )
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(action="ensure", payload={})
+            controller.finish_run(
+                run["run_id"],
+                session={"status": "ready", "meeting_id": "resident-m1", "group_id": "resident-main", "action": "none"},
+            )
+            monitor = LiveAgentSessionRunMonitor(root, ObservationLagSupervisor(), controller, default_server="http://room.local")
+
+            def checked_ensure(output_root, process_supervisor, payload, *, default_server):
+                del output_root, process_supervisor, default_server
+                self.assertEqual(payload["meeting_id"], "resident-m1")
+                self.assertEqual(payload["group_id"], "resident-main")
+                return {"status": "ready", "meeting_id": "resident-m1", "group_id": "resident-main", "action": "restart"}
+
+            with patch("agentsassemble.gui.live_agent_session_ensure_payload", side_effect=checked_ensure):
+                results = monitor.run_once()
+
+        self.assertEqual(results[0]["status"], "ready")
+
     def test_live_agent_session_run_monitor_stop_waits_until_in_flight_tick_finishes(self):
         from agentsassemble.gui import LiveAgentSessionRunMonitor
 
@@ -10910,6 +11120,386 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(supervisor.restarted, ["resident-main"])
             agent = next(agent for agent in read_live_agents(root) if agent["agent_id"] == "agent-a")
             self.assertEqual(agent["session_id"], "new-session")
+
+    def test_live_agent_session_ensure_restarts_ready_session_when_stale_lobby_cursor_lags(self):
+        class ObservationLagSupervisor:
+            def __init__(self, output_root: Path) -> None:
+                self.output_root = output_root
+                self.started = []
+                self.stopped = []
+                self.restarted = []
+                self.group = {
+                    "group_id": "resident-main",
+                    "status": "running",
+                    "meeting_id": "resident-m1",
+                    "agents": [{"agent_id": "agent-a"}],
+                    "auto_restart": True,
+                    "max_restarts": 3,
+                    "restart_count": 0,
+                    "stale_restart_after_seconds": 1,
+                }
+
+            def snapshot_groups(self):
+                return [dict(self.group)]
+
+            def list_groups(self):
+                return self.snapshot_groups()
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                self.group["status"] = "stopped"
+                return dict(self.group)
+
+            def restart_group(self, group_id, *, restart_count=None):
+                self.restarted.append(group_id)
+                self.group["status"] = "running"
+                if restart_count is not None:
+                    self.group["restart_count"] = restart_count
+                connect_live_agent(
+                    self.output_root,
+                    {
+                        "agent_id": "agent-a",
+                        "display_name": "Agent A",
+                        "provider_kind": "local_cli",
+                        "connection_kind": "local_cli",
+                        "status": "online",
+                        "meeting_id": "resident-m1",
+                        "last_observed_event_id": "lobby-old",
+                    },
+                )
+                return dict(self.group)
+
+            def start_group(self, **kwargs):
+                self.started.append(kwargs)
+                raise AssertionError("stale observation ensure should restart the existing group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            _write_lobby_jsonl_event(root, event_id="lobby-old", actor_id="human", created_at="2000-01-01T00:00:00+00:00")
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_event_id": "older-event",
+                },
+            )
+            supervisor = ObservationLagSupervisor(root)
+
+            session = live_agent_session_ensure_payload(
+                root,
+                supervisor,
+                {
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "connect_timeout_seconds": 0,
+                },
+                default_server="http://room.local",
+            )
+            agents = read_live_agents(root)
+
+        self.assertEqual(session["status"], "ready")
+        self.assertEqual(session["action"], "restart")
+        self.assertEqual(supervisor.started, [])
+        self.assertEqual(supervisor.stopped, ["resident-main"])
+        self.assertEqual(supervisor.restarted, ["resident-main"])
+        agent = next(agent for agent in agents if agent["agent_id"] == "agent-a")
+        self.assertEqual(agent["last_observed_event_id"], "lobby-old")
+
+    def test_live_agent_session_ensure_restarts_ready_session_when_stale_live_cursor_lags(self):
+        class ObservationLagSupervisor:
+            def __init__(self, output_root: Path) -> None:
+                self.output_root = output_root
+                self.started = []
+                self.stopped = []
+                self.restarted = []
+                self.group = {
+                    "group_id": "resident-main",
+                    "status": "running",
+                    "meeting_id": "resident-m1",
+                    "agents": [{"agent_id": "agent-a"}],
+                    "auto_restart": True,
+                    "max_restarts": 3,
+                    "restart_count": 0,
+                    "stale_restart_after_seconds": 1,
+                }
+
+            def snapshot_groups(self):
+                return [dict(self.group)]
+
+            def list_groups(self):
+                return self.snapshot_groups()
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                self.group["status"] = "stopped"
+                return dict(self.group)
+
+            def restart_group(self, group_id, *, restart_count=None):
+                self.restarted.append(group_id)
+                self.group["status"] = "running"
+                if restart_count is not None:
+                    self.group["restart_count"] = restart_count
+                heartbeat_live_agent(self.output_root, "agent-a", status="online", metadata={"last_observed_live_event_id": "live-old"})
+                return dict(self.group)
+
+            def start_group(self, **kwargs):
+                self.started.append(kwargs)
+                raise AssertionError("stale official-turn observation should restart the existing group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            request = _write_live_jsonl_event(
+                meeting_dir,
+                event_id="live-old",
+                kind="live_agent_turn_request",
+                target_agent_id="agent-a",
+                created_at="2000-01-01T00:00:00+00:00",
+                content="official request text must stay out",
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_live_event_id": "older-live-event",
+                },
+            )
+            supervisor = ObservationLagSupervisor(root)
+
+            session = live_agent_session_ensure_payload(
+                root,
+                supervisor,
+                {
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "connect_timeout_seconds": 0,
+                },
+                default_server="http://room.local",
+            )
+
+        self.assertEqual(session["status"], "ready")
+        self.assertEqual(session["action"], "restart")
+        self.assertEqual(supervisor.started, [])
+        self.assertEqual(supervisor.stopped, ["resident-main"])
+        self.assertEqual(supervisor.restarted, ["resident-main"])
+        self.assertNotIn("official request text", json.dumps(session, ensure_ascii=False))
+        self.assertEqual(request["id"], "live-old")
+
+    def test_live_agent_session_ensure_does_not_restart_answered_official_turn_lag(self):
+        class ObservationLagSupervisor:
+            def __init__(self) -> None:
+                self.stopped = []
+                self.restarted = []
+                self.group = {
+                    "group_id": "resident-main",
+                    "status": "running",
+                    "meeting_id": "resident-m1",
+                    "agents": [{"agent_id": "agent-a"}],
+                    "auto_restart": True,
+                    "max_restarts": 3,
+                    "restart_count": 0,
+                    "stale_restart_after_seconds": 1,
+                }
+
+            def snapshot_groups(self):
+                return [dict(self.group)]
+
+            def list_groups(self):
+                return self.snapshot_groups()
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                raise AssertionError("answered official-turn lag must not stop the group")
+
+            def restart_group(self, group_id):
+                self.restarted.append(group_id)
+                raise AssertionError("answered official-turn lag must not restart the group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            request = _write_live_jsonl_event(
+                meeting_dir,
+                event_id="live-old",
+                kind="live_agent_turn_request",
+                target_agent_id="agent-a",
+                created_at="2000-01-01T00:00:00+00:00",
+                content="official request text must stay out",
+            )
+            _write_live_jsonl_event(
+                meeting_dir,
+                event_id="live-reply",
+                kind="message",
+                actor_id="agent-a",
+                source_event_id=request["id"],
+                created_at="2000-01-01T00:00:01+00:00",
+                content="official reply text must stay out",
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_live_event_id": "older-live-event",
+                },
+            )
+            supervisor = ObservationLagSupervisor()
+
+            session = live_agent_session_ensure_payload(
+                root,
+                supervisor,
+                {
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "connect_timeout_seconds": 0,
+                },
+                default_server="http://room.local",
+            )
+
+        self.assertEqual(session["status"], "ready")
+        self.assertEqual(session["action"], "none")
+        self.assertEqual(supervisor.stopped, [])
+        self.assertEqual(supervisor.restarted, [])
+        self.assertNotIn("official request text", json.dumps(session, ensure_ascii=False))
+        self.assertNotIn("official reply text", json.dumps(session, ensure_ascii=False))
+
+    def test_live_agent_session_restart_ignores_external_stale_restart_count_payload(self):
+        from agentsassemble.gui import live_agent_session_restart_payload
+
+        class RestartSupervisor:
+            def __init__(self, output_root: Path) -> None:
+                self.output_root = output_root
+                self.restart_counts = []
+                self.group = {
+                    "group_id": "resident-main",
+                    "status": "running",
+                    "meeting_id": "resident-m1",
+                    "agents": [{"agent_id": "agent-a"}],
+                    "auto_restart": True,
+                    "max_restarts": 3,
+                    "restart_count": 2,
+                    "stale_restart_after_seconds": 1,
+                }
+
+            def snapshot_groups(self):
+                return [dict(self.group)]
+
+            def stop_group(self, group_id):
+                self.group["status"] = "stopped"
+                return dict(self.group)
+
+            def restart_group(self, group_id, *, restart_count=None):
+                self.restart_counts.append(restart_count)
+                self.group["status"] = "running"
+                self.group["restart_count"] = restart_count if restart_count is not None else 0
+                heartbeat_live_agent(self.output_root, "agent-a", status="online")
+                return dict(self.group)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "status": "online",
+                },
+            )
+            supervisor = RestartSupervisor(root)
+
+            session = live_agent_session_restart_payload(
+                root,
+                supervisor,
+                {
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "connect_timeout_seconds": 0,
+                    "_stale_observation_restart_count": 7,
+                },
+            )
+
+        self.assertEqual(session["status"], "ready")
+        self.assertEqual(supervisor.restart_counts, [None])
+        self.assertEqual(supervisor.group["restart_count"], 0)
+
+    def test_live_agent_session_ensure_does_not_restart_observation_lag_without_auto_restart(self):
+        class ObservationLagSupervisor:
+            def __init__(self) -> None:
+                self.stopped = []
+                self.restarted = []
+                self.group = {
+                    "group_id": "resident-main",
+                    "status": "running",
+                    "meeting_id": "resident-m1",
+                    "agents": [{"agent_id": "agent-a"}],
+                    "auto_restart": False,
+                    "max_restarts": 0,
+                    "restart_count": 0,
+                    "stale_restart_after_seconds": 1,
+                }
+
+            def snapshot_groups(self):
+                return [dict(self.group)]
+
+            def list_groups(self):
+                return self.snapshot_groups()
+
+            def stop_group(self, group_id):
+                self.stopped.append(group_id)
+                raise AssertionError("disabled auto-restart must not stop the group")
+
+            def restart_group(self, group_id):
+                self.restarted.append(group_id)
+                raise AssertionError("disabled auto-restart must not restart the group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            _write_lobby_jsonl_event(root, event_id="lobby-old", actor_id="human", created_at="2000-01-01T00:00:00+00:00")
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_event_id": "older-event",
+                },
+            )
+            supervisor = ObservationLagSupervisor()
+
+            session = live_agent_session_ensure_payload(
+                root,
+                supervisor,
+                {
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "connect_timeout_seconds": 0,
+                },
+                default_server="http://room.local",
+            )
+
+        self.assertEqual(session["status"], "ready")
+        self.assertEqual(session["action"], "none")
+        self.assertEqual(supervisor.stopped, [])
+        self.assertEqual(supervisor.restarted, [])
 
     def test_live_agent_session_ensure_ready_noop_can_probe_and_run_remaining_rounds(self):
         class EnsureSessionSupervisor:
@@ -13757,6 +14347,73 @@ def _write_health_resident_meeting(root: Path, *, agent_ids: list[str]) -> Path:
     }
     (meeting_dir / "meeting.json").write_text(json.dumps(meeting, ensure_ascii=False), encoding="utf-8")
     return meeting_dir
+
+
+def _write_lobby_jsonl_event(root: Path, *, event_id: str, actor_id: str, created_at: str) -> None:
+    event = {
+        "id": event_id,
+        "created_at": created_at,
+        "name": "human",
+        "side": "other",
+        "kind": "message",
+        "message": "stale event text must stay out",
+        "channel": "lobby",
+        "audience": "room",
+        "official_record": False,
+        "actor_id": actor_id,
+        "source_event_id": "",
+        "auto_chain_depth": 0,
+        "live_agent_endpoint": False,
+    }
+    with (root / "lobby.jsonl").open("a", encoding="utf-8") as file:
+        file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def _write_live_jsonl_event(
+    meeting_dir: Path,
+    *,
+    event_id: str,
+    kind: str,
+    created_at: str,
+    target_agent_id: str = "",
+    actor_id: str = "",
+    source_event_id: str = "",
+    content: str = "",
+) -> dict[str, object]:
+    event = {
+        "id": event_id,
+        "created_at": created_at,
+        "kind": kind,
+        "meeting_id": "resident-m1",
+        "channel": "official" if kind == "message" else "live",
+        "audience": "room",
+        "official_record": True,
+        "actor_id": actor_id,
+        "target_agent_id": target_agent_id,
+        "source_event_id": source_event_id,
+        "review_checkpoint_id": "",
+        "role_id": "",
+        "display_name": "",
+        "round": None,
+        "turn_id": "",
+        "turn_index": None,
+        "engagement_mode": "",
+        "content": content,
+        "position": "",
+        "stance_status": None,
+        "stance_delta": None,
+        "changed_by": [],
+        "change_reason": "",
+        "remaining_resistance": "",
+        "emotion": {},
+        "confidence": None,
+        "retry_status": None,
+        "retry_attempts": None,
+    }
+    path = meeting_dir / "live_events.jsonl"
+    with path.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+    return event
 
 
 def _write_single_agent_session_configs(council_config: Path, agent_config: Path, live_agent_config: Path) -> None:

@@ -4257,6 +4257,31 @@ Health now evaluates only ready non-diagnostic resident session agents, compares
 
 ---
 
+### Task 121: Observation-Stale Ready Session Auto-Reconcile
+
+**Goal:** Let durable resident automation recover a ready-but-not-observing session when the existing process group has explicitly opted into automatic restart policy.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_gui_server.py`
+
+- [x] **Step 1: Add RED auto-reconcile coverage**
+
+Cover a durable `ready` session-run whose bound agent is online but has not observed an old lobby event. The monitor must reconcile that run, and direct `ensure-session` must choose `restart`. Also cover stale official turn requests, answered official requests, exhausted restart budget, replaying the run's current target when the original request was blank, and that the same lag does not restart a group without `auto_restart`.
+
+- [x] **Step 2: Reuse existing auto-restart guardrails**
+
+Ready-session observation lag now becomes a restart reason only when the matching process group is running, has `auto_restart` enabled, has remaining `max_restarts` budget, and has a positive `stale_restart_after_seconds`. Health reads stay read-only; the durable monitor goes through the existing `ensure-session` and `restart-session` path instead of directly mutating providers or roster state.
+
+- [x] **Step 3: Document recovery semantics**
+
+Docs now distinguish observation health evidence from durable recovery: fresh lag, self-authored lobby events, answered official requests, disabled auto-restart, exhausted restart budget, and health-only reads do not mutate the resident session.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

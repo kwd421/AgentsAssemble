@@ -399,11 +399,11 @@ def _reconcile_live_agent_session_runs(
     target_run_id: str = "",
 ) -> list[dict[str, object]]:
     def ensure_from_run(run: dict[str, object]) -> dict[str, object]:
-        request = run.get("request") if isinstance(run.get("request"), dict) else {}
+        request = _session_run_reconcile_request(run)
         return live_agent_session_ensure_payload(
             output_root,
             process_supervisor,
-            dict(request),
+            request,
             default_server=default_server,
         )
 
@@ -438,6 +438,17 @@ def _reconcile_live_agent_session_runs(
     return results
 
 
+def _session_run_reconcile_request(run: dict[str, object]) -> dict[str, object]:
+    request = dict(run.get("request") if isinstance(run.get("request"), dict) else {})
+    meeting_id = str(run.get("meeting_id") or "").strip()
+    group_id = str(run.get("group_id") or "").strip()
+    if meeting_id:
+        request["meeting_id"] = meeting_id
+    if group_id:
+        request["group_id"] = group_id
+    return request
+
+
 def _session_run_monitor_should_reconcile(
     output_root: Path,
     process_supervisor: LiveAgentProcessSupervisor,
@@ -462,7 +473,14 @@ def _session_run_monitor_should_reconcile(
         )
     except (OSError, ValueError):
         return True
-    return _operation_result_status(readiness.get("status")) != "ready"
+    if _operation_result_status(readiness.get("status")) != "ready":
+        return True
+    return _ready_session_requires_restart_for_stale_observation_lag(
+        output_root,
+        process_supervisor,
+        {"meeting_id": meeting_id, "group_id": group_id},
+        readiness,
+    )
 
 
 class LiveAgentSessionRunMonitor:
@@ -918,6 +936,7 @@ def live_agent_session_ensure_payload(
     payload = _live_agent_session_payload_with_group_owner(process_supervisor, payload)
     current = _live_agent_session_optional_readiness_payload(output_root, process_supervisor, payload)
     action = session_ensure_action(current)
+    stale_observation_restart_count = 0
     if action == "none" and _ready_session_requires_restart_for_resident_session_drift(
         output_root,
         process_supervisor,
@@ -926,6 +945,15 @@ def live_agent_session_ensure_payload(
         default_server=default_server,
     ):
         action = "restart"
+    if action == "none":
+        stale_observation_restart_count = _stale_observation_restart_count(
+            output_root,
+            process_supervisor,
+            payload,
+            current,
+        )
+        if stale_observation_restart_count > 0:
+            action = "restart"
     if action == "none":
         session = _attach_session_auto_rounds_if_requested(output_root, dict(current) if isinstance(current, dict) else {}, payload)
     elif action == "start":
@@ -936,7 +964,12 @@ def live_agent_session_ensure_payload(
             default_server=default_server,
         )
     elif action == "restart":
-        session = live_agent_session_restart_payload(output_root, process_supervisor, payload)
+        session = live_agent_session_restart_payload(
+            output_root,
+            process_supervisor,
+            payload,
+            restart_count=stale_observation_restart_count if stale_observation_restart_count > 0 else None,
+        )
     elif action == "recover":
         session = live_agent_session_recover_payload(output_root, process_supervisor, payload)
     else:
@@ -1044,6 +1077,132 @@ def _resident_session_ids_by_agent(
         if agent_id and session_id:
             result[agent_id] = session_id
     return result
+
+
+def _ready_session_requires_restart_for_stale_observation_lag(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+    current: dict[str, object] | None,
+) -> bool:
+    return _stale_observation_restart_count(output_root, process_supervisor, payload, current) > 0
+
+
+def _stale_observation_restart_count(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+    current: dict[str, object] | None,
+) -> int:
+    if not isinstance(current, dict) or _operation_result_status(current.get("status")) != "ready":
+        return 0
+    meeting_id = str(current.get("meeting_id") or payload.get("meeting_id") or "").strip()
+    group_id = str(current.get("group_id") or payload.get("group_id") or "").strip()
+    if not meeting_id or not group_id:
+        return 0
+    group = _find_session_process_group(_session_process_groups_snapshot(process_supervisor), group_id)
+    if str(group.get("status") or "") != "running":
+        return 0
+    stale_after_seconds = _observation_restart_stale_after_seconds(group)
+    if stale_after_seconds <= 0:
+        return 0
+    agent_ids = [
+        _safe_session_run_health_identity(agent.get("agent_id"))
+        for agent in _as_dict_list(group.get("agents"))
+        if _safe_session_run_health_identity(agent.get("agent_id"))
+    ]
+    if not agent_ids:
+        return 0
+    agents_by_id = {
+        _safe_session_run_health_identity(agent.get("agent_id")): agent
+        for agent in read_live_agents(output_root)
+        if _safe_session_run_health_identity(agent.get("agent_id"))
+    }
+    has_stale_lag = _ready_session_has_stale_lobby_observation_lag(
+        output_root,
+        agent_ids,
+        agents_by_id,
+        stale_after_seconds=stale_after_seconds,
+    ) or _ready_session_has_stale_live_observation_lag(
+        output_root,
+        meeting_id,
+        agent_ids,
+        agents_by_id,
+        stale_after_seconds=stale_after_seconds,
+    )
+    if not has_stale_lag:
+        return 0
+    return _payload_nonnegative_int(group.get("restart_count"), 0) + 1
+
+
+def _observation_restart_stale_after_seconds(group: dict[str, object]) -> float:
+    if not _payload_bool(group.get("auto_restart")):
+        return 0.0
+    max_restarts = _payload_nonnegative_int(group.get("max_restarts"), 0)
+    restart_count = _payload_nonnegative_int(group.get("restart_count"), 0)
+    if max_restarts <= 0 or restart_count >= max_restarts:
+        return 0.0
+    return _payload_nonnegative_float(group.get("stale_restart_after_seconds"), 0.0)
+
+
+def _ready_session_has_stale_lobby_observation_lag(
+    output_root: Path,
+    agent_ids: list[str],
+    agents_by_id: dict[str, dict[str, object]],
+    *,
+    stale_after_seconds: float,
+) -> bool:
+    latest_lobby_event = _latest_lobby_event(output_root)
+    latest_event_id = _safe_session_run_health_identity(latest_lobby_event.get("id"))
+    latest_actor_id = _safe_session_run_health_identity(latest_lobby_event.get("actor_id"))
+    if not latest_event_id or not _event_is_stale_for_observation_restart(latest_lobby_event, stale_after_seconds):
+        return False
+    for agent_id in agent_ids:
+        agent = agents_by_id.get(agent_id, {})
+        status = _live_agent_lobby_observation_status(
+            latest_event_id,
+            _safe_session_run_health_identity(agent.get("last_observed_event_id")),
+            latest_actor_id=latest_actor_id,
+            agent_id=agent_id,
+        )
+        if status == "behind":
+            return True
+    return False
+
+
+def _ready_session_has_stale_live_observation_lag(
+    output_root: Path,
+    meeting_id: str,
+    agent_ids: list[str],
+    agents_by_id: dict[str, dict[str, object]],
+    *,
+    stale_after_seconds: float,
+) -> bool:
+    meeting_events = _live_agent_observation_events(output_root, meeting_id, {})
+    for agent_id in agent_ids:
+        latest_request = _latest_live_agent_turn_request_for_agent(meeting_events, agent_id)
+        if not latest_request or not _event_is_stale_for_observation_restart(latest_request, stale_after_seconds):
+            continue
+        latest_request_id = _safe_session_run_health_identity(latest_request.get("id"))
+        agent = agents_by_id.get(agent_id, {})
+        status = _live_agent_live_observation_status(
+            meeting_events,
+            agent_id=agent_id,
+            latest_request_id=latest_request_id,
+            last_observed_live_event_id=_safe_session_run_health_identity(agent.get("last_observed_live_event_id")),
+        )
+        if status == "behind":
+            return True
+    return False
+
+
+def _event_is_stale_for_observation_restart(event: dict[str, object], stale_after_seconds: float) -> bool:
+    if stale_after_seconds <= 0:
+        return False
+    created_at = _parse_public_timestamp(event.get("created_at"))
+    if created_at is None:
+        return False
+    return (datetime.now(UTC) - created_at).total_seconds() >= stale_after_seconds
 
 
 def _live_agent_session_optional_readiness_payload(
@@ -1175,6 +1334,8 @@ def live_agent_session_restart_payload(
     output_root: Path,
     process_supervisor: LiveAgentProcessSupervisor,
     payload: dict[str, object],
+    *,
+    restart_count: int | None = None,
 ) -> dict[str, object]:
     group_id = str(payload.get("group_id") or "").strip()
     if not group_id:
@@ -1185,6 +1346,7 @@ def live_agent_session_restart_payload(
         meeting_id=str(payload.get("meeting_id") or ""),
         group_id=group_id,
         connect_timeout_seconds=_payload_nonnegative_float(payload.get("connect_timeout_seconds"), 5.0),
+        restart_count=restart_count,
     )
     return _attach_session_auto_rounds_if_requested(output_root, session, payload)
 
