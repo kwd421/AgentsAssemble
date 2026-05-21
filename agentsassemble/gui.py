@@ -2199,12 +2199,14 @@ def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentPr
         groups,
         diagnostic_group_ids=diagnostic_group_ids,
     )
+    session_run_summary = _live_agent_session_run_health_summary(output_root)
     status = (
         "degraded"
         if agent_summary["attention"]
         or process_summary["attention"]
         or connection_summary["attention"]
         or session_summary["attention"]
+        or session_run_summary["attention"]
         else "ok"
     )
     return {
@@ -2213,6 +2215,7 @@ def live_agent_health_payload(output_root: Path, process_supervisor: LiveAgentPr
         "processes": process_summary,
         "connections": connection_summary,
         "sessions": session_summary,
+        "session_runs": session_run_summary,
     }
 
 
@@ -2371,6 +2374,113 @@ def _live_agent_session_health_summary(
         if reason:
             item["process_reason"] = reason
     return summary
+
+
+def _live_agent_session_run_health_summary(output_root: Path) -> dict[str, object]:
+    snapshot = LiveAgentSessionRunController(output_root).health_snapshot()
+    runs = snapshot.get("runs") if isinstance(snapshot.get("runs"), list) else []
+    items = []
+    attention = []
+    retrying_count = 0
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        status = str(run.get("status") or "unknown").strip() or "unknown"
+        active = run.get("active") is True
+        retrying = _live_agent_session_run_retrying(run)
+        if retrying:
+            retrying_count += 1
+        if active and status != "ready":
+            attention.append(_live_agent_session_run_attention_label(run, status=status, retrying=retrying))
+        items.append(
+            {
+                "run_id": _safe_session_run_health_identity(run.get("run_id")),
+                "meeting_id": _safe_session_run_health_identity(run.get("meeting_id")),
+                "group_id": _safe_session_run_health_identity(run.get("group_id")),
+                "status": clean_lobby_text(status, limit=64),
+                "active": active,
+                "phase": _safe_session_run_health_phase(run.get("phase")),
+                "reconcile_failure_count": _safe_session_run_health_int(run.get("reconcile_failure_count")),
+                "reconcile_backoff_seconds": _safe_session_run_health_int(run.get("reconcile_backoff_seconds")),
+                "next_reconcile_at": _safe_session_run_health_timestamp(run.get("next_reconcile_at")),
+            }
+        )
+    return {
+        "total": _safe_session_run_health_int(snapshot.get("total")),
+        "active": _safe_session_run_health_int(snapshot.get("active")),
+        "ready": _safe_session_run_health_int(snapshot.get("ready")),
+        "retrying": retrying_count,
+        "attention": attention,
+        "items": items,
+    }
+
+
+def _live_agent_session_run_retrying(run: dict[str, object]) -> bool:
+    return (
+        _safe_session_run_health_int(run.get("reconcile_failure_count")) > 0
+        or _safe_session_run_health_int(run.get("reconcile_backoff_seconds")) > 0
+        or bool(_safe_session_run_health_timestamp(run.get("next_reconcile_at")))
+    )
+
+
+def _live_agent_session_run_attention_label(run: dict[str, object], *, status: str, retrying: bool) -> str:
+    parts = [
+        _safe_session_run_health_identity(run.get("meeting_id")) or "-",
+        _safe_session_run_health_identity(run.get("group_id")) or "-",
+        _safe_session_run_health_identity(run.get("run_id")) or "-",
+        clean_lobby_text(status, limit=64) or "unknown",
+    ]
+    if retrying:
+        parts.append("retrying")
+    return ":".join(parts)
+
+
+def _safe_session_run_health_identity(value: object) -> str:
+    text = clean_lobby_text(value, limit=128)
+    if not text or text in {".", ".."}:
+        return ""
+    if text.casefold().startswith(("env:", "literal:")):
+        return ""
+    if _looks_sensitive_session_run_health_text(text):
+        return ""
+    if "/" in text or "\\" in text or Path(text).name != text:
+        return ""
+    return text
+
+
+def _safe_session_run_health_phase(value: object) -> str:
+    text = clean_lobby_text(value, limit=128)
+    if not text or _looks_sensitive_session_run_health_text(text):
+        return ""
+    return text if re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", text) else ""
+
+
+def _looks_sensitive_session_run_health_text(text: str) -> bool:
+    lowered = text.casefold()
+    token_like = re.search(
+        r"\b(?:sk-[A-Za-z0-9_-]{6,}|gh[opusr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b",
+        text,
+    )
+    return (
+        bool(token_like)
+        or _looks_sensitive_process_control_error(text)
+        or "literal:" in lowered
+    )
+
+
+def _safe_session_run_health_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, number)
+
+
+def _safe_session_run_health_timestamp(value: object) -> str:
+    timestamp = clean_lobby_text(value, limit=64)
+    return timestamp if re.fullmatch(r"[0-9T:+.\-Z]{1,64}", timestamp) else ""
 
 
 def _safe_process_meeting_id(value: object) -> str:

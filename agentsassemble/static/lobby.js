@@ -711,6 +711,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const processes = health.processes && typeof health.processes === "object" ? health.processes : {};
   const connections = health.connections && typeof health.connections === "object" ? health.connections : {};
   const sessions = health.sessions && typeof health.sessions === "object" ? health.sessions : {};
+  const sessionRuns = health.session_runs && typeof health.session_runs === "object" ? health.session_runs : {};
   const processCounts = processes.counts && typeof processes.counts === "object" ? processes.counts : {};
   const agentLive = Math.max(0, Number(agents.live || 0));
   const agentTotal = Math.max(0, Number(agents.total || 0));
@@ -720,8 +721,12 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const expected = Math.max(0, Number(connections.expected || 0));
   const readySessions = Math.max(0, Number(sessions.ready || 0));
   const sessionTotal = Math.max(0, Number(sessions.total || 0));
+  const activeSessionRuns = Math.max(0, Number(sessionRuns.active || 0));
+  const sessionRunTotal = Math.max(0, Number(sessionRuns.total || 0));
   const attentionCount = liveAgentHealthAttentionCount(health);
   const sessionAttention = liveAgentHealthAttentionSummary(sessions.attention, "session attention");
+  const sessionRunAttention = liveAgentHealthAttentionSummary(sessionRuns.attention, "session-run attention");
+  const sessionRunRetry = liveAgentHealthSessionRunRetrySummary(sessionRuns.items);
   const tone = status === "ok" ? "success" : status === "degraded" ? "warning" : "error";
   return (
     `<p class="live-agent-runtime-health" data-tone="${escapeHtml(tone)}">` +
@@ -730,8 +735,11 @@ function renderLiveAgentRuntimeHealth(health, loading) {
     `processes ${escapeHtml(`${runningProcesses}/${processTotal}`)} running · ` +
     `connections ${escapeHtml(`${connected}/${expected}`)} connected · ` +
     `sessions ${escapeHtml(`${readySessions}/${sessionTotal}`)} ready · ` +
+    `session-runs ${escapeHtml(`${activeSessionRuns}/${sessionRunTotal}`)} active · ` +
     `attention ${escapeHtml(attentionCount)}` +
     (sessionAttention ? `<br><small>${escapeHtml(sessionAttention)}</small>` : "") +
+    (sessionRunAttention ? `<br><small>${escapeHtml(sessionRunAttention)}</small>` : "") +
+    (sessionRunRetry ? `<br><small>${escapeHtml(sessionRunRetry)}</small>` : "") +
     "</p>" +
     renderLiveAgentSessionReadiness(sessions)
   );
@@ -858,7 +866,7 @@ function renderLiveAgentDiscoveryRow(discovery) {
 }
 
 function liveAgentHealthAttentionCount(health) {
-  const sections = [health?.agents, health?.processes, health?.connections, health?.sessions];
+  const sections = [health?.agents, health?.processes, health?.connections, health?.sessions, health?.session_runs];
   return sections.reduce((count, section) => {
     const attention = section && typeof section === "object" && Array.isArray(section.attention) ? section.attention : [];
     return count + attention.length;
@@ -872,6 +880,23 @@ function liveAgentHealthAttentionSummary(value, label) {
   const remaining = Math.max(0, value.length - cleaned.length);
   const suffix = remaining > 0 ? ` +${remaining} more` : "";
   return `${label} ${cleaned.join(", ")}${suffix}`;
+}
+
+function liveAgentHealthSessionRunRetrySummary(value) {
+  if (!Array.isArray(value) || value.length === 0) return "";
+  const labels = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const parts = [];
+    const failures = Number(item.reconcile_failure_count || 0);
+    const backoffSeconds = Number(item.reconcile_backoff_seconds || 0);
+    const nextReconcileAt = String(item.next_reconcile_at || "").trim();
+    if (Number.isFinite(failures) && failures > 0) parts.push(`retry failures ${Math.floor(failures)}`);
+    if (Number.isFinite(backoffSeconds) && backoffSeconds > 0) parts.push(`retry backoff ${Math.floor(backoffSeconds)}s`);
+    if (/^[0-9T:+.\-Z]{1,64}$/.test(nextReconcileAt)) parts.push(`next retry ${nextReconcileAt}`);
+    if (parts.length) labels.push(parts.join(" · "));
+  }
+  return labels.length ? `session-run retries ${labels.slice(0, 3).join(", ")}` : "";
 }
 
 function renderLiveAgentProcessCard(group) {

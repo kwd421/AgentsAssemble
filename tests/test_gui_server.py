@@ -38,6 +38,7 @@ from agentsassemble.gui import (
     _readiness_health_operation_details,
     LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT,
     live_agents_payload,
+    live_agent_health_payload,
     live_agent_session_ensure_payload,
     _attach_session_auto_rounds_if_requested,
     send_lobby_message_to_remote_bridge,
@@ -3938,6 +3939,253 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("live-agents.json", json.dumps(payload, ensure_ascii=False))
             self.assertNotIn("private/token", json.dumps(payload, ensure_ascii=False))
             self.assertFalse(supervisor.list_called)
+
+    def test_live_agent_health_endpoint_summarizes_durable_session_run_retry(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": "configs/private.json",
+                    "server": "https://secret.example",
+                },
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["session_runs"]["total"], 1)
+        self.assertEqual(payload["session_runs"]["active"], 1)
+        self.assertEqual(payload["session_runs"]["ready"], 0)
+        self.assertEqual(payload["session_runs"]["retrying"], 1)
+        self.assertEqual(
+            payload["session_runs"]["attention"],
+            [f"resident-m1:resident-main:{run['run_id']}:degraded:retrying"],
+        )
+        self.assertEqual(payload["session_runs"]["items"][0]["run_id"], run["run_id"])
+        self.assertEqual(payload["session_runs"]["items"][0]["reconcile_failure_count"], 1)
+        self.assertEqual(payload["session_runs"]["items"][0]["reconcile_backoff_seconds"], 60)
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("configs/private.json", serialized)
+        self.assertNotIn("secret.example", serialized)
+
+    def test_live_agent_health_keeps_old_active_session_runs_outside_recent_tail(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            active_run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-old",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": "configs/private.json",
+                    "server": "https://secret.example",
+                },
+            )
+            controller.finish_run(
+                active_run["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-old",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            for index in range(60):
+                run = controller.begin_run(
+                    action="ensure",
+                    payload={
+                        "meeting_id": f"resident-done-{index}",
+                        "group_id": "resident-main",
+                        "live_agent_config_path": "configs/private.json",
+                    },
+                )
+                controller.finish_run(
+                    run["run_id"],
+                    session={
+                        "status": "ready",
+                        "meeting_id": f"resident-done-{index}",
+                        "group_id": "resident-main",
+                        "action": "none",
+                    },
+                )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertIn(
+            f"resident-old:resident-main:{active_run['run_id']}:degraded:retrying",
+            payload["session_runs"]["attention"],
+        )
+        self.assertIn(active_run["run_id"], [item["run_id"] for item in payload["session_runs"]["items"]])
+
+    def test_live_agent_health_redacts_sensitive_session_run_ids(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir(parents=True)
+            (runs_dir / "session-runs.json").write_text(
+                json.dumps(
+                    {
+                        "runs": [
+                            {
+                                "run_id": "ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+                                "action": "ensure",
+                                "status": "degraded",
+                                "active": True,
+                                "phase": "/Users/me/private/live-agents.secret.json token sk-test-secret",
+                                "meeting_id": "env:SECRET_MEETING",
+                                "group_id": "literal:SECRET_GROUP",
+                                "request": {},
+                                "result": {"status": "degraded"},
+                                "next_reconcile_at": "2026-05-21T10:07:00+00:00",
+                                "reconcile_failure_count": 1,
+                                "reconcile_backoff_seconds": 60,
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("SECRET_MEETING", serialized)
+        self.assertNotIn("SECRET_GROUP", serialized)
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz1234567890", serialized)
+        self.assertNotIn("Users/me/private", serialized)
+        self.assertNotIn("live-agents.secret.json", serialized)
+        self.assertNotIn("sk-test-secret", serialized)
+        self.assertEqual(payload["session_runs"]["items"][0]["phase"], "")
+        self.assertEqual(payload["session_runs"]["attention"], ["-:-:-:degraded:retrying"])
+
+    def test_live_agent_health_ignores_diagnostic_session_runs(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "diagnostic-m1",
+                    "group_id": "diagnostic-main",
+                    "diagnostic": True,
+                    "live_agent_config_path": "configs/private.json",
+                },
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "diagnostic-m1",
+                    "group_id": "diagnostic-main",
+                    "action": "recover",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["session_runs"]["total"], 0)
+        self.assertEqual(payload["session_runs"]["active"], 0)
+        self.assertEqual(payload["session_runs"]["ready"], 0)
+        self.assertEqual(payload["session_runs"]["retrying"], 0)
+        self.assertEqual(payload["session_runs"]["attention"], [])
+        self.assertEqual(payload["session_runs"]["items"], [])
+
+    def test_live_agent_health_ignores_legacy_string_diagnostic_session_runs(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir(parents=True)
+            (runs_dir / "session-runs.json").write_text(
+                json.dumps(
+                    {
+                        "runs": [
+                            {
+                                "run_id": "legacy-diagnostic-run",
+                                "action": "ensure",
+                                "status": "degraded",
+                                "active": True,
+                                "phase": "reconcile_failed",
+                                "meeting_id": "diagnostic-m1",
+                                "group_id": "diagnostic-main",
+                                "request": {"diagnostic": "true"},
+                                "result": {"status": "degraded"},
+                                "next_reconcile_at": "2026-05-21T10:07:00+00:00",
+                                "reconcile_failure_count": 1,
+                                "reconcile_backoff_seconds": 60,
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["session_runs"]["total"], 0)
+        self.assertEqual(payload["session_runs"]["items"], [])
 
     def test_live_agent_health_endpoint_reports_only_current_recovered_unknown_reason(self):
         class FakeSupervisor:

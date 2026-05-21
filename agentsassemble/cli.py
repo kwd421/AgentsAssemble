@@ -2754,6 +2754,7 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
     processes = payload.get("processes") if isinstance(payload.get("processes"), dict) else {}
     connections = payload.get("connections") if isinstance(payload.get("connections"), dict) else {}
     sessions = payload.get("sessions") if isinstance(payload.get("sessions"), dict) else {}
+    session_runs = payload.get("session_runs") if isinstance(payload.get("session_runs"), dict) else {}
     agent_counts = agents.get("counts") if isinstance(agents.get("counts"), dict) else {}
     process_counts = processes.get("counts") if isinstance(processes.get("counts"), dict) else {}
     agent_attention = agents.get("attention") if isinstance(agents.get("attention"), list) else []
@@ -2761,6 +2762,7 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
     process_reasons = _process_reason_summary(processes.get("reasons"))
     connection_attention = connections.get("attention") if isinstance(connections.get("attention"), list) else []
     session_attention = sessions.get("attention") if isinstance(sessions.get("attention"), list) else []
+    session_run_attention = session_runs.get("attention") if isinstance(session_runs.get("attention"), list) else []
     lines = [
         f"status: {payload.get('status') or 'unknown'}",
         (
@@ -2787,12 +2789,48 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
             f"session attention: {_attention_summary(session_attention)}",
         ]
     )
+    if session_runs:
+        retry_summary = _session_run_retry_summary(session_runs.get("items"))
+        lines.extend(
+            [
+                (
+                    f"session runs: {session_runs.get('active', 0)} active / {session_runs.get('total', 0)} total "
+                    f"(ready {session_runs.get('ready', 0)}, retrying {session_runs.get('retrying', 0)})"
+                ),
+                f"session-run attention: {_attention_summary(session_run_attention)}",
+            ]
+        )
+        if retry_summary:
+            lines.append(f"session-run retries: {retry_summary}")
     return "\n".join(lines)
 
 
 def _attention_summary(items: list[object]) -> str:
     cleaned = [str(item) for item in items if str(item)]
     return ", ".join(cleaned) if cleaned else "none"
+
+
+def _session_run_retry_summary(value: object) -> str:
+    if not isinstance(value, list):
+        return ""
+    labels = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        parts = []
+        run_id = str(item.get("run_id") or "-").strip() or "-"
+        failures = _safe_int(item.get("reconcile_failure_count"))
+        backoff = _safe_int(item.get("reconcile_backoff_seconds"))
+        next_reconcile_at = str(item.get("next_reconcile_at") or "").strip()
+        if failures > 0:
+            parts.append(f"retry failures {failures}")
+        if backoff > 0:
+            parts.append(f"retry backoff {backoff}s")
+        if re.fullmatch(r"[0-9T:+.\-Z]{1,64}", next_reconcile_at):
+            parts.append(f"next retry {next_reconcile_at}")
+        if parts:
+            labels.append(f"{run_id} {'; '.join(parts)}")
+    return ", ".join(labels[:3])
 
 
 def _process_reason_summary(value: object) -> str:

@@ -2032,6 +2032,24 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
       processes: { total: 2, counts: { running: 1, restarting: 0, error: 1, unknown: 0, stopped: 0 }, attention: ["resident-main"] },
       connections: { expected: 2, connected: 1, attention: ["resident-main:agent-b:stale"] },
       sessions: { total: 2, ready: 0, degraded: 2, attention: ["resident-m1:resident-main:meeting:duplicate_active_group"] },
+      session_runs: {
+        total: 2,
+        active: 1,
+        ready: 1,
+        retrying: 1,
+        attention: ["resident-m1:resident-main:run-1:degraded:retrying"],
+        items: [
+          {
+            run_id: "run-1",
+            meeting_id: "resident-m1",
+            group_id: "resident-main",
+            status: "degraded",
+            reconcile_failure_count: 2,
+            reconcile_backoff_seconds: 120,
+            next_reconcile_at: "2026-05-21T10:07:00+00:00",
+          },
+        ],
+      },
     },
   });
 
@@ -2049,8 +2067,13 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.match(health.textContent, /processes 1\/2 running/);
   assert.match(health.textContent, /connections 1\/2 connected/);
   assert.match(health.textContent, /sessions 0\/2 ready/);
-  assert.match(health.textContent, /attention 4/);
+  assert.match(health.textContent, /session-runs 1\/2 active/);
+  assert.match(health.textContent, /attention 5/);
+  assert.match(health.textContent, /retry failures 2/);
+  assert.match(health.textContent, /retry backoff 120s/);
+  assert.match(health.textContent, /next retry 2026-05-21T10:07:00\+00:00/);
   assert.match(health.textContent, /session attention resident-m1:resident-main:meeting:duplicate_active_group/);
+  assert.match(health.textContent, /session-run attention resident-m1:resident-main:run-1:degraded:retrying/);
   assert.equal(health.attributes["data-tone"], "warning");
 });
 

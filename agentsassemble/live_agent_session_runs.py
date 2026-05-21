@@ -318,6 +318,24 @@ class LiveAgentSessionRunController:
             records = records[-safe_limit:]
             return [_public_record(record) for record in records]
 
+    def health_snapshot(self, *, recent_limit: int = DEFAULT_SESSION_RUN_LIMIT) -> dict[str, object]:
+        safe_limit = _run_limit(recent_limit)
+        with self._lock:
+            public_records = [_public_record(record) for record in self._records.values()]
+        visible_records = [record for record in public_records if not _record_is_diagnostic(record)]
+        selected_run_ids = {str(record.get("run_id") or "") for record in visible_records[-safe_limit:]}
+        selected_run_ids.update(
+            str(record.get("run_id") or "")
+            for record in visible_records
+            if record.get("active") is True and str(record.get("status") or "") != "ready"
+        )
+        return {
+            "total": len(visible_records),
+            "active": sum(1 for record in visible_records if record.get("active") is True),
+            "ready": sum(1 for record in visible_records if str(record.get("status") or "") == "ready"),
+            "runs": [record for record in visible_records if str(record.get("run_id") or "") in selected_run_ids],
+        }
+
     def _record_or_raise(self, run_id: str) -> dict[str, object]:
         clean_run_id = _safe_identity(run_id)
         record = self._records.get(clean_run_id)
@@ -487,6 +505,19 @@ def _record_meeting_id(record: dict[str, object]) -> str:
 def _record_group_id(record: dict[str, object]) -> str:
     request = record.get("request") if isinstance(record.get("request"), dict) else {}
     return _safe_identity(request.get("group_id"))
+
+
+def _record_is_diagnostic(record: dict[str, object]) -> bool:
+    request = record.get("request") if isinstance(record.get("request"), dict) else {}
+    return _truthy_session_run_flag(request.get("diagnostic"))
+
+
+def _truthy_session_run_flag(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().casefold() in {"1", "true", "yes", "on"}
+    return False
 
 
 def _safe_identity(value: object) -> str:

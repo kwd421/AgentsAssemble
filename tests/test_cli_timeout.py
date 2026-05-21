@@ -2778,6 +2778,24 @@ class CliTimeoutTests(unittest.TestCase):
                 "degraded": 1,
                 "attention": ["resident-m1:resident-main:agent-b:missing"],
             },
+            "session_runs": {
+                "total": 2,
+                "active": 1,
+                "ready": 1,
+                "retrying": 1,
+                "attention": ["resident-m1:resident-main:run-1:degraded:retrying"],
+                "items": [
+                    {
+                        "run_id": "run-1",
+                        "meeting_id": "resident-m1",
+                        "group_id": "resident-main",
+                        "status": "degraded",
+                        "reconcile_failure_count": 2,
+                        "reconcile_backoff_seconds": 120,
+                        "next_reconcile_at": "2026-05-21T10:07:00+00:00",
+                    }
+                ],
+            },
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
@@ -2805,6 +2823,13 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("connection attention: crew:friend-b:missing", output)
         self.assertIn("sessions: 1 ready / 2 total", output)
         self.assertIn("session attention: resident-m1:resident-main:agent-b:missing", output)
+        self.assertIn("session runs: 1 active / 2 total", output)
+        self.assertIn("ready 1", output)
+        self.assertIn("retrying 1", output)
+        self.assertIn("retry failures 2", output)
+        self.assertIn("retry backoff 120s", output)
+        self.assertIn("next retry 2026-05-21T10:07:00+00:00", output)
+        self.assertIn("session-run attention: resident-m1:resident-main:run-1:degraded:retrying", output)
 
     def test_live_agent_health_can_emit_json_and_fail_on_degraded(self):
         payload = {"status": "degraded", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}}
