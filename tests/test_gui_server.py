@@ -3996,6 +3996,67 @@ class GuiServerTests(unittest.TestCase):
         self.assertNotIn("configs/private.json", serialized)
         self.assertNotIn("secret.example", serialized)
 
+    def test_live_agent_health_endpoint_includes_process_monitor_liveness(self):
+        class MonitorSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return []
+
+            def monitor_snapshot(self):
+                return {
+                    "running": True,
+                    "interval_seconds": 2.5,
+                    "last_tick_at": "2026-05-21T10:09:00+00:00",
+                    "last_status": "ok",
+                    "last_group_count": 1,
+                    "last_error_type": "",
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            payload = live_agent_health_payload(Path(temp_dir), MonitorSupervisor())
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(
+            payload["process_monitor"],
+            {
+                "running": True,
+                "interval_seconds": 2.5,
+                "last_tick_at": "2026-05-21T10:09:00+00:00",
+                "last_status": "ok",
+                "last_group_count": 1,
+                "last_error_type": "",
+                "attention": [],
+            },
+        )
+
+    def test_live_agent_health_endpoint_degrades_on_safe_process_monitor_failure(self):
+        class MonitorSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return []
+
+            def monitor_snapshot(self):
+                return {
+                    "running": True,
+                    "interval_seconds": 2,
+                    "last_tick_at": "2026-05-21T10:09:00+00:00",
+                    "last_status": "failed",
+                    "last_group_count": 0,
+                    "last_error_type": "RuntimeError /Users/me/private/live-agents.secret.json",
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            payload = live_agent_health_payload(Path(temp_dir), MonitorSupervisor())
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["process_monitor"]["last_error_type"], "")
+        self.assertEqual(payload["process_monitor"]["attention"], ["failed:Exception"])
+        self.assertNotIn("/Users/me/private", json.dumps(payload, ensure_ascii=False))
+
     def test_live_agent_health_endpoint_includes_session_run_monitor_liveness(self):
         from agentsassemble.gui import LiveAgentSessionRunMonitor
 

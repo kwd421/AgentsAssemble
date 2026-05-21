@@ -718,6 +718,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const status = String(health.status || "unknown");
   const agents = health.agents && typeof health.agents === "object" ? health.agents : {};
   const processes = health.processes && typeof health.processes === "object" ? health.processes : {};
+  const processMonitor = health.process_monitor && typeof health.process_monitor === "object" ? health.process_monitor : {};
   const connections = health.connections && typeof health.connections === "object" ? health.connections : {};
   const sessions = health.sessions && typeof health.sessions === "object" ? health.sessions : {};
   const sessionRuns = health.session_runs && typeof health.session_runs === "object" ? health.session_runs : {};
@@ -734,6 +735,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const activeSessionRuns = Math.max(0, Number(sessionRuns.active || 0));
   const sessionRunTotal = Math.max(0, Number(sessionRuns.total || 0));
   const attentionCount = liveAgentHealthAttentionCount(health);
+  const processMonitorSummary = liveAgentHealthProcessMonitorSummary(processMonitor);
   const sessionAttention = liveAgentHealthAttentionSummary(sessions.attention, "session attention");
   const sessionRunAttention = liveAgentHealthAttentionSummary(sessionRuns.attention, "session-run attention");
   const sessionRunRetry = liveAgentHealthSessionRunRetrySummary(sessionRuns.items);
@@ -748,6 +750,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
     `sessions ${escapeHtml(`${readySessions}/${sessionTotal}`)} ready · ` +
     `session-runs ${escapeHtml(`${activeSessionRuns}/${sessionRunTotal}`)} active · ` +
     `attention ${escapeHtml(attentionCount)}` +
+    (processMonitorSummary ? `<br><small>${escapeHtml(processMonitorSummary)}</small>` : "") +
     (sessionAttention ? `<br><small>${escapeHtml(sessionAttention)}</small>` : "") +
     (sessionRunAttention ? `<br><small>${escapeHtml(sessionRunAttention)}</small>` : "") +
     (sessionRunRetry ? `<br><small>${escapeHtml(sessionRunRetry)}</small>` : "") +
@@ -878,11 +881,28 @@ function renderLiveAgentDiscoveryRow(discovery) {
 }
 
 function liveAgentHealthAttentionCount(health) {
-  const sections = [health?.agents, health?.processes, health?.connections, health?.sessions, health?.session_runs, health?.session_run_monitor];
+  const sections = [health?.agents, health?.processes, health?.process_monitor, health?.connections, health?.sessions, health?.session_runs, health?.session_run_monitor];
   return sections.reduce((count, section) => {
     const attention = section && typeof section === "object" && Array.isArray(section.attention) ? section.attention : [];
     return count + attention.length;
   }, 0);
+}
+
+function liveAgentHealthProcessMonitorSummary(value) {
+  if (!value || typeof value !== "object" || !("running" in value || "last_status" in value || "last_tick_at")) return "";
+  const parts = [`process monitor ${value.running === true ? "running" : "stopped"}`];
+  const intervalSeconds = Number(value.interval_seconds || 0);
+  const lastStatus = String(value.last_status || "").trim();
+  const lastGroupCount = Number(value.last_group_count || 0);
+  const lastTickAt = String(value.last_tick_at || "").trim();
+  const lastErrorType = String(value.last_error_type || "").trim();
+  const intervalLabel = liveAgentHealthSecondsLabel(intervalSeconds);
+  if (intervalLabel) parts.push(`interval ${intervalLabel}`);
+  if (/^[a-z_]{1,32}$/.test(lastStatus)) parts.push(`last ${lastStatus}`);
+  if (Number.isFinite(lastGroupCount)) parts.push(`groups ${Math.max(0, Math.floor(lastGroupCount))}`);
+  if (/^[0-9T:+.\-Z]{1,64}$/.test(lastTickAt)) parts.push(`last tick ${lastTickAt}`);
+  if (/^[A-Za-z_][A-Za-z0-9_.]{0,79}$/.test(lastErrorType)) parts.push(`error ${lastErrorType}`);
+  return parts.join(" · ");
 }
 
 function liveAgentHealthAttentionSummary(value, label) {

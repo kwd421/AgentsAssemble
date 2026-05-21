@@ -2845,6 +2845,7 @@ def _session_smoke_summary(smoke: dict[str, object]) -> str:
 def _format_live_agent_health(payload: dict[str, object]) -> str:
     agents = payload.get("agents") if isinstance(payload.get("agents"), dict) else {}
     processes = payload.get("processes") if isinstance(payload.get("processes"), dict) else {}
+    process_monitor = payload.get("process_monitor") if isinstance(payload.get("process_monitor"), dict) else {}
     connections = payload.get("connections") if isinstance(payload.get("connections"), dict) else {}
     sessions = payload.get("sessions") if isinstance(payload.get("sessions"), dict) else {}
     session_runs = payload.get("session_runs") if isinstance(payload.get("session_runs"), dict) else {}
@@ -2873,6 +2874,9 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
         ),
         f"process attention: {_attention_summary(process_attention)}",
     ]
+    process_monitor_summary = _process_monitor_summary(process_monitor)
+    if process_monitor_summary:
+        lines.append(f"process monitor: {process_monitor_summary}")
     if process_reasons:
         lines.append(f"process reasons: {process_reasons}")
     lines.extend(
@@ -4352,6 +4356,30 @@ def _format_live_agent_process_offline_attention(value: object) -> str:
         if agent_id and status:
             labels.append(f"{status} {agent_id}")
     return ", ".join(labels)
+
+
+def _process_monitor_summary(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    monitor_fields = {"running", "interval_seconds", "last_tick_at", "last_status", "last_group_count", "last_error_type"}
+    if not any(field in value for field in monitor_fields):
+        return ""
+    running = "true" if value.get("running") is True else "false"
+    parts = [f"running {running}"]
+    interval_seconds = _safe_nonnegative_float(value.get("interval_seconds"))
+    if interval_seconds > 0:
+        parts.append(f"interval {_format_seconds(interval_seconds)}")
+    last_status = str(value.get("last_status") or "").strip()
+    if last_status:
+        parts.append(f"last {last_status}")
+    parts.append(f"groups {_safe_int(value.get('last_group_count'))}")
+    last_tick_at = str(value.get("last_tick_at") or "").strip()
+    if last_tick_at:
+        parts.append(f"last tick {last_tick_at}")
+    last_error_type = str(value.get("last_error_type") or "").strip()
+    if last_error_type:
+        parts.append(f"error {last_error_type}")
+    return "; ".join(parts)
 
 
 def _session_run_monitor_summary(value: object) -> str:

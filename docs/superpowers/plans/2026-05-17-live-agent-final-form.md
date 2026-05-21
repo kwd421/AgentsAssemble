@@ -4167,6 +4167,39 @@ The GUI runtime health line and `assemble live-agent health` summary show compac
 
 ---
 
+### Task 118: Process Supervisor Monitor Liveness Surface
+
+**Goal:** Make the backend process supervisor watchdog loop visible through health/operator surfaces, so long-running resident sessions can prove that crash detection, due restart handling, and stale-watchdog checks are actively being watched.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_processes.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add process-monitor RED coverage**
+
+Cover monitor success/failure snapshots, health inclusion and degradation, CLI output, GUI runtime rendering, docs text, and static asset hooks. Missing monitor payloads remain tolerated for older/fake health payloads.
+
+- [x] **Step 2: Add monitor-owned liveness snapshot**
+
+`LiveAgentProcessSupervisor.monitor_snapshot()` now exposes thread-safe `running`, `interval_seconds`, `last_tick_at`, `last_status`, `last_group_count`, and safe `last_error_type`. Successful ticks update group count and clear stale failure type. Failed ticks record only safe exception type, reset group count to zero, and keep the loop alive.
+
+- [x] **Step 3: Expose monitor evidence without mutating health**
+
+`/api/live-agent-health` includes `process_monitor` when the supervisor supports it. Failed process-monitor liveness degrades health through compact attention, while health reads remain read-only and do not refresh groups, start due restarts, call providers, append operations, or scrape raw exception details.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

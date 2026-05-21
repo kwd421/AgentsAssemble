@@ -2097,6 +2097,14 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
       status: "degraded",
       agents: { total: 2, live: 1, counts: { online: 1, working: 0, error: 0, stale: 1, offline: 0 }, attention: ["agent-b"] },
       processes: { total: 2, counts: { running: 1, restarting: 0, error: 1, unknown: 0, stopped: 0 }, attention: ["resident-main"] },
+      process_monitor: {
+        running: true,
+        interval_seconds: 2.5,
+        last_tick_at: "2026-05-21T10:09:00+00:00",
+        last_status: "ok",
+        last_group_count: 2,
+        last_error_type: "",
+      },
       connections: { expected: 2, connected: 1, attention: ["resident-main:agent-b:stale"] },
       sessions: { total: 2, ready: 0, degraded: 2, attention: ["resident-m1:resident-main:meeting:duplicate_active_group"] },
       session_runs: {
@@ -2140,6 +2148,8 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.match(health.textContent, /runtime health degraded/);
   assert.match(health.textContent, /agents 1\/2 live/);
   assert.match(health.textContent, /processes 1\/2 running/);
+  assert.match(health.textContent, /process monitor running/);
+  assert.match(health.textContent, /groups 2/);
   assert.match(health.textContent, /connections 1\/2 connected/);
   assert.match(health.textContent, /sessions 0\/2 ready/);
   assert.match(health.textContent, /session-runs 1\/2 active/);

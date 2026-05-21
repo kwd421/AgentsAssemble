@@ -2380,6 +2380,12 @@ def live_agent_health_payload(
         groups,
         diagnostic_group_ids=diagnostic_group_ids,
     )
+    process_monitor_summary = _live_agent_process_monitor_health_summary(process_supervisor)
+    process_monitor_attention = (
+        process_monitor_summary.get("attention")
+        if isinstance(process_monitor_summary.get("attention"), list)
+        else []
+    )
     session_run_summary = _live_agent_session_run_health_summary(output_root)
     session_run_monitor_summary = _live_agent_session_run_monitor_health_summary(session_run_monitor)
     session_run_monitor_attention = (
@@ -2391,6 +2397,7 @@ def live_agent_health_payload(
         "degraded"
         if agent_summary["attention"]
         or process_summary["attention"]
+        or process_monitor_attention
         or connection_summary["attention"]
         or session_summary["attention"]
         or session_run_summary["attention"]
@@ -2405,6 +2412,8 @@ def live_agent_health_payload(
         "sessions": session_summary,
         "session_runs": session_run_summary,
     }
+    if process_monitor_summary:
+        payload["process_monitor"] = process_monitor_summary
     if session_run_monitor_summary:
         payload["session_run_monitor"] = session_run_monitor_summary
     return payload
@@ -2448,6 +2457,57 @@ def _live_agent_process_health_summary(
             if reason:
                 reasons[group_id] = reason
     return {"total": len(groups), "counts": counts, "attention": attention, "meeting_ids": meeting_ids, "reasons": reasons}
+
+
+def _live_agent_process_monitor_health_summary(process_supervisor: LiveAgentProcessSupervisor) -> dict[str, object]:
+    snapshot_fn = getattr(process_supervisor, "monitor_snapshot", None)
+    if not callable(snapshot_fn):
+        return {}
+    try:
+        raw = snapshot_fn()
+    except Exception as error:
+        raw = {
+            "running": False,
+            "interval_seconds": 0,
+            "last_tick_at": "",
+            "last_status": "failed",
+            "last_group_count": 0,
+            "last_error_type": _safe_session_run_monitor_error_type(error),
+        }
+    last_status = _safe_monitor_health_status(raw.get("last_status"))
+    last_error_type = _safe_monitor_health_error_type(raw.get("last_error_type"))
+    attention = []
+    if last_status == "failed":
+        attention.append(f"failed:{last_error_type or 'Exception'}")
+    return {
+        "running": raw.get("running") is True,
+        "interval_seconds": _safe_process_monitor_interval_value(raw.get("interval_seconds")),
+        "last_tick_at": _safe_session_run_health_timestamp(raw.get("last_tick_at")),
+        "last_status": last_status,
+        "last_group_count": _safe_session_run_health_int(raw.get("last_group_count")),
+        "last_error_type": last_error_type,
+        "attention": attention,
+    }
+
+
+def _safe_monitor_health_status(value: object) -> str:
+    status = clean_lobby_text(value, limit=64)
+    return status if status in {"not_started", "ok", "failed"} else "unknown"
+
+
+def _safe_monitor_health_error_type(value: object) -> str:
+    error_type = clean_lobby_text(value, limit=80)
+    return error_type if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,79}", error_type) else ""
+
+
+def _safe_process_monitor_interval_value(value: object) -> float:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(seconds):
+        return 0.0
+    return max(0.01, seconds)
 
 
 def _live_agent_process_health_reason(group: dict[str, object]) -> dict[str, str]:

@@ -3488,6 +3488,64 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(restarted[0]["status"], "running")
         self.assertEqual(restarted[0]["pid"], 8301)
 
+    def test_monitor_snapshot_records_successful_tick_liveness(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            supervisor = LiveAgentProcessSupervisor(root)
+            try:
+                supervisor.start_monitor(interval_seconds=0.01)
+                deadline = time.monotonic() + 1
+                snapshot = {}
+                while time.monotonic() < deadline:
+                    snapshot = supervisor.monitor_snapshot()
+                    if snapshot.get("last_status") == "ok":
+                        break
+                    time.sleep(0.01)
+                running_snapshot = supervisor.monitor_snapshot()
+            finally:
+                supervisor.stop_monitor()
+                stopped_snapshot = supervisor.monitor_snapshot()
+
+        self.assertEqual(snapshot["last_status"], "ok")
+        self.assertEqual(snapshot["last_group_count"], 0)
+        self.assertRegex(str(snapshot["last_tick_at"]), r"^\d{4}-\d{2}-\d{2}T")
+        self.assertEqual(snapshot["last_error_type"], "")
+        self.assertEqual(running_snapshot["running"], True)
+        self.assertEqual(stopped_snapshot["running"], False)
+
+    def test_monitor_snapshot_records_safe_failure_and_keeps_loop_alive(self):
+        class FailingSupervisor(_LiveAgentProcessSupervisor):
+            def __init__(self, output_root):
+                super().__init__(output_root, preflight_checker=_ok_preflight)
+                self.calls = 0
+
+            def _refresh_running_groups(self):
+                self.calls += 1
+                raise RuntimeError("failed reading /Users/me/private/live-agents.secret.json")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            supervisor = FailingSupervisor(Path(temp_dir))
+            try:
+                supervisor.start_monitor(interval_seconds=0.01)
+                deadline = time.monotonic() + 1
+                snapshot = {}
+                while time.monotonic() < deadline:
+                    snapshot = supervisor.monitor_snapshot()
+                    if snapshot.get("last_status") == "failed":
+                        break
+                    time.sleep(0.01)
+                running_snapshot = supervisor.monitor_snapshot()
+            finally:
+                supervisor.stop_monitor()
+                supervisor.close()
+
+        self.assertGreaterEqual(supervisor.calls, 1)
+        self.assertEqual(snapshot["last_status"], "failed")
+        self.assertEqual(snapshot["last_error_type"], "RuntimeError")
+        self.assertEqual(snapshot["last_group_count"], 0)
+        self.assertNotIn("/Users/me/private", json.dumps(snapshot, ensure_ascii=False))
+        self.assertEqual(running_snapshot["running"], True)
+
     def test_stop_monitor_prevents_blocked_refresh_after_stop_request(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

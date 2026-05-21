@@ -102,6 +102,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("GUI `상주 실행` panel reads `/api/live-agent-health`", doc)
         self.assertIn("meeting-owned session readiness", doc)
         self.assertIn("active/total durable session-runs", doc)
+        self.assertIn("process monitor liveness evidence in `process_monitor`", doc)
         self.assertIn("sessions.items", doc)
         self.assertIn("durable session-run retry evidence in `session_runs`", doc)
         self.assertIn("session-run monitor liveness evidence in `session_run_monitor`", doc)

@@ -3390,6 +3390,14 @@ class CliTimeoutTests(unittest.TestCase):
                     },
                 },
             },
+            "process_monitor": {
+                "running": True,
+                "interval_seconds": 2.5,
+                "last_tick_at": "2026-05-21T10:09:00+00:00",
+                "last_status": "ok",
+                "last_group_count": 7,
+                "last_error_type": "",
+            },
             "connections": {
                 "expected": 2,
                 "connected": 1,
@@ -3441,6 +3449,9 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("online 1", output)
         self.assertIn("agent attention: error-agent, offline-agent", output)
         self.assertIn("processes: 1 running / 7 total", output)
+        self.assertIn("process monitor: running true", output)
+        self.assertIn("groups 7", output)
+        self.assertIn("last tick 2026-05-21T10:09:00+00:00", output)
         self.assertIn("process attention: crashed-group, orphan-group", output)
         self.assertIn(
             (

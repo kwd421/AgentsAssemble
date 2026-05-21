@@ -74,6 +74,11 @@ class LiveAgentProcessSupervisor:
         self._lock = threading.Lock()
         self._monitor_stop = threading.Event()
         self._monitor_thread: threading.Thread | None = None
+        self._monitor_interval_seconds = 0.0
+        self._monitor_last_tick_at = ""
+        self._monitor_last_status = "not_started"
+        self._monitor_last_group_count = 0
+        self._monitor_last_error_type = ""
         if self._mark_orphan_running_groups_unknown():
             self._write_records()
 
@@ -210,6 +215,7 @@ class LiveAgentProcessSupervisor:
             if self._monitor_thread is not None and self._monitor_thread.is_alive():
                 return
             self._monitor_stop = threading.Event()
+            self._monitor_interval_seconds = interval
             thread = threading.Thread(
                 target=self._monitor_loop,
                 args=(self._monitor_stop, interval),
@@ -226,6 +232,18 @@ class LiveAgentProcessSupervisor:
             self._monitor_thread = None
         if thread is not None and thread.is_alive():
             thread.join(timeout=max(0.0, timeout_seconds))
+
+    def monitor_snapshot(self) -> dict[str, object]:
+        with self._lock:
+            thread = self._monitor_thread
+            return {
+                "running": bool(thread is not None and thread.is_alive()),
+                "interval_seconds": self._monitor_interval_seconds,
+                "last_tick_at": self._monitor_last_tick_at,
+                "last_status": self._monitor_last_status,
+                "last_group_count": self._monitor_last_group_count,
+                "last_error_type": self._monitor_last_error_type,
+            }
 
     def close(self) -> None:
         self.stop_monitor()
@@ -247,10 +265,27 @@ class LiveAgentProcessSupervisor:
 
     def _monitor_loop(self, stop_event: threading.Event, interval_seconds: float) -> None:
         while not stop_event.wait(interval_seconds):
-            with self._lock:
-                if stop_event.is_set():
-                    return
-                self._refresh_running_groups()
+            try:
+                with self._lock:
+                    if stop_event.is_set():
+                        return
+                    self._refresh_running_groups()
+                    self._record_monitor_success_unlocked()
+            except Exception as error:
+                self._record_monitor_failure(error)
+
+    def _record_monitor_success_unlocked(self) -> None:
+        self._monitor_last_tick_at = self.now_fn().isoformat()
+        self._monitor_last_status = "ok"
+        self._monitor_last_group_count = len(self._records)
+        self._monitor_last_error_type = ""
+
+    def _record_monitor_failure(self, error: Exception) -> None:
+        with self._lock:
+            self._monitor_last_tick_at = self.now_fn().isoformat()
+            self._monitor_last_status = "failed"
+            self._monitor_last_group_count = 0
+            self._monitor_last_error_type = _safe_monitor_error_type(error)
 
     def _refresh_running_groups(self) -> None:
         self._refresh_running_process_exits()
@@ -1036,6 +1071,11 @@ def _safe_restart_failure_message(error: Exception) -> str:
     if not message:
         message = error.__class__.__name__
     return f"Restart failed: {message}"
+
+
+def _safe_monitor_error_type(error: Exception) -> str:
+    error_type = clean_lobby_text(type(error).__name__, limit=80)
+    return error_type if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,79}", error_type) else "Exception"
 
 
 def _append_process_error(previous: object, suffix: str) -> str:
