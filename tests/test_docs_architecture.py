@@ -328,6 +328,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("assemble live-agent session-runs resume", doc)
         self.assertIn("assemble live-agent session-runs wait", doc)
         self.assertIn("/api/live-agent-session-runs/<run_id>/retry-now", doc)
+        self.assertIn("/api/live-agent-session-runs/retry-now", doc)
+        self.assertIn("exact `run_id` always wins", doc)
         self.assertIn("/api/live-agent-session-runs/<run_id>/pause", doc)
         self.assertIn("/api/live-agent-session-runs/<run_id>/resume", doc)
         self.assertIn("session_run.retry_now", doc)

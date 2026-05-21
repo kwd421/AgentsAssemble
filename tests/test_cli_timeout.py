@@ -969,6 +969,29 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.run_id, "retry-later")
         self.assertTrue(args.as_json)
 
+    def test_live_agent_session_runs_retry_now_parses_meeting_group_target(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "session-runs",
+                "retry-now",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "resident-m1",
+                "--group-id",
+                "resident-main",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "session-runs")
+        self.assertEqual(args.live_agent_session_runs_command, "retry-now")
+        self.assertEqual(args.run_id, "")
+        self.assertEqual(args.meeting_id, "resident-m1")
+        self.assertEqual(args.group_id, "resident-main")
+        self.assertTrue(args.as_json)
+
     def test_live_agent_session_runs_pause_resume_parse_run_id_and_json(self):
         pause_args = build_parser().parse_args(
             [
@@ -1111,6 +1134,101 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("Scheduled live-agent session run retry", stdout.getvalue())
         self.assertIn("retry-later ensure degraded resident-m1 resident-main active", stdout.getvalue())
+
+    def test_live_agent_session_runs_retry_now_posts_meeting_group_target(self):
+        payload = {
+            "status": "reconciled",
+            "session_run": {
+                "run_id": "latest-run",
+                "action": "ensure",
+                "status": "ready",
+                "active": True,
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "phase": "recover",
+            },
+            "results": [{"run_id": "latest-run", "status": "ready"}],
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()) as stdout:
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "retry-now",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-session-runs/retry-now",
+            method="POST",
+            payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            timeout_seconds=10.0,
+        )
+        self.assertIn("Retried live-agent session run retry", stdout.getvalue())
+        self.assertIn("latest-run ensure ready resident-m1 resident-main active", stdout.getvalue())
+
+    def test_live_agent_session_runs_retry_now_run_id_takes_precedence_over_meeting_group(self):
+        payload = {
+            "status": "scheduled",
+            "session_run": {
+                "run_id": "exact-run",
+                "action": "ensure",
+                "status": "degraded",
+                "active": True,
+                "meeting_id": "resident-m2",
+                "group_id": "resident-alt",
+                "phase": "retry_requested",
+            },
+            "results": [],
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "retry-now",
+                        "--server",
+                        "http://room.local",
+                        "--run-id",
+                        "exact-run",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-session-runs/exact-run/retry-now",
+            method="POST",
+            payload={},
+            timeout_seconds=10.0,
+        )
+
+    def test_live_agent_session_runs_retry_now_refuses_missing_target(self):
+        with patch("sys.stderr", StringIO()) as stderr:
+            exit_code = main(
+                [
+                    "live-agent",
+                    "session-runs",
+                    "retry-now",
+                    "--server",
+                    "http://room.local",
+                ]
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("requires --run-id or both --meeting-id and --group-id", stderr.getvalue())
 
     def test_live_agent_session_runs_retry_now_prints_skipped_result(self):
         payload = {

@@ -9073,6 +9073,241 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(operations_payload["operations"][-1]["operation"], "session_run.retry_now")
         self.assertEqual(operations_payload["operations"][-1]["target_id"], target["run_id"])
 
+    def test_live_agent_session_run_retry_now_api_resolves_latest_matching_meeting_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_run_controller = LiveAgentSessionRunController(root)
+            older_matching = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                older_matching["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+            target = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            unrelated = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m2", "group_id": "resident-alt"},
+            )
+            session_run_controller.finish_run(
+                unrelated["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m2",
+                    "group_id": "resident-alt",
+                    "action": "recover",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, session_run_controller=session_run_controller),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/retry-now",
+                    data=json.dumps({"meeting_id": "resident-m1", "group_id": "resident-main"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch(
+                    "agentsassemble.gui.live_agent_session_ensure_payload",
+                    return_value={
+                        "status": "ready",
+                        "meeting_id": "resident-m1",
+                        "group_id": "resident-main",
+                        "action": "recover",
+                    },
+                ) as ensure_payload:
+                    with urlopen(request, timeout=4) as response:
+                        retry_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(retry_payload["status"], "reconciled")
+        self.assertEqual(retry_payload["session_run"]["run_id"], target["run_id"])
+        self.assertEqual(retry_payload["session_run"]["status"], "ready")
+        ensure_payload.assert_called_once()
+        self.assertEqual(operations_payload["operations"][-1]["operation"], "session_run.retry_now")
+        self.assertEqual(operations_payload["operations"][-1]["target_id"], target["run_id"])
+        self.assertEqual(operations_payload["operations"][-1]["details"]["meeting_id"], "resident-m1")
+        self.assertEqual(operations_payload["operations"][-1]["details"]["group_id"], "resident-main")
+
+    def test_live_agent_session_run_retry_now_api_run_id_takes_precedence_over_meeting_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_run_controller = LiveAgentSessionRunController(root)
+            exact = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m2", "group_id": "resident-alt"},
+            )
+            session_run_controller.finish_run(
+                exact["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m2",
+                    "group_id": "resident-alt",
+                    "action": "recover",
+                },
+            )
+            matching = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                matching["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, session_run_controller=session_run_controller),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/retry-now",
+                    data=json.dumps(
+                        {
+                            "run_id": exact["run_id"],
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch(
+                    "agentsassemble.gui.live_agent_session_ensure_payload",
+                    return_value={
+                        "status": "ready",
+                        "meeting_id": "resident-m2",
+                        "group_id": "resident-alt",
+                        "action": "recover",
+                    },
+                ):
+                    with urlopen(request, timeout=4) as response:
+                        retry_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(retry_payload["status"], "reconciled")
+        self.assertEqual(retry_payload["session_run"]["run_id"], exact["run_id"])
+        self.assertEqual(retry_payload["session_run"]["meeting_id"], "resident-m2")
+        self.assertEqual(retry_payload["session_run"]["group_id"], "resident-alt")
+        self.assertEqual(operations_payload["operations"][-1]["target_id"], exact["run_id"])
+
+    def test_live_agent_session_run_retry_now_api_target_skips_current_ready_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_run_controller = LiveAgentSessionRunController(root)
+            target = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, session_run_controller=session_run_controller),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/retry-now",
+                    data=json.dumps({"meeting_id": "resident-m1", "group_id": "resident-main"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch("agentsassemble.gui.live_agent_session_readiness_payload", return_value={"status": "ready"}):
+                    with patch("agentsassemble.gui.live_agent_session_ensure_payload") as ensure_payload:
+                        with urlopen(request, timeout=4) as response:
+                            retry_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(retry_payload["status"], "skipped")
+        self.assertEqual(retry_payload["session_run"]["run_id"], target["run_id"])
+        self.assertEqual(retry_payload["results"], [])
+        ensure_payload.assert_not_called()
+        self.assertEqual(operations_payload["operations"][-1]["status"], "success")
+        self.assertEqual(operations_payload["operations"][-1]["details"]["skipped_reason"], "already_ready")
+
+    def test_live_agent_session_run_retry_now_api_target_refuses_without_matching_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_run_controller = LiveAgentSessionRunController(root)
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, session_run_controller=session_run_controller),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/retry-now",
+                    data=json.dumps({"meeting_id": "resident-m1", "group_id": "resident-main"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as caught:
+                    urlopen(request, timeout=4)
+                error_payload = json.loads(caught.exception.read().decode("utf-8"))
+                caught.exception.close()
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(caught.exception.code, 400)
+        self.assertIn("No matching live-agent session run", error_payload["error"])
+        self.assertEqual(operations_payload["operations"][-1]["operation"], "session_run.retry_now")
+        self.assertEqual(operations_payload["operations"][-1]["status"], "failed")
+        self.assertEqual(operations_payload["operations"][-1]["details"]["meeting_id"], "resident-m1")
+        self.assertEqual(operations_payload["operations"][-1]["details"]["group_id"], "resident-main")
+
     def test_live_agent_session_run_retry_now_api_skips_ready_current_ready_without_mutating(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -1299,12 +1299,17 @@ python3 -m agentsassemble.cli live-agent session-runs list \
   --include-readiness
 ```
 
-Use `assemble live-agent session-runs retry-now` when a degraded durable run is visible but its `next_reconcile_at` is still in the future. The command targets one run id, posts the same operator control as the GUI row action, and prints the returned public session-run summary:
+Use `assemble live-agent session-runs retry-now` when a degraded durable run is visible but its `next_reconcile_at` is still in the future. With `--run-id`, the command targets that exact run and posts the same operator control as the GUI row action to `/api/live-agent-session-runs/<run_id>/retry-now`. Without the exact run id, use both `--meeting-id` and `--group-id`; the CLI posts to `/api/live-agent-session-runs/retry-now`, the server resolves the latest matching meeting/group session-run before any retryability filtering, and exact `run_id` always wins if both target forms are supplied. The command prints the returned public session-run summary:
 
 ```bash
 python3 -m agentsassemble.cli live-agent session-runs retry-now \
   --server http://127.0.0.1:8765 \
   --run-id <session-run-id>
+
+python3 -m agentsassemble.cli live-agent session-runs retry-now \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-m1 \
+  --group-id local-cli-group
 ```
 
 Use `assemble live-agent session-runs pause` and `assemble live-agent session-runs resume` when automation should stop or restart reconciling one durable session intent without killing the live-agent process group:

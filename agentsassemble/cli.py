@@ -960,7 +960,9 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[live_server],
         help="Schedule an active durable live-agent session run for immediate retry.",
     )
-    live_session_runs_retry_now.add_argument("--run-id", required=True, help="Durable session-run id to retry now.")
+    live_session_runs_retry_now.add_argument("--run-id", default="", help="Durable session-run id to retry now.")
+    live_session_runs_retry_now.add_argument("--meeting-id", default="", help="Meeting id for the latest matching durable session run.")
+    live_session_runs_retry_now.add_argument("--group-id", default="", help="Group id for the latest matching durable session run.")
     live_session_runs_retry_now.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON retry payload.")
     live_session_runs_pause = live_session_runs_subparsers.add_parser(
         "pause",
@@ -3240,13 +3242,23 @@ def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
         _print_live_agent_session_runs_payload(payload, as_json=args.as_json)
         return 0
     if args.live_agent_session_runs_command == "retry-now":
+        _validate_live_agent_session_runs_retry_now_target(args)
+        run_id = str(args.run_id or "").strip()
+        path = "/api/live-agent-session-runs/retry-now"
+        payload: dict[str, object] = {
+            "meeting_id": str(args.meeting_id or "").strip(),
+            "group_id": str(args.group_id or "").strip(),
+        }
+        if run_id:
+            path = f"/api/live-agent-session-runs/{urllib.parse.quote(run_id, safe='')}/retry-now"
+            payload = {}
         payload = _request_json(
             _server_url(
                 args.server,
-                f"/api/live-agent-session-runs/{urllib.parse.quote(str(args.run_id or '').strip(), safe='')}/retry-now",
+                path,
             ),
             method="POST",
-            payload={},
+            payload=payload,
             timeout_seconds=10.0,
         )
         _print_live_agent_session_runs_retry_now_payload(payload, as_json=args.as_json)
@@ -3386,6 +3398,14 @@ def _validate_live_agent_session_runs_wait_target(args: argparse.Namespace) -> N
     if str(args.meeting_id or "").strip() and str(args.group_id or "").strip():
         return
     raise ValueError("live-agent session-runs wait requires --run-id or both --meeting-id and --group-id.")
+
+
+def _validate_live_agent_session_runs_retry_now_target(args: argparse.Namespace) -> None:
+    if str(args.run_id or "").strip():
+        return
+    if str(args.meeting_id or "").strip() and str(args.group_id or "").strip():
+        return
+    raise ValueError("live-agent session-runs retry-now requires --run-id or both --meeting-id and --group-id.")
 
 
 def _live_agent_session_runs_wait_requires_readiness(args: argparse.Namespace) -> bool:

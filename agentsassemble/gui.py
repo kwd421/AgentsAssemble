@@ -4369,6 +4369,30 @@ def _session_run_retry_now_operation_status(session_run: dict[str, object], *, r
     return "success" if status == "ready" else "degraded"
 
 
+def _session_run_retry_target_details(payload: dict[str, object]) -> dict[str, str]:
+    return {
+        "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
+        "group_id": clean_lobby_text(payload.get("group_id"), limit=128),
+    }
+
+
+def _latest_session_run_for_retry_target(
+    session_run_controller: LiveAgentSessionRunController,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    details = _session_run_retry_target_details(payload)
+    if not details["meeting_id"] or not details["group_id"]:
+        raise ValueError("Missing session run id")
+    runs = session_run_controller.list_runs(
+        limit=1,
+        meeting_id=details["meeting_id"],
+        group_id=details["group_id"],
+    )
+    if not runs:
+        raise ValueError("No matching live-agent session run for meeting group target.")
+    return runs[-1]
+
+
 def _session_start_operation_summary(session: dict[str, object]) -> str:
     if _operation_result_status(session.get("status")) != "ready":
         return "resident live-agent session is still connecting"
@@ -4931,17 +4955,13 @@ def _make_handler(
                 if payload is None:
                     return
                 run_id = session_run_retry_now_id or str(payload.get("run_id") or "").strip()
-                if not run_id:
-                    record_live_agent_operation(
-                        output_root,
-                        operation="session_run.retry_now",
-                        status="failed",
-                        error="Missing session run id",
-                    )
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Missing session run id")
-                    return
+                retry_target_details = _session_run_retry_target_details(payload)
                 try:
-                    current_run = live_agent_session_run_controller.get_run(run_id)
+                    if run_id:
+                        current_run = live_agent_session_run_controller.get_run(run_id)
+                    else:
+                        current_run = _latest_session_run_for_retry_target(live_agent_session_run_controller, payload)
+                        run_id = str(current_run.get("run_id") or "")
                     if not _session_run_monitor_should_reconcile(
                         output_root,
                         live_agent_process_supervisor,
@@ -4978,15 +4998,17 @@ def _make_handler(
                     )
                 except (OSError, ValueError) as error:
                     safe_error = _session_ensure_error_message(error)
+                    failed_details = {"session_run_id": run_id}
+                    failed_details.update({key: value for key, value in retry_target_details.items() if value})
                     record_live_agent_operation(
                         output_root,
                         operation="session_run.retry_now",
                         status="failed",
-                        target_id=run_id,
+                        target_id=run_id or retry_target_details["meeting_id"],
                         error=safe_error,
-                        details={"session_run_id": run_id},
+                        details=failed_details,
                     )
-                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={"session_run_id": run_id})
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=failed_details)
                     return
                 session_run = results[-1] if results else scheduled_run
                 response_status = "reconciled" if results else "scheduled"
