@@ -4870,6 +4870,34 @@ Operator docs and roadmap now state that self-service wrappers report ack-comman
 
 ---
 
+## Task 142: Report self-service reply launch failures
+
+**Goal:** Keep checked-in self-service wrappers observable when lobby or official reply commands cannot be launched, time out, or fail, instead of leaving only a `working` heartbeat or a child traceback.
+
+**Files:**
+- Modify: `scripts/my_self_service_agent.py`
+- Modify: `agentsassemble/live_agent_smoke.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_self_service_example.py`
+- Test: `tests/test_live_agent_smoke.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED reply launch failure coverage**
+
+Cover the checked-in self-service wrapper and the generated credential-free smoke child for missing lobby `say` and official `official-reply` executables. The resident must report `status: "error"` with `lobby reply failed` or `official reply failed`, preserve the matching lobby/live cursor, and avoid posting an unrelated reply.
+
+- [x] **Step 2: Run reply commands through the safe command boundary**
+
+`scripts/my_self_service_agent.py` and the generated session-smoke self-service child now run lobby and official reply command arrays through the existing optional command runner. Launch exceptions, timeouts, and non-zero exits all fall into the existing cursor-bearing reply failure heartbeats while successful replies keep the previous `online` heartbeat behavior.
+
+- [x] **Step 3: Keep docs aligned with reply failure evidence**
+
+Operator docs and roadmap now state that self-service wrappers report lobby and official reply command failures with cursor-bearing `error` heartbeats.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

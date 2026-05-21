@@ -134,6 +134,160 @@ class LiveAgentSmokeTests(unittest.TestCase):
         terminal_support.start()
         self.addCleanup(terminal_support.stop)
 
+    def _session_smoke_self_service_reply_launch_failure(self, action: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            fake_cli = root / "fake_cli.py"
+            calls_path = root / "calls.jsonl"
+            state_path = root / "state.txt"
+            fake_cli.write_text(
+                "\n".join(
+                    [
+                        "import json, os, sys",
+                        "calls_path = os.environ['SELF_SERVICE_CALLS_PATH']",
+                        "state_path = os.environ['SELF_SERVICE_STATE_PATH']",
+                        "args = sys.argv[1:]",
+                        "with open(calls_path, 'a', encoding='utf-8') as handle:",
+                        "    handle.write(json.dumps(args) + '\\n')",
+                        "command = args[0] if args else ''",
+                        "if command == 'room':",
+                        "    print(json.dumps({'agent': {'engagement_mode': 'always'}}))",
+                        "elif command == 'wait-next':",
+                        "    if os.path.exists(state_path):",
+                        "        print(json.dumps({'status': 'idle'}))",
+                        "    else:",
+                        "        open(state_path, 'w', encoding='utf-8').write('seen')",
+                        f"        print(json.dumps({self._session_smoke_launch_failure_wait_payload(action)!r}))",
+                        "elif command == 'heartbeat':",
+                        "    print(json.dumps({'status': 'ok'}))",
+                        "elif command in {'say', 'official-reply'}:",
+                        "    sys.exit(9)",
+                        "else:",
+                        "    sys.exit(2)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            base = [sys.executable, str(fake_cli)]
+            missing_say = [
+                "/definitely/missing/agentsassemble-session-smoke-say",
+                "--source-event-id",
+                "{source_event_id}",
+                "--auto-chain-depth",
+                "{auto_chain_depth}",
+                "--",
+                "{message}",
+            ]
+            working_say = [*base, "say", "--source-event-id", "{source_event_id}", "--auto-chain-depth", "{auto_chain_depth}", "--", "{message}"]
+            missing_official_reply = [
+                "/definitely/missing/agentsassemble-session-smoke-official-reply",
+                "--meeting-id",
+                "{meeting_id}",
+                "--source-event-id",
+                "{source_event_id}",
+                "--",
+                "{message}",
+            ]
+            working_official_reply = [
+                *base,
+                "official-reply",
+                "--meeting-id",
+                "{meeting_id}",
+                "--source-event-id",
+                "{source_event_id}",
+                "--",
+                "{message}",
+            ]
+            env = os.environ.copy()
+            env.update(
+                {
+                    "SELF_SERVICE_CALLS_PATH": str(calls_path),
+                    "SELF_SERVICE_STATE_PATH": str(state_path),
+                    "AGENTSASSEMBLE_MEETING_ID": "meeting-1",
+                    "AGENTSASSEMBLE_POLL_INTERVAL": "0.05",
+                    "AGENTSASSEMBLE_ROOM_COMMAND": shlex.join([*base, "room"]),
+                    "AGENTSASSEMBLE_WAIT_NEXT_COMMAND": shlex.join([*base, "wait-next", "--json"]),
+                    "AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE": shlex.join(missing_say if action == "lobby" else working_say),
+                    "AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE": shlex.join(
+                        missing_official_reply if action == "official_turn" else working_official_reply
+                    ),
+                    "AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE": shlex.join(
+                        [
+                            *base,
+                            "heartbeat",
+                            "--status",
+                            "{status}",
+                            "--last-error={last_error}",
+                            "--last-reply-at={last_reply_at}",
+                            "--last-observed-event-id={last_observed_event_id}",
+                            "--last-observed-live-event-id={last_observed_live_event_id}",
+                            "--json",
+                        ]
+                    ),
+                }
+            )
+            process = subprocess.Popen(
+                [sys.executable, "-u", "-c", _session_smoke_self_service_script("ok")],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 3
+                error_heartbeat = None
+                while time.monotonic() < deadline:
+                    if calls_path.exists():
+                        calls = [
+                            json.loads(line)
+                            for line in calls_path.read_text(encoding="utf-8").splitlines()
+                            if line.strip()
+                        ]
+                        for call in calls:
+                            if call and call[0] == "heartbeat" and call[call.index("--status") + 1] == "error":
+                                error_heartbeat = call
+                                break
+                        if error_heartbeat:
+                            break
+                    time.sleep(0.05)
+                if error_heartbeat is None:
+                    stderr = process.stderr.read() if process.poll() is not None and process.stderr is not None else ""
+                    self.fail(f"self_service script did not report {action} launch failure; stderr={stderr}")
+                return error_heartbeat
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=1)
+                if process.stderr is not None:
+                    process.stderr.close()
+
+    def _session_smoke_launch_failure_wait_payload(self, action: str) -> dict[str, object]:
+        if action == "official_turn":
+            return {
+                "status": "event",
+                "action": "official_turn",
+                "meeting_id": "meeting-1",
+                "source_event_id": "live-1",
+            }
+        return {"status": "event", "action": "lobby", "source_event_id": "evt-1"}
+
+    def test_session_smoke_self_service_script_reports_error_when_official_reply_launch_fails(self):
+        error_heartbeat = self._session_smoke_self_service_reply_launch_failure("official_turn")
+
+        self.assertIn("--last-error=official reply failed", error_heartbeat)
+        self.assertIn("--last-observed-live-event-id=live-1", error_heartbeat)
+
+    def test_session_smoke_self_service_script_reports_error_when_lobby_reply_launch_fails(self):
+        error_heartbeat = self._session_smoke_self_service_reply_launch_failure("lobby")
+
+        self.assertIn("--last-error=lobby reply failed", error_heartbeat)
+        self.assertIn("--last-observed-event-id=evt-1", error_heartbeat)
+
     def test_session_smoke_recover_killer_uses_non_graceful_signal(self):
         with patch("agentsassemble.live_agent_smoke.os.killpg") as killpg:
             _kill_session_smoke_process_group(1234)

@@ -470,6 +470,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("scripts/my_self_service_agent.py", doc)
         self.assertIn("reads `return_packet` actions through the returned `read_command` before running the `ack_command`", doc)
         self.assertIn("treats missing or failed return-packet reads as `error` heartbeats without acknowledging delivery", doc)
+        self.assertIn("treats failed lobby and official reply commands as cursor-bearing `error` heartbeats", doc)
         self.assertIn("treats failed return-packet and observe-lobby ack commands as `error` heartbeats with the matching cursor", doc)
         self.assertIn("self_service_official_reply_count", doc)
         self.assertIn("--wait-ready", doc)

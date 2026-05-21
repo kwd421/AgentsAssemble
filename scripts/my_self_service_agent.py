@@ -72,8 +72,8 @@ def _handle_event(payload: dict[str, object], *, message: str, default_meeting_i
                 "{message}": message,
             },
         )
-        reply = _run(_insert_before_message_separator(reply_command, "--json"), command_timeout)
-        if reply.returncode == 0:
+        reply = _run_optional(_insert_before_message_separator(reply_command, "--json"), command_timeout)
+        if reply is not None and reply.returncode == 0:
             _heartbeat(
                 "online",
                 last_error="",
@@ -96,8 +96,8 @@ def _handle_event(payload: dict[str, object], *, message: str, default_meeting_i
                 "{message}": message,
             },
         )
-        reply = _run(_insert_before_message_separator(say_command, "--json"), command_timeout)
-        if reply.returncode == 0:
+        reply = _run_optional(_insert_before_message_separator(say_command, "--json"), command_timeout)
+        if reply is not None and reply.returncode == 0:
             _heartbeat(
                 "online",
                 last_error="",
