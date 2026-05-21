@@ -4027,6 +4027,30 @@ Document that `list --include-readiness` is a non-blocking inspection command ov
 
 ---
 
+### Task 113: CLI Session-Run List Target Filters
+
+**Goal:** Let terminal operators, scripts, and other local agents list the durable run tail for one resident meeting/group without scanning the global session-run tail.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED parser/request coverage**
+
+Cover `assemble live-agent session-runs list --meeting-id <id> --group-id <id>` and the combined filtered readiness URL `/api/live-agent-session-runs?limit=N&meeting_id=...&group_id=...&include_readiness=1`.
+
+- [x] **Step 2: Reuse server-side filtered list semantics**
+
+Add optional list filters and forward them through `_live_agent_session_runs_path(... include_target_filters=True)`. Keep default list output unfiltered and keep exact `wait --run-id` requests from inheriting meeting/group filters.
+
+- [x] **Step 3: Document handoff inspection**
+
+Document that list filters are read-only inspection helpers over the existing server-filtered durable run API and can be combined with `--include-readiness`.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

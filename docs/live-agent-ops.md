@@ -1268,6 +1268,16 @@ python3 -m agentsassemble.cli live-agent session-runs list \
   --include-readiness
 ```
 
+Add `--meeting-id` and `--group-id` when an operator or handoff script wants only the durable run tail for one resident meeting/group instead of the global tail:
+
+```bash
+python3 -m agentsassemble.cli live-agent session-runs list \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-m1 \
+  --group-id local-cli-group \
+  --include-readiness
+```
+
 Use `assemble live-agent session-runs wait` when another script or agent needs a durable session-run status gate after starting a long-running ensure operation from the GUI, CLI, or auto-join path:
 
 ```bash
@@ -1291,7 +1301,7 @@ python3 -m agentsassemble.cli live-agent session-runs wait \
 
 This lets another agent continue without the exact run id after a GUI action or handoff. The command selects the latest matching meeting/group session-run from the bounded public list, so an older `ready` run cannot satisfy the gate while a newer matching run is still `running`. If `--run-id` is supplied together with meeting/group fields, the exact run id is the target.
 
-The list command normally reads stored durable run state. With `--include-readiness`, it requests `/api/live-agent-session-runs?limit=N&include_readiness=1` and prints compact current readiness evidence such as `readiness=degraded` and `current_connected=1/3` while leaving the raw JSON payload intact when `--json` is used. The wait path polls `/api/live-agent-session-runs?limit=N` for exact run-id waits. Meeting/group waits poll `/api/live-agent-session-runs?limit=N&meeting_id=...&group_id=...`; the server filters matching meeting/group session-runs before applying the limit window, so unrelated newer session-runs cannot push the handoff target out of the returned tail. When the requested status is `ready`, the CLI adds `include_readiness=1` and treats the stored session-run status as historical durable intent; current readiness is a separate read-only overlay. A `ready` run satisfies automation only when its current readiness overlay is also `ready`, so stale or stopped process state cannot satisfy a fresh handoff gate. In short, ready waits require the current readiness overlay to be `ready`. The overlay reads the existing session readiness snapshot and does not start providers, stop groups, run probes, append operation records, or overwrite the durable run status. It exits `0` when the target run/status is observed and exits `1` on timeout with the last observed safe run summary. It exits `2` when neither `--run-id` nor both `--meeting-id` and `--group-id` are supplied, or for non-timeout transport, parsing, validation, or HTTP errors. Use `--json` when automation needs the machine-readable `status`, requested run id, meeting/group target, requested status, attempts, matched run, readiness, or timeout run tail.
+The list command normally reads stored durable run state. With `--meeting-id` and/or `--group-id`, it asks the server to filter before applying the bounded limit window, so unrelated newer runs do not hide the target tail. With `--include-readiness`, it requests `/api/live-agent-session-runs?limit=N&include_readiness=1` and prints compact current readiness evidence such as `readiness=degraded` and `current_connected=1/3` while leaving the raw JSON payload intact when `--json` is used. The wait path polls `/api/live-agent-session-runs?limit=N` for exact run-id waits. Meeting/group waits poll `/api/live-agent-session-runs?limit=N&meeting_id=...&group_id=...`; the server filters matching meeting/group session-runs before applying the limit window, so unrelated newer session-runs cannot push the handoff target out of the returned tail. When the requested status is `ready`, the CLI adds `include_readiness=1` and treats the stored session-run status as historical durable intent; current readiness is a separate read-only overlay. A `ready` run satisfies automation only when its current readiness overlay is also `ready`, so stale or stopped process state cannot satisfy a fresh handoff gate. In short, ready waits require the current readiness overlay to be `ready`. The overlay reads the existing session readiness snapshot and does not start providers, stop groups, run probes, append operation records, or overwrite the durable run status. It exits `0` when the target run/status is observed and exits `1` on timeout with the last observed safe run summary. It exits `2` when neither `--run-id` nor both `--meeting-id` and `--group-id` are supplied, or for non-timeout transport, parsing, validation, or HTTP errors. Use `--json` when automation needs the machine-readable `status`, requested run id, meeting/group target, requested status, attempts, matched run, readiness, or timeout run tail.
 
 The public session-run API and CLI intentionally omit server URLs, config paths, commands, auth refs, prompts, log tails, and provider output. The durable controller keeps enough local request state to reconcile active runs, while the exposed status is limited to safe identifiers, requested toggles, readiness/result summaries, timestamps, `active`, `phase`, and `reconcile_count`.
 

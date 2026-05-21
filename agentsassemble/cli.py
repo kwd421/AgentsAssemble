@@ -923,6 +923,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="List durable live-agent session runs.",
     )
     live_session_runs_list.add_argument("--limit", type=parse_positive_int, default=50)
+    live_session_runs_list.add_argument("--meeting-id", default="", help="Filter durable session runs by meeting id.")
+    live_session_runs_list.add_argument("--group-id", default="", help="Filter durable session runs by group id.")
     live_session_runs_list.add_argument(
         "--include-readiness",
         action="store_true",
@@ -3081,7 +3083,11 @@ def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
         payload = _request_json(
             _server_url(
                 args.server,
-                _live_agent_session_runs_path(args, include_readiness=bool(getattr(args, "include_readiness", False))),
+                _live_agent_session_runs_path(
+                    args,
+                    include_target_filters=True,
+                    include_readiness=bool(getattr(args, "include_readiness", False)),
+                ),
             )
         )
         _print_live_agent_session_runs_payload(payload, as_json=args.as_json)
@@ -3098,11 +3104,12 @@ def _live_agent_session_runs_path(
     include_readiness: bool = False,
 ) -> str:
     query: dict[str, object] = {"limit": args.limit}
-    if include_target_filters and not str(args.run_id or "").strip():
+    if include_target_filters and not str(getattr(args, "run_id", "") or "").strip():
         meeting_id = str(args.meeting_id or "").strip()
         group_id = str(args.group_id or "").strip()
-        if meeting_id and group_id:
+        if meeting_id:
             query["meeting_id"] = meeting_id
+        if group_id:
             query["group_id"] = group_id
     if include_readiness:
         query["include_readiness"] = "1"
