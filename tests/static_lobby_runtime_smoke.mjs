@@ -1145,6 +1145,9 @@ test("live agent discovery renders safe candidate evidence without executable pa
           provider_kind: "claude_code",
           entry_mode: "terminal_session",
           entry_status: "ready",
+          join_semantics: "terminal_pty_prompt_bridge",
+          context_durability: "process_lifetime",
+          evidence_basis: "path_and_pty_preflight",
           operator_action: "auto_join",
           requires_approval: true,
           safety_note: "PATH only; run preflight before auto join",
@@ -1158,6 +1161,9 @@ test("live agent discovery renders safe candidate evidence without executable pa
           provider_kind: "codex_live_session",
           entry_mode: "codex_live_session",
           entry_status: "ready",
+          join_semantics: "codex_exec_resume",
+          context_durability: "provider_managed_resume",
+          evidence_basis: "path_and_codex_safety_preflight",
           operator_action: "auto_join",
           requires_approval: true,
           safety_note: "Codex defaults stay centralized in preflight",
@@ -1171,6 +1177,9 @@ test("live agent discovery renders safe candidate evidence without executable pa
           provider_kind: "gemini_cli_legacy",
           entry_mode: "terminal_session",
           entry_status: "legacy",
+          join_semantics: "terminal_pty_prompt_bridge",
+          context_durability: "process_lifetime",
+          evidence_basis: "path_and_pty_preflight",
           operator_action: "include_legacy_gemini",
           requires_approval: false,
           safety_note: "Legacy Gemini is skipped unless explicitly included",
@@ -1195,11 +1204,16 @@ test("live agent discovery renders safe candidate evidence without executable pa
   assert.match(reportText, /gemini/);
   assert.match(reportText, /legacy/);
   assert.match(reportText, /terminal_session/);
+  assert.match(reportText, /terminal_pty_prompt_bridge/);
+  assert.match(reportText, /process_lifetime/);
+  assert.match(reportText, /path_and_pty_preflight/);
   assert.match(reportText, /auto_join/);
   assert.match(reportText, /approval required/);
   assert.match(reportText, /include_legacy_gemini/);
   assert.match(reportText, /codex/);
   assert.match(reportText, /codex_live_session/);
+  assert.match(reportText, /codex_exec_resume/);
+  assert.match(reportText, /provider_managed_resume/);
   assert.doesNotMatch(reportText, /Users|secret|bin/);
 });
 

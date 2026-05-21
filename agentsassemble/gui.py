@@ -4109,6 +4109,30 @@ def _operation_success_for_result(value: object, *, success_values: set[str]) ->
     return "success" if _operation_result_status(value) in success_values else "failed"
 
 
+def _discovery_operation_details(discoveries: list[object]) -> dict[str, object]:
+    return {
+        "join_semantics": _discovery_operation_values(discoveries, "join_semantics"),
+        "context_durability": _discovery_operation_values(discoveries, "context_durability"),
+        "evidence_basis": _discovery_operation_values(discoveries, "evidence_basis"),
+        "approval_required": sum(
+            1
+            for item in discoveries
+            if isinstance(item, dict) and item.get("available") and item.get("included") and item.get("requires_approval")
+        ),
+    }
+
+
+def _discovery_operation_values(discoveries: list[object], field_name: str) -> list[str]:
+    values = set()
+    for item in discoveries:
+        if not isinstance(item, dict) or not item.get("available"):
+            continue
+        value = clean_lobby_text(item.get(field_name), limit=128)
+        if value:
+            values.add(value)
+    return sorted(values)
+
+
 def _payload_probe_agent_ids(value: object) -> list[str]:
     raw_items = value if isinstance(value, list) else []
     agent_ids = []
@@ -6390,6 +6414,7 @@ def _make_handler(
                         "result_status": result_status,
                         "agents": len(agents) if isinstance(agents, list) else 0,
                         "discovered": sum(1 for item in discoveries if isinstance(item, dict) and item.get("available")),
+                        **_discovery_operation_details(discoveries),
                     },
                 )
                 self._send_json(discovery)

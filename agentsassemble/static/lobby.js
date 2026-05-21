@@ -892,12 +892,15 @@ function renderLiveAgentDiscoveryRow(discovery) {
   const providerKind = String(discovery?.provider_kind || "unknown");
   const entryMode = String(discovery?.entry_mode || discovery?.connection_kind || "");
   const entryStatus = String(discovery?.entry_status || "");
+  const joinSemantics = String(discovery?.join_semantics || "");
+  const contextDurability = String(discovery?.context_durability || "");
+  const evidenceBasis = String(discovery?.evidence_basis || "");
   const operatorAction = String(discovery?.operator_action || "");
   const approval = discovery?.requires_approval ? "approval required" : "";
   const safetyNote = String(discovery?.safety_note || "");
   const reason = String(discovery?.reason || "");
   const status = discovery?.included ? "included" : discovery?.available ? "skipped" : "missing";
-  const detail = [providerKind, entryMode, entryStatus || reason, operatorAction, approval, safetyNote]
+  const detail = [providerKind, entryMode, joinSemantics, contextDurability, evidenceBasis, entryStatus || reason, operatorAction, approval, safetyNote]
     .filter(Boolean)
     .join(" · ");
   return `

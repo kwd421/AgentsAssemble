@@ -13,6 +13,7 @@ from agentsassemble.cli import main
 from agentsassemble.config import load_agent_runtime_config, load_council_config
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_agent_discovery import build_discovered_live_agent_config
+from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_sessions import start_live_agent_session
 
@@ -60,26 +61,72 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         discoveries = {item["command"]: item for item in report["discoveries"]}
         self.assertEqual(discoveries["claude"]["entry_status"], "ready")
         self.assertEqual(discoveries["claude"]["entry_mode"], "terminal_session")
+        self.assertEqual(discoveries["claude"]["join_semantics"], "terminal_pty_prompt_bridge")
+        self.assertEqual(discoveries["claude"]["context_durability"], "process_lifetime")
+        self.assertEqual(discoveries["claude"]["evidence_basis"], "path_and_pty_preflight")
         self.assertEqual(discoveries["claude"]["operator_action"], "auto_join")
         self.assertTrue(discoveries["claude"]["requires_approval"])
         self.assertIn("preflight", discoveries["claude"]["safety_note"])
 
         self.assertEqual(discoveries["codex"]["entry_status"], "ready")
         self.assertEqual(discoveries["codex"]["entry_mode"], "codex_live_session")
+        self.assertEqual(discoveries["codex"]["join_semantics"], "codex_exec_resume")
+        self.assertEqual(discoveries["codex"]["context_durability"], "provider_managed_resume")
+        self.assertEqual(discoveries["codex"]["evidence_basis"], "path_and_codex_safety_preflight")
         self.assertEqual(discoveries["codex"]["operator_action"], "auto_join")
         self.assertTrue(discoveries["codex"]["requires_approval"])
         self.assertIn("Codex", discoveries["codex"]["safety_note"])
 
         self.assertEqual(discoveries["antigravity"]["entry_status"], "missing")
         self.assertEqual(discoveries["antigravity"]["entry_mode"], "self_service")
+        self.assertEqual(discoveries["antigravity"]["join_semantics"], "self_service_room_loop")
+        self.assertEqual(discoveries["antigravity"]["context_durability"], "provider_managed_room_loop")
+        self.assertEqual(discoveries["antigravity"]["evidence_basis"], "path_and_self_service_preflight")
         self.assertEqual(discoveries["antigravity"]["operator_action"], "install_cli")
         self.assertFalse(discoveries["antigravity"]["requires_approval"])
 
         self.assertEqual(discoveries["gemini"]["entry_status"], "legacy")
         self.assertEqual(discoveries["gemini"]["entry_mode"], "terminal_session")
+        self.assertEqual(discoveries["gemini"]["join_semantics"], "terminal_pty_prompt_bridge")
+        self.assertEqual(discoveries["gemini"]["context_durability"], "process_lifetime")
+        self.assertEqual(discoveries["gemini"]["evidence_basis"], "path_and_pty_preflight")
         self.assertEqual(discoveries["gemini"]["operator_action"], "include_legacy_gemini")
         self.assertFalse(discoveries["gemini"]["requires_approval"])
         self.assertIn("legacy", discoveries["gemini"]["safety_note"])
+
+    def test_discovery_includes_external_cli_candidates_with_prompt_bridge_contract(self):
+        external_commands = {"cursor-agent", "grok", "hermes", "openclaw"}
+
+        def resolver(command):
+            return f"/opt/bin/{command}" if command in external_commands else None
+
+        report = build_discovered_live_agent_config(
+            server="http://room.local",
+            meeting_id="resident-m1",
+            command_resolver=resolver,
+            terminal_session_supported=lambda: True,
+        )
+
+        agents = report["config"]["agents"]
+        self.assertEqual(
+            [agent["agent_id"] for agent in agents],
+            ["cursor-agent-live", "grok-build-live", "hermes-cli-live", "openclaw-cli-live"],
+        )
+        for agent in agents:
+            self.assertEqual(agent["connection_kind"], "terminal_session")
+            self.assertEqual(agent["join_semantics"], "terminal_pty_prompt_bridge")
+            self.assertEqual(agent["context_durability"], "process_lifetime")
+            self.assertEqual(agent["evidence_basis"], "path_and_pty_preflight")
+        self.assertEqual([agent["command"] for agent in agents], [["cursor-agent"], ["grok"], ["hermes"], ["openclaw"]])
+
+        discoveries = {item["command"]: item for item in report["discoveries"]}
+        for command in external_commands:
+            self.assertTrue(discoveries[command]["available"])
+            self.assertTrue(discoveries[command]["included"])
+            self.assertTrue(discoveries[command]["requires_approval"])
+            self.assertEqual(discoveries[command]["join_semantics"], "terminal_pty_prompt_bridge")
+            self.assertEqual(discoveries[command]["context_durability"], "process_lifetime")
+            self.assertEqual(discoveries[command]["evidence_basis"], "path_and_pty_preflight")
 
     def test_build_discovered_config_can_include_legacy_gemini_when_requested(self):
         def resolver(command):
@@ -187,9 +234,18 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 0)
             output = stdout.getvalue()
-            self.assertIn("entry claude ready terminal_session auto_join approval required", output)
-            self.assertIn("entry gemini legacy terminal_session include_legacy_gemini", output)
-            self.assertIn("entry codex missing codex_live_session install_cli", output)
+            self.assertIn(
+                "entry claude ready terminal_session terminal_pty_prompt_bridge process_lifetime path_and_pty_preflight auto_join approval required",
+                output,
+            )
+            self.assertIn(
+                "entry gemini legacy terminal_session terminal_pty_prompt_bridge process_lifetime path_and_pty_preflight include_legacy_gemini",
+                output,
+            )
+            self.assertIn(
+                "entry codex missing codex_live_session codex_exec_resume provider_managed_resume path_and_codex_safety_preflight install_cli",
+                output,
+            )
 
     def test_live_agent_discover_compact_output_shows_terminal_unsupported(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -219,7 +275,10 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(exit_code, 1)
             self.assertFalse(output_path.exists())
             output = stdout.getvalue()
-            self.assertIn("entry claude unsupported terminal_session unsupported_terminal", output)
+            self.assertIn(
+                "entry claude unsupported terminal_session terminal_pty_prompt_bridge process_lifetime path_and_pty_preflight unsupported_terminal",
+                output,
+            )
             self.assertIn("No supported local agent CLIs found.", output)
 
     def test_live_agent_discover_can_write_session_bundle_and_ensure_command(self):
@@ -274,6 +333,19 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 [provider["kind"] for provider in agent_config["providers"]],
                 ["claude_code", "codex_live_session", "antigravity_cli"],
             )
+            self.assertEqual(
+                [role["join_semantics"] for role in council["roles"]],
+                ["terminal_pty_prompt_bridge", "codex_exec_resume", "self_service_room_loop"],
+            )
+            self.assertEqual(
+                [role["context_durability"] for role in council["roles"]],
+                ["process_lifetime", "provider_managed_resume", "provider_managed_room_loop"],
+            )
+            self.assertNotIn("discovered local CLI transport", council["roles"][0]["research_focus"])
+            self.assertIn("terminal_pty_prompt_bridge", council["roles"][0]["research_focus"])
+            self.assertEqual(agent_config["providers"][0]["join_semantics"], "terminal_pty_prompt_bridge")
+            self.assertEqual(agent_config["providers"][1]["context_durability"], "provider_managed_resume")
+            self.assertEqual(agent_config["agent_bindings"][2]["evidence_basis"], "path_and_self_service_preflight")
             ensure = payload["next_commands"]["ensure_session"]
             self.assertIn("--council-config", ensure)
             self.assertIn(str(council_path), ensure)
@@ -916,6 +988,37 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual([agent["agent_id"] for agent in written["agents"]], ["claude-code-live", "antigravity-cli-live"])
             self.assertEqual(written["agents"][0]["meeting_id"], "resident-m1")
             self.assertEqual(payload["next_commands"]["preflight"][-1], str(output_path))
+            operation = json.loads((root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+            self.assertEqual(operation["operation"], "discovery.run")
+            self.assertEqual(operation["details"]["join_semantics"], ["self_service_room_loop", "terminal_pty_prompt_bridge"])
+            self.assertEqual(operation["details"]["context_durability"], ["process_lifetime", "provider_managed_room_loop"])
+            self.assertEqual(operation["details"]["evidence_basis"], ["path_and_pty_preflight", "path_and_self_service_preflight"])
+            self.assertEqual(operation["details"]["approval_required"], 2)
+            self.assertNotIn("/opt/bin", json.dumps(operation, ensure_ascii=False))
+
+    def test_discovery_operation_contract_values_are_whitelisted(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            append_live_agent_operation(
+                root,
+                operation="discovery.run",
+                status="success",
+                details={
+                    "join_semantics": ["terminal_pty_prompt_bridge", "env:OPENAI_API_KEY"],
+                    "context_durability": ["process_lifetime", "literal:secret"],
+                    "evidence_basis": ["path_and_pty_preflight", "sk-abcdef123456"],
+                },
+            )
+
+            operation = read_live_agent_operations(root, limit=1)[0]
+
+        self.assertEqual(operation["details"]["join_semantics"], ["terminal_pty_prompt_bridge"])
+        self.assertEqual(operation["details"]["context_durability"], ["process_lifetime"])
+        self.assertEqual(operation["details"]["evidence_basis"], ["path_and_pty_preflight"])
+        operation_text = json.dumps(operation, ensure_ascii=False)
+        self.assertNotIn("env:OPENAI_API_KEY", operation_text)
+        self.assertNotIn("literal:secret", operation_text)
+        self.assertNotIn("sk-abcdef123456", operation_text)
 
     def test_gui_discovery_api_can_write_session_bundle_without_running_agents(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -47,6 +47,23 @@ HEALTH_OPERATION_DETAIL_KEYS = {
     "health_process_reasons",
     "health_session_attention",
 }
+PUBLIC_ENUM_DETAIL_VALUES = {
+    "join_semantics": {
+        "terminal_pty_prompt_bridge",
+        "codex_exec_resume",
+        "self_service_room_loop",
+    },
+    "context_durability": {
+        "process_lifetime",
+        "provider_managed_resume",
+        "provider_managed_room_loop",
+    },
+    "evidence_basis": {
+        "path_and_pty_preflight",
+        "path_and_codex_safety_preflight",
+        "path_and_self_service_preflight",
+    },
+}
 
 HEALTH_OPERATION_SENSITIVE_LABEL_MARKERS = (
     "api-key",
@@ -294,7 +311,9 @@ def _safe_details(value: object) -> dict[str, object]:
         clean_key = _clean_detail_key(key)
         if not clean_key or _is_sensitive_detail_key(clean_key):
             continue
-        if clean_key in HEALTH_OPERATION_DETAIL_KEYS:
+        if clean_key in PUBLIC_ENUM_DETAIL_VALUES:
+            safe_value = _safe_public_enum_detail_value(clean_key, raw_detail)
+        elif clean_key in HEALTH_OPERATION_DETAIL_KEYS:
             safe_value = _safe_health_operation_detail_value(raw_detail)
         else:
             safe_value = _safe_detail_value(raw_detail)
@@ -416,6 +435,24 @@ def _safe_health_operation_detail_value(value: object) -> object | None:
                 safe_items.append(item)
         return safe_items
     return _safe_detail_value(value)
+
+
+def _safe_public_enum_detail_value(field_name: str, value: object) -> object | None:
+    if isinstance(value, str):
+        return _safe_public_enum_label(field_name, value)
+    if isinstance(value, list):
+        safe_items = []
+        for item in value[:20]:
+            if isinstance(item, str) and (safe_item := _safe_public_enum_label(field_name, item)):
+                safe_items.append(safe_item)
+        return safe_items
+    return None
+
+
+def _safe_public_enum_label(field_name: str, value: object) -> str:
+    text = _clean_field(value, limit=OPERATION_FIELD_LIMIT)
+    allowed = PUBLIC_ENUM_DETAIL_VALUES.get(field_name, set())
+    return text if text in allowed else ""
 
 
 def _safe_health_operation_label(value: object, *, limit: int) -> str:

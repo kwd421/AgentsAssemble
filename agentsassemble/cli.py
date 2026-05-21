@@ -2772,9 +2772,12 @@ def _format_live_agent_discovery_entry(item: dict[str, object]) -> str:
     command = str(item.get("command") or "").strip()
     entry_status = str(item.get("entry_status") or "").strip()
     entry_mode = str(item.get("entry_mode") or item.get("connection_kind") or "").strip()
+    join_semantics = str(item.get("join_semantics") or "").strip()
+    context_durability = str(item.get("context_durability") or "").strip()
+    evidence_basis = str(item.get("evidence_basis") or "").strip()
     operator_action = str(item.get("operator_action") or "").strip()
     approval = "approval required" if item.get("requires_approval") else ""
-    parts = [command, entry_status, entry_mode, operator_action, approval]
+    parts = [command, entry_status, entry_mode, join_semantics, context_durability, evidence_basis, operator_action, approval]
     clean = [part for part in parts if part]
     return "entry " + " ".join(clean) if clean else ""
 

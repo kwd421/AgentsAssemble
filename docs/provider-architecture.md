@@ -53,16 +53,21 @@ The default registry exposes provider kinds with explicit capability snapshots:
 - `anthropic`
 - `gemini`
 - `grok`
+- `grok_build_cli`
 - `local_openai_compatible`
 - `remote_http_bridge`
 - `local_cli`
 - `cursor`
 - `claude_code`
+- `antigravity_cli`
+- `gemini_cli_legacy`
+- `hermes_cli`
+- `openclaw_cli`
 - `hermes_memory`
 - `openclaw_memory`
 - `memory_pack`
 
-`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `cursor` and `claude_code` remain implementation-phase planned providers; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
+`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `cursor`, `claude_code`, `antigravity_cli`, `gemini_cli_legacy`, `grok_build_cli`, `hermes_cli`, and `openclaw_cli` remain implementation-phase planned providers unless they are launched through the resident live-agent runner's explicit connection-kind contract; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
 ## Provider Families
 

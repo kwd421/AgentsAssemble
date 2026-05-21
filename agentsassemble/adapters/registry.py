@@ -288,6 +288,42 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
             ),
             "Legacy Gemini CLI resident integration is supported only for explicit compatibility testing.",
         ),
+        "grok_build_cli": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=True,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=False,
+                cost_class="subscription",
+            ),
+            "Grok Build CLI resident integration is planned through terminal prompt bridge discovery.",
+        ),
+        "hermes_cli": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=False,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=False,
+                cost_class="subscription",
+            ),
+            "Hermes CLI resident integration is planned through terminal prompt bridge discovery.",
+        ),
+        "openclaw_cli": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=False,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=False,
+                cost_class="subscription",
+            ),
+            "OpenClaw CLI resident integration is planned through terminal prompt bridge discovery.",
+        ),
         "hermes_memory": (
             ProviderCapabilities(
                 supports_research=False,
@@ -333,7 +369,16 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
             status="planned",
             reason=reason,
             preferred_phase="implementation"
-            if kind in {"cursor", "claude_code", "antigravity_cli", "gemini_cli_legacy"}
+            if kind
+            in {
+                "cursor",
+                "claude_code",
+                "antigravity_cli",
+                "gemini_cli_legacy",
+                "grok_build_cli",
+                "hermes_cli",
+                "openclaw_cli",
+            }
             else "memory",
         )
 
