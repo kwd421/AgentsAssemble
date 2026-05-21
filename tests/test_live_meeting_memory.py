@@ -86,6 +86,28 @@ class LiveMeetingMemoryTests(unittest.TestCase):
         self.assertNotIn("leak review-only note", memory_blob)
         self.assertNotIn("private status", memory_blob)
 
+    def test_build_live_meeting_memory_counts_all_items_even_when_lists_are_capped(self):
+        events = [
+            {
+                "id": f"reply-{index}",
+                "created_at": f"2026-05-22T01:02:{index:02d}+00:00",
+                "kind": "message",
+                "channel": "official",
+                "official_record": True,
+                "actor_id": "agent-a",
+                "role_id": "architect",
+                "display_name": "Architect",
+                "content": f"Action: Count long resident memory item {index}.",
+            }
+            for index in range(55)
+        ]
+
+        memory = build_live_meeting_memory(events, meeting={"meeting_id": "resident-m1"})
+
+        self.assertEqual(memory["official_event_count"], 55)
+        self.assertEqual(memory["action_item_count"], 55)
+        self.assertLess(len(memory["action_items"]), memory["action_item_count"])
+
     def test_render_live_meeting_memory_writes_human_readable_shared_records(self):
         memory = {
             "meeting_id": "resident-m1",

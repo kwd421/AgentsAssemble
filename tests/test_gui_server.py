@@ -4535,6 +4535,141 @@ class GuiServerTests(unittest.TestCase):
         self.assertNotIn("official request text", serialized)
         self.assertNotIn("official reply text", serialized)
 
+    def test_live_agent_health_includes_shared_memory_summary_without_content(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "resident-m1",
+                    "official_record": True,
+                    "actor_id": "agent-a",
+                    "role_id": "agent-a",
+                    "content": "Action: Preserve resident memory health evidence.",
+                },
+            )
+            last_event = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "resident-m1",
+                    "official_record": True,
+                    "actor_id": "agent-a",
+                    "role_id": "agent-a",
+                    "content": "Question: Is shared memory still current?",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "ok")
+        shared_memory = payload["shared_memory"]
+        self.assertEqual(shared_memory["ready_sessions"], 1)
+        self.assertEqual(shared_memory["with_memory"], 1)
+        self.assertEqual(shared_memory["official_event_count"], 2)
+        self.assertEqual(shared_memory["open_question_count"], 1)
+        self.assertEqual(shared_memory["action_item_count"], 1)
+        self.assertEqual(shared_memory["last_official_event_id"], last_event["id"])
+        self.assertEqual(shared_memory["items"][0]["meeting_id"], "resident-m1")
+        self.assertEqual(shared_memory["items"][0]["group_id"], "resident-main")
+        self.assertEqual(shared_memory["items"][0]["official_event_count"], 2)
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("Preserve resident memory health evidence", serialized)
+        self.assertNotIn("Is shared memory still current", serialized)
+
+    def test_live_agent_health_shared_memory_uses_full_counts_and_drops_source_text(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            shared_dir = meeting_dir / "shared_memory"
+            shared_dir.mkdir()
+            (shared_dir / "index.json").write_text(
+                json.dumps(
+                    {
+                        "source": "PROMPT BODY SHOULD NOT LEAK",
+                        "official_event_count": 1,
+                        "action_items": [{"text": "embedded fallback action should not leak"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            last_event = None
+            for index in range(55):
+                last_event = append_live_event(
+                    meeting_dir,
+                    {
+                        "kind": "message",
+                        "meeting_id": "resident-m1",
+                        "official_record": True,
+                        "actor_id": "agent-a",
+                        "role_id": "agent-a",
+                        "content": f"Action: Full memory count item {index}.",
+                    },
+                )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        shared_memory = payload["shared_memory"]
+        self.assertEqual(shared_memory["official_event_count"], 55)
+        self.assertEqual(shared_memory["action_item_count"], 55)
+        self.assertEqual(shared_memory["last_official_event_id"], last_event["id"])
+        self.assertNotIn("source", shared_memory["items"][0])
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("PROMPT BODY SHOULD NOT LEAK", serialized)
+        self.assertNotIn("embedded fallback action should not leak", serialized)
+        self.assertNotIn("Full memory count item", serialized)
+
     def test_live_agent_health_keeps_old_active_session_runs_outside_recent_tail(self):
         class FakeSupervisor:
             def list_groups(self):

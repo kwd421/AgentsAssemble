@@ -2463,6 +2463,15 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
         latest_live_request_count: 0,
         attention: ["resident-m1:resident-main:agent-b:lobby_cursor_behind"],
       },
+      shared_memory: {
+        ready_sessions: 1,
+        with_memory: 1,
+        official_event_count: 2,
+        open_question_count: 1,
+        action_item_count: 1,
+        last_official_event_id: "reply-2",
+        attention: [],
+      },
     },
   });
 
@@ -2486,6 +2495,11 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.match(health.textContent, /attention 6/);
   assert.match(health.textContent, /observations 2 ready agents/);
   assert.match(health.textContent, /lobby behind 1/);
+  assert.match(health.textContent, /shared memory 2 official events/);
+  assert.match(health.textContent, /1\/1 ready sessions/);
+  assert.match(health.textContent, /questions 1/);
+  assert.match(health.textContent, /actions 1/);
+  assert.match(health.textContent, /last reply-2/);
   assert.match(health.textContent, /observation attention resident-m1:resident-main:agent-b:lobby_cursor_behind/);
   assert.match(health.textContent, /retry failures 2/);
   assert.match(health.textContent, /retry backoff 120s/);

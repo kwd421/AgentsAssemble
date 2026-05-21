@@ -77,6 +77,7 @@ from agentsassemble.live_agent_turns import (
     wait_for_review_checkpoint_reply,
 )
 from agentsassemble.live_meeting_memory import (
+    build_live_meeting_memory,
     load_live_meeting_memory_context,
     projected_live_meeting_memory_artifacts,
     write_live_meeting_memory_artifacts,
@@ -2771,6 +2772,12 @@ def live_agent_health_payload(
         if isinstance(process_monitor_summary.get("attention"), list)
         else []
     )
+    shared_memory_summary = _live_agent_shared_memory_health_summary(output_root, session_summary)
+    shared_memory_attention = (
+        shared_memory_summary.get("attention")
+        if isinstance(shared_memory_summary.get("attention"), list)
+        else []
+    )
     session_run_summary = _live_agent_session_run_health_summary(output_root)
     session_run_monitor_summary = _live_agent_session_run_monitor_health_summary(session_run_monitor)
     session_run_monitor_attention = (
@@ -2786,6 +2793,7 @@ def live_agent_health_payload(
         or connection_summary["attention"]
         or session_summary["attention"]
         or observation_summary["attention"]
+        or shared_memory_attention
         or session_run_summary["attention"]
         or session_run_monitor_attention
         else "ok"
@@ -2797,6 +2805,7 @@ def live_agent_health_payload(
         "connections": connection_summary,
         "sessions": session_summary,
         "observations": observation_summary,
+        "shared_memory": shared_memory_summary,
         "session_runs": session_run_summary,
     }
     if process_monitor_summary:
@@ -2804,6 +2813,91 @@ def live_agent_health_payload(
     if session_run_monitor_summary:
         payload["session_run_monitor"] = session_run_monitor_summary
     return payload
+
+
+def _live_agent_shared_memory_health_summary(
+    output_root: Path,
+    session_summary: dict[str, object],
+) -> dict[str, object]:
+    ready_sessions = 0
+    items: list[dict[str, object]] = []
+    latest_event_id = ""
+    official_event_count = 0
+    open_question_count = 0
+    action_item_count = 0
+    decision_count = 0
+    attention: list[str] = []
+    for session in _as_dict_list(session_summary.get("items")):
+        if str(session.get("status") or "") != "ready":
+            continue
+        ready_sessions += 1
+        meeting_id = _safe_session_run_health_identity(session.get("meeting_id"))
+        group_id = _safe_session_run_health_identity(session.get("group_id"))
+        if not meeting_id or not group_id:
+            continue
+        meeting_dir = output_root / "meetings" / meeting_id
+        try:
+            meeting = _read_live_agent_health_meeting(meeting_dir)
+            memory = build_live_meeting_memory(read_live_events(meeting_dir, limit=None), meeting=meeting)
+        except Exception:
+            attention.append(f"{meeting_id}:{group_id}:memory_unavailable")
+            continue
+        item = _live_agent_shared_memory_health_item(memory, meeting_id=meeting_id, group_id=group_id)
+        if not item:
+            continue
+        items.append(item)
+        official_event_count += int(item["official_event_count"])
+        open_question_count += int(item["open_question_count"])
+        action_item_count += int(item["action_item_count"])
+        decision_count += int(item["decision_count"])
+        latest_event_id = str(item.get("last_official_event_id") or latest_event_id)
+    return {
+        "ready_sessions": ready_sessions,
+        "with_memory": len(items),
+        "official_event_count": official_event_count,
+        "decision_count": decision_count,
+        "open_question_count": open_question_count,
+        "action_item_count": action_item_count,
+        "last_official_event_id": latest_event_id,
+        "attention": attention,
+        "items": items,
+    }
+
+
+def _live_agent_shared_memory_health_item(
+    memory: dict[str, object],
+    *,
+    meeting_id: str,
+    group_id: str,
+) -> dict[str, object]:
+    official_event_count = _payload_nonnegative_int(memory.get("official_event_count"), 0)
+    if official_event_count <= 0:
+        return {}
+    return {
+        "meeting_id": meeting_id,
+        "group_id": group_id,
+        "official_event_count": official_event_count,
+        "official_message_count": _payload_nonnegative_int(memory.get("official_message_count"), 0),
+        "official_synthesis_count": _payload_nonnegative_int(memory.get("official_synthesis_count"), 0),
+        "decision_count": _payload_nonnegative_int(memory.get("decision_count"), _memory_item_count(memory.get("decisions"))),
+        "open_question_count": _payload_nonnegative_int(
+            memory.get("open_question_count"),
+            _memory_item_count(memory.get("open_questions")),
+        ),
+        "action_item_count": _payload_nonnegative_int(
+            memory.get("action_item_count"),
+            _memory_item_count(memory.get("action_items")),
+        ),
+        "last_official_event_id": _safe_session_run_health_identity(memory.get("last_official_event_id")),
+    }
+
+
+def _read_live_agent_health_meeting(meeting_dir: Path) -> dict[str, object]:
+    try:
+        value = json.loads((meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _live_agent_health_summary(agents: list[dict[str, object]]) -> dict[str, object]:

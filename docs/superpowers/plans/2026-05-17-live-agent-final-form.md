@@ -5009,6 +5009,34 @@ CLI `live-agent operations list` and GUI operation rows now prioritize `discover
 
 ---
 
+## Task 147: Surface Shared Memory Health Evidence
+
+**Goal:** Make long-running resident session context visible in the operator health surface, so a ready room can prove it has current shared meeting memory without exposing official reply text, prompts, or raw memory artifact bodies.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED shared-memory health coverage**
+
+Cover a ready resident session with official live replies that produce shared memory. `/api/live-agent-health` must include `shared_memory` counts for ready sessions, official events, open questions, action items, and the last official event id without copying official reply text into the health payload. The GUI runtime health smoke must render that same evidence.
+
+- [x] **Step 2: Add compact read-only health summary**
+
+Health now builds a compact `shared_memory` section from the same official-only meeting memory context used by resident prompts and room payloads. It summarizes ready sessions with memory, official event counts, decision/open-question/action-item counts, safe meeting/group ids, and the last official event id. It does not write memory artifacts, call providers, append operation records, or expose raw official content.
+
+- [x] **Step 3: Keep docs aligned with long-session context evidence**
+
+Operator docs and roadmap now state that health and the GUI runtime row surface shared memory health evidence as safe counts and ids, not as transcript, prompt, provider-output, return-packet, or raw memory-body data.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

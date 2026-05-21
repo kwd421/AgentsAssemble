@@ -34,6 +34,9 @@ def build_live_meeting_memory(
     meeting = meeting or {}
     official_events = official_live_transcript_events(events)
     rolling_events = official_events[-ROLLING_SUMMARY_LIMIT:]
+    decisions = _extract_memory_items(official_events, kind="decision")
+    open_questions = _extract_memory_items(official_events, kind="question")
+    action_items = _extract_memory_items(official_events, kind="action")
     return {
         "source": "official_live_events",
         "generated_at": _last_event_created_at(official_events),
@@ -46,9 +49,12 @@ def build_live_meeting_memory(
         "artifact_dir": "shared_memory/",
         "artifacts": dict(SHARED_MEMORY_ARTIFACTS),
         "rolling_summary": [_summary_item(event) for event in rolling_events],
-        "decisions": _extract_memory_items(official_events, kind="decision"),
-        "open_questions": _extract_memory_items(official_events, kind="question"),
-        "action_items": _extract_memory_items(official_events, kind="action"),
+        "decision_count": _count_memory_items(official_events, kind="decision"),
+        "open_question_count": _count_memory_items(official_events, kind="question"),
+        "action_item_count": _count_memory_items(official_events, kind="action"),
+        "decisions": decisions,
+        "open_questions": open_questions,
+        "action_items": action_items,
     }
 
 
@@ -166,6 +172,13 @@ def compact_live_meeting_memory(memory: dict[str, object]) -> dict[str, object]:
         "official_message_count": _nonnegative_int(memory.get("official_message_count")),
         "official_synthesis_count": _nonnegative_int(memory.get("official_synthesis_count")),
         "last_official_event_id": clean_lobby_text(memory.get("last_official_event_id"), limit=128),
+        "decision_count": _nonnegative_int(memory.get("decision_count")) or len(_compact_memory_items(memory.get("decisions"))),
+        "open_question_count": _nonnegative_int(memory.get("open_question_count")) or len(
+            _compact_memory_items(memory.get("open_questions"))
+        ),
+        "action_item_count": _nonnegative_int(memory.get("action_item_count")) or len(
+            _compact_memory_items(memory.get("action_items"))
+        ),
         "rolling_summary": _compact_summary_items(memory.get("rolling_summary")),
         "decisions": _compact_memory_items(memory.get("decisions")),
         "open_questions": _compact_memory_items(memory.get("open_questions")),
@@ -252,6 +265,15 @@ def _extract_memory_items(events: list[dict[str, object]], *, kind: str) -> list
             if len(items) >= MEMORY_ITEM_LIMIT:
                 return items
     return items
+
+
+def _count_memory_items(events: list[dict[str, object]], *, kind: str) -> int:
+    count = 0
+    for event in events:
+        for line in _content_lines(event):
+            if _line_memory_text(line, kind=kind):
+                count += 1
+    return count
 
 
 def _line_memory_text(line: str, *, kind: str) -> str:

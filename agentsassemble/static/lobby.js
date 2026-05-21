@@ -778,6 +778,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const connections = health.connections && typeof health.connections === "object" ? health.connections : {};
   const sessions = health.sessions && typeof health.sessions === "object" ? health.sessions : {};
   const observations = health.observations && typeof health.observations === "object" ? health.observations : {};
+  const sharedMemory = health.shared_memory && typeof health.shared_memory === "object" ? health.shared_memory : {};
   const sessionRuns = health.session_runs && typeof health.session_runs === "object" ? health.session_runs : {};
   const sessionRunMonitor = health.session_run_monitor && typeof health.session_run_monitor === "object" ? health.session_run_monitor : {};
   const processCounts = processes.counts && typeof processes.counts === "object" ? processes.counts : {};
@@ -796,6 +797,8 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const sessionAttention = liveAgentHealthAttentionSummary(sessions.attention, "session attention");
   const observationSummary = liveAgentHealthObservationSummary(observations);
   const observationAttention = liveAgentHealthAttentionSummary(observations.attention, "observation attention");
+  const sharedMemorySummary = liveAgentHealthSharedMemorySummary(sharedMemory);
+  const sharedMemoryAttention = liveAgentHealthAttentionSummary(sharedMemory.attention, "shared-memory attention");
   const sessionRunAttention = liveAgentHealthAttentionSummary(sessionRuns.attention, "session-run attention");
   const sessionRunRetry = liveAgentHealthSessionRunRetrySummary(sessionRuns.items);
   const sessionRunMonitorSummary = liveAgentHealthSessionRunMonitorSummary(sessionRunMonitor);
@@ -813,6 +816,8 @@ function renderLiveAgentRuntimeHealth(health, loading) {
     (sessionAttention ? `<br><small>${escapeHtml(sessionAttention)}</small>` : "") +
     (observationSummary ? `<br><small>${escapeHtml(observationSummary)}</small>` : "") +
     (observationAttention ? `<br><small>${escapeHtml(observationAttention)}</small>` : "") +
+    (sharedMemorySummary ? `<br><small>${escapeHtml(sharedMemorySummary)}</small>` : "") +
+    (sharedMemoryAttention ? `<br><small>${escapeHtml(sharedMemoryAttention)}</small>` : "") +
     (sessionRunAttention ? `<br><small>${escapeHtml(sessionRunAttention)}</small>` : "") +
     (sessionRunRetry ? `<br><small>${escapeHtml(sessionRunRetry)}</small>` : "") +
     (sessionRunMonitorSummary ? `<br><small>${escapeHtml(sessionRunMonitorSummary)}</small>` : "") +
@@ -957,7 +962,7 @@ function renderLiveAgentDiscoveryRow(discovery) {
 }
 
 function liveAgentHealthAttentionCount(health) {
-  const sections = [health?.agents, health?.processes, health?.process_monitor, health?.connections, health?.sessions, health?.observations, health?.session_runs, health?.session_run_monitor];
+  const sections = [health?.agents, health?.processes, health?.process_monitor, health?.connections, health?.sessions, health?.observations, health?.shared_memory, health?.session_runs, health?.session_run_monitor];
   return sections.reduce((count, section) => {
     const attention = section && typeof section === "object" && Array.isArray(section.attention) ? section.attention : [];
     return count + attention.length;
@@ -997,6 +1002,23 @@ function liveAgentHealthObservationSummary(value) {
   const liveBehind = Math.max(0, Number(value.live_behind_count || 0));
   const errors = Math.max(0, Number(value.error_count || 0));
   return `observations ${Math.floor(readyAgents)} ready agents · lobby behind ${Math.floor(lobbyBehind)} · live behind ${Math.floor(liveBehind)} · errors ${Math.floor(errors)}`;
+}
+
+function liveAgentHealthSharedMemorySummary(value) {
+  if (!value || typeof value !== "object") return "";
+  const officialEvents = Math.max(0, Number(value.official_event_count || 0));
+  const readySessions = Math.max(0, Number(value.ready_sessions || 0));
+  const withMemory = Math.max(0, Number(value.with_memory || 0));
+  if (!officialEvents && !withMemory) return "";
+  const questions = Math.max(0, Number(value.open_question_count || 0));
+  const actions = Math.max(0, Number(value.action_item_count || 0));
+  const latest = String(value.last_official_event_id || "").trim();
+  return (
+    `shared memory ${Math.floor(officialEvents)} official events · ` +
+    `${Math.floor(withMemory)}/${Math.floor(readySessions)} ready sessions · ` +
+    `questions ${Math.floor(questions)} · actions ${Math.floor(actions)}` +
+    (latest ? ` · last ${latest}` : "")
+  );
 }
 
 function liveAgentHealthSessionRunRetrySummary(value) {

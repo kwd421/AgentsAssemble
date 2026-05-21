@@ -133,6 +133,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("active/total durable session-runs", doc)
         self.assertIn("process monitor liveness evidence in `process_monitor`", doc)
         self.assertIn("sessions.items", doc)
+        self.assertIn("shared meeting memory health evidence in `shared_memory`", doc)
+        self.assertIn("official event, open-question, and action-item counts without official reply text", doc)
         self.assertIn("durable session-run retry evidence in `session_runs`", doc)
         self.assertIn("session-run monitor liveness evidence in `session_run_monitor`", doc)
         self.assertIn("session-run attention", doc)
