@@ -317,6 +317,25 @@ def build_parser() -> argparse.ArgumentParser:
     _add_session_finalize_after_rounds_arg(live_call_remaining_rounds)
     live_call_remaining_rounds.add_argument("--json", action="store_true", dest="as_json", help="Print the raw remaining-round result payload.")
 
+    live_review_checkpoint = live_agent_subparsers.add_parser(
+        "review-checkpoint",
+        parents=[live_server],
+        help="Request a one-shot resident review checkpoint from ready bound live agents.",
+    )
+    live_review_checkpoint.add_argument("--meeting-id", required=True)
+    live_review_checkpoint.add_argument("--group-id", required=True)
+    live_review_checkpoint.add_argument(
+        "--agent-id",
+        action="append",
+        default=[],
+        dest="agent_ids",
+        help="Limit to a bound agent id; repeat to set order.",
+    )
+    live_review_checkpoint.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
+    live_review_checkpoint.add_argument("--checkpoint-id", default="")
+    live_review_checkpoint.add_argument("--json", action="store_true", dest="as_json", help="Print the raw checkpoint result payload.")
+    live_review_checkpoint.add_argument("message", nargs="+")
+
     live_start_meeting = live_agent_subparsers.add_parser(
         "start-meeting",
         parents=[live_server],
@@ -1080,6 +1099,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_call_round(args)
         if args.live_agent_command == "call-remaining-rounds":
             return _run_live_agent_call_remaining_rounds(args)
+        if args.live_agent_command == "review-checkpoint":
+            return _run_live_agent_review_checkpoint(args)
         if args.live_agent_command == "start-meeting":
             return _run_live_agent_start_meeting(args)
         if args.live_agent_command == "finalize-meeting":
@@ -1367,6 +1388,42 @@ def _run_live_agent_call_remaining_rounds(args: argparse.Namespace) -> int:
     if finalization is not None and finalization.get("status") not in {"finalized", "already_finalized"}:
         return 1
     return 0
+
+
+def _run_live_agent_review_checkpoint(args: argparse.Namespace) -> int:
+    meeting_id = urllib.parse.quote(args.meeting_id, safe="")
+    payload = {
+        "group_id": str(args.group_id or ""),
+        "agent_ids": list(args.agent_ids or []),
+        "content": " ".join(args.message),
+        "checkpoint_id": str(args.checkpoint_id or ""),
+        "timeout_seconds": float(args.timeout),
+    }
+    target_windows = len(args.agent_ids) if args.agent_ids else MAX_LIVE_AGENT_SEQUENCE_TURNS
+    response = _request_json(
+        _server_url(args.server, f"/api/meetings/{meeting_id}/review-checkpoints"),
+        method="POST",
+        payload=payload,
+        timeout_seconds=_operation_http_timeout(float(args.timeout), windows=max(1, target_windows)),
+    )
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        print(
+            f"Review checkpoint {response.get('checkpoint_id') or args.checkpoint_id or 'unknown'} "
+            f"{response.get('status') or 'unknown'}: "
+            f"{response.get('answered_count', 0)}/{response.get('turn_count', 0)} answered, "
+            f"{response.get('timeout_count', 0)} timed out, "
+            f"{response.get('skipped_count', 0)} skipped"
+        )
+        reason = str(response.get("reason") or "").strip()
+        if reason:
+            print(f"reason: {reason}")
+        for result in response.get("results", []):
+            if not isinstance(result, dict):
+                continue
+            print(f"- {result.get('agent_id') or 'unknown'}: {_sequence_result_summary(result)}")
+    return 0 if response.get("status") == "answered" else 1
 
 
 def _run_live_agent_start_meeting(args: argparse.Namespace) -> int:
@@ -3730,6 +3787,17 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
             "stopped_round_count",
             "statuses",
         ]
+    if operation_name == "review.checkpoint":
+        return [
+            "result_status",
+            "checkpoint_id",
+            "answered_count",
+            "timeout_count",
+            "skipped_count",
+            "agent_ids",
+            "statuses",
+            "reply_event_ids",
+        ]
     return []
 
 
@@ -3741,6 +3809,8 @@ def _live_agent_operation_detail_limit(operation_name: str) -> int:
     if operation_name in {"session.start", "session.resume", "session.restart", "session.recover"}:
         return 10
     if operation_name == "official_turn.rounds":
+        return 8
+    if operation_name == "review.checkpoint":
         return 8
     return 7
 

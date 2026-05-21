@@ -2985,6 +2985,45 @@ test("operation row renders safe details when summary is empty", () => {
   assert.match(rowText, /probe_agent_ids=agent-a,agent-b/);
 });
 
+test("operation row prioritizes review checkpoint evidence", () => {
+  resetState();
+  const { document } = installHarness();
+  state.liveAgentOperations = [
+    {
+      timestamp: "2026-05-18T01:02:03+00:00",
+      operation: "review.checkpoint",
+      status: "success",
+      target_id: "m1",
+      summary: "",
+      details: {
+        meeting_id: "m1",
+        group_id: "resident-main",
+        checkpoint_id: "checkpoint-1",
+        result_status: "answered",
+        turn_count: 2,
+        answered_count: 2,
+        timeout_count: 0,
+        skipped_count: 0,
+        agent_ids: ["agent-a", "agent-b"],
+        statuses: ["answered", "answered"],
+        request_event_ids: ["request-a", "request-b"],
+        reply_event_ids: ["reply-a", "reply-b"],
+      },
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+
+  const rowText = document.querySelector(".live-agent-operation-row").textContent;
+  assert.match(rowText, /review\.checkpoint/);
+  assert.match(rowText, /result_status=answered/);
+  assert.match(rowText, /checkpoint_id=checkpoint-1/);
+  assert.match(rowText, /answered_count=2/);
+  assert.match(rowText, /timeout_count=0/);
+  assert.ok(rowText.indexOf("result_status=answered") < rowText.indexOf("checkpoint_id=checkpoint-1"));
+  assert.doesNotMatch(rowText, /request_event_ids=/);
+});
+
 test("operation row prioritizes readiness session smoke soak statuses", () => {
   resetState();
   const { document } = installHarness();

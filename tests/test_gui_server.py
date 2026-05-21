@@ -10589,6 +10589,240 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(round_operations[0]["status"], "failed")
             self.assertNotIn("private round instruction", json.dumps(operations["operations"], ensure_ascii=False))
 
+    def test_live_agent_review_checkpoint_answers_ready_resident_agents_without_official_record(self):
+        class ReadySupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "m1",
+                        "agents": [{"agent_id": "agent-a"}, {"agent_id": "agent-b"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "topic": "resident review",
+                    "live_status": "running",
+                    "roles": [
+                        {"id": "architect", "display_name": "Architect"},
+                        {"id": "critic", "display_name": "Critic"},
+                    ],
+                    "agent_bindings": [
+                        {"role_id": "architect", "agent_id": "agent-a", "provider_id": "local-cli"},
+                        {"role_id": "critic", "agent_id": "agent-b", "provider_id": "local-cli"},
+                    ],
+                    "provider_configs": {"local-cli": {"kind": "local_cli", "display_name": "Local CLI"}},
+                },
+            )
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            connect_live_agent_payload(root, {"agent_id": "agent-b", "display_name": "Agent B", "meeting_id": "m1"})
+
+            responder_done = threading.Event()
+
+            def answer_review_requests():
+                answered = set()
+                deadline = time.time() + 3.0
+                while time.time() < deadline and len(answered) < 2:
+                    for event in read_live_events(meeting_dir, limit=None):
+                        if event.get("kind") != "live_agent_turn_request":
+                            continue
+                        if event.get("review_checkpoint_id") != "checkpoint-1":
+                            continue
+                        event_id = str(event.get("id") or "")
+                        agent_id = str(event.get("target_agent_id") or "")
+                        if not event_id or not agent_id or event_id in answered:
+                            continue
+                        live_agent_official_turn_payload(
+                            root,
+                            agent_id,
+                            {
+                                "meeting_id": "m1",
+                                "source_event_id": event_id,
+                                "content": f"secret review reply from {agent_id}",
+                            },
+                        )
+                        answered.add(event_id)
+                    time.sleep(0.01)
+                responder_done.set()
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=ReadySupervisor()))
+            server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+            response_thread = threading.Thread(target=answer_review_requests, daemon=True)
+            server_thread.start()
+            response_thread.start()
+            try:
+                checkpoint_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/review-checkpoints",
+                    data=json.dumps(
+                        {
+                            "group_id": "resident main",
+                            "checkpoint_id": "checkpoint-1",
+                            "content": "secret prompt for reviewers",
+                            "timeout_seconds": 2.0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(checkpoint_request, timeout=4) as response:
+                    checkpoint = json.loads(response.read().decode("utf-8"))
+                responder_done.wait(timeout=2)
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(checkpoint["status"], "answered")
+            self.assertEqual(checkpoint["checkpoint_id"], "checkpoint-1")
+            self.assertEqual(checkpoint["turn_count"], 2)
+            self.assertEqual(checkpoint["answered_count"], 2)
+            request_events = [
+                event
+                for event in read_live_events(meeting_dir, limit=None)
+                if event.get("kind") == "live_agent_turn_request" and event.get("review_checkpoint_id") == "checkpoint-1"
+            ]
+            reply_events = [
+                event
+                for event in read_live_events(meeting_dir, limit=None)
+                if event.get("kind") == "message" and event.get("review_checkpoint_id") == "checkpoint-1"
+            ]
+            self.assertEqual(len(request_events), 2)
+            self.assertEqual(len(reply_events), 2)
+            for event in request_events + reply_events:
+                self.assertEqual(event["channel"], "review")
+                self.assertFalse(event["official_record"])
+            transcript = build_meeting_payload(meeting_dir)["artifacts"]["transcript.md"]
+            self.assertNotIn("secret prompt for reviewers", transcript)
+            self.assertNotIn("secret review reply", transcript)
+            checkpoint_operations = [item for item in operations["operations"] if item["operation"] == "review.checkpoint"]
+            self.assertEqual(checkpoint_operations[-1]["status"], "success")
+            self.assertEqual(checkpoint_operations[-1]["details"]["checkpoint_id"], "checkpoint-1")
+            self.assertEqual(checkpoint_operations[-1]["details"]["answered_count"], 2)
+            operation_blob = json.dumps(checkpoint_operations, ensure_ascii=False)
+            self.assertNotIn("secret prompt for reviewers", operation_blob)
+            self.assertNotIn("secret review reply", operation_blob)
+
+    def test_live_agent_review_checkpoint_degrades_without_ready_session_and_omits_prompt_content(self):
+        class MissingGroupSupervisor:
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "topic": "resident review",
+                    "live_status": "running",
+                    "roles": [{"id": "architect", "display_name": "Architect"}],
+                    "agent_bindings": [{"role_id": "architect", "agent_id": "agent-a", "provider_id": "local-cli"}],
+                    "provider_configs": {"local-cli": {"kind": "local_cli", "display_name": "Local CLI"}},
+                },
+            )
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=MissingGroupSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                checkpoint_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/review-checkpoints",
+                    data=json.dumps(
+                        {
+                            "group_id": "resident-main",
+                            "checkpoint_id": "checkpoint-1",
+                            "content": "secret unavailable review prompt",
+                            "timeout_seconds": 0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(checkpoint_request, timeout=4) as response:
+                    checkpoint = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(checkpoint["status"], "degraded")
+            self.assertEqual(checkpoint["reason"], "session_not_ready")
+            self.assertEqual(read_live_events(meeting_dir, limit=None), [])
+            checkpoint_operations = [item for item in operations["operations"] if item["operation"] == "review.checkpoint"]
+            self.assertEqual(checkpoint_operations[-1]["status"], "degraded")
+            self.assertEqual(checkpoint_operations[-1]["details"]["result_status"], "degraded")
+            self.assertEqual(checkpoint_operations[-1]["details"]["reason"], "session_not_ready")
+            self.assertNotIn("secret unavailable review prompt", json.dumps(checkpoint_operations, ensure_ascii=False))
+
+    def test_live_agent_review_checkpoint_reply_endpoint_records_review_operation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            request_event = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "role_id": "architect",
+                    "display_name": "Agent A",
+                    "content": "secret review prompt",
+                    "channel": "review",
+                    "official_record": False,
+                    "review_checkpoint_id": "checkpoint-1",
+                },
+            )
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                reply_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/official-turn",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "source_event_id": request_event["id"],
+                            "content": "secret review reply",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(reply_request, timeout=4) as response:
+                    replied = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(replied["event"]["channel"], "review")
+            self.assertFalse(replied["event"]["official_record"])
+            self.assertEqual(replied["event"]["review_checkpoint_id"], "checkpoint-1")
+            operation_names = [item["operation"] for item in operations["operations"]]
+            self.assertIn("review.reply", operation_names)
+            self.assertNotIn("official_turn.reply", operation_names)
+            review_operations = [item for item in operations["operations"] if item["operation"] == "review.reply"]
+            self.assertEqual(review_operations[-1]["details"]["review_checkpoint_id"], "checkpoint-1")
+            operations_text = json.dumps(operations["operations"], ensure_ascii=False)
+            self.assertNotIn("secret review prompt", operations_text)
+            self.assertNotIn("secret review reply", operations_text)
+
     def test_live_agent_official_turn_request_rejects_meeting_id_path_traversal(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"

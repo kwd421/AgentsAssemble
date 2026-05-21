@@ -13,6 +13,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
+from uuid import uuid4
 
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.codex_sessions import (
@@ -65,7 +66,12 @@ from agentsassemble.live_agent_smoke import (
     run_live_agent_session_smoke,
     run_live_agent_smoke,
 )
-from agentsassemble.live_agent_turns import is_official_turn_reply_event, wait_for_official_turn_reply
+from agentsassemble.live_agent_turns import (
+    is_official_turn_reply_event,
+    is_review_checkpoint_reply_event,
+    wait_for_official_turn_reply,
+    wait_for_review_checkpoint_reply,
+)
 from agentsassemble.live_transcript import projected_live_transcript_text
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
@@ -1564,22 +1570,29 @@ def live_agent_turn_request_payload(output_root: Path, meeting_id: str, payload:
             raise ValueError("Official turn request content is required.")
         role_id = clean_lobby_text(payload.get("role_id"), limit=128) or agent_id
         display_name = clean_lobby_text(payload.get("display_name"), limit=64) or str(agent.get("display_name") or agent_id)
-        event = append_live_event(
-            meeting_dir,
-            {
-                "kind": "live_agent_turn_request",
-                "meeting_id": clean_meeting_id,
-                "actor_id": "moderator",
-                "target_agent_id": agent_id,
-                "role_id": role_id,
-                "display_name": display_name,
-                "audience": f"agent:{agent_id}",
-                "content": content,
-                "turn_id": clean_lobby_text(payload.get("turn_id"), limit=128),
-                "turn_index": _payload_optional_int(payload.get("turn_index")),
-                "engagement_mode": "moderator_called",
-            },
-        )
+        event_payload: dict[str, object] = {
+            "kind": "live_agent_turn_request",
+            "meeting_id": clean_meeting_id,
+            "actor_id": "moderator",
+            "target_agent_id": agent_id,
+            "role_id": role_id,
+            "display_name": display_name,
+            "audience": f"agent:{agent_id}",
+            "content": content,
+            "turn_id": clean_lobby_text(payload.get("turn_id"), limit=128),
+            "turn_index": _payload_optional_int(payload.get("turn_index")),
+            "engagement_mode": "moderator_called",
+        }
+        review_checkpoint_id = clean_lobby_text(payload.get("review_checkpoint_id") or payload.get("checkpoint_id"), limit=128)
+        if review_checkpoint_id:
+            event_payload.update(
+                {
+                    "review_checkpoint_id": review_checkpoint_id,
+                    "channel": "review",
+                    "official_record": False,
+                }
+            )
+        event = append_live_event(meeting_dir, event_payload)
         return {"agent": agent, "event": event, "live_events": read_live_events(meeting_dir)}
 
 
@@ -1643,6 +1656,111 @@ def live_agent_turn_sequence_payload(output_root: Path, meeting_id: str, payload
         "stop_on_timeout": stop_on_timeout,
         "timeout_seconds": timeout_seconds,
         "results": results,
+    }
+
+
+def live_agent_review_checkpoint_payload(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    meeting_id: str,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
+    if not clean_meeting_id or not meeting_dir.exists():
+        raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
+    group_id = clean_live_agent_group_id(str(payload.get("group_id") or ""))
+    if not group_id:
+        raise ValueError("Live agent group id is required.")
+    content = clean_lobby_text(payload.get("content") or payload.get("message"), limit=4000)
+    if not content:
+        raise ValueError("Review checkpoint content is required.")
+    timeout_seconds = _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0)
+    checkpoint_id = clean_lobby_text(payload.get("checkpoint_id") or payload.get("review_checkpoint_id"), limit=128)
+    if not checkpoint_id:
+        checkpoint_id = f"review-{uuid4().hex[:8]}"
+    readiness = live_agent_session_readiness_payload(
+        output_root,
+        process_supervisor,
+        meeting_id=clean_meeting_id,
+        group_id=group_id,
+    )
+    expected_agent_ids = _review_checkpoint_expected_agent_ids(readiness)
+    if readiness.get("status") != "ready":
+        return {
+            "status": "degraded",
+            "reason": "session_not_ready",
+            "checkpoint_id": checkpoint_id,
+            "meeting_id": clean_meeting_id,
+            "group_id": group_id,
+            "turn_count": 0,
+            "answered_count": 0,
+            "timeout_count": 0,
+            "skipped_count": 0,
+            "timeout_seconds": timeout_seconds,
+            "agent_ids": [],
+            "expected_agent_ids": expected_agent_ids,
+            "results": [],
+            "readiness": readiness,
+        }
+
+    target_agent_ids = _review_checkpoint_target_agent_ids(payload.get("agent_ids"), expected_agent_ids)
+    identities = _review_checkpoint_agent_identities(_read_meeting_record(meeting_dir))
+    results = []
+    for index, agent_id in enumerate(target_agent_ids):
+        identity = identities.get(agent_id, {})
+        request = live_agent_turn_request_payload(
+            output_root,
+            clean_meeting_id,
+            {
+                "agent_id": agent_id,
+                "role_id": clean_lobby_text(identity.get("role_id"), limit=128) or agent_id,
+                "display_name": clean_lobby_text(identity.get("display_name"), limit=64) or agent_id,
+                "turn_id": checkpoint_id,
+                "turn_index": index,
+                "content": content,
+                "review_checkpoint_id": checkpoint_id,
+            },
+        )
+        request_event = request.get("event") if isinstance(request.get("event"), dict) else {}
+        source_event_id = clean_lobby_text(request_event.get("id"), limit=128)
+        if not source_event_id:
+            raise ValueError("Review checkpoint request could not be created.")
+        wait_result = wait_for_review_checkpoint_reply(
+            meeting_dir,
+            agent_id=agent_id,
+            source_event_id=source_event_id,
+            checkpoint_id=checkpoint_id,
+            timeout_seconds=timeout_seconds,
+        )
+        results.append(
+            _live_agent_turn_sequence_result(
+                index,
+                {
+                    "status": wait_result["status"],
+                    "request_event": request_event,
+                    "reply_event": wait_result["reply_event"],
+                    "elapsed_seconds": wait_result["elapsed_seconds"],
+                    "timeout_seconds": wait_result["timeout_seconds"],
+                },
+            )
+        )
+    answered_count = sum(1 for result in results if result["status"] == "answered")
+    timeout_count = sum(1 for result in results if result["status"] == "timeout")
+    skipped_count = sum(1 for result in results if result["status"] == "skipped")
+    return {
+        "status": _live_agent_turn_sequence_status(answered_count, timeout_count, skipped_count),
+        "checkpoint_id": checkpoint_id,
+        "meeting_id": clean_meeting_id,
+        "group_id": group_id,
+        "turn_count": len(target_agent_ids),
+        "answered_count": answered_count,
+        "timeout_count": timeout_count,
+        "skipped_count": skipped_count,
+        "timeout_seconds": timeout_seconds,
+        "agent_ids": target_agent_ids,
+        "results": results,
+        "readiness": readiness,
     }
 
 
@@ -1886,7 +2004,7 @@ def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: 
         request_event = _matching_live_agent_turn_request(meeting_dir, agent_id, source_event_id)
         if request_event is None:
             raise ValueError("Matching official turn request was not found.")
-        existing_reply = _official_turn_reply_for_request(meeting_dir, agent_id, source_event_id)
+        existing_reply = _live_agent_reply_for_request(meeting_dir, agent_id, source_event_id, request_event)
         if existing_reply is not None:
             event = existing_reply
         else:
@@ -1898,22 +2016,29 @@ def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: 
             )
             request_turn_index = request_event.get("turn_index")
             turn_index = request_turn_index if isinstance(request_turn_index, int) and not isinstance(request_turn_index, bool) else None
-            event = append_live_event(
-                meeting_dir,
-                {
-                    "kind": "message",
-                    "meeting_id": meeting_id,
-                    "actor_id": agent_id,
-                    "target_agent_id": agent_id,
-                    "source_event_id": source_event_id,
-                    "role_id": role_id,
-                    "display_name": display_name,
-                    "content": content,
-                    "turn_id": clean_lobby_text(request_event.get("turn_id"), limit=128),
-                    "turn_index": turn_index,
-                    "engagement_mode": "moderator_called",
-                },
-            )
+            event_payload: dict[str, object] = {
+                "kind": "message",
+                "meeting_id": meeting_id,
+                "actor_id": agent_id,
+                "target_agent_id": agent_id,
+                "source_event_id": source_event_id,
+                "role_id": role_id,
+                "display_name": display_name,
+                "content": content,
+                "turn_id": clean_lobby_text(request_event.get("turn_id"), limit=128),
+                "turn_index": turn_index,
+                "engagement_mode": "moderator_called",
+            }
+            review_checkpoint_id = clean_lobby_text(request_event.get("review_checkpoint_id"), limit=128)
+            if review_checkpoint_id:
+                event_payload.update(
+                    {
+                        "review_checkpoint_id": review_checkpoint_id,
+                        "channel": "review",
+                        "official_record": False,
+                    }
+                )
+            event = append_live_event(meeting_dir, event_payload)
     updated_agent = heartbeat_live_agent(
         output_root,
         agent_id,
@@ -3031,6 +3156,37 @@ def _official_turn_reply_for_request(meeting_dir: Path, agent_id: str, source_ev
     return None
 
 
+def _live_agent_reply_for_request(
+    meeting_dir: Path,
+    agent_id: str,
+    source_event_id: str,
+    request_event: dict[str, object],
+) -> dict[str, object] | None:
+    checkpoint_id = clean_lobby_text(request_event.get("review_checkpoint_id"), limit=128)
+    if checkpoint_id:
+        return _review_checkpoint_reply_for_request(meeting_dir, agent_id, source_event_id, checkpoint_id)
+    return _official_turn_reply_for_request(meeting_dir, agent_id, source_event_id)
+
+
+def _review_checkpoint_reply_for_request(
+    meeting_dir: Path,
+    agent_id: str,
+    source_event_id: str,
+    checkpoint_id: str,
+) -> dict[str, object] | None:
+    for event in read_live_events(meeting_dir, limit=None):
+        if not is_review_checkpoint_reply_event(event):
+            continue
+        if str(event.get("actor_id") or "") != agent_id:
+            continue
+        if str(event.get("source_event_id") or "") != source_event_id:
+            continue
+        if clean_lobby_text(event.get("review_checkpoint_id"), limit=128) != checkpoint_id:
+            continue
+        return event
+    return None
+
+
 def _live_agent_action_path(path: str, action: str) -> str | None:
     parts = path.strip("/").split("/")
     if len(parts) == 4 and parts[0] == "api" and parts[1] == "live-agents" and parts[3] == action:
@@ -3061,6 +3217,13 @@ def _meeting_live_agent_turn_round_path(path: str) -> str | None:
 def _meeting_finalize_path(path: str) -> str | None:
     parts = path.strip("/").split("/")
     if len(parts) == 4 and parts[0] == "api" and parts[1] == "meetings" and parts[3] == "finalize":
+        return unquote(parts[2])
+    return None
+
+
+def _meeting_review_checkpoint_path(path: str) -> str | None:
+    parts = path.strip("/").split("/")
+    if len(parts) == 4 and parts[0] == "api" and parts[1] == "meetings" and parts[3] == "review-checkpoints":
         return unquote(parts[2])
     return None
 
@@ -3763,6 +3926,45 @@ def _safe_payload_strings(value: object, *, limit: int) -> list[str]:
     return strings
 
 
+def _review_checkpoint_expected_agent_ids(readiness: dict[str, object]) -> list[str]:
+    connection = readiness.get("connection") if isinstance(readiness.get("connection"), dict) else {}
+    return _safe_payload_strings(connection.get("agent_ids"), limit=64)
+
+
+def _review_checkpoint_target_agent_ids(value: object, expected_agent_ids: list[str]) -> list[str]:
+    if value is None or value == "" or value == []:
+        targets = list(expected_agent_ids)
+    else:
+        if not isinstance(value, list):
+            raise ValueError("Review checkpoint agent_ids must be an array.")
+        targets = _safe_payload_strings(value, limit=64)
+    deduped = list(dict.fromkeys(targets))
+    if not deduped:
+        raise ValueError("Review checkpoint requires at least one live agent.")
+    expected = set(expected_agent_ids)
+    unexpected = [agent_id for agent_id in deduped if agent_id not in expected]
+    if unexpected:
+        raise ValueError(f"Review checkpoint target is not in the ready resident session: {', '.join(unexpected)}.")
+    return deduped
+
+
+def _review_checkpoint_agent_identities(meeting: dict[str, object]) -> dict[str, dict[str, str]]:
+    roles = _index_by_id(meeting.get("roles", []))
+    identities: dict[str, dict[str, str]] = {}
+    for binding in _as_dict_list(meeting.get("agent_bindings", [])):
+        agent_id = clean_lobby_text(binding.get("agent_id"), limit=64)
+        role_id = clean_lobby_text(binding.get("role_id"), limit=128)
+        if not agent_id:
+            continue
+        role = roles.get(role_id) if role_id else None
+        display_name = clean_lobby_text(role.get("display_name"), limit=64) if role else ""
+        identities[agent_id] = {
+            "role_id": role_id or agent_id,
+            "display_name": display_name or agent_id,
+        }
+    return identities
+
+
 def _validate_live_agent_turn_sequence(output_root: Path, meeting_id: str, turns: list[dict[str, object]]) -> str:
     clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
     meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
@@ -3854,6 +4056,30 @@ def _turn_sequence_operation_details(sequence: dict[str, object], meeting_id: st
         "request_event_ids": request_event_ids,
         "reply_event_ids": reply_event_ids,
         "timeout_seconds": _payload_nonnegative_float(sequence.get("timeout_seconds"), 0.0),
+    }
+
+
+def _review_checkpoint_operation_details(checkpoint: dict[str, object], meeting_id: str) -> dict[str, object]:
+    details = _turn_sequence_operation_details(checkpoint, meeting_id)
+    details["result_status"] = _operation_result_status(checkpoint.get("status"))
+    details["checkpoint_id"] = clean_lobby_text(checkpoint.get("checkpoint_id"), limit=128)
+    details["group_id"] = clean_lobby_text(checkpoint.get("group_id"), limit=128)
+    reason = clean_lobby_text(checkpoint.get("reason"), limit=128)
+    if reason:
+        details["reason"] = reason
+    expected_agent_ids = _safe_payload_strings(checkpoint.get("expected_agent_ids"), limit=64)
+    if expected_agent_ids:
+        details["expected_agent_ids"] = expected_agent_ids
+    return details
+
+
+def _review_checkpoint_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:
+    return {
+        "meeting_id": meeting_id,
+        "group_id": clean_live_agent_group_id(str(payload.get("group_id") or "")),
+        "checkpoint_id": clean_lobby_text(payload.get("checkpoint_id") or payload.get("review_checkpoint_id"), limit=128),
+        "agent_ids": _safe_payload_strings(payload.get("agent_ids"), limit=64),
+        "timeout_seconds": _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0),
     }
 
 
@@ -4967,6 +5193,44 @@ def _make_handler(
                     return
                 self._send_json(live_agent)
                 return
+            review_checkpoint_meeting_id = _meeting_review_checkpoint_path(parsed.path)
+            if review_checkpoint_meeting_id is not None:
+                payload = self._operation_json_payload(operation="review.checkpoint")
+                if payload is None:
+                    return
+                try:
+                    checkpoint = live_agent_review_checkpoint_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        review_checkpoint_meeting_id,
+                        payload,
+                    )
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="review.checkpoint",
+                        status="failed",
+                        target_id=review_checkpoint_meeting_id,
+                        error=str(error),
+                        details=_review_checkpoint_request_operation_details(payload, review_checkpoint_meeting_id),
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                checkpoint_status = str(checkpoint.get("status") or "unknown")
+                record_live_agent_operation(
+                    output_root,
+                    operation="review.checkpoint",
+                    status="success" if checkpoint_status == "answered" else "degraded",
+                    target_id=review_checkpoint_meeting_id,
+                    summary=(
+                        "completed resident live-agent review checkpoint"
+                        if checkpoint_status == "answered"
+                        else "resident live-agent review checkpoint was not fully answered"
+                    ),
+                    details=_review_checkpoint_operation_details(checkpoint, review_checkpoint_meeting_id),
+                )
+                self._send_json(checkpoint)
+                return
             turn_rounds_meeting_id = _meeting_live_agent_turn_rounds_path(parsed.path)
             if turn_rounds_meeting_id is not None:
                 payload = self._operation_json_payload(operation="official_turn.rounds")
@@ -5788,19 +6052,28 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 event = official_turn.get("event") if isinstance(official_turn.get("event"), dict) else {}
+                review_checkpoint_id = clean_lobby_text(event.get("review_checkpoint_id"), limit=128)
+                reply_operation = "review.reply" if review_checkpoint_id else "official_turn.reply"
+                reply_details = {
+                    "meeting_id": str(event.get("meeting_id") or payload.get("meeting_id") or ""),
+                    "source_event_id": str(event.get("source_event_id") or ""),
+                    "role_id": str(event.get("role_id") or ""),
+                    "turn_id": str(event.get("turn_id") or ""),
+                    "turn_index": _payload_optional_int(event.get("turn_index")),
+                }
+                if review_checkpoint_id:
+                    reply_details["review_checkpoint_id"] = review_checkpoint_id
                 record_live_agent_operation(
                     output_root,
-                    operation="official_turn.reply",
+                    operation=reply_operation,
                     status="success",
                     target_id=live_agent_official_turn_id,
-                    summary="recorded live-agent official turn",
-                    details={
-                        "meeting_id": str(event.get("meeting_id") or payload.get("meeting_id") or ""),
-                        "source_event_id": str(event.get("source_event_id") or ""),
-                        "role_id": str(event.get("role_id") or ""),
-                        "turn_id": str(event.get("turn_id") or ""),
-                        "turn_index": _payload_optional_int(event.get("turn_index")),
-                    },
+                    summary=(
+                        "recorded live-agent review checkpoint reply"
+                        if review_checkpoint_id
+                        else "recorded live-agent official turn"
+                    ),
+                    details=reply_details,
                 )
                 self._send_json(official_turn)
                 return

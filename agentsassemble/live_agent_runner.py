@@ -12,7 +12,7 @@ from typing import Callable
 
 from agentsassemble.codex_resident import default_codex_resident_command
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
-from agentsassemble.live_agent_turns import is_official_turn_reply_event
+from agentsassemble.live_agent_turns import is_official_turn_reply_event, is_review_checkpoint_reply_event
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
 from agentsassemble.remote_bridge_config import (
     remote_bridge_auth_ref_available,
@@ -592,7 +592,7 @@ def official_turn_request_candidate(
 def _visible_official_reply_source_ids(events: list[dict[str, object]], agent_id: str) -> set[str]:
     source_ids: set[str] = set()
     for event in events:
-        if not is_official_turn_reply_event(event):
+        if not is_official_turn_reply_event(event) and not is_review_checkpoint_reply_event(event):
             continue
         if str(event.get("actor_id") or "") != agent_id:
             continue
@@ -650,17 +650,28 @@ def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source
 
 
 def official_turn_prompt(config: ResidentAgentConfig, room: dict[str, object], source_event: dict[str, object]) -> str:
+    review_checkpoint_id = str(source_event.get("review_checkpoint_id") or "").strip()
+    if review_checkpoint_id:
+        intro = f"You are a live AgentsAssemble participant called into review checkpoint {review_checkpoint_id}."
+        reply_rule = "Reply with one concise review message only."
+        request_label = "Review request:"
+        events_label = "Recent review-visible meeting events:"
+    else:
+        intro = "You are a live AgentsAssemble participant called into the official meeting record."
+        reply_rule = "Reply with one concise official meeting turn only."
+        request_label = "Moderator request:"
+        events_label = "Recent official meeting events:"
     lines = [
-        "You are a live AgentsAssemble participant called into the official meeting record.",
+        intro,
         f"Agent id: {config.agent_id}",
         f"Display name: {config.display_name or config.agent_id}",
-        "Reply with one concise official meeting turn only.",
+        reply_rule,
         "Do not include lobby chatter, markdown fences, or multiple alternatives.",
         "",
-        "Moderator request:",
+        request_label,
         f"- {source_event.get('content') or ''}",
         "",
-        "Recent official meeting events:",
+        events_label,
     ]
     for event in _live_events(room)[-12:]:
         if not _live_event_visible_to_agent(event, config.agent_id, source_event):

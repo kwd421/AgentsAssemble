@@ -9,7 +9,7 @@ from uuid import uuid4
 
 LobbySide = Literal["mine", "my-agent", "other", "other-agent"]
 LobbyKind = Literal["message", "ready", "deploy"]
-RoomChannel = Literal["lobby", "side_chat", "official", "system"]
+RoomChannel = Literal["lobby", "side_chat", "official", "system", "review"]
 MeetingEventKind = Literal[
     "meeting_started",
     "role_sessions_started",
@@ -188,17 +188,19 @@ def append_side_chat_event_to_file(path: Path, payload: dict[str, object]) -> di
 def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str, object]:
     kind = str(payload.get("kind", "status"))
     turn_index = payload.get("turn_index")
+    official_record = payload.get("official_record")
     event = {
         "id": uuid4().hex[:12],
         "created_at": datetime.now(UTC).isoformat(),
         "kind": kind,
         "meeting_id": clean_lobby_text(payload.get("meeting_id", ""), limit=128),
-        "channel": _live_channel(kind),
+        "channel": _payload_live_channel(kind, payload),
         "audience": clean_lobby_text(payload.get("audience", "room"), limit=32) or "room",
-        "official_record": kind in OFFICIAL_LIVE_KINDS,
+        "official_record": official_record is True if isinstance(official_record, bool) else kind in OFFICIAL_LIVE_KINDS,
         "actor_id": clean_lobby_text(payload.get("actor_id", ""), limit=64),
         "target_agent_id": clean_lobby_text(payload.get("target_agent_id", ""), limit=64),
         "source_event_id": clean_lobby_text(payload.get("source_event_id", ""), limit=128),
+        "review_checkpoint_id": clean_lobby_text(payload.get("review_checkpoint_id", ""), limit=128),
         "role_id": payload.get("role_id"),
         "display_name": payload.get("display_name"),
         "round": payload.get("round"),
@@ -341,6 +343,13 @@ def _live_channel(kind: str) -> RoomChannel:
     if kind == "room_chat":
         return "side_chat"
     return "system"
+
+
+def _payload_live_channel(kind: str, payload: dict[str, object]) -> RoomChannel:
+    channel = clean_lobby_text(payload.get("channel", ""), limit=32)
+    if channel in {"official", "system", "side_chat", "review"}:
+        return channel  # type: ignore[return-value]
+    return _live_channel(kind)
 
 
 def _events_after_id(events: list[dict[str, object]], last_event_id: str | None) -> list[dict[str, object]]:

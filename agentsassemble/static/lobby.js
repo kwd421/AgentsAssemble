@@ -1191,12 +1191,25 @@ function liveAgentOperationDetailPriority(operationName = "") {
       "auto_rounds_round_count",
     ];
   }
+  if (operationName === "review.checkpoint") {
+    return [
+      "result_status",
+      "checkpoint_id",
+      "answered_count",
+      "timeout_count",
+      "skipped_count",
+      "agent_ids",
+      "statuses",
+      "reply_event_ids",
+    ];
+  }
   return [];
 }
 
 function liveAgentOperationDetailLimit(operationName = "") {
   if (operationName === "session.ensure") return 9;
   if (["session.start", "session.resume", "session.restart", "session.recover"].includes(operationName)) return 8;
+  if (operationName === "review.checkpoint") return 8;
   return 7;
 }
 

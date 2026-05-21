@@ -642,6 +642,27 @@ This path reads the meeting template, skips round ids already recorded in `debat
 
 The GUI Lobby `상주 실행` panel exposes the same bounded path as `남은라운드`. It uses the panel's `meeting id`, timeout, `max remaining official rounds`, and `timeout stop` fields, then refreshes the selected meeting after the batch returns.
 
+Use a review checkpoint when the operator wants ready resident agents to review a slice of work without turning that review into official meeting transcript evidence:
+
+```bash
+python3 -m agentsassemble.cli live-agent review-checkpoint \
+  --server http://127.0.0.1:8765 \
+  --meeting-id meeting-1 \
+  --group-id resident-main \
+  --timeout 30 \
+  "Review the current implementation against the goal."
+```
+
+The HTTP path is:
+
+```text
+POST /api/meetings/<meeting_id>/review-checkpoints
+```
+
+with `group_id`, optional repeated `agent_ids`, optional `checkpoint_id`, `content`, and `timeout_seconds`. The server first runs the same targeted resident session readiness check as `session-readiness`; if the group is not `ready`, it returns `status: "degraded"` and `reason: "session_not_ready"` without appending turn requests or calling providers. When ready, it creates one targeted `live_agent_turn_request` per selected or bound agent, waits for each resident reply, and returns `status: "answered"`, `status: "timeout"`, or `status: "stopped"` with answered/timed-out/skipped counts.
+
+Review checkpoint request and reply live events use `channel: "review"`, `official_record: false`, and the same `review_checkpoint_id`. Resident runners still post replies through `/api/live-agents/<agent_id>/official-turn`, but the request metadata makes those replies review records rather than official transcript turns. Successful review replies are recorded as sanitized `review.reply` operations instead of `official_turn.reply`. The aggregate operation ledger records one sanitized `review.checkpoint` entry with meeting id, group id, checkpoint id, agent ids, request/reply ids, counts, statuses, and timeout only; it does not include prompt or reply content, endpoints, config paths, auth refs, command arguments, provider output, or logs. Because review events are not official records, `build_meeting_payload()` does not project them into the Archive transcript.
+
 The resident runner answers by posting to:
 
 ```text

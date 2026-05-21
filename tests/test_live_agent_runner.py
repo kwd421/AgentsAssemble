@@ -1507,6 +1507,31 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
         self.assertEqual(official_turn_request_candidate(events, "agent-a", ""), events[1])
 
+    def test_official_turn_candidate_treats_review_checkpoint_reply_as_answered(self):
+        events = [
+            {
+                "id": "review-request-1",
+                "kind": "live_agent_turn_request",
+                "target_agent_id": "agent-a",
+                "content": "리뷰해줘",
+                "channel": "review",
+                "official_record": False,
+                "review_checkpoint_id": "checkpoint-1",
+            },
+            {
+                "id": "review-reply-1",
+                "kind": "message",
+                "actor_id": "agent-a",
+                "source_event_id": "review-request-1",
+                "content": "검토 완료",
+                "channel": "review",
+                "official_record": False,
+                "review_checkpoint_id": "checkpoint-1",
+            },
+        ]
+
+        self.assertIsNone(official_turn_request_candidate(events, "agent-a", ""))
+
     def test_moderator_called_skips_visible_already_answered_request_without_model_call(self):
         clock = FakeClock()
         room = {
@@ -1762,6 +1787,31 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertIn("agent A private request", prompt)
         self.assertIn("public official statement", prompt)
         self.assertNotIn("private target-B instruction", prompt)
+
+    def test_official_turn_prompt_labels_review_checkpoint_as_review_not_official_record(self):
+        room = {
+            "live_events": [
+                {
+                    "id": "checkpoint-request",
+                    "kind": "live_agent_turn_request",
+                    "channel": "review",
+                    "official_record": False,
+                    "review_checkpoint_id": "checkpoint-1",
+                    "target_agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "content": "검토 기준",
+                }
+            ],
+            "lobby_events": [{"id": "lobby-1", "message": "최근 맥락"}],
+        }
+
+        prompt = official_turn_prompt(config(agent_id="agent-a", display_name="Agent A"), room, room["live_events"][0])
+
+        self.assertIn("review checkpoint checkpoint-1", prompt)
+        self.assertIn("Reply with one concise review message only.", prompt)
+        self.assertNotIn("official meeting record", prompt)
+        self.assertIn("검토 기준", prompt)
+        self.assertIn("최근 맥락", prompt)
 
     def test_runner_uses_room_engagement_mode_to_pause_active_agent(self):
         clock = FakeClock()

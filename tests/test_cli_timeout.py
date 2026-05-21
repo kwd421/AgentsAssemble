@@ -3479,6 +3479,127 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(args.stop_on_timeout)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_review_checkpoint_parser_accepts_targets(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "review-checkpoint",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "m1",
+                "--group-id",
+                "resident main",
+                "--agent-id",
+                "agent-a",
+                "--agent-id",
+                "agent-b",
+                "--timeout",
+                "8",
+                "--checkpoint-id",
+                "checkpoint-1",
+                "--json",
+                "Review",
+                "this",
+                "slice",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "review-checkpoint")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.meeting_id, "m1")
+        self.assertEqual(args.group_id, "resident main")
+        self.assertEqual(args.agent_ids, ["agent-a", "agent-b"])
+        self.assertEqual(args.timeout, 8.0)
+        self.assertEqual(args.checkpoint_id, "checkpoint-1")
+        self.assertTrue(args.as_json)
+        self.assertEqual(args.message, ["Review", "this", "slice"])
+
+    def test_live_agent_review_checkpoint_posts_request_and_prints_summary(self):
+        response = {
+            "status": "answered",
+            "checkpoint_id": "checkpoint-1",
+            "turn_count": 2,
+            "answered_count": 2,
+            "timeout_count": 0,
+            "skipped_count": 0,
+            "results": [
+                {"agent_id": "agent-a", "status": "answered", "reply_event": {"id": "reply-a"}},
+                {"agent_id": "agent-b", "status": "answered", "reply_event": {"id": "reply-b"}},
+            ],
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "review-checkpoint",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--group-id",
+                        "resident-main",
+                        "--agent-id",
+                        "agent-a",
+                        "--agent-id",
+                        "agent-b",
+                        "--timeout",
+                        "8",
+                        "--checkpoint-id",
+                        "checkpoint-1",
+                        "Review",
+                        "this",
+                        "slice",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Review checkpoint checkpoint-1 answered: 2/2 answered, 0 timed out, 0 skipped", stdout.getvalue())
+        request_json.assert_called_once()
+        url = request_json.call_args.args[0]
+        payload = request_json.call_args.kwargs["payload"]
+        self.assertEqual(url, "http://room.local/api/meetings/m1/review-checkpoints")
+        self.assertEqual(payload["group_id"], "resident-main")
+        self.assertEqual(payload["agent_ids"], ["agent-a", "agent-b"])
+        self.assertEqual(payload["content"], "Review this slice")
+        self.assertEqual(payload["checkpoint_id"], "checkpoint-1")
+        self.assertEqual(payload["timeout_seconds"], 8.0)
+
+    def test_live_agent_review_checkpoint_returns_one_when_not_answered(self):
+        response = {
+            "status": "timeout",
+            "checkpoint_id": "checkpoint-1",
+            "turn_count": 1,
+            "answered_count": 0,
+            "timeout_count": 1,
+            "skipped_count": 0,
+            "results": [{"agent_id": "agent-a", "status": "timeout", "request_event": {"id": "request-a"}}],
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "review-checkpoint",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--group-id",
+                        "resident-main",
+                        "--timeout",
+                        "0",
+                        "Review",
+                        "this",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("Review checkpoint checkpoint-1 timeout: 0/1 answered, 1 timed out, 0 skipped", stdout.getvalue())
+
     def test_live_agent_call_round_posts_request_and_prints_summary(self):
         response = {
             "status": "answered",
