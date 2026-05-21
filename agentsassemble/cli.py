@@ -41,8 +41,10 @@ from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.live_meeting_memory import compact_live_meeting_memory
 from agentsassemble.live_agent_discovery import (
     add_session_bundle_outputs,
+    apply_discovery_approval_filter,
     build_discovered_live_agent_config,
     build_discovered_session_bundle,
+    discovery_has_exact_approval,
     discovered_session_bundle_paths,
     fill_discovery_next_command_output,
     validate_distinct_session_bundle_paths,
@@ -735,6 +737,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--approve-real-providers",
         action="store_true",
         help="Allow auto-join to start discovered real provider CLIs after discovery and preflight evidence.",
+    )
+    live_auto_join.add_argument(
+        "--approve-agent",
+        action="append",
+        default=[],
+        dest="approve_agents",
+        help="Allow only a specific discovered live-agent id to auto-join; repeat for multiple agents.",
+    )
+    live_auto_join.add_argument(
+        "--approve-command",
+        action="append",
+        default=[],
+        dest="approve_commands",
+        help="Allow only a specific discovered CLI command to auto-join; repeat for multiple commands.",
     )
     live_auto_join.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0)
     live_auto_join.add_argument("--wait-timeout", type=parse_nonnegative_float, default=30.0)
@@ -2648,6 +2664,12 @@ def _write_live_agent_discovery_outputs(
         engagement_mode=args.engagement_mode,
         include_legacy_gemini=args.include_legacy_gemini,
     )
+    if _live_agent_auto_join_has_exact_approval_args(args):
+        apply_discovery_approval_filter(
+            report,
+            approved_agents=getattr(args, "approve_agents", []) or [],
+            approved_commands=getattr(args, "approve_commands", []) or [],
+        )
     output_path = Path(args.output) if args.output else None
     if report.get("status") == "ok" and output_path is not None:
         session_bundle_paths = None
@@ -2720,6 +2742,7 @@ def _run_live_agent_auto_join(args: argparse.Namespace) -> int:
     ensure_args.agent_config = str(session_bundle.get("agent_config_path") or "")
     ensure_args.live_agent_config = str(session_bundle.get("live_agent_config_path") or output_path or "")
     ensure_args.probe_bound_agents = _live_agent_auto_join_requires_reply_probe(args, report)
+    ensure_args.approve_real_providers = bool(args.approve_real_providers) or discovery_has_exact_approval(report)
     action, response = _ensure_live_agent_session_run(ensure_args)
     result = {
         "status": response.get("status") or "unknown",
@@ -2736,13 +2759,23 @@ def _run_live_agent_auto_join(args: argparse.Namespace) -> int:
 
 def _live_agent_discovery_requires_approval(report: dict[str, object]) -> bool:
     discoveries = report.get("discoveries") if isinstance(report.get("discoveries"), list) else []
-    return any(isinstance(item, dict) and item.get("included") and item.get("requires_approval") for item in discoveries)
+    return any(
+        isinstance(item, dict)
+        and item.get("included")
+        and item.get("requires_approval")
+        and item.get("approval_status") != "approved"
+        for item in discoveries
+    )
 
 
 def _live_agent_auto_join_requires_reply_probe(args: argparse.Namespace, report: dict[str, object]) -> bool:
-    return bool(getattr(args, "probe_bound_agents", False)) or (
+    return bool(getattr(args, "probe_bound_agents", False)) or discovery_has_exact_approval(report) or (
         bool(getattr(args, "approve_real_providers", False)) and _live_agent_discovery_requires_approval(report)
     )
+
+
+def _live_agent_auto_join_has_exact_approval_args(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "approve_agents", []) or getattr(args, "approve_commands", []))
 
 
 def _live_agent_discovery_approval_commands(report: dict[str, object]) -> list[str]:

@@ -50,6 +50,7 @@ def build_discovered_live_agent_config(
         discoveries.append(
             {
                 "command": spec["command"],
+                "agent_id": spec["agent_id"],
                 "provider_kind": spec["provider_kind"],
                 "connection_kind": spec["connection_kind"],
                 "entry_mode": _entry_mode(spec),
@@ -81,6 +82,75 @@ def build_discovered_live_agent_config(
         "discoveries": discoveries,
         "next_commands": _next_commands(server=server),
     }
+
+
+def apply_discovery_approval_filter(
+    report: dict[str, Any],
+    *,
+    approved_agents: list[object],
+    approved_commands: list[object],
+) -> None:
+    approved_agent_ids = {str(value or "").strip() for value in approved_agents if str(value or "").strip()}
+    approved_command_names = {str(value or "").strip() for value in approved_commands if str(value or "").strip()}
+    discoveries = report.get("discoveries") if isinstance(report.get("discoveries"), list) else []
+    excluded_agent_ids: set[str] = set()
+    matched_agent_ids: set[str] = set()
+    matched_command_names: set[str] = set()
+    approved_count = 0
+    excluded_agents: list[str] = []
+    excluded_commands: list[str] = []
+    for item in discoveries:
+        if not isinstance(item, dict) or not item.get("included") or not item.get("requires_approval"):
+            continue
+        agent_id = str(item.get("agent_id") or "").strip()
+        command = str(item.get("command") or "").strip()
+        approved = bool(agent_id and agent_id in approved_agent_ids) or bool(command and command in approved_command_names)
+        if approved:
+            item["approval_status"] = "approved"
+            item["operator_action"] = "approved_auto_join"
+            if agent_id and agent_id in approved_agent_ids:
+                matched_agent_ids.add(agent_id)
+            if command and command in approved_command_names:
+                matched_command_names.add(command)
+            approved_count += 1
+            continue
+        item["approval_status"] = "not_approved"
+        item["included"] = False
+        item["reason"] = "not_approved"
+        item["entry_status"] = "approval_required"
+        item["operator_action"] = "approve_agent"
+        item["safety_note"] = "Candidate was discovered but excluded from this auto-join because it was not explicitly approved."
+        if agent_id:
+            excluded_agent_ids.add(agent_id)
+            excluded_agents.append(agent_id)
+        if command:
+            excluded_commands.append(command)
+    config = report.get("config") if isinstance(report.get("config"), dict) else {}
+    agents = config.get("agents") if isinstance(config.get("agents"), list) else []
+    if excluded_agent_ids and isinstance(config, dict):
+        config["agents"] = [
+            agent
+            for agent in agents
+            if not (isinstance(agent, dict) and str(agent.get("agent_id") or "").strip() in excluded_agent_ids)
+        ]
+    kept_agents = config.get("agents") if isinstance(config.get("agents"), list) else []
+    report["status"] = "ok" if kept_agents else "approval_required"
+    report["approval_filter"] = {
+        "approved_agents": sorted(matched_agent_ids),
+        "approved_commands": sorted(matched_command_names),
+        "approved_count": approved_count,
+        "excluded_agents": sorted(excluded_agents),
+        "excluded_commands": sorted(excluded_commands),
+        "unmatched_approval_count": len(approved_agent_ids - matched_agent_ids) + len(approved_command_names - matched_command_names),
+    }
+
+
+def discovery_has_exact_approval(report: dict[str, Any]) -> bool:
+    approval_filter = report.get("approval_filter") if isinstance(report.get("approval_filter"), dict) else {}
+    try:
+        return int(approval_filter.get("approved_count") or 0) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _candidate_specs() -> list[dict[str, Any]]:

@@ -4898,6 +4898,35 @@ Operator docs and roadmap now state that self-service wrappers report lobby and 
 
 ---
 
+## Task 143: Narrow auto-join approval to explicit agents
+
+**Goal:** Let operators approve only selected discovered real-provider agents for a single `auto-join` call, so installed but unapproved CLIs are excluded from generated resident/session bundle files before any supervised process can start.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_discovery.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_discovery.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED exact-approval coverage**
+
+Cover `live-agent auto-join --approve-agent codex-live` when Claude, Codex, and Antigravity are all discoverable. The generated resident config, council config, and agent config must include only `codex-live`, the durable ensure request must carry one-shot real-provider approval plus reply probing for the narrowed config, and unapproved discoveries must be marked `approval_status: "not_approved"`.
+
+- [x] **Step 2: Filter discovery before writing auto-join outputs**
+
+`auto-join` now accepts repeated `--approve-agent` and `--approve-command` flags. Exact approvals filter the discovery report before config and session-bundle files are written, even if the broad approval flag is also present. Approved candidates are marked `approval_status: "approved"` without changing the provider-class `requires_approval` fact; unapproved real-provider candidates are removed from the runnable config and marked `reason: "not_approved"`. The same shared filter is available to the GUI discovery API through `approved_agents` and `approved_commands`.
+
+- [x] **Step 3: Keep docs aligned with one-shot approval scope**
+
+Operator docs and roadmap now distinguish broad `--approve-real-providers` from exact `--approve-agent` / `--approve-command`, and state that approval remains one-shot launch permission rather than durable stored provider approval.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

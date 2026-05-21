@@ -39,6 +39,7 @@ from agentsassemble.gui import (
     LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT,
     live_agents_payload,
     live_agent_health_payload,
+    live_agent_discovery_payload,
     live_agent_session_ensure_payload,
     _attach_session_auto_rounds_if_requested,
     send_lobby_message_to_remote_bridge,
@@ -73,6 +74,44 @@ def _read_sse_frame(response, timeout: float = 3.0) -> str:
 
 
 class GuiServerTests(unittest.TestCase):
+    def test_live_agent_discovery_payload_filters_exact_approved_agents_before_writing_bundle(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "codex", "antigravity"} else None
+
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+            ):
+                report = live_agent_discovery_payload(
+                    root,
+                    {
+                        "server": "http://room.local",
+                        "meeting_id": "resident-gui",
+                        "write_config": True,
+                        "session_bundle": True,
+                        "approved_agents": ["codex-live"],
+                    },
+                    default_server="http://default.local",
+                )
+
+            self.assertEqual(report["status"], "ok")
+            output_path = Path(report["output"])
+            self.assertTrue(output_path.exists())
+            written = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual([agent["agent_id"] for agent in written["agents"]], ["codex-live"])
+            council = json.loads(Path(report["session_bundle"]["council_config_path"]).read_text(encoding="utf-8"))
+            agent_config = json.loads(Path(report["session_bundle"]["agent_config_path"]).read_text(encoding="utf-8"))
+            self.assertEqual([role["id"] for role in council["roles"]], ["codex_live"])
+            self.assertEqual([binding["agent_id"] for binding in agent_config["agent_bindings"]], ["codex-live"])
+            discoveries = {item["command"]: item for item in report["discoveries"]}
+            self.assertEqual(discoveries["codex"]["approval_status"], "approved")
+            self.assertEqual(discoveries["claude"]["approval_status"], "not_approved")
+            self.assertEqual(discoveries["antigravity"]["approval_status"], "not_approved")
+            self.assertEqual(report["approval_filter"]["approved_agents"], ["codex-live"])
+
     def test_build_meeting_payload_contains_tabs_and_artifacts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = run_demo_meeting(adapter_name="mock", output_root=Path(temp_dir))

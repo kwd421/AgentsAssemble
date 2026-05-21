@@ -390,6 +390,182 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(payload["approval_required"]["commands"], ["codex"])
             self.assertEqual(payload["session"], {})
 
+    def test_live_agent_auto_join_can_approve_only_one_discovered_agent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+            requests = []
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "codex", "antigravity"} else None
+
+            def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+                requests.append(
+                    {
+                        "url": url,
+                        "method": method,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    }
+                )
+                if url.startswith("http://room.local/api/live-agent-sessions/readiness?"):
+                    return {
+                        "status": "ready",
+                        "meeting_id": "resident-m1",
+                        "group_id": "live-agents.discovered",
+                        "connection": {"expected": 1, "connected": 1, "attention": []},
+                        "process": {"status": "running", "attention": []},
+                    }
+                if url == "http://room.local/api/live-agent-session-runs/ensure":
+                    return {
+                        "status": "ready",
+                        "action": "start",
+                        "meeting_id": "resident-m1",
+                        "group_id": "live-agents.discovered",
+                        "connection": {"expected": 1, "connected": 1, "attention": []},
+                        "process": {"status": "running", "attention": []},
+                    }
+                raise AssertionError(f"unexpected request: {url}")
+
+            stdout = StringIO()
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+            ):
+                with patch("agentsassemble.cli._request_json", side_effect=request_json):
+                    with patch("sys.stdout", stdout):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "auto-join",
+                                "--server",
+                                "http://room.local",
+                                "--meeting-id",
+                                "resident-m1",
+                                "--output",
+                                str(output_path),
+                                "--approve-real-providers",
+                                "--approve-agent",
+                                "codex-live",
+                                "--json",
+                            ]
+                        )
+
+            self.assertEqual(exit_code, 0)
+            written = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual([agent["agent_id"] for agent in written["agents"]], ["codex-live"])
+            council = json.loads((Path(temp_dir) / "council.discovered.json").read_text(encoding="utf-8"))
+            agent_config = json.loads((Path(temp_dir) / "agents.discovered.json").read_text(encoding="utf-8"))
+            self.assertEqual([role["id"] for role in council["roles"]], ["codex_live"])
+            self.assertEqual([binding["agent_id"] for binding in agent_config["agent_bindings"]], ["codex-live"])
+            ensure_request = next(request for request in requests if request["url"] == "http://room.local/api/live-agent-session-runs/ensure")
+            self.assertEqual(ensure_request["payload"]["approve_real_providers"], True)
+            self.assertEqual(ensure_request["payload"]["probe_bound_agents"], True)
+            payload = json.loads(stdout.getvalue())
+            discoveries = {item["command"]: item for item in payload["discovery"]["discoveries"]}
+            self.assertEqual(discoveries["codex"]["approval_status"], "approved")
+            self.assertTrue(discoveries["codex"]["included"])
+            self.assertEqual(discoveries["claude"]["approval_status"], "not_approved")
+            self.assertFalse(discoveries["claude"]["included"])
+            self.assertEqual(discoveries["antigravity"]["approval_status"], "not_approved")
+            self.assertFalse(discoveries["antigravity"]["included"])
+            self.assertEqual(payload["discovery"]["approval_filter"]["approved_agents"], ["codex-live"])
+            self.assertEqual(payload["session"]["connection"]["expected"], 1)
+
+    def test_live_agent_auto_join_can_approve_by_discovered_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "codex"} else None
+
+            def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+                if url.startswith("http://room.local/api/live-agent-sessions/readiness?"):
+                    return {
+                        "status": "ready",
+                        "meeting_id": "resident-m1",
+                        "group_id": "live-agents.discovered",
+                        "connection": {"expected": 1, "connected": 1, "attention": []},
+                        "process": {"status": "running", "attention": []},
+                    }
+                if url == "http://room.local/api/live-agent-session-runs/ensure":
+                    return {
+                        "status": "ready",
+                        "action": "start",
+                        "meeting_id": "resident-m1",
+                        "group_id": "live-agents.discovered",
+                        "connection": {"expected": 1, "connected": 1, "attention": []},
+                        "process": {"status": "running", "attention": []},
+                    }
+                raise AssertionError(f"unexpected request: {url}")
+
+            stdout = StringIO()
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.cli._request_json", side_effect=request_json),
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "auto-join",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--output",
+                        str(output_path),
+                        "--approve-command",
+                        "codex",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            written = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual([agent["agent_id"] for agent in written["agents"]], ["codex-live"])
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["discovery"]["approval_filter"]["approved_commands"], ["codex"])
+
+    def test_live_agent_auto_join_exact_approval_with_no_match_does_not_write_or_ensure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+            stdout = StringIO()
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command == "codex" else None
+
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.cli._request_json", side_effect=AssertionError("approval filter must stop before ensure")),
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "auto-join",
+                        "--server",
+                        "http://room.local",
+                        "--output",
+                        str(output_path),
+                        "--approve-agent",
+                        "unknown-live",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 1)
+            self.assertFalse(output_path.exists())
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "approval_required")
+            self.assertEqual(payload["action"], "none")
+            self.assertEqual(payload["discovery"]["approval_filter"]["approved_count"], 0)
+            self.assertEqual(payload["discovery"]["approval_filter"]["approved_agents"], [])
+            self.assertEqual(payload["discovery"]["approval_filter"]["unmatched_approval_count"], 1)
+            self.assertNotIn("unknown-live", json.dumps(payload, ensure_ascii=False))
+            self.assertEqual(payload["session"], {})
+
     def test_live_agent_auto_join_writes_session_bundle_and_records_durable_session_run(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "live-agents.discovered.json"

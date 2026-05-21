@@ -28,6 +28,7 @@ from agentsassemble.codex_sessions import (
 from agentsassemble.config import load_agent_runtime_config, load_council_config, providers_from_config
 from agentsassemble.live_agent_discovery import (
     add_session_bundle_outputs,
+    apply_discovery_approval_filter,
     build_discovered_live_agent_config,
     build_discovered_session_bundle,
     discovered_session_bundle_paths,
@@ -2517,6 +2518,10 @@ def live_agent_discovery_payload(
         engagement_mode=str(payload.get("engagement_mode") or "mentioned"),
         include_legacy_gemini=_payload_bool(payload.get("include_legacy_gemini")),
     )
+    approved_agents = _safe_payload_strings(payload.get("approved_agents"), limit=64)
+    approved_commands = _safe_payload_strings(payload.get("approved_commands"), limit=64)
+    if approved_agents or approved_commands:
+        apply_discovery_approval_filter(report, approved_agents=approved_agents, approved_commands=approved_commands)
     output_path = output_root / "live-agents.discovered.local.json"
     should_write = not ("write_config" in payload and not _payload_bool(payload.get("write_config")))
     if report.get("status") == "ok" and should_write:
