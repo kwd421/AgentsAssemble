@@ -14387,6 +14387,33 @@ class GuiServerTests(unittest.TestCase):
             transcript = build_meeting_payload(meeting_dir)["artifacts"]["transcript.md"]
             self.assertNotIn("secret prompt for reviewers", transcript)
             self.assertNotIn("secret review reply", transcript)
+            checkpoint_markdown = meeting_dir / "review_checkpoints" / "checkpoint-1.md"
+            checkpoint_json = meeting_dir / "review_checkpoints" / "checkpoint-1.json"
+            self.assertTrue(checkpoint_markdown.exists())
+            self.assertTrue(checkpoint_json.exists())
+            artifact_text = checkpoint_markdown.read_text(encoding="utf-8")
+            artifact_json = json.loads(checkpoint_json.read_text(encoding="utf-8"))
+            self.assertIn("secret prompt for reviewers", artifact_text)
+            self.assertIn("secret review reply from agent-a", artifact_text)
+            self.assertEqual(artifact_json["checkpoint_id"], "checkpoint-1")
+            self.assertEqual(artifact_json["status"], "answered")
+            self.assertEqual(artifact_json["answered_count"], 2)
+            self.assertEqual(artifact_json["results"][0]["request"]["content"], "secret prompt for reviewers")
+            self.assertIn("secret review reply", artifact_json["results"][0]["reply"]["content"])
+            payload = build_meeting_payload(meeting_dir)
+            self.assertIn("checkpoint-1.md", payload["review_checkpoints"])
+            self.assertIn("secret review reply from agent-a", payload["review_checkpoints"]["checkpoint-1.md"])
+            artifact_events = [
+                event
+                for event in read_live_events(meeting_dir, limit=None)
+                if event.get("artifact_kind") == "review_checkpoint"
+            ]
+            self.assertEqual(len(artifact_events), 1)
+            self.assertEqual(artifact_events[0]["channel"], "review")
+            self.assertFalse(artifact_events[0]["official_record"])
+            self.assertEqual(artifact_events[0]["artifact_path"], "review_checkpoints/checkpoint-1.md")
+            self.assertNotIn("secret prompt for reviewers", json.dumps(artifact_events, ensure_ascii=False))
+            self.assertNotIn("secret review reply", json.dumps(artifact_events, ensure_ascii=False))
             checkpoint_operations = [item for item in operations["operations"] if item["operation"] == "review.checkpoint"]
             self.assertEqual(checkpoint_operations[-1]["status"], "success")
             self.assertEqual(checkpoint_operations[-1]["details"]["checkpoint_id"], "checkpoint-1")

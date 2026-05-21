@@ -50,6 +50,7 @@ from agentsassemble.live_agent_processes import (
     read_live_agent_process_event_history,
 )
 from agentsassemble.live_agent_probe import PROBE_REPLY_EVENT_TAIL_LIMIT, run_live_agent_probe, safe_probe_timeout
+from agentsassemble.live_agent_review_checkpoints import write_review_checkpoint_artifacts
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
 from agentsassemble.live_agent_sessions import (
     check_live_agent_session,
@@ -206,6 +207,11 @@ def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[s
         packet_path.name: packet_path.read_text(encoding="utf-8")
         for packet_path in sorted((meeting_dir / "return_packets").glob("*.md"))
     }
+    review_checkpoints = {
+        checkpoint_path.name: checkpoint_path.read_text(encoding="utf-8")
+        for checkpoint_path in sorted((meeting_dir / "review_checkpoints").glob("*.*"))
+        if checkpoint_path.suffix in {".md", ".json"}
+    }
     research = {}
     research_json = {}
     research_root = meeting_dir / "private_research"
@@ -224,6 +230,7 @@ def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[s
         "artifacts": artifacts,
         "tasks": tasks,
         "return_packets": return_packets,
+        "review_checkpoints": review_checkpoints,
         "research": research,
         "research_json": research_json,
         "live_events": read_live_events(meeting_dir),
@@ -2149,7 +2156,7 @@ def live_agent_review_checkpoint_payload(
     answered_count = sum(1 for result in results if result["status"] == "answered")
     timeout_count = sum(1 for result in results if result["status"] == "timeout")
     skipped_count = sum(1 for result in results if result["status"] == "skipped")
-    return {
+    checkpoint = {
         "status": _live_agent_turn_sequence_status(answered_count, timeout_count, skipped_count),
         "checkpoint_id": checkpoint_id,
         "meeting_id": clean_meeting_id,
@@ -2163,6 +2170,23 @@ def live_agent_review_checkpoint_payload(
         "results": results,
         "readiness": readiness,
     }
+    artifacts = write_review_checkpoint_artifacts(meeting_dir, checkpoint)
+    checkpoint.update(artifacts)
+    append_live_event(
+        meeting_dir,
+        {
+            "kind": "artifact",
+            "meeting_id": clean_meeting_id,
+            "channel": "review",
+            "official_record": False,
+            "artifact_kind": "review_checkpoint",
+            "artifact_path": artifacts["artifact_path"],
+            "artifact_json_path": artifacts["artifact_json_path"],
+            "review_checkpoint_id": checkpoint_id,
+            "content": f"Review checkpoint artifact ready: {artifacts['artifact_path']}",
+        },
+    )
+    return checkpoint
 
 
 def live_agent_turn_round_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:

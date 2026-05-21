@@ -5037,6 +5037,36 @@ Operator docs and roadmap now state that health and the GUI runtime row surface 
 
 ---
 
+## Task 148: Persist Resident Review Checkpoint Artifacts
+
+**Goal:** Make resident review checkpoints durable operator artifacts, so a Superpowers-style review loop can be requested, answered, inspected later, and kept separate from official meeting evidence.
+
+**Files:**
+- Create: `agentsassemble/live_agent_review_checkpoints.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/static/archive.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_review_checkpoints.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED artifact coverage**
+
+Cover a ready two-agent review checkpoint that returns resident replies. The endpoint must write `review_checkpoints/<checkpoint_id>.md` and `review_checkpoints/<checkpoint_id>.json`, expose them through `build_meeting_payload()`, keep transcript projection clean, append only a content-free non-official artifact event, and keep operation history prompt/reply-free. Static Archive coverage expects `review_checkpoints` entries to be labeled and grouped.
+
+- [x] **Step 2: Write path-safe review artifacts**
+
+Review checkpoint completion now renders deterministic Markdown and JSON artifacts containing the operator prompt plus resident replies. Checkpoint ids are normalized before becoming filenames, repeated checkpoint ids overwrite the same artifact paths, and the returned payload includes the relative artifact paths. The helper keeps path handling isolated from the control-plane operation ledger.
+
+- [x] **Step 3: Surface artifacts as operator records**
+
+`build_meeting_payload()` returns `review_checkpoints`, and Archive groups those records under `리뷰 체크포인트`. Docs and roadmap now state that review checkpoint artifacts are operator/Archive records, not official transcript, shared memory, decision, return-packet, or operation-detail content.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

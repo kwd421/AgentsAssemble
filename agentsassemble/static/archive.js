@@ -168,6 +168,7 @@ function archiveKindLabel(key) {
   if (key.includes("research/")) return "리서치";
   if (key.includes("tasks/")) return "작업 배정";
   if (key.includes("return_packets/")) return "세션 복귀";
+  if (key.startsWith("review_checkpoints/")) return "리뷰 체크포인트";
   if (key === "room-log.md") return "자유채팅";
   if (key.startsWith("shared_memory/")) return "공유 기억";
   if (key === "decision.md") return "결정";
@@ -189,6 +190,7 @@ function buildArchiveEntries(payload) {
     ...payload.artifacts,
     ...Object.fromEntries(Object.entries(payload.tasks).map(([key, value]) => [`tasks/${key}`, value])),
     ...Object.fromEntries(Object.entries(payload.return_packets || {}).map(([key, value]) => [`return_packets/${key}`, value])),
+    ...Object.fromEntries(Object.entries(payload.review_checkpoints || {}).map(([key, value]) => [`review_checkpoints/${key}`, value])),
     ...Object.fromEntries(Object.entries(payload.research).map(([key, value]) => [`research/${key}`, value])),
     ...buildEvidenceArchiveEntries(payload),
   });
@@ -253,6 +255,7 @@ function tableCell(value) {
 
 function renderArchiveGroups(payload, entries) {
   const publicKeys = ["agenda.md", "room-log.md", "transcript.md", "shared_memory/rolling-summary.md", "shared_memory/open-questions.md", "shared_memory/action-items.md", "shared_memory/index.json", "decision.md", "meeting.json"].filter((key) => key in entries);
+  const reviewKeys = Object.keys(entries).filter((key) => key.startsWith("review_checkpoints/")).sort();
   const roleGroups = (payload.meeting.roles || []).map((role) => {
     const meta = roleMeta[role.id] || { color: "purple", title: role.lens, badge: role.lens, avatar: "/static/avatar-moderator.svg" };
     const keys = Object.keys(entries)
@@ -263,6 +266,7 @@ function renderArchiveGroups(payload, entries) {
 
   return [
     renderArchiveGroup("공용 기록", "회의 전체 문서", publicKeys, entries),
+    renderArchiveGroup("리뷰 체크포인트", "비공식 상주 리뷰 기록", reviewKeys, entries),
     ...roleGroups.map(({ role, meta, keys }) =>
       renderArchiveGroup(role.display_name, meta.badge, keys, entries, meta)
     ),
