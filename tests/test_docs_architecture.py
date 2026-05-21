@@ -6,6 +6,27 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DocsArchitectureTests(unittest.TestCase):
+    def test_product_operating_model_records_agentsassemble_specific_memory(self):
+        doc = (ROOT / "docs" / "product" / "OPERATING_MODEL.md").read_text(encoding="utf-8")
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text(encoding="utf-8")
+
+        self.assertIn("AgentsAssemble Operating Model", doc)
+        self.assertIn("discovery is not execution", doc)
+        self.assertIn("meeting room startup must not launch real provider CLIs", doc)
+        self.assertIn("host-approved session", doc)
+        self.assertIn("agent-private context", doc)
+        self.assertIn("shared meeting memory", doc)
+        self.assertIn("Work Mode", doc)
+        self.assertIn("Play Mode", doc)
+        self.assertIn("official record", doc)
+        self.assertIn("rolling summary", doc)
+        self.assertIn("frontend polish is deferred", doc)
+        self.assertIn("Viewooa", doc)
+        self.assertIn("Do not copy Viewooa files", doc)
+        self.assertIn("docs/product/OPERATING_MODEL.md", agents)
+        self.assertIn("docs/product/OPERATING_MODEL.md", roadmap)
+
     def test_live_session_room_model_documents_shared_room_semantics(self):
         doc = (ROOT / "docs" / "live-session-room-model.md").read_text(encoding="utf-8")
 

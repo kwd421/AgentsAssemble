@@ -43,6 +43,10 @@ The near-term product is not a polished chat app. It is a reliable local council
 - File-based Memory Layer v0 writes project, agent, episode, and reflection memory.
 - Research influences are recorded in `docs/research-log.md`.
 - Repository operating rules are recorded in `AGENTS.md`.
+- Product operating memory is recorded in `docs/product/OPERATING_MODEL.md`,
+  including discovery-versus-execution, host-approved sessions, provider-owned
+  agent context, shared meeting memory, Work Mode / Play Mode separation, and
+  the decision to defer frontend polish behind stable backend contracts.
 - Long-term memory/context engineering research notes now compare MemGPT-style memory tiers, Reflexion-style verbal reflection, LongMemEval-style evaluation questions, and LangGraph Store-style namespaced memory.
 - Provider binding groundwork records provider configs, agent bindings, capabilities, and meeting-only permissions in `meeting.json`.
 - Room Event Log direction is documented: agents should join one shared room event stream rather than receive isolated interview prompts.

@@ -4,6 +4,19 @@ Use these instructions as general coding guidance for any project in this reposi
 
 The goal is not to make code look architecturally impressive. The goal is to make the next safe change easy for a human to discover, understand, implement, verify, and review.
 
+## Project Product Memory
+
+Before changing live-agent, provider, memory, meeting-record, or GUI behavior,
+read `docs/product/OPERATING_MODEL.md` together with the closest topic doc:
+`docs/live-session-room-model.md`, `docs/provider-architecture.md`,
+`docs/live-agent-ops.md`, or `docs/roadmap.md`.
+
+`docs/product/OPERATING_MODEL.md` records current product boundaries such as
+discovery not being execution, real provider CLIs requiring explicit approval,
+agent-private context staying provider-owned, shared meeting memory staying
+AgentsAssemble-owned, and Work Mode / Play Mode remaining separate unless an
+explicit promote action is designed.
+
 ## Operating Summary
 
 Before changing code, understand the local pattern and the reason for change.
