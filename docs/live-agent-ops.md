@@ -1312,6 +1312,8 @@ python3 -m agentsassemble.cli live-agent session-runs list \
   --include-readiness
 ```
 
+For scriptable durable-run gates, add `--fail-on-attention`. The command still prints the normal session-run summary first, then exits `1` when any returned run is `failed`, reports `error`, is active but not `ready`, or is active with a current readiness overlay that is not `ready`. Paused or stopped inactive runs do not fail the gate by themselves. Without that flag, listing session-runs exits `0` whenever the list was fetched successfully.
+
 Use `assemble live-agent session-runs retry-now` when a degraded durable run is visible but its `next_reconcile_at` is still in the future. With `--run-id`, the command targets that exact run and posts the same operator control as the GUI row action to `/api/live-agent-session-runs/<run_id>/retry-now`. Without the exact run id, use both `--meeting-id` and `--group-id`; the CLI posts to `/api/live-agent-session-runs/retry-now`, the server resolves the latest matching meeting/group session-run before any retryability filtering, and exact `run_id` always wins if both target forms are supplied. The command prints the returned public session-run summary:
 
 ```bash

@@ -930,6 +930,22 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.live_agent_session_runs_command, "list")
         self.assertTrue(args.include_readiness)
 
+    def test_live_agent_session_runs_list_parses_fail_on_attention(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "session-runs",
+                "list",
+                "--server",
+                "http://room.local",
+                "--fail-on-attention",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "session-runs")
+        self.assertEqual(args.live_agent_session_runs_command, "list")
+        self.assertTrue(args.fail_on_attention)
+
     def test_live_agent_session_runs_list_parses_meeting_group_filters(self):
         args = build_parser().parse_args(
             [
@@ -1792,6 +1808,116 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("run-1 ensure ready resident-m1 resident-main active", output)
         self.assertIn("readiness=ready", output)
         self.assertIn("current_connected=2/2", output)
+
+    def test_live_agent_session_runs_list_fail_on_attention_exits_one_after_printing_summary(self):
+        payload = {
+            "runs": [
+                {
+                    "run_id": "run-ready-stale",
+                    "action": "ensure",
+                    "status": "ready",
+                    "active": True,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "readiness": {"status": "degraded", "expected": 2, "connected": 1},
+                },
+                {
+                    "run_id": "run-degraded",
+                    "action": "ensure",
+                    "status": "degraded",
+                    "active": True,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                },
+                {
+                    "run_id": "run-failed",
+                    "action": "ensure",
+                    "status": "failed",
+                    "active": False,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                },
+                {
+                    "run_id": "run-stopped",
+                    "action": "ensure",
+                    "status": "stopped",
+                    "active": False,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                },
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--include-readiness",
+                        "--fail-on-attention",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-session-runs?limit=50&include_readiness=1")
+        output = stdout.getvalue()
+        self.assertIn("run-ready-stale ensure ready resident-m1 resident-main active", output)
+        self.assertIn("readiness=degraded", output)
+        self.assertIn("run-degraded ensure degraded resident-m1 resident-main active", output)
+        self.assertIn("run-failed ensure failed resident-m1 resident-main inactive", output)
+        self.assertIn("run-stopped ensure stopped resident-m1 resident-main inactive", output)
+
+    def test_live_agent_session_runs_list_fail_on_attention_accepts_ready_paused_and_stopped(self):
+        payload = {
+            "runs": [
+                {
+                    "run_id": "run-ready",
+                    "action": "ensure",
+                    "status": "ready",
+                    "active": True,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "readiness": {"status": "ready", "expected": 2, "connected": 2},
+                },
+                {
+                    "run_id": "run-paused",
+                    "action": "ensure",
+                    "status": "paused",
+                    "active": False,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "readiness": {"status": "degraded", "expected": 2, "connected": 0},
+                },
+                {
+                    "run_id": "run-stopped",
+                    "action": "ensure",
+                    "status": "stopped",
+                    "active": False,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "readiness": {"status": "degraded", "expected": 2, "connected": 0},
+                },
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--include-readiness",
+                        "--fail-on-attention",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
 
     def test_live_agent_session_runs_list_include_readiness_json_preserves_raw_payload(self):
         payload = {

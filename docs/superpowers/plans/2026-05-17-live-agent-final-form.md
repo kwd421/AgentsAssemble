@@ -4365,6 +4365,33 @@ Docs now show `session-runs list --run-id <session-run-id> --include-readiness` 
 
 ---
 
+### Task 125: Session-Run List Attention Exit Gate
+
+**Goal:** Let terminal automation turn durable session-run inspection into a scriptable gate without losing the normal safe summary output.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED gate coverage**
+
+Cover `assemble live-agent session-runs list --fail-on-attention` parser acceptance, exit `1` after printing summaries for failed, active non-ready, or current-readiness-degraded runs, and exit `0` for ready plus inactive paused/stopped runs.
+
+- [x] **Step 2: Reuse list output and add local attention policy**
+
+The list command prints the same text or JSON payload first, then returns `1` when requested and any returned session-run needs attention. The policy treats `failed`/`error`, active non-`ready`, and active rows with non-`ready` current readiness overlays as attention while leaving inactive `paused` and `stopped` rows alone.
+
+- [x] **Step 3: Document exit semantics**
+
+Docs now describe `session-runs list --fail-on-attention` as a scriptable durable-run gate and name the statuses that do or do not trip it.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

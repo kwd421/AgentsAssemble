@@ -956,6 +956,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Request the current read-only readiness overlay for each session run.",
     )
     live_session_runs_list.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON session-run payload.")
+    live_session_runs_list.add_argument(
+        "--fail-on-attention",
+        action="store_true",
+        help="Exit 1 when any returned session run needs operator attention.",
+    )
     live_session_runs_retry_now = live_session_runs_subparsers.add_parser(
         "retry-now",
         parents=[live_server],
@@ -3283,6 +3288,8 @@ def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
             )
         )
         _print_live_agent_session_runs_payload(payload, as_json=args.as_json)
+        if args.fail_on_attention and _live_agent_session_runs_payload_needs_attention(payload):
+            return 1
         return 0
     if args.live_agent_session_runs_command == "retry-now":
         _validate_live_agent_session_runs_retry_now_target(args)
@@ -3857,6 +3864,26 @@ def _live_agent_operations_payload_needs_attention(payload: dict[str, object]) -
         if isinstance(item, dict) and str(item.get("status") or "").strip() != "success":
             return True
     return False
+
+
+def _live_agent_session_runs_payload_needs_attention(payload: dict[str, object]) -> bool:
+    runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
+    for item in runs:
+        if isinstance(item, dict) and _live_agent_session_run_needs_attention(item):
+            return True
+    return False
+
+
+def _live_agent_session_run_needs_attention(run: dict[str, object]) -> bool:
+    status = str(run.get("status") or "").strip()
+    if status in {"failed", "error"}:
+        return True
+    active = run.get("active") is True
+    if active and status != "ready":
+        return True
+    readiness = run.get("readiness") if isinstance(run.get("readiness"), dict) else {}
+    readiness_status = str(readiness.get("status") or "").strip()
+    return bool(active and readiness_status and readiness_status != "ready")
 
 
 def _format_live_agent_operation_details(value: object, *, operation_name: str = "") -> str:
