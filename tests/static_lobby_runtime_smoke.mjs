@@ -513,7 +513,7 @@ function installHarness({
     if (url === "/api/live-agent-operations?limit=20") {
       return jsonResponse(liveAgentOperationsPayload || { operations: [] });
     }
-    if (url === "/api/live-agent-session-runs?limit=20") {
+    if (url === "/api/live-agent-session-runs?limit=20&include_readiness=1") {
       return jsonResponse(liveAgentSessionRunsPayload || { runs: [] });
     }
     if (url === "/api/codex-sessions/invite") {
@@ -1636,7 +1636,7 @@ test("durable session run ensure button posts persistent resident session payloa
     round_max_rounds: 2,
     round_stop_on_timeout: true,
   });
-  assert.ok(requests.some((request) => request.url === "/api/live-agent-session-runs?limit=20"));
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-session-runs?limit=20&include_readiness=1"));
   assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 3/3 connected · run run-1 ready");
   assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
@@ -2114,7 +2114,7 @@ test("runtime health renders meeting-owned session readiness details", async () 
   assert.match(rowText, /reason stale_watchdog stale manifest agent agent-b/);
 });
 
-test("runtime refresh loads durable session runs and renders safe connection evidence", async () => {
+test("runtime refresh loads durable session runs and renders current readiness evidence", async () => {
   resetState();
   const { document, requests } = installHarness({
     liveAgentSessionRunsPayload: {
@@ -2122,7 +2122,7 @@ test("runtime refresh loads durable session runs and renders safe connection evi
         {
           run_id: "run-2",
           action: "ensure",
-          status: "degraded",
+          status: "ready",
           active: true,
           meeting_id: "resident-gui",
           group_id: "resident-main",
@@ -2133,7 +2133,13 @@ test("runtime refresh loads durable session runs and renders safe connection evi
             server: "https://secret.example",
           },
           result: {
-            connection: { expected: 3, connected: 2 },
+            connection: { expected: 3, connected: 3 },
+          },
+          readiness: {
+            status: "degraded",
+            expected: 3,
+            connected: 1,
+            connection_attention: ["agent-c:offline"],
           },
         },
       ],
@@ -2143,13 +2149,18 @@ test("runtime refresh loads durable session runs and renders safe connection evi
   await refreshLiveAgentRuntimeSurfaces();
   renderLobby({ followLatest: false });
 
-  assert.ok(requests.some((request) => request.url === "/api/live-agent-session-runs?limit=20"));
-  const runText = document.querySelector(".live-agent-session-run-row").textContent;
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-session-runs?limit=20&include_readiness=1"));
+  const runRow = document.querySelector(".live-agent-session-run-row");
+  const runText = runRow.textContent;
   assert.match(runText, /run-2/);
   assert.match(runText, /resident-gui/);
   assert.match(runText, /resident-main/);
-  assert.match(runText, /degraded/);
-  assert.match(runText, /connected 2\/3/);
+  assert.match(runText, /ready/);
+  assert.match(runText, /readiness degraded · run ready · active/);
+  assert.match(runText, /stored connected 3\/3/);
+  assert.match(runText, /readiness degraded/);
+  assert.match(runText, /current connected 1\/3/);
+  assert.match(runText, /connection agent-c:offline/);
   assert.match(runText, /reconcile 2/);
   assert.doesNotMatch(runText, /configs\/|secret\.example|https:/);
 });
@@ -2284,7 +2295,7 @@ test("process panel refresh reloads lifecycle history", async () => {
   await document.querySelector("#live-agent-process-refresh").click();
 
   assert.ok(requests.some((request) => request.url === "/api/live-agent-process-events?limit=20"));
-  assert.ok(requests.some((request) => request.url === "/api/live-agent-session-runs?limit=20"));
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-session-runs?limit=20&include_readiness=1"));
 });
 
 test("live-agent roster renders lobby and official cursors separately", () => {

@@ -3978,6 +3978,31 @@ Document that process supervisor reconciliation preserves provider error evidenc
 
 ---
 
+### Task 111: GUI Session-Run Current Readiness Overlay
+
+**Goal:** Make the GUI `상주 세션런` list show current live readiness for durable session-run rows, so historical persisted `ready` intent is not mistaken for a currently ready resident session.
+
+**Files:**
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_static_ui_assets.py`
+
+- [x] **Step 1: Add RED GUI coverage for current readiness**
+
+Cover runtime refresh requesting `/api/live-agent-session-runs?limit=20&include_readiness=1` and rendering a run whose persisted status is `ready` while the attached current readiness overlay is `degraded`.
+
+- [x] **Step 2: Render the safe overlay in the session-run row**
+
+Add the current readiness status, current connected/expected counts, and bounded safe attention labels to the existing compact row. Keep the historical result connection evidence visible as separate stored-run evidence.
+
+- [x] **Step 3: Document the operator boundary**
+
+Document that the GUI list uses the read-only overlay and does not start providers, stop groups, run probes, append operation records, overwrite durable run status, or render private recovery payload fields.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

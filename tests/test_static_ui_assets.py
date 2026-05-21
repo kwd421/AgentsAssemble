@@ -282,7 +282,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("/api/live-agent-sessions/start", script)
         self.assertIn("/api/live-agent-sessions/ensure", script)
         self.assertIn("/api/live-agent-session-runs/ensure", script)
-        self.assertIn("/api/live-agent-session-runs?limit=20", script)
+        self.assertIn("/api/live-agent-session-runs?limit=20&include_readiness=1", script)
         self.assertIn("/api/live-agent-operations", script)
         self.assertIn("/api/live-agent-smoke", script)
         self.assertIn("/api/live-agent-official-round-smoke", script)

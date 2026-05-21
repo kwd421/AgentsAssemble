@@ -944,9 +944,12 @@ function renderLiveAgentSessionRun(run) {
   const meetingId = String(run.meeting_id || "-");
   const groupId = String(run.group_id || "-");
   const activity = run.active === true ? "active" : "inactive";
+  const readiness = liveAgentSessionRunReadinessPayload(run);
+  const stateLabel = readiness ? `readiness ${String(readiness.status || "unknown")} · run ${status} · ${activity}` : `${status} · ${activity}`;
   const details = [
     `phase ${String(run.phase || status)}`,
-    liveAgentSessionRunConnectionLabel(run),
+    liveAgentSessionRunConnectionLabel(run, { stored: Boolean(readiness) }),
+    liveAgentSessionRunReadinessLabel(readiness),
     run.reconcile_count ? `reconcile ${Math.max(0, Number(run.reconcile_count || 0))}` : "",
   ]
     .filter(Boolean)
@@ -958,18 +961,39 @@ function renderLiveAgentSessionRun(run) {
         <span>${escapeHtml(meetingId)} · ${escapeHtml(groupId)}</span>
         <small>${escapeHtml(details)}</small>
       </div>
-      <em>${escapeHtml(status)} · ${escapeHtml(activity)}</em>
+      <em>${escapeHtml(stateLabel)}</em>
     </article>
   `;
 }
 
-function liveAgentSessionRunConnectionLabel(run) {
+function liveAgentSessionRunConnectionLabel(run, options = {}) {
   const result = run?.result && typeof run.result === "object" ? run.result : {};
   const connection = result.connection && typeof result.connection === "object" ? result.connection : {};
   const expected = Number(connection.expected || 0);
   const connected = Number(connection.connected || 0);
   if (!Number.isFinite(expected) || !Number.isFinite(connected) || expected <= 0) return "";
-  return `connected ${Math.max(0, connected)}/${Math.max(0, expected)}`;
+  const label = options.stored ? "stored connected" : "connected";
+  return `${label} ${Math.max(0, connected)}/${Math.max(0, expected)}`;
+}
+
+function liveAgentSessionRunReadinessPayload(run) {
+  const readiness = run?.readiness && typeof run.readiness === "object" ? run.readiness : null;
+  return readiness && !Array.isArray(readiness) ? readiness : null;
+}
+
+function liveAgentSessionRunReadinessLabel(readiness) {
+  if (!readiness) return "";
+  const expected = Number(readiness.expected || 0);
+  const connected = Number(readiness.connected || 0);
+  const parts = [];
+  if (Number.isFinite(expected) && Number.isFinite(connected) && expected > 0) {
+    parts.push(`current connected ${Math.max(0, connected)}/${Math.max(0, expected)}`);
+  }
+  parts.push(liveAgentSessionAttentionLabel("ownership", readiness.ownership_attention));
+  parts.push(liveAgentSessionAttentionLabel("process", readiness.process_attention));
+  parts.push(liveAgentSessionAttentionLabel("connection", readiness.connection_attention));
+  parts.push(liveAgentSessionAttentionLabel("attention", readiness.attention));
+  return parts.filter(Boolean).join(" · ");
 }
 
 function renderLiveAgentProcessEvents() {
@@ -1705,7 +1729,7 @@ async function loadLiveAgentSessionRuns(options = {}) {
   let shouldRender = !options.background;
   state.liveAgentSessionRunsLoading = true;
   try {
-    const payload = await fetchJson("/api/live-agent-session-runs?limit=20");
+    const payload = await fetchJson("/api/live-agent-session-runs?limit=20&include_readiness=1");
     const runs = payload.runs || [];
     setLiveAgentSessionRuns(runs);
     state.liveAgentSessionRunsLoaded = true;
