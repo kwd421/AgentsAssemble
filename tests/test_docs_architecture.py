@@ -361,6 +361,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("ready-session drift guard", doc)
         self.assertIn("process-owned meeting id", doc)
         self.assertIn("does not create a replacement meeting", doc)
+        self.assertIn("post-stop process status", doc)
         self.assertIn("while preserving any `reply_probe` and `auto_rounds` evidence", doc)
         self.assertIn("session.recover", doc)
         self.assertIn("post-recover", doc)

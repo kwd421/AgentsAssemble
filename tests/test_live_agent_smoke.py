@@ -799,6 +799,94 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertEqual({reply["source_event_id"] for reply in result["post_restart_replies"]}, {"probe-3", "probe-4"})
         self.assertEqual({reply["source_event_id"] for reply in result["post_recover_replies"]}, {"probe-5", "probe-6"})
 
+    def test_session_smoke_fails_when_stop_leaves_process_group_running(self):
+        state = {"probe_ids": [], "stopped": False}
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            del timeout_seconds
+            if url.endswith("/api/live-agent-sessions/start"):
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
+                }
+            if url.endswith("/live-agent-turns/rounds"):
+                return {
+                    "status": "answered",
+                    "meeting_id": "session-smoke-meeting",
+                    "round_count": 1,
+                    "answered_round_count": 1,
+                    "completed_round_count": 0,
+                    "timeout_round_count": 0,
+                    "skipped_round_count": 0,
+                    "stopped_round_count": 0,
+                }
+            if url.endswith("/engagement"):
+                return {"agent": {"agent_id": url.rsplit("/", 2)[-2], "engagement_mode": "always"}}
+            if url.endswith("/api/lobby") and method == "POST":
+                probe_id = f"probe-{len(state['probe_ids']) + 1}"
+                state["probe_ids"].append(probe_id)
+                return {"event": {"id": probe_id}}
+            if url.endswith("/api/lobby") and method == "GET":
+                events = []
+                for probe_id in state["probe_ids"]:
+                    events.extend(_session_smoke_lobby_reply_events(probe_id))
+                return {"events": events}
+            if (
+                url.endswith("/api/live-agent-sessions/check")
+                or url.endswith("/api/live-agent-sessions/resume")
+                or url.endswith("/api/live-agent-sessions/restart")
+                or url.endswith("/api/live-agent-sessions/recover")
+            ):
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
+                }
+            if url.endswith("/api/live-agent-processes"):
+                status = "running" if state["stopped"] else "error"
+                return {
+                    "groups": [
+                        {
+                            "group_id": "session-smoke",
+                            "status": status,
+                            "pid": 1234,
+                            "meeting_id": "session-smoke-meeting",
+                            "diagnostic": True,
+                            "agents": [
+                                {"agent_id": "session-smoke-local-cli"},
+                                {"agent_id": "session-smoke-live-session"},
+                                {"agent_id": "session-smoke-remote-bridge"},
+                                {"agent_id": "session-smoke-self-service"},
+                            ],
+                        }
+                    ]
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                state["stopped"] = True
+                return {
+                    "status": "stopped",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "offline": {"expected": 4, "offline": 4, "attention": []},
+                }
+            return {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(LiveAgentSmokeFailed, "did not stop process group"):
+                run_live_agent_session_smoke(
+                    server="http://room.local",
+                    group_id="session-smoke",
+                    meeting_id="session-smoke-meeting",
+                    timeout_seconds=8,
+                    request_json=request_json,
+                    output_root=Path(temp_dir) / "room",
+                    sleep_fn=lambda seconds: None,
+                    temp_dir_factory=lambda: _FixedTemporaryDirectory(Path(temp_dir) / "config"),
+                )
+
     def test_session_smoke_can_run_same_session_soak_cycles(self):
         calls = []
         state = {"probe_ids": [], "check_count": 0, "sleeps": []}

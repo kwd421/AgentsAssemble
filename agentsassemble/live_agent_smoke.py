@@ -340,6 +340,7 @@ def run_live_agent_session_smoke(
     post_recover_probe_event_ids: list[str] = []
     soak_probe_event_ids: list[str] = []
     soak_check_statuses: list[str] = []
+    post_stop_process_status = ""
     with _SmokeRemoteBridgeServer(response_message=expected_messages[agent_ids["remote_bridge"]]) as bridge:
         with temp_dir_factory() as temp_dir:
             temp_root = Path(temp_dir).resolve()
@@ -516,6 +517,14 @@ def run_live_agent_session_smoke(
                 except Exception:
                     if start_result:
                         raise
+                else:
+                    post_stop_process_status = _ensure_session_smoke_process_group_stopped(
+                        server,
+                        clean_group_id,
+                        request_json=request_json,
+                        sleep_fn=sleep_fn,
+                        timeout_seconds=min(2.0, max(0.1, float(timeout_seconds))),
+                    )
 
     safe_replies = _safe_session_smoke_replies(replies)
     safe_post_restart_replies = _safe_session_smoke_replies(post_restart_replies)
@@ -559,6 +568,7 @@ def run_live_agent_session_smoke(
         "restart_status": str(restart_result.get("status") or ""),
         "recover_status": str(recover_result.get("status") or ""),
         "stop_status": str(stop_result.get("status") or ""),
+        "post_stop_process_status": post_stop_process_status,
     }
 
 
@@ -1084,6 +1094,30 @@ def _make_session_smoke_group_recoverable(
         sleep_fn=sleep_fn,
         timeout_seconds=timeout_seconds,
     )
+
+
+def _ensure_session_smoke_process_group_stopped(
+    server: str,
+    group_id: str,
+    *,
+    request_json: RequestJson,
+    sleep_fn: Callable[[float], None],
+    timeout_seconds: float,
+) -> str:
+    payload = wait_for_smoke_group_to_settle(
+        server,
+        group_id,
+        request_json=request_json,
+        sleep_fn=sleep_fn,
+        timeout_seconds=timeout_seconds,
+    )
+    group = find_process_group(payload, group_id)
+    if group is None:
+        return "missing"
+    status = str(group.get("status") or "unknown")
+    if status in {"running", "restarting"}:
+        raise LiveAgentSmokeFailed(f"Session smoke did not stop process group; status {status}.")
+    return status
 
 
 def _wait_for_session_smoke_recoverable_group(
