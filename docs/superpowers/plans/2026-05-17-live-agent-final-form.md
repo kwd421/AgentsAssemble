@@ -4513,6 +4513,33 @@ Operator docs now show the brief generation command and explain that the externa
 
 ---
 
+### Task 130: Run-Group Worker Failure Isolation
+
+**Goal:** Keep a single resident worker failure from taking down sibling workers in the same `run-group`.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED worker-isolation coverage**
+
+Cover a two-worker `run-group` where one worker raises a non-shutdown runtime exception after the sibling has started. The sibling must finish its own runner loop instead of being closed by the failed worker's error path.
+
+- [x] **Step 2: Keep shutdown behavior distinct from worker failure**
+
+The group still shuts down all active command runners for SIGINT, `KeyboardInterrupt`, and explicit group stop. Non-shutdown worker exceptions are recorded for the final stderr/exit report, while only that worker's own command runner is closed in its `finally` path.
+
+- [x] **Step 3: Document the operator contract**
+
+Operator docs now state that non-shutdown worker failures are isolated to the failed worker, sibling workers are not closed solely because one worker failed, and the group exits `2` with the failed worker report after remaining workers finish or the operator stops the group.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

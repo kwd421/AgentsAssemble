@@ -12610,12 +12610,12 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(sibling_closed_while_running.is_set())
         self.assertTrue(restored.is_set())
 
-    def test_live_agent_run_group_suppresses_secondary_shutdown_errors(self):
+    def test_live_agent_run_group_suppresses_secondary_errors_after_shutdown(self):
         configs = [
             ResidentAgentConfig(
                 server="http://room.local",
-                agent_id="primary-error",
-                display_name="Primary Error",
+                agent_id="primary-interrupt",
+                display_name="Primary Interrupt",
                 provider_kind="local_cli",
                 connection_kind="local_cli",
                 session_id="",
@@ -12659,8 +12659,8 @@ class CliTimeoutTests(unittest.TestCase):
                 self.stop_event = stop_event
 
             def run(self):
-                if self.config.agent_id == "primary-error":
-                    raise RuntimeError("primary boom")
+                if self.config.agent_id == "primary-interrupt":
+                    raise KeyboardInterrupt()
                 while not self.stop_event.is_set():
                     time.sleep(0.01)
                 raise RuntimeError("secondary closed during shutdown")
@@ -12675,8 +12675,7 @@ class CliTimeoutTests(unittest.TestCase):
         ):
             exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
 
-        self.assertEqual(exit_code, 2)
-        self.assertIn("primary-error: primary boom", stderr.getvalue())
+        self.assertEqual(exit_code, 0)
         self.assertNotIn("secondary closed during shutdown", stderr.getvalue())
 
     def test_live_agent_run_group_reports_worker_system_exit_as_error(self):
@@ -12813,7 +12812,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertTrue(sibling_closed_while_running.is_set())
 
-    def test_live_agent_run_group_closes_sibling_runners_after_primary_failure(self):
+    def test_live_agent_run_group_keeps_sibling_runner_after_primary_failure(self):
         configs = [
             ResidentAgentConfig(
                 server="http://room.local",
@@ -12857,6 +12856,7 @@ class CliTimeoutTests(unittest.TestCase):
         runners = {}
         sibling_started = threading.Event()
         sibling_closed_while_running = threading.Event()
+        sibling_finished = threading.Event()
 
         class CloseRecordingRunner:
             def __init__(self, agent_id):
@@ -12884,7 +12884,8 @@ class CliTimeoutTests(unittest.TestCase):
                         sibling_closed_while_running.set()
                         return 0
                     time.sleep(0.01)
-                return 0
+                sibling_finished.set()
+                return 3
 
         def command_runner_for_config(config):
             runner = CloseRecordingRunner(config.agent_id)
@@ -12904,7 +12905,8 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 2)
         self.assertIn("primary-error: primary boom", stderr.getvalue())
-        self.assertTrue(sibling_closed_while_running.is_set())
+        self.assertTrue(sibling_finished.is_set())
+        self.assertFalse(sibling_closed_while_running.is_set())
 
     def test_live_agent_run_live_session_reuses_one_process_for_multiple_events(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -2600,7 +2600,6 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
             if stop_event.is_set():
                 return
             errors[config.agent_id] = str(error)
-            shutdown_group()
         finally:
             if command_runner is not None:
                 _close_command_runner(command_runner)

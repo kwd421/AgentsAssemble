@@ -265,6 +265,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("active local provider commands are terminated", doc)
         self.assertIn("provider command hits its timeout", doc)
         self.assertIn("Direct resident `SIGTERM`", doc)
+        self.assertIn("A non-shutdown worker failure is isolated to that worker", doc)
+        self.assertIn("sibling workers are not closed just because one worker failed", doc)
         self.assertIn("instead of surfacing `KeyboardInterrupt`", doc)
         self.assertIn("own process group", doc)
         self.assertIn(".agentsassemble/live_agents.json", doc)
