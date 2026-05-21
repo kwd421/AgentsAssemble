@@ -8838,6 +8838,190 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(operations["operations"], [])
         self.assertNotIn(str(live_agent_config), str(runs_payload))
 
+    def test_live_agent_session_run_monitor_reconciles_active_runs_on_each_tick(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor
+
+        class TwoTickStop:
+            def __init__(self):
+                self.waits = []
+
+            def is_set(self):
+                return False
+
+            def wait(self, seconds):
+                self.waits.append(seconds)
+                return len(self.waits) >= 2
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": "configs/live-agents.example.json",
+                    "server": "http://room.local",
+                },
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+            observed_requests = []
+
+            def ensure_from_run(output_root, process_supervisor, payload, *, default_server):
+                del output_root, process_supervisor, default_server
+                observed_requests.append(dict(payload))
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "action": "none",
+                }
+
+            monitor = LiveAgentSessionRunMonitor(
+                root,
+                object(),
+                controller,
+                default_server="http://room.local",
+                interval_seconds=0,
+            )
+            stop = TwoTickStop()
+            with patch("agentsassemble.gui.live_agent_session_ensure_payload", side_effect=ensure_from_run):
+                monitor._loop(stop)
+            reconciled = controller.list_runs()[0]
+
+        self.assertEqual(len(observed_requests), 2)
+        self.assertEqual(observed_requests[0]["live_agent_config_path"], "configs/live-agents.example.json")
+        self.assertEqual(reconciled["status"], "ready")
+        self.assertEqual(reconciled["reconcile_count"], 2)
+        self.assertTrue(all(seconds >= 1.0 for seconds in stop.waits))
+
+    def test_live_agent_session_run_monitor_records_safe_failure_and_keeps_loop_alive(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor, live_agent_operations_payload
+
+        class RaisingController:
+            def __init__(self):
+                self.calls = 0
+
+            def reconcile_active_runs(self, callback):
+                del callback
+                self.calls += 1
+                raise RuntimeError("provider failed in /Users/me/private/live-agents.secret.json")
+
+        class TwoTickStop:
+            def __init__(self):
+                self.waits = 0
+
+            def is_set(self):
+                return False
+
+            def wait(self, seconds):
+                del seconds
+                self.waits += 1
+                return self.waits >= 2
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = RaisingController()
+            monitor = LiveAgentSessionRunMonitor(
+                root,
+                object(),
+                controller,
+                default_server="http://room.local",
+                interval_seconds=1,
+            )
+
+            monitor._loop(TwoTickStop())
+            operations = live_agent_operations_payload(root, limit=10)["operations"]
+
+        self.assertEqual(controller.calls, 2)
+        self.assertEqual(len(operations), 2)
+        self.assertEqual(operations[-1]["operation"], "session_run.monitor")
+        self.assertEqual(operations[-1]["status"], "failed")
+        self.assertEqual(operations[-1]["error"], "Live-agent session run monitor failed.")
+        self.assertNotIn("/Users/me/private", str(operations))
+
+    def test_live_agent_session_run_monitor_stop_waits_until_in_flight_tick_finishes(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor
+
+        class BlockingMonitor(LiveAgentSessionRunMonitor):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.entered = threading.Event()
+                self.release = threading.Event()
+
+            def run_once(self):
+                self.entered.set()
+                self.release.wait(timeout=2)
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            monitor = BlockingMonitor(
+                Path(temp_dir),
+                object(),
+                LiveAgentSessionRunController(Path(temp_dir)),
+                default_server="http://room.local",
+                interval_seconds=1,
+            )
+            monitor.start()
+            self.assertTrue(monitor.entered.wait(timeout=1))
+            stopper = threading.Thread(target=lambda: monitor.stop(timeout_seconds=None))
+            stopper.start()
+            time.sleep(0.05)
+            still_waiting = stopper.is_alive()
+            monitor.release.set()
+            stopper.join(timeout=1)
+
+        self.assertTrue(still_waiting)
+        self.assertFalse(stopper.is_alive())
+
+    def test_serve_gui_stops_session_run_monitor_before_process_supervisor(self):
+        events = []
+
+        class FakeProcessSupervisor:
+            def start_monitor(self):
+                events.append("process_start")
+
+            def close(self):
+                events.append("process_close")
+
+        class FakeSessionRunMonitor:
+            def __init__(self, *args, **kwargs):
+                del args, kwargs
+
+            def start(self):
+                events.append("session_start")
+
+            def stop(self, *, timeout_seconds=5.0):
+                del timeout_seconds
+                events.append("session_stop")
+
+        class FakeServer:
+            server_address = ("127.0.0.1", 8765)
+
+            def serve_forever(self):
+                raise KeyboardInterrupt()
+
+            def server_close(self):
+                events.append("server_close")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch("agentsassemble.gui.LiveAgentProcessSupervisor", return_value=FakeProcessSupervisor()):
+                with patch("agentsassemble.gui.LiveAgentSessionRunMonitor", FakeSessionRunMonitor):
+                    with patch("agentsassemble.gui.ThreadingHTTPServer", return_value=FakeServer()):
+                        serve_gui(output_root=Path(temp_dir))
+
+        self.assertEqual(events[:2], ["process_start", "session_start"])
+        self.assertLess(events.index("session_stop"), events.index("process_close"))
+        self.assertEqual(events[-1], "server_close")
+
     def test_live_agent_session_ensure_resolves_blank_meeting_id_from_owned_ready_group(self):
         class EnsureSessionSupervisor:
             def __init__(self) -> None:

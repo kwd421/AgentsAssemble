@@ -103,32 +103,12 @@ class LiveAgentSessionRunController:
     def finish_run(self, run_id: str, *, session: dict[str, object]) -> dict[str, object]:
         with self._lock:
             record = self._record_or_raise(run_id)
-            now = self.now_fn().isoformat()
-            status = _safe_status(session.get("status"))
-            record["status"] = status
-            record["active"] = status in ACTIVE_SESSION_RUN_STATUSES
-            record["phase"] = _safe_phase(session.get("action")) or status
-            record["meeting_id"] = _safe_identity(session.get("meeting_id")) or str(record.get("meeting_id") or "")
-            record["group_id"] = _safe_identity(session.get("group_id")) or str(record.get("group_id") or "")
-            record["result"] = _public_result(session)
-            record["last_error"] = ""
-            record["updated_at"] = now
-            record["finished_at"] = now
-            self._write_records()
-            return _public_record(record)
+            return self._finish_record(record, session=session)
 
     def fail_run(self, run_id: str, error: object) -> dict[str, object]:
         with self._lock:
             record = self._record_or_raise(run_id)
-            now = self.now_fn().isoformat()
-            record["status"] = "failed"
-            record["active"] = False
-            record["phase"] = "failed"
-            record["last_error"] = _safe_error(error)
-            record["updated_at"] = now
-            record["finished_at"] = now
-            self._write_records()
-            return _public_record(record)
+            return self._fail_record(record, error)
 
     def mark_matching_stopped(self, *, meeting_id: str, group_id: str, reason: str = "operator_stop") -> list[dict[str, object]]:
         clean_meeting_id = _safe_identity(meeting_id)
@@ -166,6 +146,9 @@ class LiveAgentSessionRunController:
         for run_id in active_run_ids:
             with self._lock:
                 record = self._record_or_raise(run_id)
+                if str(record.get("status") or "") not in ACTIVE_SESSION_RUN_STATUSES:
+                    results.append(_public_record(record))
+                    continue
                 record["status"] = "recovering"
                 record["active"] = True
                 record["phase"] = "reconcile"
@@ -178,10 +161,50 @@ class LiveAgentSessionRunController:
             try:
                 session = callback(callback_record)
             except Exception as error:
-                results.append(self.fail_run(run_id, error))
+                results.append(self._fail_reconciled_run_if_active(run_id, error))
                 continue
-            results.append(self.finish_run(run_id, session=session))
+            results.append(self._finish_reconciled_run_if_active(run_id, session=session))
         return results
+
+    def _finish_reconciled_run_if_active(self, run_id: str, *, session: dict[str, object]) -> dict[str, object]:
+        with self._lock:
+            record = self._record_or_raise(run_id)
+            if str(record.get("status") or "") not in ACTIVE_SESSION_RUN_STATUSES:
+                return _public_record(record)
+            return self._finish_record(record, session=session)
+
+    def _fail_reconciled_run_if_active(self, run_id: str, error: object) -> dict[str, object]:
+        with self._lock:
+            record = self._record_or_raise(run_id)
+            if str(record.get("status") or "") not in ACTIVE_SESSION_RUN_STATUSES:
+                return _public_record(record)
+            return self._fail_record(record, error)
+
+    def _finish_record(self, record: dict[str, object], *, session: dict[str, object]) -> dict[str, object]:
+        now = self.now_fn().isoformat()
+        status = _safe_status(session.get("status"))
+        record["status"] = status
+        record["active"] = status in ACTIVE_SESSION_RUN_STATUSES
+        record["phase"] = _safe_phase(session.get("action")) or status
+        record["meeting_id"] = _safe_identity(session.get("meeting_id")) or str(record.get("meeting_id") or "")
+        record["group_id"] = _safe_identity(session.get("group_id")) or str(record.get("group_id") or "")
+        record["result"] = _public_result(session)
+        record["last_error"] = ""
+        record["updated_at"] = now
+        record["finished_at"] = now
+        self._write_records()
+        return _public_record(record)
+
+    def _fail_record(self, record: dict[str, object], error: object) -> dict[str, object]:
+        now = self.now_fn().isoformat()
+        record["status"] = "failed"
+        record["active"] = False
+        record["phase"] = "failed"
+        record["last_error"] = _safe_error(error)
+        record["updated_at"] = now
+        record["finished_at"] = now
+        self._write_records()
+        return _public_record(record)
 
     def list_runs(
         self,

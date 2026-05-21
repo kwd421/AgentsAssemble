@@ -173,6 +173,93 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
         self.assertEqual(runs[stopped["run_id"]]["status"], "stopped")
         self.assertFalse(runs[stopped["run_id"]]["active"])
 
+    def test_reconcile_active_runs_does_not_resurrect_run_stopped_during_callback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": "configs/live-agents.example.json",
+                },
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+
+            def stop_then_return_ready(reconcile_run):
+                controller.mark_matching_stopped(
+                    meeting_id=str(reconcile_run.get("meeting_id") or ""),
+                    group_id=str(reconcile_run.get("group_id") or ""),
+                    reason="session.stop",
+                )
+                return {
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                }
+
+            results = controller.reconcile_active_runs(stop_then_return_ready)
+            stored_run = controller.list_runs()[0]
+
+        self.assertEqual(results[0]["run_id"], run["run_id"])
+        self.assertEqual(results[0]["status"], "stopped")
+        self.assertFalse(results[0]["active"])
+        self.assertEqual(stored_run["status"], "stopped")
+        self.assertFalse(stored_run["active"])
+
+    def test_reconciled_finish_preserves_terminal_record_at_write_boundary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": "configs/live-agents.example.json",
+                },
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+            controller.mark_matching_stopped(
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                reason="session.stop",
+            )
+
+            result = controller._finish_reconciled_run_if_active(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+            stored_run = controller.list_runs()[0]
+
+        self.assertEqual(result["status"], "stopped")
+        self.assertFalse(result["active"])
+        self.assertEqual(stored_run["status"], "stopped")
+        self.assertFalse(stored_run["active"])
+
     def test_fail_run_records_sanitized_error_without_leaking_request_details(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

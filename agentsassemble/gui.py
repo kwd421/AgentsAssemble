@@ -100,6 +100,9 @@ MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
 MAX_LIVE_AGENT_ROUND_BATCH = 8
 LIVE_AGENT_ROUND_SCHEDULER_LOCKS: dict[str, threading.RLock] = {}
 LIVE_AGENT_ROUND_SCHEDULER_LOCKS_LOCK = threading.Lock()
+DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS = 30.0
+MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS = 1.0
+SESSION_RUN_MONITOR_ERROR = "Live-agent session run monitor failed."
 HEALTH_WATCHDOG_REASON_EVENT_TYPES = {"stale_watchdog", "stale_watchdog_stop_failed"}
 HEALTH_RESTART_FAILED_REASON_EVENT_TYPE = "restart_failed"
 HEALTH_RECOVERED_UNKNOWN_REASON_EVENT_TYPE = "recovered_unknown"
@@ -289,18 +292,20 @@ def serve_gui(
                 restart_backoff_seconds=live_agent_restart_backoff_seconds,
                 stale_restart_after_seconds=live_agent_stale_restart_after_seconds,
             )
-        threading.Thread(
-            target=_reconcile_live_agent_session_runs_on_startup,
-            args=(root, process_supervisor, session_run_controller),
-            kwargs={"default_server": server_url},
-            daemon=True,
-            name="AgentsAssembleLiveAgentSessionRunReconcile",
-        ).start()
+        session_run_monitor = LiveAgentSessionRunMonitor(
+            root,
+            process_supervisor,
+            session_run_controller,
+            default_server=server_url,
+        )
+        session_run_monitor.start()
         print(f"AgentsAssemble GUI: {server_url}")
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping AgentsAssemble GUI")
     finally:
+        if "session_run_monitor" in locals():
+            session_run_monitor.stop()
         process_supervisor.close()
         server.server_close()
 
@@ -368,6 +373,23 @@ def _reconcile_live_agent_session_runs_on_startup(
     *,
     default_server: str,
 ) -> list[dict[str, object]]:
+    return _reconcile_live_agent_session_runs(
+        output_root,
+        process_supervisor,
+        session_run_controller,
+        default_server=default_server,
+        summary="reconciled durable live-agent session runs on GUI startup",
+    )
+
+
+def _reconcile_live_agent_session_runs(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    session_run_controller: LiveAgentSessionRunController,
+    *,
+    default_server: str,
+    summary: str,
+) -> list[dict[str, object]]:
     def ensure_from_run(run: dict[str, object]) -> dict[str, object]:
         request = run.get("request") if isinstance(run.get("request"), dict) else {}
         return live_agent_session_ensure_payload(
@@ -384,13 +406,99 @@ def _reconcile_live_agent_session_runs_on_startup(
             output_root,
             operation="session_run.reconcile",
             status="failed" if failed_count else "success",
-            summary="reconciled durable live-agent session runs on GUI startup",
+            summary=summary,
             details={
                 "session_run_count": len(results),
                 "session_run_failed_count": failed_count,
             },
         )
     return results
+
+
+class LiveAgentSessionRunMonitor:
+    def __init__(
+        self,
+        output_root: Path,
+        process_supervisor: LiveAgentProcessSupervisor,
+        session_run_controller: LiveAgentSessionRunController,
+        *,
+        default_server: str,
+        interval_seconds: float = DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS,
+    ) -> None:
+        self.output_root = output_root
+        self.process_supervisor = process_supervisor
+        self.session_run_controller = session_run_controller
+        self.default_server = default_server
+        self.interval_seconds = _session_run_monitor_interval(interval_seconds)
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._stop_event = threading.Event()
+            thread = threading.Thread(
+                target=self._loop,
+                args=(self._stop_event,),
+                daemon=True,
+                name="AgentsAssembleLiveAgentSessionRunMonitor",
+            )
+            self._thread = thread
+            thread.start()
+
+    def stop(self, *, timeout_seconds: float | None = None) -> bool:
+        with self._lock:
+            stop_event = self._stop_event
+            thread = self._thread
+            self._thread = None
+        stop_event.set()
+        if thread is not None:
+            if timeout_seconds is None:
+                thread.join()
+            else:
+                thread.join(timeout=max(0.0, timeout_seconds))
+            return not thread.is_alive()
+        return True
+
+    def run_once(self) -> list[dict[str, object]]:
+        return _reconcile_live_agent_session_runs(
+            self.output_root,
+            self.process_supervisor,
+            self.session_run_controller,
+            default_server=self.default_server,
+            summary="reconciled durable live-agent session runs during GUI runtime",
+        )
+
+    def _loop(self, stop_event: threading.Event) -> None:
+        while not stop_event.is_set():
+            try:
+                self.run_once()
+            except Exception as error:
+                self._record_failure(error)
+            if stop_event.wait(self.interval_seconds):
+                break
+
+    def _record_failure(self, error: Exception) -> None:
+        record_live_agent_operation(
+            self.output_root,
+            operation="session_run.monitor",
+            status="failed",
+            summary="live-agent session-run monitor failed",
+            error=SESSION_RUN_MONITOR_ERROR,
+            details={"error_type": type(error).__name__},
+        )
+
+
+def _session_run_monitor_interval(value: object) -> float:
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS
+    if not math.isfinite(seconds):
+        return DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS
+    return max(MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS, seconds)
 
 
 def _read_optional(path: Path) -> str:
