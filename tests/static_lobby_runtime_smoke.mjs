@@ -399,6 +399,22 @@ function installHarness({
         },
       });
     }
+    const sessionRunStopMatch = String(url).match(/^\/api\/live-agent-session-runs\/([^/]+)\/stop$/);
+    if (sessionRunStopMatch) {
+      return jsonResponse({
+        status: "stopped",
+        session_run: {
+          run_id: sessionRunStopMatch[1],
+          action: "ensure",
+          status: "stopped",
+          active: false,
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          phase: "stopped",
+          stopped_status: "degraded",
+        },
+      });
+    }
     const sessionRunRetryNowMatch = String(url).match(/^\/api\/live-agent-session-runs\/([^/]+)\/retry-now$/);
     if (sessionRunRetryNowMatch) {
       return jsonResponse(
@@ -632,6 +648,10 @@ function sessionRunPauseRequest(requests) {
 
 function sessionRunResumeRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-session-runs/run-paused/resume");
+}
+
+function sessionRunStopRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-session-runs/run-1/stop");
 }
 
 function sessionResumeRequest(requests) {
@@ -2410,6 +2430,36 @@ test("session run pause and resume buttons control durable automation", async ()
 
   assert.deepEqual(sessionRunResumeRequest(requests).jsonBody, {});
   assert.equal(state.liveAgentProcessStatus.message, "run-paused 재개됨");
+});
+
+test("session run stop button stops one durable automation intent", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    liveAgentSessionRunsPayload: {
+      runs: [
+        {
+          run_id: "run-1",
+          action: "ensure",
+          status: "degraded",
+          active: true,
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          phase: "reconcile_failed",
+          reconcile_failure_count: 1,
+          reconcile_backoff_seconds: 60,
+        },
+      ],
+    },
+  });
+  renderLobby({ followLatest: false });
+  await refreshLiveAgentRuntimeSurfaces();
+
+  const stopButton = document.querySelectorAll("[data-live-agent-session-run-stop]")[0];
+  assert.ok(stopButton);
+  await stopButton.click();
+
+  assert.deepEqual(sessionRunStopRequest(requests).jsonBody, {});
+  assert.equal(state.liveAgentProcessStatus.message, "run-1 중지됨");
 });
 
 test("runtime health session readiness renders only safe escaped evidence", async () => {

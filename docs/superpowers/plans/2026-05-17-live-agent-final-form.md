@@ -4282,6 +4282,32 @@ Docs now distinguish observation health evidence from durable recovery: fresh la
 
 ---
 
+### Task 122: GUI Session-Run Stop Control
+
+**Goal:** Let operators stop one durable session-run intent directly from the GUI list without stopping the resident process group.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+
+- [x] **Step 1: Add RED GUI stop coverage**
+
+Static and runtime smoke coverage now expects the `상주 세션런` row to expose a stop control and to post `{}` to `/api/live-agent-session-runs/<run_id>/stop`.
+
+- [x] **Step 2: Reuse row action patterns**
+
+The GUI stop control uses the same row action lock, status-line feedback, safe history refresh, and render refresh pattern as pause and resume. It is shown only for active non-terminal durable runs.
+
+- [x] **Step 3: Document row-level stop semantics**
+
+Docs now distinguish the row-level `중지` control from `세션중지`: stopping a row removes one durable reconcile intent while leaving the resident process group and roster evidence untouched.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

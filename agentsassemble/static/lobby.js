@@ -183,6 +183,9 @@ export function renderLobby(options = {}) {
   lobby.querySelectorAll("[data-live-agent-session-run-resume]").forEach((button) => {
     button.addEventListener("click", () => resumeLiveAgentSessionRun(button.dataset.liveAgentSessionRunResume));
   });
+  lobby.querySelectorAll("[data-live-agent-session-run-stop]").forEach((button) => {
+    button.addEventListener("click", () => stopLiveAgentSessionRun(button.dataset.liveAgentSessionRunStop));
+  });
   lobby.querySelectorAll("[data-live-agent-engagement]").forEach((select) => {
     select.addEventListener("change", () => updateLiveAgentEngagement(select.dataset.liveAgentEngagement, select.value));
   });
@@ -1041,6 +1044,7 @@ function renderLiveAgentSessionRun(run) {
   const canRetry = liveAgentSessionRunCanRetry(run, readiness);
   const canPause = liveAgentSessionRunCanPause(run);
   const canResume = liveAgentSessionRunCanResume(run);
+  const canStop = liveAgentSessionRunCanStop(run);
   const actionDisabled = liveAgentProcessActionBusy() ? " disabled" : "";
   const stateLabel = readiness ? `readiness ${String(readiness.status || "unknown")} · run ${status} · ${activity}` : `${status} · ${activity}`;
   const details = [
@@ -1063,9 +1067,16 @@ function renderLiveAgentSessionRun(run) {
       ${canPause ? `<button type="button" data-live-agent-session-run-pause="${escapeHtml(runId)}"${actionDisabled}>일시정지</button>` : ""}
       ${canResume ? `<button type="button" data-live-agent-session-run-resume="${escapeHtml(runId)}"${actionDisabled}>재개</button>` : ""}
       ${canRetry ? `<button type="button" data-live-agent-session-run-retry-now="${escapeHtml(runId)}"${actionDisabled}>재시도</button>` : ""}
+      ${canStop ? `<button type="button" data-live-agent-session-run-stop="${escapeHtml(runId)}"${actionDisabled}>중지</button>` : ""}
       <em>${escapeHtml(stateLabel)}</em>
     </article>
   `;
+}
+
+function liveAgentSessionRunCanStop(run) {
+  const status = String(run?.status || "unknown");
+  const runId = String(run?.run_id || "").trim();
+  return run?.active === true && Boolean(runId) && !["failed", "stopped"].includes(status);
 }
 
 function liveAgentSessionRunCanPause(run) {
@@ -3014,6 +3025,28 @@ async function resumeLiveAgentSessionRun(runId) {
     state.liveAgentProcessStatus = { message: `${run.run_id || runId} 재개됨`, tone: "success" };
   } catch (error) {
     state.liveAgentProcessStatus = { message: `${runId} 재개 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    await refreshLiveAgentProcessHistory();
+    state.liveAgentSessionRunActionRunning = "";
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function stopLiveAgentSessionRun(runId) {
+  if (!runId || liveAgentProcessActionBusy()) return;
+  state.liveAgentSessionRunActionRunning = runId;
+  state.liveAgentProcessStatus = { message: `${runId} 중지 중`, tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson(`/api/live-agent-session-runs/${encodeURIComponent(runId)}/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const run = payload?.session_run && typeof payload.session_run === "object" ? payload.session_run : {};
+    state.liveAgentProcessStatus = { message: `${run.run_id || runId} 중지됨`, tone: "success" };
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `${runId} 중지 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   } finally {
     await refreshLiveAgentProcessHistory();
     state.liveAgentSessionRunActionRunning = "";
