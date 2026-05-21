@@ -328,6 +328,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("ready waits require the current readiness overlay to be `ready`", doc)
         self.assertIn("lifecycle-owned session-run monitor", doc)
         self.assertIn("conservative runtime interval", doc)
+        self.assertIn("Successful post-ready checks consume their one-shot durable request fields", doc)
+        self.assertIn("Failed post-ready checks keep the run `degraded`", doc)
         self.assertIn("shuts down before the process supervisor", doc)
         self.assertIn("Recent operation views read from the JSONL tail", doc)
         self.assertIn("prioritize high-signal liveness evidence", doc)

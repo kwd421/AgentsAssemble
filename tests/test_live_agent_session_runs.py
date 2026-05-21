@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
@@ -172,6 +173,199 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
         self.assertEqual(runs[active["run_id"]]["last_reconciled_at"], current["value"].isoformat())
         self.assertEqual(runs[stopped["run_id"]]["status"], "stopped")
         self.assertFalse(runs[stopped["run_id"]]["active"])
+
+    def test_finish_run_consumes_successful_post_ready_request_fields(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": "configs/live-agents.example.json",
+                    "server": "http://room.local",
+                    "probe_bound_agents": True,
+                    "probe_timeout_seconds": 3,
+                    "run_remaining_rounds": True,
+                    "round_timeout_seconds": 5,
+                    "round_max_rounds": 2,
+                    "round_stop_on_timeout": True,
+                    "finalize_after_rounds": True,
+                },
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                    "reply_probe": {"status": "ok", "ok_count": 1},
+                    "auto_rounds": {"status": "answered", "answered_round_count": 1},
+                    "finalization": {"status": "finalized", "official_event_count": 1},
+                },
+            )
+
+            reloaded = LiveAgentSessionRunController(root)
+            observed_requests = []
+            reloaded.reconcile_active_runs(
+                lambda reconcile_run: observed_requests.append(dict(reconcile_run["request"]))
+                or {
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                }
+            )
+            public_run = reloaded.list_runs()[0]
+
+        self.assertEqual(public_run["status"], "ready")
+        for key in (
+            "probe_bound_agents",
+            "probe_timeout_seconds",
+            "run_remaining_rounds",
+            "round_timeout_seconds",
+            "round_max_rounds",
+            "round_stop_on_timeout",
+            "finalize_after_rounds",
+        ):
+            self.assertNotIn(key, public_run["request"])
+            self.assertNotIn(key, observed_requests[0])
+
+    def test_legacy_ready_run_consumes_successful_post_ready_request_fields_on_read(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir(parents=True)
+            (runs_dir / "session-runs.json").write_text(
+                json.dumps(
+                    {
+                        "runs": [
+                            {
+                                "run_id": "legacy-ready",
+                                "action": "ensure",
+                                "status": "ready",
+                                "active": True,
+                                "phase": "none",
+                                "meeting_id": "resident-m1",
+                                "group_id": "resident-main",
+                                "request": {
+                                    "meeting_id": "resident-m1",
+                                    "group_id": "resident-main",
+                                    "live_agent_config_path": "configs/live-agents.example.json",
+                                    "server": "http://room.local",
+                                    "probe_bound_agents": True,
+                                    "probe_timeout_seconds": 3,
+                                    "run_remaining_rounds": True,
+                                    "round_timeout_seconds": 5,
+                                    "round_max_rounds": 2,
+                                    "round_stop_on_timeout": True,
+                                    "finalize_after_rounds": True,
+                                },
+                                "result": {
+                                    "status": "ready",
+                                    "meeting_id": "resident-m1",
+                                    "group_id": "resident-main",
+                                    "action": "none",
+                                    "reply_probe": {"status": "ok"},
+                                    "auto_rounds": {"status": "answered"},
+                                    "finalization": {"status": "finalized"},
+                                },
+                                "last_error": "",
+                                "created_at": "2026-05-21T10:00:00+00:00",
+                                "updated_at": "2026-05-21T10:00:01+00:00",
+                                "finished_at": "2026-05-21T10:00:01+00:00",
+                                "last_reconciled_at": "",
+                                "reconcile_count": 0,
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            controller = LiveAgentSessionRunController(root)
+            public_run = controller.list_runs()[0]
+            observed_requests = []
+            controller.reconcile_active_runs(
+                lambda reconcile_run: observed_requests.append(dict(reconcile_run["request"]))
+                or {
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                }
+            )
+
+        for key in (
+            "probe_bound_agents",
+            "probe_timeout_seconds",
+            "run_remaining_rounds",
+            "round_timeout_seconds",
+            "round_max_rounds",
+            "round_stop_on_timeout",
+            "finalize_after_rounds",
+        ):
+            self.assertNotIn(key, public_run["request"])
+            self.assertNotIn(key, observed_requests[0])
+
+    def test_finish_run_keeps_failed_post_ready_request_fields_for_retry(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": "configs/live-agents.example.json",
+                    "server": "http://room.local",
+                    "probe_bound_agents": True,
+                    "probe_timeout_seconds": 3,
+                    "run_remaining_rounds": True,
+                    "round_timeout_seconds": 5,
+                    "finalize_after_rounds": True,
+                },
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                    "reply_probe": {"status": "timeout", "timeout_count": 1},
+                    "auto_rounds": {"status": "skipped", "reason": "probe_not_ready"},
+                    "finalization": {"status": "skipped", "reason": "rounds_not_ready"},
+                },
+            )
+
+            observed_requests = []
+            reloaded = LiveAgentSessionRunController(root)
+            initial_run = reloaded.list_runs()[0]
+            reloaded.reconcile_active_runs(
+                lambda reconcile_run: observed_requests.append(dict(reconcile_run["request"]))
+                or {
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                    "reply_probe": {"status": "ok"},
+                    "auto_rounds": {"status": "answered"},
+                    "finalization": {"status": "finalized"},
+                }
+            )
+            public_run = reloaded.list_runs()[0]
+
+        self.assertEqual(initial_run["status"], "degraded")
+        self.assertTrue(initial_run["active"])
+        self.assertEqual(public_run["status"], "ready")
+        self.assertTrue(observed_requests[0]["probe_bound_agents"])
+        self.assertTrue(observed_requests[0]["run_remaining_rounds"])
+        self.assertTrue(observed_requests[0]["finalize_after_rounds"])
 
     def test_reconcile_active_runs_does_not_resurrect_run_stopped_during_callback(self):
         with tempfile.TemporaryDirectory() as temp_dir:

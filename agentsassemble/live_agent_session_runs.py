@@ -17,6 +17,15 @@ SESSION_RUN_TEXT_LIMIT = 500
 SESSION_RUN_FIELD_LIMIT = 128
 ACTIVE_SESSION_RUN_STATUSES = {"running", "recovering", "ready", "starting", "degraded"}
 TERMINAL_SESSION_RUN_STATUSES = {"failed", "stopped"}
+POST_READY_REQUEST_KEYS = {
+    "probe_bound_agents",
+    "probe_timeout_seconds",
+    "run_remaining_rounds",
+    "round_timeout_seconds",
+    "round_max_rounds",
+    "round_stop_on_timeout",
+    "finalize_after_rounds",
+}
 SAFE_REQUEST_KEYS = {
     "meeting_id",
     "group_id",
@@ -135,7 +144,12 @@ class LiveAgentSessionRunController:
                 self._write_records()
         return stopped
 
-    def reconcile_active_runs(self, callback: Callable[[dict[str, object]], dict[str, object]]) -> list[dict[str, object]]:
+    def reconcile_active_runs(
+        self,
+        callback: Callable[[dict[str, object]], dict[str, object]],
+        *,
+        should_reconcile: Callable[[dict[str, object]], bool] | None = None,
+    ) -> list[dict[str, object]]:
         results: list[dict[str, object]] = []
         with self._lock:
             active_run_ids = [
@@ -144,6 +158,15 @@ class LiveAgentSessionRunController:
                 if str(record.get("status") or "") in ACTIVE_SESSION_RUN_STATUSES
             ]
         for run_id in active_run_ids:
+            with self._lock:
+                record = self._record_or_raise(run_id)
+                if str(record.get("status") or "") not in ACTIVE_SESSION_RUN_STATUSES:
+                    results.append(_public_record(record))
+                    continue
+                pending_record = dict(record)
+                pending_record["request"] = dict(record.get("request") if isinstance(record.get("request"), dict) else {})
+            if should_reconcile is not None and not should_reconcile(pending_record):
+                continue
             with self._lock:
                 record = self._record_or_raise(run_id)
                 if str(record.get("status") or "") not in ACTIVE_SESSION_RUN_STATUSES:
@@ -182,13 +205,17 @@ class LiveAgentSessionRunController:
 
     def _finish_record(self, record: dict[str, object], *, session: dict[str, object]) -> dict[str, object]:
         now = self.now_fn().isoformat()
-        status = _safe_status(session.get("status"))
+        status = _session_run_status(session)
         record["status"] = status
         record["active"] = status in ACTIVE_SESSION_RUN_STATUSES
         record["phase"] = _safe_phase(session.get("action")) or status
         record["meeting_id"] = _safe_identity(session.get("meeting_id")) or str(record.get("meeting_id") or "")
         record["group_id"] = _safe_identity(session.get("group_id")) or str(record.get("group_id") or "")
         record["result"] = _public_result(session)
+        if status == "ready":
+            record["request"] = _request_without_post_ready_fields(
+                record.get("request") if isinstance(record.get("request"), dict) else {}
+            )
         record["last_error"] = ""
         record["updated_at"] = now
         record["finished_at"] = now
@@ -281,9 +308,13 @@ def _safe_record(value: object) -> dict[str, object]:
     run_id = _safe_identity(value.get("run_id"))
     if not run_id:
         return {}
-    status = _safe_status(value.get("status"))
     request = _request_payload(value.get("request") if isinstance(value.get("request"), dict) else {})
     result = _public_result(value.get("result") if isinstance(value.get("result"), dict) else {})
+    status = _safe_status(value.get("status"))
+    if status in ACTIVE_SESSION_RUN_STATUSES and result:
+        status = _session_run_status({**result, "status": result.get("status", status)})
+    if status == "ready":
+        request = _request_without_post_ready_fields(request)
     return {
         "run_id": run_id,
         "action": _safe_action(value.get("action")),
@@ -419,6 +450,30 @@ def _safe_status(value: object) -> str:
     if status in ACTIVE_SESSION_RUN_STATUSES or status in TERMINAL_SESSION_RUN_STATUSES:
         return status
     return "degraded" if status else "running"
+
+
+def _session_run_status(session: dict[str, object]) -> str:
+    status = _safe_status(session.get("status"))
+    if status != "ready":
+        return status
+    reply_probe = session.get("reply_probe") if isinstance(session.get("reply_probe"), dict) else None
+    if reply_probe is not None and _result_status(reply_probe.get("status")) != "ok":
+        return "degraded"
+    auto_rounds = session.get("auto_rounds") if isinstance(session.get("auto_rounds"), dict) else None
+    if auto_rounds is not None and _result_status(auto_rounds.get("status")) not in {"answered", "complete"}:
+        return "degraded"
+    finalization = session.get("finalization") if isinstance(session.get("finalization"), dict) else None
+    if finalization is not None and _result_status(finalization.get("status")) not in {"finalized", "already_finalized"}:
+        return "degraded"
+    return "ready"
+
+
+def _result_status(value: object) -> str:
+    return clean_lobby_text(value, limit=SESSION_RUN_FIELD_LIMIT)
+
+
+def _request_without_post_ready_fields(request: dict[str, object]) -> dict[str, object]:
+    return {key: value for key, value in request.items() if key not in POST_READY_REQUEST_KEYS}
 
 
 def _safe_phase(value: object) -> str:

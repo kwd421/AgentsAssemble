@@ -399,7 +399,14 @@ def _reconcile_live_agent_session_runs(
             default_server=default_server,
         )
 
-    results = session_run_controller.reconcile_active_runs(ensure_from_run)
+    results = session_run_controller.reconcile_active_runs(
+        ensure_from_run,
+        should_reconcile=lambda run: _session_run_monitor_should_reconcile(
+            output_root,
+            process_supervisor,
+            run,
+        ),
+    )
     if results:
         failed_count = sum(1 for item in results if str(item.get("status") or "") == "failed")
         record_live_agent_operation(
@@ -413,6 +420,29 @@ def _reconcile_live_agent_session_runs(
             },
         )
     return results
+
+
+def _session_run_monitor_should_reconcile(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    run: dict[str, object],
+) -> bool:
+    if _operation_result_status(run.get("status")) != "ready":
+        return True
+    meeting_id = str(run.get("meeting_id") or "").strip()
+    group_id = str(run.get("group_id") or "").strip()
+    if not meeting_id or not group_id:
+        return True
+    try:
+        readiness = live_agent_session_readiness_payload(
+            output_root,
+            process_supervisor,
+            meeting_id=meeting_id,
+            group_id=group_id,
+        )
+    except (OSError, ValueError):
+        return True
+    return _operation_result_status(readiness.get("status")) != "ready"
 
 
 class LiveAgentSessionRunMonitor:

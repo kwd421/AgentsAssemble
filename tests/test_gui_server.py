@@ -8910,8 +8910,9 @@ class GuiServerTests(unittest.TestCase):
             def __init__(self):
                 self.calls = 0
 
-            def reconcile_active_runs(self, callback):
+            def reconcile_active_runs(self, callback, **kwargs):
                 del callback
+                del kwargs
                 self.calls += 1
                 raise RuntimeError("provider failed in /Users/me/private/live-agents.secret.json")
 
@@ -8947,6 +8948,76 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(operations[-1]["status"], "failed")
         self.assertEqual(operations[-1]["error"], "Live-agent session run monitor failed.")
         self.assertNotIn("/Users/me/private", str(operations))
+
+    def test_live_agent_session_run_monitor_skips_mutating_ensure_for_current_ready_run(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor, live_agent_operations_payload
+
+        class ReadySessionSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": str(live_agent_config),
+                    "server": "http://room.local",
+                    "probe_bound_agents": True,
+                    "run_remaining_rounds": True,
+                    "finalize_after_rounds": True,
+                },
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                    "reply_probe": {"status": "ok"},
+                    "auto_rounds": {"status": "complete"},
+                    "finalization": {"status": "already_finalized"},
+                },
+            )
+            monitor = LiveAgentSessionRunMonitor(
+                root,
+                ReadySessionSupervisor(),
+                controller,
+                default_server="http://room.local",
+            )
+
+            with patch("agentsassemble.gui.live_agent_session_ensure_payload") as ensure_payload:
+                ensure_payload.side_effect = AssertionError("ready monitor tick must stay read-only")
+                results = monitor.run_once()
+            operations = live_agent_operations_payload(root, limit=10)["operations"]
+            stored_run = controller.list_runs()[0]
+
+        self.assertEqual(results, [])
+        self.assertEqual(operations, [])
+        self.assertEqual(stored_run["status"], "ready")
+        self.assertEqual(stored_run["reconcile_count"], 0)
 
     def test_live_agent_session_run_monitor_stop_waits_until_in_flight_tick_finishes(self):
         from agentsassemble.gui import LiveAgentSessionRunMonitor
