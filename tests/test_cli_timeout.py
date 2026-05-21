@@ -759,6 +759,33 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(args.as_json)
         self.assertTrue(args.fail_on_attention)
 
+    def test_live_agent_list_parses_target_filters_and_require_match(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "list",
+                "--meeting-id",
+                "resident-m1",
+                "--agent-id",
+                "agent-a",
+                "--agent-id",
+                "agent-b",
+                "--status",
+                "online",
+                "--status",
+                "working",
+                "--require-match",
+                "--require-all-agents",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "list")
+        self.assertEqual(args.meeting_id, "resident-m1")
+        self.assertEqual(args.agent_ids, ["agent-a", "agent-b"])
+        self.assertEqual(args.statuses, ["online", "working"])
+        self.assertTrue(args.require_match)
+        self.assertTrue(args.require_all_agents)
+
     def test_live_agent_list_fetches_roster_and_prints_safe_presence(self):
         payload = {
             "agents": [
@@ -794,6 +821,103 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("official_cursor=live-1", output)
         self.assertNotIn("secret.local", output)
         self.assertNotIn("endpoint", output)
+
+    def test_live_agent_list_sends_target_filters_to_server(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "working",
+                    "meeting_id": "resident-m1",
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--agent-id",
+                        "agent-a",
+                        "--agent-id",
+                        "agent-b",
+                        "--status",
+                        "online",
+                        "--status",
+                        "working",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        requested = urllib.parse.urlparse(request_json.call_args.args[0])
+        self.assertEqual(requested.scheme, "http")
+        self.assertEqual(requested.netloc, "room.local")
+        self.assertEqual(requested.path, "/api/live-agents")
+        query = urllib.parse.parse_qs(requested.query)
+        self.assertEqual(query["meeting_id"], ["resident-m1"])
+        self.assertEqual(query["agent_id"], ["agent-a", "agent-b"])
+        self.assertEqual(query["status"], ["online", "working"])
+        self.assertIn("agent-a Agent A local_cli/local_cli working", stdout.getvalue())
+
+    def test_live_agent_list_require_match_exits_one_after_printing_empty_summary(self):
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value={"agents": []}):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "missing-agent",
+                        "--require-match",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("no live agents", stdout.getvalue())
+
+    def test_live_agent_list_require_all_agents_exits_one_when_any_requested_agent_is_missing(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "online",
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "agent-a",
+                        "--agent-id",
+                        "agent-b",
+                        "--require-all-agents",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("agent-a Agent A local_cli/local_cli online", stdout.getvalue())
 
     def test_live_agent_list_json_prints_safe_roster_projection(self):
         payload = {

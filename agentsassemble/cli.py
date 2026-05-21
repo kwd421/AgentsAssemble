@@ -273,6 +273,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     live_list = live_agent_subparsers.add_parser("list", parents=[live_server], help="List live agent roster presence.")
     live_list.add_argument("--json", action="store_true", dest="as_json", help="Print the safe roster response.")
+    live_list.add_argument("--meeting-id", default="", help="Limit roster rows to one meeting id.")
+    live_list.add_argument("--agent-id", action="append", default=[], dest="agent_ids", help="Limit to an agent id; repeat to include more.")
+    live_list.add_argument(
+        "--status",
+        action="append",
+        default=[],
+        dest="statuses",
+        choices=["online", "working", "offline", "error", "stale"],
+        help="Limit to a live-agent status; repeat to include more.",
+    )
+    live_list.add_argument(
+        "--require-match",
+        action="store_true",
+        help="Exit 1 when the filtered roster returns no live agents.",
+    )
+    live_list.add_argument(
+        "--require-all-agents",
+        action="store_true",
+        help="Exit 1 when any requested --agent-id is missing from the filtered roster.",
+    )
     live_list.add_argument(
         "--fail-on-attention",
         action="store_true",
@@ -1283,13 +1303,35 @@ def _is_unreplaced_template_placeholder(value: object) -> bool:
 
 def _run_live_agent_list(args: argparse.Namespace) -> int:
     try:
-        payload = _request_json(_server_url(args.server, "/api/live-agents"))
+        payload = _request_json(_server_url(args.server, _live_agent_list_path(args)))
     except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
         raise ValueError(_live_agent_list_fetch_error(error)) from error
     _print_live_agent_list_payload(payload, as_json=args.as_json)
+    if args.require_match and _live_agent_list_payload_empty(payload):
+        return 1
+    if args.require_all_agents and _live_agent_list_missing_required_agents(payload, args.agent_ids):
+        return 1
     if args.fail_on_attention and _live_agent_list_payload_needs_attention(payload):
         return 1
     return 0
+
+
+def _live_agent_list_path(args: argparse.Namespace) -> str:
+    query: list[tuple[str, str]] = []
+    meeting_id = str(getattr(args, "meeting_id", "") or "").strip()
+    if meeting_id:
+        query.append(("meeting_id", meeting_id))
+    for agent_id in getattr(args, "agent_ids", []) or []:
+        clean_agent_id = str(agent_id or "").strip()
+        if clean_agent_id:
+            query.append(("agent_id", clean_agent_id))
+    for status in getattr(args, "statuses", []) or []:
+        clean_status = str(status or "").strip()
+        if clean_status:
+            query.append(("status", clean_status))
+    if not query:
+        return "/api/live-agents"
+    return f"/api/live-agents?{urllib.parse.urlencode(query)}"
 
 
 def _live_agent_list_fetch_error(error: Exception) -> str:
@@ -1417,6 +1459,28 @@ def _append_live_agent_roster_seconds(parts: list[str], label: str, value: objec
 def _live_agent_list_payload_needs_attention(payload: dict[str, object]) -> bool:
     agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
     return any(isinstance(item, dict) and _live_agent_roster_agent_needs_attention(item) for item in agents)
+
+
+def _live_agent_list_payload_empty(payload: dict[str, object]) -> bool:
+    agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
+    return not any(isinstance(item, dict) for item in agents)
+
+
+def _live_agent_list_missing_required_agents(payload: dict[str, object], agent_ids: list[str]) -> bool:
+    required = {
+        clean_lobby_text(agent_id, limit=64)
+        for agent_id in agent_ids
+        if clean_lobby_text(agent_id, limit=64)
+    }
+    if not required:
+        return False
+    agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
+    returned = {
+        str(item.get("agent_id") or "")
+        for item in agents
+        if isinstance(item, dict) and str(item.get("agent_id") or "")
+    }
+    return not required.issubset(returned)
 
 
 def _live_agent_roster_agent_needs_attention(agent: dict[str, object]) -> bool:

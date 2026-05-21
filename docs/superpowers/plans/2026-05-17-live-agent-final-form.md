@@ -4419,6 +4419,39 @@ Docs now show `assemble live-agent list`, the checkout module form, and `live-ag
 
 ---
 
+### Task 127: Live-Agent Roster Target Filters
+
+**Goal:** Let terminal automation inspect and gate one resident session or expected agent without unrelated roster rows from other sessions changing the result.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED filter coverage**
+
+Cover `assemble live-agent list --meeting-id ... --agent-id ... --status ... --require-match`, server URL query construction, HTTP `/api/live-agents` filtering, and missing target exit behavior.
+
+- [x] **Step 2: Add server-backed roster filters**
+
+The list command now sends `meeting_id`, repeatable `agent_id`, and repeatable `status` query filters to `/api/live-agents`. The GUI server applies those filters before returning roster rows.
+
+- [x] **Step 3: Add missing-target gate**
+
+`live-agent list --require-match` prints the normal summary and exits `1` when the filtered roster contains no agent rows, so scripts can distinguish "all matched rows healthy" from "the target is absent."
+
+- [x] **Step 4: Add all-requested-agents gate and stale filter coverage**
+
+`live-agent list --require-all-agents` exits `1` when any repeated `--agent-id` is absent from the filtered roster. Coverage also verifies that `status=stale` filters match stale rows inferred at read time rather than only persisted statuses.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

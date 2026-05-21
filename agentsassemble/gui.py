@@ -760,8 +760,51 @@ def codex_sessions_payload(limit: int = 20) -> dict[str, object]:
     return {"sessions": list_codex_sessions(limit=limit)}
 
 
-def live_agents_payload(output_root: Path) -> dict[str, object]:
-    return {"agents": read_live_agents(output_root)}
+def live_agents_payload(
+    output_root: Path,
+    *,
+    meeting_id: str = "",
+    agent_ids: list[str] | None = None,
+    statuses: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "agents": _filter_live_agent_roster(
+            read_live_agents(output_root),
+            meeting_id=meeting_id,
+            agent_ids=agent_ids or [],
+            statuses=statuses or [],
+        )
+    }
+
+
+def _filter_live_agent_roster(
+    agents: list[dict[str, object]],
+    *,
+    meeting_id: str = "",
+    agent_ids: list[str],
+    statuses: list[str],
+) -> list[dict[str, object]]:
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    clean_agent_ids = {
+        clean_lobby_text(agent_id, limit=64)
+        for agent_id in agent_ids
+        if clean_lobby_text(agent_id, limit=64)
+    }
+    clean_statuses = {
+        clean_lobby_text(status, limit=32)
+        for status in statuses
+        if clean_lobby_text(status, limit=32)
+    }
+    filtered = []
+    for agent in agents:
+        if clean_meeting_id and str(agent.get("meeting_id") or "") != clean_meeting_id:
+            continue
+        if clean_agent_ids and str(agent.get("agent_id") or "") not in clean_agent_ids:
+            continue
+        if clean_statuses and str(agent.get("status") or "") not in clean_statuses:
+            continue
+        filtered.append(agent)
+    return filtered
 
 
 def live_agent_operations_payload(
@@ -5278,7 +5321,14 @@ def _make_handler(
                 self._send_json(provider_catalog_payload())
                 return
             if path == "/api/live-agents":
-                self._send_json(live_agents_payload(output_root))
+                self._send_json(
+                    live_agents_payload(
+                        output_root,
+                        meeting_id=str(query.get("meeting_id", [""])[0] or ""),
+                        agent_ids=query.get("agent_id", []),
+                        statuses=query.get("status", []),
+                    )
+                )
                 return
             if path == "/api/live-agent-health":
                 self._send_json(

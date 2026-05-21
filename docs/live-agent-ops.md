@@ -132,6 +132,21 @@ The compact roster output shows each agent's id, display name, provider/connecti
 
 For scriptable roster gates, use `live-agent list --fail-on-attention`. The command prints the normal roster summary first, then exits `1` if any returned agent is not `online` or `working`, including `stale`, `offline`, `error`, or unknown statuses. An empty roster exits `0` because there is no agent row claiming unhealthy presence.
 
+When a room has multiple resident sessions or historical roster rows, target the roster read before using it as a gate:
+
+```bash
+python3 -m agentsassemble.cli live-agent list \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1 \
+  --agent-id claude-code-live \
+  --require-match \
+  --fail-on-attention
+```
+
+The CLI sends meeting_id, agent_id, and status query filters to `/api/live-agents`, with repeatable `--agent-id` and `--status`. Use `live-agent list --require-match` when the filtered roster must contain at least one row; it prints the normal empty summary first and exits `1` if no agent matches. Use `live-agent list --require-all-agents` when every requested `--agent-id` must be present in the filtered roster. This lets automation check one session's expected agents without unrelated stale rows from another session failing the gate, while still failing when the requested target is missing.
+
+`--fail-on-attention` evaluates only the returned rows. If you want to detect stale, offline, or error rows for a target, filter by `--meeting-id` or `--agent-id` and leave `--status` unset; adding `--status online --status working` intentionally hides non-ready rows before the gate runs.
+
 The GUI "Codex 세션 초대" panel can bind a current Codex CLI session to a meeting role through:
 
 ```text
