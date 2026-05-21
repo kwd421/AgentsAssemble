@@ -6366,6 +6366,273 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["live_events"][0]["target_agent_id"], "agent-a")
             self.assertEqual(payload["live_events"][0]["official_record"], False)
 
+    def test_live_agent_room_endpoint_projects_return_packet_after_event_tail_ages_out(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "runtime",
+                        "live_status": "complete",
+                        "roles": [
+                            {"id": "architect", "display_name": "Architect"},
+                            {"id": "critic", "display_name": "Critic"},
+                        ],
+                        "agent_bindings": [
+                            {"role_id": "architect", "agent_id": "agent-a"},
+                            {"role_id": "critic", "agent_id": "agent-b"},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            packet_dir = meeting_dir / "return_packets"
+            packet_dir.mkdir()
+            (packet_dir / "architect.md").write_text("Architect packet body must stay out of the room event.", encoding="utf-8")
+            (packet_dir / "architect.json").write_text(json.dumps({"role_id": "architect"}), encoding="utf-8")
+            (packet_dir / "critic.md").write_text("Critic packet body must stay private to agent-b.", encoding="utf-8")
+            (packet_dir / "critic.json").write_text(json.dumps({"role_id": "critic"}), encoding="utf-8")
+            original_packet_event = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "artifact",
+                    "artifact_kind": "return_packet",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "audience": "agent:agent-a",
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "artifact_path": "return_packets/architect.md",
+                    "artifact_json_path": "return_packets/architect.json",
+                    "content": "Return packet ready: return_packets/architect.md",
+                },
+            )
+            for index in range(205):
+                tail_event = append_live_event(
+                    meeting_dir,
+                    {
+                        "kind": "status",
+                        "meeting_id": "m1",
+                        "content": f"tail filler {index}",
+                    },
+                )
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            return_packet_events = [
+                event
+                for event in payload["live_events"]
+                if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet"
+            ]
+            self.assertEqual(len(return_packet_events), 1)
+            packet_event = return_packet_events[0]
+            self.assertEqual(packet_event["id"], original_packet_event["id"])
+            self.assertEqual(packet_event["target_agent_id"], "agent-a")
+            self.assertEqual(packet_event["audience"], "agent:agent-a")
+            self.assertEqual(packet_event["role_id"], "architect")
+            self.assertEqual(packet_event["artifact_path"], "return_packets/architect.md")
+            self.assertEqual(packet_event["artifact_json_path"], "return_packets/architect.json")
+            self.assertEqual(packet_event["official_record"], False)
+            payload_text = json.dumps(payload, ensure_ascii=False)
+            self.assertNotIn("Architect packet body must stay out", payload_text)
+            self.assertNotIn("Critic packet body", payload_text)
+            self.assertNotIn("return_packets/critic", payload_text)
+
+            heartbeat_live_agent(root, "agent-a", metadata={"last_observed_live_event_id": original_packet_event["id"]})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    acknowledged_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+            self.assertFalse(
+                [
+                    event
+                    for event in acknowledged_payload["live_events"]
+                    if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet"
+                ]
+            )
+
+            heartbeat_live_agent(root, "agent-a", metadata={"last_observed_live_event_id": tail_event["id"]})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    later_cursor_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+            self.assertFalse(
+                [
+                    event
+                    for event in later_cursor_payload["live_events"]
+                    if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet"
+                ]
+            )
+
+    def test_live_agent_room_endpoint_stops_projected_return_packet_after_projected_ack(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "runtime",
+                        "live_status": "complete",
+                        "roles": [{"id": "architect", "display_name": "Architect"}],
+                        "agent_bindings": [{"role_id": "architect", "agent_id": "agent-a"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            packet_dir = meeting_dir / "return_packets"
+            packet_dir.mkdir()
+            (packet_dir / "architect.md").write_text("Architect packet body must stay out of the room event.", encoding="utf-8")
+            (packet_dir / "architect.json").write_text(json.dumps({"role_id": "architect"}), encoding="utf-8")
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+            return_packet_events = [
+                event
+                for event in payload["live_events"]
+                if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet"
+            ]
+            self.assertEqual(len(return_packet_events), 1)
+            projected_id = return_packet_events[0]["id"]
+
+            heartbeat_live_agent(root, "agent-a", metadata={"last_observed_live_event_id": projected_id})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    acknowledged_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+            self.assertFalse(
+                [
+                    event
+                    for event in acknowledged_payload["live_events"]
+                    if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet"
+                ]
+            )
+
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "artifact",
+                    "artifact_kind": "return_packet",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "audience": "agent:agent-a",
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "artifact_path": "return_packets/architect.md",
+                    "artifact_json_path": "return_packets/architect.json",
+                    "content": "Return packet ready: return_packets/architect.md",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    late_original_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+            self.assertFalse(
+                [
+                    event
+                    for event in late_original_payload["live_events"]
+                    if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet"
+                ]
+            )
+
+    def test_live_agent_room_endpoint_does_not_project_legacy_packet_after_known_live_cursor(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "runtime",
+                        "live_status": "complete",
+                        "roles": [{"id": "architect", "display_name": "Architect"}],
+                        "agent_bindings": [{"role_id": "architect", "agent_id": "agent-a"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            packet_dir = meeting_dir / "return_packets"
+            packet_dir.mkdir()
+            (packet_dir / "architect.md").write_text("Architect packet body must stay out of the room event.", encoding="utf-8")
+            (packet_dir / "architect.json").write_text(json.dumps({"role_id": "architect"}), encoding="utf-8")
+            later_event = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "status",
+                    "meeting_id": "m1",
+                    "content": "agent has observed this later event",
+                },
+            )
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "meeting_id": "m1",
+                    "last_observed_live_event_id": later_event["id"],
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertFalse(
+                [
+                    event
+                    for event in payload["live_events"]
+                    if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet"
+                ]
+            )
+
     def test_live_agent_room_endpoint_returns_compact_shared_memory_for_agent_meeting(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

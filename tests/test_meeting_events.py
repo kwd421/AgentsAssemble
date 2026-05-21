@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.meeting_events import (
+    append_live_event,
     read_live_events,
     read_lobby_events,
     read_side_chat_events,
@@ -175,6 +176,27 @@ class MeetingEventsTests(unittest.TestCase):
             result = read_live_events(meeting_dir, limit=None)
 
         self.assertEqual([event["id"] for event in result], [event["id"] for event in events])
+
+    def test_append_live_event_preserves_artifact_metadata(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir) / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+
+            event = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "artifact",
+                    "artifact_kind": "return_packet",
+                    "artifact_path": "return_packets/architect.md",
+                    "artifact_json_path": "return_packets/architect.json",
+                    "target_agent_id": "agent-a",
+                    "audience": "agent:agent-a",
+                },
+            )
+
+            self.assertEqual(event["artifact_kind"], "return_packet")
+            self.assertEqual(event["artifact_path"], "return_packets/architect.md")
+            self.assertEqual(event["artifact_json_path"], "return_packets/architect.json")
 
 
 class _CountingBinaryFile:
