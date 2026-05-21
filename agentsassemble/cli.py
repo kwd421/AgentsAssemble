@@ -969,14 +969,18 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[live_server],
         help="Pause an active durable live-agent session run without stopping its process group.",
     )
-    live_session_runs_pause.add_argument("--run-id", required=True, help="Durable session-run id to pause.")
+    live_session_runs_pause.add_argument("--run-id", default="", help="Durable session-run id to pause.")
+    live_session_runs_pause.add_argument("--meeting-id", default="", help="Meeting id for the latest matching durable session run.")
+    live_session_runs_pause.add_argument("--group-id", default="", help="Group id for the latest matching durable session run.")
     live_session_runs_pause.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON pause payload.")
     live_session_runs_resume = live_session_runs_subparsers.add_parser(
         "resume",
         parents=[live_server],
         help="Resume a paused durable live-agent session run.",
     )
-    live_session_runs_resume.add_argument("--run-id", required=True, help="Durable session-run id to resume.")
+    live_session_runs_resume.add_argument("--run-id", default="", help="Durable session-run id to resume.")
+    live_session_runs_resume.add_argument("--meeting-id", default="", help="Meeting id for the latest matching durable session run.")
+    live_session_runs_resume.add_argument("--group-id", default="", help="Group id for the latest matching durable session run.")
     live_session_runs_resume.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON resume payload.")
     live_session_runs_wait = live_session_runs_subparsers.add_parser(
         "wait",
@@ -3265,13 +3269,23 @@ def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
         return 0
     if args.live_agent_session_runs_command in {"pause", "resume"}:
         command = str(args.live_agent_session_runs_command)
+        _validate_live_agent_session_runs_action_target(args, command)
+        run_id = str(args.run_id or "").strip()
+        path = f"/api/live-agent-session-runs/{command}"
+        request_payload: dict[str, object] = {
+            "meeting_id": str(args.meeting_id or "").strip(),
+            "group_id": str(args.group_id or "").strip(),
+        }
+        if run_id:
+            path = f"/api/live-agent-session-runs/{urllib.parse.quote(run_id, safe='')}/{command}"
+            request_payload = {}
         payload = _request_json(
             _server_url(
                 args.server,
-                f"/api/live-agent-session-runs/{urllib.parse.quote(str(args.run_id or '').strip(), safe='')}/{command}",
+                path,
             ),
             method="POST",
-            payload={},
+            payload=request_payload,
             timeout_seconds=10.0,
         )
         _print_live_agent_session_runs_pause_resume_payload(payload, as_json=args.as_json, command=command)
@@ -3401,11 +3415,19 @@ def _validate_live_agent_session_runs_wait_target(args: argparse.Namespace) -> N
 
 
 def _validate_live_agent_session_runs_retry_now_target(args: argparse.Namespace) -> None:
+    _validate_live_agent_session_runs_target(args, "retry-now")
+
+
+def _validate_live_agent_session_runs_action_target(args: argparse.Namespace, command: str) -> None:
+    _validate_live_agent_session_runs_target(args, command)
+
+
+def _validate_live_agent_session_runs_target(args: argparse.Namespace, command: str) -> None:
     if str(args.run_id or "").strip():
         return
     if str(args.meeting_id or "").strip() and str(args.group_id or "").strip():
         return
-    raise ValueError("live-agent session-runs retry-now requires --run-id or both --meeting-id and --group-id.")
+    raise ValueError(f"live-agent session-runs {command} requires --run-id or both --meeting-id and --group-id.")
 
 
 def _live_agent_session_runs_wait_requires_readiness(args: argparse.Namespace) -> bool:

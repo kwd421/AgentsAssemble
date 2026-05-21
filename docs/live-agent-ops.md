@@ -1312,16 +1312,26 @@ python3 -m agentsassemble.cli live-agent session-runs retry-now \
   --group-id local-cli-group
 ```
 
-Use `assemble live-agent session-runs pause` and `assemble live-agent session-runs resume` when automation should stop or restart reconciling one durable session intent without killing the live-agent process group:
+Use `assemble live-agent session-runs pause` and `assemble live-agent session-runs resume` when automation should stop or restart reconciling one durable session intent without killing the live-agent process group. With `--run-id`, the commands target the exact run through `/api/live-agent-session-runs/<run_id>/pause` or `/api/live-agent-session-runs/<run_id>/resume`. Without the exact run id, use both `--meeting-id` and `--group-id`; the CLI posts to `/api/live-agent-session-runs/pause` or `/api/live-agent-session-runs/resume`, the server resolves the latest matching meeting/group session-run before pause/resume eligibility checks, and exact `run_id` always wins if both target forms are supplied:
 
 ```bash
 python3 -m agentsassemble.cli live-agent session-runs pause \
   --server http://127.0.0.1:8765 \
   --run-id <session-run-id>
 
+python3 -m agentsassemble.cli live-agent session-runs pause \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-m1 \
+  --group-id local-cli-group
+
 python3 -m agentsassemble.cli live-agent session-runs resume \
   --server http://127.0.0.1:8765 \
   --run-id <session-run-id>
+
+python3 -m agentsassemble.cli live-agent session-runs resume \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-m1 \
+  --group-id local-cli-group
 ```
 
 Use `assemble live-agent session-runs wait` when another script or agent needs a durable session-run status gate after starting a long-running ensure operation from the GUI, CLI, or auto-join path:

@@ -1025,6 +1025,47 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(resume_args.run_id, "run-paused")
         self.assertTrue(resume_args.as_json)
 
+    def test_live_agent_session_runs_pause_resume_parse_meeting_group_target(self):
+        pause_args = build_parser().parse_args(
+            [
+                "live-agent",
+                "session-runs",
+                "pause",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "resident-m1",
+                "--group-id",
+                "resident-main",
+                "--json",
+            ]
+        )
+        resume_args = build_parser().parse_args(
+            [
+                "live-agent",
+                "session-runs",
+                "resume",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "resident-m1",
+                "--group-id",
+                "resident-main",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(pause_args.live_agent_session_runs_command, "pause")
+        self.assertEqual(pause_args.run_id, "")
+        self.assertEqual(pause_args.meeting_id, "resident-m1")
+        self.assertEqual(pause_args.group_id, "resident-main")
+        self.assertTrue(pause_args.as_json)
+        self.assertEqual(resume_args.live_agent_session_runs_command, "resume")
+        self.assertEqual(resume_args.run_id, "")
+        self.assertEqual(resume_args.meeting_id, "resident-m1")
+        self.assertEqual(resume_args.group_id, "resident-main")
+        self.assertTrue(resume_args.as_json)
+
     def test_live_agent_session_runs_list_fetches_durable_runs(self):
         payload = {
             "runs": [
@@ -1337,6 +1378,172 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("Resumed live-agent session run", stdout.getvalue())
         self.assertIn("run-paused ensure degraded resident-m1 resident-main active", stdout.getvalue())
+
+    def test_live_agent_session_runs_pause_resume_post_meeting_group_target(self):
+        pause_payload = {
+            "status": "paused",
+            "session_run": {
+                "run_id": "latest-run",
+                "action": "ensure",
+                "status": "paused",
+                "active": False,
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "phase": "paused",
+                "paused_status": "degraded",
+            },
+        }
+        resume_payload = {
+            "status": "resumed",
+            "session_run": {
+                "run_id": "latest-run",
+                "action": "ensure",
+                "status": "degraded",
+                "active": True,
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "phase": "resume_requested",
+            },
+        }
+        with patch("agentsassemble.cli._request_json", side_effect=[pause_payload, resume_payload]) as request_json:
+            with patch("sys.stdout", StringIO()) as stdout:
+                pause_exit = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "pause",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                    ]
+                )
+                resume_exit = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "resume",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                    ]
+                )
+
+        self.assertEqual(pause_exit, 0)
+        self.assertEqual(resume_exit, 0)
+        self.assertEqual(
+            request_json.call_args_list[0].args,
+            ("http://room.local/api/live-agent-session-runs/pause",),
+        )
+        self.assertEqual(request_json.call_args_list[0].kwargs["method"], "POST")
+        self.assertEqual(request_json.call_args_list[0].kwargs["payload"], {"meeting_id": "resident-m1", "group_id": "resident-main"})
+        self.assertEqual(
+            request_json.call_args_list[1].args,
+            ("http://room.local/api/live-agent-session-runs/resume",),
+        )
+        self.assertEqual(request_json.call_args_list[1].kwargs["method"], "POST")
+        self.assertEqual(request_json.call_args_list[1].kwargs["payload"], {"meeting_id": "resident-m1", "group_id": "resident-main"})
+        self.assertIn("Paused live-agent session run", stdout.getvalue())
+        self.assertIn("Resumed live-agent session run", stdout.getvalue())
+
+    def test_live_agent_session_runs_pause_run_id_takes_precedence_over_meeting_group(self):
+        payload = {
+            "status": "paused",
+            "session_run": {
+                "run_id": "exact-run",
+                "action": "ensure",
+                "status": "paused",
+                "active": False,
+                "meeting_id": "resident-m2",
+                "group_id": "resident-alt",
+                "phase": "paused",
+                "paused_status": "degraded",
+            },
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "pause",
+                        "--server",
+                        "http://room.local",
+                        "--run-id",
+                        "exact-run",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-session-runs/exact-run/pause",
+            method="POST",
+            payload={},
+            timeout_seconds=10.0,
+        )
+
+    def test_live_agent_session_runs_resume_run_id_takes_precedence_over_meeting_group(self):
+        payload = {
+            "status": "resumed",
+            "session_run": {
+                "run_id": "exact-run",
+                "action": "ensure",
+                "status": "degraded",
+                "active": True,
+                "meeting_id": "resident-m2",
+                "group_id": "resident-alt",
+                "phase": "resume_requested",
+            },
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "resume",
+                        "--server",
+                        "http://room.local",
+                        "--run-id",
+                        "exact-run",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-session-runs/exact-run/resume",
+            method="POST",
+            payload={},
+            timeout_seconds=10.0,
+        )
+
+    def test_live_agent_session_runs_pause_refuses_missing_target(self):
+        with patch("sys.stderr", StringIO()) as stderr:
+            exit_code = main(
+                [
+                    "live-agent",
+                    "session-runs",
+                    "pause",
+                    "--server",
+                    "http://room.local",
+                ]
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("requires --run-id or both --meeting-id and --group-id", stderr.getvalue())
 
     def test_live_agent_session_runs_list_include_readiness_fetches_and_prints_current_counts(self):
         payload = {

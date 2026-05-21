@@ -4051,6 +4051,58 @@ Document that list filters are read-only inspection helpers over the existing se
 
 ---
 
+### Task 114: Session-Run Retry-Now Meeting/Group Target
+
+**Goal:** Let operators and automation retry the latest durable session-run for a resident meeting/group without first copying an exact run id, while preserving exact run-id behavior.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+
+- [x] **Step 1: Add RED CLI and API target coverage**
+
+Cover parser acceptance for `retry-now --meeting-id <id> --group-id <id>`, CLI posting to `/api/live-agent-session-runs/retry-now`, exact run-id precedence, missing-target validation, latest matching meeting/group API resolution, and no-match failure operation details.
+
+- [x] **Step 2: Resolve retry target at the CLI/API edge**
+
+Keep `LiveAgentSessionRunController.retry_run_now(run_id)` exact-id only. Let the CLI and GUI API resolve meeting/group payloads to the latest matching session-run before retryability checks, with exact `run_id` winning whenever both target forms are present.
+
+- [x] **Step 3: Document retry target precedence**
+
+Document the exact-id endpoint, collection endpoint, latest meeting/group selection, and exact run-id precedence.
+
+---
+
+### Task 115: Session-Run Pause/Resume Meeting/Group Target
+
+**Goal:** Let operators and automation pause or resume the latest durable session-run for a resident meeting/group without killing the process group or copying an exact run id.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED CLI and API target coverage**
+
+Cover parser acceptance for `pause`/`resume --meeting-id <id> --group-id <id>`, CLI posting to `/api/live-agent-session-runs/pause|resume`, exact run-id precedence, missing-target validation, latest matching meeting/group API resolution, and no-match failure operation details.
+
+- [x] **Step 2: Reuse action-neutral target resolution**
+
+Keep `pause_run(run_id)` and `resume_run(run_id)` exact-id only. Reuse the action-neutral meeting/group resolver at the GUI API edge, and let CLI exact `--run-id` post to `/<run_id>/<action>` while meeting/group posts to the collection action endpoint.
+
+- [x] **Step 3: Document pause/resume target precedence**
+
+Document the meeting/group form, collection endpoints, latest matching run selection before eligibility checks, and exact run-id precedence.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
