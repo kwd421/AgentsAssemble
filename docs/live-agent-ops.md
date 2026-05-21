@@ -139,6 +139,8 @@ POST /api/live-agent-join-brief
 
 The HTTP endpoint returns the same command arrays and templates, defaults the packet server URL to the current GUI request host, and still does not register the agent, write files, append operation records, start providers, or execute commands.
 
+The GUI `살아있는 에이전트` form exposes the same safe packet through the `초대 패킷` button. It reads the agent id, display name, provider kind, and connection kind from the registration form, attaches the current meeting id, requests `engagement_mode: "mentioned"`, and renders the returned join brief without registering the agent or starting any provider. This lets an operator hand a browser-generated register/wait-next packet to Claude, Cursor, a terminal agent, or another external participant while keeping admission explicit.
+
 Inspect the current roster from a terminal with:
 
 ```bash

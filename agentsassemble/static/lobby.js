@@ -206,6 +206,9 @@ export function renderLobby(options = {}) {
     event.preventDefault();
     await sendLiveAgentRegistration(event.currentTarget);
   });
+  lobby.querySelector("#live-agent-join-brief")?.addEventListener("click", async () => {
+    await generateLiveAgentJoinBrief(lobby);
+  });
   lobby.querySelector("#codex-session-refresh")?.addEventListener("click", () => {
     loadCodexSessions({ force: true });
   });
@@ -552,9 +555,34 @@ function renderLiveAgentConnections() {
           <option value="manual">Manual</option>
         </select>
         <button type="submit" ${state.liveAgentsLoading ? "disabled" : ""}>접속 등록</button>
+        <button type="button" id="live-agent-join-brief" ${state.liveAgentJoinBriefRunning ? "disabled" : ""}>초대 패킷</button>
         <button type="button" id="live-agent-refresh">갱신</button>
       </form>
+      ${renderLiveAgentJoinBrief(state.liveAgentJoinBrief)}
       ${status ? `<p class="live-agent-status" data-tone="${escapeHtml(status.tone || "info")}">${escapeHtml(status.message)}</p>` : ""}
+    </section>
+  `;
+}
+
+function renderLiveAgentJoinBrief(brief) {
+  if (!brief || typeof brief !== "object") return "";
+  const agent = brief.agent && typeof brief.agent === "object" ? brief.agent : {};
+  const agentId = String(agent.agent_id || "external-agent");
+  const publicBrief = {
+    agent: brief.agent || {},
+    commands: brief.commands || {},
+    templates: brief.templates || {},
+    instructions: brief.instructions || [],
+    env: brief.env || {},
+    safety: brief.safety || {},
+  };
+  return `
+    <section class="live-agent-join-brief" aria-label="External live-agent join brief">
+      <div>
+        <strong>${escapeHtml(agentId)} join brief</strong>
+        <span>register once, then wait-next loop</span>
+      </div>
+      <pre>${escapeHtml(JSON.stringify(publicBrief, null, 2))}</pre>
     </section>
   `;
 }
@@ -3227,6 +3255,45 @@ async function sendLiveAgentRegistration(form) {
     state.liveAgentStatus = { message: "에이전트 접속 등록 실패", tone: "error" };
   }
   renderLobby({ followLatest: false });
+}
+
+async function generateLiveAgentJoinBrief(lobby) {
+  const form = lobby.querySelector("#live-agent-form");
+  if (!form || state.liveAgentJoinBriefRunning) return;
+  const agentId = form.querySelector("#live-agent-id")?.value.trim() || "";
+  if (!agentId) return;
+  const displayName = form.querySelector("#live-agent-display-name")?.value.trim() || agentId;
+  const providerKind = form.querySelector("#live-agent-provider-kind")?.value || "manual";
+  const connectionKind = form.querySelector("#live-agent-connection-kind")?.value || "manual";
+  state.liveAgentJoinBriefRunning = true;
+  state.liveAgentJoinBrief = null;
+  state.liveAgentStatus = { message: "에이전트 초대 패킷 생성 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-join-brief", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent_id: agentId,
+        display_name: displayName,
+        provider_kind: providerKind,
+        connection_kind: connectionKind,
+        meeting_id: state.payload?.meeting?.meeting_id || "",
+        engagement_mode: "mentioned",
+        timeout: 30,
+        poll_interval: 2,
+        max_chain_depth: 1,
+      }),
+    });
+    state.liveAgentJoinBrief = payload;
+    state.liveAgentStatus = { message: `${agentId} 초대 패킷 생성됨`, tone: "success" };
+  } catch (error) {
+    state.liveAgentJoinBrief = null;
+    state.liveAgentStatus = { message: `에이전트 초대 패킷 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    state.liveAgentJoinBriefRunning = false;
+    renderLobby({ followLatest: false });
+  }
 }
 
 async function updateLiveAgentEngagement(agentId, engagementMode) {

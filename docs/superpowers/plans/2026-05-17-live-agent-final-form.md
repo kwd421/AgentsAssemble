@@ -4952,6 +4952,33 @@ Operator docs now distinguish the per-candidate exact approval checkboxes from t
 
 ---
 
+## Task 145: Generate external join briefs from the GUI
+
+**Goal:** Let the GUI operator generate the safe external/manual live-agent startup packet that already exists in the CLI/API, so another AI can be invited with explicit register/wait-next commands without registering it or starting a provider from the browser.
+
+**Files:**
+- Modify: `agentsassemble/static/shared.js`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED GUI join-brief coverage**
+
+Cover filling the live-agent registration form, pressing `초대 패킷`, and verifying that the GUI posts only to `/api/live-agent-join-brief` with the current meeting id, form identity fields, `engagement_mode: "mentioned"`, and bounded wait-loop defaults. The test asserts that no registration POST is sent and that the rendered packet includes the register/wait-next evidence without secret-like fields.
+
+- [x] **Step 2: Render the returned safe packet**
+
+The live-agent form now has a `초대 패킷` button. It calls the safe join-brief endpoint, preserves the registration draft across rerenders, renders allowlisted packet sections, and reports success/failure through the existing live-agent status line without mutating the roster.
+
+- [x] **Step 3: Keep docs aligned with GUI invitation**
+
+Operator docs and roadmap now state that GUI join briefs are safe startup packets for external/manual agents and do not register agents, write files, append operations, start providers, or grant broad automatic entry.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

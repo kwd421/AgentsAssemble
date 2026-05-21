@@ -174,6 +174,8 @@ function resetState() {
     liveAgentsLoaded: true,
     liveAgentsLoading: false,
     liveAgentStatus: null,
+    liveAgentJoinBrief: null,
+    liveAgentJoinBriefRunning: false,
     liveAgentProbeRunning: "",
     liveAgentHealth: null,
     liveAgentHealthLoaded: true,
@@ -246,6 +248,7 @@ function installHarness({
   liveAgentPreflightPayload = null,
   reviewCheckpointPayload = null,
   liveAgentsPayload = null,
+  liveAgentJoinBriefPayload = null,
   liveAgentProcessEventsPayload = null,
   liveAgentOperationsPayload = null,
   liveAgentSessionRunsPayload = null,
@@ -585,6 +588,19 @@ function installHarness({
       );
     }
     if (url === "/api/lobby") return jsonResponse({ events: [] });
+    if (url === "/api/live-agent-join-brief") {
+      return jsonResponse(
+        liveAgentJoinBriefPayload || {
+          status: "generated",
+          agent: { agent_id: "external-reviewer", display_name: "External Reviewer", meeting_id: "resident-gui" },
+          commands: {
+            register: ["python3", "-m", "agentsassemble.cli", "live-agent", "register", "--agent-id", "external-reviewer"],
+            wait_next: ["python3", "-m", "agentsassemble.cli", "live-agent", "wait-next", "--agent-id", "external-reviewer"],
+          },
+          safety: { room_contacted: false, provider_executed: false, contains_secrets: false },
+        }
+      );
+    }
     if (url === "/api/live-agents") return jsonResponse(payloadValue(liveAgentsPayload) || { agents: [] });
     if (url === "/api/live-agent-processes") return jsonResponse({ groups: [] });
     if (url === "/api/live-agent-process-events?limit=20") {
@@ -674,6 +690,10 @@ function sessionRunResumeRequest(requests) {
 
 function sessionRunStopRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-session-runs/run-1/stop");
+}
+
+function liveAgentJoinBriefRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-join-brief");
 }
 
 function sessionResumeRequest(requests) {
@@ -1620,6 +1640,68 @@ test("auto join exact approval with stale selection stops on backend approval_re
   assert.equal(sessionRunEnsureRequest(requests), undefined);
   assert.equal(state.liveAgentProcessStatus.message, "자동입장 중단: discovery approval_required · 0 agents");
   assert.equal(state.liveAgentProcessStatus.tone, "error");
+});
+
+test("join brief button generates an external agent packet without registering", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  const { document, requests } = installHarness({
+    liveAgentJoinBriefPayload: {
+      status: "generated",
+      agent: {
+        agent_id: "external-reviewer",
+        display_name: "External Reviewer",
+        provider_kind: "manual",
+        connection_kind: "manual",
+        meeting_id: "resident-gui",
+        engagement_mode: "mentioned",
+      },
+      commands: {
+        register: ["python3", "-m", "agentsassemble.cli", "live-agent", "register", "--agent-id", "external-reviewer"],
+        wait_next: ["python3", "-m", "agentsassemble.cli", "live-agent", "wait-next", "--agent-id", "external-reviewer"],
+      },
+      safety: { room_contacted: false, provider_executed: false, contains_secrets: false },
+      session_id: "must-not-render",
+      endpoint: "https://example.invalid/private",
+      config_path: "/tmp/private.json",
+      unsafe_extra: { auth_ref: "secret" },
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-id").value = "external-reviewer";
+  lobby.querySelector("#live-agent-display-name").value = "External Reviewer";
+  lobby.querySelector("#live-agent-provider-kind").value = "manual";
+  lobby.querySelector("#live-agent-connection-kind").value = "manual";
+  await lobby.querySelector("#live-agent-join-brief").click();
+
+  assert.deepEqual(liveAgentJoinBriefRequest(requests).jsonBody, {
+    agent_id: "external-reviewer",
+    display_name: "External Reviewer",
+    provider_kind: "manual",
+    connection_kind: "manual",
+    meeting_id: "resident-gui",
+    engagement_mode: "mentioned",
+    timeout: 30,
+    poll_interval: 2,
+    max_chain_depth: 1,
+  });
+  assert.equal(requests.some((request) => request.url === "/api/live-agents" && request.options.method === "POST"), false);
+  assert.equal(requests.some((request) => request.url === "/api/live-agent-processes/start"), false);
+  assert.equal(requests.some((request) => request.url === "/api/live-agent-sessions/start"), false);
+  assert.equal(requests.some((request) => request.url === "/api/live-agent-session-runs/ensure"), false);
+  assert.equal(requests.some((request) => request.url === "/api/live-agent-discovery"), false);
+  assert.equal(requests.some((request) => request.url === "/api/live-agent-preflight"), false);
+  assert.equal(lobby.querySelector("#live-agent-id").value, "external-reviewer");
+  assert.equal(lobby.querySelector("#live-agent-display-name").value, "External Reviewer");
+  assert.equal(lobby.querySelector("#live-agent-provider-kind").value, "manual");
+  assert.equal(lobby.querySelector("#live-agent-connection-kind").value, "manual");
+  assert.match(document.querySelector("#lobby").innerHTML, /external-reviewer/);
+  assert.match(document.querySelector("#lobby").innerHTML, /wait-next/);
+  assert.doesNotMatch(document.querySelector("#lobby").innerHTML, /must-not-render|example\.invalid|session_id|auth_ref|config_path|log_path/);
+  assert.equal(state.liveAgentStatus.message, "external-reviewer 초대 패킷 생성됨");
+  assert.equal(state.liveAgentStatus.tone, "success");
 });
 
 test("auto join stops before preflight when discovery omits the session bundle", async () => {
