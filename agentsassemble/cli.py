@@ -57,6 +57,7 @@ from agentsassemble.live_agent_runner import (
     load_group_configs,
     official_turn_request_candidate,
     resident_connection_kind_error,
+    should_reply_to_event,
 )
 from agentsassemble.live_agent_smoke import (
     MAX_SESSION_SMOKE_LOBBY_PROBES,
@@ -4870,6 +4871,18 @@ def _events_after_id(events: list[object], event_id: str) -> list[object]:
     return events
 
 
+def _latest_observed_event_id(events: object, fallback: str) -> str:
+    if not isinstance(events, list):
+        return fallback
+    for event in reversed(events):
+        if not isinstance(event, dict):
+            continue
+        event_id = str(event.get("id") or "").strip()
+        if event_id:
+            return event_id
+    return fallback
+
+
 def _wait_room_self_event(agent_id: str, display_name: str, event: dict[str, object]) -> bool:
     actor_id = str(event.get("actor_id") or "")
     if actor_id:
@@ -4913,11 +4926,12 @@ def _wait_room_event_payload(
 
 def _wait_room_timeout_payload(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object]:
     agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    cursor = str(args.after_event_id or agent.get("last_observed_event_id") or "").strip()
     return {
         "status": "timeout",
         "agent_id": args.agent_id,
         "timeout_seconds": float(args.timeout),
-        "last_observed_event_id": str(args.after_event_id or agent.get("last_observed_event_id") or "").strip(),
+        "last_observed_event_id": _latest_observed_event_id(room.get("lobby_events"), cursor),
     }
 
 
@@ -5047,11 +5061,15 @@ def _wait_turn_request_meeting_id(room: dict[str, object], event: dict[str, obje
 
 def _wait_turn_request_timeout_payload(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object]:
     agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    requested_cursor = getattr(args, "after_live_event_id", None)
+    if requested_cursor is None:
+        requested_cursor = getattr(args, "after_event_id", "")
+    cursor = str(requested_cursor or agent.get("last_observed_live_event_id") or "").strip()
     return {
         "status": "timeout",
         "agent_id": args.agent_id,
         "timeout_seconds": float(args.timeout),
-        "last_observed_live_event_id": str(args.after_event_id or agent.get("last_observed_live_event_id") or "").strip(),
+        "last_observed_live_event_id": _latest_observed_event_id(room.get("live_events"), cursor),
     }
 
 
@@ -5088,14 +5106,19 @@ def _run_live_agent_wait_next(args: argparse.Namespace) -> int:
             else:
                 print(f"return_packet {_format_wait_return_packet(payload)}")
             return 0
-        lobby_candidate = _wait_room_event_candidate(args, room)
-        if lobby_candidate is not None:
-            payload = _wait_room_event_payload(args, room, lobby_candidate)
-            payload["action"] = "lobby"
+        lobby_observation = _wait_next_lobby_observation(args, room)
+        if lobby_observation is not None:
+            action, lobby_candidate = lobby_observation
+            payload = (
+                _wait_room_event_payload(args, room, lobby_candidate)
+                if action == "lobby"
+                else _wait_lobby_observation_payload(args, room, lobby_candidate)
+            )
+            payload["action"] = action
             if args.as_json:
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
             else:
-                print(f"lobby {_format_wait_room_event(payload)}")
+                print(f"{action} {_format_wait_room_event(payload)}")
             return 0
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -5113,12 +5136,75 @@ def _run_live_agent_wait_next(args: argparse.Namespace) -> int:
 
 def _wait_next_timeout_payload(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object]:
     agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    lobby_cursor = str(args.after_event_id or agent.get("last_observed_event_id") or "").strip()
+    live_cursor = str(args.after_live_event_id or agent.get("last_observed_live_event_id") or "").strip()
     return {
         "status": "timeout",
         "agent_id": args.agent_id,
         "timeout_seconds": float(args.timeout),
-        "last_observed_event_id": str(args.after_event_id or agent.get("last_observed_event_id") or "").strip(),
-        "last_observed_live_event_id": str(args.after_live_event_id or agent.get("last_observed_live_event_id") or "").strip(),
+        "last_observed_event_id": _latest_observed_event_id(room.get("lobby_events"), lobby_cursor),
+        "last_observed_live_event_id": _latest_observed_event_id(room.get("live_events"), live_cursor),
+    }
+
+
+def _wait_next_lobby_observation(args: argparse.Namespace, room: dict[str, object]) -> tuple[str, dict[str, object]] | None:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    events = room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []
+    cursor = str(args.after_event_id or agent.get("last_observed_event_id") or "").strip()
+    display_name = str(agent.get("display_name") or "").strip()
+    engagement_mode = str(agent.get("engagement_mode") or "always").strip() or "always"
+    observed_candidate: dict[str, object] | None = None
+    for event in _events_after_id(events, cursor):
+        if not isinstance(event, dict):
+            continue
+        if _wait_room_self_event(args.agent_id, display_name, event):
+            continue
+        if not str(event.get("id") or "").strip():
+            continue
+        if not str(event.get("message") or "").strip():
+            continue
+        if _delegate_chain_depth(event) > int(args.max_chain_depth):
+            observed_candidate = event
+            continue
+        if should_reply_to_event(engagement_mode, event, args.agent_id, display_name):
+            return ("lobby", event)
+        observed_candidate = event
+    if observed_candidate is not None:
+        return ("observe_lobby", observed_candidate)
+    return None
+
+
+def _wait_lobby_observation_payload(
+    args: argparse.Namespace,
+    room: dict[str, object],
+    event: dict[str, object],
+) -> dict[str, object]:
+    event_id = str(event.get("id") or "")
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    engagement_mode = str(agent.get("engagement_mode") or "always").strip() or "always"
+    return {
+        "status": "event",
+        "agent_id": args.agent_id,
+        "source_event_id": event_id,
+        "engagement_mode": engagement_mode,
+        "event": event,
+        "ack_command": [
+            "python3",
+            "-m",
+            "agentsassemble.cli",
+            "live-agent",
+            "heartbeat",
+            "--server",
+            str(args.server),
+            "--agent-id",
+            str(args.agent_id),
+            "--status",
+            "online",
+            "--last-error=",
+            f"--last-observed-event-id={event_id}",
+            "--json",
+        ],
+        "room": _wait_room_context(room, meeting_id=str(room.get("meeting_id") or "")),
     }
 
 

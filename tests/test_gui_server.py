@@ -5952,6 +5952,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertIn("wait-next", payload["commands"]["wait_next"])
             self.assertIn("--max-chain-depth", payload["commands"]["wait_next"])
             self.assertIn("2", payload["commands"]["wait_next"])
+            self.assertIn("For observe_lobby actions, run the returned ack_command and do not post a reply.", payload["instructions"])
             self.assertEqual(payload["templates"]["say"][-2:], ["--", "{message}"])
             self.assertEqual(payload["safety"]["room_contacted"], False)
             self.assertEqual(payload["safety"]["provider_executed"], False)

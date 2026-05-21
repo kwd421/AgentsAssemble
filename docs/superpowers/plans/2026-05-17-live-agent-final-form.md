@@ -4718,6 +4718,40 @@ Operator docs now state that resident room snapshots and wait-next payloads use 
 
 ---
 
+### Task 137: Cursor-Only Observation For Self-Service Wait Loops
+
+**Goal:** Keep terminal and self-service resident agents visibly current when they observe room events that should not produce replies.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/live_agent_join_brief.py`
+- Modify: `agentsassemble/live_agent_smoke.py`
+- Modify: `scripts/my_self_service_agent.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_self_service_example.py`
+- Test: `tests/test_live_agent_smoke.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED cursor-only observation coverage**
+
+Cover `wait-room-event`, `wait-official-turn`, and `wait-next` timeout payloads advancing observed cursors over visible but non-actionable room events. Cover the checked-in self-service wrapper sending an `online` heartbeat with those timeout cursors instead of exiting without evidence.
+
+- [x] **Step 2: Add engagement-aware `observe_lobby` to `wait-next`**
+
+`wait-next` now keeps raw `wait-room-event` behavior unchanged, but applies the resident engagement policy before returning a lobby action. Replyable events still return `action: "lobby"` with a `say` command. Visible lobby events that should only advance the cursor return `action: "observe_lobby"` with an `ack_command` heartbeat and no reply command. Coverage includes mentioned-mode misses, manual/watch modes, and over-depth lobby chains.
+
+- [x] **Step 3: Update self-service wrappers and operator docs**
+
+The checked-in self-service wrapper and credential-free smoke child now run `observe_lobby` ack commands and send cursor-only timeout heartbeats. Join brief and operator docs describe observe-with-ack behavior so external agents can stay current without replying.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

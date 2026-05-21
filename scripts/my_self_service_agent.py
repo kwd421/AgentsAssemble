@@ -28,6 +28,8 @@ def main(argv: list[str] | None = None) -> int:
     while True:
         wait = _run([*_command_from_env("AGENTSASSEMBLE_WAIT_NEXT_COMMAND"), "--timeout", str(args.wait_timeout)], args.command_timeout)
         if wait.returncode != 0:
+            if _heartbeat_cursor_only_observation(wait.stdout, command_timeout=args.command_timeout) and args.once:
+                return 0
             if args.once:
                 return wait.returncode or 1
             time.sleep(poll_interval)
@@ -83,7 +85,7 @@ def _handle_event(payload: dict[str, object], *, message: str, default_meeting_i
         _heartbeat("error", last_error="official reply failed", last_observed_live_event_id=source_event_id, command_timeout=command_timeout)
         return False
 
-    if action == "lobby" and _current_engagement_mode(command_timeout) == "always":
+    if action == "lobby":
         auto_chain_depth = str(payload.get("auto_chain_depth") or "1")
         _heartbeat("working", last_observed_event_id=source_event_id, command_timeout=command_timeout)
         say_command = _replace_tokens(
@@ -128,7 +130,46 @@ def _handle_event(payload: dict[str, object], *, message: str, default_meeting_i
         )
         return True
 
+    if action == "observe_lobby":
+        ack_command = _command_list(payload.get("ack_command"))
+        if ack_command:
+            ack = _run(ack_command, command_timeout)
+            if ack.returncode == 0:
+                return True
+            _heartbeat(
+                "error",
+                last_error="lobby observation ack failed",
+                last_observed_event_id=source_event_id,
+                command_timeout=command_timeout,
+            )
+            return False
+        _heartbeat(
+            "online",
+            last_error="",
+            last_observed_event_id=source_event_id,
+            command_timeout=command_timeout,
+        )
+        return True
+
     return False
+
+
+def _heartbeat_cursor_only_observation(stdout: str, *, command_timeout: float) -> bool:
+    payload = _json_object(stdout)
+    if payload.get("status") != "timeout":
+        return False
+    lobby_cursor = str(payload.get("last_observed_event_id") or "")
+    live_cursor = str(payload.get("last_observed_live_event_id") or "")
+    if not lobby_cursor and not live_cursor:
+        return False
+    _heartbeat(
+        "online",
+        last_error="",
+        last_observed_event_id=lobby_cursor,
+        last_observed_live_event_id=live_cursor,
+        command_timeout=command_timeout,
+    )
+    return True
 
 
 def _command_list(value: object) -> list[str]:
@@ -169,17 +210,6 @@ def _json_object(text: str) -> dict[str, object]:
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
-
-
-def _current_engagement_mode(command_timeout: float) -> str:
-    try:
-        room = _run(_command_from_env("AGENTSASSEMBLE_ROOM_COMMAND"), command_timeout)
-    except Exception:
-        return ""
-    if room.returncode != 0:
-        return ""
-    agent = _json_object(room.stdout).get("agent")
-    return str(agent.get("engagement_mode") or "") if isinstance(agent, dict) else ""
 
 
 def _heartbeat(
