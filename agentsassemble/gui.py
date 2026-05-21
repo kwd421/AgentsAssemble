@@ -3681,6 +3681,12 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
 def _session_stop_operation_details(session: dict[str, object]) -> dict[str, object]:
     offline = session.get("offline") if isinstance(session.get("offline"), dict) else {}
     process = session.get("process") if isinstance(session.get("process"), dict) else {}
+    session_runs = session.get("session_runs") if isinstance(session.get("session_runs"), list) else []
+    stopped_session_run_ids = [
+        clean_lobby_text(run.get("run_id"), limit=64)
+        for run in session_runs
+        if isinstance(run, dict) and run.get("status") == "stopped" and clean_lobby_text(run.get("run_id"), limit=64)
+    ]
     return {
         "result_status": _operation_result_status(session.get("status")),
         "meeting_id": clean_lobby_text(session.get("meeting_id"), limit=128),
@@ -3693,6 +3699,8 @@ def _session_stop_operation_details(session: dict[str, object]) -> dict[str, obj
         "process_status": clean_lobby_text(process.get("status"), limit=64),
         "process_agent_ids": _safe_payload_strings(process.get("agent_ids"), limit=64),
         "process_attention": _safe_payload_strings(process.get("attention"), limit=128),
+        "session_run_stopped_count": len(stopped_session_run_ids),
+        "session_run_ids": stopped_session_run_ids[:10],
     }
 
 

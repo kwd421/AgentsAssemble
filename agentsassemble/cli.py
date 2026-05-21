@@ -1891,8 +1891,20 @@ def _format_live_agent_session_stop(response: dict[str, object]) -> str:
     expected = offline.get("expected", 0)
     stopped = offline.get("offline", 0)
     attention = offline.get("attention") if isinstance(offline.get("attention"), list) else []
-    suffix = f"; attention {', '.join(str(item) for item in attention)}" if attention else ""
+    suffixes = []
+    stopped_session_runs = _stopped_session_run_count(response)
+    if stopped_session_runs:
+        label = "session run" if stopped_session_runs == 1 else "session runs"
+        suffixes.append(f"{stopped_session_runs} {label} stopped")
+    if attention:
+        suffixes.append(f"attention {', '.join(str(item) for item in attention)}")
+    suffix = f"; {'; '.join(suffixes)}" if suffixes else ""
     return f"Resident session {meeting_id} {status}; group {group_id}; {stopped}/{expected} offline{suffix}"
+
+
+def _stopped_session_run_count(response: dict[str, object]) -> int:
+    runs = response.get("session_runs") if isinstance(response.get("session_runs"), list) else []
+    return sum(1 for item in runs if isinstance(item, dict) and item.get("status") == "stopped")
 
 
 def _format_live_agent_session_check(response: dict[str, object]) -> str:

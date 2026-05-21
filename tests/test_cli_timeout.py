@@ -3474,6 +3474,13 @@ class CliTimeoutTests(unittest.TestCase):
                 "offline": 2,
                 "attention": [],
             },
+            "session_runs": [
+                {
+                    "run_id": "run-stop-1",
+                    "status": "stopped",
+                    "active": False,
+                }
+            ],
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
@@ -3504,6 +3511,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("Resident session resident-m1 stopped", stdout.getvalue())
         self.assertIn("resident-main", stdout.getvalue())
         self.assertIn("2/2 offline", stdout.getvalue())
+        self.assertIn("1 session run stopped", stdout.getvalue())
 
     def test_live_agent_stop_session_returns_failure_for_degraded_stop(self):
         response = {

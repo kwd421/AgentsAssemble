@@ -381,6 +381,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("session.check", doc)
         self.assertIn("session.restart", doc)
         self.assertIn("session.stop", doc)
+        self.assertIn("stopped session-run count", doc)
+        self.assertIn("`세션중지` marks matching active session-runs as stopped", doc)
         self.assertIn("stale online rows cannot prove restart readiness", doc)
         self.assertIn("preflights the persisted restart config and server", doc)
         self.assertIn("preflights the persisted recover config and server", doc)

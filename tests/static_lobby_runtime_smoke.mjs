@@ -1776,6 +1776,15 @@ test("session stop button posts existing meeting and group payload", async () =>
       group_id: "resident-main",
       offline: { expected: 3, offline: 3, attention: [] },
       process: { status: "stopped", attention: [] },
+      session_runs: [
+        {
+          run_id: "run-stop-1",
+          status: "stopped",
+          active: false,
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+        },
+      ],
     },
   });
   renderLobby({ followLatest: false });
@@ -1791,7 +1800,7 @@ test("session stop button posts existing meeting and group payload", async () =>
   });
   assert.equal(
     state.liveAgentProcessStatus.message,
-    "세션 stopped: resident-gui · resident-main · 3/3 offline"
+    "세션 stopped: resident-gui · resident-main · 3/3 offline · runs stopped 1"
   );
 });
 

@@ -2591,7 +2591,14 @@ function liveAgentSessionStatusMessage(payload) {
 
 function liveAgentSessionStopStatusMessage(payload) {
   const offline = payload?.offline && typeof payload.offline === "object" ? payload.offline : {};
-  return `세션 ${payload?.status || "unknown"}: ${payload?.meeting_id || "unknown"} · ${payload?.group_id || "unknown"} · ${offline.offline || 0}/${offline.expected || 0} offline`;
+  const sessionRuns = liveAgentStoppedSessionRunsLabel(payload);
+  return `세션 ${payload?.status || "unknown"}: ${payload?.meeting_id || "unknown"} · ${payload?.group_id || "unknown"} · ${offline.offline || 0}/${offline.expected || 0} offline${sessionRuns ? ` · ${sessionRuns}` : ""}`;
+}
+
+function liveAgentStoppedSessionRunsLabel(payload) {
+  const runs = Array.isArray(payload?.session_runs) ? payload.session_runs : [];
+  const stopped = runs.filter((run) => run && typeof run === "object" && run.status === "stopped");
+  return stopped.length ? `runs stopped ${stopped.length}` : "";
 }
 
 function liveAgentSessionCheckStatusMessage(payload) {

@@ -467,7 +467,7 @@ with `meeting_id` and `group_id` only. `meeting_id` must name an existing meetin
 
 After the group is stopped, stop marks only roster rows already bound to that meeting as `offline`. Missing bound rows may be recreated as offline evidence, but a row for the same `agent_id` that is currently attached to another meeting is left untouched and reported in `offline.attention` as `agent_id:wrong_meeting`. The response reports `status: "stopped"` only when the process is no longer running and every expected bound agent was recorded offline for that meeting; otherwise it reports `status: "stopping"` with attention fields for the remaining evidence gap. CLI exit code is `0` for `stopped` and `1` for `stopping`.
 
-The operation ledger records one sanitized `session.stop` entry with result status, meeting id, group id, offline counts, safe agent ids, process status, and attention fields. It does not record config paths, command arguments, endpoint URLs, auth refs, prompts, log tails, provider output, replies, or official turn content.
+The operation ledger records one sanitized `session.stop` entry with result status, meeting id, group id, offline counts, safe agent ids, process status, stopped session-run count, stopped session-run ids, and attention fields. It does not record config paths, command arguments, endpoint URLs, auth refs, prompts, log tails, provider output, replies, or official turn content.
 
 Use `start-meeting` when you want a normal, visible meeting record that is ready for resident live-agent official turns, instead of a diagnostic smoke meeting:
 
@@ -1245,7 +1245,7 @@ The lifecycle event wait path polls `/api/live-agent-process-events?limit=N&scan
 
 Use `/api/live-agent-session-runs/ensure` when the operator wants the ensure request recorded as durable session intent instead of only as a one-shot control operation. The endpoint accepts the same payload as `/api/live-agent-sessions/ensure`, creates a `session-runs.json` record before invoking ensure, then updates that record with the final readiness status, selected ensure action, connection counts, probe result, remaining-round result, finalization result, and a sanitized error if ensure fails. The GUI server reconciles active durable runs on startup by replaying their saved ensure request, so a restarted GUI process has a visible recovery hook above the lower-level process supervisor.
 
-The GUI `상주 실행` panel keeps the older `세션보장` one-shot ensure button and adds `상주보장` for the durable session-run path. Its `상주 세션런` list reads `/api/live-agent-session-runs?limit=20` during normal runtime refresh and shows only safe operator evidence: run id, meeting id, group id, phase/status, active flag, reconnect count, and connected/expected counts. It does not render saved config paths, command arguments, server URLs, prompts, provider output, or log tails.
+The GUI `상주 실행` panel keeps the older `세션보장` one-shot ensure button and adds `상주보장` for the durable session-run path. Its `상주 세션런` list reads `/api/live-agent-session-runs?limit=20` during normal runtime refresh and shows only safe operator evidence: run id, meeting id, group id, phase/status, active flag, reconnect count, and connected/expected counts. `세션중지` marks matching active session-runs as stopped, refreshes the list, and reports the stopped run count in the status line. It does not render saved config paths, command arguments, server URLs, prompts, provider output, or log tails.
 
 ```bash
 curl -X POST \

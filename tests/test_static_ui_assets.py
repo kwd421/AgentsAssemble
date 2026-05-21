@@ -188,6 +188,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning", script)
         self.assertIn("state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning", script)
         self.assertIn("state.liveAgentReadinessRunning || state.liveAgentDiscoveryRunning || state.liveAgentAutoJoinRunning || Boolean(state.liveAgentProcessRowActionRunning)", script)
+        self.assertIn("function liveAgentStoppedSessionRunsLabel", script)
         self.assertIn("liveAgentDiscoveryReport: null", script)
         self.assertIn("function renderLiveAgentDiscoveryReport", script)
         self.assertIn('class="live-agent-discovery-report"', script)

@@ -48,6 +48,7 @@ from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.live_agents import heartbeat_live_agent, read_live_agents
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
+from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 
 
@@ -7995,6 +7996,24 @@ class GuiServerTests(unittest.TestCase):
             )
             heartbeat_live_agent(root, "agent-a", status="online")
             supervisor = StopSessionSupervisor()
+            session_run_controller = LiveAgentSessionRunController(root)
+            session_run = session_run_controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": str(live_agent_config),
+                },
+            )
+            session_run_controller.finish_run(
+                session_run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
@@ -8009,12 +8028,17 @@ class GuiServerTests(unittest.TestCase):
                     session_payload = json.loads(response.read().decode("utf-8"))
                 with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
                     operations = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs?limit=20", timeout=4) as response:
+                    session_runs = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
 
             self.assertEqual(session_payload["status"], "stopped")
             self.assertEqual(session_payload["group_id"], "resident-main")
+            self.assertEqual(session_payload["session_runs"][0]["run_id"], session_run["run_id"])
+            self.assertEqual(session_payload["session_runs"][0]["status"], "stopped")
+            self.assertFalse(session_runs["runs"][0]["active"])
             self.assertEqual(supervisor.stopped, ["resident-main"])
             agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
             self.assertEqual(agents["agent-a"]["status"], "offline")
@@ -8022,6 +8046,8 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(session_operations[-1]["status"], "success")
             self.assertEqual(session_operations[-1]["target_id"], "resident-m1")
             self.assertEqual(session_operations[-1]["details"]["offline_agent_count"], 1)
+            self.assertEqual(session_operations[-1]["details"]["session_run_stopped_count"], 1)
+            self.assertEqual(session_operations[-1]["details"]["session_run_ids"], [session_run["run_id"]])
             operation_blob = json.dumps(session_operations, ensure_ascii=False)
             self.assertNotIn("/private/live-agents.json", operation_blob)
             self.assertNotIn("secret provider output", operation_blob)

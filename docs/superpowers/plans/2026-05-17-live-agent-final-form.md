@@ -3770,6 +3770,36 @@ Document that discovery remains PATH-only and non-mutating, while `auto-join` is
 
 ---
 
+### Task 103: Session Stop Durable Run Evidence
+
+**Goal:** Make `세션중지` prove which durable session-run intents were closed, so stopped resident sessions do not look recoverable or ambiguous after GUI restart.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for stopped run evidence**
+
+Cover stop-session responses with matching active durable runs and require API operation details, CLI text output, and GUI status text to include safe stopped session-run evidence.
+
+- [x] **Step 2: Surface stopped run counts and ids**
+
+Keep the existing `mark_matching_stopped()` behavior and expose its result through the existing stop response. Add sanitized operation details for `session_run_stopped_count` and bounded safe `session_run_ids`, add CLI text such as `1 session run stopped`, and add GUI status text such as `runs stopped 1`.
+
+- [x] **Step 3: Document stop semantics**
+
+Document that `세션중지` stops matching active session-runs, refreshes the GUI list, and records only safe run ids/counts in operation history.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
