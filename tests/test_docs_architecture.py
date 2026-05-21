@@ -315,6 +315,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("/api/live-agent-session-runs/ensure", doc)
         self.assertIn("adds `상주보장` for the durable session-run path", doc)
         self.assertIn("/api/live-agent-session-runs?limit=20", doc)
+        self.assertIn("retry failure count/backoff/next retry time", doc)
+        self.assertIn("waiting for its next durable retry", doc)
         self.assertIn("It does not render saved config paths", doc)
         self.assertIn("assemble live-agent session-runs list", doc)
         self.assertIn("assemble live-agent session-runs wait", doc)

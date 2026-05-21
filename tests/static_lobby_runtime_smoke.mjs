@@ -2128,12 +2128,20 @@ test("runtime refresh loads durable session runs and renders current readiness e
           group_id: "resident-main",
           phase: "recover",
           reconcile_count: 2,
+          reconcile_failure_count: 2,
+          reconcile_backoff_seconds: 120,
+          next_reconcile_at: "2026-05-21T10:07:00+00:00",
           request: {
             live_agent_config_path: "configs/private.json",
             server: "https://secret.example",
+            auth_ref: "env:SECRET_TOKEN",
+            command: ["provider", "--token", "secret"],
+            prompt: "private prompt",
           },
           result: {
             connection: { expected: 3, connected: 3 },
+            provider_output: "private provider output",
+            log_tail: "private log tail",
           },
           readiness: {
             status: "degraded",
@@ -2162,7 +2170,10 @@ test("runtime refresh loads durable session runs and renders current readiness e
   assert.match(runText, /current connected 1\/3/);
   assert.match(runText, /connection agent-c:offline/);
   assert.match(runText, /reconcile 2/);
-  assert.doesNotMatch(runText, /configs\/|secret\.example|https:/);
+  assert.match(runText, /retry failures 2/);
+  assert.match(runText, /retry backoff 120s/);
+  assert.match(runText, /next retry 2026-05-21T10:07:00\+00:00/);
+  assert.doesNotMatch(runText, /configs\/|secret\.example|https:|SECRET_TOKEN|--token|private prompt|provider output|log tail/);
 });
 
 test("runtime health session readiness renders only safe escaped evidence", async () => {

@@ -951,6 +951,7 @@ function renderLiveAgentSessionRun(run) {
     liveAgentSessionRunConnectionLabel(run, { stored: Boolean(readiness) }),
     liveAgentSessionRunReadinessLabel(readiness),
     run.reconcile_count ? `reconcile ${Math.max(0, Number(run.reconcile_count || 0))}` : "",
+    liveAgentSessionRunRetryLabel(run),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -994,6 +995,17 @@ function liveAgentSessionRunReadinessLabel(readiness) {
   parts.push(liveAgentSessionAttentionLabel("connection", readiness.connection_attention));
   parts.push(liveAgentSessionAttentionLabel("attention", readiness.attention));
   return parts.filter(Boolean).join(" · ");
+}
+
+function liveAgentSessionRunRetryLabel(run) {
+  const labels = [];
+  const failures = Number(run?.reconcile_failure_count || 0);
+  const backoffSeconds = Number(run?.reconcile_backoff_seconds || 0);
+  const nextReconcileAt = String(run?.next_reconcile_at || "").trim();
+  if (Number.isFinite(failures) && failures > 0) labels.push(`retry failures ${Math.floor(failures)}`);
+  if (Number.isFinite(backoffSeconds) && backoffSeconds > 0) labels.push(`retry backoff ${Math.floor(backoffSeconds)}s`);
+  if (/^[0-9T:+.\-Z]{1,64}$/.test(nextReconcileAt)) labels.push(`next retry ${nextReconcileAt}`);
+  return labels.join(" · ");
 }
 
 function renderLiveAgentProcessEvents() {
