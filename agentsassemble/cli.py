@@ -895,6 +895,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="List recent live-agent control operations.",
     )
     live_operations_list.add_argument("--limit", type=parse_positive_int, default=50)
+    live_operations_list.add_argument("--operation", default="", help="Optional operation name filter.")
+    live_operations_list.add_argument("--target-id", default="", help="Optional operation target id filter.")
+    live_operations_list.add_argument("--status", default="", help="Optional operation status filter.")
+    live_operations_list.add_argument("--scan-limit", type=parse_positive_int, default=None, help="Maximum recent operations to scan before returning matches.")
     live_operations_list.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON operation payload.")
     live_operations_list.add_argument(
         "--fail-on-attention",
@@ -3068,7 +3072,7 @@ def _live_agent_process_event_wait_result(
 
 def _run_live_agent_operations(args: argparse.Namespace) -> int:
     if args.live_agent_operations_command == "list":
-        payload = _request_json(_server_url(args.server, f"/api/live-agent-operations?limit={args.limit}"))
+        payload = _request_json(_server_url(args.server, _live_agent_operations_path(args, include_filters=True)))
         _print_live_agent_operations_payload(payload, as_json=args.as_json)
         if args.fail_on_attention and _live_agent_operations_payload_needs_attention(payload):
             return 1
@@ -3076,6 +3080,23 @@ def _run_live_agent_operations(args: argparse.Namespace) -> int:
     if args.live_agent_operations_command == "wait":
         return _run_live_agent_operations_wait(args)
     return 1
+
+
+def _live_agent_operations_path(args: argparse.Namespace, *, include_filters: bool = False) -> str:
+    query: dict[str, object] = {"limit": args.limit}
+    if include_filters:
+        operation = str(getattr(args, "operation", "") or "").strip()
+        target_id = str(getattr(args, "target_id", "") or "").strip()
+        status = str(getattr(args, "status", "") or "").strip()
+        if operation:
+            query["operation"] = operation
+        if target_id:
+            query["target_id"] = target_id
+        if status:
+            query["status"] = status
+        if getattr(args, "scan_limit", None) is not None:
+            query["scan_limit"] = args.scan_limit
+    return f"/api/live-agent-operations?{urllib.parse.urlencode(query)}"
 
 
 def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
@@ -3449,10 +3470,13 @@ def _print_live_agent_operations_payload(payload: dict[str, object], *, as_json:
     operations = payload.get("operations") if isinstance(payload.get("operations"), list) else []
     if not operations:
         print("no live-agent operations")
-        return
-    for item in operations:
-        if isinstance(item, dict):
-            print(_format_live_agent_operation(item))
+    else:
+        for item in operations:
+            if isinstance(item, dict):
+                print(_format_live_agent_operation(item))
+    scan_notice = _format_live_agent_operation_scan_notice(payload)
+    if scan_notice:
+        print(scan_notice)
 
 
 def _print_live_agent_session_runs_payload(payload: dict[str, object], *, as_json: bool) -> None:
@@ -3532,6 +3556,15 @@ def _format_live_agent_operation(operation: dict[str, object]) -> str:
     suffix_parts = [part for part in (summary, details) if part]
     suffix = f" · {' · '.join(suffix_parts)}" if suffix_parts else ""
     return f"{timestamp} {operation_name} {status} {target_id}{suffix}"
+
+
+def _format_live_agent_operation_scan_notice(payload: dict[str, object]) -> str:
+    if payload.get("truncated") is not True:
+        return ""
+    scanned = _safe_int(payload.get("scanned_operation_count")) or _safe_int(payload.get("scan_limit"))
+    if scanned <= 0:
+        return "searched bounded operation history; older matches may exist"
+    return f"searched recent {scanned} live-agent operations; older matches may exist"
 
 
 def _live_agent_operations_payload_needs_attention(payload: dict[str, object]) -> bool:

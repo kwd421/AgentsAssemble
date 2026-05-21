@@ -6,7 +6,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 import agentsassemble.live_agent_operations as live_agent_operations
-from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
+from agentsassemble.live_agent_operations import (
+    append_live_agent_operation,
+    read_live_agent_operation_history,
+    read_live_agent_operations,
+)
 
 
 class LiveAgentOperationTests(unittest.TestCase):
@@ -306,3 +310,155 @@ class LiveAgentOperationTests(unittest.TestCase):
         self.assertNotIn("https://friend.example", operations[0]["details"]["group_alias"])
         self.assertNotIn("/Users/me/private", operations[0]["error"])
         self.assertNotIn("SECRET_TOKEN", operations[0]["error"])
+
+    def test_read_operations_applies_filters_before_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            append_live_agent_operation(
+                root,
+                operation="session.start",
+                status="success",
+                target_id="resident-a",
+                summary="matching older operation",
+            )
+            append_live_agent_operation(
+                root,
+                operation="session.start",
+                status="failed",
+                target_id="resident-a",
+                summary="wrong status",
+            )
+            append_live_agent_operation(
+                root,
+                operation="session.resume",
+                status="success",
+                target_id="resident-a",
+                summary="wrong operation",
+            )
+            append_live_agent_operation(
+                root,
+                operation="session.start",
+                status="success",
+                target_id="resident-b",
+                summary="wrong target",
+            )
+
+            operations = read_live_agent_operations(
+                root,
+                limit=1,
+                operation="session.start",
+                target_id="resident-a",
+                status="success",
+            )
+
+        self.assertEqual(len(operations), 1)
+        self.assertEqual(operations[0]["summary"], "matching older operation")
+
+    def test_read_operation_history_reports_scan_limit_truncation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            append_live_agent_operation(
+                root,
+                operation="session.start",
+                status="success",
+                target_id="resident-a",
+                summary="matching older operation",
+            )
+            append_live_agent_operation(
+                root,
+                operation="session.start",
+                status="success",
+                target_id="resident-b",
+                summary="wrong target",
+            )
+            append_live_agent_operation(
+                root,
+                operation="session.resume",
+                status="success",
+                target_id="resident-a",
+                summary="wrong operation",
+            )
+
+            history = read_live_agent_operation_history(
+                root,
+                limit=1,
+                operation="session.start",
+                target_id="resident-a",
+                status="success",
+                scan_limit=2,
+            )
+
+        self.assertEqual(history["operations"], [])
+        self.assertEqual(history["limit"], 1)
+        self.assertEqual(history["operation"], "session.start")
+        self.assertEqual(history["target_id"], "resident-a")
+        self.assertEqual(history["status"], "success")
+        self.assertEqual(history["scan_limit"], 2)
+        self.assertEqual(history["scanned_operation_count"], 2)
+        self.assertTrue(history["truncated"])
+
+    def test_read_operation_history_does_not_report_truncated_when_scan_limit_reaches_file_start(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            append_live_agent_operation(
+                root,
+                operation="session.start",
+                status="success",
+                target_id="resident-a",
+                summary="oldest operation",
+            )
+            append_live_agent_operation(
+                root,
+                operation="session.resume",
+                status="success",
+                target_id="resident-a",
+                summary="newest operation",
+            )
+
+            history = read_live_agent_operation_history(root, limit=5, scan_limit=2)
+
+        self.assertEqual([operation["summary"] for operation in history["operations"]], ["oldest operation", "newest operation"])
+        self.assertEqual(history["scanned_operation_count"], 2)
+        self.assertFalse(history["truncated"])
+
+    def test_read_operations_path_like_target_filter_does_not_broaden_results(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            append_live_agent_operation(
+                root,
+                operation="session.start",
+                status="success",
+                target_id="resident-a",
+                summary="normal target",
+            )
+
+            operations = read_live_agent_operations(root, limit=5, target_id="/private/resident-a.json")
+
+        self.assertEqual(operations, [])
+
+    def test_read_operations_sensitive_target_filter_does_not_match_redacted_legacy_targets(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            path = root / "live-agent-runs" / "operations.jsonl"
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                json.dumps(
+                    {
+                        "id": "legacy",
+                        "timestamp": "2026-05-18T01:02:03+00:00",
+                        "operation": "session.start",
+                        "status": "success",
+                        "target_id": "/private/resident-a.json",
+                        "summary": "legacy target",
+                        "details": {},
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            history = read_live_agent_operation_history(root, limit=5, target_id="/private/resident-b.json")
+
+        self.assertEqual(history["target_id"], "[redacted]")
+        self.assertEqual(history["operations"], [])

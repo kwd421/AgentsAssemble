@@ -1380,12 +1380,22 @@ The recent operation history is available through the GUI "최근 작업" list, 
 curl 'http://127.0.0.1:8765/api/live-agent-operations?limit=20'
 ```
 
+Add `operation`, `target_id`, and `status` query parameters when a monitor only needs one operation stream, for example:
+
+```bash
+curl 'http://127.0.0.1:8765/api/live-agent-operations?limit=20&operation=session.start&target_id=resident-1&status=success'
+```
+
 and through the CLI:
 
 ```bash
 assemble live-agent operations list \
   --server http://127.0.0.1:8765 \
-  --limit 20
+  --limit 20 \
+  --operation session.start \
+  --target-id resident-1 \
+  --status success \
+  --scan-limit 1000
 ```
 
 The module form is equivalent when running from a checkout:
@@ -1397,7 +1407,7 @@ python3 -m agentsassemble.cli live-agent operations list \
   --json
 ```
 
-The GUI list and the default CLI output include compact safe `details` values, such as readiness result status, reply counts, probe ids, or restart settings. For `session.smoke` and `readiness.check`, those compact details prioritize high-signal liveness evidence such as bounded sanitized health process reasons and attention, reply counts, post-restart and post-recover counts, session-smoke soak cycle/reply counts, and soak check statuses before lower-value identifiers; the operation record stores those health summaries, not the raw health payload. For `session.start`, `session.ensure`, `session.resume`, `session.restart`, and `session.recover`, the compact rows prioritize the chosen ensure action when present, connected-agent counts, bound-agent reply probe status, optional auto-round status/reason/counts, and requested `finalization_status`, `finalization_reason`, and official event count before lower-value identifiers, so long-session proof remains visible in the recent operation rows. For `official_turn.rounds`, finalization status and reason are also prioritized before lower-value round ids, so a degraded auto-finalize batch explains whether artifacts were skipped, failed, or finalized. Use `--json` when an operator script needs the full sanitized operation payload.
+The `operations list` CLI uses the same optional `--operation`, `--target-id`, and `--status` filters as the HTTP query. These filters are applied before the result limit, so unrelated newer operations do not hide the matching rows a monitor is watching for. The filtered read remains bounded by `scan_limit` / `--scan-limit`, and a truncated response includes `scanned_operation_count` plus `truncated: true` so scripts know older matches may exist. The GUI list and the default CLI output include compact safe `details` values, such as readiness result status, reply counts, probe ids, or restart settings. For `session.smoke` and `readiness.check`, those compact details prioritize high-signal liveness evidence such as bounded sanitized health process reasons and attention, reply counts, post-restart and post-recover counts, session-smoke soak cycle/reply counts, and soak check statuses before lower-value identifiers; the operation record stores those health summaries, not the raw health payload. For `session.start`, `session.ensure`, `session.resume`, `session.restart`, and `session.recover`, the compact rows prioritize the chosen ensure action when present, connected-agent counts, bound-agent reply probe status, optional auto-round status/reason/counts, and requested `finalization_status`, `finalization_reason`, and official event count before lower-value identifiers, so long-session proof remains visible in the recent operation rows. For `official_turn.rounds`, finalization status and reason are also prioritized before lower-value round ids, so a degraded auto-finalize batch explains whether artifacts were skipped, failed, or finalized. Use `--json` when an operator script needs the full sanitized operation payload.
 
 For scriptable operation-history gates, use `live-agent operations list --fail-on-attention`. The command still prints the normal operation summary first, then exits `1` when any returned operation status is not `success`, such as `failed`, `degraded`, or `unknown`. Without that flag, listing operations exits `0` whenever the history was fetched successfully.
 

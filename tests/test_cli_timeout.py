@@ -868,6 +868,32 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.live_agent_operations_command, "list")
         self.assertTrue(args.fail_on_attention)
 
+    def test_live_agent_operations_list_parses_filters(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "operations",
+                "list",
+                "--server",
+                "http://room.local",
+                "--operation",
+                "session.start",
+                "--target-id",
+                "resident-m1",
+                "--status",
+                "success",
+                "--scan-limit",
+                "1000",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "operations")
+        self.assertEqual(args.live_agent_operations_command, "list")
+        self.assertEqual(args.operation, "session.start")
+        self.assertEqual(args.target_id, "resident-m1")
+        self.assertEqual(args.status, "success")
+        self.assertEqual(args.scan_limit, 1000)
+
     def test_live_agent_session_runs_list_parses_limit_and_json(self):
         args = build_parser().parse_args(
             [
@@ -1800,6 +1826,49 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("process.start", stdout.getvalue())
         self.assertIn("success", stdout.getvalue())
         self.assertIn("crew", stdout.getvalue())
+
+    def test_live_agent_operations_list_fetches_filtered_operations(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "session.start",
+                    "status": "success",
+                    "target_id": "resident-m1",
+                    "summary": "ready",
+                    "details": {},
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "operations",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--limit",
+                        "3",
+                        "--operation",
+                        "session.start",
+                        "--target-id",
+                        "resident-m1",
+                        "--status",
+                        "success",
+                        "--scan-limit",
+                        "1000",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-operations?limit=3&operation=session.start&target_id=resident-m1&status=success&scan_limit=1000"
+        )
+        self.assertIn("session.start", stdout.getvalue())
+        self.assertIn("resident-m1", stdout.getvalue())
 
     def test_live_agent_operations_wait_observes_matching_operation_after_marker(self):
         payloads = [

@@ -36,7 +36,7 @@ from agentsassemble.live_agent_discovery import (
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
-from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
+from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operation_history
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
 from agentsassemble.live_agent_processes import (
@@ -545,8 +545,23 @@ def live_agents_payload(output_root: Path) -> dict[str, object]:
     return {"agents": read_live_agents(output_root)}
 
 
-def live_agent_operations_payload(output_root: Path, *, limit: int = 50) -> dict[str, object]:
-    return {"operations": read_live_agent_operations(output_root, limit=limit)}
+def live_agent_operations_payload(
+    output_root: Path,
+    *,
+    limit: int = 50,
+    operation: str = "",
+    target_id: str = "",
+    status: str = "",
+    scan_limit: object = None,
+) -> dict[str, object]:
+    return read_live_agent_operation_history(
+        output_root,
+        limit=limit,
+        operation=operation,
+        target_id=target_id,
+        status=status,
+        scan_limit=scan_limit,
+    )
 
 
 def live_agent_session_runs_payload(
@@ -4220,7 +4235,16 @@ def _make_handler(
                 )
                 return
             if path == "/api/live-agent-operations":
-                self._send_json(live_agent_operations_payload(output_root, limit=self._limit(query, default=50)))
+                self._send_json(
+                    live_agent_operations_payload(
+                        output_root,
+                        limit=self._limit(query, default=50),
+                        operation=str(query.get("operation", [""])[0] or ""),
+                        target_id=str(query.get("target_id", [""])[0] or ""),
+                        status=str(query.get("status", [""])[0] or ""),
+                        scan_limit=query.get("scan_limit", [""])[0],
+                    )
+                )
                 return
             if path == "/api/live-agent-session-runs":
                 self._send_json(

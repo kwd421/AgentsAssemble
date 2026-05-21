@@ -11,6 +11,7 @@ OPERATION_TEXT_LIMIT = 500
 OPERATION_FIELD_LIMIT = 128
 DEFAULT_OPERATION_LIMIT = 50
 MAX_OPERATION_LIMIT = 200
+MAX_OPERATION_SCAN_LIMIT = 5000
 JSONL_TAIL_BLOCK_BYTES = 8192
 
 SENSITIVE_DETAIL_MARKERS = (
@@ -95,12 +96,55 @@ def append_live_agent_operation(
     return record
 
 
-def read_live_agent_operations(output_root: Path, *, limit: int = DEFAULT_OPERATION_LIMIT) -> list[dict[str, object]]:
+def read_live_agent_operations(
+    output_root: Path,
+    *,
+    limit: int = DEFAULT_OPERATION_LIMIT,
+    operation: str = "",
+    target_id: str = "",
+    status: str = "",
+    scan_limit: object = None,
+) -> list[dict[str, object]]:
+    return read_live_agent_operation_history(
+        output_root,
+        limit=limit,
+        operation=operation,
+        target_id=target_id,
+        status=status,
+        scan_limit=scan_limit,
+    )["operations"]
+
+
+def read_live_agent_operation_history(
+    output_root: Path,
+    *,
+    limit: int = DEFAULT_OPERATION_LIMIT,
+    operation: str = "",
+    target_id: str = "",
+    status: str = "",
+    scan_limit: object = None,
+) -> dict[str, object]:
+    safe_limit = _operation_limit(limit)
+    safe_scan_limit = _operation_scan_limit(scan_limit, operation_limit=safe_limit)
+    operation_filter = _operation_filter(operation)
+    target_id_filter = _target_id_filter(target_id)
+    target_id_match_filter = _target_id_match_filter(target_id)
+    status_filter = _status_filter(status)
+    history: dict[str, object] = {
+        "operations": [],
+        "limit": safe_limit,
+        "operation": operation_filter,
+        "target_id": target_id_filter,
+        "status": status_filter,
+        "scan_limit": safe_scan_limit,
+        "scanned_operation_count": 0,
+        "truncated": False,
+    }
     path = _operations_path(output_root)
     if not path.exists() or not path.is_file():
-        return []
-    safe_limit = _operation_limit(limit)
+        return history
     operations: list[dict[str, object]] = []
+    scanned_operation_count = 0
     for line in _jsonl_tail_lines_newest_first(path):
         if not line.strip():
             continue
@@ -109,16 +153,57 @@ def read_live_agent_operations(output_root: Path, *, limit: int = DEFAULT_OPERAT
         except json.JSONDecodeError:
             continue
         record = _safe_operation_record(payload)
-        if record:
+        if not record:
+            continue
+        if scanned_operation_count >= safe_scan_limit:
+            history["truncated"] = True
+            break
+        scanned_operation_count += 1
+        if _operation_matches(record, operation=operation_filter, target_id=target_id_match_filter, status=status_filter):
             operations.append(record)
             if len(operations) >= safe_limit:
                 break
     operations.reverse()
-    return operations
+    history["operations"] = operations
+    history["scanned_operation_count"] = scanned_operation_count
+    return history
 
 
 def _operations_path(output_root: Path) -> Path:
     return output_root / "live-agent-runs" / "operations.jsonl"
+
+
+def _operation_matches(record: dict[str, object], *, operation: str, target_id: str | None, status: str) -> bool:
+    if target_id is None:
+        return False
+    if operation and str(record.get("operation") or "") != operation:
+        return False
+    if target_id and str(record.get("target_id") or "") != target_id:
+        return False
+    if status and str(record.get("status") or "") != status:
+        return False
+    return True
+
+
+def _operation_filter(value: object) -> str:
+    return _clean_field(value, limit=OPERATION_FIELD_LIMIT)
+
+
+def _target_id_filter(value: object) -> str:
+    return _safe_public_field(value, limit=OPERATION_FIELD_LIMIT)
+
+
+def _target_id_match_filter(value: object) -> str | None:
+    target_id = _clean_field(value, limit=OPERATION_FIELD_LIMIT)
+    if not target_id:
+        return ""
+    if _safe_public_field(target_id, limit=OPERATION_FIELD_LIMIT) != target_id:
+        return None
+    return target_id
+
+
+def _status_filter(value: object) -> str:
+    return _clean_field(value, limit=OPERATION_FIELD_LIMIT)
 
 
 def _jsonl_tail_lines_newest_first(path: Path):
@@ -367,3 +452,16 @@ def _operation_limit(value: object) -> int:
     except (TypeError, ValueError):
         return DEFAULT_OPERATION_LIMIT
     return min(MAX_OPERATION_LIMIT, max(1, parsed))
+
+
+def _operation_scan_limit(value: object, *, operation_limit: int) -> int:
+    default = min(max(operation_limit * 20, 500), MAX_OPERATION_SCAN_LIMIT)
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 0:
+        return default
+    return min(parsed, MAX_OPERATION_SCAN_LIMIT)

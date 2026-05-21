@@ -47,6 +47,7 @@ from agentsassemble.meeting_events import append_live_event, read_live_events, w
 from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.live_agents import heartbeat_live_agent, read_live_agents
+from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
@@ -91,6 +92,60 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["tab_labels"]["live"], "실황")
             self.assertEqual(payload["tab_labels"]["board"], "작전판")
             self.assertEqual(payload["tab_labels"]["archive"], "아카이브")
+
+    def test_live_agent_operations_endpoint_filters_operation_target_and_status(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            append_live_agent_operation(
+                root,
+                operation="session.start",
+                status="success",
+                target_id="resident-a",
+                summary="matching operation",
+            )
+            append_live_agent_operation(
+                root,
+                operation="session.start",
+                status="failed",
+                target_id="resident-a",
+                summary="wrong status",
+            )
+            append_live_agent_operation(
+                root,
+                operation="session.resume",
+                status="success",
+                target_id="resident-a",
+                summary="wrong operation",
+            )
+            append_live_agent_operation(
+                root,
+                operation="session.start",
+                status="success",
+                target_id="resident-b",
+                summary="wrong target",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    (
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-operations"
+                        "?limit=1&operation=session.start&target_id=resident-a&status=success&scan_limit=10"
+                    ),
+                    timeout=4,
+                ) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual([operation["summary"] for operation in payload["operations"]], ["matching operation"])
+        self.assertEqual(payload["operation"], "session.start")
+        self.assertEqual(payload["target_id"], "resident-a")
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["scan_limit"], 10)
+        self.assertFalse(payload["truncated"])
 
     def test_build_meeting_payload_includes_room_log_for_free_chat(self):
         with tempfile.TemporaryDirectory() as temp_dir:

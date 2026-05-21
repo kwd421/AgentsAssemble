@@ -306,6 +306,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("operations.jsonl", doc)
         self.assertIn("/api/live-agent-operations", doc)
         self.assertIn("assemble live-agent operations list", doc)
+        self.assertIn("--scan-limit", doc)
+        self.assertIn("filters are applied before the result limit", doc)
         self.assertIn("live-agent operations list --fail-on-attention", doc)
         self.assertIn("live-agent operations wait", doc)
         self.assertIn("session-runs.json", doc)
