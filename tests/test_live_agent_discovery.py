@@ -410,6 +410,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                     "max_restarts": 0,
                     "restart_backoff_seconds": 5.0,
                     "stale_restart_after_seconds": 0.0,
+                    "probe_bound_agents": True,
+                    "probe_timeout_seconds": 12.0,
                 },
             )
             payload = json.loads(stdout.getvalue())
@@ -418,6 +420,83 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(payload["discovery"]["session_bundle"]["group_id"], "live-agents.discovered")
             self.assertEqual(payload["session"]["connection"]["connected"], 2)
             self.assertEqual(payload["session"]["session_run"]["run_id"], "run-auto-1")
+
+    def test_live_agent_auto_join_does_not_force_probe_for_approval_free_discovery(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.fake.json"
+            requests = []
+            report = {
+                "status": "ok",
+                "config": {"agents": [{"agent_id": "fake-local", "provider_kind": "local_cli"}]},
+                "discoveries": [
+                    {
+                        "command": "fake",
+                        "provider_kind": "local_cli",
+                        "available": True,
+                        "included": True,
+                        "requires_approval": False,
+                    }
+                ],
+                "session_bundle": {
+                    "live_agent_config_path": str(output_path),
+                    "council_config_path": str(Path(temp_dir) / "council.fake.json"),
+                    "agent_config_path": str(Path(temp_dir) / "agents.fake.json"),
+                    "group_id": "live-agents.fake",
+                },
+            }
+
+            def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+                requests.append(
+                    {
+                        "url": url,
+                        "method": method,
+                        "payload": payload,
+                        "timeout_seconds": timeout_seconds,
+                    }
+                )
+                if url == "http://room.local/api/live-agent-session-runs/ensure":
+                    return {
+                        "status": "ready",
+                        "action": "start",
+                        "meeting_id": "resident-fake",
+                        "group_id": "live-agents.fake",
+                        "connection": {"expected": 1, "connected": 1, "attention": []},
+                        "process": {"status": "running", "attention": []},
+                    }
+                if url.startswith("http://room.local/api/live-agent-sessions/readiness?"):
+                    return {
+                        "status": "ready",
+                        "meeting_id": "resident-fake",
+                        "group_id": "live-agents.fake",
+                        "connection": {"expected": 1, "connected": 1, "attention": []},
+                        "process": {"status": "running", "attention": []},
+                    }
+                raise AssertionError(f"unexpected request: {url}")
+
+            stdout = StringIO()
+            with (
+                patch("agentsassemble.cli._write_live_agent_discovery_outputs", return_value=(output_path, report)),
+                patch("agentsassemble.cli._request_json", side_effect=request_json),
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "auto-join",
+                        "--server",
+                        "http://room.local",
+                        "--output",
+                        str(output_path),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            ensure_request = next(request for request in requests if request["url"] == "http://room.local/api/live-agent-session-runs/ensure")
+            self.assertNotIn("probe_bound_agents", ensure_request["payload"])
+            self.assertNotIn("probe_timeout_seconds", ensure_request["payload"])
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "ready")
 
     def test_live_agent_auto_join_can_finalize_after_remaining_rounds(self):
         with tempfile.TemporaryDirectory() as temp_dir:

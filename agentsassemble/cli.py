@@ -2418,6 +2418,7 @@ def _run_live_agent_auto_join(args: argparse.Namespace) -> int:
     ensure_args.council_config = str(session_bundle.get("council_config_path") or "")
     ensure_args.agent_config = str(session_bundle.get("agent_config_path") or "")
     ensure_args.live_agent_config = str(session_bundle.get("live_agent_config_path") or output_path or "")
+    ensure_args.probe_bound_agents = _live_agent_auto_join_requires_reply_probe(args, report)
     action, response = _ensure_live_agent_session_run(ensure_args)
     result = {
         "status": response.get("status") or "unknown",
@@ -2435,6 +2436,12 @@ def _run_live_agent_auto_join(args: argparse.Namespace) -> int:
 def _live_agent_discovery_requires_approval(report: dict[str, object]) -> bool:
     discoveries = report.get("discoveries") if isinstance(report.get("discoveries"), list) else []
     return any(isinstance(item, dict) and item.get("included") and item.get("requires_approval") for item in discoveries)
+
+
+def _live_agent_auto_join_requires_reply_probe(args: argparse.Namespace, report: dict[str, object]) -> bool:
+    return bool(getattr(args, "probe_bound_agents", False)) or (
+        bool(getattr(args, "approve_real_providers", False)) and _live_agent_discovery_requires_approval(report)
+    )
 
 
 def _live_agent_discovery_approval_commands(report: dict[str, object]) -> list[str]:

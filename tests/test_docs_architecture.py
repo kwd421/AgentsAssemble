@@ -139,6 +139,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("python3 -m agentsassemble.cli live-agent auto-join", doc)
         self.assertIn("--approve-real-providers", doc)
         self.assertIn("approval_required", doc)
+        self.assertIn("Approved real-provider auto-join also sends `probe_bound_agents: true`", doc)
+        self.assertIn("a failed or timed-out reply probe leaves the returned session/run degraded", doc)
         self.assertIn("durable session-run ensure", doc)
         self.assertIn("posts to `/api/live-agent-session-runs/ensure`", doc)
         self.assertIn("The resulting `session_run` stays visible", doc)

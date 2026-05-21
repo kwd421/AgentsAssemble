@@ -2307,6 +2307,7 @@ async function runLiveAgentAutoJoin(lobby) {
       busyMessage: "자동입장: 상주 세션런 보장 중",
       failurePrefix: "자동입장 실패",
       notifyRecoverable: true,
+      forceProbeBoundAgents: realProviderApproved && liveAgentDiscoveryRequiresApproval(discovery),
     });
   } catch (error) {
     state.liveAgentProcessStatus = { message: `자동입장 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
@@ -2510,8 +2511,8 @@ function addLiveAgentSessionRemainingRoundsPayload(lobby, requestBody) {
   requestBody.round_stop_on_timeout = lobby.querySelector("#live-agent-round-stop-on-timeout")?.checked === true;
 }
 
-function addLiveAgentSessionProbePayload(lobby, requestBody) {
-  const probeBoundAgents = lobby.querySelector("#live-agent-session-probe-bound-agents")?.checked === true;
+function addLiveAgentSessionProbePayload(lobby, requestBody, options = {}) {
+  const probeBoundAgents = options.force === true || lobby.querySelector("#live-agent-session-probe-bound-agents")?.checked === true;
   if (!probeBoundAgents) return;
   requestBody.probe_bound_agents = true;
   requestBody.probe_timeout_seconds = liveAgentSessionProbeTimeoutSeconds(lobby);
@@ -2594,7 +2595,10 @@ async function stopRunningLiveAgentProcessGroups() {
   }
 }
 
-async function runLiveAgentSessionAction(lobby, { endpoint, includeCouncilConfigs, busyMessage, failurePrefix, notifyRecoverable }) {
+async function runLiveAgentSessionAction(
+  lobby,
+  { endpoint, includeCouncilConfigs, busyMessage, failurePrefix, notifyRecoverable, forceProbeBoundAgents = false }
+) {
   const liveAgentConfigPath = lobby.querySelector("#live-agent-process-config")?.value.trim() || "";
   const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
   const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
@@ -2628,7 +2632,7 @@ async function runLiveAgentSessionAction(lobby, { endpoint, includeCouncilConfig
       requestBody.council_config_path = councilConfigPath;
       requestBody.agent_config_path = agentConfigPath;
     }
-    addLiveAgentSessionProbePayload(lobby, requestBody);
+    addLiveAgentSessionProbePayload(lobby, requestBody, { force: forceProbeBoundAgents });
     if (runRemainingRounds) {
       requestBody.run_remaining_rounds = true;
       requestBody.round_timeout_seconds = roundTimeoutSeconds;

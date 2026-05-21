@@ -4200,6 +4200,33 @@ Cover monitor success/failure snapshots, health inclusion and degradation, CLI o
 
 ---
 
+### Task 119: Auto-Join Real-Provider Reply-Probe Gate
+
+**Goal:** Make real-provider `auto-join` readiness prove that approved residents can actually answer a lobby probe, instead of treating process launch alone as enough.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_discovery.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+
+- [x] **Step 1: Add RED coverage for approved real-provider auto-join**
+
+CLI and GUI static smoke tests now expect `probe_bound_agents: true` plus the bounded probe timeout when discovery includes an approved real-provider row that requires operator approval.
+
+- [x] **Step 2: Reuse existing session reply-probe gate**
+
+CLI `auto-join --approve-real-providers` forces `probe_bound_agents` for real-provider discoveries while preserving explicit `--probe-bound-agents` behavior. GUI `자동입장` does the same when `실사용 CLI 승인` is checked for approval-required discoveries.
+
+- [x] **Step 3: Document readiness semantics**
+
+Docs now state that approved real-provider auto-join readiness is gated by bounded reply-probe evidence and that probe failures degrade the returned session/run and CLI exit code even if resident processes launched.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

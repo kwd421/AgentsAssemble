@@ -1382,6 +1382,8 @@ test("auto join proceeds with explicit real provider approval", async () => {
 
   assert.ok(liveAgentPreflightRequest(requests));
   assert.ok(sessionRunEnsureRequest(requests));
+  assert.equal(sessionRunEnsureRequest(requests).jsonBody.probe_bound_agents, true);
+  assert.equal(sessionRunEnsureRequest(requests).jsonBody.probe_timeout_seconds, 12);
   assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 1/1 connected · run auto-run-approved ready");
 });
 
