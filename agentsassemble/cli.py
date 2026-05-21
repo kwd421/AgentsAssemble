@@ -4471,16 +4471,18 @@ class _SelfServiceResidentSupervisor:
     def run(self) -> int:
         self._register()
         self._heartbeat("online")
+        keep_error_presence = False
         try:
             process = self._start_process()
             return self._supervise(process)
         except subprocess.CalledProcessError as error:
             if not self.stop_event.is_set():
-                self._heartbeat_safely("error", last_error=_self_service_exit_error(error.returncode))
+                keep_error_presence = self._heartbeat_safely("error", last_error=_self_service_exit_error(error.returncode))
             raise
         finally:
             self.close()
-            self._heartbeat_final_offline()
+            if not keep_error_presence:
+                self._heartbeat_final_offline()
 
     def close(self) -> None:
         with self._lock:
@@ -4565,11 +4567,12 @@ class _SelfServiceResidentSupervisor:
         if time.monotonic() - self.last_heartbeat_at >= self.config.heartbeat_interval:
             self._heartbeat_safely("online", preserve_status=True)
 
-    def _heartbeat_safely(self, status: str, **metadata: object) -> None:
+    def _heartbeat_safely(self, status: str, **metadata: object) -> bool:
         try:
             self._heartbeat(status, **metadata)
         except Exception:
-            return
+            return False
+        return True
 
     def _heartbeat_final_offline(self) -> None:
         self._heartbeat_safely("offline")

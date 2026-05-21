@@ -22,6 +22,47 @@ from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 
 
+class _FailingSelfServiceProcess:
+    pid = 4321
+    returncode = 7
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        del timeout
+        return self.returncode
+
+    def terminate(self):
+        self.returncode = -15
+
+    def kill(self):
+        self.returncode = -9
+
+
+def _self_service_resident_config(**overrides) -> ResidentAgentConfig:
+    data = {
+        "server": "http://room.local",
+        "agent_id": "selfer",
+        "display_name": "Self Service",
+        "provider_kind": "antigravity_cli",
+        "connection_kind": "self_service",
+        "session_id": "",
+        "endpoint": "",
+        "auth_ref": "",
+        "meeting_id": "resident-m1",
+        "engagement_mode": "always",
+        "command": ["agent"],
+        "timeout_seconds": 120,
+        "poll_interval": 0,
+        "heartbeat_interval": 30,
+        "cooldown": 5,
+        "max_chain_depth": 1,
+    }
+    data.update(overrides)
+    return ResidentAgentConfig(**data)
+
+
 def _pid_exists(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -8976,6 +9017,71 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("--last-observed-event-id={last_observed_event_id}", heartbeat_template)
         self.assertIn("--last-observed-live-event-id={last_observed_live_event_id}", heartbeat_template)
         self.assertFalse(any(call["url"].endswith("/room") for call in calls))
+
+    def test_self_service_child_failure_keeps_error_presence(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, **kwargs):
+            del kwargs
+            calls.append({"url": url, "method": method, "payload": payload})
+            return {"agent": {"agent_id": "selfer", "status": (payload or {}).get("status", "online")}}
+
+        supervisor = cli_module._SelfServiceResidentSupervisor(
+            _self_service_resident_config(),
+            request_json=request_json,
+            sleep_fn=lambda seconds: None,
+        )
+
+        with patch("agentsassemble.cli.subprocess.Popen", return_value=_FailingSelfServiceProcess()):
+            with self.assertRaises(subprocess.CalledProcessError):
+                supervisor.run()
+
+        heartbeat_payloads = [
+            call["payload"]
+            for call in calls
+            if call["url"] == "http://room.local/api/live-agents/selfer/heartbeat"
+        ]
+        self.assertEqual(
+            heartbeat_payloads,
+            [
+                {"status": "online"},
+                {"status": "error", "last_error": "Self-service command exited with return code 7."},
+            ],
+        )
+
+    def test_self_service_child_failure_falls_back_to_offline_when_error_heartbeat_fails(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, **kwargs):
+            del kwargs
+            calls.append({"url": url, "method": method, "payload": payload})
+            if payload and payload.get("status") == "error":
+                raise RuntimeError("temporary heartbeat failure")
+            return {"agent": {"agent_id": "selfer", "status": (payload or {}).get("status", "online")}}
+
+        supervisor = cli_module._SelfServiceResidentSupervisor(
+            _self_service_resident_config(),
+            request_json=request_json,
+            sleep_fn=lambda seconds: None,
+        )
+
+        with patch("agentsassemble.cli.subprocess.Popen", return_value=_FailingSelfServiceProcess()):
+            with self.assertRaises(subprocess.CalledProcessError):
+                supervisor.run()
+
+        heartbeat_payloads = [
+            call["payload"]
+            for call in calls
+            if call["url"] == "http://room.local/api/live-agents/selfer/heartbeat"
+        ]
+        self.assertEqual(
+            heartbeat_payloads,
+            [
+                {"status": "online"},
+                {"status": "error", "last_error": "Self-service command exited with return code 7."},
+                {"status": "offline"},
+            ],
+        )
 
     def test_live_agent_run_group_keeps_self_service_child_in_group_process_session(self):
         config = ResidentAgentConfig(

@@ -3930,6 +3930,30 @@ Have CLI ready waits request `include_readiness=1` and match only runs whose per
 
 ---
 
+### Task 109: Self-Service Failure Presence Evidence
+
+**Goal:** Keep self-service resident failures visible in the live-agent roster, so a crashed child process is not mistaken for an ordinary offline shutdown.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED coverage for self-service child failure**
+
+Cover `_SelfServiceResidentSupervisor` with a child process that exits non-zero and require heartbeats to stop at `online -> error(last_error)` instead of sending a final `offline` heartbeat after the error.
+
+- [x] **Step 2: Preserve error presence outside shutdown**
+
+Track the non-shutdown child failure path and skip the final offline heartbeat only after a safe error presence write succeeds. If the error heartbeat itself fails, keep the final offline fallback so the roster does not remain apparently online. Keep normal bounded exit, max-tick exit, SIGINT/SIGTERM shutdown, and group shutdown behavior on the existing offline path.
+
+- [x] **Step 3: Document the failure boundary**
+
+Document that self-service child failure records `status: "error"` with safe `last_error` and is not overwritten by a final offline heartbeat.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
