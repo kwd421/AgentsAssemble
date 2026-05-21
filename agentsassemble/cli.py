@@ -5069,6 +5069,15 @@ def _run_live_agent_wait_next(args: argparse.Namespace) -> int:
             else:
                 print(f"official_turn {_format_wait_turn_request(payload)}")
             return 0
+        return_packet_candidate = _wait_return_packet_candidate(args, room)
+        if return_packet_candidate is not None:
+            payload = _wait_return_packet_payload(args, room, return_packet_candidate)
+            payload["action"] = "return_packet"
+            if args.as_json:
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                print(f"return_packet {_format_wait_return_packet(payload)}")
+            return 0
         lobby_candidate = _wait_room_event_candidate(args, room)
         if lobby_candidate is not None:
             payload = _wait_room_event_payload(args, room, lobby_candidate)
@@ -5101,6 +5110,73 @@ def _wait_next_timeout_payload(args: argparse.Namespace, room: dict[str, object]
         "last_observed_event_id": str(args.after_event_id or agent.get("last_observed_event_id") or "").strip(),
         "last_observed_live_event_id": str(args.after_live_event_id or agent.get("last_observed_live_event_id") or "").strip(),
     }
+
+
+def _wait_return_packet_candidate(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object] | None:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    events = room.get("live_events") if isinstance(room.get("live_events"), list) else []
+    cursor = str(args.after_live_event_id or agent.get("last_observed_live_event_id") or "").strip()
+    for event in _events_after_id(events, cursor):
+        if not isinstance(event, dict):
+            continue
+        if str(event.get("kind") or "") != "artifact":
+            continue
+        if str(event.get("artifact_kind") or "") != "return_packet":
+            continue
+        event_id = str(event.get("id") or "").strip()
+        if not event_id:
+            continue
+        target_agent_id = str(event.get("target_agent_id") or "").strip()
+        audience = str(event.get("audience") or "").strip()
+        targeted_to_agent = target_agent_id == args.agent_id or audience == f"agent:{args.agent_id}"
+        if not targeted_to_agent:
+            continue
+        if not str(event.get("artifact_path") or event.get("artifact_json_path") or "").strip():
+            continue
+        return event
+    return None
+
+
+def _wait_return_packet_payload(
+    args: argparse.Namespace,
+    room: dict[str, object],
+    event: dict[str, object],
+) -> dict[str, object]:
+    event_id = str(event.get("id") or "")
+    meeting_id = _wait_turn_request_meeting_id(room, event)
+    return {
+        "status": "event",
+        "agent_id": args.agent_id,
+        "meeting_id": meeting_id,
+        "source_event_id": event_id,
+        "event": event,
+        "artifact_path": str(event.get("artifact_path") or ""),
+        "artifact_json_path": str(event.get("artifact_json_path") or ""),
+        "ack_command": [
+            "python3",
+            "-m",
+            "agentsassemble.cli",
+            "live-agent",
+            "heartbeat",
+            "--server",
+            str(args.server),
+            "--agent-id",
+            str(args.agent_id),
+            "--status",
+            "online",
+            "--last-error=",
+            "--last-observed-live-event-id=" + event_id,
+            "--json",
+        ],
+        "room": _wait_room_context(room, meeting_id=str(room.get("meeting_id") or meeting_id)),
+    }
+
+
+def _format_wait_return_packet(payload: dict[str, object]) -> str:
+    event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+    event_id = str(event.get("id") or "return packet")
+    artifact_path = str(payload.get("artifact_path") or payload.get("artifact_json_path") or "").strip()
+    return f"{event_id} {artifact_path}".strip()
 
 
 class _JsonlLiveSessionCommandRunner:

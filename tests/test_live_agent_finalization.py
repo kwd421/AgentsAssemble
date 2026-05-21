@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
-from agentsassemble.meeting_events import append_live_event, write_live_state
+from agentsassemble.meeting_events import append_live_event, read_live_events, write_live_state
 
 
 def _resident_live_meeting() -> dict[str, object]:
@@ -174,6 +174,19 @@ class LiveAgentFinalizationTests(unittest.TestCase):
                 [message["role_id"] for message in meeting["debate_rounds"][0]["messages"]],
                 ["architect", "critic"],
             )
+            self.assertEqual(result["return_packet_event_count"], 2)
+            return_packet_events = [
+                event
+                for event in read_live_events(meeting_dir, limit=None)
+                if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet"
+            ]
+            self.assertEqual({event.get("target_agent_id") for event in return_packet_events}, {"agent-a", "agent-b"})
+            self.assertEqual({event.get("official_record") for event in return_packet_events}, {False})
+            self.assertEqual({event.get("channel") for event in return_packet_events}, {"system"})
+            self.assertIn("return_packets/architect.md", {event.get("artifact_path") for event in return_packet_events})
+            self.assertIn("return_packets/critic.md", {event.get("artifact_path") for event in return_packet_events})
+            self.assertNotIn("private architect prompt", json.dumps(return_packet_events, ensure_ascii=False))
+            self.assertNotIn("private critic prompt", json.dumps(return_packet_events, ensure_ascii=False))
 
     def test_finalize_live_agent_meeting_refuses_pending_turn_requests(self):
         with tempfile.TemporaryDirectory() as temp_dir:

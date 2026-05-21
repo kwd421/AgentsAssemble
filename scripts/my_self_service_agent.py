@@ -107,7 +107,35 @@ def _handle_event(payload: dict[str, object], *, message: str, default_meeting_i
         _heartbeat("error", last_error="lobby reply failed", last_observed_event_id=source_event_id, command_timeout=command_timeout)
         return False
 
+    if action == "return_packet":
+        ack_command = _command_list(payload.get("ack_command"))
+        if ack_command:
+            ack = _run(ack_command, command_timeout)
+            if ack.returncode == 0:
+                return True
+            _heartbeat(
+                "error",
+                last_error="return packet ack failed",
+                last_observed_live_event_id=source_event_id,
+                command_timeout=command_timeout,
+            )
+            return False
+        _heartbeat(
+            "online",
+            last_error="",
+            last_observed_live_event_id=source_event_id,
+            command_timeout=command_timeout,
+        )
+        return True
+
     return False
+
+
+def _command_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    command = [str(part) for part in value]
+    return command if command else []
 
 
 def _command_from_env(name: str) -> list[str]:

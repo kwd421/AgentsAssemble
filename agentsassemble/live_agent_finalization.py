@@ -42,6 +42,7 @@ def finalize_live_agent_meeting(meeting_dir: Path, *, force: bool = False) -> di
     meeting["shared_memory"] = shared_memory
     write_public_artifacts(meeting_dir, meeting, transcript_text=transcript_text)
     write_live_state(meeting_dir, meeting)
+    return_packet_events = _append_return_packet_ready_events(meeting_dir, meeting)
     artifact_event = append_live_event(
         meeting_dir,
         {
@@ -55,6 +56,10 @@ def finalize_live_agent_meeting(meeting_dir: Path, *, force: bool = False) -> di
         "meeting_id": meeting["meeting_id"],
         "official_event_count": len(official_events),
         "artifact_event_id": artifact_event["id"],
+        "return_packet_event_count": len(return_packet_events),
+        "return_packet_event_ids": [
+            str(event.get("id") or "") for event in return_packet_events if str(event.get("id") or "").strip()
+        ],
         "artifacts": meeting["artifacts"],
         "shared_memory": _shared_memory_result(shared_memory),
     }
@@ -383,6 +388,46 @@ def _final_artifact_refs(meeting: dict[str, object]) -> dict[str, object]:
         }
     )
     return artifacts
+
+
+def _append_return_packet_ready_events(meeting_dir: Path, meeting: dict[str, object]) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    role_names = {
+        role_id: str(role.get("display_name") or role_id)
+        for role in _as_dict_list(meeting.get("roles"))
+        if (role_id := clean_lobby_text(role.get("id"), limit=128))
+    }
+    for binding in _as_dict_list(meeting.get("agent_bindings")):
+        role_id = clean_lobby_text(binding.get("role_id"), limit=128)
+        agent_id = clean_lobby_text(binding.get("agent_id"), limit=64)
+        if not role_id or not agent_id:
+            continue
+        packet_path = meeting_dir / "return_packets" / f"{role_id}.md"
+        packet_json_path = meeting_dir / "return_packets" / f"{role_id}.json"
+        if not packet_path.exists() or not packet_json_path.exists():
+            continue
+        artifact_path = f"return_packets/{role_id}.md"
+        artifact_json_path = f"return_packets/{role_id}.json"
+        events.append(
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "artifact",
+                    "meeting_id": meeting.get("meeting_id"),
+                    "channel": "system",
+                    "official_record": False,
+                    "audience": f"agent:{agent_id}",
+                    "target_agent_id": agent_id,
+                    "role_id": role_id,
+                    "display_name": role_names.get(role_id, role_id),
+                    "artifact_kind": "return_packet",
+                    "artifact_path": artifact_path,
+                    "artifact_json_path": artifact_json_path,
+                    "content": f"Return packet ready: {artifact_path}",
+                },
+            )
+        )
+    return events
 
 
 def _shared_memory_result(memory: dict[str, object]) -> dict[str, object]:

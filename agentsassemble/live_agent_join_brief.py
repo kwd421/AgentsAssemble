@@ -79,6 +79,7 @@ def build_live_agent_join_brief(
             "Read room.shared_memory as official-only background context when present.",
             "For lobby actions, replace templates.say placeholders and run it once.",
             "For official_turn actions, replace templates.official_reply placeholders and run it once.",
+            "For return_packet actions, run the returned ack_command and do not post a reply.",
             "Use templates.heartbeat to report online, working, error, or cursor-only observation.",
         ],
         "safety": {

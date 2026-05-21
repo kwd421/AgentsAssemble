@@ -1046,6 +1046,14 @@ def _session_smoke_self_service_script(message: str) -> str:
             "            heartbeat('online', last_error='', last_reply_at=str(time.time()), last_observed_event_id=source_event_id)",
             "        else:",
             "            heartbeat('error', last_error='lobby reply failed', last_observed_event_id=source_event_id)",
+            "    elif action == 'return_packet' and source_event_id:",
+            "        ack_command = payload.get('ack_command')",
+            "        if isinstance(ack_command, list) and ack_command:",
+            "            ack = cli([str(part) for part in ack_command])",
+            "            if ack.returncode != 0:",
+            "                heartbeat('error', last_error='return packet ack failed', last_observed_live_event_id=source_event_id)",
+            "        else:",
+            "            heartbeat('online', last_error='', last_observed_live_event_id=source_event_id)",
             "    time.sleep(POLL)",
         ]
     )

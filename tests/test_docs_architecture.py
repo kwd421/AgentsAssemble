@@ -202,6 +202,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("python3 -m agentsassemble.cli live-agent wait-next", doc)
         self.assertIn('action: "official_turn"', doc)
         self.assertIn('action: "lobby"', doc)
+        self.assertIn('action: "return_packet"', doc)
+        self.assertIn("targeted return-packet event", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent wait-room-event", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent wait-official-turn", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent official-reply", doc)
