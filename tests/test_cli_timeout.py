@@ -3435,6 +3435,15 @@ class CliTimeoutTests(unittest.TestCase):
                 "last_result_count": 1,
                 "last_error_type": "",
             },
+            "observations": {
+                "ready_agent_count": 2,
+                "lobby_behind_count": 1,
+                "live_behind_count": 0,
+                "error_count": 0,
+                "latest_lobby_event_id": "lobby-7",
+                "latest_live_request_count": 0,
+                "attention": ["resident-m1:resident-main:agent-b:lobby_cursor_behind"],
+            },
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
@@ -3475,6 +3484,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("session-run monitor: running true", output)
         self.assertIn("last ok", output)
         self.assertIn("last tick 2026-05-21T10:08:00+00:00", output)
+        self.assertIn("observations: 2 ready agents, lobby behind 1, live behind 0, errors 0", output)
+        self.assertIn("observation attention: resident-m1:resident-main:agent-b:lobby_cursor_behind", output)
 
     def test_live_agent_health_can_emit_json_and_fail_on_degraded(self):
         payload = {"status": "degraded", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}}

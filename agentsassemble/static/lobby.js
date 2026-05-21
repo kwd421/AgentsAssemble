@@ -721,6 +721,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const processMonitor = health.process_monitor && typeof health.process_monitor === "object" ? health.process_monitor : {};
   const connections = health.connections && typeof health.connections === "object" ? health.connections : {};
   const sessions = health.sessions && typeof health.sessions === "object" ? health.sessions : {};
+  const observations = health.observations && typeof health.observations === "object" ? health.observations : {};
   const sessionRuns = health.session_runs && typeof health.session_runs === "object" ? health.session_runs : {};
   const sessionRunMonitor = health.session_run_monitor && typeof health.session_run_monitor === "object" ? health.session_run_monitor : {};
   const processCounts = processes.counts && typeof processes.counts === "object" ? processes.counts : {};
@@ -737,6 +738,8 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const attentionCount = liveAgentHealthAttentionCount(health);
   const processMonitorSummary = liveAgentHealthProcessMonitorSummary(processMonitor);
   const sessionAttention = liveAgentHealthAttentionSummary(sessions.attention, "session attention");
+  const observationSummary = liveAgentHealthObservationSummary(observations);
+  const observationAttention = liveAgentHealthAttentionSummary(observations.attention, "observation attention");
   const sessionRunAttention = liveAgentHealthAttentionSummary(sessionRuns.attention, "session-run attention");
   const sessionRunRetry = liveAgentHealthSessionRunRetrySummary(sessionRuns.items);
   const sessionRunMonitorSummary = liveAgentHealthSessionRunMonitorSummary(sessionRunMonitor);
@@ -752,6 +755,8 @@ function renderLiveAgentRuntimeHealth(health, loading) {
     `attention ${escapeHtml(attentionCount)}` +
     (processMonitorSummary ? `<br><small>${escapeHtml(processMonitorSummary)}</small>` : "") +
     (sessionAttention ? `<br><small>${escapeHtml(sessionAttention)}</small>` : "") +
+    (observationSummary ? `<br><small>${escapeHtml(observationSummary)}</small>` : "") +
+    (observationAttention ? `<br><small>${escapeHtml(observationAttention)}</small>` : "") +
     (sessionRunAttention ? `<br><small>${escapeHtml(sessionRunAttention)}</small>` : "") +
     (sessionRunRetry ? `<br><small>${escapeHtml(sessionRunRetry)}</small>` : "") +
     (sessionRunMonitorSummary ? `<br><small>${escapeHtml(sessionRunMonitorSummary)}</small>` : "") +
@@ -881,7 +886,7 @@ function renderLiveAgentDiscoveryRow(discovery) {
 }
 
 function liveAgentHealthAttentionCount(health) {
-  const sections = [health?.agents, health?.processes, health?.process_monitor, health?.connections, health?.sessions, health?.session_runs, health?.session_run_monitor];
+  const sections = [health?.agents, health?.processes, health?.process_monitor, health?.connections, health?.sessions, health?.observations, health?.session_runs, health?.session_run_monitor];
   return sections.reduce((count, section) => {
     const attention = section && typeof section === "object" && Array.isArray(section.attention) ? section.attention : [];
     return count + attention.length;
@@ -912,6 +917,15 @@ function liveAgentHealthAttentionSummary(value, label) {
   const remaining = Math.max(0, value.length - cleaned.length);
   const suffix = remaining > 0 ? ` +${remaining} more` : "";
   return `${label} ${cleaned.join(", ")}${suffix}`;
+}
+
+function liveAgentHealthObservationSummary(value) {
+  if (!value || typeof value !== "object" || !("ready_agent_count" in value || "lobby_behind_count" in value || "live_behind_count" in value)) return "";
+  const readyAgents = Math.max(0, Number(value.ready_agent_count || 0));
+  const lobbyBehind = Math.max(0, Number(value.lobby_behind_count || 0));
+  const liveBehind = Math.max(0, Number(value.live_behind_count || 0));
+  const errors = Math.max(0, Number(value.error_count || 0));
+  return `observations ${Math.floor(readyAgents)} ready agents · lobby behind ${Math.floor(lobbyBehind)} · live behind ${Math.floor(liveBehind)} · errors ${Math.floor(errors)}`;
 }
 
 function liveAgentHealthSessionRunRetrySummary(value) {

@@ -47,7 +47,7 @@ from agentsassemble.gui import (
 from agentsassemble.meeting_events import append_live_event, read_live_events, write_live_state
 from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
 from agentsassemble.meeting import run_demo_meeting
-from agentsassemble.live_agents import heartbeat_live_agent, read_live_agents
+from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
@@ -4097,6 +4097,242 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(monitor_payload["last_result_count"], 0)
         self.assertRegex(monitor_payload["last_tick_at"], r"^\d{4}-\d{2}-\d{2}T")
         self.assertEqual(monitor_payload["last_error_type"], "")
+
+    def test_live_agent_health_degrades_ready_session_when_lobby_cursor_lags_latest_event(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            latest = append_lobby_event(root, {"name": "human", "message": "latest event text must stay out"})
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_event_id": "older-event",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["observations"]["latest_lobby_event_id"], latest["id"])
+        self.assertEqual(payload["observations"]["ready_agent_count"], 1)
+        self.assertEqual(payload["observations"]["lobby_behind_count"], 1)
+        self.assertEqual(
+            payload["observations"]["attention"],
+            ["resident-m1:resident-main:agent-a:lobby_cursor_behind"],
+        )
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("latest event text", serialized)
+
+    def test_live_agent_health_keeps_ready_session_ok_when_lobby_cursor_is_current(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            latest = append_lobby_event(root, {"name": "human", "message": "current event text must stay out"})
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_event_id": latest["id"],
+                    "last_reply_at": "2026-05-21T10:12:00+00:00",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["observations"]["attention"], [])
+        self.assertEqual(payload["observations"]["lobby_behind_count"], 0)
+        self.assertEqual(payload["observations"]["items"][0]["last_reply_at"], "2026-05-21T10:12:00+00:00")
+        self.assertNotIn("current event text", json.dumps(payload, ensure_ascii=False))
+
+    def test_live_agent_health_does_not_expose_or_degrade_on_preserved_last_error(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            latest = append_lobby_event(root, {"name": "human", "message": "current event text must stay out"})
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_event_id": latest["id"],
+                    "last_error": "provider output raw model reply should never leak",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["observations"]["error_count"], 0)
+        self.assertEqual(payload["observations"]["attention"], [])
+        self.assertNotIn("last_error", payload["observations"]["items"][0])
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("provider output", serialized)
+        self.assertNotIn("raw model reply", serialized)
+
+    def test_live_agent_health_degrades_ready_session_when_official_turn_cursor_lags_request(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            request = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "resident-m1",
+                    "target_agent_id": "agent-a",
+                    "content": "official request text must stay out",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_live_event_id": "older-live-event",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["observations"]["latest_live_request_count"], 1)
+        self.assertEqual(payload["observations"]["items"][0]["latest_live_event_id"], request["id"])
+        self.assertEqual(
+            payload["observations"]["attention"],
+            ["resident-m1:resident-main:agent-a:live_cursor_behind"],
+        )
+        self.assertNotIn("official request text", json.dumps(payload, ensure_ascii=False))
+
+    def test_live_agent_health_treats_official_turn_reply_as_observed(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            request = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "resident-m1",
+                    "target_agent_id": "agent-a",
+                    "content": "official request text must stay out",
+                },
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "resident-m1",
+                    "official_record": True,
+                    "actor_id": "agent-a",
+                    "source_event_id": request["id"],
+                    "content": "official reply text must stay out",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_live_event_id": "older-live-event",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["observations"]["live_behind_count"], 0)
+        self.assertEqual(payload["observations"]["attention"], [])
+        self.assertEqual(payload["observations"]["items"][0]["live_status"], "answered")
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("official request text", serialized)
+        self.assertNotIn("official reply text", serialized)
 
     def test_live_agent_health_keeps_old_active_session_runs_outside_recent_tail(self):
         class FakeSupervisor:
@@ -13496,6 +13732,31 @@ class GuiServerTests(unittest.TestCase):
                 probe_mode="bridge",
                 probe_timeout_seconds=0.75,
             )
+
+
+def _write_health_resident_meeting(root: Path, *, agent_ids: list[str]) -> Path:
+    meeting_dir = root / "meetings" / "resident-m1"
+    meeting_dir.mkdir(parents=True)
+    provider_configs = {
+        f"{agent_id}-provider": {"id": f"{agent_id}-provider", "kind": "local_cli"}
+        for agent_id in agent_ids
+    }
+    meeting = {
+        "meeting_id": "resident-m1",
+        "topic": "resident health",
+        "question": "Are residents current?",
+        "agent_bindings": [
+            {
+                "agent_id": agent_id,
+                "role_id": agent_id,
+                "provider_id": f"{agent_id}-provider",
+            }
+            for agent_id in agent_ids
+        ],
+        "provider_configs": provider_configs,
+    }
+    (meeting_dir / "meeting.json").write_text(json.dumps(meeting, ensure_ascii=False), encoding="utf-8")
+    return meeting_dir
 
 
 def _write_single_agent_session_configs(council_config: Path, agent_config: Path, live_agent_config: Path) -> None:

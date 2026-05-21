@@ -4227,6 +4227,36 @@ Docs now state that approved real-provider auto-join readiness is gated by bound
 
 ---
 
+### Task 120: Ready Session Observation Freshness Overlay
+
+**Goal:** Make health/readiness surfaces show when a ready resident session is connected but no longer observing the latest lobby or official room events.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+
+- [x] **Step 1: Add RED freshness coverage**
+
+Cover `/api/live-agent-health` degrading when a ready resident agent's lobby cursor lags the latest lobby event, staying ok when the cursor is current, degrading when an official turn request has not been observed, and never echoing lobby or official message text. Cover CLI and GUI runtime rendering of observation counts and attention labels.
+
+- [x] **Step 2: Add read-only observation overlay**
+
+Health now evaluates only ready non-diagnostic resident session agents, compares their preserved lobby/live cursors to bounded lobby and live-event tails, and reports compact safe ids, reply timestamps, active error count, behind counts, and attention labels. The overlay does not mutate roster, process, session-run, operation, lobby, or provider state, and it does not expose preserved presence error text.
+
+- [x] **Step 3: Render and document the operator signal**
+
+`assemble live-agent health` and the GUI runtime health line now show observation counts and attention labels next to session readiness and monitor liveness. Docs state that the overlay is evidence-only and excludes prompt, message, endpoint, config, auth, and provider-output details.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

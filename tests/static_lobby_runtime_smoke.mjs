@@ -2135,6 +2135,15 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
         last_result_count: 1,
         last_error_type: "",
       },
+      observations: {
+        ready_agent_count: 2,
+        lobby_behind_count: 1,
+        live_behind_count: 0,
+        error_count: 0,
+        latest_lobby_event_id: "lobby-7",
+        latest_live_request_count: 0,
+        attention: ["resident-m1:resident-main:agent-b:lobby_cursor_behind"],
+      },
     },
   });
 
@@ -2155,7 +2164,10 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.match(health.textContent, /connections 1\/2 connected/);
   assert.match(health.textContent, /sessions 0\/2 ready/);
   assert.match(health.textContent, /session-runs 1\/2 active/);
-  assert.match(health.textContent, /attention 5/);
+  assert.match(health.textContent, /attention 6/);
+  assert.match(health.textContent, /observations 2 ready agents/);
+  assert.match(health.textContent, /lobby behind 1/);
+  assert.match(health.textContent, /observation attention resident-m1:resident-main:agent-b:lobby_cursor_behind/);
   assert.match(health.textContent, /retry failures 2/);
   assert.match(health.textContent, /retry backoff 120s/);
   assert.match(health.textContent, /next retry 2026-05-21T10:07:00\+00:00/);

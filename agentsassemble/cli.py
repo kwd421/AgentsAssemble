@@ -2855,6 +2855,7 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
     process_monitor = payload.get("process_monitor") if isinstance(payload.get("process_monitor"), dict) else {}
     connections = payload.get("connections") if isinstance(payload.get("connections"), dict) else {}
     sessions = payload.get("sessions") if isinstance(payload.get("sessions"), dict) else {}
+    observations = payload.get("observations") if isinstance(payload.get("observations"), dict) else {}
     session_runs = payload.get("session_runs") if isinstance(payload.get("session_runs"), dict) else {}
     session_run_monitor = payload.get("session_run_monitor") if isinstance(payload.get("session_run_monitor"), dict) else {}
     agent_counts = agents.get("counts") if isinstance(agents.get("counts"), dict) else {}
@@ -2864,6 +2865,7 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
     process_reasons = _process_reason_summary(processes.get("reasons"))
     connection_attention = connections.get("attention") if isinstance(connections.get("attention"), list) else []
     session_attention = sessions.get("attention") if isinstance(sessions.get("attention"), list) else []
+    observation_attention = observations.get("attention") if isinstance(observations.get("attention"), list) else []
     session_run_attention = session_runs.get("attention") if isinstance(session_runs.get("attention"), list) else []
     lines = [
         f"status: {payload.get('status') or 'unknown'}",
@@ -2894,6 +2896,18 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
             f"session attention: {_attention_summary(session_attention)}",
         ]
     )
+    if observations:
+        lines.extend(
+            [
+                (
+                    f"observations: {observations.get('ready_agent_count', 0)} ready agents, "
+                    f"lobby behind {observations.get('lobby_behind_count', 0)}, "
+                    f"live behind {observations.get('live_behind_count', 0)}, "
+                    f"errors {observations.get('error_count', 0)}"
+                ),
+                f"observation attention: {_attention_summary(observation_attention)}",
+            ]
+        )
     if session_runs:
         retry_summary = _session_run_retry_summary(session_runs.get("items"))
         lines.extend(
