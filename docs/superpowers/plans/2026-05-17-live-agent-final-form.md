@@ -4003,6 +4003,30 @@ Document that the GUI list uses the read-only overlay and does not start provide
 
 ---
 
+### Task 112: CLI Session-Run List Readiness Overlay
+
+**Goal:** Let terminal operators, scripts, and other local agents inspect the same current read-only session-run readiness overlay without using the GUI or a blocking wait command.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED parser/request/output coverage**
+
+Cover `assemble live-agent session-runs list --include-readiness`, the requested `/api/live-agent-session-runs?limit=N&include_readiness=1` URL, and compact text output that includes current readiness status plus current connected/expected counts.
+
+- [x] **Step 2: Reuse the existing read-only session-run list API**
+
+Forward `--include-readiness` through `_live_agent_session_runs_path()` and keep `--json` as the raw public payload output. Do not add any process mutation, provider start, stop, probe, operation append, or durable run update.
+
+- [x] **Step 3: Document the scriptable list boundary**
+
+Document that `list --include-readiness` is a non-blocking inspection command over the existing read-only overlay, while `wait --status ready` remains the gate that enforces current readiness before automation continues.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -923,6 +923,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="List durable live-agent session runs.",
     )
     live_session_runs_list.add_argument("--limit", type=parse_positive_int, default=50)
+    live_session_runs_list.add_argument(
+        "--include-readiness",
+        action="store_true",
+        help="Request the current read-only readiness overlay for each session run.",
+    )
     live_session_runs_list.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON session-run payload.")
     live_session_runs_wait = live_session_runs_subparsers.add_parser(
         "wait",
@@ -3073,7 +3078,12 @@ def _run_live_agent_operations(args: argparse.Namespace) -> int:
 
 def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
     if args.live_agent_session_runs_command == "list":
-        payload = _request_json(_server_url(args.server, _live_agent_session_runs_path(args)))
+        payload = _request_json(
+            _server_url(
+                args.server,
+                _live_agent_session_runs_path(args, include_readiness=bool(getattr(args, "include_readiness", False))),
+            )
+        )
         _print_live_agent_session_runs_payload(payload, as_json=args.as_json)
         return 0
     if args.live_agent_session_runs_command == "wait":
@@ -3497,6 +3507,10 @@ def _format_live_agent_session_run(run: dict[str, object]) -> str:
     readiness_status = str(readiness.get("status") or "").strip()
     if readiness_status:
         suffix_parts.append(f"readiness={readiness_status}")
+    readiness_expected = _safe_int(readiness.get("expected"))
+    readiness_connected = _safe_int(readiness.get("connected"))
+    if readiness_expected > 0:
+        suffix_parts.append(f"current_connected={max(0, readiness_connected)}/{readiness_expected}")
     suffix = f" · {' · '.join(suffix_parts)}" if suffix_parts else ""
     return f"{run_id} {action} {status} {meeting_id} {group_id} {activity}{suffix}"
 

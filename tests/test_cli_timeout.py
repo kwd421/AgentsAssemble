@@ -887,6 +887,22 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.limit, 3)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_session_runs_list_parses_include_readiness(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "session-runs",
+                "list",
+                "--server",
+                "http://room.local",
+                "--include-readiness",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "session-runs")
+        self.assertEqual(args.live_agent_session_runs_command, "list")
+        self.assertTrue(args.include_readiness)
+
     def test_live_agent_session_runs_list_fetches_durable_runs(self):
         payload = {
             "runs": [
@@ -919,6 +935,82 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         request_json.assert_called_once_with("http://room.local/api/live-agent-session-runs?limit=3")
         self.assertIn("run-1 ensure ready resident-m1 resident-main active", stdout.getvalue())
+
+    def test_live_agent_session_runs_list_include_readiness_fetches_and_prints_current_counts(self):
+        payload = {
+            "runs": [
+                {
+                    "run_id": "run-1",
+                    "action": "ensure",
+                    "status": "ready",
+                    "active": True,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "readiness": {
+                        "status": "degraded",
+                        "expected": 3,
+                        "connected": 1,
+                    },
+                }
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()) as stdout:
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--limit",
+                        "3",
+                        "--include-readiness",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-session-runs?limit=3&include_readiness=1")
+        output = stdout.getvalue()
+        self.assertIn("run-1 ensure ready resident-m1 resident-main active", output)
+        self.assertIn("readiness=degraded", output)
+        self.assertIn("current_connected=1/3", output)
+
+    def test_live_agent_session_runs_list_include_readiness_json_preserves_raw_payload(self):
+        payload = {
+            "runs": [
+                {
+                    "run_id": "run-1",
+                    "action": "ensure",
+                    "status": "ready",
+                    "active": True,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "readiness": {
+                        "status": "degraded",
+                        "expected": 3,
+                        "connected": 1,
+                    },
+                }
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()) as stdout:
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--include-readiness",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-session-runs?limit=50&include_readiness=1")
+        self.assertEqual(json.loads(stdout.getvalue()), payload)
 
     def test_live_agent_session_runs_wait_parses_target_status_and_wait_options(self):
         args = build_parser().parse_args(
