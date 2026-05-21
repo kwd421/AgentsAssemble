@@ -6366,6 +6366,84 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["live_events"][0]["target_agent_id"], "agent-a")
             self.assertEqual(payload["live_events"][0]["official_record"], False)
 
+    def test_live_agent_room_endpoint_returns_compact_shared_memory_for_agent_meeting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "topic": "runtime",
+                    "live_status": "running",
+                    "shared_memory": {
+                        "official_event_count": 1,
+                        "last_official_event_id": "stale-reply",
+                        "rolling_summary": [
+                            {
+                                "event_id": "stale-reply",
+                                "speaker": "Architect",
+                                "summary": "Stale embedded resident memory.",
+                            }
+                        ],
+                    },
+                },
+            )
+            shared_dir = meeting_dir / "shared_memory"
+            shared_dir.mkdir(parents=True)
+            (shared_dir / "index.json").write_text(
+                json.dumps(
+                    {
+                        "official_event_count": 2,
+                        "last_official_event_id": "reply-2",
+                        "rolling_summary": [
+                            {
+                                "event_id": "reply-2",
+                                "speaker": "Architect",
+                                "summary": "Fresh index resident memory.",
+                            }
+                        ],
+                        "action_items": [
+                            {
+                                "event_id": "reply-2",
+                                "speaker": "Architect",
+                                "text": "Use shared memory in prompts.",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-b",
+                    "content": "private target-B instruction",
+                },
+            )
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["shared_memory"]["official_event_count"], 2)
+            self.assertEqual(payload["shared_memory"]["last_official_event_id"], "reply-2")
+            self.assertEqual(payload["shared_memory"]["rolling_summary"][0]["summary"], "Fresh index resident memory.")
+            self.assertEqual(payload["shared_memory"]["action_items"][0]["text"], "Use shared memory in prompts.")
+            payload_text = json.dumps(payload["shared_memory"], ensure_ascii=False)
+            self.assertNotIn("Stale embedded resident memory.", payload_text)
+            self.assertNotIn("private target-B instruction", payload_text)
+
     def test_live_agent_room_endpoint_hides_other_agents_targeted_turn_requests(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -74,7 +74,11 @@ from agentsassemble.live_agent_turns import (
     wait_for_official_turn_reply,
     wait_for_review_checkpoint_reply,
 )
-from agentsassemble.live_meeting_memory import projected_live_meeting_memory_artifacts, write_live_meeting_memory_artifacts
+from agentsassemble.live_meeting_memory import (
+    load_live_meeting_memory_context,
+    projected_live_meeting_memory_artifacts,
+    write_live_meeting_memory_artifacts,
+)
 from agentsassemble.live_transcript import projected_live_transcript_text
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
@@ -1738,15 +1742,22 @@ def live_agent_room_payload(output_root: Path, agent_id: str) -> dict[str, objec
     agent = _live_agent_for_id(output_root, agent_id)
     meeting_id = str(agent.get("meeting_id") or "").strip()
     live_events = []
+    shared_memory: dict[str, object] = {}
     if meeting_id:
         meeting_dir = _safe_meeting_dir(output_root, meeting_id)
         if meeting_dir.exists():
             live_events = _live_events_visible_to_agent(read_live_events(meeting_dir), agent_id)
+            try:
+                meeting = _read_meeting_record(meeting_dir)
+            except (ValueError, OSError, json.JSONDecodeError):
+                meeting = {}
+            shared_memory = load_live_meeting_memory_context(meeting_dir, meeting=meeting)
     return {
         "agent": agent,
         "agents": read_live_agents(output_root),
         "meetings": list_meetings(output_root),
         "meeting_id": meeting_id,
+        "shared_memory": shared_memory,
         "live_events": live_events,
         "lobby_events": read_lobby(output_root, limit=LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT),
         "side_chat_events": read_side_chat(output_root),

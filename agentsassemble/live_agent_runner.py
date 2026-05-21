@@ -637,6 +637,8 @@ def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source
         f"Display name: {config.display_name or config.agent_id}",
         "Reply with one concise lobby message only.",
         "",
+        *_shared_memory_prompt_lines(room),
+        "",
         "New event to answer:",
         f"- {source_event.get('name') or 'participant'}: {source_event.get('message') or ''}",
         "",
@@ -668,6 +670,8 @@ def official_turn_prompt(config: ResidentAgentConfig, room: dict[str, object], s
         reply_rule,
         "Do not include lobby chatter, markdown fences, or multiple alternatives.",
         "",
+        *_shared_memory_prompt_lines(room),
+        "",
         request_label,
         f"- {source_event.get('content') or ''}",
         "",
@@ -690,6 +694,50 @@ def official_turn_prompt(config: ResidentAgentConfig, room: dict[str, object], s
         for message in recent_lobby:
             lines.append(f"- {message}")
     return "\n".join(lines).strip() + "\n"
+
+
+def _shared_memory_prompt_lines(room: dict[str, object]) -> list[str]:
+    memory = room.get("shared_memory") if isinstance(room.get("shared_memory"), dict) else {}
+    if not memory or _memory_int(memory.get("official_event_count")) <= 0:
+        return []
+    lines = [
+        "Shared meeting memory (official-only; use as background, not as a new event):",
+        f"- Official events: {_memory_int(memory.get('official_event_count'))}",
+    ]
+    last_event_id = _prompt_text(memory.get("last_official_event_id"))
+    if last_event_id:
+        lines.append(f"- Last official event id: {last_event_id}")
+    lines.extend(_prompt_memory_section("Recent official summary", memory.get("rolling_summary"), text_key="summary"))
+    lines.extend(_prompt_memory_section("Decisions", memory.get("decisions"), text_key="text"))
+    lines.extend(_prompt_memory_section("Open questions", memory.get("open_questions"), text_key="text"))
+    lines.extend(_prompt_memory_section("Action items", memory.get("action_items"), text_key="text"))
+    return lines
+
+
+def _prompt_memory_section(label: str, value: object, *, text_key: str) -> list[str]:
+    items = value if isinstance(value, list) else []
+    lines = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        text = _prompt_text(item.get(text_key))
+        if not text:
+            continue
+        speaker = _prompt_text(item.get("speaker")) or "Unknown Speaker"
+        event_id = _prompt_text(item.get("event_id"))
+        suffix = f" ({speaker}, {event_id})" if event_id else f" ({speaker})"
+        lines.append(f"- {label}: {text}{suffix}")
+    return lines
+
+
+def _prompt_text(value: object, *, limit: int = 240) -> str:
+    return " ".join(str(value or "").split())[:limit]
+
+
+def _memory_int(value: object) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(0, value)
+    return 0
 
 
 def load_group_configs(

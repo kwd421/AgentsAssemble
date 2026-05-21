@@ -6,6 +6,7 @@ from pathlib import Path
 
 from agentsassemble.live_meeting_memory import (
     build_live_meeting_memory,
+    load_live_meeting_memory_context,
     projected_live_meeting_memory_artifacts,
     render_action_items,
     render_open_questions,
@@ -174,6 +175,43 @@ class LiveMeetingMemoryTests(unittest.TestCase):
                 (meeting_dir / "shared_memory" / "open-questions.md").read_text(encoding="utf-8").count("Is rewrite idempotent?"),
                 1,
             )
+
+    def test_load_live_meeting_memory_context_prefers_index_over_stale_embedded_memory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            shared_dir = meeting_dir / "shared_memory"
+            shared_dir.mkdir(parents=True)
+            (shared_dir / "index.json").write_text(
+                json.dumps(
+                    {
+                        "official_event_count": 2,
+                        "last_official_event_id": "fresh-reply",
+                        "rolling_summary": [
+                            {"event_id": "fresh-reply", "speaker": "Architect", "summary": "Fresh index memory."}
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            memory = load_live_meeting_memory_context(
+                meeting_dir,
+                meeting={
+                    "shared_memory": {
+                        "official_event_count": 1,
+                        "last_official_event_id": "stale-reply",
+                        "rolling_summary": [
+                            {"event_id": "stale-reply", "speaker": "Architect", "summary": "Stale embedded memory."}
+                        ],
+                    }
+                },
+            )
+
+            self.assertEqual(memory["official_event_count"], 2)
+            self.assertEqual(memory["last_official_event_id"], "fresh-reply")
+            self.assertEqual(memory["rolling_summary"][0]["summary"], "Fresh index memory.")
+            self.assertNotIn("Stale embedded memory.", json.dumps(memory, ensure_ascii=False))
 
 
 if __name__ == "__main__":

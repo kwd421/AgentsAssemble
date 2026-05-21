@@ -11,6 +11,9 @@ ROLLING_SUMMARY_LIMIT = 20
 MEMORY_ITEM_LIMIT = 50
 SUMMARY_TEXT_LIMIT = 360
 MEMORY_TEXT_LIMIT = 280
+ROOM_MEMORY_ROLLING_LIMIT = 6
+ROOM_MEMORY_ITEM_LIMIT = 8
+ROOM_MEMORY_TEXT_LIMIT = 220
 SHARED_MEMORY_ARTIFACTS = {
     "rolling_summary": "shared_memory/rolling-summary.md",
     "open_questions": "shared_memory/open-questions.md",
@@ -121,6 +124,46 @@ def write_live_meeting_memory_artifacts(
     return memory
 
 
+def load_live_meeting_memory_context(
+    meeting_dir: Path,
+    meeting: dict[str, object] | None = None,
+) -> dict[str, object]:
+    index_path = meeting_dir / "shared_memory" / "index.json"
+    if index_path.exists():
+        try:
+            memory = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            memory = {}
+        if isinstance(memory, dict):
+            compact = compact_live_meeting_memory(memory)
+            if compact:
+                return compact
+    if isinstance(meeting, dict):
+        embedded = meeting.get("shared_memory")
+        if isinstance(embedded, dict):
+            return compact_live_meeting_memory(embedded)
+    return {}
+
+
+def compact_live_meeting_memory(memory: dict[str, object]) -> dict[str, object]:
+    official_count = _nonnegative_int(memory.get("official_event_count"))
+    if official_count <= 0:
+        return {}
+    return {
+        "source": clean_lobby_text(memory.get("source") or "official_live_events", limit=64),
+        "meeting_id": clean_lobby_text(memory.get("meeting_id"), limit=128),
+        "topic": clean_lobby_text(memory.get("topic"), limit=240),
+        "official_event_count": official_count,
+        "official_message_count": _nonnegative_int(memory.get("official_message_count")),
+        "official_synthesis_count": _nonnegative_int(memory.get("official_synthesis_count")),
+        "last_official_event_id": clean_lobby_text(memory.get("last_official_event_id"), limit=128),
+        "rolling_summary": _compact_summary_items(memory.get("rolling_summary")),
+        "decisions": _compact_memory_items(memory.get("decisions")),
+        "open_questions": _compact_memory_items(memory.get("open_questions")),
+        "action_items": _compact_memory_items(memory.get("action_items")),
+    }
+
+
 def _summary_item(event: dict[str, object]) -> dict[str, object]:
     return {
         "event_id": clean_lobby_text(event.get("id"), limit=128),
@@ -205,6 +248,44 @@ def _compact_text(value: object, *, limit: int) -> str:
 def _is_checkbox_action(value: str) -> bool:
     normalized = value.strip()
     return normalized.startswith("- [ ]") or normalized.startswith("* [ ]")
+
+
+def _compact_summary_items(value: object) -> list[dict[str, object]]:
+    items = value if isinstance(value, list) else []
+    compacted = []
+    for item in items[-ROOM_MEMORY_ROLLING_LIMIT:]:
+        if not isinstance(item, dict):
+            continue
+        compacted.append(
+            {
+                "event_id": clean_lobby_text(item.get("event_id"), limit=128),
+                "speaker": clean_lobby_text(item.get("speaker"), limit=128) or "Unknown Speaker",
+                "summary": _compact_text(item.get("summary"), limit=ROOM_MEMORY_TEXT_LIMIT),
+            }
+        )
+    return compacted
+
+
+def _compact_memory_items(value: object) -> list[dict[str, object]]:
+    items = value if isinstance(value, list) else []
+    compacted = []
+    for item in items[-ROOM_MEMORY_ITEM_LIMIT:]:
+        if not isinstance(item, dict):
+            continue
+        compacted.append(
+            {
+                "event_id": clean_lobby_text(item.get("event_id"), limit=128),
+                "speaker": clean_lobby_text(item.get("speaker"), limit=128) or "Unknown Speaker",
+                "text": _compact_text(item.get("text"), limit=ROOM_MEMORY_TEXT_LIMIT),
+            }
+        )
+    return compacted
+
+
+def _nonnegative_int(value: object) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(0, value)
+    return 0
 
 
 def _render_summary_items(value: object) -> list[str]:

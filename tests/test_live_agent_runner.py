@@ -1788,6 +1788,79 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertIn("public official statement", prompt)
         self.assertNotIn("private target-B instruction", prompt)
 
+    def test_official_turn_prompt_includes_compact_shared_meeting_memory(self):
+        room = {
+            "shared_memory": {
+                "official_event_count": 2,
+                "last_official_event_id": "reply-2",
+                "rolling_summary": [
+                    {"event_id": "reply-1", "speaker": "Architect", "summary": "Keep resident agents explicit."}
+                ],
+                "decisions": [
+                    {"event_id": "reply-1", "speaker": "Architect", "text": "Use host-approved live sessions."}
+                ],
+                "open_questions": [
+                    {"event_id": "reply-2", "speaker": "Critic", "text": "Should play chatter be promoted?"}
+                ],
+                "action_items": [
+                    {"event_id": "reply-2", "speaker": "Critic", "text": "Wire shared memory into resident prompts."}
+                ],
+            },
+            "live_events": [
+                {
+                    "id": "target-a",
+                    "kind": "live_agent_turn_request",
+                    "official_record": False,
+                    "target_agent_id": "agent-a",
+                    "audience": "agent:agent-a",
+                    "display_name": "Agent A",
+                    "content": "Use the accumulated context.",
+                }
+            ],
+        }
+
+        prompt = official_turn_prompt(config(agent_id="agent-a", display_name="Agent A"), room, room["live_events"][0])
+
+        self.assertIn("Shared meeting memory", prompt)
+        self.assertIn("Use host-approved live sessions.", prompt)
+        self.assertIn("Should play chatter be promoted?", prompt)
+        self.assertIn("Wire shared memory into resident prompts.", prompt)
+        self.assertIn("Use the accumulated context.", prompt)
+
+    def test_lobby_delegate_prompt_includes_shared_memory_without_turn_requests(self):
+        room = {
+            "shared_memory": {
+                "official_event_count": 1,
+                "last_official_event_id": "reply-1",
+                "rolling_summary": [
+                    {"event_id": "reply-1", "speaker": "Architect", "summary": "Official context only."}
+                ],
+                "action_items": [
+                    {"event_id": "reply-1", "speaker": "Architect", "text": "Keep room prompts compact."}
+                ],
+            },
+            "lobby_events": [{"id": "evt-human", "name": "나", "message": "공유기억 보고 있어?"}],
+            "live_events": [
+                {
+                    "id": "secret-request",
+                    "kind": "live_agent_turn_request",
+                    "official_record": False,
+                    "target_agent_id": "other-agent",
+                    "content": "private prompt must stay out",
+                }
+            ],
+        }
+
+        from agentsassemble.live_agent_runner import delegate_prompt
+
+        prompt = delegate_prompt(config(agent_id="agent-a", display_name="Agent A"), room, room["lobby_events"][0])
+
+        self.assertIn("Shared meeting memory", prompt)
+        self.assertIn("Official context only.", prompt)
+        self.assertIn("Keep room prompts compact.", prompt)
+        self.assertIn("공유기억 보고 있어?", prompt)
+        self.assertNotIn("private prompt must stay out", prompt)
+
     def test_official_turn_prompt_labels_review_checkpoint_as_review_not_official_record(self):
         room = {
             "live_events": [

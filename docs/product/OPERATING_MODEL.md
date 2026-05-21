@@ -56,6 +56,8 @@ AgentsAssemble should preserve that boundary:
 - Do not pretend to own or compress a provider's hidden session state.
 - Pass only the current room event, relevant recent public room context, role
   identity, and explicit shared meeting memory.
+- Feed compact shared memory into resident prompts as background, not as a new
+  event to answer.
 
 AgentsAssemble owns shared meeting memory.
 
@@ -95,6 +97,8 @@ Near-term work should favor backend contracts over visual polish:
   stateless-prompt where they are accurate.
 - Keep `shared_memory/` resident meeting artifacts deterministic, official-only,
   and refreshed during long-running sessions.
+- Keep the compact shared-memory room payload and resident prompt block aligned
+  with those official-only artifacts.
 - Keep GUI changes minimal: show trustworthy state and leave detailed front-end
   styling for a later pass.
 
