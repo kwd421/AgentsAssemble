@@ -110,6 +110,33 @@ def _handle_event(payload: dict[str, object], *, message: str, default_meeting_i
         return False
 
     if action == "return_packet":
+        read_command = _command_list(payload.get("read_command"))
+        if not read_command:
+            _heartbeat(
+                "error",
+                last_error="return packet read command missing",
+                last_observed_live_event_id=source_event_id,
+                command_timeout=command_timeout,
+            )
+            return False
+        try:
+            packet = _run(read_command, command_timeout)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            _heartbeat(
+                "error",
+                last_error="return packet read failed",
+                last_observed_live_event_id=source_event_id,
+                command_timeout=command_timeout,
+            )
+            return False
+        if packet.returncode != 0:
+            _heartbeat(
+                "error",
+                last_error="return packet read failed",
+                last_observed_live_event_id=source_event_id,
+                command_timeout=command_timeout,
+            )
+            return False
         ack_command = _command_list(payload.get("ack_command"))
         if ack_command:
             ack = _run(ack_command, command_timeout)

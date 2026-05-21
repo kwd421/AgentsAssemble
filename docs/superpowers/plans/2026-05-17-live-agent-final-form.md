@@ -4782,6 +4782,36 @@ Join brief and operator docs now tell external agents to run `read_command` befo
 
 ---
 
+### Task 139: Self-Service Return Packet Read-Before-Ack
+
+**Goal:** Make resident self-service wrappers actually consume the return-packet read surface before acknowledging packet delivery.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `scripts/my_self_service_agent.py`
+- Modify: `agentsassemble/live_agent_smoke.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_self_service_example.py`
+- Test: `tests/test_live_agent_smoke.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED wrapper coverage**
+
+Cover the checked-in self-service wrapper and credential-free smoke child receiving `action: "return_packet"` with both `read_command` and `ack_command`. They must run the read command before the ack command and must not post lobby or official replies.
+
+- [x] **Step 2: Read before ack in resident wrappers**
+
+`scripts/my_self_service_agent.py` and the generated session-smoke self-service child now execute `read_command` first. If reading the packet fails, times out, or cannot be launched, they report `status: "error"` with `last_observed_live_event_id` and do not acknowledge the packet cursor.
+
+- [x] **Step 3: Keep docs aligned with actual wrappers**
+
+Operator docs and roadmap now state that the checked-in self-service wrapper and credential-free smoke child run the return-packet read step before acknowledging delivery, and keep packet delivery unacknowledged when that read step is missing or fails.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -467,6 +467,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("live-agent health --wait-session-ready", doc)
         self.assertIn("live-agent session-readiness", doc)
         self.assertIn("scripts/my_self_service_agent.py", doc)
+        self.assertIn("reads `return_packet` actions through the returned `read_command` before running the `ack_command`", doc)
+        self.assertIn("treats missing or failed return-packet reads as `error` heartbeats without acknowledging delivery", doc)
         self.assertIn("self_service_official_reply_count", doc)
         self.assertIn("--wait-ready", doc)
         self.assertIn("live-agent ensure-session", doc)
