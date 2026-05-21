@@ -5059,7 +5059,7 @@ Cover a ready two-agent review checkpoint that returns resident replies. The end
 
 - [x] **Step 2: Write path-safe review artifacts**
 
-Review checkpoint completion now renders deterministic Markdown and JSON artifacts containing the operator prompt plus resident replies. Checkpoint ids are normalized before becoming filenames, repeated checkpoint ids overwrite the same artifact paths, and the returned payload includes the relative artifact paths. The helper keeps path handling isolated from the control-plane operation ledger.
+Review checkpoint completion now renders deterministic Markdown and JSON artifacts containing the operator prompt plus resident replies. Checkpoint ids are normalized before becoming filenames, repeated checkpoint ids overwrite the same artifact paths, distinct ids that normalize to the same stem receive a numeric suffix, and the returned payload includes the relative artifact paths. The helper keeps path handling isolated from the control-plane operation ledger.
 
 - [x] **Step 3: Surface artifacts as operator records**
 

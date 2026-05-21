@@ -3,21 +3,27 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from threading import Lock
 
 from agentsassemble.meeting_events import clean_lobby_text
 
+_REVIEW_CHECKPOINT_ARTIFACT_LOCK = Lock()
+_REVIEW_CHECKPOINT_ARTIFACT_LOCKS: dict[str, Lock] = {}
+
 
 def write_review_checkpoint_artifacts(meeting_dir: Path, checkpoint: dict[str, object]) -> dict[str, str]:
-    checkpoint_id = clean_lobby_text(checkpoint.get("checkpoint_id"), limit=128) or "checkpoint"
-    file_stem = review_checkpoint_file_stem(checkpoint_id)
-    artifact = review_checkpoint_artifact_payload(checkpoint)
-    relative_markdown = f"review_checkpoints/{file_stem}.md"
-    relative_json = f"review_checkpoints/{file_stem}.json"
-    markdown_path = meeting_dir / relative_markdown
-    json_path = meeting_dir / relative_json
-    markdown_path.parent.mkdir(parents=True, exist_ok=True)
-    markdown_path.write_text(render_review_checkpoint_markdown(artifact), encoding="utf-8")
-    json_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    checkpoint_id = _review_checkpoint_identity(checkpoint.get("checkpoint_id")) or "checkpoint"
+    artifact_lock = _review_checkpoint_artifact_lock(meeting_dir)
+    with artifact_lock:
+        file_stem = _review_checkpoint_file_stem_for_write(meeting_dir, checkpoint_id)
+        artifact = review_checkpoint_artifact_payload({**checkpoint, "checkpoint_id": checkpoint_id})
+        relative_markdown = f"review_checkpoints/{file_stem}.md"
+        relative_json = f"review_checkpoints/{file_stem}.json"
+        markdown_path = meeting_dir / relative_markdown
+        json_path = meeting_dir / relative_json
+        markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        markdown_path.write_text(render_review_checkpoint_markdown(artifact), encoding="utf-8")
+        json_path.write_text(json.dumps(artifact, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {
         "artifact_path": relative_markdown,
         "artifact_json_path": relative_json,
@@ -33,9 +39,53 @@ def review_checkpoint_file_stem(value: object) -> str:
     return text[:96]
 
 
+def _review_checkpoint_identity(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _review_checkpoint_artifact_lock(meeting_dir: Path) -> Lock:
+    try:
+        key = str(meeting_dir.resolve())
+    except OSError:
+        key = str(meeting_dir)
+    with _REVIEW_CHECKPOINT_ARTIFACT_LOCK:
+        lock = _REVIEW_CHECKPOINT_ARTIFACT_LOCKS.get(key)
+        if lock is None:
+            lock = Lock()
+            _REVIEW_CHECKPOINT_ARTIFACT_LOCKS[key] = lock
+        return lock
+
+
+def _review_checkpoint_file_stem_for_write(meeting_dir: Path, checkpoint_id: str) -> str:
+    base_stem = review_checkpoint_file_stem(checkpoint_id)
+    for suffix in range(0, 1000):
+        file_stem = base_stem if suffix == 0 else f"{base_stem}-{suffix + 1}"
+        if _review_checkpoint_artifact_slot_available(meeting_dir, file_stem, checkpoint_id):
+            return file_stem
+    raise ValueError(f"Too many review checkpoint artifacts collide with {base_stem}.")
+
+
+def _review_checkpoint_artifact_slot_available(meeting_dir: Path, file_stem: str, checkpoint_id: str) -> bool:
+    markdown_path = meeting_dir / "review_checkpoints" / f"{file_stem}.md"
+    json_path = meeting_dir / "review_checkpoints" / f"{file_stem}.json"
+    if not markdown_path.exists() and not json_path.exists():
+        return True
+    return markdown_path.exists() and json_path.exists() and _review_checkpoint_json_id(json_path) == checkpoint_id
+
+
+def _review_checkpoint_json_id(path: Path) -> str:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    return _review_checkpoint_identity(payload.get("checkpoint_id"))
+
+
 def review_checkpoint_artifact_payload(checkpoint: dict[str, object]) -> dict[str, object]:
     return {
-        "checkpoint_id": clean_lobby_text(checkpoint.get("checkpoint_id"), limit=128),
+        "checkpoint_id": _review_checkpoint_identity(checkpoint.get("checkpoint_id")),
         "meeting_id": clean_lobby_text(checkpoint.get("meeting_id"), limit=128),
         "group_id": clean_lobby_text(checkpoint.get("group_id"), limit=128),
         "status": clean_lobby_text(checkpoint.get("status"), limit=64) or "unknown",

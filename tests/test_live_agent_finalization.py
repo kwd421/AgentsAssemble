@@ -249,6 +249,169 @@ class LiveAgentFinalizationTests(unittest.TestCase):
 
             self.assertFalse((meeting_dir / "decision.md").exists())
 
+    def test_finalize_live_agent_meeting_ignores_review_checkpoint_requests(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir) / "meetings" / "resident-m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, _resident_live_meeting())
+            official_request = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "resident-m1",
+                    "target_agent_id": "agent-a",
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "content": "private official prompt",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                },
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "resident-m1",
+                    "actor_id": "agent-a",
+                    "target_agent_id": "agent-a",
+                    "source_event_id": official_request["id"],
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "content": "Official answer.",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                },
+            )
+            review_request = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "resident-m1",
+                    "target_agent_id": "agent-b",
+                    "role_id": "critic",
+                    "display_name": "Critic",
+                    "content": "private review checkpoint prompt",
+                    "turn_id": "checkpoint-1",
+                    "turn_index": 0,
+                    "review_checkpoint_id": "checkpoint-1",
+                    "channel": "review",
+                    "official_record": False,
+                },
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "resident-m1",
+                    "actor_id": "agent-b",
+                    "target_agent_id": "agent-b",
+                    "source_event_id": review_request["id"],
+                    "role_id": "critic",
+                    "display_name": "Critic",
+                    "content": "private review checkpoint reply",
+                    "turn_id": "checkpoint-1",
+                    "turn_index": 0,
+                    "review_checkpoint_id": "checkpoint-1",
+                    "channel": "review",
+                    "official_record": False,
+                },
+            )
+
+            result = finalize_live_agent_meeting(meeting_dir)
+
+            self.assertEqual(result["status"], "finalized")
+            self.assertEqual(result["official_event_count"], 1)
+            public_text = "\n".join(
+                [
+                    (meeting_dir / "transcript.md").read_text(encoding="utf-8"),
+                    (meeting_dir / "decision.md").read_text(encoding="utf-8"),
+                    (meeting_dir / "shared_memory" / "rolling-summary.md").read_text(encoding="utf-8"),
+                    (meeting_dir / "shared_memory" / "index.json").read_text(encoding="utf-8"),
+                    *(path.read_text(encoding="utf-8") for path in sorted((meeting_dir / "return_packets").glob("*.*"))),
+                ]
+            )
+            self.assertIn("Official answer.", public_text)
+            self.assertNotIn("private review checkpoint prompt", public_text)
+            self.assertNotIn("private review checkpoint reply", public_text)
+
+    def test_finalize_live_agent_meeting_requires_full_review_checkpoint_signature_before_skipping_pending(self):
+        suspicious_payloads = [
+            (
+                "review channel only",
+                {
+                    "channel": "review",
+                    "official_record": False,
+                },
+            ),
+            (
+                "review id without review channel",
+                {
+                    "review_checkpoint_id": "checkpoint-1",
+                    "official_record": False,
+                },
+            ),
+            (
+                "official review checkpoint",
+                {
+                    "review_checkpoint_id": "checkpoint-1",
+                    "channel": "review",
+                    "official_record": True,
+                },
+            ),
+        ]
+        for case_name, extra_payload in suspicious_payloads:
+            with self.subTest(case_name), tempfile.TemporaryDirectory() as temp_dir:
+                meeting_dir = Path(temp_dir) / "meetings" / "resident-m1"
+                meeting_dir.mkdir(parents=True)
+                write_live_state(meeting_dir, _resident_live_meeting())
+                official_request = append_live_event(
+                    meeting_dir,
+                    {
+                        "kind": "live_agent_turn_request",
+                        "meeting_id": "resident-m1",
+                        "target_agent_id": "agent-a",
+                        "role_id": "architect",
+                        "display_name": "Architect",
+                        "content": "private official prompt",
+                        "turn_id": "round_1:0:architect",
+                        "turn_index": 0,
+                    },
+                )
+                append_live_event(
+                    meeting_dir,
+                    {
+                        "kind": "message",
+                        "meeting_id": "resident-m1",
+                        "actor_id": "agent-a",
+                        "target_agent_id": "agent-a",
+                        "source_event_id": official_request["id"],
+                        "role_id": "architect",
+                        "display_name": "Architect",
+                        "content": "Official answer.",
+                        "turn_id": "round_1:0:architect",
+                        "turn_index": 0,
+                    },
+                )
+                suspicious_request = append_live_event(
+                    meeting_dir,
+                    {
+                        "kind": "live_agent_turn_request",
+                        "meeting_id": "resident-m1",
+                        "target_agent_id": "agent-b",
+                        "role_id": "critic",
+                        "display_name": "Critic",
+                        "content": "suspicious pending prompt",
+                        "turn_id": "checkpoint-1",
+                        "turn_index": 0,
+                        **extra_payload,
+                    },
+                )
+
+                with self.assertRaisesRegex(ValueError, suspicious_request["id"]):
+                    finalize_live_agent_meeting(meeting_dir)
+
+                self.assertFalse((meeting_dir / "decision.md").exists())
+
     def test_finalize_live_agent_meeting_repairs_partial_final_artifacts_without_force(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "resident-m1"

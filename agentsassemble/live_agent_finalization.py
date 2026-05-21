@@ -281,11 +281,21 @@ def _pending_turn_requests(events: list[dict[str, object]]) -> list[dict[str, ob
     for event in events:
         if str(event.get("kind") or "") != "live_agent_turn_request":
             continue
+        if _is_review_checkpoint_turn_request(event):
+            continue
         request_id = str(event.get("id") or "")
         agent_id = str(event.get("target_agent_id") or "")
         if not request_id or not agent_id or _official_transcript_reply(events, agent_id=agent_id, source_event_id=request_id) is None:
             pending.append(event)
     return pending
+
+
+def _is_review_checkpoint_turn_request(event: dict[str, object]) -> bool:
+    return (
+        bool(clean_lobby_text(event.get("review_checkpoint_id"), limit=128))
+        and event.get("channel") == "review"
+        and event.get("official_record") is False
+    )
 
 
 def _official_transcript_reply(
