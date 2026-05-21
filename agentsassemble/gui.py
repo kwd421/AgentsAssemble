@@ -552,8 +552,10 @@ def live_agent_session_runs_payload(
     session_run_controller: LiveAgentSessionRunController,
     *,
     limit: int = 50,
+    meeting_id: str = "",
+    group_id: str = "",
 ) -> dict[str, object]:
-    return {"runs": session_run_controller.list_runs(limit=limit)}
+    return {"runs": session_run_controller.list_runs(limit=limit, meeting_id=meeting_id, group_id=group_id)}
 
 
 def live_agent_process_events_payload(
@@ -4146,6 +4148,8 @@ def _make_handler(
                     live_agent_session_runs_payload(
                         live_agent_session_run_controller,
                         limit=self._limit(query, default=50),
+                        meeting_id=str(query.get("meeting_id", [""])[0] or ""),
+                        group_id=str(query.get("group_id", [""])[0] or ""),
                     )
                 )
                 return

@@ -57,6 +57,65 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
         self.assertEqual(runs[0]["result"]["connection"]["connected"], 1)
         self.assertEqual(runs[0]["result"]["auto_rounds"]["status"], "answered")
 
+    def test_list_runs_filters_by_meeting_and_group_before_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            target = controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "running",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "start",
+                },
+            )
+            unrelated = controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m2", "group_id": "resident-alt"},
+            )
+            controller.finish_run(
+                unrelated["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m2",
+                    "group_id": "resident-alt",
+                    "action": "none",
+                },
+            )
+
+            runs = controller.list_runs(limit=1, meeting_id="resident-m1", group_id="resident-main")
+
+        self.assertEqual([run["run_id"] for run in runs], [target["run_id"]])
+        self.assertEqual(runs[0]["meeting_id"], "resident-m1")
+        self.assertEqual(runs[0]["group_id"], "resident-main")
+
+    def test_list_runs_invalid_nonempty_filter_does_not_broaden_listing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+
+            runs = controller.list_runs(limit=1, meeting_id="../resident-m1", group_id="resident-main")
+
+        self.assertEqual(runs, [])
+
     def test_reconcile_active_runs_uses_persisted_request_and_skips_stopped_runs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

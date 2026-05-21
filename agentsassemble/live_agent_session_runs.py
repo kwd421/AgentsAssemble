@@ -183,10 +183,37 @@ class LiveAgentSessionRunController:
             results.append(self.finish_run(run_id, session=session))
         return results
 
-    def list_runs(self, *, limit: int = DEFAULT_SESSION_RUN_LIMIT) -> list[dict[str, object]]:
+    def list_runs(
+        self,
+        *,
+        limit: int = DEFAULT_SESSION_RUN_LIMIT,
+        meeting_id: str = "",
+        group_id: str = "",
+    ) -> list[dict[str, object]]:
         safe_limit = _run_limit(limit)
+        has_meeting_filter = str(meeting_id or "").strip() != ""
+        has_group_filter = str(group_id or "").strip() != ""
+        safe_meeting_id = _safe_identity(meeting_id)
+        safe_group_id = _safe_identity(group_id)
         with self._lock:
-            records = list(self._records.values())[-safe_limit:]
+            records = list(self._records.values())
+            if has_meeting_filter and not safe_meeting_id:
+                records = []
+            elif safe_meeting_id:
+                records = [
+                    record
+                    for record in records
+                    if (_safe_identity(record.get("meeting_id")) or _record_meeting_id(record)) == safe_meeting_id
+                ]
+            if has_group_filter and not safe_group_id:
+                records = []
+            elif safe_group_id:
+                records = [
+                    record
+                    for record in records
+                    if (_safe_identity(record.get("group_id")) or _record_group_id(record)) == safe_group_id
+                ]
+            records = records[-safe_limit:]
             return [_public_record(record) for record in records]
 
     def _record_or_raise(self, run_id: str) -> dict[str, object]:

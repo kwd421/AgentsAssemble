@@ -3850,6 +3850,59 @@ Document that meeting/group wait is for handoffs where the exact run id is unkno
 
 ---
 
+### Task 106: Server-Filtered Session-Run Handoff Wait
+
+**Goal:** Keep meeting/group handoff waits durable when unrelated session-runs are newer than the target by filtering on the server before applying the bounded result window.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_session_runs.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_session_runs.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for server-side filtering**
+
+Cover controller and public API behavior where `limit=1` still returns an older matching meeting/group run even when a newer unrelated run exists, plus CLI wait behavior that sends meeting/group filters to the server.
+
+- [x] **Step 2: Filter before the result tail**
+
+Let `LiveAgentSessionRunController.list_runs()` accept optional `meeting_id` and `group_id`, filter matching records first, then apply `limit`. Forward those query parameters from `/api/live-agent-session-runs`.
+
+- [x] **Step 3: Use filtered polling for handoff waits**
+
+Keep exact `--run-id` waits unfiltered, but make meeting/group waits poll `/api/live-agent-session-runs?limit=N&meeting_id=...&group_id=...` so unrelated runs do not hide the latest matching intent.
+
+---
+
+### Task 107: Session Smoke Recover Kill Signal
+
+**Goal:** Keep the credential-free session smoke recover step meaningful by making its diagnostic process interruption produce a recoverable failed process state instead of a graceful `stopped` state.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_smoke.py`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_smoke.py`
+- Test: `tests/test_gui_server.py`
+
+- [x] **Step 1: Reproduce the failing smoke**
+
+Full unittest and the single `test_live_agent_session_smoke_endpoint_runs_credential_free_session` both failed with `502` because the recover preparation step killed the resident group with `SIGTERM`, which the runner recorded as graceful `stopped` rather than recoverable `error` or `unknown`.
+
+- [x] **Step 2: Make recover preparation non-graceful**
+
+Change the session smoke diagnostic process killer to use `SIGKILL`, preserving normal operator stop behavior while forcing the smoke-only recover path through the intended failed-process state.
+
+- [x] **Step 3: Lock the behavior with targeted verification**
+
+Add a unit assertion for the non-graceful signal and rerun the credential-free GUI smoke endpoint test.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

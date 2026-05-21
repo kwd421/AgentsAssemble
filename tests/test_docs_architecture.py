@@ -312,6 +312,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("durable session-run status gate", doc)
         self.assertIn("without the exact run id", doc)
         self.assertIn("latest matching meeting/group session-run", doc)
+        self.assertIn("/api/live-agent-session-runs?limit=N&meeting_id=...&group_id=...", doc)
+        self.assertIn("filters matching meeting/group session-runs before applying the limit window", doc)
         self.assertIn("reconciles active durable runs on startup", doc)
         self.assertIn("Recent operation views read from the JSONL tail", doc)
         self.assertIn("prioritize high-signal liveness evidence", doc)

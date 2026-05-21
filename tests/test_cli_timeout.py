@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import StringIO
@@ -1073,6 +1074,49 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(result["group_id"], "resident-main")
         self.assertEqual(result["run"]["run_id"], "run-new")
 
+    def test_live_agent_session_runs_wait_by_meeting_group_requests_server_filters(self):
+        payload = {
+            "runs": [
+                {
+                    "run_id": "run-target",
+                    "action": "ensure",
+                    "status": "ready",
+                    "active": True,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                }
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "wait",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--group-id",
+                        "resident-main",
+                        "--status",
+                        "ready",
+                        "--limit",
+                        "5",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        requested_url = request_json.call_args.args[0]
+        parsed = urllib.parse.urlparse(requested_url)
+        query = urllib.parse.parse_qs(parsed.query)
+        self.assertEqual(parsed.path, "/api/live-agent-session-runs")
+        self.assertEqual(query["limit"], ["5"])
+        self.assertEqual(query["meeting_id"], ["resident-m1"])
+        self.assertEqual(query["group_id"], ["resident-main"])
+
     def test_live_agent_session_runs_wait_run_id_takes_precedence_over_meeting_group_target(self):
         payload = {
             "runs": [
@@ -1095,7 +1139,7 @@ class CliTimeoutTests(unittest.TestCase):
             ]
         }
         stdout = StringIO()
-        with patch("agentsassemble.cli._request_json", return_value=payload):
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
             with patch("sys.stdout", stdout):
                 exit_code = main(
                     [
@@ -1120,6 +1164,10 @@ class CliTimeoutTests(unittest.TestCase):
         result = json.loads(stdout.getvalue())
         self.assertEqual(result["run_id"], "run-by-id")
         self.assertEqual(result["run"]["run_id"], "run-by-id")
+        requested_url = request_json.call_args.args[0]
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(requested_url).query)
+        self.assertNotIn("meeting_id", query)
+        self.assertNotIn("group_id", query)
 
     def test_live_agent_session_runs_wait_refuses_missing_target(self):
         stderr = StringIO()

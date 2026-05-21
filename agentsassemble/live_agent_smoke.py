@@ -1173,8 +1173,9 @@ def _session_smoke_group_agent_ids(agents: object) -> list[str]:
 
 
 def _kill_session_smoke_process_group(pid: int) -> None:
+    kill_signal = _session_smoke_kill_signal(signal)
     try:
-        os.killpg(pid, signal.SIGTERM)
+        os.killpg(pid, kill_signal)
         return
     except AttributeError:
         pass
@@ -1183,11 +1184,16 @@ def _kill_session_smoke_process_group(pid: int) -> None:
     except PermissionError as error:
         raise LiveAgentSmokeFailed("Session smoke could not stop process group for recover.") from error
     try:
-        os.kill(pid, signal.SIGTERM)
+        os.kill(pid, kill_signal)
     except ProcessLookupError:
         return
     except PermissionError as error:
         raise LiveAgentSmokeFailed("Session smoke could not stop process for recover.") from error
+
+
+def _session_smoke_kill_signal(signal_module: object) -> int:
+    sigterm = getattr(signal_module, "SIGTERM")
+    return int(getattr(signal_module, "SIGKILL", sigterm))
 
 
 def _safe_session_smoke_replies(replies: list[dict[str, object]]) -> list[dict[str, object]]:

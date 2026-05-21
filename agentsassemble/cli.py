@@ -3035,12 +3035,23 @@ def _run_live_agent_operations(args: argparse.Namespace) -> int:
 
 def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
     if args.live_agent_session_runs_command == "list":
-        payload = _request_json(_server_url(args.server, f"/api/live-agent-session-runs?limit={args.limit}"))
+        payload = _request_json(_server_url(args.server, _live_agent_session_runs_path(args)))
         _print_live_agent_session_runs_payload(payload, as_json=args.as_json)
         return 0
     if args.live_agent_session_runs_command == "wait":
         return _run_live_agent_session_runs_wait(args)
     return 1
+
+
+def _live_agent_session_runs_path(args: argparse.Namespace, *, include_target_filters: bool = False) -> str:
+    query: dict[str, object] = {"limit": args.limit}
+    if include_target_filters and not str(args.run_id or "").strip():
+        meeting_id = str(args.meeting_id or "").strip()
+        group_id = str(args.group_id or "").strip()
+        if meeting_id and group_id:
+            query["meeting_id"] = meeting_id
+            query["group_id"] = group_id
+    return f"/api/live-agent-session-runs?{urllib.parse.urlencode(query)}"
 
 
 def _run_live_agent_session_runs_wait(args: argparse.Namespace) -> int:
@@ -3062,7 +3073,7 @@ def _run_live_agent_session_runs_wait(args: argparse.Namespace) -> int:
         attempts += 1
         try:
             payload = _request_json(
-                _server_url(args.server, f"/api/live-agent-session-runs?limit={args.limit}"),
+                _server_url(args.server, _live_agent_session_runs_path(args, include_target_filters=True)),
                 timeout_seconds=remaining_before_poll,
             )
         except (TimeoutError, urllib.error.URLError) as error:

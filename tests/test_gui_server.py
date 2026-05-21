@@ -8577,6 +8577,57 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(runs_payload["runs"][0]["result"]["reply_probe"]["status"], "ok")
         self.assertNotIn(str(live_agent_config), str(runs_payload))
 
+    def test_live_agent_session_runs_api_filters_meeting_group_before_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_run_controller = LiveAgentSessionRunController(root)
+            target = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "running",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "start",
+                },
+            )
+            unrelated = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m2", "group_id": "resident-alt"},
+            )
+            session_run_controller.finish_run(
+                unrelated["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m2",
+                    "group_id": "resident-alt",
+                    "action": "none",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, session_run_controller=session_run_controller),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs"
+                    "?limit=1&meeting_id=resident-m1&group_id=resident-main",
+                    timeout=4,
+                ) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual([run["run_id"] for run in runs_payload["runs"]], [target["run_id"]])
+        self.assertEqual(runs_payload["runs"][0]["meeting_id"], "resident-m1")
+        self.assertEqual(runs_payload["runs"][0]["group_id"], "resident-main")
+
     def test_live_agent_session_ensure_resolves_blank_meeting_id_from_owned_ready_group(self):
         class EnsureSessionSupervisor:
             def __init__(self) -> None:
