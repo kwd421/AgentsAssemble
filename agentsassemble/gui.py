@@ -789,13 +789,14 @@ def live_agent_session_runs_payload(
     session_run_controller: LiveAgentSessionRunController,
     *,
     limit: int = 50,
+    run_id: str = "",
     meeting_id: str = "",
     group_id: str = "",
     include_readiness: bool = False,
     output_root: Path | None = None,
     process_supervisor: LiveAgentProcessSupervisor | None = None,
 ) -> dict[str, object]:
-    runs = session_run_controller.list_runs(limit=limit, meeting_id=meeting_id, group_id=group_id)
+    runs = session_run_controller.list_runs(limit=limit, run_id=run_id, meeting_id=meeting_id, group_id=group_id)
     if include_readiness and output_root is not None and process_supervisor is not None:
         runs = _session_runs_with_readiness(runs, output_root=output_root, process_supervisor=process_supervisor)
     return {"runs": runs}
@@ -5336,6 +5337,7 @@ def _make_handler(
                     live_agent_session_runs_payload(
                         live_agent_session_run_controller,
                         limit=self._limit(query, default=50),
+                        run_id=str(query.get("run_id", [""])[0] or ""),
                         meeting_id=str(query.get("meeting_id", [""])[0] or ""),
                         group_id=str(query.get("group_id", [""])[0] or ""),
                         include_readiness=_payload_bool(query.get("include_readiness", [""])[0]),

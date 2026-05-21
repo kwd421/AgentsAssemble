@@ -372,16 +372,27 @@ class LiveAgentSessionRunController:
         self,
         *,
         limit: int = DEFAULT_SESSION_RUN_LIMIT,
+        run_id: str = "",
         meeting_id: str = "",
         group_id: str = "",
     ) -> list[dict[str, object]]:
         safe_limit = _run_limit(limit)
+        has_run_filter = str(run_id or "").strip() != ""
+        safe_run_id = _safe_identity(run_id)
         has_meeting_filter = str(meeting_id or "").strip() != ""
         has_group_filter = str(group_id or "").strip() != ""
         safe_meeting_id = _safe_identity(meeting_id)
         safe_group_id = _safe_identity(group_id)
         with self._lock:
             records = list(self._records.values())
+            if has_run_filter and not safe_run_id:
+                records = []
+            elif safe_run_id:
+                records = [
+                    record
+                    for record in records
+                    if _safe_identity(record.get("run_id")) == safe_run_id
+                ]
             if has_meeting_filter and not safe_meeting_id:
                 records = []
             elif safe_meeting_id:

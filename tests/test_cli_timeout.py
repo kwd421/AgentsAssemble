@@ -1875,7 +1875,10 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(request_json.call_count, 2)
-        self.assertEqual(request_json.call_args_list[-1].args, ("http://room.local/api/live-agent-session-runs?limit=5&include_readiness=1",))
+        self.assertEqual(
+            request_json.call_args_list[-1].args,
+            ("http://room.local/api/live-agent-session-runs?limit=5&run_id=run-1&include_readiness=1",),
+        )
         self.assertIn("timeout_seconds", request_json.call_args_list[-1].kwargs)
         self.assertEqual(sleep.call_count, 1)
         result = json.loads(stdout.getvalue())
@@ -2005,6 +2008,54 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(query["limit"], ["5"])
         self.assertEqual(query["meeting_id"], ["resident-m1"])
         self.assertEqual(query["group_id"], ["resident-main"])
+
+    def test_live_agent_session_runs_wait_by_run_id_requests_server_run_filter(self):
+        payload = {
+            "runs": [
+                {
+                    "run_id": "run-1",
+                    "action": "ensure",
+                    "status": "ready",
+                    "active": True,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "readiness": {"status": "ready"},
+                }
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "wait",
+                        "--server",
+                        "http://room.local",
+                        "--run-id",
+                        "run-1",
+                        "--meeting-id",
+                        "resident-m2",
+                        "--group-id",
+                        "resident-alt",
+                        "--status",
+                        "ready",
+                        "--limit",
+                        "5",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        requested_url = request_json.call_args.args[0]
+        parsed = urllib.parse.urlparse(requested_url)
+        query = urllib.parse.parse_qs(parsed.query)
+        self.assertEqual(parsed.path, "/api/live-agent-session-runs")
+        self.assertEqual(query["limit"], ["5"])
+        self.assertEqual(query["run_id"], ["run-1"])
+        self.assertEqual(query["include_readiness"], ["1"])
+        self.assertNotIn("meeting_id", query)
+        self.assertNotIn("group_id", query)
 
     def test_live_agent_session_runs_wait_ready_requires_current_readiness(self):
         payloads = [

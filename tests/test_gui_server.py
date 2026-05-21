@@ -9350,6 +9350,90 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(runs_payload["runs"][0]["meeting_id"], "resident-m1")
         self.assertEqual(runs_payload["runs"][0]["group_id"], "resident-main")
 
+    def test_live_agent_session_runs_api_filters_run_id_before_limit_and_overlays_readiness(self):
+        class ReadinessSessionSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "stopped",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            session_run_controller = LiveAgentSessionRunController(root)
+            target = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+            unrelated = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m2", "group_id": "resident-alt"},
+            )
+            session_run_controller.finish_run(
+                unrelated["run_id"],
+                session={
+                    "status": "running",
+                    "meeting_id": "resident-m2",
+                    "group_id": "resident-alt",
+                    "action": "start",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(
+                    root,
+                    process_supervisor=ReadinessSessionSupervisor(),
+                    session_run_controller=session_run_controller,
+                ),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs"
+                    f"?limit=1&run_id={target['run_id']}&include_readiness=1",
+                    timeout=4,
+                ) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        run = runs_payload["runs"][0]
+        self.assertEqual(run["run_id"], target["run_id"])
+        self.assertEqual(run["readiness"]["status"], "degraded")
+        self.assertEqual(run["readiness"]["process_status"], "stopped")
+        self.assertEqual(operations_payload["operations"], [])
+        self.assertNotIn(str(live_agent_config), str(runs_payload))
+
     def test_live_agent_session_run_retry_now_api_clears_backoff_and_records_operation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

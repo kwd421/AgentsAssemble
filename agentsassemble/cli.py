@@ -3340,13 +3340,17 @@ def _live_agent_session_runs_path(
     include_readiness: bool = False,
 ) -> str:
     query: dict[str, object] = {"limit": args.limit}
-    if include_target_filters and not str(getattr(args, "run_id", "") or "").strip():
-        meeting_id = str(args.meeting_id or "").strip()
-        group_id = str(args.group_id or "").strip()
-        if meeting_id:
-            query["meeting_id"] = meeting_id
-        if group_id:
-            query["group_id"] = group_id
+    if include_target_filters:
+        run_id = str(getattr(args, "run_id", "") or "").strip()
+        if run_id:
+            query["run_id"] = run_id
+        else:
+            meeting_id = str(args.meeting_id or "").strip()
+            group_id = str(args.group_id or "").strip()
+            if meeting_id:
+                query["meeting_id"] = meeting_id
+            if group_id:
+                query["group_id"] = group_id
     if include_readiness:
         query["include_readiness"] = "1"
     return f"/api/live-agent-session-runs?{urllib.parse.urlencode(query)}"

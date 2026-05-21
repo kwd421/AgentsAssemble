@@ -4308,6 +4308,36 @@ Docs now distinguish the row-level `중지` control from `세션중지`: stoppin
 
 ---
 
+### Task 123: Exact Session-Run Wait Server Filter
+
+**Goal:** Keep exact run-id handoff waits stable in busy rooms by filtering the requested durable session-run before the bounded list limit is applied.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_session_runs.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_live_agent_session_runs.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED exact-id filter coverage**
+
+Cover controller, GUI API, CLI wait URL construction, and operator docs for exact `run_id` filtering before `limit` is applied.
+
+- [x] **Step 2: Thread run-id through the existing read-only list path**
+
+`LiveAgentSessionRunController.list_runs()` accepts `run_id`, `/api/live-agent-session-runs` forwards the `run_id` query parameter, and exact `session-runs wait --run-id` polls `/api/live-agent-session-runs?limit=N&run_id=...` while continuing to omit meeting/group filters.
+
+- [x] **Step 3: Preserve readiness and side-effect boundaries**
+
+The exact-id list filter still composes with `include_readiness=1`; the overlay remains read-only and does not start providers, stop groups, run probes, append operation records, or mutate durable session-run status.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
