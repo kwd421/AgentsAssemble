@@ -3825,6 +3825,31 @@ Document the durable session-run status gate, exit-code contract, and redaction 
 
 ---
 
+### Task 105: Durable Session-Run Handoff Wait Target
+
+**Goal:** Let another script or agent continue a durable session-run handoff without knowing the exact run id, by waiting on the latest matching meeting/group session-run intent.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for meeting/group wait target**
+
+Cover parser acceptance for `session-runs wait --meeting-id <id> --group-id <id> --status ready`, a successful wait that ignores an older ready run while a newer matching run is still running, and validation that refuses a wait without either `--run-id` or both meeting/group ids.
+
+- [x] **Step 2: Select the latest matching intent**
+
+Make `--run-id` optional for `session-runs wait`. When it is absent, require both `--meeting-id` and `--group-id`, select the latest matching run from the public bounded list, and succeed only if that latest run has the requested status.
+
+- [x] **Step 3: Document handoff semantics**
+
+Document that meeting/group wait is for handoffs where the exact run id is unknown, and that older ready runs cannot satisfy the gate while a newer matching run is still in progress.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -924,7 +924,9 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[live_server],
         help="Wait for a durable live-agent session run to reach a status.",
     )
-    live_session_runs_wait.add_argument("--run-id", required=True, help="Durable session-run id to wait for.")
+    live_session_runs_wait.add_argument("--run-id", default="", help="Durable session-run id to wait for.")
+    live_session_runs_wait.add_argument("--meeting-id", default="", help="Meeting id for the latest matching durable session run.")
+    live_session_runs_wait.add_argument("--group-id", default="", help="Group id for the latest matching durable session run.")
     live_session_runs_wait.add_argument("--status", required=True, help="Session-run status to observe, such as ready, failed, or stopped.")
     live_session_runs_wait.add_argument("--limit", type=parse_positive_int, default=50)
     live_session_runs_wait.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
@@ -3042,6 +3044,7 @@ def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
 
 
 def _run_live_agent_session_runs_wait(args: argparse.Namespace) -> int:
+    _validate_live_agent_session_runs_wait_target(args)
     timeout_seconds = float(args.timeout)
     poll_interval = max(0.01, float(args.poll_interval))
     deadline = time.monotonic() + timeout_seconds
@@ -3079,7 +3082,13 @@ def _run_live_agent_session_runs_wait(args: argparse.Namespace) -> int:
             )
             return 1
         last_payload = payload
-        run = _find_live_agent_session_run(payload, args.run_id, args.status)
+        run = _find_live_agent_session_run(
+            payload,
+            run_id=args.run_id,
+            meeting_id=args.meeting_id,
+            group_id=args.group_id,
+            status=args.status,
+        )
         if run is not None:
             _print_live_agent_session_runs_wait_result(
                 _live_agent_session_runs_wait_result("observed", args, timeout_seconds, attempts, run, payload),
@@ -3103,7 +3112,9 @@ def _live_agent_session_runs_wait_result(
 ) -> dict[str, object]:
     result: dict[str, object] = {
         "status": status,
-        "run_id": args.run_id,
+        "run_id": str(run.get("run_id") or "") if isinstance(run, dict) else str(args.run_id or ""),
+        "meeting_id": str(args.meeting_id or ""),
+        "group_id": str(args.group_id or ""),
         "wanted_status": args.status,
         "run_status": str(run.get("status") or "") if isinstance(run, dict) else "",
         "timeout_seconds": timeout_seconds,
@@ -3117,14 +3128,53 @@ def _live_agent_session_runs_wait_result(
     return result
 
 
-def _find_live_agent_session_run(payload: dict[str, object], run_id: str, status: str = "") -> dict[str, object] | None:
+def _validate_live_agent_session_runs_wait_target(args: argparse.Namespace) -> None:
+    if str(args.run_id or "").strip():
+        return
+    if str(args.meeting_id or "").strip() and str(args.group_id or "").strip():
+        return
+    raise ValueError("live-agent session-runs wait requires --run-id or both --meeting-id and --group-id.")
+
+
+def _find_live_agent_session_run(
+    payload: dict[str, object],
+    *,
+    run_id: str = "",
+    meeting_id: str = "",
+    group_id: str = "",
+    status: str = "",
+) -> dict[str, object] | None:
     runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
-    for item in runs:
+    if run_id:
+        for item in runs:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("run_id") or "") != run_id:
+                continue
+            if status and str(item.get("status") or "") != status:
+                continue
+            return item
+        return None
+    latest = _latest_live_agent_session_run_for_target(runs, meeting_id=meeting_id, group_id=group_id)
+    if latest is None:
+        return None
+    if status and str(latest.get("status") or "") != status:
+        return None
+    return latest
+
+
+def _latest_live_agent_session_run_for_target(
+    runs: list[object],
+    *,
+    meeting_id: str = "",
+    group_id: str = "",
+) -> dict[str, object] | None:
+    for item in reversed(runs):
         if not isinstance(item, dict):
             continue
-        if str(item.get("run_id") or "") != run_id:
+        if meeting_id and str(item.get("meeting_id") or "") != meeting_id:
             continue
-        if status and str(item.get("status") or "") != status:
+        if group_id and str(item.get("group_id") or "") != group_id:
             continue
         return item
     return None
@@ -3327,17 +3377,24 @@ def _print_live_agent_session_runs_wait_result(result: dict[str, object], *, as_
     if as_json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
-    run_id = str(result.get("run_id") or "unknown")
+    run_id = str(result.get("run_id") or "").strip()
+    meeting_id = str(result.get("meeting_id") or "").strip()
+    group_id = str(result.get("group_id") or "").strip()
+    target_label = f"session run {run_id}" if run_id else f"session run for {meeting_id or '-'} {group_id or '-'}"
     wanted_status = str(result.get("wanted_status") or "unknown")
     timeout_seconds = _safe_float(result.get("timeout_seconds"))
     run = result.get("run") if isinstance(result.get("run"), dict) else None
     if result.get("status") == "observed":
         suffix = f": {_format_live_agent_session_run(run)}" if run is not None else ""
-        print(f"Observed live-agent session run {run_id} status {wanted_status}{suffix}")
+        print(f"Observed live-agent {target_label} status {wanted_status}{suffix}")
         return
-    print(f"Timed out waiting for live-agent session run {run_id} status {wanted_status} after {timeout_seconds:.1f}s")
+    print(f"Timed out waiting for live-agent {target_label} status {wanted_status} after {timeout_seconds:.1f}s")
     runs = result.get("runs") if isinstance(result.get("runs"), list) else []
-    last_run = next((item for item in reversed(runs) if isinstance(item, dict) and str(item.get("run_id") or "") == run_id), None)
+    last_run = None
+    if run_id:
+        last_run = next((item for item in reversed(runs) if isinstance(item, dict) and str(item.get("run_id") or "") == run_id), None)
+    if last_run is None and (meeting_id or group_id):
+        last_run = _latest_live_agent_session_run_for_target(runs, meeting_id=meeting_id, group_id=group_id)
     if last_run is None:
         last_run = next((item for item in reversed(runs) if isinstance(item, dict)), None)
     if last_run is not None:

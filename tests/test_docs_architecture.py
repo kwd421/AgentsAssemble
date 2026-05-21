@@ -310,6 +310,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("assemble live-agent session-runs list", doc)
         self.assertIn("assemble live-agent session-runs wait", doc)
         self.assertIn("durable session-run status gate", doc)
+        self.assertIn("without the exact run id", doc)
+        self.assertIn("latest matching meeting/group session-run", doc)
         self.assertIn("reconciles active durable runs on startup", doc)
         self.assertIn("Recent operation views read from the JSONL tail", doc)
         self.assertIn("prioritize high-signal liveness evidence", doc)

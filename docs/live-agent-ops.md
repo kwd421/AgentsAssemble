@@ -1268,7 +1268,19 @@ python3 -m agentsassemble.cli live-agent session-runs wait \
   --poll-interval 2
 ```
 
-The wait path polls `/api/live-agent-session-runs?limit=N` until the named run reaches the requested status or the timeout expires. It exits `0` when the target run/status is observed and exits `1` on timeout with the last observed safe run summary. It exits `2` for non-timeout transport, parsing, validation, or HTTP errors. Use `--json` when automation needs the machine-readable `status`, requested run id, requested status, attempts, matched run, or timeout run tail.
+When a script knows the resident meeting and group but not the exact run id, it can wait on the latest matching meeting/group session-run:
+
+```bash
+python3 -m agentsassemble.cli live-agent session-runs wait \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-m1 \
+  --group-id local-cli-group \
+  --status ready
+```
+
+This lets another agent continue without the exact run id after a GUI action or handoff. The command selects the latest matching meeting/group session-run from the bounded public list, so an older `ready` run cannot satisfy the gate while a newer matching run is still `running`. If `--run-id` is supplied together with meeting/group fields, the exact run id is the target. Increase `--limit` when many newer unrelated session-runs may have pushed the relevant handoff out of the default result window.
+
+The wait path polls `/api/live-agent-session-runs?limit=N` until the named run, or latest matching meeting/group run, reaches the requested status or the timeout expires. It exits `0` when the target run/status is observed and exits `1` on timeout with the last observed safe run summary. It exits `2` when neither `--run-id` nor both `--meeting-id` and `--group-id` are supplied, or for non-timeout transport, parsing, validation, or HTTP errors. Use `--json` when automation needs the machine-readable `status`, requested run id, meeting/group target, requested status, attempts, matched run, or timeout run tail.
 
 The public session-run API and CLI intentionally omit server URLs, config paths, commands, auth refs, prompts, log tails, and provider output. The durable controller keeps enough local request state to reconcile active runs, while the exposed status is limited to safe identifiers, requested toggles, readiness/result summaries, timestamps, `active`, `phase`, and `reconcile_count`.
 
