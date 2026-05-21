@@ -192,6 +192,40 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("private request text", payload["artifacts"]["transcript.md"])
             self.assertFalse((meeting_dir / "transcript.md").exists())
 
+    def test_build_meeting_payload_projects_shared_memory_without_writing_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir) / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "private request text",
+                },
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "m1",
+                    "actor_id": "agent-a",
+                    "display_name": "Agent A",
+                    "source_event_id": "request-1",
+                    "content": "official live reply\nAction: Preserve a shared memory artifact.",
+                },
+            )
+
+            payload = build_meeting_payload(meeting_dir)
+
+            self.assertIn("official live reply", payload["artifacts"]["shared_memory/rolling-summary.md"])
+            self.assertIn("Preserve a shared memory artifact.", payload["artifacts"]["shared_memory/action-items.md"])
+            self.assertNotIn("private request text", payload["artifacts"]["shared_memory/rolling-summary.md"])
+            self.assertFalse((meeting_dir / "shared_memory" / "rolling-summary.md").exists())
+            self.assertFalse((meeting_dir / "shared_memory" / "index.json").exists())
+
     def test_build_meeting_payload_preserves_existing_transcript(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"
@@ -6428,7 +6462,7 @@ class GuiServerTests(unittest.TestCase):
                         {
                             "meeting_id": "m1",
                             "source_event_id": requested["event"]["id"],
-                            "content": "공식 답변",
+                            "content": "공식 답변\nAction item: Preserve resident shared memory.",
                             "role_id": "payload-override",
                             "display_name": "Payload Override",
                             "turn_id": "round_1:0:architect",
@@ -6470,12 +6504,22 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("private target-B instruction", [event.get("content") for event in replied["live_events"]])
             self.assertEqual(lobby["events"], [])
             self.assertEqual([item["operation"] for item in operations["operations"]], ["official_turn.request", "official_turn.reply"])
+            reply_operation = operations["operations"][1]
+            self.assertEqual(reply_operation["details"]["shared_memory_official_event_count"], 1)
+            self.assertEqual(reply_operation["details"]["shared_memory_action_item_count"], 1)
             transcript = build_meeting_payload(meeting_dir)["artifacts"]["transcript.md"]
             self.assertIn("공식 답변", transcript)
             self.assertIn(f"- Source event id: {request_event['id']}", transcript)
             self.assertNotIn("공식 발언 차례", transcript)
             self.assertNotIn("private target-B instruction", transcript)
             self.assertFalse((meeting_dir / "transcript.md").exists())
+            self.assertTrue((meeting_dir / "shared_memory" / "rolling-summary.md").exists())
+            self.assertTrue((meeting_dir / "shared_memory" / "action-items.md").exists())
+            shared_memory_text = (meeting_dir / "shared_memory" / "action-items.md").read_text(encoding="utf-8")
+            self.assertIn("Preserve resident shared memory.", shared_memory_text)
+            self.assertNotIn("공식 발언 차례", shared_memory_text)
+            operations_text = json.dumps(operations["operations"], ensure_ascii=False)
+            self.assertNotIn("Preserve resident shared memory.", operations_text)
 
     def test_live_agent_official_turn_call_waits_for_verified_reply(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -7216,6 +7260,13 @@ class GuiServerTests(unittest.TestCase):
                 "meeting_id": "m1",
                 "official_event_count": 1,
                 "artifact_event_id": "artifact-1",
+                "shared_memory": {
+                    "official_event_count": 1,
+                    "last_official_event_id": "reply-1",
+                    "decision_count": 0,
+                    "open_question_count": 0,
+                    "action_item_count": 1,
+                },
             }
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -7278,6 +7329,9 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(rounds_operations[0]["status"], "success")
             self.assertEqual(rounds_operations[0]["details"]["finalization_status"], "finalized")
             self.assertEqual(rounds_operations[0]["details"]["finalization_official_event_count"], 1)
+            self.assertEqual(rounds_operations[0]["details"]["shared_memory_official_event_count"], 1)
+            self.assertEqual(rounds_operations[0]["details"]["shared_memory_last_event_id"], "reply-1")
+            self.assertEqual(rounds_operations[0]["details"]["shared_memory_action_item_count"], 1)
             operations_text = json.dumps(operations["operations"], ensure_ascii=False)
             self.assertNotIn("remaining reply", operations_text)
 
@@ -12027,6 +12081,13 @@ class GuiServerTests(unittest.TestCase):
                 "meeting_id": "resident-m1",
                 "official_event_count": 1,
                 "artifact_event_id": "artifact-1",
+                "shared_memory": {
+                    "official_event_count": 1,
+                    "last_official_event_id": "reply-1",
+                    "decision_count": 0,
+                    "open_question_count": 0,
+                    "action_item_count": 1,
+                },
             }
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=EnsureSessionSupervisor()))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -12070,6 +12131,9 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(session_operations[-1]["details"]["auto_rounds_status"], "answered")
         self.assertEqual(session_operations[-1]["details"]["finalization_status"], "finalized")
         self.assertEqual(session_operations[-1]["details"]["finalization_official_event_count"], 1)
+        self.assertEqual(session_operations[-1]["details"]["shared_memory_official_event_count"], 1)
+        self.assertEqual(session_operations[-1]["details"]["shared_memory_last_event_id"], "reply-1")
+        self.assertEqual(session_operations[-1]["details"]["shared_memory_action_item_count"], 1)
         operations_text = json.dumps(operations["operations"], ensure_ascii=False)
         self.assertNotIn("round_1 instruction", operations_text)
 

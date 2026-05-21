@@ -61,10 +61,13 @@ AgentsAssemble owns shared meeting memory.
 
 Shared meeting memory includes:
 - official transcript entries.
-- rolling summary for long-running meetings.
+- `shared_memory/rolling-summary.md` as the rolling summary for long-running
+  resident meetings.
 - decisions and unresolved decision points.
-- open questions.
-- action items.
+- `shared_memory/open-questions.md`.
+- `shared_memory/action-items.md`.
+- `shared_memory/index.json` as the deterministic machine-readable index for
+  those shared-memory artifacts.
 - promoted context from Play Mode into Work Mode.
 - memory or handoff packets intentionally shared with future sessions.
 
@@ -90,8 +93,8 @@ Near-term work should favor backend contracts over visual polish:
 - Add discovery rows that say how a provider can join and what evidence supports it.
 - Add context durability labels such as provider-managed, process-lifetime, and
   stateless-prompt where they are accurate.
-- Add live meeting rolling summary artifacts for resident sessions.
-- Add open question and action item artifacts for long-running rooms.
+- Keep `shared_memory/` resident meeting artifacts deterministic, official-only,
+  and refreshed during long-running sessions.
 - Keep GUI changes minimal: show trustworthy state and leave detailed front-end
   styling for a later pass.
 

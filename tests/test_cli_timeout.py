@@ -10169,6 +10169,7 @@ class CliTimeoutTests(unittest.TestCase):
                     )
                 operations = cli_module._request_json(f"{server_url}/api/live-agent-operations")
                 persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
+                shared_memory_written = (root / "meetings" / "m1" / "shared_memory" / "rolling-summary.md").exists()
             finally:
                 server.shutdown()
                 server.server_close()
@@ -10180,6 +10181,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(wait_payload["meeting_id"], "m1")
         self.assertEqual(reply_payload["event"]["source_event_id"], wait_payload["source_event_id"])
         self.assertEqual(reply_payload["event"]["content"], "Official self-service reply.")
+        self.assertEqual(reply_payload["shared_memory"]["shared_memory_official_event_count"], 1)
+        self.assertTrue(shared_memory_written)
         self.assertEqual(persisted_agent["last_observed_live_event_id"], wait_payload["source_event_id"])
         self.assertIn("official_turn.reply", [item["operation"] for item in operations["operations"]])
 

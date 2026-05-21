@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.artifacts import write_public_artifacts
+from agentsassemble.live_meeting_memory import build_live_meeting_memory, write_live_meeting_memory_artifacts
 from agentsassemble.live_transcript import official_live_transcript_events, render_live_transcript
 from agentsassemble.meeting_events import append_live_event, clean_lobby_text, read_live_events, write_live_state
 from agentsassemble.meeting_record import derive_failure_state
@@ -25,6 +26,9 @@ def finalize_live_agent_meeting(meeting_dir: Path, *, force: bool = False) -> di
             "status": "already_finalized",
             "meeting_id": str(meeting.get("meeting_id") or meeting_dir.name),
             "official_event_count": len(official_live_transcript_events(events)),
+            "shared_memory": _shared_memory_result(
+                meeting.get("shared_memory") if isinstance(meeting.get("shared_memory"), dict) else {}
+            ),
         }
 
     live_meeting = _read_live_meeting(meeting_dir)
@@ -34,6 +38,8 @@ def finalize_live_agent_meeting(meeting_dir: Path, *, force: bool = False) -> di
 
     meeting = build_finalized_live_meeting_record(live_meeting, events)
     transcript_text = render_live_transcript(events, meeting=meeting)
+    shared_memory = write_live_meeting_memory_artifacts(meeting_dir, meeting=meeting)
+    meeting["shared_memory"] = shared_memory
     write_public_artifacts(meeting_dir, meeting, transcript_text=transcript_text)
     write_live_state(meeting_dir, meeting)
     artifact_event = append_live_event(
@@ -50,6 +56,7 @@ def finalize_live_agent_meeting(meeting_dir: Path, *, force: bool = False) -> di
         "official_event_count": len(official_events),
         "artifact_event_id": artifact_event["id"],
         "artifacts": meeting["artifacts"],
+        "shared_memory": _shared_memory_result(shared_memory),
     }
 
 
@@ -63,6 +70,7 @@ def build_finalized_live_meeting_record(
     evidence_gate = resident_live_evidence_gate()
     decision_gate = resident_needs_user_decision_gate()
     meeting = dict(live_meeting)
+    meeting["shared_memory"] = build_live_meeting_memory(events, meeting=meeting)
     meeting.setdefault("room_chat", [])
     meeting.setdefault("memory_context", {"recent_episodes": [], "agent_memories": {}})
     meeting.setdefault("memory_input", {"research_summaries": []})
@@ -207,7 +215,15 @@ def resident_live_evidence_gate() -> dict[str, object]:
 
 
 def _has_complete_finalization(meeting_dir: Path) -> bool:
+    required_shared_memory = (
+        meeting_dir / "shared_memory" / "rolling-summary.md",
+        meeting_dir / "shared_memory" / "open-questions.md",
+        meeting_dir / "shared_memory" / "action-items.md",
+        meeting_dir / "shared_memory" / "index.json",
+    )
     if not all((meeting_dir / name).exists() for name in ("meeting.json", "transcript.md", "decision.md")):
+        return False
+    if not all(path.exists() for path in required_shared_memory):
         return False
     try:
         meeting = _read_json(meeting_dir / "meeting.json")
@@ -359,12 +375,24 @@ def _final_artifact_refs(meeting: dict[str, object]) -> dict[str, object]:
             "transcript": "transcript.md",
             "decision": "decision.md",
             "meeting": "meeting.json",
+            "shared_memory": "shared_memory/",
+            "shared_memory_index": "shared_memory/index.json",
             "tasks": "tasks/",
             "delegate_packets": "delegate_packets/",
             "return_packets": "return_packets/",
         }
     )
     return artifacts
+
+
+def _shared_memory_result(memory: dict[str, object]) -> dict[str, object]:
+    return {
+        "official_event_count": int(memory.get("official_event_count") or 0),
+        "last_official_event_id": clean_lobby_text(memory.get("last_official_event_id"), limit=128),
+        "decision_count": len(memory.get("decisions") if isinstance(memory.get("decisions"), list) else []),
+        "open_question_count": len(memory.get("open_questions") if isinstance(memory.get("open_questions"), list) else []),
+        "action_item_count": len(memory.get("action_items") if isinstance(memory.get("action_items"), list) else []),
+    }
 
 
 def _as_dict_list(value: object) -> list[dict[str, object]]:

@@ -74,6 +74,7 @@ from agentsassemble.live_agent_turns import (
     wait_for_official_turn_reply,
     wait_for_review_checkpoint_reply,
 )
+from agentsassemble.live_meeting_memory import projected_live_meeting_memory_artifacts, write_live_meeting_memory_artifacts
 from agentsassemble.live_transcript import projected_live_transcript_text
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
@@ -189,6 +190,7 @@ def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[s
     }
     if not (meeting_dir / "transcript.md").exists() and not has_final_record:
         artifacts["transcript.md"] = projected_live_transcript_text(meeting_dir, meeting=meeting)
+    artifacts.update(_shared_memory_artifacts(meeting_dir, meeting=meeting, has_final_record=has_final_record))
     tasks = {
         task_path.name: task_path.read_text(encoding="utf-8")
         for task_path in sorted((meeting_dir / "tasks").glob("*.md"))
@@ -219,6 +221,29 @@ def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[s
         "research_json": research_json,
         "live_events": read_live_events(meeting_dir),
     }
+
+
+def _shared_memory_artifacts(
+    meeting_dir: Path,
+    *,
+    meeting: dict[str, object],
+    has_final_record: bool,
+) -> dict[str, str]:
+    shared_dir = meeting_dir / "shared_memory"
+    artifact_paths = {
+        "shared_memory/rolling-summary.md": shared_dir / "rolling-summary.md",
+        "shared_memory/open-questions.md": shared_dir / "open-questions.md",
+        "shared_memory/action-items.md": shared_dir / "action-items.md",
+        "shared_memory/index.json": shared_dir / "index.json",
+    }
+    existing = {
+        key: path.read_text(encoding="utf-8")
+        for key, path in artifact_paths.items()
+        if path.exists()
+    }
+    if existing or has_final_record:
+        return existing
+    return projected_live_meeting_memory_artifacts(meeting_dir, meeting=meeting)
 
 
 def _load_meeting_record(meeting_dir: Path) -> tuple[dict[str, object], Path, bool]:
@@ -2286,6 +2311,7 @@ def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: 
                     }
                 )
             event = append_live_event(meeting_dir, event_payload)
+        shared_memory = _refresh_live_meeting_memory_after_official_reply(meeting_dir, event)
     updated_agent = heartbeat_live_agent(
         output_root,
         agent_id,
@@ -2299,8 +2325,31 @@ def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: 
     return {
         "agent": updated_agent,
         "event": event,
+        "shared_memory": shared_memory,
         "live_events": _live_events_visible_to_agent(read_live_events(meeting_dir), agent_id),
     }
+
+
+def _refresh_live_meeting_memory_after_official_reply(
+    meeting_dir: Path,
+    event: dict[str, object],
+) -> dict[str, object]:
+    if event.get("official_record") is not True or event.get("channel") != "official":
+        return {}
+    try:
+        meeting = _read_meeting_record(meeting_dir)
+        can_update_live_state = True
+    except (ValueError, OSError, json.JSONDecodeError):
+        meeting = {
+            "meeting_id": clean_lobby_text(event.get("meeting_id"), limit=128),
+            "topic": clean_lobby_text(event.get("meeting_id"), limit=240),
+        }
+        can_update_live_state = False
+    memory = write_live_meeting_memory_artifacts(meeting_dir, meeting=meeting)
+    if can_update_live_state:
+        meeting["shared_memory"] = memory
+        write_live_state(meeting_dir, meeting)
+    return _shared_memory_operation_details(memory)
 
 
 def live_agent_probe_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -4754,13 +4803,17 @@ def _turn_rounds_operation_details(rounds_result: dict[str, object], meeting_id:
 
 
 def _rounds_finalization_operation_details(finalization: dict[str, object], meeting_id: str) -> dict[str, object]:
-    return {
+    details = {
         "finalization_status": _operation_result_status(finalization.get("status")),
         "finalization_reason": clean_lobby_text(finalization.get("reason"), limit=256),
         "finalization_meeting_id": clean_lobby_text(finalization.get("meeting_id") or meeting_id, limit=128),
         "finalization_official_event_count": _payload_nonnegative_int(finalization.get("official_event_count"), 0),
         "finalization_artifact_event_id": clean_lobby_text(finalization.get("artifact_event_id"), limit=128),
     }
+    shared_memory = finalization.get("shared_memory") if isinstance(finalization.get("shared_memory"), dict) else {}
+    if shared_memory:
+        details.update(_shared_memory_operation_details(shared_memory))
+    return details
 
 
 def _official_round_smoke_operation_details(smoke: dict[str, object]) -> dict[str, object]:
@@ -4904,12 +4957,36 @@ def _session_stop_operation_details(session: dict[str, object]) -> dict[str, obj
 
 
 def _meeting_finalize_operation_details(result: dict[str, object], meeting_id: str) -> dict[str, object]:
-    return {
+    details = {
         "result_status": _operation_result_status(result.get("status")),
         "meeting_id": clean_lobby_text(result.get("meeting_id") or meeting_id, limit=128),
         "official_event_count": _payload_nonnegative_int(result.get("official_event_count"), 0),
         "artifact_event_id": clean_lobby_text(result.get("artifact_event_id"), limit=128),
     }
+    shared_memory = result.get("shared_memory") if isinstance(result.get("shared_memory"), dict) else {}
+    if shared_memory:
+        details.update(_shared_memory_operation_details(shared_memory))
+    return details
+
+
+def _shared_memory_operation_details(memory: dict[str, object]) -> dict[str, object]:
+    return {
+        "shared_memory_official_event_count": _payload_nonnegative_int(memory.get("official_event_count"), 0),
+        "shared_memory_last_event_id": clean_lobby_text(memory.get("last_official_event_id"), limit=128),
+        "shared_memory_decision_count": _payload_nonnegative_int(memory.get("decision_count"), _memory_item_count(memory.get("decisions"))),
+        "shared_memory_open_question_count": _payload_nonnegative_int(
+            memory.get("open_question_count"),
+            _memory_item_count(memory.get("open_questions")),
+        ),
+        "shared_memory_action_item_count": _payload_nonnegative_int(
+            memory.get("action_item_count"),
+            _memory_item_count(memory.get("action_items")),
+        ),
+    }
+
+
+def _memory_item_count(value: object) -> int:
+    return len(value) if isinstance(value, list) else 0
 
 
 def _session_check_operation_details(session: dict[str, object]) -> dict[str, object]:
@@ -6848,6 +6925,9 @@ def _make_handler(
                 }
                 if review_checkpoint_id:
                     reply_details["review_checkpoint_id"] = review_checkpoint_id
+                shared_memory = official_turn.get("shared_memory") if isinstance(official_turn.get("shared_memory"), dict) else {}
+                if shared_memory:
+                    reply_details.update(shared_memory)
                 record_live_agent_operation(
                     output_root,
                     operation=reply_operation,

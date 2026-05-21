@@ -169,6 +169,7 @@ function archiveKindLabel(key) {
   if (key.includes("tasks/")) return "작업 배정";
   if (key.includes("return_packets/")) return "세션 복귀";
   if (key === "room-log.md") return "자유채팅";
+  if (key.startsWith("shared_memory/")) return "공유 기억";
   if (key === "decision.md") return "결정";
   if (key === "transcript.md") return "회의록";
   if (key === "agenda.md") return "안건";
@@ -251,7 +252,7 @@ function tableCell(value) {
 }
 
 function renderArchiveGroups(payload, entries) {
-  const publicKeys = ["agenda.md", "room-log.md", "transcript.md", "decision.md", "meeting.json"].filter((key) => key in entries);
+  const publicKeys = ["agenda.md", "room-log.md", "transcript.md", "shared_memory/rolling-summary.md", "shared_memory/open-questions.md", "shared_memory/action-items.md", "shared_memory/index.json", "decision.md", "meeting.json"].filter((key) => key in entries);
   const roleGroups = (payload.meeting.roles || []).map((role) => {
     const meta = roleMeta[role.id] || { color: "purple", title: role.lens, badge: role.lens, avatar: "/static/avatar-moderator.svg" };
     const keys = Object.keys(entries)
