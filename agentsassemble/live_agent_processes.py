@@ -380,7 +380,7 @@ class LiveAgentProcessSupervisor:
         transition_record["stopped_at"] = stopped_at.isoformat()
         transition_record["last_error"] = last_error
         transition_record["restart_count"] = restart_count
-        offline = self._mark_manifest_agents_offline(record)
+        offline = self._mark_manifest_agents_offline(record, preserve_error_presence=_process_exit_failed(returncode))
         if backoff_seconds <= 0:
             self._append_lifecycle_event(
                 transition_record,
@@ -466,7 +466,7 @@ class LiveAgentProcessSupervisor:
                     _safe_restart_failure_message(error),
                 )
                 record["next_restart_at"] = ""
-                offline = self._mark_manifest_agents_offline(record)
+                offline = self._mark_manifest_agents_offline(record, preserve_error_presence=True)
                 self._write_records()
                 self._append_lifecycle_event(record, "restart_failed", offline=offline)
 
@@ -572,7 +572,7 @@ class LiveAgentProcessSupervisor:
         record["next_restart_at"] = ""
         self._processes.pop(group_id, None)
         self._close_log(group_id)
-        offline = self._mark_manifest_agents_offline(record)
+        offline = self._mark_manifest_agents_offline(record, preserve_error_presence=_process_exit_failed(returncode))
         self._write_records()
         self._append_lifecycle_event(
             record,
@@ -599,7 +599,7 @@ class LiveAgentProcessSupervisor:
         record["next_restart_at"] = ""
         self._processes.pop(group_id, None)
         self._close_log(group_id)
-        offline = self._mark_manifest_agents_offline(record)
+        offline = self._mark_manifest_agents_offline(record, preserve_error_presence=_process_exit_failed(returncode))
         self._write_records()
         self._append_lifecycle_event(
             record,
@@ -702,7 +702,12 @@ class LiveAgentProcessSupervisor:
             visible["offline"] = offline
         return visible
 
-    def _mark_manifest_agents_offline(self, record: dict[str, object]) -> dict[str, object]:
+    def _mark_manifest_agents_offline(
+        self,
+        record: dict[str, object],
+        *,
+        preserve_error_presence: bool = False,
+    ) -> dict[str, object]:
         agent_ids = _manifest_agent_ids(record.get("agents"))
         if not agent_ids:
             return _offline_reconciliation_summary(expected=0, offline_agent_ids=[], attention=[])
@@ -720,6 +725,9 @@ class LiveAgentProcessSupervisor:
                 continue
             if self._agent_expected_by_other_active_group(record, agent_id):
                 attention.append(_offline_reconciliation_attention(agent_id, "still_owned"))
+                continue
+            if preserve_error_presence and str(existing.get("status") or "") == "error":
+                attention.append(_offline_reconciliation_attention(agent_id, "preserved_error"))
                 continue
             heartbeat_live_agent(self.output_root, agent_id, status="offline", now=self.now_fn())
             offline_agent_ids.append(agent_id)
@@ -1253,6 +1261,10 @@ def _record_returncode(record: dict[str, object]) -> int | None:
 def _event_returncode(returncode: object, record: dict[str, object]) -> int | None:
     explicit = _safe_process_returncode(returncode)
     return explicit if explicit is not None else _record_returncode(record)
+
+
+def _process_exit_failed(returncode: object) -> bool:
+    return _safe_process_returncode(returncode) not in (0, None)
 
 
 def _preflight_failure_message(report: dict[str, object]) -> str:

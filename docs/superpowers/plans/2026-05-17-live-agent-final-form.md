@@ -3954,6 +3954,30 @@ Document that self-service child failure records `status: "error"` with safe `la
 
 ---
 
+### Task 110: Supervisor Process-Error Presence Preservation
+
+**Goal:** Keep the GUI process supervisor from erasing agent-level error evidence when it reconciles a failed resident process group.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_processes.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_processes.py`
+
+- [x] **Step 1: Add RED coverage for supervisor reconciliation**
+
+Cover a failed process group whose manifest has one normal agent row and one matching `error` agent row. The normal row should become `offline`, while the error row should keep its `status: "error"` and `last_error`.
+
+- [x] **Step 2: Preserve existing error rows only on failed process exits**
+
+Let failed process-exit reconciliation skip matching rows that already have `status: "error"` and record lifecycle offline attention as `preserved_error`. Keep normal operator stop, successful max-tick exit, wrong-meeting rows, and still-owned rows on their existing paths.
+
+- [x] **Step 3: Document the supervisor boundary**
+
+Document that process supervisor reconciliation preserves provider error evidence after failed process exits instead of turning it into a plain offline shutdown.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

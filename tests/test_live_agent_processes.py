@@ -753,6 +753,14 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
                 max_restarts=1,
                 restart_backoff_seconds=10,
             )
+            connect_live_agent(root, {"agent_id": "a", "status": "online"}, now=current_time["value"])
+            heartbeat_live_agent(
+                root,
+                "a",
+                status="error",
+                metadata={"last_error": "Self-service command exited with return code 2."},
+                now=current_time["value"],
+            )
             processes[0].returncode = 2
             waiting = supervisor.list_groups()
             reports["current"] = {
@@ -774,6 +782,8 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             current_time["value"] += timedelta(seconds=11)
 
             groups = supervisor.list_groups()
+            agents = {str(agent["agent_id"]): agent for agent in read_live_agents(root, now=current_time["value"])}
+            events = _read_lifecycle_events(root)
 
         self.assertEqual(len(processes), 1)
         self.assertEqual(waiting[0]["status"], "restarting")
@@ -782,6 +792,11 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(groups[0]["restart_count"], 1)
         self.assertIn("Live agent preflight failed", groups[0]["last_error"])
         self.assertIn("bad-agent command", groups[0]["last_error"])
+        self.assertEqual(agents["a"]["status"], "error")
+        self.assertEqual(agents["a"]["last_error"], "Self-service command exited with return code 2.")
+        self.assertEqual(events[-1]["event_type"], "restart_failed")
+        self.assertEqual(events[-1]["offline"]["offline_agent_ids"], [])
+        self.assertEqual(events[-1]["offline"]["attention"], [{"agent_id": "a", "status": "preserved_error"}])
 
     def test_stop_group_interrupts_owned_process_and_marks_stopped(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -838,6 +853,60 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
         self.assertEqual(stopped["offline"]["skipped"], 0)
         self.assertEqual(stopped["offline"]["offline_agent_ids"], ["agent-a", "agent-b"])
         self.assertEqual(stopped["offline"]["attention"], [])
+
+    def test_process_error_preserves_matching_agent_error_presence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            process = FakeProcess(pid=9876)
+            now = datetime(2026, 5, 17, 12, 0, tzinfo=UTC)
+            supervisor = LiveAgentProcessSupervisor(
+                root,
+                command_factory=lambda command, **kwargs: process,
+                now_fn=lambda: now,
+            )
+            config_path = root / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {"agent_id": "agent-a", "display_name": "Agent A", "command": ["fake"]},
+                            {"agent_id": "agent-b", "display_name": "Agent B", "command": ["fake"]},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            supervisor.start_group(config_path=config_path, server="http://room.local", group_id="crew", meeting_id="meeting-1")
+            connect_live_agent(root, {"agent_id": "agent-a", "meeting_id": "meeting-1", "status": "online"}, now=now)
+            connect_live_agent(root, {"agent_id": "agent-b", "meeting_id": "meeting-1", "status": "online"}, now=now)
+            heartbeat_live_agent(
+                root,
+                "agent-b",
+                status="error",
+                metadata={"last_error": "Self-service command exited with return code 7."},
+                now=now,
+            )
+
+            process.returncode = 7
+            stopped = supervisor.list_groups()[0]
+            agents = {str(agent["agent_id"]): agent for agent in read_live_agents(root, now=now)}
+            events = _read_lifecycle_events(root)
+
+        self.assertEqual(stopped["status"], "error")
+        self.assertEqual(agents["agent-a"]["status"], "offline")
+        self.assertEqual(agents["agent-b"]["status"], "error")
+        self.assertEqual(agents["agent-b"]["last_error"], "Self-service command exited with return code 7.")
+        self.assertEqual(stopped["recent_events"][-1]["offline"]["expected"], 2)
+        self.assertEqual(stopped["recent_events"][-1]["offline"]["offline"], 1)
+        self.assertEqual(stopped["recent_events"][-1]["offline"]["skipped"], 1)
+        self.assertEqual(stopped["recent_events"][-1]["offline"]["offline_agent_ids"], ["agent-a"])
+        self.assertEqual(
+            stopped["recent_events"][-1]["offline"]["attention"],
+            [{"agent_id": "agent-b", "status": "preserved_error"}],
+        )
+        self.assertEqual(events[-1]["event_type"], "error")
+        self.assertEqual(events[-1]["offline"]["offline_agent_ids"], ["agent-a"])
+        self.assertEqual(events[-1]["offline"]["attention"], [{"agent_id": "agent-b", "status": "preserved_error"}])
 
     def test_stop_group_does_not_offline_manifest_agent_from_another_meeting(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -3487,9 +3556,18 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
                 config_path=config_path,
                 server="http://room.local",
                 group_id="crew",
+                meeting_id="meeting-1",
                 auto_restart=True,
                 max_restarts=1,
                 restart_backoff_seconds=30,
+            )
+            connect_live_agent(root, {"agent_id": "a", "meeting_id": "meeting-1", "status": "online"}, now=current_time["value"])
+            heartbeat_live_agent(
+                root,
+                "a",
+                status="error",
+                metadata={"last_error": "Self-service command exited with return code 2."},
+                now=current_time["value"],
             )
             processes[0].returncode = 2
             supervisor.list_groups()
@@ -3497,9 +3575,13 @@ class LiveAgentProcessSupervisorTests(unittest.TestCase):
             stopped = supervisor.stop_group("crew")
             current_time["value"] += timedelta(seconds=31)
             after_due = supervisor.list_groups()
+            agents = {str(agent["agent_id"]): agent for agent in read_live_agents(root, now=current_time["value"])}
 
         self.assertEqual(stopped["status"], "stopped")
         self.assertEqual(stopped["next_restart_at"], "")
+        self.assertEqual(stopped["offline"]["offline_agent_ids"], ["a"])
+        self.assertEqual(stopped["offline"]["attention"], [])
+        self.assertEqual(agents["a"]["status"], "offline")
         self.assertEqual(after_due[0]["status"], "stopped")
         self.assertEqual(len(processes), 1)
 
