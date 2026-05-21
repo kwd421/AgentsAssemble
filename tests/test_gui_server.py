@@ -5862,12 +5862,15 @@ class GuiServerTests(unittest.TestCase):
                     payload = json.loads(response.read().decode("utf-8"))
                 with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents", timeout=4) as response:
                     listed = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents?safe=0", timeout=4) as response:
+                    explicit_raw = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
 
             self.assertEqual(payload["agent"]["agent_id"], "gemini-cli")
             self.assertEqual(listed["agents"][0]["session_id"], "gemini-session")
+            self.assertEqual(explicit_raw["agents"][0]["session_id"], "gemini-session")
             self.assertIsInstance(listed["agents"][0]["heartbeat_age_seconds"], int)
             self.assertGreaterEqual(listed["agents"][0]["heartbeat_age_seconds"], 0)
             self.assertEqual(listed["agents"][0]["stale_after_seconds"], 180)
@@ -5930,6 +5933,112 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual([agent["agent_id"] for agent in listed["agents"]], ["agent-a"])
             self.assertEqual([agent["agent_id"] for agent in meeting_working["agents"]], ["agent-a"])
+
+    def test_live_agent_http_endpoint_safe_projection_redacts_roster_fields(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "remote_bridge",
+                    "connection_kind": "remote_bridge",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-session",
+                    "endpoint": "http://secret.local:8777/bridge",
+                    "last_error": "token=secret-token config /Users/seinel/private/live-agents.json",
+                },
+            )
+            state_path = root / "live_agents.json"
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            state["agents"][0]["auth_ref"] = "env:SECRET_TOKEN"
+            state["agents"][0]["config_path"] = "/Users/seinel/private/live-agents.json"
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents?safe=1", timeout=4) as response:
+                    listed = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            agent = listed["agents"][0]
+            self.assertEqual(agent["agent_id"], "agent-a")
+            self.assertEqual(agent["meeting_id"], "resident-m1")
+            self.assertEqual(agent["last_error"], "Live-agent presence error details redacted.")
+            self.assertNotIn("session_id", agent)
+            self.assertNotIn("endpoint", agent)
+            self.assertNotIn("auth_ref", agent)
+            self.assertNotIn("config_path", agent)
+            encoded = json.dumps(listed)
+            self.assertNotIn("secret.local", encoded)
+            self.assertNotIn("secret-token", encoded)
+            self.assertNotIn("private-session", encoded)
+            self.assertNotIn("live-agents.json", encoded)
+
+    def test_live_agent_http_endpoint_safe_projection_combines_with_filters(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-a",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-b",
+                    "display_name": "Agent B",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m2",
+                    "session_id": "private-b",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-c",
+                    "display_name": "Agent C",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-c",
+                },
+            )
+            heartbeat_live_agent(root, "agent-a", status="working")
+            heartbeat_live_agent(root, "agent-b", status="working")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    (
+                        f"http://127.0.0.1:{server.server_port}/api/live-agents"
+                        "?safe=1&meeting_id=resident-m1"
+                        "&agent_id=agent-a&agent_id=agent-c"
+                        "&status=online&status=working"
+                    ),
+                    timeout=4,
+                ) as response:
+                    listed = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual([agent["agent_id"] for agent in listed["agents"]], ["agent-a", "agent-c"])
+            self.assertEqual([agent["status"] for agent in listed["agents"]], ["working", "online"])
+            self.assertNotIn("session_id", listed["agents"][0])
+            self.assertNotIn("session_id", listed["agents"][1])
 
     def test_live_agent_http_endpoint_filters_inferred_stale_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:

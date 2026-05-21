@@ -293,6 +293,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("live-agent list --require-match", doc)
         self.assertIn("live-agent list --require-all-agents", doc)
         self.assertIn("meeting_id, agent_id, and status query filters", doc)
+        self.assertIn("/api/live-agents?safe=1", doc)
+        self.assertIn("safe roster projection", doc)
         self.assertIn("heartbeat_age_seconds", doc)
         self.assertIn("stale_after_seconds", doc)
         self.assertIn("last_observed_live_event_id", doc)

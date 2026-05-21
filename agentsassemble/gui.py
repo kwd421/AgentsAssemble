@@ -36,6 +36,7 @@ from agentsassemble.live_agent_discovery import (
 )
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_runner import load_group_configs
+from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operation_history
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
@@ -766,45 +767,19 @@ def live_agents_payload(
     meeting_id: str = "",
     agent_ids: list[str] | None = None,
     statuses: list[str] | None = None,
+    safe: bool = False,
 ) -> dict[str, object]:
-    return {
-        "agents": _filter_live_agent_roster(
+    payload = {
+        "agents": filter_live_agent_roster(
             read_live_agents(output_root),
             meeting_id=meeting_id,
             agent_ids=agent_ids or [],
             statuses=statuses or [],
         )
     }
-
-
-def _filter_live_agent_roster(
-    agents: list[dict[str, object]],
-    *,
-    meeting_id: str = "",
-    agent_ids: list[str],
-    statuses: list[str],
-) -> list[dict[str, object]]:
-    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
-    clean_agent_ids = {
-        clean_lobby_text(agent_id, limit=64)
-        for agent_id in agent_ids
-        if clean_lobby_text(agent_id, limit=64)
-    }
-    clean_statuses = {
-        clean_lobby_text(status, limit=32)
-        for status in statuses
-        if clean_lobby_text(status, limit=32)
-    }
-    filtered = []
-    for agent in agents:
-        if clean_meeting_id and str(agent.get("meeting_id") or "") != clean_meeting_id:
-            continue
-        if clean_agent_ids and str(agent.get("agent_id") or "") not in clean_agent_ids:
-            continue
-        if clean_statuses and str(agent.get("status") or "") not in clean_statuses:
-            continue
-        filtered.append(agent)
-    return filtered
+    if safe:
+        return safe_live_agent_roster_payload(payload)
+    return payload
 
 
 def live_agent_operations_payload(
@@ -5327,6 +5302,7 @@ def _make_handler(
                         meeting_id=str(query.get("meeting_id", [""])[0] or ""),
                         agent_ids=query.get("agent_id", []),
                         statuses=query.get("status", []),
+                        safe=_payload_bool(query.get("safe", [""])[0]),
                     )
                 )
                 return

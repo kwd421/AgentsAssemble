@@ -4452,6 +4452,40 @@ The list command now sends `meeting_id`, repeatable `agent_id`, and repeatable `
 
 ---
 
+### Task 128: Safe Live-Agent Roster API Projection
+
+**Goal:** Let terminal wrappers and external local tools read live-agent presence over HTTP without receiving raw local session, endpoint, config, or credential-adjacent fields.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Add: `agentsassemble/live_agent_roster.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED safe projection coverage**
+
+Cover `GET /api/live-agents?safe=1`, redaction of sensitive roster fields, composition with `meeting_id`, repeated `agent_id`, and `status` filters, and CLI list URL construction that requests the safe projection by default.
+
+- [x] **Step 2: Add shared roster projection policy**
+
+`agentsassemble/live_agent_roster.py` now owns the allowlisted safe roster fields, numeric coercion, text/error redaction, and target filtering policy so CLI and GUI server behavior do not drift.
+
+- [x] **Step 3: Wire API and CLI safe reads**
+
+The GUI server keeps raw `/api/live-agents` compatibility, adds `safe=1` for the projected HTTP response, and `assemble live-agent list` now requests `safe=1` while still applying its local safe projection before printing.
+
+- [x] **Step 4: Document HTTP usage**
+
+Operator docs now tell direct HTTP wrappers to prefer `/api/live-agents?safe=1` and describe raw `/api/live-agents` as a legacy/local GUI compatibility surface.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
