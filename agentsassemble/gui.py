@@ -4875,11 +4875,15 @@ def _make_handler(
                 return
             session_run_pause_id = _live_agent_session_run_action_path(parsed.path, "pause")
             if session_run_pause_id is not None or parsed.path == "/api/live-agent-session-runs/pause":
-                self._handle_session_run_pause_resume("pause", session_run_pause_id)
+                self._handle_session_run_action("pause", session_run_pause_id)
                 return
             session_run_resume_id = _live_agent_session_run_action_path(parsed.path, "resume")
             if session_run_resume_id is not None or parsed.path == "/api/live-agent-session-runs/resume":
-                self._handle_session_run_pause_resume("resume", session_run_resume_id)
+                self._handle_session_run_action("resume", session_run_resume_id)
+                return
+            session_run_stop_id = _live_agent_session_run_action_path(parsed.path, "stop")
+            if session_run_stop_id is not None or parsed.path == "/api/live-agent-session-runs/stop":
+                self._handle_session_run_action("stop", session_run_stop_id)
                 return
             session_run_retry_now_id = _live_agent_session_run_action_path(parsed.path, "retry-now")
             if session_run_retry_now_id is not None or parsed.path == "/api/live-agent-session-runs/retry-now":
@@ -6345,7 +6349,7 @@ def _make_handler(
         def _local_server_url(self) -> str:
             return _local_server_url(self.server.server_address)
 
-        def _handle_session_run_pause_resume(self, command: str, path_run_id: str | None) -> None:
+        def _handle_session_run_action(self, command: str, path_run_id: str | None) -> None:
             operation = f"session_run.{command}"
             payload = self._operation_json_payload(operation=operation, target_id=path_run_id or "")
             if payload is None:
@@ -6360,10 +6364,16 @@ def _make_handler(
                     session_run = live_agent_session_run_controller.pause_run(run_id)
                     response_status = "paused"
                     summary = "paused durable live-agent session run"
-                else:
+                elif command == "resume":
                     session_run = live_agent_session_run_controller.resume_run(run_id)
                     response_status = "resumed"
                     summary = "resumed durable live-agent session run"
+                elif command == "stop":
+                    session_run = live_agent_session_run_controller.stop_run(run_id, reason="operator_stop")
+                    response_status = "stopped"
+                    summary = "stopped durable live-agent session run"
+                else:
+                    raise ValueError(f"Unsupported session-run action: {command}")
             except (OSError, ValueError) as error:
                 safe_error = _session_ensure_error_message(error)
                 failed_details = {"session_run_id": run_id}

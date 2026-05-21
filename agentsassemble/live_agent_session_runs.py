@@ -171,6 +171,14 @@ class LiveAgentSessionRunController:
             self._write_records()
             return _public_record(record)
 
+    def stop_run(self, run_id: str, *, reason: str = "operator_stop") -> dict[str, object]:
+        with self._lock:
+            record = self._record_or_raise(run_id)
+            if str(record.get("status") or "") not in TERMINAL_SESSION_RUN_STATUSES:
+                self._stop_record(record, reason=reason)
+                self._write_records()
+            return _public_record(record)
+
     def mark_matching_stopped(self, *, meeting_id: str, group_id: str, reason: str = "operator_stop") -> list[dict[str, object]]:
         clean_meeting_id = _safe_identity(meeting_id)
         clean_group_id = _safe_identity(group_id)
@@ -185,13 +193,7 @@ class LiveAgentSessionRunController:
                     continue
                 if clean_group_id and _record_group_id(record) != clean_group_id:
                     continue
-                now = self.now_fn().isoformat()
-                record["status"] = "stopped"
-                record["active"] = False
-                record["phase"] = _safe_phase(reason) or "stopped"
-                self._clear_reconcile_retry(record)
-                record["updated_at"] = now
-                record["finished_at"] = now
+                self._stop_record(record, reason=reason)
                 stopped.append(_public_record(record))
             if stopped:
                 self._write_records()
@@ -356,6 +358,15 @@ class LiveAgentSessionRunController:
         record["finished_at"] = now
         self._write_records()
         return _public_record(record)
+
+    def _stop_record(self, record: dict[str, object], *, reason: str) -> None:
+        now = self.now_fn().isoformat()
+        record["status"] = "stopped"
+        record["active"] = False
+        record["phase"] = _safe_phase(reason) or "stopped"
+        self._clear_reconcile_retry(record)
+        record["updated_at"] = now
+        record["finished_at"] = now
 
     def list_runs(
         self,

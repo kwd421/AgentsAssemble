@@ -174,6 +174,47 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
         self.assertEqual(runs[stopped["run_id"]]["status"], "stopped")
         self.assertFalse(runs[stopped["run_id"]]["active"])
 
+    def test_stop_run_marks_exact_run_stopped_without_sweeping_matching_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            target = controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            sibling = controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            controller.finish_run(
+                sibling["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+
+            stopped = controller.stop_run(target["run_id"], reason="operator_stop")
+            stored = {item["run_id"]: item for item in controller.list_runs()}
+
+        self.assertEqual(stopped["status"], "stopped")
+        self.assertFalse(stopped["active"])
+        self.assertEqual(stopped["phase"], "operator_stop")
+        self.assertEqual(stored[target["run_id"]]["status"], "stopped")
+        self.assertEqual(stored[sibling["run_id"]]["status"], "degraded")
+        self.assertTrue(stored[sibling["run_id"]]["active"])
+
     def test_finish_run_consumes_successful_post_ready_request_fields(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

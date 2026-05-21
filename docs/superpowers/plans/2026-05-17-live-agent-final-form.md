@@ -4103,6 +4103,58 @@ Document the meeting/group form, collection endpoints, latest matching run selec
 
 ---
 
+### Task 116: Session-Run Stop Target
+
+**Goal:** Let operators and automation stop one durable session-run intent without stopping the resident process group or sweeping every matching run.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_session_runs.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_session_runs.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED exact and meeting/group stop coverage**
+
+Cover `stop_run()` stopping only the exact durable run, parser acceptance for `session-runs stop --meeting-id <id> --group-id <id>`, CLI exact run-id precedence, GUI/API collection stop resolving the latest matching run, and exact run-id precedence over meeting/group payloads.
+
+- [x] **Step 2: Reuse the session-run action target surface**
+
+Add exact `stop_run(run_id)` to the controller. Reuse the existing CLI/API target resolver so exact `--run-id` posts to `/<run_id>/stop`, while meeting/group posts to `/stop` and resolves the latest matching durable run before mutation.
+
+- [x] **Step 3: Document stop semantics**
+
+Document that `session-runs stop` stops only the selected durable run, records sanitized `session_run.stop` evidence, does not stop the process group, does not sweep older matching runs, and does not mark roster rows offline.
+
+---
+
+### Task 117: Session-Run Monitor Liveness Surface
+
+**Goal:** Make the backend durable session-run monitor itself visible through health/operator surfaces, so multi-hour resident sessions can prove that stored intent is actively being watched.
+
+**Status:** Planned next slice.
+
+**Candidate files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Optional test: `tests/test_cli_timeout.py`
+
+**Candidate checks:**
+- Health includes monitor status after a monitor tick.
+- Monitor failure records a safe `last_error_type` without raw exception details.
+- Healthy monitor ticks do not append operation spam.
+- GUI renders compact monitor evidence near existing health/process status.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -9505,6 +9505,108 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(operations_payload["operations"][-2]["target_id"], target["run_id"])
         self.assertEqual(operations_payload["operations"][-1]["target_id"], target["run_id"])
 
+    def test_live_agent_session_run_stop_api_resolves_latest_matching_meeting_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_run_controller = LiveAgentSessionRunController(root)
+            older_matching = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                older_matching["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            target = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, session_run_controller=session_run_controller),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/stop",
+                    data=json.dumps({"meeting_id": "resident-m1", "group_id": "resident-main"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    stop_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(stop_payload["status"], "stopped")
+        self.assertEqual(stop_payload["session_run"]["run_id"], target["run_id"])
+        self.assertEqual(stop_payload["session_run"]["status"], "stopped")
+        self.assertEqual(session_run_controller.get_run(older_matching["run_id"])["status"], "degraded")
+        self.assertEqual(operations_payload["operations"][-1]["operation"], "session_run.stop")
+        self.assertEqual(operations_payload["operations"][-1]["target_id"], target["run_id"])
+
+    def test_live_agent_session_run_stop_api_path_stops_exact_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_run_controller = LiveAgentSessionRunController(root)
+            target = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, session_run_controller=session_run_controller),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/{target['run_id']}/stop",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    stop_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(stop_payload["status"], "stopped")
+        self.assertEqual(stop_payload["session_run"]["run_id"], target["run_id"])
+        self.assertEqual(stop_payload["session_run"]["status"], "stopped")
+        self.assertEqual(operations_payload["operations"][-1]["operation"], "session_run.stop")
+        self.assertEqual(operations_payload["operations"][-1]["details"]["session_run_id"], target["run_id"])
+
     def test_live_agent_session_run_pause_api_run_id_takes_precedence_over_meeting_group(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -9627,6 +9729,67 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(resume_payload["session_run"]["meeting_id"], "resident-m2")
         self.assertEqual(resume_payload["session_run"]["group_id"], "resident-alt")
         self.assertEqual(session_run_controller.get_run(matching["run_id"])["status"], "paused")
+
+    def test_live_agent_session_run_stop_api_run_id_takes_precedence_over_meeting_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_run_controller = LiveAgentSessionRunController(root)
+            exact = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m2", "group_id": "resident-alt"},
+            )
+            session_run_controller.finish_run(
+                exact["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m2",
+                    "group_id": "resident-alt",
+                    "action": "recover",
+                },
+            )
+            matching = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                matching["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, session_run_controller=session_run_controller),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/stop",
+                    data=json.dumps(
+                        {
+                            "run_id": exact["run_id"],
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    stop_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(stop_payload["status"], "stopped")
+        self.assertEqual(stop_payload["session_run"]["run_id"], exact["run_id"])
+        self.assertEqual(stop_payload["session_run"]["meeting_id"], "resident-m2")
+        self.assertEqual(stop_payload["session_run"]["group_id"], "resident-alt")
+        self.assertEqual(session_run_controller.get_run(matching["run_id"])["status"], "degraded")
 
     def test_live_agent_session_run_pause_resume_api_uses_latest_before_eligibility_checks(self):
         with tempfile.TemporaryDirectory() as temp_dir:

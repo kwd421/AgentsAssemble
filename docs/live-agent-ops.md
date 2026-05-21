@@ -1334,6 +1334,19 @@ python3 -m agentsassemble.cli live-agent session-runs resume \
   --group-id local-cli-group
 ```
 
+Use `assemble live-agent session-runs stop` when one durable session intent should be removed from automatic reconciliation without stopping its resident process group. It follows the same target contract as retry/pause/resume: `--run-id` posts to `/api/live-agent-session-runs/<run_id>/stop`, while `--meeting-id` plus `--group-id` posts to `/api/live-agent-session-runs/stop` and resolves the latest matching meeting/group session-run. Exact `run_id` wins if both target forms are supplied. This stops only the selected durable run; it does not sweep older matching runs and does not mark roster rows offline. The API records sanitized `session_run.stop` evidence with the safe run id, meeting id, group id, run status, and phase:
+
+```bash
+python3 -m agentsassemble.cli live-agent session-runs stop \
+  --server http://127.0.0.1:8765 \
+  --run-id <session-run-id>
+
+python3 -m agentsassemble.cli live-agent session-runs stop \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-m1 \
+  --group-id local-cli-group
+```
+
 Use `assemble live-agent session-runs wait` when another script or agent needs a durable session-run status gate after starting a long-running ensure operation from the GUI, CLI, or auto-join path:
 
 ```bash

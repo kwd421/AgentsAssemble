@@ -982,6 +982,15 @@ def build_parser() -> argparse.ArgumentParser:
     live_session_runs_resume.add_argument("--meeting-id", default="", help="Meeting id for the latest matching durable session run.")
     live_session_runs_resume.add_argument("--group-id", default="", help="Group id for the latest matching durable session run.")
     live_session_runs_resume.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON resume payload.")
+    live_session_runs_stop = live_session_runs_subparsers.add_parser(
+        "stop",
+        parents=[live_server],
+        help="Stop a durable live-agent session run without stopping its process group.",
+    )
+    live_session_runs_stop.add_argument("--run-id", default="", help="Durable session-run id to stop.")
+    live_session_runs_stop.add_argument("--meeting-id", default="", help="Meeting id for the latest matching durable session run.")
+    live_session_runs_stop.add_argument("--group-id", default="", help="Group id for the latest matching durable session run.")
+    live_session_runs_stop.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON stop payload.")
     live_session_runs_wait = live_session_runs_subparsers.add_parser(
         "wait",
         parents=[live_server],
@@ -3267,7 +3276,7 @@ def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
         )
         _print_live_agent_session_runs_retry_now_payload(payload, as_json=args.as_json)
         return 0
-    if args.live_agent_session_runs_command in {"pause", "resume"}:
+    if args.live_agent_session_runs_command in {"pause", "resume", "stop"}:
         command = str(args.live_agent_session_runs_command)
         _validate_live_agent_session_runs_action_target(args, command)
         run_id = str(args.run_id or "").strip()
@@ -3288,7 +3297,7 @@ def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
             payload=request_payload,
             timeout_seconds=10.0,
         )
-        _print_live_agent_session_runs_pause_resume_payload(payload, as_json=args.as_json, command=command)
+        _print_live_agent_session_runs_action_payload(payload, as_json=args.as_json, command=command)
         return 0
     if args.live_agent_session_runs_command == "wait":
         return _run_live_agent_session_runs_wait(args)
@@ -3706,7 +3715,7 @@ def _print_live_agent_session_runs_retry_now_payload(payload: dict[str, object],
     print(f"{verb} live-agent session run retry{suffix}")
 
 
-def _print_live_agent_session_runs_pause_resume_payload(
+def _print_live_agent_session_runs_action_payload(
     payload: dict[str, object],
     *,
     as_json: bool,
@@ -3717,7 +3726,7 @@ def _print_live_agent_session_runs_pause_resume_payload(
         return
     run = payload.get("session_run") if isinstance(payload.get("session_run"), dict) else {}
     suffix = f": {_format_live_agent_session_run(run)}" if run else ""
-    verb = "Paused" if command == "pause" else "Resumed"
+    verb = {"pause": "Paused", "resume": "Resumed", "stop": "Stopped"}.get(command, command.title())
     print(f"{verb} live-agent session run{suffix}")
 
 
