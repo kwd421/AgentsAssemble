@@ -1944,7 +1944,12 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
             request_json=_request_json,
             sleep_fn=time.sleep,
         )
-        replies = runner.run()
+        restore_signal_handlers = lambda: None
+        try:
+            restore_signal_handlers = _install_resident_shutdown_signal_handlers(runner.close)
+            replies = runner.run()
+        finally:
+            restore_signal_handlers()
         print(f"Self-service resident agent stopped after posting {replies} parent-managed replies")
         return 0
     command_runner = _command_runner_for_config(config)
@@ -1955,9 +1960,12 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
         sleep_fn=time.sleep,
     )
     replies = 0
+    restore_signal_handlers = lambda: None
     try:
+        restore_signal_handlers = _install_resident_shutdown_signal_handlers(lambda: _close_command_runner(command_runner))
         replies = runner.run()
     finally:
+        restore_signal_handlers()
         _close_command_runner(command_runner)
     print(f"Resident agent stopped after posting {replies} replies")
     return 0
@@ -1984,6 +1992,10 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
             runners_to_close = list(active_command_runners)
         for active_runner in runners_to_close:
             _close_command_runner(active_runner)
+
+    def shutdown_group() -> None:
+        stop_event.set()
+        close_active_command_runners()
 
     def run_agent(config) -> None:
         command_runner = None
@@ -2014,14 +2026,12 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
                 results[config.agent_id] = runner.run()
         except BaseException as error:  # pragma: no cover - surfaced through CLI status in integration use
             if isinstance(error, KeyboardInterrupt):
-                stop_event.set()
-                close_active_command_runners()
+                shutdown_group()
                 return
             if stop_event.is_set():
                 return
             errors[config.agent_id] = str(error)
-            stop_event.set()
-            close_active_command_runners()
+            shutdown_group()
         finally:
             if command_runner is not None:
                 _close_command_runner(command_runner)
@@ -2030,16 +2040,19 @@ def _run_live_agent_group(args: argparse.Namespace) -> int:
                         active_command_runners.remove(command_runner)
 
     threads = [threading.Thread(target=run_agent, args=(config,), daemon=True) for config in configs]
+    restore_signal_handlers = lambda: None
     try:
+        restore_signal_handlers = _install_resident_shutdown_signal_handlers(shutdown_group)
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
     except KeyboardInterrupt:
-        stop_event.set()
-        close_active_command_runners()
+        shutdown_group()
         for thread in threads:
             thread.join(timeout=5)
+    finally:
+        restore_signal_handlers()
     if errors:
         for agent_id, error in errors.items():
             print(f"{agent_id}: {error}", file=sys.stderr)
@@ -4423,6 +4436,33 @@ def _supports_process_groups() -> bool:
 def _stop_signal(name: str) -> int | None:
     value = getattr(signal, name, None)
     return value if isinstance(value, int) else None
+
+
+def _install_resident_shutdown_signal_handlers(on_shutdown):
+    sigterm = _stop_signal("SIGTERM")
+    if sigterm is None or threading.current_thread() is not threading.main_thread():
+        return lambda: None
+
+    previous_handlers = {}
+
+    def handle_shutdown(signum, frame):
+        del signum, frame
+        on_shutdown()
+        raise KeyboardInterrupt()
+
+    try:
+        previous_handlers[sigterm] = signal.signal(sigterm, handle_shutdown)
+    except (OSError, RuntimeError, ValueError):
+        return lambda: None
+
+    def restore_signal_handlers() -> None:
+        for signum, previous_handler in previous_handlers.items():
+            try:
+                signal.signal(signum, previous_handler)
+            except (OSError, RuntimeError, ValueError):
+                pass
+
+    return restore_signal_handlers
 
 
 def _validate_resident_config(config: ResidentAgentConfig) -> None:

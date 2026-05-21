@@ -9466,6 +9466,184 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(process.terminated)
         self.assertFalse(process.killed)
 
+    def test_resident_shutdown_signal_handler_closes_and_raises_keyboard_interrupt(self):
+        sigterm = getattr(signal, "SIGTERM", None)
+        if sigterm is None:
+            self.skipTest("SIGTERM is unavailable on this platform")
+
+        installed_handlers = {}
+        previous_handlers = {}
+        restored_handlers = []
+
+        def fake_signal(signum, handler):
+            previous = previous_handlers.setdefault(signum, object())
+            if signum in installed_handlers:
+                restored_handlers.append((signum, handler))
+            else:
+                installed_handlers[signum] = handler
+            return previous
+
+        closed = []
+        with patch("agentsassemble.cli.signal.signal", side_effect=fake_signal):
+            restore = cli_module._install_resident_shutdown_signal_handlers(lambda: closed.append(True))
+            self.assertIn(sigterm, installed_handlers)
+            with self.assertRaises(KeyboardInterrupt):
+                installed_handlers[sigterm](sigterm, None)
+            restore()
+
+        self.assertEqual(closed, [True])
+        self.assertIn((sigterm, previous_handlers[sigterm]), restored_handlers)
+
+    def test_live_agent_run_self_service_shutdown_signal_closes_supervisor(self):
+        installed_shutdown = {}
+        restored = threading.Event()
+        supervisors = []
+
+        class SignalAwareSupervisor:
+            def __init__(self, *args, **kwargs):
+                del args, kwargs
+                self.closed = False
+                supervisors.append(self)
+
+            def run(self):
+                installed_shutdown["callback"]()
+                raise KeyboardInterrupt()
+
+            def close(self):
+                self.closed = True
+
+        def install_shutdown_handler(callback):
+            installed_shutdown["callback"] = callback
+            return lambda: restored.set()
+
+        with (
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
+            patch("agentsassemble.cli._SelfServiceResidentSupervisor", SignalAwareSupervisor),
+            patch("agentsassemble.cli._install_resident_shutdown_signal_handlers", side_effect=install_shutdown_handler, create=True),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", StringIO()),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                main(
+                    [
+                        "live-agent",
+                        "run",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "self-service-signal",
+                        "--display-name",
+                        "Self Service Signal",
+                        "--connection-kind",
+                        "self_service",
+                        "--poll-interval",
+                        "0",
+                        "--command",
+                        "fake-provider",
+                    ]
+                )
+
+        self.assertTrue(supervisors)
+        self.assertTrue(supervisors[0].closed)
+        self.assertTrue(restored.is_set())
+
+    def test_live_agent_run_group_shutdown_signal_closes_active_runners(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="signal-agent",
+                display_name="Signal Agent",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            ),
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="sibling-blocked",
+                display_name="Sibling Blocked",
+                provider_kind="local_cli",
+                connection_kind="local_cli",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=["fake"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=0,
+            ),
+        ]
+        sibling_started = threading.Event()
+        sibling_closed_while_running = threading.Event()
+        installed_shutdown = {}
+        restored = threading.Event()
+
+        class CloseRecordingRunner:
+            def __init__(self, agent_id):
+                self.agent_id = agent_id
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        class SignalInterruptingRunner:
+            def __init__(self, config, *, command_runner, **kwargs):
+                del kwargs
+                self.config = config
+                self.command_runner = command_runner
+
+            def run(self):
+                if self.config.agent_id == "signal-agent":
+                    if not sibling_started.wait(timeout=1):
+                        raise AssertionError("secondary runner did not start")
+                    installed_shutdown["callback"]()
+                    raise KeyboardInterrupt()
+                sibling_started.set()
+                deadline = time.time() + 0.5
+                while time.time() < deadline:
+                    if self.command_runner.closed:
+                        sibling_closed_while_running.set()
+                        return 0
+                    time.sleep(0.01)
+                return 0
+
+        def command_runner_for_config(config):
+            return CloseRecordingRunner(config.agent_id)
+
+        def install_shutdown_handler(callback):
+            installed_shutdown["callback"] = callback
+            return lambda: restored.set()
+
+        with (
+            patch("agentsassemble.cli.load_group_configs", return_value=configs),
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
+            patch("agentsassemble.cli._command_runner_for_config", side_effect=command_runner_for_config),
+            patch("agentsassemble.cli._install_resident_shutdown_signal_handlers", side_effect=install_shutdown_handler, create=True),
+            patch("agentsassemble.cli.LiveAgentRunner", SignalInterruptingRunner),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", StringIO()),
+        ):
+            exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(sibling_closed_while_running.is_set())
+        self.assertTrue(restored.is_set())
+
     def test_live_agent_run_group_suppresses_secondary_shutdown_errors(self):
         configs = [
             ResidentAgentConfig(
