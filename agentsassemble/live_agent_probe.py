@@ -10,6 +10,7 @@ from agentsassemble.meeting_events import append_lobby_event_to_file, read_lobby
 MAX_PROBE_TIMEOUT_SECONDS = 60.0
 DEFAULT_PROBE_TIMEOUT_SECONDS = 12.0
 DEFAULT_PROBE_POLL_INTERVAL = 0.05
+PROBE_REPLY_EVENT_TAIL_LIMIT = 1000
 
 
 def run_live_agent_probe(
@@ -79,7 +80,7 @@ def _wait_for_probe_reply(
     deadline = time.monotonic() + timeout_seconds
     while True:
         reply = _matching_probe_reply(
-            read_lobby_events(output_root / "lobby.jsonl"),
+            read_lobby_events(output_root / "lobby.jsonl", limit=PROBE_REPLY_EVENT_TAIL_LIMIT),
             agent_id=agent_id,
             source_event_id=source_event_id,
         )

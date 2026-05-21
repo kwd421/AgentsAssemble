@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agentsassemble.live_agent_probe import run_live_agent_probe
+from agentsassemble.live_agent_probe import PROBE_REPLY_EVENT_TAIL_LIMIT, run_live_agent_probe
 from agentsassemble.meeting_events import append_lobby_event_to_file, read_lobby_events
 
 
@@ -170,6 +170,63 @@ class LiveAgentProbeTests(unittest.TestCase):
         self.assertEqual(result["agent_id"], "agent-a")
         self.assertIn("source_event_id", result)
         self.assertNotIn("reply", result)
+
+    def test_probe_finds_reply_that_default_lobby_tail_would_miss_in_busy_room(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "status": "online",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def reply_then_add_busy_tail(_seconds):
+                events = read_lobby_events(root / "lobby.jsonl")
+                probe_event_id = events[-1]["id"]
+                append_lobby_event_to_file(
+                    root / "lobby.jsonl",
+                    {
+                        "name": "Agent A",
+                        "side": "other-agent",
+                        "kind": "message",
+                        "message": "probe response before busy tail",
+                        "actor_id": "agent-a",
+                        "source_event_id": probe_event_id,
+                    },
+                    live_agent_endpoint=True,
+                )
+                for index in range(PROBE_REPLY_EVENT_TAIL_LIMIT - 1):
+                    append_lobby_event_to_file(
+                        root / "lobby.jsonl",
+                        {
+                            "name": "Busy Agent",
+                            "side": "other-agent",
+                            "kind": "message",
+                            "message": f"busy chatter {index}",
+                            "actor_id": f"busy-{index}",
+                        },
+                        live_agent_endpoint=True,
+                    )
+
+            result = run_live_agent_probe(
+                root,
+                "agent-a",
+                timeout_seconds=0.01,
+                poll_interval=0.01,
+                sleep_fn=reply_then_add_busy_tail,
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["reply"]["message"], "probe response before busy tail")
 
     def test_probe_skips_non_live_agent_without_appending_probe_event(self):
         with tempfile.TemporaryDirectory() as temp_dir:
