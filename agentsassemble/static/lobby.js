@@ -239,6 +239,7 @@ function readLiveAgentProcessDraft(lobby) {
     sessionProbeBoundAgents: Boolean(form.querySelector("#live-agent-session-probe-bound-agents")?.checked),
     sessionProbeTimeout: form.querySelector("#live-agent-session-probe-timeout")?.value ?? "",
     discoverySessionBundle: Boolean(form.querySelector("#live-agent-discovery-session-bundle")?.checked),
+    realProviderApproval: Boolean(form.querySelector("#live-agent-auto-join-real-provider-approval")?.checked),
     autoRestart: Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked),
     officialRoundSmoke: Boolean(form.querySelector("#live-agent-readiness-official-round")?.checked),
     sessionSmoke: Boolean(form.querySelector("#live-agent-readiness-session-smoke")?.checked),
@@ -277,6 +278,7 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const sessionProbeBoundAgents = lobby.querySelector("#live-agent-session-probe-bound-agents");
   const sessionProbeTimeout = lobby.querySelector("#live-agent-session-probe-timeout");
   const discoverySessionBundle = lobby.querySelector("#live-agent-discovery-session-bundle");
+  const realProviderApproval = lobby.querySelector("#live-agent-auto-join-real-provider-approval");
   const autoRestart = lobby.querySelector("#live-agent-process-auto-restart");
   const officialRoundSmoke = lobby.querySelector("#live-agent-readiness-official-round");
   const sessionSmoke = lobby.querySelector("#live-agent-readiness-session-smoke");
@@ -299,6 +301,7 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   if (sessionProbeBoundAgents) sessionProbeBoundAgents.checked = draft.sessionProbeBoundAgents;
   if (sessionProbeTimeout) sessionProbeTimeout.value = draft.sessionProbeTimeout;
   if (discoverySessionBundle) discoverySessionBundle.checked = draft.discoverySessionBundle;
+  if (realProviderApproval) realProviderApproval.checked = draft.realProviderApproval;
   if (autoRestart) autoRestart.checked = draft.autoRestart;
   if (officialRoundSmoke) officialRoundSmoke.checked = draft.officialRoundSmoke;
   if (sessionSmoke) sessionSmoke.checked = draft.sessionSmoke;
@@ -584,6 +587,10 @@ function renderLiveAgentProcessControls() {
         <label class="live-agent-process-options">
           <input id="live-agent-discovery-session-bundle" type="checkbox" checked ${processActionsDisabled ? "disabled" : ""} />
           <span>세션번들</span>
+        </label>
+        <label class="live-agent-process-options">
+          <input id="live-agent-auto-join-real-provider-approval" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+          <span>실사용 CLI 승인</span>
         </label>
         <button type="button" id="live-agent-discover" ${processActionsDisabled ? "disabled" : ""}>CLI발견</button>
         <button type="button" id="live-agent-auto-join" ${processActionsDisabled ? "disabled" : ""}>자동입장</button>
@@ -2076,6 +2083,7 @@ async function runLiveAgentDiscovery(lobby) {
 async function runLiveAgentAutoJoin(lobby) {
   if (liveAgentProcessActionBusy()) return;
   const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
+  const realProviderApproved = lobby.querySelector("#live-agent-auto-join-real-provider-approval")?.checked === true;
   state.liveAgentAutoJoinRunning = true;
   state.liveAgentDiscoveryReport = null;
   state.liveAgentProcessStatus = { message: "자동입장: CLI 발견 중", tone: "info" };
@@ -2096,6 +2104,12 @@ async function runLiveAgentAutoJoin(lobby) {
     const agentCount = Array.isArray(discovery.config?.agents) ? discovery.config.agents.length : 0;
     if (discovery.status !== "ok" || !outputPath) {
       state.liveAgentProcessStatus = { message: `자동입장 중단: discovery ${discovery.status || "unknown"} · ${agentCount} agents`, tone: "error" };
+      return;
+    }
+    if (!realProviderApproved && liveAgentDiscoveryRequiresApproval(discovery)) {
+      const commands = liveAgentDiscoveryApprovalCommands(discovery);
+      const suffix = commands.length ? ` · ${commands.join(", ")}` : "";
+      state.liveAgentProcessStatus = { message: `자동입장 중단: 실사용 CLI 승인 필요${suffix}`, tone: "error" };
       return;
     }
     if (!liveAgentDiscoveryHasSessionBundle(discovery)) {
@@ -2133,6 +2147,20 @@ async function runLiveAgentAutoJoin(lobby) {
     await loadLiveAgentOperations({ background: true, force: true });
     renderLobby({ followLatest: false });
   }
+}
+
+function liveAgentDiscoveryRequiresApproval(discovery) {
+  const discoveries = Array.isArray(discovery?.discoveries) ? discovery.discoveries : [];
+  return discoveries.some((item) => item?.included && item?.requires_approval);
+}
+
+function liveAgentDiscoveryApprovalCommands(discovery) {
+  const discoveries = Array.isArray(discovery?.discoveries) ? discovery.discoveries : [];
+  return discoveries
+    .filter((item) => item?.included && item?.requires_approval)
+    .map((item) => String(item?.command || "").trim())
+    .filter(Boolean)
+    .slice(0, 5);
 }
 
 function liveAgentDiscoveryHasSessionBundle(discovery) {

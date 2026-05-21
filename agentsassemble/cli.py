@@ -648,6 +648,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include a detected legacy Gemini CLI entry in the generated config.",
     )
+    live_auto_join.add_argument(
+        "--approve-real-providers",
+        action="store_true",
+        help="Allow auto-join to start discovered real provider CLIs after discovery and preflight evidence.",
+    )
     live_auto_join.add_argument("--connect-timeout", type=parse_nonnegative_float, default=5.0)
     live_auto_join.add_argument("--wait-timeout", type=parse_nonnegative_float, default=30.0)
     live_auto_join.add_argument("--wait-poll-interval", type=parse_nonnegative_float, default=2.0)
@@ -2286,6 +2291,22 @@ def _run_live_agent_auto_join(args: argparse.Namespace) -> int:
         else:
             print(_format_live_agent_discovery(report, output_path=output_path))
         return 1
+    if _live_agent_discovery_requires_approval(report) and not bool(args.approve_real_providers):
+        result = {
+            "status": "approval_required",
+            "action": "none",
+            "approval_required": {
+                "commands": _live_agent_discovery_approval_commands(report),
+            },
+            "discovery": discovery_payload,
+            "session": {},
+        }
+        if args.as_json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            commands = ", ".join(result["approval_required"]["commands"]) or "real provider CLI"
+            print(f"Auto-join requires --approve-real-providers before starting: {commands}")
+        return 1
     session_bundle = report.get("session_bundle") if isinstance(report.get("session_bundle"), dict) else {}
     ensure_args = argparse.Namespace(**vars(args))
     ensure_args.group_id = str(session_bundle.get("group_id") or "")
@@ -2304,6 +2325,23 @@ def _run_live_agent_auto_join(args: argparse.Namespace) -> int:
     else:
         print(f"Auto-joined via {action}: {_format_live_agent_session_start(response)}")
     return _session_command_exit_code(response)
+
+
+def _live_agent_discovery_requires_approval(report: dict[str, object]) -> bool:
+    discoveries = report.get("discoveries") if isinstance(report.get("discoveries"), list) else []
+    return any(isinstance(item, dict) and item.get("included") and item.get("requires_approval") for item in discoveries)
+
+
+def _live_agent_discovery_approval_commands(report: dict[str, object]) -> list[str]:
+    discoveries = report.get("discoveries") if isinstance(report.get("discoveries"), list) else []
+    commands = []
+    for item in discoveries:
+        if not isinstance(item, dict) or not item.get("included") or not item.get("requires_approval"):
+            continue
+        command = str(item.get("command") or "").strip()
+        if command:
+            commands.append(command)
+    return commands[:5]
 
 
 def _ensure_live_agent_session_run(args: argparse.Namespace) -> tuple[str, dict[str, object]]:

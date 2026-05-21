@@ -284,6 +284,40 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertIn("--meeting-id", ensure)
             self.assertIn("resident-m1", ensure)
 
+    def test_live_agent_auto_join_requires_approval_before_durable_session_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+            stdout = StringIO()
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command == "codex" else None
+
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.cli._request_json", side_effect=AssertionError("approval gate must stop before ensure")),
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "auto-join",
+                        "--server",
+                        "http://room.local",
+                        "--output",
+                        str(output_path),
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 1)
+            self.assertTrue(output_path.exists())
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "approval_required")
+            self.assertEqual(payload["action"], "none")
+            self.assertEqual(payload["approval_required"]["commands"], ["codex"])
+            self.assertEqual(payload["session"], {})
+
     def test_live_agent_auto_join_writes_session_bundle_and_records_durable_session_run(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "live-agents.discovered.json"
@@ -353,6 +387,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                                 "3",
                                 "--wait-poll-interval",
                                 "0.1",
+                                "--approve-real-providers",
                                 "--json",
                             ]
                         )
@@ -459,6 +494,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                                 "--max-rounds",
                                 "3",
                                 "--stop-on-timeout",
+                                "--approve-real-providers",
                                 "--json",
                             ]
                         )
@@ -541,6 +577,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                                 "11",
                                 "--max-rounds",
                                 "3",
+                                "--approve-real-providers",
                                 "--json",
                             ]
                         )
@@ -620,6 +657,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                                 str(output_path),
                                 "--run-remaining-rounds",
                                 "--finalize-after-rounds",
+                                "--approve-real-providers",
                             ]
                         )
 

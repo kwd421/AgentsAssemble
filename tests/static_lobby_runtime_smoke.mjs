@@ -1228,6 +1228,96 @@ test("auto join discovers local CLIs preflights the generated config and records
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
 });
 
+test("auto join stops before preflight when discovered real providers need approval", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  const { document, requests } = installHarness({
+    liveAgentDiscoveryPayload: {
+      status: "ok",
+      written: true,
+      output: ".agentsassemble/live-agents.discovered.local.json",
+      config: {
+        agents: [
+          { agent_id: "claude-local", provider_kind: "claude_code" },
+          { agent_id: "codex-live", provider_kind: "codex_live_session" },
+        ],
+      },
+      discoveries: [
+        { command: "claude", provider_kind: "claude_code", available: true, included: true, requires_approval: true },
+        { command: "codex", provider_kind: "codex_live_session", available: true, included: true, requires_approval: true },
+      ],
+      session_bundle: {
+        live_agent_config_path: ".agentsassemble/live-agents.discovered.local.json",
+        council_config_path: ".agentsassemble/council.discovered.local.json",
+        agent_config_path: ".agentsassemble/agents.discovered.local.json",
+        group_id: "live-agents.discovered.local",
+      },
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  await document.querySelector("#live-agent-auto-join").click();
+
+  assert.equal(liveAgentDiscoveryRequest(requests).jsonBody.session_bundle, true);
+  assert.equal(liveAgentPreflightRequest(requests), undefined);
+  assert.equal(sessionRunEnsureRequest(requests), undefined);
+  assert.equal(state.liveAgentProcessStatus.message, "자동입장 중단: 실사용 CLI 승인 필요 · claude, codex");
+  assert.equal(state.liveAgentProcessStatus.tone, "error");
+});
+
+test("auto join proceeds with explicit real provider approval", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  const { document, requests } = installHarness({
+    liveAgentDiscoveryPayload: {
+      status: "ok",
+      written: true,
+      output: ".agentsassemble/live-agents.discovered.local.json",
+      config: {
+        agents: [{ agent_id: "codex-live", provider_kind: "codex_live_session" }],
+      },
+      discoveries: [
+        { command: "codex", provider_kind: "codex_live_session", available: true, included: true, requires_approval: true },
+      ],
+      session_bundle: {
+        live_agent_config_path: ".agentsassemble/live-agents.discovered.local.json",
+        council_config_path: ".agentsassemble/council.discovered.local.json",
+        agent_config_path: ".agentsassemble/agents.discovered.local.json",
+        group_id: "live-agents.discovered.local",
+      },
+    },
+    liveAgentPreflightPayload: {
+      status: "ok",
+      summary: { agents: 1 },
+      agents: [{ agent_id: "codex-live", status: "ok" }],
+    },
+    sessionRunEnsurePayload: {
+      status: "ready",
+      action: "start",
+      meeting_id: "resident-gui",
+      group_id: "live-agents.discovered.local",
+      connection: { expected: 1, connected: 1, attention: [] },
+      process: { status: "running", attention: [] },
+      session_run: {
+        run_id: "auto-run-approved",
+        action: "ensure",
+        status: "ready",
+        active: true,
+        meeting_id: "resident-gui",
+        group_id: "live-agents.discovered.local",
+      },
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  document.querySelector("#live-agent-auto-join-real-provider-approval").checked = true;
+  await document.querySelector("#live-agent-auto-join").click();
+
+  assert.ok(liveAgentPreflightRequest(requests));
+  assert.ok(sessionRunEnsureRequest(requests));
+  assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 1/1 connected · run auto-run-approved ready");
+});
+
 test("auto join stops before preflight when discovery omits the session bundle", async () => {
   resetState();
   state.payload = { meeting: { meeting_id: "resident-gui" } };
