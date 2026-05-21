@@ -284,7 +284,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertIn("--meeting-id", ensure)
             self.assertIn("resident-m1", ensure)
 
-    def test_live_agent_auto_join_writes_session_bundle_and_ensures_discovered_session(self):
+    def test_live_agent_auto_join_writes_session_bundle_and_records_durable_session_run(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "live-agents.discovered.json"
             requests = []
@@ -304,8 +304,6 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 )
                 if url.startswith("http://room.local/api/live-agent-sessions/readiness?"):
                     readiness_seen["count"] += 1
-                    if readiness_seen["count"] == 1:
-                        raise ValueError("Meeting resident-m1 was not found.")
                     return {
                         "status": "ready",
                         "meeting_id": "resident-m1",
@@ -313,13 +311,22 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                         "connection": {"expected": 2, "connected": 2, "attention": []},
                         "process": {"status": "running", "attention": []},
                     }
-                if url == "http://room.local/api/live-agent-sessions/start":
+                if url == "http://room.local/api/live-agent-session-runs/ensure":
                     return {
                         "status": "ready",
+                        "action": "start",
                         "meeting_id": "resident-m1",
                         "group_id": "live-agents.discovered",
                         "connection": {"expected": 2, "connected": 2, "attention": []},
                         "process": {"status": "running", "attention": []},
+                        "session_run": {
+                            "run_id": "run-auto-1",
+                            "status": "ready",
+                            "action": "ensure",
+                            "active": True,
+                            "meeting_id": "resident-m1",
+                            "group_id": "live-agents.discovered",
+                        },
                     }
                 raise AssertionError(f"unexpected request: {url}")
 
@@ -354,7 +361,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
             self.assertTrue((Path(temp_dir) / "council.discovered.json").exists())
             self.assertTrue((Path(temp_dir) / "agents.discovered.json").exists())
-            start_request = next(request for request in requests if request["url"] == "http://room.local/api/live-agent-sessions/start")
+            start_request = next(request for request in requests if request["url"] == "http://room.local/api/live-agent-session-runs/ensure")
             self.assertEqual(
                 start_request["payload"],
                 {
@@ -375,6 +382,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(payload["action"], "start")
             self.assertEqual(payload["discovery"]["session_bundle"]["group_id"], "live-agents.discovered")
             self.assertEqual(payload["session"]["connection"]["connected"], 2)
+            self.assertEqual(payload["session"]["session_run"]["run_id"], "run-auto-1")
 
     def test_live_agent_auto_join_can_finalize_after_remaining_rounds(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -396,8 +404,6 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 )
                 if url.startswith("http://room.local/api/live-agent-sessions/readiness?"):
                     readiness_seen["count"] += 1
-                    if readiness_seen["count"] == 1:
-                        raise ValueError("Meeting resident-m1 was not found.")
                     return {
                         "status": "ready",
                         "meeting_id": "resident-m1",
@@ -405,9 +411,10 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                         "connection": {"expected": 2, "connected": 2, "attention": []},
                         "process": {"status": "running", "attention": []},
                     }
-                if url == "http://room.local/api/live-agent-sessions/start":
+                if url == "http://room.local/api/live-agent-session-runs/ensure":
                     return {
                         "status": "ready",
+                        "action": "start",
                         "meeting_id": "resident-m1",
                         "group_id": "live-agents.discovered",
                         "connection": {"expected": 2, "connected": 2, "attention": []},
@@ -457,7 +464,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                         )
 
             self.assertEqual(exit_code, 0)
-            start_request = next(request for request in requests if request["url"] == "http://room.local/api/live-agent-sessions/start")
+            start_request = next(request for request in requests if request["url"] == "http://room.local/api/live-agent-session-runs/ensure")
             self.assertEqual(start_request["payload"]["run_remaining_rounds"], True)
             self.assertEqual(start_request["payload"]["finalize_after_rounds"], True)
             self.assertEqual(start_request["payload"]["round_timeout_seconds"], 11.0)
@@ -485,7 +492,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                         "timeout_seconds": timeout_seconds,
                     }
                 )
-                if url == "http://room.local/api/live-agent-sessions/ensure":
+                if url == "http://room.local/api/live-agent-session-runs/ensure":
                     return {
                         "status": "ready",
                         "action": "none",
@@ -508,7 +515,9 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                         },
                     }
                 if url == "http://room.local/api/live-agent-sessions/start":
-                    raise AssertionError("auto-join without a meeting id should let server ensure adopt owned groups")
+                    raise AssertionError("auto-join without a meeting id should let durable server ensure adopt owned groups")
+                if url == "http://room.local/api/live-agent-sessions/ensure":
+                    raise AssertionError("auto-join should record durable session-run intent")
                 raise AssertionError(f"unexpected request: {url}")
 
             stdout = StringIO()
@@ -537,7 +546,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                         )
 
             self.assertEqual(exit_code, 0)
-            ensure_request = next(request for request in requests if request["url"] == "http://room.local/api/live-agent-sessions/ensure")
+            ensure_request = next(request for request in requests if request["url"] == "http://room.local/api/live-agent-session-runs/ensure")
             self.assertEqual(ensure_request["payload"]["meeting_id"], "")
             self.assertEqual(ensure_request["payload"]["group_id"], "live-agents.discovered")
             self.assertEqual(ensure_request["payload"]["live_agent_config_path"], str(output_path))
@@ -560,8 +569,6 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
                 if url.startswith("http://room.local/api/live-agent-sessions/readiness?"):
                     readiness_seen["count"] += 1
-                    if readiness_seen["count"] == 1:
-                        raise ValueError("Meeting resident-m1 was not found.")
                     return {
                         "status": "ready",
                         "meeting_id": "resident-m1",
@@ -569,9 +576,10 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                         "connection": {"expected": 2, "connected": 2, "attention": []},
                         "process": {"status": "running", "attention": []},
                     }
-                if url == "http://room.local/api/live-agent-sessions/start":
+                if url == "http://room.local/api/live-agent-session-runs/ensure":
                     return {
                         "status": "ready",
+                        "action": "start",
                         "meeting_id": "resident-m1",
                         "group_id": "live-agents.discovered",
                         "connection": {"expected": 2, "connected": 2, "attention": []},

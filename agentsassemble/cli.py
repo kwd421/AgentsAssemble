@@ -1782,7 +1782,7 @@ def _attach_session_post_ready_results(
     if not isinstance(response, dict) or not isinstance(source, dict):
         return response
     merged = response
-    for key in ("reply_probe", "auto_rounds", "finalization"):
+    for key in ("reply_probe", "auto_rounds", "finalization", "session_run"):
         value = source.get(key)
         if isinstance(value, dict):
             if merged is response:
@@ -2267,7 +2267,7 @@ def _run_live_agent_auto_join(args: argparse.Namespace) -> int:
     ensure_args.council_config = str(session_bundle.get("council_config_path") or "")
     ensure_args.agent_config = str(session_bundle.get("agent_config_path") or "")
     ensure_args.live_agent_config = str(session_bundle.get("live_agent_config_path") or output_path or "")
-    action, response = _ensure_live_agent_session(ensure_args)
+    action, response = _ensure_live_agent_session_run(ensure_args)
     result = {
         "status": response.get("status") or "unknown",
         "action": action,
@@ -2279,6 +2279,25 @@ def _run_live_agent_auto_join(args: argparse.Namespace) -> int:
     else:
         print(f"Auto-joined via {action}: {_format_live_agent_session_start(response)}")
     return _session_command_exit_code(response)
+
+
+def _ensure_live_agent_session_run(args: argparse.Namespace) -> tuple[str, dict[str, object]]:
+    payload = _session_start_payload(args)
+    timeout_seconds = _session_remaining_rounds_request(
+        args,
+        payload,
+        connect_timeout_seconds=float(args.connect_timeout),
+    )
+    response = _request_json(
+        _server_url(str(args.server), "/api/live-agent-session-runs/ensure"),
+        method="POST",
+        payload=payload,
+        timeout_seconds=timeout_seconds,
+    )
+    action = str(response.get("action") or "ensure")
+    if action != "none":
+        response = _wait_for_live_agent_session_ready_after_control(args, response)
+    return action, response
 
 
 def _format_live_agent_discovery(report: dict[str, object], *, output_path: Path | None) -> str:

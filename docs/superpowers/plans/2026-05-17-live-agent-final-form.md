@@ -3743,6 +3743,33 @@ Run the static runtime smoke, static UI assertions, docs assertion, JS syntax ch
 
 ---
 
+### Task 102: Durable Auto-Join Session Intent
+
+**Goal:** Make automatic local CLI entry record the same durable session-run intent as manual `상주보장`, so discovered resident sessions remain inspectable and recoverable after GUI restart.
+
+**Files:**
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_live_agent_discovery.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for durable auto-join**
+
+Cover GUI `자동입장` and CLI `live-agent auto-join` so they fail if they call the one-shot `/api/live-agent-sessions/ensure` path instead of `/api/live-agent-session-runs/ensure`. The assertions preserve the same session bundle, restart, remaining-round, finalization, and blank-meeting adoption payload fields.
+
+- [x] **Step 2: Route auto-join through the durable ensure wrapper**
+
+Change GUI `자동입장` to post the discovered bundle through `/api/live-agent-session-runs/ensure`, and change CLI `auto-join` to post the generated session bundle payload to the same durable endpoint. Preserve post-control readiness waiting and carry returned `session_run` evidence through the final CLI payload.
+
+- [x] **Step 3: Document the durable entry semantics**
+
+Document that discovery remains PATH-only and non-mutating, while `auto-join` is the explicit mutating operation that may start providers and now leaves a durable `session-runs.json` record visible through the GUI `상주 세션런` list.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

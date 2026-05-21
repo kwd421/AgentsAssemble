@@ -1120,7 +1120,7 @@ test("live agent discovery clears stale candidate evidence when the request fail
   assert.equal(document.querySelector(".live-agent-discovery-report"), null);
 });
 
-test("auto join discovers local CLIs preflights the generated config and ensures the resident session", async () => {
+test("auto join discovers local CLIs preflights the generated config and records durable session run", async () => {
   resetState();
   state.payload = { meeting: { meeting_id: "resident-gui" } };
   const { document, requests, events } = installHarness({
@@ -1153,13 +1153,23 @@ test("auto join discovers local CLIs preflights the generated config and ensures
         { agent_id: "codex-live", status: "ok" },
       ],
     },
-    sessionEnsurePayload: {
+    sessionRunEnsurePayload: {
       status: "ready",
       action: "start",
       meeting_id: "resident-gui",
       group_id: "resident-main",
       connection: { expected: 2, connected: 2, attention: [] },
       process: { status: "running", attention: [] },
+      session_run: {
+        run_id: "auto-run-1",
+        action: "ensure",
+        status: "ready",
+        active: true,
+        meeting_id: "resident-gui",
+        group_id: "resident-main",
+        phase: "start",
+        reconcile_count: 0,
+      },
     },
   });
 
@@ -1185,7 +1195,7 @@ test("auto join discovers local CLIs preflights the generated config and ensures
   assert.deepEqual(liveAgentPreflightRequest(requests).jsonBody, {
     config_path: ".agentsassemble/live-agents.discovered.local.json",
   });
-  assert.deepEqual(sessionEnsureRequest(requests).jsonBody, {
+  assert.deepEqual(sessionRunEnsureRequest(requests).jsonBody, {
     meeting_id: "resident-gui",
     group_id: "live-agents.discovered.local",
     council_config_path: ".agentsassemble/council.discovered.local.json",
@@ -1203,8 +1213,9 @@ test("auto join discovers local CLIs preflights the generated config and ensures
   );
   assert.ok(
     requests.findIndex((request) => request.url === "/api/live-agent-preflight") <
-      requests.findIndex((request) => request.url === "/api/live-agent-sessions/ensure")
+      requests.findIndex((request) => request.url === "/api/live-agent-session-runs/ensure")
   );
+  assert.equal(requests.some((request) => request.url === "/api/live-agent-sessions/ensure"), false);
   assert.equal(
     document.querySelector("#live-agent-process-config").value,
     ".agentsassemble/live-agents.discovered.local.json"
@@ -1212,7 +1223,7 @@ test("auto join discovers local CLIs preflights the generated config and ensures
   assert.equal(document.querySelector("#live-agent-process-group").value, "live-agents.discovered.local");
   assert.equal(document.querySelector("#live-agent-session-council-config").value, ".agentsassemble/council.discovered.local.json");
   assert.equal(document.querySelector("#live-agent-session-agent-config").value, ".agentsassemble/agents.discovered.local.json");
-  assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 2/2 connected");
+  assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 2/2 connected · run auto-run-1 ready");
   assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
 });

@@ -196,6 +196,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('const includeSessionBundle = lobby.querySelector("#live-agent-discovery-session-bundle")?.checked === true;', script)
         self.assertIn("session_bundle: includeSessionBundle", script)
         self.assertIn("session_bundle: true", script)
+        self.assertIn('endpoint: "/api/live-agent-session-runs/ensure"', script)
+        self.assertIn('busyMessage: "자동입장: 상주 세션런 보장 중"', script)
         self.assertIn("function applyLiveAgentDiscoveryOutputs", script)
         self.assertIn("sessionBundle.live_agent_config_path", script)
         self.assertIn("sessionBundle.council_config_path", script)

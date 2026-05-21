@@ -2120,9 +2120,9 @@ async function runLiveAgentAutoJoin(lobby) {
     }
     const currentLobby = document.querySelector("#lobby") || lobby;
     await runLiveAgentSessionAction(currentLobby, {
-      endpoint: "/api/live-agent-sessions/ensure",
+      endpoint: "/api/live-agent-session-runs/ensure",
       includeCouncilConfigs: true,
-      busyMessage: "자동입장: 상주 세션 보장 중",
+      busyMessage: "자동입장: 상주 세션런 보장 중",
       failurePrefix: "자동입장 실패",
       notifyRecoverable: true,
     });
