@@ -9126,6 +9126,70 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(operations_payload["operations"][-1]["status"], "success")
         self.assertEqual(operations_payload["operations"][-1]["details"]["skipped_reason"], "already_ready")
 
+    def test_live_agent_session_run_pause_resume_api_controls_durable_reconcile(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session_run_controller = LiveAgentSessionRunController(root)
+            target = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, session_run_controller=session_run_controller),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                pause_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/{target['run_id']}/pause",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(pause_request, timeout=4) as response:
+                    pause_payload = json.loads(response.read().decode("utf-8"))
+                with patch("agentsassemble.gui.live_agent_session_ensure_payload") as ensure_payload:
+                    reconciled_while_paused = session_run_controller.reconcile_active_runs(
+                        lambda run: ensure_payload(run) or {"status": "ready"}
+                    )
+                resume_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/{target['run_id']}/resume",
+                    data=b"{}",
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(resume_request, timeout=4) as response:
+                    resume_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs?limit=20", timeout=4) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(pause_payload["status"], "paused")
+        self.assertEqual(pause_payload["session_run"]["status"], "paused")
+        self.assertFalse(pause_payload["session_run"]["active"])
+        self.assertEqual(pause_payload["session_run"]["paused_status"], "degraded")
+        self.assertEqual(reconciled_while_paused, [])
+        ensure_payload.assert_not_called()
+        self.assertEqual(resume_payload["status"], "resumed")
+        self.assertEqual(resume_payload["session_run"]["status"], "degraded")
+        self.assertTrue(resume_payload["session_run"]["active"])
+        self.assertEqual(runs_payload["runs"][0]["phase"], "resume_requested")
+        self.assertEqual([item["operation"] for item in operations_payload["operations"][-2:]], ["session_run.pause", "session_run.resume"])
+
     def test_live_agent_session_runs_api_can_overlay_current_readiness_without_operations(self):
         class ReadinessSessionSupervisor:
             def snapshot_groups(self):

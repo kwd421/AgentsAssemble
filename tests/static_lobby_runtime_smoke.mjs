@@ -189,6 +189,7 @@ function resetState() {
     liveAgentSessionRuns: [],
     liveAgentSessionRunsLoaded: true,
     liveAgentSessionRunsLoading: false,
+    liveAgentSessionRunActionRunning: "",
     liveAgentSessionRunRetryNowRunning: "",
     liveAgentProcessStartRunning: false,
     liveAgentSessionStartRunning: false,
@@ -366,6 +367,37 @@ function installHarness({
           },
         }
       );
+    }
+    const sessionRunPauseMatch = String(url).match(/^\/api\/live-agent-session-runs\/([^/]+)\/pause$/);
+    if (sessionRunPauseMatch) {
+      return jsonResponse({
+        status: "paused",
+        session_run: {
+          run_id: sessionRunPauseMatch[1],
+          action: "ensure",
+          status: "paused",
+          active: false,
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          phase: "paused",
+          paused_status: "degraded",
+        },
+      });
+    }
+    const sessionRunResumeMatch = String(url).match(/^\/api\/live-agent-session-runs\/([^/]+)\/resume$/);
+    if (sessionRunResumeMatch) {
+      return jsonResponse({
+        status: "resumed",
+        session_run: {
+          run_id: sessionRunResumeMatch[1],
+          action: "ensure",
+          status: "degraded",
+          active: true,
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          phase: "resume_requested",
+        },
+      });
     }
     const sessionRunRetryNowMatch = String(url).match(/^\/api\/live-agent-session-runs\/([^/]+)\/retry-now$/);
     if (sessionRunRetryNowMatch) {
@@ -592,6 +624,14 @@ function sessionRunEnsureRequest(requests) {
 
 function sessionRunRetryNowRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-session-runs/run-1/retry-now");
+}
+
+function sessionRunPauseRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-session-runs/run-1/pause");
+}
+
+function sessionRunResumeRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-session-runs/run-paused/resume");
 }
 
 function sessionResumeRequest(requests) {
@@ -2286,6 +2326,54 @@ test("session run retry button is hidden for ready runs with ready current readi
   await refreshLiveAgentRuntimeSurfaces();
 
   assert.equal(document.querySelectorAll("[data-live-agent-session-run-retry-now]").length, 0);
+});
+
+test("session run pause and resume buttons control durable automation", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    liveAgentSessionRunsPayload: {
+      runs: [
+        {
+          run_id: "run-1",
+          action: "ensure",
+          status: "degraded",
+          active: true,
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          phase: "reconcile_failed",
+          reconcile_failure_count: 1,
+          reconcile_backoff_seconds: 60,
+        },
+        {
+          run_id: "run-paused",
+          action: "ensure",
+          status: "paused",
+          active: false,
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          phase: "paused",
+          paused_status: "degraded",
+        },
+      ],
+    },
+  });
+  renderLobby({ followLatest: false });
+  await refreshLiveAgentRuntimeSurfaces();
+
+  const pauseButton = document.querySelectorAll("[data-live-agent-session-run-pause]")[0];
+  assert.ok(pauseButton);
+  await pauseButton.click();
+
+  assert.deepEqual(sessionRunPauseRequest(requests).jsonBody, {});
+  assert.equal(state.liveAgentProcessStatus.message, "run-1 일시정지됨");
+
+  renderLobby({ followLatest: false });
+  const resumeButton = document.querySelectorAll("[data-live-agent-session-run-resume]")[0];
+  assert.ok(resumeButton);
+  await resumeButton.click();
+
+  assert.deepEqual(sessionRunResumeRequest(requests).jsonBody, {});
+  assert.equal(state.liveAgentProcessStatus.message, "run-paused 재개됨");
 });
 
 test("runtime health session readiness renders only safe escaped evidence", async () => {

@@ -4849,6 +4849,79 @@ def _make_handler(
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
                 return
+            session_run_pause_id = _live_agent_session_run_action_path(parsed.path, "pause")
+            if session_run_pause_id is not None:
+                payload = self._operation_json_payload(operation="session_run.pause", target_id=session_run_pause_id)
+                if payload is None:
+                    return
+                del payload
+                try:
+                    session_run = live_agent_session_run_controller.pause_run(session_run_pause_id)
+                except (OSError, ValueError) as error:
+                    safe_error = _session_ensure_error_message(error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session_run.pause",
+                        status="failed",
+                        target_id=session_run_pause_id,
+                        error=safe_error,
+                        details={"session_run_id": session_run_pause_id},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={"session_run_id": session_run_pause_id})
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="session_run.pause",
+                    status="success",
+                    target_id=str(session_run.get("run_id") or session_run_pause_id),
+                    summary="paused durable live-agent session run",
+                    details={
+                        "session_run_id": str(session_run.get("run_id") or session_run_pause_id),
+                        "meeting_id": str(session_run.get("meeting_id") or ""),
+                        "group_id": str(session_run.get("group_id") or ""),
+                        "run_status": str(session_run.get("status") or ""),
+                        "paused_status": str(session_run.get("paused_status") or ""),
+                        "phase": str(session_run.get("phase") or ""),
+                    },
+                )
+                self._send_json({"status": "paused", "session_run": session_run})
+                return
+            session_run_resume_id = _live_agent_session_run_action_path(parsed.path, "resume")
+            if session_run_resume_id is not None:
+                payload = self._operation_json_payload(operation="session_run.resume", target_id=session_run_resume_id)
+                if payload is None:
+                    return
+                del payload
+                try:
+                    session_run = live_agent_session_run_controller.resume_run(session_run_resume_id)
+                except (OSError, ValueError) as error:
+                    safe_error = _session_ensure_error_message(error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session_run.resume",
+                        status="failed",
+                        target_id=session_run_resume_id,
+                        error=safe_error,
+                        details={"session_run_id": session_run_resume_id},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={"session_run_id": session_run_resume_id})
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="session_run.resume",
+                    status="success",
+                    target_id=str(session_run.get("run_id") or session_run_resume_id),
+                    summary="resumed durable live-agent session run",
+                    details={
+                        "session_run_id": str(session_run.get("run_id") or session_run_resume_id),
+                        "meeting_id": str(session_run.get("meeting_id") or ""),
+                        "group_id": str(session_run.get("group_id") or ""),
+                        "run_status": str(session_run.get("status") or ""),
+                        "phase": str(session_run.get("phase") or ""),
+                    },
+                )
+                self._send_json({"status": "resumed", "session_run": session_run})
+                return
             session_run_retry_now_id = _live_agent_session_run_action_path(parsed.path, "retry-now")
             if session_run_retry_now_id is not None or parsed.path == "/api/live-agent-session-runs/retry-now":
                 payload = self._operation_json_payload(

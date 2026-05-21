@@ -19,6 +19,7 @@ DEFAULT_RECONCILE_BACKOFF_SECONDS = 60
 MAX_RECONCILE_BACKOFF_SECONDS = 300
 ACTIVE_SESSION_RUN_STATUSES = {"running", "recovering", "ready", "starting", "degraded"}
 TERMINAL_SESSION_RUN_STATUSES = {"failed", "stopped"}
+PAUSED_SESSION_RUN_STATUSES = {"paused"}
 POST_READY_REQUEST_KEYS = {
     "probe_bound_agents",
     "probe_timeout_seconds",
@@ -108,6 +109,7 @@ class LiveAgentSessionRunController:
             "reconcile_count": 0,
             "reconcile_failure_count": 0,
             "reconcile_backoff_seconds": 0,
+            "paused_status": "",
         }
         with self._lock:
             self._records[run_id] = record
@@ -127,6 +129,47 @@ class LiveAgentSessionRunController:
     def get_run(self, run_id: str) -> dict[str, object]:
         with self._lock:
             return _public_record(self._record_or_raise(run_id))
+
+    def pause_run(self, run_id: str) -> dict[str, object]:
+        with self._lock:
+            record = self._record_or_raise(run_id)
+            status = _safe_status(record.get("status"))
+            if status in TERMINAL_SESSION_RUN_STATUSES:
+                raise ValueError(
+                    f"Live-agent session run {_safe_identity(record.get('run_id')) or 'unknown'} is {status} and cannot be paused."
+                )
+            if status in PAUSED_SESSION_RUN_STATUSES:
+                return _public_record(record)
+            if status not in ACTIVE_SESSION_RUN_STATUSES or record.get("active") is not True:
+                raise ValueError(
+                    f"Live-agent session run {_safe_identity(record.get('run_id')) or 'unknown'} is not active and cannot be paused."
+                )
+            now = self.now_fn().isoformat()
+            record["paused_status"] = status
+            record["status"] = "paused"
+            record["active"] = False
+            record["phase"] = "paused"
+            record["updated_at"] = now
+            self._write_records()
+            return _public_record(record)
+
+    def resume_run(self, run_id: str) -> dict[str, object]:
+        with self._lock:
+            record = self._record_or_raise(run_id)
+            status = _safe_status(record.get("status"))
+            if status != "paused":
+                raise ValueError(
+                    f"Live-agent session run {_safe_identity(record.get('run_id')) or 'unknown'} is not paused and cannot be resumed."
+                )
+            resumed_status = _safe_paused_status(record.get("paused_status")) or "degraded"
+            now = self.now_fn().isoformat()
+            record["status"] = resumed_status
+            record["active"] = True
+            record["phase"] = "resume_requested"
+            record["paused_status"] = ""
+            record["updated_at"] = now
+            self._write_records()
+            return _public_record(record)
 
     def mark_matching_stopped(self, *, meeting_id: str, group_id: str, reason: str = "operator_stop") -> list[dict[str, object]]:
         clean_meeting_id = _safe_identity(meeting_id)
@@ -242,6 +285,8 @@ class LiveAgentSessionRunController:
         *,
         session: dict[str, object],
     ) -> dict[str, object]:
+        if _safe_status(record.get("status")) == "paused":
+            return _public_record(record)
         now = self.now_fn().isoformat()
         status = _session_run_status(session)
         record["status"] = status
@@ -299,6 +344,8 @@ class LiveAgentSessionRunController:
         record["reconcile_backoff_seconds"] = 0
 
     def _fail_record(self, record: dict[str, object], error: object) -> dict[str, object]:
+        if _safe_status(record.get("status")) == "paused":
+            return _public_record(record)
         now = self.now_fn().isoformat()
         record["status"] = "failed"
         record["active"] = False
@@ -414,7 +461,7 @@ def _safe_record(value: object) -> dict[str, object]:
         "run_id": run_id,
         "action": _safe_action(value.get("action")),
         "status": status,
-        "active": bool(value.get("active")) and status not in TERMINAL_SESSION_RUN_STATUSES,
+        "active": bool(value.get("active")) and status not in TERMINAL_SESSION_RUN_STATUSES and status != "paused",
         "phase": _safe_phase(value.get("phase")) or status,
         "meeting_id": _safe_identity(value.get("meeting_id")) or _safe_identity(request.get("meeting_id")),
         "group_id": _safe_identity(value.get("group_id")) or _safe_identity(request.get("group_id")),
@@ -429,6 +476,7 @@ def _safe_record(value: object) -> dict[str, object]:
         "reconcile_count": _nonnegative_int(value.get("reconcile_count"), 0),
         "reconcile_failure_count": 0 if status == "ready" or status in TERMINAL_SESSION_RUN_STATUSES else _nonnegative_int(value.get("reconcile_failure_count"), 0),
         "reconcile_backoff_seconds": 0 if status == "ready" or status in TERMINAL_SESSION_RUN_STATUSES else _nonnegative_int(value.get("reconcile_backoff_seconds"), 0),
+        "paused_status": _safe_paused_status(value.get("paused_status")) if status == "paused" else "",
     }
 
 
@@ -438,7 +486,7 @@ def _public_record(record: dict[str, object]) -> dict[str, object]:
         "run_id": _safe_identity(record.get("run_id")),
         "action": _safe_action(record.get("action")),
         "status": status,
-        "active": bool(record.get("active")) and status not in TERMINAL_SESSION_RUN_STATUSES,
+        "active": bool(record.get("active")) and status not in TERMINAL_SESSION_RUN_STATUSES and status != "paused",
         "phase": _safe_phase(record.get("phase")) or status,
         "meeting_id": _safe_identity(record.get("meeting_id")) or _record_meeting_id(record),
         "group_id": _safe_identity(record.get("group_id")) or _record_group_id(record),
@@ -453,6 +501,7 @@ def _public_record(record: dict[str, object]) -> dict[str, object]:
         "reconcile_count": _nonnegative_int(record.get("reconcile_count"), 0),
         "reconcile_failure_count": 0 if status == "ready" or status in TERMINAL_SESSION_RUN_STATUSES else _nonnegative_int(record.get("reconcile_failure_count"), 0),
         "reconcile_backoff_seconds": 0 if status == "ready" or status in TERMINAL_SESSION_RUN_STATUSES else _nonnegative_int(record.get("reconcile_backoff_seconds"), 0),
+        "paused_status": _safe_paused_status(record.get("paused_status")) if status == "paused" else "",
     }
 
 
@@ -561,9 +610,16 @@ def _safe_action(value: object) -> str:
 
 def _safe_status(value: object) -> str:
     status = clean_lobby_text(value, limit=SESSION_RUN_FIELD_LIMIT)
-    if status in ACTIVE_SESSION_RUN_STATUSES or status in TERMINAL_SESSION_RUN_STATUSES:
+    if status in ACTIVE_SESSION_RUN_STATUSES or status in TERMINAL_SESSION_RUN_STATUSES or status in PAUSED_SESSION_RUN_STATUSES:
         return status
     return "degraded" if status else "running"
+
+
+def _safe_paused_status(value: object) -> str:
+    if clean_lobby_text(value, limit=SESSION_RUN_FIELD_LIMIT) == "":
+        return ""
+    status = _safe_status(value)
+    return status if status in ACTIVE_SESSION_RUN_STATUSES else ""
 
 
 def _session_run_status(session: dict[str, object]) -> str:

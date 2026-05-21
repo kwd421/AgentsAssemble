@@ -538,6 +538,146 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
         self.assertFalse(stored_run["active"])
         self.assertEqual(stored_run["phase"], "operator_paused")
 
+    def test_pause_run_skips_reconcile_until_resumed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            now = {"value": datetime(2026, 5, 21, 10, 0, tzinfo=UTC)}
+            controller = LiveAgentSessionRunController(root, now_fn=lambda: now["value"])
+            run = controller.begin_run(action="ensure", payload={"meeting_id": "resident-m1", "group_id": "resident-main"})
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            now["value"] = datetime(2026, 5, 21, 10, 2, tzinfo=UTC)
+
+            paused = controller.pause_run(run["run_id"])
+            paused_calls = []
+            paused_results = controller.reconcile_active_runs(
+                lambda reconcile_run: paused_calls.append(reconcile_run) or {"status": "ready"}
+            )
+            resumed = controller.resume_run(run["run_id"])
+            resumed_calls = []
+            resumed_results = controller.reconcile_active_runs(
+                lambda reconcile_run: resumed_calls.append(reconcile_run)
+                or {
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                }
+            )
+
+        self.assertEqual(paused["status"], "paused")
+        self.assertFalse(paused["active"])
+        self.assertEqual(paused["phase"], "paused")
+        self.assertEqual(paused["paused_status"], "degraded")
+        self.assertEqual(paused_results, [])
+        self.assertEqual(paused_calls, [])
+        self.assertEqual(resumed["status"], "degraded")
+        self.assertTrue(resumed["active"])
+        self.assertEqual(resumed["phase"], "resume_requested")
+        self.assertEqual(resumed["paused_status"], "")
+        self.assertEqual(len(resumed_calls), 1)
+        self.assertEqual(resumed_calls[0]["run_id"], run["run_id"])
+        self.assertEqual(resumed_results[0]["status"], "ready")
+
+    def test_pause_run_refuses_terminal_run_and_resume_refuses_unpaused_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            stopped = controller.begin_run(action="ensure", payload={"meeting_id": "resident-m1", "group_id": "resident-main"})
+            controller.fail_run(stopped["run_id"], "operator-visible failure")
+            active = controller.begin_run(action="ensure", payload={"meeting_id": "resident-m2", "group_id": "resident-main"})
+
+            with self.assertRaises(ValueError):
+                controller.pause_run(stopped["run_id"])
+            with self.assertRaises(ValueError):
+                controller.resume_run(active["run_id"])
+
+    def test_finish_run_does_not_overwrite_paused_in_flight_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(action="ensure", payload={"meeting_id": "resident-m1", "group_id": "resident-main"})
+            paused = controller.pause_run(run["run_id"])
+
+            finished = controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            stored = controller.get_run(run["run_id"])
+
+        self.assertEqual(paused["status"], "paused")
+        self.assertEqual(finished["status"], "paused")
+        self.assertFalse(finished["active"])
+        self.assertEqual(finished["paused_status"], "running")
+        self.assertEqual(stored["status"], "paused")
+        self.assertFalse(stored["active"])
+
+    def test_fail_run_does_not_overwrite_paused_in_flight_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(action="ensure", payload={"meeting_id": "resident-m1", "group_id": "resident-main"})
+            paused = controller.pause_run(run["run_id"])
+
+            failed = controller.fail_run(run["run_id"], "provider timed out")
+            stored = controller.get_run(run["run_id"])
+
+        self.assertEqual(paused["status"], "paused")
+        self.assertEqual(failed["status"], "paused")
+        self.assertFalse(failed["active"])
+        self.assertEqual(failed["last_error"], "")
+        self.assertEqual(stored["status"], "paused")
+        self.assertFalse(stored["active"])
+
+    def test_resume_run_with_missing_paused_status_falls_back_to_degraded(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir(parents=True)
+            (runs_dir / "session-runs.json").write_text(
+                json.dumps(
+                    {
+                        "runs": [
+                            {
+                                "run_id": "legacy-paused",
+                                "action": "ensure",
+                                "status": "paused",
+                                "active": False,
+                                "phase": "paused",
+                                "meeting_id": "resident-m1",
+                                "group_id": "resident-main",
+                                "request": {"meeting_id": "resident-m1", "group_id": "resident-main"},
+                                "created_at": "2026-05-21T10:00:00+00:00",
+                                "updated_at": "2026-05-21T10:00:00+00:00",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            controller = LiveAgentSessionRunController(root)
+
+            loaded = controller.get_run("legacy-paused")
+            resumed = controller.resume_run("legacy-paused")
+
+        self.assertEqual(loaded["paused_status"], "")
+        self.assertEqual(resumed["status"], "degraded")
+        self.assertTrue(resumed["active"])
+
     def test_reconcile_failure_keeps_run_active_degraded_with_retry_backoff(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
