@@ -112,6 +112,134 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(discoveries["antigravity"]["approval_status"], "not_approved")
             self.assertEqual(report["approval_filter"]["approved_agents"], ["codex-live"])
 
+    def test_live_agent_discovery_endpoint_records_exact_approval_operation_evidence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "codex", "antigravity"} else None
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                with (
+                    patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                    patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                ):
+                    request = Request(
+                        f"{server_url}/api/live-agent-discovery",
+                        data=json.dumps(
+                            {
+                                "meeting_id": "resident-gui",
+                                "write_config": True,
+                                "session_bundle": True,
+                                "approved_agents": ["codex-live", "missing-agent"],
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=4) as response:
+                        report = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"{server_url}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            discovery_operations = [
+                operation for operation in operations["operations"] if operation["operation"] == "discovery.run"
+            ]
+            self.assertEqual(report["approval_filter"]["approved_agents"], ["codex-live"])
+            self.assertEqual(len(discovery_operations), 1)
+            details = discovery_operations[0]["details"]
+            self.assertEqual(details["result_status"], "ok")
+            self.assertEqual(details["agents"], 1)
+            self.assertEqual(details["approved_count"], 1)
+            self.assertEqual(details["approved_agent_ids"], ["codex-live"])
+            self.assertEqual(details["excluded_agent_count"], 2)
+            self.assertEqual(details["unmatched_approval_count"], 1)
+            serialized = json.dumps(discovery_operations[0], ensure_ascii=False)
+            self.assertNotIn("/opt/bin", serialized)
+            self.assertNotIn("approved_commands", serialized)
+            self.assertNotIn("excluded_commands", serialized)
+
+    def test_live_agent_discovery_endpoint_records_cli_approval_counts_without_command_names(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command in {"claude", "codex", "antigravity"} else None
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                with (
+                    patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                    patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                ):
+                    request = Request(
+                        f"{server_url}/api/live-agent-discovery",
+                        data=json.dumps(
+                            {
+                                "meeting_id": "resident-gui",
+                                "write_config": True,
+                                "session_bundle": True,
+                                "approved_commands": ["codex", "missing-cli"],
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=4) as response:
+                        report = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"{server_url}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            discovery_operations = [
+                operation for operation in operations["operations"] if operation["operation"] == "discovery.run"
+            ]
+            self.assertEqual(report["approval_filter"]["approved_commands"], ["codex"])
+            self.assertEqual(len(discovery_operations), 1)
+            details = discovery_operations[0]["details"]
+            self.assertEqual(details["result_status"], "ok")
+            self.assertEqual(details["agents"], 1)
+            self.assertEqual(details["approved_count"], 1)
+            self.assertNotIn("approved_agent_ids", details)
+            self.assertEqual(details["approved_cli_count"], 1)
+            self.assertEqual(details["excluded_cli_count"], 2)
+            self.assertEqual(details["excluded_agent_count"], 2)
+            self.assertEqual(details["unmatched_approval_count"], 1)
+            serialized_details = json.dumps(details, ensure_ascii=False)
+            self.assertNotIn("/opt/bin", serialized_details)
+            self.assertNotIn("missing-cli", serialized_details)
+            self.assertNotIn("approved_commands", serialized_details)
+            self.assertNotIn("excluded_commands", serialized_details)
+            approval_details = {
+                key: value
+                for key, value in details.items()
+                if key
+                in {
+                    "approved_count",
+                    "approved_cli_count",
+                    "excluded_agent_count",
+                    "excluded_cli_count",
+                    "unmatched_approval_count",
+                }
+            }
+            serialized_approval_details = json.dumps(approval_details, ensure_ascii=False)
+            self.assertNotIn("codex", serialized_approval_details)
+            self.assertNotIn("claude", serialized_approval_details)
+            self.assertNotIn("antigravity", serialized_approval_details)
+            self.assertNotIn("missing-cli", serialized_approval_details)
+
     def test_build_meeting_payload_contains_tabs_and_artifacts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             result = run_demo_meeting(adapter_name="mock", output_root=Path(temp_dir))

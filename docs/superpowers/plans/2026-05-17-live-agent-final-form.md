@@ -4979,6 +4979,36 @@ Operator docs and roadmap now state that GUI join briefs are safe startup packet
 
 ---
 
+## Task 146: Record exact auto-join approval evidence in operations
+
+**Goal:** Preserve a safe audit trail for one-shot exact auto-join approvals, so operators can later see which discovered real-provider agents were approved, excluded, or unmatched without turning that approval into durable provider permission.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED operation-audit coverage**
+
+Cover `POST /api/live-agent-discovery` with exact `approved_agents`, then read `/api/live-agent-operations` and assert the `discovery.run` row records `approved_count`, `approved_agent_ids`, `excluded_agent_count`, and `unmatched_approval_count` without executable paths or command-name lists. Cover CLI and GUI operation compact rows so exact approval evidence appears before lower-signal discovery details.
+
+- [x] **Step 2: Store safe approval details**
+
+`discovery.run` operation details now copy only safe approval-filter evidence: approved counts, approved agent ids, excluded agent counts, unmatched approval counts, and CLI approval/exclusion counts. Sensitive detail keys such as command, path, config, endpoint, auth, token, or provider output remain excluded by the existing operation sanitizer.
+
+- [x] **Step 3: Prioritize audit evidence in operator surfaces**
+
+CLI `live-agent operations list` and GUI operation rows now prioritize `discovery.run` exact approval details before generic discovery counts and enum metadata, keeping one-shot real-provider approval visible in recent history.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

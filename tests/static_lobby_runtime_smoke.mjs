@@ -1588,6 +1588,8 @@ test("auto join sends selected discovery approvals before preflight and durable 
   assert.ok(liveAgentPreflightRequest(requests));
   assert.ok(sessionRunEnsureRequest(requests));
   assert.equal(sessionRunEnsureRequest(requests).jsonBody.approve_real_providers, true);
+  assert.equal(sessionRunEnsureRequest(requests).jsonBody.approved_agents, undefined);
+  assert.equal(sessionRunEnsureRequest(requests).jsonBody.approved_commands, undefined);
   assert.equal(sessionRunEnsureRequest(requests).jsonBody.probe_bound_agents, true);
   assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 1/1 connected · run auto-run-exact ready");
 });
@@ -3695,6 +3697,44 @@ test("operation row prioritizes review checkpoint evidence", () => {
   assert.match(rowText, /timeout_count=0/);
   assert.ok(rowText.indexOf("result_status=answered") < rowText.indexOf("checkpoint_id=checkpoint-1"));
   assert.doesNotMatch(rowText, /request_event_ids=/);
+});
+
+test("operation row prioritizes discovery exact approval evidence", () => {
+  resetState();
+  const { document } = installHarness();
+  state.liveAgentOperations = [
+    {
+      timestamp: "2026-05-18T01:02:03+00:00",
+      operation: "discovery.run",
+      status: "success",
+      target_id: "live-agent-discovery",
+      summary: "",
+      details: {
+        agents: 1,
+        discovered: 3,
+        join_semantics: ["terminal_pty_prompt_bridge", "codex_exec_resume"],
+        context_durability: ["process_lifetime", "provider_managed_resume"],
+        evidence_basis: ["path_and_pty_preflight", "path_and_codex_safety_preflight"],
+        approval_required: 1,
+        result_status: "ok",
+        approved_count: 1,
+        approved_agent_ids: ["codex-live"],
+        excluded_agent_count: 2,
+        unmatched_approval_count: 1,
+      },
+    },
+  ];
+
+  renderLobby({ followLatest: false });
+
+  const rowText = document.querySelector(".live-agent-operation-row").textContent;
+  assert.match(rowText, /discovery\.run/);
+  assert.match(rowText, /result_status=ok/);
+  assert.match(rowText, /approved_count=1/);
+  assert.match(rowText, /approved_agent_ids=codex-live/);
+  assert.match(rowText, /excluded_agent_count=2/);
+  assert.match(rowText, /unmatched_approval_count=1/);
+  assert.ok(rowText.indexOf("approved_count=1") < rowText.indexOf("agents=1"));
 });
 
 test("operation row prioritizes readiness session smoke soak statuses", () => {

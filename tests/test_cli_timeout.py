@@ -4127,6 +4127,54 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("finalization_reason=pending_turn_request", output)
         self.assertIn("finalization_official_event_count=0", output)
 
+    def test_live_agent_operations_list_prioritizes_discovery_exact_approval_result(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "discovery.run",
+                    "status": "success",
+                    "target_id": "live-agent-discovery",
+                    "summary": "",
+                    "details": {
+                        "agents": 1,
+                        "discovered": 3,
+                        "join_semantics": ["terminal_pty_prompt_bridge", "codex_exec_resume"],
+                        "context_durability": ["process_lifetime", "provider_managed_resume"],
+                        "evidence_basis": ["path_and_pty_preflight", "path_and_codex_safety_preflight"],
+                        "approval_required": 1,
+                        "result_status": "ok",
+                        "approved_count": 1,
+                        "approved_agent_ids": ["codex-live"],
+                        "excluded_agent_count": 2,
+                        "unmatched_approval_count": 1,
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "operations",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("discovery.run", output)
+        self.assertIn("result_status=ok", output)
+        self.assertIn("approved_count=1", output)
+        self.assertIn("approved_agent_ids=codex-live", output)
+        self.assertIn("excluded_agent_count=2", output)
+        self.assertIn("unmatched_approval_count=1", output)
+        self.assertLess(output.index("approved_count=1"), output.index("agents=1"))
+
     def test_live_agent_operations_list_prioritizes_remaining_rounds_finalization_result(self):
         payload = {
             "operations": [

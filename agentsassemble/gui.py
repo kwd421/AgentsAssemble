@@ -4583,7 +4583,7 @@ def _operation_success_for_result(value: object, *, success_values: set[str]) ->
     return "success" if _operation_result_status(value) in success_values else "failed"
 
 
-def _discovery_operation_details(discoveries: list[object]) -> dict[str, object]:
+def _discovery_operation_details(discoveries: list[object], approval_filter: object = None) -> dict[str, object]:
     return {
         "join_semantics": _discovery_operation_values(discoveries, "join_semantics"),
         "context_durability": _discovery_operation_values(discoveries, "context_durability"),
@@ -4593,7 +4593,33 @@ def _discovery_operation_details(discoveries: list[object]) -> dict[str, object]
             for item in discoveries
             if isinstance(item, dict) and item.get("available") and item.get("included") and item.get("requires_approval")
         ),
+        **_discovery_approval_operation_details(approval_filter),
     }
+
+
+def _discovery_approval_operation_details(approval_filter: object) -> dict[str, object]:
+    if not isinstance(approval_filter, dict):
+        return {}
+    approved_agents = _safe_payload_strings(approval_filter.get("approved_agents"), limit=64)
+    excluded_agents = _safe_payload_strings(approval_filter.get("excluded_agents"), limit=64)
+    approved_clis = _safe_payload_strings(approval_filter.get("approved_commands"), limit=64)
+    excluded_clis = _safe_payload_strings(approval_filter.get("excluded_commands"), limit=64)
+    approved_count = _payload_nonnegative_int(approval_filter.get("approved_count"), 0)
+    unmatched_count = _payload_nonnegative_int(approval_filter.get("unmatched_approval_count"), 0)
+    if not (approved_agents or excluded_agents or approved_clis or excluded_clis or approved_count or unmatched_count):
+        return {}
+    details: dict[str, object] = {
+        "approved_count": approved_count,
+        "excluded_agent_count": len(excluded_agents),
+        "unmatched_approval_count": unmatched_count,
+    }
+    if approved_agents:
+        details["approved_agent_ids"] = approved_agents[:10]
+    if approved_clis:
+        details["approved_cli_count"] = len(approved_clis)
+    if excluded_clis:
+        details["excluded_cli_count"] = len(excluded_clis)
+    return details
 
 
 def _discovery_operation_values(discoveries: list[object], field_name: str) -> list[str]:
@@ -6932,7 +6958,7 @@ def _make_handler(
                         "result_status": result_status,
                         "agents": len(agents) if isinstance(agents, list) else 0,
                         "discovered": sum(1 for item in discoveries if isinstance(item, dict) and item.get("available")),
-                        **_discovery_operation_details(discoveries),
+                        **_discovery_operation_details(discoveries, discovery.get("approval_filter")),
                     },
                 )
                 self._send_json(discovery)

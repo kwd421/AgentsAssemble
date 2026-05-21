@@ -4294,6 +4294,19 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
             "auto_rounds_answered_round_count",
             "auto_rounds_round_count",
         ]
+    if operation_name == "discovery.run":
+        return [
+            "result_status",
+            "approved_count",
+            "approved_agent_ids",
+            "approved_cli_count",
+            "excluded_agent_count",
+            "excluded_cli_count",
+            "unmatched_approval_count",
+            "agents",
+            "discovered",
+            "approval_required",
+        ]
     if operation_name == "official_turn.rounds":
         return [
             "finalization_status",
@@ -4332,6 +4345,8 @@ def _live_agent_operation_detail_limit(operation_name: str) -> int:
         return 8
     if operation_name == "review.checkpoint":
         return 8
+    if operation_name == "discovery.run":
+        return 10
     return 7
 
 
