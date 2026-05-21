@@ -392,6 +392,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("retry failures", script)
         self.assertIn("retry backoff", script)
         self.assertIn("next retry", script)
+        self.assertIn("data-live-agent-session-run-retry-now", script)
+        self.assertIn("/api/live-agent-session-runs/${encodeURIComponent(runId)}/retry-now", script)
         self.assertIn('class="codex-session-invite"', script)
         self.assertIn('id="codex-session-select"', script)
         self.assertIn('id="codex-role-select"', script)

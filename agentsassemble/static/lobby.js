@@ -174,6 +174,9 @@ export function renderLobby(options = {}) {
   lobby.querySelectorAll(".live-agent-process-recover").forEach((button) => {
     button.addEventListener("click", () => recoverLiveAgentProcessGroup(button.dataset.liveAgentProcessRecover));
   });
+  lobby.querySelectorAll("[data-live-agent-session-run-retry-now]").forEach((button) => {
+    button.addEventListener("click", () => retryLiveAgentSessionRunNow(button.dataset.liveAgentSessionRunRetryNow));
+  });
   lobby.querySelectorAll("[data-live-agent-engagement]").forEach((select) => {
     select.addEventListener("change", () => updateLiveAgentEngagement(select.dataset.liveAgentEngagement, select.value));
   });
@@ -628,7 +631,7 @@ function renderLiveAgentProcessControls() {
 }
 
 function liveAgentProcessActionBusy() {
-  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || state.liveAgentDiscoveryRunning || state.liveAgentAutoJoinRunning || Boolean(state.liveAgentProcessRowActionRunning) || state.liveAgentProcessBulkStopRunning;
+  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || state.liveAgentDiscoveryRunning || state.liveAgentAutoJoinRunning || Boolean(state.liveAgentProcessRowActionRunning) || state.liveAgentProcessBulkStopRunning || Boolean(state.liveAgentSessionRunRetryNowRunning);
 }
 
 function defaultOfficialRoundId(meeting) {
@@ -970,6 +973,8 @@ function renderLiveAgentSessionRun(run) {
   const groupId = String(run.group_id || "-");
   const activity = run.active === true ? "active" : "inactive";
   const readiness = liveAgentSessionRunReadinessPayload(run);
+  const canRetry = liveAgentSessionRunCanRetry(run, readiness);
+  const retryDisabled = liveAgentProcessActionBusy() ? " disabled" : "";
   const stateLabel = readiness ? `readiness ${String(readiness.status || "unknown")} · run ${status} · ${activity}` : `${status} · ${activity}`;
   const details = [
     `phase ${String(run.phase || status)}`,
@@ -987,9 +992,25 @@ function renderLiveAgentSessionRun(run) {
         <span>${escapeHtml(meetingId)} · ${escapeHtml(groupId)}</span>
         <small>${escapeHtml(details)}</small>
       </div>
+      ${canRetry ? `<button type="button" data-live-agent-session-run-retry-now="${escapeHtml(runId)}"${retryDisabled}>재시도</button>` : ""}
       <em>${escapeHtml(stateLabel)}</em>
     </article>
   `;
+}
+
+function liveAgentSessionRunCanRetry(run, readiness) {
+  const status = String(run?.status || "unknown");
+  const runId = String(run?.run_id || "").trim();
+  if (run?.active !== true || !runId || ["failed", "stopped"].includes(status)) return false;
+  if (status !== "ready") return true;
+  const failures = Number(run?.reconcile_failure_count || 0);
+  const backoffSeconds = Number(run?.reconcile_backoff_seconds || 0);
+  const nextReconcileAt = String(run?.next_reconcile_at || "").trim();
+  if ((Number.isFinite(failures) && failures > 0) || (Number.isFinite(backoffSeconds) && backoffSeconds > 0) || nextReconcileAt) {
+    return true;
+  }
+  const readinessStatus = String(readiness?.status || "").trim();
+  return Boolean(readinessStatus && readinessStatus !== "ready");
 }
 
 function liveAgentSessionRunConnectionLabel(run, options = {}) {
@@ -2834,6 +2855,33 @@ async function recoverLiveAgentProcessGroup(groupId) {
   } finally {
     await refreshLiveAgentProcessHistory();
     state.liveAgentProcessRowActionRunning = "";
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function retryLiveAgentSessionRunNow(runId) {
+  if (!runId || liveAgentProcessActionBusy()) return;
+  state.liveAgentSessionRunRetryNowRunning = runId;
+  state.liveAgentProcessStatus = { message: `${runId} 재시도 요청 중`, tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson(`/api/live-agent-session-runs/${encodeURIComponent(runId)}/retry-now`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const run = payload?.session_run && typeof payload.session_run === "object" ? payload.session_run : {};
+    const responseStatus = String(payload?.status || "scheduled");
+    const label = responseStatus === "reconciled" ? "실행됨" : "예약됨";
+    state.liveAgentProcessStatus = {
+      message: `${run.run_id || runId} 재시도 ${label}`,
+      tone: run.status === "ready" ? "success" : "info",
+    };
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `${runId} 재시도 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    await refreshLiveAgentProcessHistory();
+    state.liveAgentSessionRunRetryNowRunning = "";
     renderLobby({ followLatest: false });
   }
 }

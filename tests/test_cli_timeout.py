@@ -950,6 +950,25 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.meeting_id, "resident-m1")
         self.assertEqual(args.group_id, "resident-main")
 
+    def test_live_agent_session_runs_retry_now_parses_run_id_and_json(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "session-runs",
+                "retry-now",
+                "--server",
+                "http://room.local",
+                "--run-id",
+                "retry-later",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "session-runs")
+        self.assertEqual(args.live_agent_session_runs_command, "retry-now")
+        self.assertEqual(args.run_id, "retry-later")
+        self.assertTrue(args.as_json)
+
     def test_live_agent_session_runs_list_fetches_durable_runs(self):
         payload = {
             "runs": [
@@ -1018,6 +1037,79 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("reconcile_failures=2", output)
         self.assertIn("reconcile_backoff=120s", output)
         self.assertIn("next_reconcile=2026-05-21T10:07:00+00:00", output)
+
+    def test_live_agent_session_runs_retry_now_posts_target_run(self):
+        payload = {
+            "status": "scheduled",
+            "session_run": {
+                "run_id": "retry-later",
+                "action": "ensure",
+                "status": "degraded",
+                "active": True,
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "phase": "retry_requested",
+                "reconcile_failure_count": 2,
+                "reconcile_backoff_seconds": 0,
+                "next_reconcile_at": "",
+            },
+            "results": [],
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()) as stdout:
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "retry-now",
+                        "--server",
+                        "http://room.local",
+                        "--run-id",
+                        "retry-later",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-session-runs/retry-later/retry-now",
+            method="POST",
+            payload={},
+            timeout_seconds=10.0,
+        )
+        self.assertIn("Scheduled live-agent session run retry", stdout.getvalue())
+        self.assertIn("retry-later ensure degraded resident-m1 resident-main active", stdout.getvalue())
+
+    def test_live_agent_session_runs_retry_now_prints_skipped_result(self):
+        payload = {
+            "status": "skipped",
+            "session_run": {
+                "run_id": "ready-run",
+                "action": "ensure",
+                "status": "ready",
+                "active": True,
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "phase": "none",
+            },
+            "results": [],
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", StringIO()) as stdout:
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "retry-now",
+                        "--server",
+                        "http://room.local",
+                        "--run-id",
+                        "ready-run",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Skipped live-agent session run retry", stdout.getvalue())
+        self.assertIn("ready-run ensure ready resident-m1 resident-main active", stdout.getvalue())
 
     def test_live_agent_session_runs_list_include_readiness_fetches_and_prints_current_counts(self):
         payload = {

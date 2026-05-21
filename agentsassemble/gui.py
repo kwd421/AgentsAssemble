@@ -395,6 +395,7 @@ def _reconcile_live_agent_session_runs(
     *,
     default_server: str,
     summary: str,
+    target_run_id: str = "",
 ) -> list[dict[str, object]]:
     def ensure_from_run(run: dict[str, object]) -> dict[str, object]:
         request = run.get("request") if isinstance(run.get("request"), dict) else {}
@@ -411,6 +412,7 @@ def _reconcile_live_agent_session_runs(
             output_root,
             process_supervisor,
             run,
+            target_run_id=target_run_id,
         ),
     )
     if results:
@@ -439,7 +441,11 @@ def _session_run_monitor_should_reconcile(
     output_root: Path,
     process_supervisor: LiveAgentProcessSupervisor,
     run: dict[str, object],
+    *,
+    target_run_id: str = "",
 ) -> bool:
+    if target_run_id and str(run.get("run_id") or "") != target_run_id:
+        return False
     if _operation_result_status(run.get("status")) != "ready":
         return True
     meeting_id = str(run.get("meeting_id") or "").strip()
@@ -3248,6 +3254,13 @@ def _live_agent_process_action_path(path: str, action: str) -> str | None:
     return None
 
 
+def _live_agent_session_run_action_path(path: str, action: str) -> str | None:
+    parts = path.strip("/").split("/")
+    if len(parts) == 4 and parts[0] == "api" and parts[1] == "live-agent-session-runs" and parts[3] == action:
+        return unquote(parts[2])
+    return None
+
+
 def _resolve_lobby_meeting_dir(output_root: Path, meeting_id: str | None) -> Path:
     if meeting_id:
         meeting_dir = output_root / "meetings" / meeting_id
@@ -4347,6 +4360,15 @@ def _session_start_operation_status(session: dict[str, object]) -> str:
     return "success"
 
 
+def _session_run_retry_now_operation_status(session_run: dict[str, object], *, reconciled: bool) -> str:
+    if not reconciled:
+        return "success"
+    status = _operation_result_status(session_run.get("status"))
+    if status in {"failed", "stopped"}:
+        return "failed"
+    return "success" if status == "ready" else "degraded"
+
+
 def _session_start_operation_summary(session: dict[str, object]) -> str:
     if _operation_result_status(session.get("status")) != "ready":
         return "resident live-agent session is still connecting"
@@ -4826,6 +4848,93 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
+                return
+            session_run_retry_now_id = _live_agent_session_run_action_path(parsed.path, "retry-now")
+            if session_run_retry_now_id is not None or parsed.path == "/api/live-agent-session-runs/retry-now":
+                payload = self._operation_json_payload(
+                    operation="session_run.retry_now",
+                    target_id=session_run_retry_now_id or "",
+                )
+                if payload is None:
+                    return
+                run_id = session_run_retry_now_id or str(payload.get("run_id") or "").strip()
+                if not run_id:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session_run.retry_now",
+                        status="failed",
+                        error="Missing session run id",
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Missing session run id")
+                    return
+                try:
+                    current_run = live_agent_session_run_controller.get_run(run_id)
+                    if not _session_run_monitor_should_reconcile(
+                        output_root,
+                        live_agent_process_supervisor,
+                        current_run,
+                        target_run_id=str(current_run.get("run_id") or run_id),
+                    ):
+                        record_live_agent_operation(
+                            output_root,
+                            operation="session_run.retry_now",
+                            status="success",
+                            target_id=str(current_run.get("run_id") or run_id),
+                            summary="skipped durable live-agent session-run retry because it is already ready",
+                            details={
+                                "session_run_id": str(current_run.get("run_id") or run_id),
+                                "meeting_id": str(current_run.get("meeting_id") or ""),
+                                "group_id": str(current_run.get("group_id") or ""),
+                                "run_status": str(current_run.get("status") or ""),
+                                "phase": str(current_run.get("phase") or ""),
+                                "reconciled": False,
+                                "result_count": 0,
+                                "skipped_reason": "already_ready",
+                            },
+                        )
+                        self._send_json({"status": "skipped", "session_run": current_run, "results": []})
+                        return
+                    scheduled_run = live_agent_session_run_controller.retry_run_now(run_id)
+                    results = _reconcile_live_agent_session_runs(
+                        output_root,
+                        live_agent_process_supervisor,
+                        live_agent_session_run_controller,
+                        default_server=self._request_server_url(),
+                        summary="retried durable live-agent session run immediately",
+                        target_run_id=str(scheduled_run.get("run_id") or run_id),
+                    )
+                except (OSError, ValueError) as error:
+                    safe_error = _session_ensure_error_message(error)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session_run.retry_now",
+                        status="failed",
+                        target_id=run_id,
+                        error=safe_error,
+                        details={"session_run_id": run_id},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details={"session_run_id": run_id})
+                    return
+                session_run = results[-1] if results else scheduled_run
+                response_status = "reconciled" if results else "scheduled"
+                operation_status = _session_run_retry_now_operation_status(session_run, reconciled=bool(results))
+                record_live_agent_operation(
+                    output_root,
+                    operation="session_run.retry_now",
+                    status=operation_status,
+                    target_id=str(session_run.get("run_id") or run_id),
+                    summary="scheduled immediate durable live-agent session-run retry",
+                    details={
+                        "session_run_id": str(session_run.get("run_id") or run_id),
+                        "meeting_id": str(session_run.get("meeting_id") or ""),
+                        "group_id": str(session_run.get("group_id") or ""),
+                        "run_status": str(session_run.get("status") or ""),
+                        "phase": str(session_run.get("phase") or ""),
+                        "reconciled": bool(results),
+                        "result_count": len(results),
+                    },
+                )
+                self._send_json({"status": response_status, "session_run": session_run, "results": results})
                 return
             if parsed.path == "/api/live-agent-session-runs/ensure":
                 payload = self._operation_json_payload(operation="session_run.ensure")

@@ -30,6 +30,7 @@ export const state = {
   liveAgentSessionRuns: [],
   liveAgentSessionRunsLoaded: false,
   liveAgentSessionRunsLoading: false,
+  liveAgentSessionRunRetryNowRunning: "",
   liveAgentProcessStartRunning: false,
   liveAgentSessionStartRunning: false,
   liveAgentSessionRestartRunning: false,

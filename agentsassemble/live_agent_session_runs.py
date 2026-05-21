@@ -124,6 +124,10 @@ class LiveAgentSessionRunController:
             record = self._record_or_raise(run_id)
             return self._fail_record(record, error)
 
+    def get_run(self, run_id: str) -> dict[str, object]:
+        with self._lock:
+            return _public_record(self._record_or_raise(run_id))
+
     def mark_matching_stopped(self, *, meeting_id: str, group_id: str, reason: str = "operator_stop") -> list[dict[str, object]]:
         clean_meeting_id = _safe_identity(meeting_id)
         clean_group_id = _safe_identity(group_id)
@@ -149,6 +153,27 @@ class LiveAgentSessionRunController:
             if stopped:
                 self._write_records()
         return stopped
+
+    def retry_run_now(self, run_id: str) -> dict[str, object]:
+        with self._lock:
+            record = self._record_or_raise(run_id)
+            status = _safe_status(record.get("status"))
+            if status in TERMINAL_SESSION_RUN_STATUSES:
+                raise ValueError(
+                    f"Live-agent session run {_safe_identity(record.get('run_id')) or 'unknown'} is {status} and cannot be retried."
+                )
+            if status not in ACTIVE_SESSION_RUN_STATUSES or record.get("active") is not True:
+                raise ValueError(
+                    f"Live-agent session run {_safe_identity(record.get('run_id')) or 'unknown'} is not active and cannot be retried."
+                )
+            now = self.now_fn().isoformat()
+            record["active"] = True
+            record["phase"] = "retry_requested"
+            record["next_reconcile_at"] = ""
+            record["reconcile_backoff_seconds"] = 0
+            record["updated_at"] = now
+            self._write_records()
+            return _public_record(record)
 
     def reconcile_active_runs(
         self,

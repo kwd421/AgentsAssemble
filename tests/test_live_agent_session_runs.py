@@ -427,6 +427,117 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
         self.assertEqual(stored_run["reconcile_backoff_seconds"], 60)
         self.assertEqual(stored_run["reconcile_count"], 1)
 
+    def test_retry_run_now_makes_backoff_run_due_without_losing_failure_evidence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir(parents=True)
+            (runs_dir / "session-runs.json").write_text(
+                json.dumps(
+                    {
+                        "runs": [
+                            {
+                                "run_id": "retry-later",
+                                "action": "ensure",
+                                "status": "degraded",
+                                "active": True,
+                                "phase": "reconcile_failed",
+                                "meeting_id": "resident-m1",
+                                "group_id": "resident-main",
+                                "request": {
+                                    "meeting_id": "resident-m1",
+                                    "group_id": "resident-main",
+                                    "live_agent_config_path": "configs/live-agents.example.json",
+                                },
+                                "result": {"status": "degraded"},
+                                "last_error": "provider temporarily missing",
+                                "created_at": "2026-05-21T10:00:00+00:00",
+                                "updated_at": "2026-05-21T10:00:01+00:00",
+                                "finished_at": "2026-05-21T10:00:01+00:00",
+                                "last_reconciled_at": "2026-05-21T10:00:01+00:00",
+                                "next_reconcile_at": "2026-05-21T10:30:00+00:00",
+                                "reconcile_failure_count": 2,
+                                "reconcile_backoff_seconds": 120,
+                                "reconcile_count": 3,
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            now = {"value": datetime(2026, 5, 21, 10, 2, tzinfo=UTC)}
+            controller = LiveAgentSessionRunController(root, now_fn=lambda: now["value"])
+
+            retried = controller.retry_run_now("retry-later")
+            calls = []
+            results = controller.reconcile_active_runs(
+                lambda run: calls.append(run)
+                or {
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                }
+            )
+
+        self.assertEqual(retried["status"], "degraded")
+        self.assertEqual(retried["phase"], "retry_requested")
+        self.assertEqual(retried["next_reconcile_at"], "")
+        self.assertEqual(retried["reconcile_failure_count"], 2)
+        self.assertEqual(retried["reconcile_backoff_seconds"], 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["run_id"], "retry-later")
+        self.assertEqual(results[0]["status"], "ready")
+
+    def test_retry_run_now_refuses_terminal_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(action="ensure", payload={"meeting_id": "resident-m1", "group_id": "resident-main"})
+            controller.fail_run(run["run_id"], "operator-visible failure")
+
+            with self.assertRaises(ValueError):
+                controller.retry_run_now(run["run_id"])
+
+    def test_retry_run_now_refuses_inactive_nonterminal_run(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir(parents=True)
+            (runs_dir / "session-runs.json").write_text(
+                json.dumps(
+                    {
+                        "runs": [
+                            {
+                                "run_id": "inactive-degraded",
+                                "action": "ensure",
+                                "status": "degraded",
+                                "active": False,
+                                "phase": "operator_paused",
+                                "meeting_id": "resident-m1",
+                                "group_id": "resident-main",
+                                "request": {"meeting_id": "resident-m1", "group_id": "resident-main"},
+                                "created_at": "2026-05-21T10:00:00+00:00",
+                                "updated_at": "2026-05-21T10:00:00+00:00",
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            controller = LiveAgentSessionRunController(root)
+
+            with self.assertRaises(ValueError):
+                controller.retry_run_now("inactive-degraded")
+            stored_run = controller.get_run("inactive-degraded")
+
+        self.assertFalse(stored_run["active"])
+        self.assertEqual(stored_run["phase"], "operator_paused")
+
     def test_reconcile_failure_keeps_run_active_degraded_with_retry_backoff(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

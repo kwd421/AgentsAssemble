@@ -955,6 +955,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Request the current read-only readiness overlay for each session run.",
     )
     live_session_runs_list.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON session-run payload.")
+    live_session_runs_retry_now = live_session_runs_subparsers.add_parser(
+        "retry-now",
+        parents=[live_server],
+        help="Schedule an active durable live-agent session run for immediate retry.",
+    )
+    live_session_runs_retry_now.add_argument("--run-id", required=True, help="Durable session-run id to retry now.")
+    live_session_runs_retry_now.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON retry payload.")
     live_session_runs_wait = live_session_runs_subparsers.add_parser(
         "wait",
         parents=[live_server],
@@ -3218,6 +3225,18 @@ def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
         )
         _print_live_agent_session_runs_payload(payload, as_json=args.as_json)
         return 0
+    if args.live_agent_session_runs_command == "retry-now":
+        payload = _request_json(
+            _server_url(
+                args.server,
+                f"/api/live-agent-session-runs/{urllib.parse.quote(str(args.run_id or '').strip(), safe='')}/retry-now",
+            ),
+            method="POST",
+            payload={},
+            timeout_seconds=10.0,
+        )
+        _print_live_agent_session_runs_retry_now_payload(payload, as_json=args.as_json)
+        return 0
     if args.live_agent_session_runs_command == "wait":
         return _run_live_agent_session_runs_wait(args)
     return 1
@@ -3605,6 +3624,17 @@ def _print_live_agent_session_runs_payload(payload: dict[str, object], *, as_jso
     for item in runs:
         if isinstance(item, dict):
             print(_format_live_agent_session_run(item))
+
+
+def _print_live_agent_session_runs_retry_now_payload(payload: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    run = payload.get("session_run") if isinstance(payload.get("session_run"), dict) else {}
+    suffix = f": {_format_live_agent_session_run(run)}" if run else ""
+    status = str(payload.get("status") or "scheduled")
+    verb = {"reconciled": "Retried", "skipped": "Skipped"}.get(status, "Scheduled")
+    print(f"{verb} live-agent session run retry{suffix}")
 
 
 def _print_live_agent_session_runs_wait_result(result: dict[str, object], *, as_json: bool) -> None:

@@ -189,6 +189,7 @@ function resetState() {
     liveAgentSessionRuns: [],
     liveAgentSessionRunsLoaded: true,
     liveAgentSessionRunsLoading: false,
+    liveAgentSessionRunRetryNowRunning: "",
     liveAgentProcessStartRunning: false,
     liveAgentSessionStartRunning: false,
     liveAgentSessionRestartRunning: false,
@@ -222,6 +223,7 @@ function installHarness({
   processStopRunningPayload = null,
   sessionStartPayload = null,
   sessionRunEnsurePayload = null,
+  sessionRunRetryNowPayload = null,
   sessionEnsurePayload = null,
   sessionResumePayload = null,
   sessionRestartPayload = null,
@@ -362,6 +364,27 @@ function installHarness({
             phase: "resume",
             reconcile_count: 0,
           },
+        }
+      );
+    }
+    const sessionRunRetryNowMatch = String(url).match(/^\/api\/live-agent-session-runs\/([^/]+)\/retry-now$/);
+    if (sessionRunRetryNowMatch) {
+      return jsonResponse(
+        sessionRunRetryNowPayload || {
+          status: "scheduled",
+          session_run: {
+            run_id: sessionRunRetryNowMatch[1],
+            action: "ensure",
+            status: "degraded",
+            active: true,
+            meeting_id: "resident-gui",
+            group_id: "resident-main",
+            phase: "retry_requested",
+            reconcile_failure_count: 2,
+            reconcile_backoff_seconds: 0,
+            next_reconcile_at: "",
+          },
+          results: [],
         }
       );
     }
@@ -565,6 +588,10 @@ function sessionEnsureRequest(requests) {
 
 function sessionRunEnsureRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-session-runs/ensure");
+}
+
+function sessionRunRetryNowRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-session-runs/run-1/retry-now");
 }
 
 function sessionResumeRequest(requests) {
@@ -2197,6 +2224,68 @@ test("runtime refresh loads durable session runs and renders current readiness e
   assert.match(runText, /retry backoff 120s/);
   assert.match(runText, /next retry 2026-05-21T10:07:00\+00:00/);
   assert.doesNotMatch(runText, /configs\/|secret\.example|https:|SECRET_TOKEN|--token|private prompt|provider output|log tail/);
+});
+
+test("session run retry button schedules immediate durable retry and refreshes run list", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    liveAgentSessionRunsPayload: {
+      runs: [
+        {
+          run_id: "run-1",
+          action: "ensure",
+          status: "degraded",
+          active: true,
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          phase: "reconcile_failed",
+          reconcile_count: 3,
+          reconcile_failure_count: 2,
+          reconcile_backoff_seconds: 120,
+          next_reconcile_at: "2026-05-21T10:07:00+00:00",
+        },
+      ],
+    },
+  });
+  renderLobby({ followLatest: false });
+  await refreshLiveAgentRuntimeSurfaces();
+
+  const retryButton = document.querySelectorAll("[data-live-agent-session-run-retry-now]")[0];
+  assert.ok(retryButton);
+
+  await retryButton.click();
+
+  assert.deepEqual(sessionRunRetryNowRequest(requests).jsonBody, {});
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-session-runs?limit=20&include_readiness=1"));
+  assert.equal(state.liveAgentProcessStatus.message, "run-1 재시도 예약됨");
+});
+
+test("session run retry button is hidden for ready runs with ready current readiness", async () => {
+  resetState();
+  const { document } = installHarness({
+    liveAgentSessionRunsPayload: {
+      runs: [
+        {
+          run_id: "run-ready",
+          action: "ensure",
+          status: "ready",
+          active: true,
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          phase: "none",
+          readiness: {
+            status: "ready",
+            expected: 3,
+            connected: 3,
+          },
+        },
+      ],
+    },
+  });
+  renderLobby({ followLatest: false });
+  await refreshLiveAgentRuntimeSurfaces();
+
+  assert.equal(document.querySelectorAll("[data-live-agent-session-run-retry-now]").length, 0);
 });
 
 test("runtime health session readiness renders only safe escaped evidence", async () => {
