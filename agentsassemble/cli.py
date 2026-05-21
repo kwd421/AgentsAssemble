@@ -38,6 +38,7 @@ from agentsassemble.live_agent_roster import (
     safe_live_agent_roster_text,
 )
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.live_meeting_memory import compact_live_meeting_memory
 from agentsassemble.live_agent_discovery import (
     add_session_bundle_outputs,
     build_discovered_live_agent_config,
@@ -4896,11 +4897,7 @@ def _wait_room_event_payload(
             "--",
             "<reply>",
         ],
-        "room": {
-            "meeting_id": str(room.get("meeting_id") or ""),
-            "lobby_event_count": len(room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []),
-            "live_event_count": len(room.get("live_events") if isinstance(room.get("live_events"), list) else []),
-        },
+        "room": _wait_room_context(room, meeting_id=str(room.get("meeting_id") or "")),
     }
 
 
@@ -5010,12 +5007,27 @@ def _wait_turn_request_payload(
             "--",
             "<reply>",
         ],
-        "room": {
-            "meeting_id": str(room.get("meeting_id") or meeting_id),
-            "lobby_event_count": len(room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []),
-            "live_event_count": len(room.get("live_events") if isinstance(room.get("live_events"), list) else []),
-        },
+        "room": _wait_room_context(room, meeting_id=str(room.get("meeting_id") or meeting_id)),
     }
+
+
+def _wait_room_context(room: dict[str, object], *, meeting_id: str) -> dict[str, object]:
+    context: dict[str, object] = {
+        "meeting_id": meeting_id,
+        "lobby_event_count": len(room.get("lobby_events") if isinstance(room.get("lobby_events"), list) else []),
+        "live_event_count": len(room.get("live_events") if isinstance(room.get("live_events"), list) else []),
+    }
+    shared_memory = _wait_shared_memory(room)
+    if shared_memory:
+        context["shared_memory"] = shared_memory
+    return context
+
+
+def _wait_shared_memory(room: dict[str, object]) -> dict[str, object]:
+    memory = room.get("shared_memory")
+    if not isinstance(memory, dict):
+        return {}
+    return compact_live_meeting_memory(memory)
 
 
 def _wait_turn_request_meeting_id(room: dict[str, object], event: dict[str, object]) -> str:

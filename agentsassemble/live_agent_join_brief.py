@@ -76,6 +76,7 @@ def build_live_agent_join_brief(
         "instructions": [
             "Run commands.register once before observing the room.",
             "Loop commands.wait_next and inspect the returned action.",
+            "Read room.shared_memory as official-only background context when present.",
             "For lobby actions, replace templates.say placeholders and run it once.",
             "For official_turn actions, replace templates.official_reply placeholders and run it once.",
             "Use templates.heartbeat to report online, working, error, or cursor-only observation.",

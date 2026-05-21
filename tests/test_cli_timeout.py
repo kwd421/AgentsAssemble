@@ -667,6 +667,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("--poll-interval", payload["commands"]["wait_next"])
         self.assertIn("0.5", payload["commands"]["wait_next"])
         self.assertEqual(payload["commands"]["roster_gate"][-3:], ["--require-match", "--fail-on-attention", "--json"])
+        self.assertIn("Read room.shared_memory as official-only background context when present.", payload["instructions"])
         self.assertEqual(payload["templates"]["say"][-2:], ["--", "{message}"])
         self.assertIn("{source_event_id}", payload["templates"]["say"])
         self.assertIn("{auto_chain_depth}", payload["templates"]["say"])
@@ -9490,6 +9491,62 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["reply_command"][0:7], ["python3", "-m", "agentsassemble.cli", "live-agent", "say", "--server", "http://room.local"])
         self.assertEqual(payload["reply_command"][-2:], ["--", "<reply>"])
 
+    def test_live_agent_wait_room_event_includes_official_only_shared_memory(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {"agent_id": "claude-terminal", "last_observed_event_id": "evt-old"},
+            "shared_memory": {
+                "official_event_count": 1,
+                "last_official_event_id": "reply-1",
+                "rolling_summary": [
+                    {"event_id": "reply-1", "speaker": "Architect", "summary": "Official context only."}
+                ],
+                "action_items": [
+                    {"event_id": "reply-1", "speaker": "Architect", "text": "Keep terminal agents in sync."}
+                ],
+                "private_prompt": "malicious injected prompt",
+                "raw_nested": {"token": "secret-token"},
+            },
+            "lobby_events": [
+                {"id": "evt-old", "name": "나", "message": "old"},
+                {"id": "evt-next", "name": "나", "message": "lobby question"},
+            ],
+            "live_events": [
+                {
+                    "id": "secret-request",
+                    "kind": "live_agent_turn_request",
+                    "target_agent_id": "other-agent",
+                    "content": "private prompt must not leak",
+                }
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-room-event",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["room"]["shared_memory"]["official_event_count"], 1)
+        self.assertEqual(payload["room"]["shared_memory"]["action_items"][0]["text"], "Keep terminal agents in sync.")
+        payload_text = json.dumps(payload["room"]["shared_memory"], ensure_ascii=False)
+        self.assertIn("Official context only.", payload_text)
+        self.assertNotIn("private prompt must not leak", payload_text)
+        self.assertNotIn("malicious injected prompt", payload_text)
+        self.assertNotIn("secret-token", payload_text)
+
     def test_live_agent_wait_room_event_treats_actor_id_as_authoritative_for_self_check(self):
         stdout = StringIO()
         room_payload = {
@@ -9744,6 +9801,66 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["reply_command"][0:7], ["python3", "-m", "agentsassemble.cli", "live-agent", "official-reply", "--server", "http://room.local"])
         self.assertEqual(payload["reply_command"][-2:], ["--", "<reply>"])
 
+    def test_live_agent_wait_official_turn_includes_official_only_shared_memory(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "meeting_id": "meeting-1",
+                "last_observed_live_event_id": "live-old",
+            },
+            "meeting_id": "meeting-1",
+            "shared_memory": {
+                "official_event_count": 2,
+                "last_official_event_id": "reply-2",
+                "decisions": [
+                    {"event_id": "reply-1", "speaker": "Architect", "text": "Keep self-service informed."}
+                ],
+                "provider_output": "raw model output must not leak",
+            },
+            "live_events": [
+                {"id": "live-old", "kind": "message", "content": "old"},
+                {
+                    "id": "live-next",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "meeting-1",
+                    "target_agent_id": "claude-terminal",
+                    "content": "official question",
+                },
+                {
+                    "id": "secret-request",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "meeting-1",
+                    "target_agent_id": "other-agent",
+                    "content": "other private turn",
+                },
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-official-turn",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["room"]["shared_memory"]["official_event_count"], 2)
+        payload_text = json.dumps(payload["room"]["shared_memory"], ensure_ascii=False)
+        self.assertIn("Keep self-service informed.", payload_text)
+        self.assertNotIn("other private turn", payload_text)
+        self.assertNotIn("raw model output must not leak", payload_text)
+
     def test_live_agent_wait_official_turn_uses_visible_tail_when_cursor_is_missing(self):
         stdout = StringIO()
         room_payload = {
@@ -9976,6 +10093,12 @@ class CliTimeoutTests(unittest.TestCase):
                 "display_name": "Claude Terminal",
                 "last_observed_event_id": "evt-old",
             },
+            "shared_memory": {
+                "official_event_count": 1,
+                "rolling_summary": [
+                    {"event_id": "reply-1", "speaker": "Architect", "summary": "Shared room context."}
+                ],
+            },
             "lobby_events": [
                 {"id": "evt-old", "name": "나", "message": "old"},
                 {"id": "evt-next", "name": "나", "message": "lobby question"},
@@ -10004,6 +10127,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["action"], "lobby")
         self.assertEqual(payload["event"]["id"], "evt-next")
         self.assertEqual(payload["reply_command"][4], "say")
+        self.assertEqual(payload["room"]["shared_memory"]["rolling_summary"][0]["summary"], "Shared room context.")
 
     def test_live_agent_wait_next_does_not_use_lobby_cursor_for_official_turns(self):
         stdout = StringIO()

@@ -192,6 +192,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("shared_memory_last_event_id", doc)
         self.assertIn("shared_memory in `/api/live-agents/<agent_id>/room`", doc)
         self.assertIn("Shared meeting memory", doc)
+        self.assertIn("wait-next event payloads include `room.shared_memory`", doc)
+        self.assertIn("Read room.shared_memory as official-only background context", doc)
         self.assertIn("Action item:", doc)
         self.assertIn("Open question:", doc)
         self.assertIn("--include-legacy-gemini", doc)
