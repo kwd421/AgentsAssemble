@@ -115,6 +115,22 @@ python3 -m agentsassemble.cli live-agent register \
 
 Use `--json` when a wrapper needs the registration acknowledgement, including the server-preserved meeting, session, and engagement fields, instead of parsing the compact `Registered <agent-id>` line.
 
+When handing the room to another AI, generate a startup packet instead of writing ad hoc instructions:
+
+```bash
+python3 -m agentsassemble.cli live-agent join-brief \
+  --server http://127.0.0.1:8765 \
+  --agent-id external-reviewer \
+  --display-name "External Reviewer" \
+  --provider-kind manual \
+  --connection-kind manual \
+  --meeting-id resident-1 \
+  --engagement-mode watch \
+  --json
+```
+
+`join-brief` is local formatting only: it does not contact the room, write files, start providers, or execute commands. The JSON includes safe command arrays for `register`, `wait-next`, `room`, and a roster gate, plus `say`, `official-reply`, and `heartbeat` templates that another agent can fill after `wait-next` returns an action. It intentionally omits session ids, endpoint URLs, auth refs, config paths, provider command arguments, provider output, log paths, prompts, and reply text. Give that packet to the external agent, have it run `commands.register` once, then loop `commands.wait_next` and fill exactly one reply template per returned action.
+
 Inspect the current roster from a terminal with:
 
 ```bash

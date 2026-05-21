@@ -257,6 +257,22 @@ def build_parser() -> argparse.ArgumentParser:
     live_register.add_argument("--engagement-mode", default="mentioned")
     live_register.add_argument("--json", action="store_true", dest="as_json", help="Print the raw registration response.")
 
+    live_join_brief = live_agent_subparsers.add_parser(
+        "join-brief",
+        parents=[live_server],
+        help="Generate safe startup commands for an external or manual live agent.",
+    )
+    live_join_brief.add_argument("--agent-id", required=True)
+    live_join_brief.add_argument("--display-name", default="")
+    live_join_brief.add_argument("--provider-kind", default="manual")
+    live_join_brief.add_argument("--connection-kind", choices=LIVE_AGENT_CONNECTION_KIND_CHOICES, default="manual")
+    live_join_brief.add_argument("--meeting-id", default="")
+    live_join_brief.add_argument("--engagement-mode", choices=ENGAGEMENT_MODE_CHOICES, default="mentioned")
+    live_join_brief.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
+    live_join_brief.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    live_join_brief.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
+    live_join_brief.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable join brief.")
+
     live_list = live_agent_subparsers.add_parser("list", parents=[live_server], help="List live agent roster presence.")
     live_list.add_argument("--json", action="store_true", dest="as_json", help="Print the safe roster response.")
     live_list.add_argument("--meeting-id", default="", help="Limit roster rows to one meeting id.")
@@ -1153,6 +1169,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             else:
                 print(f"Registered {agent.get('agent_id') or args.agent_id}")
             return 0
+        if args.live_agent_command == "join-brief":
+            return _run_live_agent_join_brief(args)
         if args.live_agent_command == "list":
             return _run_live_agent_list(args)
         if args.live_agent_command == "heartbeat":
@@ -1285,6 +1303,235 @@ def _is_unreplaced_template_placeholder(value: object) -> bool:
     if not isinstance(value, str):
         return False
     return bool(re.fullmatch(r"\{[A-Za-z0-9_]+\}", value.strip()))
+
+
+def _run_live_agent_join_brief(args: argparse.Namespace) -> int:
+    payload = _live_agent_join_brief_payload(args)
+    if args.as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        _print_live_agent_join_brief(payload)
+    return 0
+
+
+def _live_agent_join_brief_payload(args: argparse.Namespace) -> dict[str, object]:
+    server = str(args.server or "").strip() or "http://127.0.0.1:8765"
+    agent_id = clean_lobby_text(args.agent_id, limit=64)
+    display_name = clean_lobby_text(args.display_name, limit=128) or agent_id
+    provider_kind = clean_lobby_text(args.provider_kind, limit=64) or "manual"
+    connection_kind = clean_lobby_text(args.connection_kind, limit=64) or "manual"
+    meeting_id = clean_lobby_text(args.meeting_id, limit=128)
+    engagement_mode = clean_lobby_text(args.engagement_mode, limit=64) or "mentioned"
+    timeout = _cli_number(args.timeout)
+    poll_interval = _cli_number(args.poll_interval)
+    max_chain_depth = str(max(0, int(args.max_chain_depth)))
+    agent = {
+        "agent_id": agent_id,
+        "display_name": display_name,
+        "provider_kind": provider_kind,
+        "connection_kind": connection_kind,
+        "meeting_id": meeting_id,
+        "engagement_mode": engagement_mode,
+    }
+    commands = {
+        "register": _live_agent_join_register_command(
+            server=server,
+            agent=agent,
+        ),
+        "wait_next": _live_agent_join_wait_next_command(
+            server=server,
+            agent_id=agent_id,
+            timeout=timeout,
+            poll_interval=poll_interval,
+            max_chain_depth=max_chain_depth,
+        ),
+        "room": _live_agent_join_room_command(server=server, agent_id=agent_id),
+        "roster_gate": _live_agent_join_roster_gate_command(server=server, agent_id=agent_id, meeting_id=meeting_id),
+    }
+    templates = {
+        "say": _live_agent_join_say_template(server=server, agent_id=agent_id),
+        "official_reply": _live_agent_join_official_reply_template(server=server, agent_id=agent_id),
+        "heartbeat": _live_agent_join_heartbeat_template(server=server, agent_id=agent_id),
+    }
+    return {
+        "status": "generated",
+        "agent": agent,
+        "commands": commands,
+        "templates": templates,
+        "env": {
+            "AGENTSASSEMBLE_SERVER": server,
+            "AGENTSASSEMBLE_AGENT_ID": agent_id,
+            "AGENTSASSEMBLE_DISPLAY_NAME": display_name,
+            "AGENTSASSEMBLE_PROVIDER_KIND": provider_kind,
+            "AGENTSASSEMBLE_CONNECTION_KIND": connection_kind,
+            "AGENTSASSEMBLE_MEETING_ID": meeting_id,
+            "AGENTSASSEMBLE_ENGAGEMENT_MODE": engagement_mode,
+        },
+        "instructions": [
+            "Run commands.register once before observing the room.",
+            "Loop commands.wait_next and inspect the returned action.",
+            "For lobby actions, replace templates.say placeholders and run it once.",
+            "For official_turn actions, replace templates.official_reply placeholders and run it once.",
+            "Use templates.heartbeat to report online, working, error, or cursor-only observation.",
+        ],
+        "safety": {
+            "room_contacted": False,
+            "provider_executed": False,
+            "contains_secrets": False,
+        },
+    }
+
+
+def _live_agent_join_register_command(*, server: str, agent: dict[str, object]) -> list[str]:
+    command = _module_cli_command("live-agent", "register", "--server", server)
+    command.extend(
+        [
+            "--agent-id",
+            str(agent["agent_id"]),
+            "--display-name",
+            str(agent["display_name"]),
+            "--provider-kind",
+            str(agent["provider_kind"]),
+            "--connection-kind",
+            str(agent["connection_kind"]),
+        ]
+    )
+    meeting_id = str(agent.get("meeting_id") or "")
+    if meeting_id:
+        command.extend(["--meeting-id", meeting_id])
+    command.extend(["--engagement-mode", str(agent["engagement_mode"]), "--json"])
+    return command
+
+
+def _live_agent_join_wait_next_command(
+    *,
+    server: str,
+    agent_id: str,
+    timeout: str,
+    poll_interval: str,
+    max_chain_depth: str,
+) -> list[str]:
+    return _module_cli_command(
+        "live-agent",
+        "wait-next",
+        "--server",
+        server,
+        "--agent-id",
+        agent_id,
+        "--max-chain-depth",
+        max_chain_depth,
+        "--timeout",
+        timeout,
+        "--poll-interval",
+        poll_interval,
+        "--json",
+    )
+
+
+def _live_agent_join_room_command(*, server: str, agent_id: str) -> list[str]:
+    return _module_cli_command("live-agent", "room", "--server", server, "--agent-id", agent_id)
+
+
+def _live_agent_join_roster_gate_command(*, server: str, agent_id: str, meeting_id: str) -> list[str]:
+    command = _module_cli_command(
+        "live-agent",
+        "list",
+        "--server",
+        server,
+        "--agent-id",
+        agent_id,
+    )
+    if meeting_id:
+        command.extend(["--meeting-id", meeting_id])
+    command.extend(["--require-match", "--fail-on-attention", "--json"])
+    return command
+
+
+def _live_agent_join_say_template(*, server: str, agent_id: str) -> list[str]:
+    return _module_cli_command(
+        "live-agent",
+        "say",
+        "--server",
+        server,
+        "--agent-id",
+        agent_id,
+        "--source-event-id",
+        "{source_event_id}",
+        "--auto-chain-depth",
+        "{auto_chain_depth}",
+        "--json",
+        "--",
+        "{message}",
+    )
+
+
+def _live_agent_join_official_reply_template(*, server: str, agent_id: str) -> list[str]:
+    return _module_cli_command(
+        "live-agent",
+        "official-reply",
+        "--server",
+        server,
+        "--agent-id",
+        agent_id,
+        "--meeting-id",
+        "{meeting_id}",
+        "--source-event-id",
+        "{source_event_id}",
+        "--json",
+        "--",
+        "{message}",
+    )
+
+
+def _live_agent_join_heartbeat_template(*, server: str, agent_id: str) -> list[str]:
+    return _module_cli_command(
+        "live-agent",
+        "heartbeat",
+        "--server",
+        server,
+        "--agent-id",
+        agent_id,
+        "--status",
+        "{status}",
+        "--last-error={last_error}",
+        "--last-reply-at={last_reply_at}",
+        "--last-observed-event-id={last_observed_event_id}",
+        "--last-observed-live-event-id={last_observed_live_event_id}",
+        "--json",
+    )
+
+
+def _module_cli_command(*args: str) -> list[str]:
+    return ["python3", "-m", "agentsassemble.cli", *args]
+
+
+def _print_live_agent_join_brief(payload: dict[str, object]) -> None:
+    agent = payload.get("agent") if isinstance(payload.get("agent"), dict) else {}
+    commands = payload.get("commands") if isinstance(payload.get("commands"), dict) else {}
+    templates = payload.get("templates") if isinstance(payload.get("templates"), dict) else {}
+    agent_id = str(agent.get("agent_id") or "agent")
+    print(f"Live-agent join brief for {agent_id}")
+    _print_join_brief_command("Register", commands.get("register"))
+    _print_join_brief_command("Wait loop", commands.get("wait_next"))
+    _print_join_brief_command("Room snapshot", commands.get("room"))
+    _print_join_brief_command("Roster gate", commands.get("roster_gate"))
+    _print_join_brief_command("Lobby reply template", templates.get("say"))
+    _print_join_brief_command("Official reply template", templates.get("official_reply"))
+    _print_join_brief_command("Heartbeat template", templates.get("heartbeat"))
+    print("Run Register first, then loop Wait and fill one reply template for each returned action.")
+
+
+def _print_join_brief_command(label: str, value: object) -> None:
+    if not isinstance(value, list):
+        return
+    command = [str(item) for item in value]
+    print(f"{label}:")
+    print(f"  {shlex.join(command)}")
+
+
+def _cli_number(value: object) -> str:
+    number = _safe_nonnegative_float(value)
+    return f"{number:g}"
 
 
 def _run_live_agent_list(args: argparse.Namespace) -> int:

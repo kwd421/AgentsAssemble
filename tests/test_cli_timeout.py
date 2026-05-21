@@ -588,6 +588,196 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(terminal_args.connection_kind, "terminal_session")
         self.assertEqual(self_service_args.connection_kind, "self_service")
 
+    def test_live_agent_join_brief_json_builds_safe_external_agent_commands(self):
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=AssertionError("join brief should not contact room")):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "join-brief",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--display-name",
+                        "Claude Terminal",
+                        "--provider-kind",
+                        "claude_code",
+                        "--connection-kind",
+                        "manual",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--engagement-mode",
+                        "watch",
+                        "--timeout",
+                        "9",
+                        "--poll-interval",
+                        "0.5",
+                        "--max-chain-depth",
+                        "2",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "generated")
+        self.assertEqual(
+            payload["agent"],
+            {
+                "agent_id": "claude-terminal",
+                "display_name": "Claude Terminal",
+                "provider_kind": "claude_code",
+                "connection_kind": "manual",
+                "meeting_id": "resident-m1",
+                "engagement_mode": "watch",
+            },
+        )
+        self.assertEqual(
+            payload["commands"]["register"],
+            [
+                "python3",
+                "-m",
+                "agentsassemble.cli",
+                "live-agent",
+                "register",
+                "--server",
+                "http://room.local",
+                "--agent-id",
+                "claude-terminal",
+                "--display-name",
+                "Claude Terminal",
+                "--provider-kind",
+                "claude_code",
+                "--connection-kind",
+                "manual",
+                "--meeting-id",
+                "resident-m1",
+                "--engagement-mode",
+                "watch",
+                "--json",
+            ],
+        )
+        self.assertEqual(payload["commands"]["wait_next"][0:7], ["python3", "-m", "agentsassemble.cli", "live-agent", "wait-next", "--server", "http://room.local"])
+        self.assertIn("--max-chain-depth", payload["commands"]["wait_next"])
+        self.assertIn("2", payload["commands"]["wait_next"])
+        self.assertIn("--timeout", payload["commands"]["wait_next"])
+        self.assertIn("9", payload["commands"]["wait_next"])
+        self.assertIn("--poll-interval", payload["commands"]["wait_next"])
+        self.assertIn("0.5", payload["commands"]["wait_next"])
+        self.assertEqual(payload["commands"]["roster_gate"][-3:], ["--require-match", "--fail-on-attention", "--json"])
+        self.assertEqual(payload["templates"]["say"][-2:], ["--", "{message}"])
+        self.assertIn("{source_event_id}", payload["templates"]["say"])
+        self.assertIn("{auto_chain_depth}", payload["templates"]["say"])
+        self.assertEqual(payload["templates"]["official_reply"][-2:], ["--", "{message}"])
+        self.assertIn("{meeting_id}", payload["templates"]["official_reply"])
+        self.assertIn("{source_event_id}", payload["templates"]["official_reply"])
+        serialized = json.dumps(payload)
+        self.assertNotIn("endpoint", serialized)
+        self.assertNotIn("auth", serialized)
+        self.assertNotIn("session_id", serialized)
+        self.assertNotIn("config_path", serialized)
+        self.assertNotIn("log_path", serialized)
+
+    def test_live_agent_join_brief_templates_parse_after_placeholder_replacement(self):
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            exit_code = main(
+                [
+                    "live-agent",
+                    "join-brief",
+                    "--server",
+                    "http://room.local",
+                    "--agent-id",
+                    "agent-a",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        say_command = [
+            (
+                "-h"
+                if item == "{message}"
+                else "evt-1"
+                if item == "{source_event_id}"
+                else "1"
+                if item == "{auto_chain_depth}"
+                else item
+            )
+            for item in payload["templates"]["say"][3:]
+        ]
+        say_args = build_parser().parse_args(say_command)
+        self.assertEqual(say_args.live_agent_command, "say")
+        self.assertEqual(say_args.message, ["-h"])
+
+        official_command = [
+            (
+                "-official"
+                if item == "{message}"
+                else "meeting-1"
+                if item == "{meeting_id}"
+                else "live-1"
+                if item == "{source_event_id}"
+                else item
+            )
+            for item in payload["templates"]["official_reply"][3:]
+        ]
+        official_args = build_parser().parse_args(official_command)
+        self.assertEqual(official_args.live_agent_command, "official-reply")
+        self.assertEqual(official_args.message, ["-official"])
+
+        heartbeat_command = [
+            (
+                "error"
+                if item == "{status}"
+                else "--last-error=--provider-failed"
+                if item == "--last-error={last_error}"
+                else "--last-reply-at="
+                if item == "--last-reply-at={last_reply_at}"
+                else "--last-observed-event-id=evt-1"
+                if item == "--last-observed-event-id={last_observed_event_id}"
+                else "--last-observed-live-event-id=live-1"
+                if item == "--last-observed-live-event-id={last_observed_live_event_id}"
+                else item
+            )
+            for item in payload["templates"]["heartbeat"][3:]
+        ]
+        heartbeat_args = build_parser().parse_args(heartbeat_command)
+        self.assertEqual(heartbeat_args.live_agent_command, "heartbeat")
+        self.assertEqual(heartbeat_args.status, "error")
+        self.assertEqual(heartbeat_args.last_error, "--provider-failed")
+
+    def test_live_agent_join_brief_compact_output_shell_quotes_commands(self):
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", side_effect=AssertionError("join brief should not contact room")):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "join-brief",
+                        "--server",
+                        "http://room.local/with space",
+                        "--agent-id",
+                        "agent one",
+                        "--display-name",
+                        "Agent One",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("Live-agent join brief for agent one", output)
+        self.assertIn("Register:", output)
+        self.assertIn("Wait loop:", output)
+        self.assertIn("Room snapshot:", output)
+        self.assertIn("Lobby reply template:", output)
+        self.assertIn("Official reply template:", output)
+        self.assertIn("'http://room.local/with space'", output)
+        self.assertIn("'agent one'", output)
+
     def test_live_agent_say_posts_lobby_message(self):
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value={"event": {"id": "evt1"}}) as request_json:

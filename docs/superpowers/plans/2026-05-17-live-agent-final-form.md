@@ -4486,6 +4486,33 @@ Operator docs now tell direct HTTP wrappers to prefer `/api/live-agents?safe=1` 
 
 ---
 
+### Task 129: External Agent Join Brief
+
+**Goal:** Make it easy to hand a live room to another AI or manually driven agent without inventing one-off instructions or exposing local/session details.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED join-brief coverage**
+
+Cover `assemble live-agent join-brief --json`, no room contact, safe identity fields, generated command arrays, placeholder reply templates, compact shell-quoted output, and omission of endpoint/auth/session/config/log fields.
+
+- [x] **Step 2: Add local startup packet generation**
+
+`join-brief` now emits local-only startup evidence for external agents: `register`, `wait-next`, `room`, and roster gate command arrays plus `say`, `official-reply`, and `heartbeat` templates with safe option boundaries for message values that begin with `-`.
+
+- [x] **Step 3: Document external handoff usage**
+
+Operator docs now show the brief generation command and explain that the external agent should register once, loop `wait-next`, and fill exactly one reply template for each returned action.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
