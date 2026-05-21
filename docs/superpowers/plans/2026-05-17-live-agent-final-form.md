@@ -4927,6 +4927,31 @@ Operator docs and roadmap now distinguish broad `--approve-real-providers` from 
 
 ---
 
+## Task 144: Surface exact auto-join approvals in the GUI
+
+**Goal:** Let the GUI operator select specific discovered real-provider candidates before `자동입장`, so the same exact `approved_agents` filtering available to CLI/API users is reachable from the normal browser control surface.
+
+**Files:**
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED static GUI approval coverage**
+
+Cover a rendered discovery report with Claude and Codex approval-required rows. Selecting only `codex-live` and pressing `자동입장` must send `approved_agents: ["codex-live"]` to discovery before preflight, then ensure the durable session-run with one-shot real-provider approval and reply probing. Cover stale exact selections that the backend returns as `approval_required`, proving the GUI stops before preflight or ensure.
+
+- [x] **Step 2: Render and preserve per-candidate exact approvals**
+
+Discovery rows now render an exact approval checkbox for included approval-required rows with a safe `agent_id`. The selected agent ids are read before `자동입장` clears the report, preserved across ordinary lobby rerenders, filtered through the same safe-token guard, and sent only to `POST /api/live-agent-discovery`; the later durable ensure request receives only the one-shot `approve_real_providers` and `probe_bound_agents` booleans.
+
+- [x] **Step 3: Keep docs aligned with GUI approval controls**
+
+Operator docs now distinguish the per-candidate exact approval checkboxes from the broad `실사용 CLI 승인` checkbox and state that exact approvals filter before preflight and session-run ensure.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

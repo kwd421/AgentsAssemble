@@ -1448,6 +1448,180 @@ test("auto join proceeds with explicit real provider approval", async () => {
   assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 1/1 connected · run auto-run-approved ready");
 });
 
+test("auto join sends selected discovery approvals before preflight and durable ensure", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  state.liveAgentDiscoveryReport = {
+    status: "ok",
+    written: true,
+    output: ".agentsassemble/live-agents.discovered.local.json",
+    config: {
+      agents: [
+        { agent_id: "claude-code-live", provider_kind: "claude_code" },
+        { agent_id: "codex-live", provider_kind: "codex_live_session" },
+      ],
+    },
+    discoveries: [
+      {
+        command: "claude",
+        agent_id: "claude-code-live",
+        provider_kind: "claude_code",
+        available: true,
+        included: true,
+        requires_approval: true,
+      },
+      {
+        command: "codex",
+        agent_id: "codex-live",
+        provider_kind: "codex_live_session",
+        available: true,
+        included: true,
+        requires_approval: true,
+      },
+      {
+        command: "unsafe",
+        agent_id: "../unsafe live",
+        provider_kind: "local_cli",
+        available: true,
+        included: true,
+        requires_approval: true,
+      },
+    ],
+  };
+  const { document, requests } = installHarness({
+    liveAgentDiscoveryPayload: {
+      status: "ok",
+      written: true,
+      output: ".agentsassemble/live-agents.discovered.local.json",
+      approval_filter: { approved_agents: ["codex-live"], approved_count: 1 },
+      config: {
+        agents: [{ agent_id: "codex-live", provider_kind: "codex_live_session" }],
+      },
+      discoveries: [
+        {
+          command: "claude",
+          agent_id: "claude-code-live",
+          provider_kind: "claude_code",
+          available: true,
+          included: false,
+          requires_approval: true,
+          approval_status: "not_approved",
+        },
+        {
+          command: "codex",
+          agent_id: "codex-live",
+          provider_kind: "codex_live_session",
+          available: true,
+          included: true,
+          requires_approval: true,
+          approval_status: "approved",
+        },
+      ],
+      session_bundle: {
+        live_agent_config_path: ".agentsassemble/live-agents.discovered.local.json",
+        council_config_path: ".agentsassemble/council.discovered.local.json",
+        agent_config_path: ".agentsassemble/agents.discovered.local.json",
+        group_id: "live-agents.discovered.local",
+      },
+    },
+    liveAgentPreflightPayload: {
+      status: "ok",
+      summary: { agents: 1 },
+      agents: [{ agent_id: "codex-live", status: "ok" }],
+    },
+    sessionRunEnsurePayload: {
+      status: "ready",
+      action: "start",
+      meeting_id: "resident-gui",
+      group_id: "live-agents.discovered.local",
+      connection: { expected: 1, connected: 1, attention: [] },
+      process: { status: "running", attention: [] },
+      session_run: {
+        run_id: "auto-run-exact",
+        action: "ensure",
+        status: "ready",
+        active: true,
+        meeting_id: "resident-gui",
+        group_id: "live-agents.discovered.local",
+      },
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  assert.equal(document.querySelectorAll("[data-live-agent-discovery-approve-agent]").length, 2);
+  const exactApproval = document
+    .querySelectorAll("[data-live-agent-discovery-approve-agent]")
+    .find((input) => input.attributes["data-live-agent-discovery-approve-agent"] === "codex-live");
+  assert.ok(exactApproval);
+  exactApproval.checked = true;
+  renderLobby({ followLatest: false });
+  const preservedApproval = document
+    .querySelectorAll("[data-live-agent-discovery-approve-agent]")
+    .find((input) => input.attributes["data-live-agent-discovery-approve-agent"] === "codex-live");
+  assert.ok(preservedApproval);
+  assert.equal(preservedApproval.checked, true);
+  document.querySelector("#live-agent-auto-join-real-provider-approval").checked = true;
+  await document.querySelector("#live-agent-auto-join").click();
+
+  assert.deepEqual(liveAgentDiscoveryRequest(requests).jsonBody.approved_agents, ["codex-live"]);
+  assert.equal(liveAgentDiscoveryRequest(requests).jsonBody.approved_commands, undefined);
+  assert.ok(liveAgentPreflightRequest(requests));
+  assert.ok(sessionRunEnsureRequest(requests));
+  assert.equal(sessionRunEnsureRequest(requests).jsonBody.approve_real_providers, true);
+  assert.equal(sessionRunEnsureRequest(requests).jsonBody.probe_bound_agents, true);
+  assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 1/1 connected · run auto-run-exact ready");
+});
+
+test("auto join exact approval with stale selection stops on backend approval_required", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui" } };
+  state.liveAgentDiscoveryReport = {
+    status: "ok",
+    discoveries: [
+      {
+        command: "codex",
+        agent_id: "codex-live",
+        provider_kind: "codex_live_session",
+        available: true,
+        included: true,
+        requires_approval: true,
+      },
+    ],
+  };
+  const { document, requests } = installHarness({
+    liveAgentDiscoveryPayload: {
+      status: "approval_required",
+      written: false,
+      output: "",
+      approval_filter: { approved_agents: [], approved_count: 0, unmatched_approval_count: 1 },
+      config: { agents: [] },
+      discoveries: [
+        {
+          command: "codex",
+          agent_id: "codex-live",
+          provider_kind: "codex_live_session",
+          available: true,
+          included: false,
+          requires_approval: true,
+          approval_status: "not_approved",
+        },
+      ],
+    },
+  });
+
+  renderLobby({ followLatest: false });
+  const exactApproval = document.querySelectorAll("[data-live-agent-discovery-approve-agent]")[0];
+  assert.ok(exactApproval);
+  exactApproval.checked = true;
+  await document.querySelector("#live-agent-auto-join").click();
+
+  assert.deepEqual(liveAgentDiscoveryRequest(requests).jsonBody.approved_agents, ["codex-live"]);
+  assert.equal(liveAgentPreflightRequest(requests), undefined);
+  assert.equal(sessionRunEnsureRequest(requests), undefined);
+  assert.equal(state.liveAgentProcessStatus.message, "자동입장 중단: discovery approval_required · 0 agents");
+  assert.equal(state.liveAgentProcessStatus.tone, "error");
+});
+
 test("auto join stops before preflight when discovery omits the session bundle", async () => {
   resetState();
   state.payload = { meeting: { meeting_id: "resident-gui" } };

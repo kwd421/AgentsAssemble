@@ -264,6 +264,7 @@ function readLiveAgentProcessDraft(lobby) {
     sessionProbeBoundAgents: Boolean(form.querySelector("#live-agent-session-probe-bound-agents")?.checked),
     sessionProbeTimeout: form.querySelector("#live-agent-session-probe-timeout")?.value ?? "",
     discoverySessionBundle: Boolean(form.querySelector("#live-agent-discovery-session-bundle")?.checked),
+    discoveryApprovedAgents: liveAgentDiscoverySelectedApprovals(lobby),
     realProviderApproval: Boolean(form.querySelector("#live-agent-auto-join-real-provider-approval")?.checked),
     autoRestart: Boolean(form.querySelector("#live-agent-process-auto-restart")?.checked),
     officialRoundSmoke: Boolean(form.querySelector("#live-agent-readiness-official-round")?.checked),
@@ -332,6 +333,7 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   if (sessionProbeBoundAgents) sessionProbeBoundAgents.checked = draft.sessionProbeBoundAgents;
   if (sessionProbeTimeout) sessionProbeTimeout.value = draft.sessionProbeTimeout;
   if (discoverySessionBundle) discoverySessionBundle.checked = draft.discoverySessionBundle;
+  restoreLiveAgentDiscoverySelectedApprovals(lobby, draft.discoveryApprovedAgents);
   if (realProviderApproval) realProviderApproval.checked = draft.realProviderApproval;
   if (autoRestart) autoRestart.checked = draft.autoRestart;
   if (officialRoundSmoke) officialRoundSmoke.checked = draft.officialRoundSmoke;
@@ -889,6 +891,7 @@ function renderLiveAgentDiscoveryNextCommands(report) {
 
 function renderLiveAgentDiscoveryRow(discovery) {
   const command = String(discovery?.command || "unknown");
+  const agentId = String(discovery?.agent_id || "").trim();
   const providerKind = String(discovery?.provider_kind || "unknown");
   const entryMode = String(discovery?.entry_mode || discovery?.connection_kind || "");
   const entryStatus = String(discovery?.entry_status || "");
@@ -897,18 +900,29 @@ function renderLiveAgentDiscoveryRow(discovery) {
   const evidenceBasis = String(discovery?.evidence_basis || "");
   const operatorAction = String(discovery?.operator_action || "");
   const approval = discovery?.requires_approval ? "approval required" : "";
+  const approvalStatus = String(discovery?.approval_status || "");
   const safetyNote = String(discovery?.safety_note || "");
   const reason = String(discovery?.reason || "");
   const status = discovery?.included ? "included" : discovery?.available ? "skipped" : "missing";
-  const detail = [providerKind, entryMode, joinSemantics, contextDurability, evidenceBasis, entryStatus || reason, operatorAction, approval, safetyNote]
+  const detail = [providerKind, agentId, entryMode, joinSemantics, contextDurability, evidenceBasis, entryStatus || reason, operatorAction, approvalStatus, approval, safetyNote]
     .filter(Boolean)
     .join(" · ");
+  const approvalAgentId = liveAgentDiscoverySafeApprovalAgentId(agentId) ? agentId : "";
+  const approvalControl = discovery?.included && discovery?.requires_approval && approvalAgentId
+    ? `
+      <label class="live-agent-process-options">
+        <input type="checkbox" data-live-agent-discovery-approve-agent="${escapeHtml(approvalAgentId)}" />
+        <span>approve</span>
+      </label>
+    `
+    : "";
   return `
     <article class="live-agent-discovery-row live-agent-discovery-${escapeHtml(status)}">
       <div>
         <strong>${escapeHtml(command)}</strong>
         <small>${escapeHtml(detail)}</small>
       </div>
+      ${approvalControl}
       <em>${escapeHtml(status)}</em>
     </article>
   `;
@@ -2323,6 +2337,7 @@ async function runLiveAgentAutoJoin(lobby) {
   if (liveAgentProcessActionBusy()) return;
   const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
   const realProviderApproved = lobby.querySelector("#live-agent-auto-join-real-provider-approval")?.checked === true;
+  const approvedAgents = liveAgentDiscoverySelectedApprovals(lobby);
   state.liveAgentAutoJoinRunning = true;
   state.liveAgentDiscoveryReport = null;
   state.liveAgentProcessStatus = { message: "자동입장: CLI 발견 중", tone: "info" };
@@ -2336,6 +2351,7 @@ async function runLiveAgentAutoJoin(lobby) {
         engagement_mode: "mentioned",
         write_config: true,
         session_bundle: true,
+        ...(approvedAgents.length ? { approved_agents: approvedAgents } : {}),
       }),
     });
     state.liveAgentDiscoveryReport = discovery;
@@ -2378,8 +2394,8 @@ async function runLiveAgentAutoJoin(lobby) {
       busyMessage: "자동입장: 상주 세션런 보장 중",
       failurePrefix: "자동입장 실패",
       notifyRecoverable: true,
-      forceProbeBoundAgents: realProviderApproved && liveAgentDiscoveryRequiresApproval(discovery),
-      approveRealProviders: realProviderApproved && liveAgentDiscoveryRequiresApproval(discovery),
+      forceProbeBoundAgents: liveAgentDiscoveryHasExactApproval(discovery) || (realProviderApproved && liveAgentDiscoveryRequiresApproval(discovery)),
+      approveRealProviders: liveAgentDiscoveryHasExactApproval(discovery) || (realProviderApproved && liveAgentDiscoveryRequiresApproval(discovery)),
     });
   } catch (error) {
     state.liveAgentProcessStatus = { message: `자동입장 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
@@ -2392,7 +2408,7 @@ async function runLiveAgentAutoJoin(lobby) {
 
 function liveAgentDiscoveryRequiresApproval(discovery) {
   const discoveries = Array.isArray(discovery?.discoveries) ? discovery.discoveries : [];
-  return discoveries.some((item) => item?.included && item?.requires_approval);
+  return discoveries.some((item) => item?.included && item?.requires_approval && item?.approval_status !== "approved");
 }
 
 function liveAgentDiscoveryApprovalCommands(discovery) {
@@ -2402,6 +2418,30 @@ function liveAgentDiscoveryApprovalCommands(discovery) {
     .map((item) => String(item?.command || "").trim())
     .filter(Boolean)
     .slice(0, 5);
+}
+
+function liveAgentDiscoveryHasExactApproval(discovery) {
+  const approvalFilter = discovery?.approval_filter && typeof discovery.approval_filter === "object" ? discovery.approval_filter : {};
+  return Number(approvalFilter.approved_count || 0) > 0;
+}
+
+function liveAgentDiscoverySelectedApprovals(root) {
+  return Array.from(root.querySelectorAll("[data-live-agent-discovery-approve-agent]"))
+    .filter((input) => input.checked)
+    .map((input) => String(input.dataset?.liveAgentDiscoveryApproveAgent || "").trim())
+    .filter(liveAgentDiscoverySafeApprovalAgentId)
+    .slice(0, 32);
+}
+
+function restoreLiveAgentDiscoverySelectedApprovals(root, approvedAgents) {
+  const approved = new Set(Array.isArray(approvedAgents) ? approvedAgents.map((value) => String(value || "").trim()).filter(liveAgentDiscoverySafeApprovalAgentId) : []);
+  root.querySelectorAll("[data-live-agent-discovery-approve-agent]").forEach((input) => {
+    input.checked = approved.has(String(input.dataset?.liveAgentDiscoveryApproveAgent || "").trim());
+  });
+}
+
+function liveAgentDiscoverySafeApprovalAgentId(value) {
+  return /^[A-Za-z0-9_.:-]{1,64}$/.test(String(value || "").trim());
 }
 
 function liveAgentDiscoveryHasSessionBundle(discovery) {
