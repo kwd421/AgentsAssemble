@@ -1286,6 +1286,46 @@ class LiveAgentRunnerTests(unittest.TestCase):
         ]
         self.assertIn("evt1", observed)
 
+    def test_watch_mode_survives_transient_cursor_heartbeat_failure(self):
+        clock = FakeClock()
+        calls = []
+        command_calls = []
+        room_reads = 0
+
+        def request_json(url, *, method="GET", payload=None):
+            nonlocal room_reads
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/room"):
+                room_reads += 1
+                return {"lobby_events": [{"id": "evt1", "side": "mine", "name": "나", "message": "보고만 있어"}]}
+            if url.endswith("/heartbeat"):
+                if (payload or {}).get("last_observed_event_id") == "evt1" and (payload or {}).get("status") == "online":
+                    raise ConnectionError("transient cursor heartbeat failure")
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            return {}
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="watch", max_ticks=2),
+            request_json=request_json,
+            command_runner=lambda command, prompt, *, timeout_seconds: command_calls.append(prompt) or "reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        self.assertEqual(command_calls, [])
+        self.assertEqual(room_reads, 2)
+        self.assertEqual([call for call in calls if call[0].endswith("/lobby")], [])
+        offline_heartbeats = [
+            payload
+            for url, method, payload in calls
+            if url.endswith("/heartbeat") and (payload or {}).get("status") == "offline"
+        ]
+        self.assertEqual(offline_heartbeats[-1]["last_observed_event_id"], "evt1")
+
     def test_manual_mode_observes_without_replying_and_advances_cursor(self):
         clock = FakeClock()
         room = {"lobby_events": [{"id": "evt1", "side": "mine", "name": "나", "message": "수동 모드야"}]}
@@ -1707,6 +1747,46 @@ class LiveAgentRunnerTests(unittest.TestCase):
         heartbeats = [payload for url, method, payload in client.calls if url.endswith("/heartbeat")]
         self.assertEqual(heartbeats[-1]["status"], "offline")
         self.assertEqual(heartbeats[-1]["last_observed_event_id"], "lobby1")
+
+    def test_moderator_called_survives_transient_live_cursor_heartbeat_failure(self):
+        clock = FakeClock()
+        calls = []
+        command_calls = []
+
+        def request_json(url, *, method="GET", payload=None):
+            calls.append((url, method, payload))
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online", "engagement_mode": "moderator_called"}}
+            if url.endswith("/room"):
+                return {
+                    "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+                    "lobby_events": [],
+                    "live_events": [{"id": "live-info", "kind": "meeting_status", "content": "still running"}],
+                }
+            if url.endswith("/heartbeat"):
+                if (payload or {}).get("last_observed_live_event_id") == "live-info" and (payload or {}).get("status") == "online":
+                    raise ConnectionError("transient live cursor heartbeat failure")
+                return {"agent": {"agent_id": "agent-a", "status": (payload or {}).get("status", "online")}}
+            return {}
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1"),
+            request_json=request_json,
+            command_runner=lambda command, prompt, *, timeout_seconds: command_calls.append(prompt) or "reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        self.assertEqual(command_calls, [])
+        self.assertEqual([call for call in calls if call[0].endswith("/official-turn")], [])
+        offline_heartbeats = [
+            payload
+            for url, method, payload in calls
+            if url.endswith("/heartbeat") and (payload or {}).get("status") == "offline"
+        ]
+        self.assertEqual(offline_heartbeats[-1]["last_observed_live_event_id"], "live-info")
 
     def test_official_turn_cursor_does_not_poison_lobby_cursor_when_mode_changes(self):
         clock = FakeClock()

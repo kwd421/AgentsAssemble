@@ -400,7 +400,7 @@ class LiveAgentRunner:
         latest_id = _latest_event_id(events)
         if latest_id and latest_id != self.last_observed_event_id:
             self.last_observed_event_id = latest_id
-            self._heartbeat("online", last_observed_event_id=latest_id)
+            self._heartbeat_due_safely("online", last_observed_event_id=latest_id)
 
     def _observe_lobby_cursor(self, events: list[dict[str, object]]) -> None:
         latest_id = _latest_event_id(events)
@@ -411,7 +411,7 @@ class LiveAgentRunner:
         latest_id = _latest_event_id(events)
         if latest_id and latest_id != self.last_observed_live_event_id:
             self.last_observed_live_event_id = latest_id
-            self._heartbeat("online", **self._cursor_metadata())
+            self._heartbeat_due_safely("online", **self._cursor_metadata())
 
     def _set_cursor(self, cursor_field: str, event_id: str) -> None:
         if cursor_field == "last_observed_live_event_id":

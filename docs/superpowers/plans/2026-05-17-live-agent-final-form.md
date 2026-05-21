@@ -4812,6 +4812,34 @@ Operator docs and roadmap now state that the checked-in self-service wrapper and
 
 ---
 
+### Task 140: Cursor-Only Observation Heartbeats Are Best-Effort
+
+**Goal:** Keep parent-managed resident runners alive when a transient heartbeat write fails while advancing non-reply observation cursors.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_runner.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_runner.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED cursor heartbeat failure coverage**
+
+Cover `watch` lobby observation and `moderator_called` non-turn live observation where the cursor-only `online` heartbeat raises after the local cursor advances. The runner must not call the provider, must not post a reply, and must preserve the advanced cursor for later offline/follow-up evidence.
+
+- [x] **Step 2: Make cursor-only observation heartbeats best-effort**
+
+`_advance_cursor()` and `_advance_live_cursor()` now update runner-local cursor state first, then send the matching `online` heartbeat through the existing best-effort heartbeat helper. A transient presence write failure no longer crashes the resident group during ordinary non-reply observation.
+
+- [x] **Step 3: Keep docs aligned with runner resilience**
+
+Operator docs and roadmap now state that parent-managed runners continue polling when cursor-only observation heartbeats fail transiently after local cursor advancement.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

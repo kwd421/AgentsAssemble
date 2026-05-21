@@ -383,6 +383,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("live_agent_endpoint", doc)
         self.assertIn("official cursor", doc)
         self.assertIn("wrong-meeting", doc)
+        self.assertIn("cursor-only observation heartbeat fails transiently", doc)
         self.assertIn("Slow resident replies keep sending `working` heartbeats", doc)
         self.assertIn("--status error", doc)
         self.assertIn("--last-error", doc)
