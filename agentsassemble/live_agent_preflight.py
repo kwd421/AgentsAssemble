@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -45,7 +46,8 @@ def preflight_live_agent_config(
     if not configs:
         return _failed_config_report(config_path, "Live agent group config did not contain any valid agent objects.")
     top_checks = [_duplicate_agent_id_check(configs)]
-    agents = [_preflight_agent(config, resolver, codex_checker) for config in configs]
+    command_base_dir = Path.cwd()
+    agents = [_preflight_agent(config, resolver, codex_checker, command_base_dir=command_base_dir) for config in configs]
     checks_failed = _failed_check_count(top_checks) + sum(_failed_check_count(agent["checks"]) for agent in agents)
     failed_agents = sum(1 for agent in agents if agent["status"] == "failed")
     status = "failed" if checks_failed else "ok"
@@ -93,6 +95,8 @@ def _preflight_agent(
     config: ResidentAgentConfig,
     command_resolver: Callable[[str], str | None],
     codex_capability_checker: Callable[[list[str]], dict[str, str]],
+    *,
+    command_base_dir: Path,
 ) -> dict[str, object]:
     checks = [
         _agent_id_check(config.agent_id),
@@ -111,6 +115,10 @@ def _preflight_agent(
     else:
         command_check = _command_check(config.command, command_resolver)
         checks.append(command_check)
+        if config.connection_kind == "self_service" and command_check["status"] == "ok":
+            script_check = _python_script_check(config.command, command_base_dir=command_base_dir)
+            if script_check is not None:
+                checks.append(script_check)
         if config.connection_kind == "terminal_session":
             checks.append(_terminal_pty_check())
         if (
@@ -155,6 +163,10 @@ def resident_config_setup_error(
     command_check = _command_check(config.command, resolver)
     if command_check["status"] != "ok":
         return str(command_check.get("message") or "Command is not executable.")
+    if config.connection_kind == "self_service":
+        script_check = _python_script_check(config.command, command_base_dir=Path.cwd())
+        if script_check is not None and script_check["status"] != "ok":
+            return str(script_check.get("message") or "Command script is not available.")
     if config.provider_kind == "codex_live_session" and config.connection_kind == "live_session":
         codex_command_check = _codex_command_check(config.command)
         if codex_command_check["status"] != "ok":
@@ -275,6 +287,53 @@ def _command_check(command: list[str], command_resolver: Callable[[str], str | N
             "path": resolved,
         }
     return {"id": "command", "status": "failed", "message": f"Command not found: {executable}"}
+
+
+def _python_script_check(command: list[str], *, command_base_dir: Path) -> dict[str, str] | None:
+    script_arg = _python_script_argument(command)
+    if script_arg is None:
+        return None
+    script_path = Path(script_arg)
+    resolved = script_path if script_path.is_absolute() else (command_base_dir / script_path).resolve()
+    if resolved.is_file():
+        return {
+            "id": "command_script",
+            "status": "ok",
+            "message": f"Command script found: {script_arg}",
+            "path": str(resolved),
+        }
+    return {
+        "id": "command_script",
+        "status": "failed",
+        "message": f"Command script not found: {script_arg}",
+    }
+
+
+def _python_script_argument(command: list[str]) -> str | None:
+    if not command:
+        return None
+    if not _is_python_executable_name(Path(command[0]).name):
+        return None
+    index = 1
+    while index < len(command):
+        part = command[index]
+        if _is_python_inline_or_module_option(part):
+            return None
+        if part.startswith("-"):
+            index += 1
+            continue
+        if part.endswith(".py"):
+            return part
+        return None
+    return None
+
+
+def _is_python_inline_or_module_option(part: str) -> bool:
+    return part in {"-c", "-m"} or part.startswith("-c") or part.startswith("-m")
+
+
+def _is_python_executable_name(name: str) -> bool:
+    return bool(re.fullmatch(r"python(?:\d+(?:\.\d+)?)?(?:\.exe)?", name))
 
 
 def _terminal_pty_check() -> dict[str, str]:

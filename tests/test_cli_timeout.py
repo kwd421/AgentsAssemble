@@ -9759,6 +9759,63 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("Command not found", stderr.getvalue())
         self.assertNotIn("Resident group stopped", stdout.getvalue())
 
+    def test_live_agent_run_group_rejects_missing_self_service_python_script_before_registration(self):
+        configs = [
+            ResidentAgentConfig(
+                server="http://room.local",
+                agent_id="missing-self-service",
+                display_name="Missing Self Service",
+                provider_kind="local_cli",
+                connection_kind="self_service",
+                session_id="",
+                endpoint="",
+                auth_ref="",
+                meeting_id="",
+                engagement_mode="always",
+                command=[sys.executable, "scripts/missing_self_service.py"],
+                timeout_seconds=30,
+                poll_interval=0,
+                heartbeat_interval=30,
+                cooldown=0,
+                max_chain_depth=1,
+                max_ticks=1,
+            )
+        ]
+        constructed = []
+
+        class RecordingSupervisor:
+            def __init__(self, *args, **kwargs):
+                constructed.append((args, kwargs))
+
+            def run(self):
+                return 0
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            previous_cwd = Path.cwd()
+            os.chdir(temp_dir)
+            try:
+                stdout = StringIO()
+                stderr = StringIO()
+                with (
+                    patch("agentsassemble.cli.load_group_configs", return_value=configs),
+                    patch("agentsassemble.cli._SelfServiceResidentSupervisor", RecordingSupervisor),
+                    patch(
+                        "agentsassemble.live_agent_preflight.shutil.which",
+                        side_effect=lambda command: command if command == sys.executable else None,
+                    ),
+                    patch("sys.stdout", stdout),
+                    patch("sys.stderr", stderr),
+                ):
+                    exit_code = main(["live-agent", "run-group", "--config", "ignored.json"])
+            finally:
+                os.chdir(previous_cwd)
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(constructed, [])
+        self.assertIn("missing-self-service", stderr.getvalue())
+        self.assertIn("Command script not found: scripts/missing_self_service.py", stderr.getvalue())
+        self.assertNotIn("Self-service resident agent stopped", stdout.getvalue())
+
     def test_live_agent_run_group_rejects_codex_safety_probe_failure_before_launch(self):
         configs = [
             ResidentAgentConfig(

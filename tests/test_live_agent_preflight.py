@@ -10,6 +10,14 @@ from agentsassemble.live_agent_runner import ResidentAgentConfig
 
 
 class LiveAgentPreflightTests(unittest.TestCase):
+    def run_with_cwd(self, cwd, callback):
+        previous = Path.cwd()
+        os.chdir(cwd)
+        try:
+            return callback()
+        finally:
+            os.chdir(previous)
+
     def resident_config(self, **overrides):
         data = {
             "server": "http://room.local",
@@ -48,6 +56,47 @@ class LiveAgentPreflightTests(unittest.TestCase):
 
         self.assertEqual(error, "Codex command does not accept required live-session safety flags.")
         self.assertEqual(errors, [["/usr/local/bin/codex"]])
+
+    def test_resident_setup_error_rejects_missing_self_service_python_script_relative_to_launch_cwd(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = self.resident_config(
+                provider_kind="local_cli",
+                connection_kind="self_service",
+                command=["python3", "scripts/missing_self_service.py"],
+            )
+
+            error = self.run_with_cwd(
+                root,
+                lambda: resident_config_setup_error(
+                    config,
+                    command_resolver=lambda command: "/usr/bin/python3" if command == "python3" else None,
+                ),
+            )
+
+            self.assertEqual(error, "Command script not found: scripts/missing_self_service.py")
+
+    def test_resident_setup_error_accepts_existing_self_service_python_script_relative_to_launch_cwd(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            script_path = root / "scripts" / "my_self_service_agent.py"
+            script_path.parent.mkdir()
+            script_path.write_text("print('ok')\n", encoding="utf-8")
+            config = self.resident_config(
+                provider_kind="local_cli",
+                connection_kind="self_service",
+                command=["python3", "scripts/my_self_service_agent.py"],
+            )
+
+            error = self.run_with_cwd(
+                root,
+                lambda: resident_config_setup_error(
+                    config,
+                    command_resolver=lambda command: "/usr/bin/python3" if command == "python3" else None,
+                ),
+            )
+
+            self.assertEqual(error, "")
 
     def test_codex_live_agent_example_preflights_with_fake_codex_resolver(self):
         config_path = Path("configs/live-agents.codex-session.example.json")
@@ -142,6 +191,146 @@ class LiveAgentPreflightTests(unittest.TestCase):
             checks = report["agents"][0]["checks"]
             self.assertEqual([check["id"] for check in checks], ["agent_id", "connection_kind", "command"])
             self.assertEqual(report["agents"][0]["connection_kind"], "self_service")
+
+    def test_preflight_rejects_missing_python_script_argument_relative_to_launch_cwd(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "configs" / "live-agents.json"
+            config_path.parent.mkdir()
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "custom-self-service",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "self_service",
+                                "command": ["python3", "scripts/missing_self_service.py"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = self.run_with_cwd(
+                root,
+                lambda: preflight_live_agent_config(
+                    config_path,
+                    command_resolver=lambda command: "/usr/bin/python3" if command == "python3" else None,
+                ),
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            self.assertIn(
+                {
+                    "id": "command_script",
+                    "status": "failed",
+                    "message": "Command script not found: scripts/missing_self_service.py",
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_preflight_accepts_existing_python_script_argument_relative_to_launch_cwd(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            script_path = root / "scripts" / "my_self_service_agent.py"
+            script_path.parent.mkdir()
+            script_path.write_text("print('ok')\n", encoding="utf-8")
+            config_path = root / "configs" / "live-agents.json"
+            config_path.parent.mkdir()
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "custom-self-service",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "self_service",
+                                "command": ["python3", "scripts/my_self_service_agent.py"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = self.run_with_cwd(
+                root,
+                lambda: preflight_live_agent_config(
+                    config_path,
+                    command_resolver=lambda command: "/usr/bin/python3" if command == "python3" else None,
+                ),
+            )
+
+            self.assertEqual(report["status"], "ok")
+            self.assertIn(
+                {
+                    "id": "command_script",
+                    "status": "ok",
+                    "message": "Command script found: scripts/my_self_service_agent.py",
+                    "path": str(script_path.resolve()),
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_preflight_accepts_checked_in_self_service_example_python_script(self):
+        project_root = Path(__file__).resolve().parents[1]
+        config_path = project_root / "configs" / "live-agents.self-service.example.json"
+
+        report = self.run_with_cwd(
+            project_root,
+            lambda: preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/bin/python3" if command == "python3" else "/opt/bin/antigravity",
+            ),
+        )
+
+        custom_agent = next(agent for agent in report["agents"] if agent["agent_id"] == "custom-cli-live")
+        self.assertEqual(report["status"], "ok")
+        self.assertIn(
+            {
+                "id": "command_script",
+                "status": "ok",
+                "message": "Command script found: scripts/my_self_service_agent.py",
+                "path": str((project_root / "scripts" / "my_self_service_agent.py").resolve()),
+            },
+            custom_agent["checks"],
+        )
+
+    def test_preflight_does_not_treat_python_attached_command_or_module_args_as_script(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for option in ("-cprint('ok')", "-mtimeit"):
+                with self.subTest(option=option):
+                    config_path = root / f"live-agents-{option[1]}.json"
+                    config_path.write_text(
+                        json.dumps(
+                            {
+                                "agents": [
+                                    {
+                                        "agent_id": "custom-self-service",
+                                        "provider_kind": "local_cli",
+                                        "connection_kind": "self_service",
+                                        "command": ["python3", option, "scripts/missing_self_service.py"],
+                                    }
+                                ]
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    report = self.run_with_cwd(
+                        root,
+                        lambda: preflight_live_agent_config(
+                            config_path,
+                            command_resolver=lambda command: "/usr/bin/python3" if command == "python3" else None,
+                        ),
+                    )
+
+                    self.assertEqual(report["status"], "ok")
+                    self.assertNotIn("command_script", [check["id"] for check in report["agents"][0]["checks"]])
 
     def test_preflight_accepts_terminal_session_with_command_and_pty_support(self):
         with tempfile.TemporaryDirectory() as temp_dir:
