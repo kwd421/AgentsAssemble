@@ -826,6 +826,58 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.live_agent_operations_command, "list")
         self.assertTrue(args.fail_on_attention)
 
+    def test_live_agent_session_runs_list_parses_limit_and_json(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "session-runs",
+                "list",
+                "--server",
+                "http://room.local",
+                "--limit",
+                "3",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "session-runs")
+        self.assertEqual(args.live_agent_session_runs_command, "list")
+        self.assertEqual(args.limit, 3)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_session_runs_list_fetches_durable_runs(self):
+        payload = {
+            "runs": [
+                {
+                    "run_id": "run-1",
+                    "action": "ensure",
+                    "status": "ready",
+                    "active": True,
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "phase": "none",
+                    "reconcile_count": 1,
+                }
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()) as stdout:
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--limit",
+                        "3",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agent-session-runs?limit=3")
+        self.assertIn("run-1 ensure ready resident-m1 resident-main active", stdout.getvalue())
+
     def test_live_agent_operations_wait_parses_filters_and_wait_options(self):
         args = build_parser().parse_args(
             [

@@ -56,6 +56,7 @@ from agentsassemble.live_agent_sessions import (
     start_live_agent_session,
     stop_live_agent_session,
 )
+from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
 from agentsassemble.live_agent_smoke import (
     LiveAgentSmokeFailed,
     MAX_SESSION_SMOKE_SOAK_CYCLES,
@@ -265,7 +266,12 @@ def serve_gui(
 ) -> None:
     root = output_root or Path(".agentsassemble")
     process_supervisor = LiveAgentProcessSupervisor(root)
-    handler = _make_handler(root, process_supervisor=process_supervisor)
+    session_run_controller = LiveAgentSessionRunController(root)
+    handler = _make_handler(
+        root,
+        process_supervisor=process_supervisor,
+        session_run_controller=session_run_controller,
+    )
     server = ThreadingHTTPServer((host, port), handler)
     try:
         process_supervisor.start_monitor()
@@ -282,6 +288,13 @@ def serve_gui(
                 restart_backoff_seconds=live_agent_restart_backoff_seconds,
                 stale_restart_after_seconds=live_agent_stale_restart_after_seconds,
             )
+        threading.Thread(
+            target=_reconcile_live_agent_session_runs_on_startup,
+            args=(root, process_supervisor, session_run_controller),
+            kwargs={"default_server": server_url},
+            daemon=True,
+            name="AgentsAssembleLiveAgentSessionRunReconcile",
+        ).start()
         print(f"AgentsAssemble GUI: {server_url}")
         server.serve_forever()
     except KeyboardInterrupt:
@@ -345,6 +358,38 @@ def _autostart_live_agent_group(
             "stale_restart_after_seconds": stale_restart_after_seconds,
         },
     )
+
+
+def _reconcile_live_agent_session_runs_on_startup(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    session_run_controller: LiveAgentSessionRunController,
+    *,
+    default_server: str,
+) -> list[dict[str, object]]:
+    def ensure_from_run(run: dict[str, object]) -> dict[str, object]:
+        request = run.get("request") if isinstance(run.get("request"), dict) else {}
+        return live_agent_session_ensure_payload(
+            output_root,
+            process_supervisor,
+            dict(request),
+            default_server=default_server,
+        )
+
+    results = session_run_controller.reconcile_active_runs(ensure_from_run)
+    if results:
+        failed_count = sum(1 for item in results if str(item.get("status") or "") == "failed")
+        record_live_agent_operation(
+            output_root,
+            operation="session_run.reconcile",
+            status="failed" if failed_count else "success",
+            summary="reconciled durable live-agent session runs on GUI startup",
+            details={
+                "session_run_count": len(results),
+                "session_run_failed_count": failed_count,
+            },
+        )
+    return results
 
 
 def _read_optional(path: Path) -> str:
@@ -501,6 +546,14 @@ def live_agents_payload(output_root: Path) -> dict[str, object]:
 
 def live_agent_operations_payload(output_root: Path, *, limit: int = 50) -> dict[str, object]:
     return {"operations": read_live_agent_operations(output_root, limit=limit)}
+
+
+def live_agent_session_runs_payload(
+    session_run_controller: LiveAgentSessionRunController,
+    *,
+    limit: int = 50,
+) -> dict[str, object]:
+    return {"runs": session_run_controller.list_runs(limit=limit)}
 
 
 def live_agent_process_events_payload(
@@ -4001,9 +4054,11 @@ def _make_handler(
     output_root: Path,
     *,
     process_supervisor: LiveAgentProcessSupervisor | None = None,
+    session_run_controller: LiveAgentSessionRunController | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     static_root = Path(__file__).parent / "static"
     live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
+    live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
 
     class AgentsAssembleHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -4077,6 +4132,14 @@ def _make_handler(
                 return
             if path == "/api/live-agent-operations":
                 self._send_json(live_agent_operations_payload(output_root, limit=self._limit(query, default=50)))
+                return
+            if path == "/api/live-agent-session-runs":
+                self._send_json(
+                    live_agent_session_runs_payload(
+                        live_agent_session_run_controller,
+                        limit=self._limit(query, default=50),
+                    )
+                )
                 return
             live_agent_room_id = _live_agent_action_path(path, "room")
             if live_agent_room_id is not None:
@@ -4161,6 +4224,48 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
+                return
+            if parsed.path == "/api/live-agent-session-runs/ensure":
+                payload = self._operation_json_payload(operation="session_run.ensure")
+                if payload is None:
+                    return
+                session_run = live_agent_session_run_controller.begin_run(action="ensure", payload=dict(payload))
+                try:
+                    session = live_agent_session_ensure_payload(
+                        output_root,
+                        live_agent_process_supervisor,
+                        payload,
+                        default_server=self._request_server_url(),
+                    )
+                except (OSError, ValueError) as error:
+                    safe_error = _session_ensure_error_message(error)
+                    failed_run = live_agent_session_run_controller.fail_run(session_run["run_id"], safe_error)
+                    safe_details = _session_start_error_details(payload, error)
+                    safe_details["session_run_id"] = str(failed_run.get("run_id") or "")
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session_run.ensure",
+                        status="failed",
+                        target_id=str(safe_details.get("meeting_id") or safe_details.get("requested_meeting_id") or ""),
+                        error=safe_error,
+                        details=safe_details,
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
+                    return
+                finished_run = live_agent_session_run_controller.finish_run(session_run["run_id"], session=session)
+                session["session_run"] = finished_run
+                record_live_agent_operation(
+                    output_root,
+                    operation="session_run.ensure",
+                    status=_session_start_operation_status(session),
+                    target_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
+                    summary="ensured durable live-agent session run",
+                    details={
+                        **_session_start_operation_details(session),
+                        "session_run_id": str(finished_run.get("run_id") or ""),
+                    },
+                )
+                self._send_json(session)
                 return
             if parsed.path == "/api/live-agent-sessions/start":
                 payload = self._operation_json_payload(operation="session.start")
@@ -4386,6 +4491,13 @@ def _make_handler(
                     )
                     self._send_error(HTTPStatus.BAD_REQUEST, safe_error, details=safe_details)
                     return
+                stopped_runs = live_agent_session_run_controller.mark_matching_stopped(
+                    meeting_id=str(session.get("meeting_id") or payload.get("meeting_id") or ""),
+                    group_id=str(session.get("group_id") or payload.get("group_id") or ""),
+                    reason="session.stop",
+                )
+                if stopped_runs:
+                    session["session_runs"] = stopped_runs
                 record_live_agent_operation(
                     output_root,
                     operation="session.stop",

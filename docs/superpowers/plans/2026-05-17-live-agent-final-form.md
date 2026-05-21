@@ -3675,6 +3675,43 @@ Document that direct resident SIGTERM uses the same clean shutdown path as Keybo
 
 ---
 
+### Task 100: Durable Session-Run Intent Controller
+
+**Goal:** Add the first durable high-level session intent layer above one-shot `ensure` calls, so a resident session can be listed, inspected, and reconciled after GUI restart without confusing process mechanics with operator intent.
+
+**Files:**
+- Create: `agentsassemble/live_agent_session_runs.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_session_runs.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for durable session-run records**
+
+Cover a controller that begins an `ensure` run, persists safe public state, finishes with ready/session evidence, reloads from disk, reconciles active runs through a provided callback, stops matching runs after an operator stop, and records sanitized failure state without leaking tokens, absolute paths, server URLs, commands, prompts, or provider output.
+
+- [x] **Step 2: Add a thin API wrapper above existing ensure**
+
+Expose `POST /api/live-agent-session-runs/ensure` as a durable wrapper around `live_agent_session_ensure_payload()`. The wrapper creates the run before invoking ensure, updates it with the final readiness/session result, returns `session_run` in the response, and leaves the existing one-shot `/api/live-agent-sessions/ensure` behavior intact.
+
+- [x] **Step 3: Add inspection surfaces**
+
+Expose `GET /api/live-agent-session-runs?limit=N` and `assemble live-agent session-runs list --limit N [--json]` so operators and scripts can inspect durable session intent separately from append-only `operations.jsonl` and low-level `processes.json`.
+
+- [x] **Step 4: Reconcile on GUI startup**
+
+Instantiate the controller beside the process supervisor and reconcile active durable runs on GUI startup by replaying their saved ensure request. Record a bounded `session_run.reconcile` operation summarizing startup reconciliation.
+
+- [x] **Step 5: Document session-run semantics**
+
+Document `session-runs.json`, the durable ensure endpoint, the CLI list command, startup reconciliation, and the redaction boundary between internal recovery request state and public operator output.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

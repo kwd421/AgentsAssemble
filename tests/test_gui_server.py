@@ -8478,6 +8478,79 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(session_operations[-1]["status"], "success")
             self.assertEqual(session_operations[-1]["details"]["ensure_action"], "none")
 
+    def test_live_agent_session_ensure_records_durable_session_run_status(self):
+        class EnsureSessionSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+            def list_groups(self):
+                return self.snapshot_groups()
+
+            def start_group(self, **kwargs):
+                raise AssertionError("ready ensure must not start a group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = root / "council.json"
+            agent_config = root / "agents.json"
+            live_agent_config = root / "live-agents.json"
+            _write_single_agent_session_configs(council_config, agent_config, live_agent_config)
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            heartbeat_live_agent(root, "agent-a", status="online")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=EnsureSessionSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/ensure",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                            "live_agent_config_path": str(live_agent_config),
+                            "probe_bound_agents": True,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch(
+                    "agentsassemble.gui.run_live_agent_probe",
+                    return_value={"status": "ok", "agent_id": "agent-a", "source_event_id": "probe-1", "reply_event_id": "reply-1"},
+                ):
+                    with urlopen(request, timeout=4) as response:
+                        session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs?limit=20", timeout=4) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(session_payload["status"], "ready")
+        self.assertIn("session_run", session_payload)
+        self.assertEqual(session_payload["session_run"]["status"], "ready")
+        run_id = session_payload["session_run"]["run_id"]
+        self.assertEqual(runs_payload["runs"][0]["run_id"], run_id)
+        self.assertEqual(runs_payload["runs"][0]["action"], "ensure")
+        self.assertEqual(runs_payload["runs"][0]["status"], "ready")
+        self.assertTrue(runs_payload["runs"][0]["active"])
+        self.assertEqual(runs_payload["runs"][0]["meeting_id"], "resident-m1")
+        self.assertEqual(runs_payload["runs"][0]["group_id"], "resident-main")
+        self.assertEqual(runs_payload["runs"][0]["result"]["reply_probe"]["status"], "ok")
+        self.assertNotIn(str(live_agent_config), str(runs_payload))
+
     def test_live_agent_session_ensure_resolves_blank_meeting_id_from_owned_ready_group(self):
         class EnsureSessionSupervisor:
             def __init__(self) -> None:

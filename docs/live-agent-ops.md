@@ -1243,6 +1243,20 @@ python3 -m agentsassemble.cli live-agent processes wait-event \
 
 The lifecycle event wait path polls `/api/live-agent-process-events?limit=N&scan_limit=N&group_id=...`, then filters the returned sanitized events by `event_type`, optional group id, optional status, and optional `--after-timestamp`. Events at or before `--after-timestamp` are ignored so an older crash or restart record does not satisfy a new wait. The command exits `0` when a matching event appears and exits `1` on timeout with the last observed lifecycle event summary. It exits `2` for non-timeout transport, parsing, validation, or HTTP errors. Use `--json` for the machine-readable `status`, filters, `timeout_seconds`, `attempts`, matched `event`, and timeout event tail.
 
+Use `/api/live-agent-session-runs/ensure` when the operator wants the ensure request recorded as durable session intent instead of only as a one-shot control operation. The endpoint accepts the same payload as `/api/live-agent-sessions/ensure`, creates a `session-runs.json` record before invoking ensure, then updates that record with the final readiness status, selected ensure action, connection counts, probe result, remaining-round result, finalization result, and a sanitized error if ensure fails. The GUI server reconciles active durable runs on startup by replaying their saved ensure request, so a restarted GUI process has a visible recovery hook above the lower-level process supervisor.
+
+```bash
+curl -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"meeting_id":"resident-m1","group_id":"local-cli-group","live_agent_config_path":"configs/live-agents.example.json"}' \
+  http://127.0.0.1:8765/api/live-agent-session-runs/ensure
+
+python3 -m agentsassemble.cli live-agent session-runs list \
+  --server http://127.0.0.1:8765
+```
+
+The public session-run API and CLI intentionally omit server URLs, config paths, commands, auth refs, prompts, log tails, and provider output. The durable controller keeps enough local request state to reconcile active runs, while the exposed status is limited to safe identifiers, requested toggles, readiness/result summaries, timestamps, `active`, `phase`, and `reconcile_count`.
+
 The process CLI uses exit code `0` for successful supervisor requests, even when a listed group is `stopped`, `error`, or `unknown`, unless `--fail-on-attention`, `processes wait`, or `processes wait-event` is used as an explicit scriptable gate. It uses exit code `2` for argument validation, connection failures, invalid JSON, HTTP errors, missing config files, unknown group ids, and refused restarts.
 
 The supervisor only stops group ids it launched in the current GUI process. It does not control arbitrary OS PIDs. Historical records from a previous GUI process are shown as `unknown`, `stopped`, or `error`, but are not treated as externally stoppable PIDs. Restarting a historical record starts a fresh local process from the saved config and server instead of attaching to the old PID. A manual restart resets the auto-restart counter for the new run while preserving the configured retry policy.
@@ -1261,6 +1275,7 @@ Default files under `--output-root .agentsassemble`:
 .agentsassemble/live-agent-runs/processes.json
 .agentsassemble/live-agent-runs/events.jsonl
 .agentsassemble/live-agent-runs/operations.jsonl
+.agentsassemble/live-agent-runs/session-runs.json
 .agentsassemble/live-agent-runs/<group_id>.log
 ```
 
@@ -1271,6 +1286,7 @@ What to check:
 - Slow resident replies keep sending `working` heartbeats while the provider command is still in flight, so a long Claude, Gemini, local CLI, live session, or remote bridge turn does not look stale merely because it is still answering.
 - `.agentsassemble/lobby.jsonl`: human lobby messages and live-agent replies. Live-agent auto replies include `actor_id`, `source_event_id`, `auto_chain_depth`, and the server-issued `live_agent_endpoint` evidence flag when they were posted through the resident live-agent lobby endpoint. A repeated live-agent lobby post with the same `actor_id` and `source_event_id` returns the existing endpoint reply instead of appending a duplicate, so overlapping resident processes cannot multiply-answer one source event after restart or recovery races.
 - `.agentsassemble/live-agent-runs/processes.json`: durable group records with `group_id`, `status`, `pid`, `config_path`, `server`, `log_path`, timestamps, `returncode`, `last_error`, and a safe launch-time `agents` manifest. Process list/API/GUI output redacts suspicious `last_error` text before display, and new auto-restart `restart_failed` records store a compact redacted restart-failure label when the relaunch exception contains tokens, endpoints, config paths, command options, env refs, or path-like values. Safe short failures such as a missing agent command remain visible.
+- `.agentsassemble/live-agent-runs/session-runs.json`: durable high-level session-run records created by `/api/live-agent-session-runs/ensure`. These records are the operator intent layer above process mechanics: they track `run_id`, `action`, `status`, `active`, `phase`, safe meeting/group ids, timestamps, reconcile count, and safe session result summaries. Use `assemble live-agent session-runs list` or `GET /api/live-agent-session-runs` to inspect them.
 - agents manifest entries contain only `agent_id`, `display_name`, `provider_kind`, and `connection_kind`. The manifest does not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
 - `/api/live-agent-processes`: process rows add output-only `agent_connection` evidence by comparing each group's launch-time manifest with current live-agent presence. This manifest-aware connection evidence reports `expected`, `connected`, and attention entries such as missing, wrong-meeting, not-reconnected, stale, offline, or error agents. A presence row whose `last_seen_at` is older than the process group's `started_at` is `not_reconnected` rather than connected, so stale pre-restart heartbeats do not prove the fresh process is attached. It is not persisted into `processes.json`. Process-control error responses for start, stop, restart, recover, and bulk stop redact suspicious path, endpoint, token, config filename, option, env, and secret-looking details before sending browser-visible JSON, while keeping safe short errors such as a missing agent command visible.
 - The default CLI process list and GUI process rows show the latest lifecycle offline summary beside the last event label, such as `last event restart_scheduled, offline 1/2, wrong_meeting agent-b`, so crash-time roster reconciliation evidence is visible without opening JSON. They also show the latest sanitized watchdog reason from recent lifecycle history, such as `last reason stale_watchdog missing manifest agent agent-a`, when the latest row event did not carry that reason itself.

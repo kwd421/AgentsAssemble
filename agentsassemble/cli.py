@@ -910,6 +910,16 @@ def build_parser() -> argparse.ArgumentParser:
     live_operations_wait.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
     live_operations_wait.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable wait result.")
 
+    live_session_runs = live_agent_subparsers.add_parser("session-runs", help="Inspect durable live-agent session-run state.")
+    live_session_runs_subparsers = live_session_runs.add_subparsers(dest="live_agent_session_runs_command", required=True)
+    live_session_runs_list = live_session_runs_subparsers.add_parser(
+        "list",
+        parents=[live_server],
+        help="List durable live-agent session runs.",
+    )
+    live_session_runs_list.add_argument("--limit", type=parse_positive_int, default=50)
+    live_session_runs_list.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON session-run payload.")
+
     sessions = subparsers.add_parser("sessions", help="Inspect and invite Codex CLI live sessions.")
     session_subparsers = sessions.add_subparsers(dest="sessions_command", required=True)
 
@@ -1113,6 +1123,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_processes(args)
         if args.live_agent_command == "operations":
             return _run_live_agent_operations(args)
+        if args.live_agent_command == "session-runs":
+            return _run_live_agent_session_runs(args)
         if args.live_agent_command == "delegate":
             return _run_live_agent_delegate(args)
         if args.live_agent_command == "run":
@@ -2977,6 +2989,14 @@ def _run_live_agent_operations(args: argparse.Namespace) -> int:
     return 1
 
 
+def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
+    if args.live_agent_session_runs_command == "list":
+        payload = _request_json(_server_url(args.server, f"/api/live-agent-session-runs?limit={args.limit}"))
+        _print_live_agent_session_runs_payload(payload, as_json=args.as_json)
+        return 0
+    return 1
+
+
 def _run_live_agent_operations_wait(args: argparse.Namespace) -> int:
     timeout_seconds = float(args.timeout)
     poll_interval = max(0.01, float(args.poll_interval))
@@ -3155,6 +3175,37 @@ def _print_live_agent_operations_payload(payload: dict[str, object], *, as_json:
     for item in operations:
         if isinstance(item, dict):
             print(_format_live_agent_operation(item))
+
+
+def _print_live_agent_session_runs_payload(payload: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    runs = payload.get("runs") if isinstance(payload.get("runs"), list) else []
+    if not runs:
+        print("no live-agent session runs")
+        return
+    for item in runs:
+        if isinstance(item, dict):
+            print(_format_live_agent_session_run(item))
+
+
+def _format_live_agent_session_run(run: dict[str, object]) -> str:
+    run_id = str(run.get("run_id") or "-")
+    action = str(run.get("action") or "unknown")
+    status = str(run.get("status") or "unknown")
+    meeting_id = str(run.get("meeting_id") or "-")
+    group_id = str(run.get("group_id") or "-")
+    activity = "active" if run.get("active") is True else "inactive"
+    phase = str(run.get("phase") or "").strip()
+    reconcile_count = _safe_int(run.get("reconcile_count"))
+    suffix_parts = []
+    if phase:
+        suffix_parts.append(f"phase={phase}")
+    if reconcile_count:
+        suffix_parts.append(f"reconcile_count={reconcile_count}")
+    suffix = f" · {' · '.join(suffix_parts)}" if suffix_parts else ""
+    return f"{run_id} {action} {status} {meeting_id} {group_id} {activity}{suffix}"
 
 
 def _format_live_agent_operation(operation: dict[str, object]) -> str:
