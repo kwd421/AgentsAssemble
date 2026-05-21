@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
+from threading import Lock
 
 from agentsassemble.live_transcript import official_live_transcript_events
 from agentsassemble.meeting_events import clean_lobby_text, read_live_events
@@ -20,6 +22,9 @@ SHARED_MEMORY_ARTIFACTS = {
     "action_items": "shared_memory/action-items.md",
     "index": "shared_memory/index.json",
 }
+LIVE_MEMORY_CONTEXT_CACHE_LIMIT = 32
+_LIVE_MEMORY_CONTEXT_CACHE: dict[tuple[str, int, int, str, str], dict[str, object]] = {}
+_LIVE_MEMORY_CONTEXT_CACHE_LOCK = Lock()
 
 
 def build_live_meeting_memory(
@@ -128,6 +133,7 @@ def load_live_meeting_memory_context(
     meeting_dir: Path,
     meeting: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    index_memory: dict[str, object] = {}
     index_path = meeting_dir / "shared_memory" / "index.json"
     if index_path.exists():
         try:
@@ -135,9 +141,12 @@ def load_live_meeting_memory_context(
         except (OSError, json.JSONDecodeError):
             memory = {}
         if isinstance(memory, dict):
-            compact = compact_live_meeting_memory(memory)
-            if compact:
-                return compact
+            index_memory = compact_live_meeting_memory(memory)
+    current_memory = _current_live_meeting_memory_context(meeting_dir, meeting=meeting)
+    if current_memory:
+        return current_memory
+    if index_memory:
+        return index_memory
     if isinstance(meeting, dict):
         embedded = meeting.get("shared_memory")
         if isinstance(embedded, dict):
@@ -162,6 +171,58 @@ def compact_live_meeting_memory(memory: dict[str, object]) -> dict[str, object]:
         "open_questions": _compact_memory_items(memory.get("open_questions")),
         "action_items": _compact_memory_items(memory.get("action_items")),
     }
+
+
+def _current_live_meeting_memory_context(
+    meeting_dir: Path,
+    meeting: dict[str, object] | None = None,
+) -> dict[str, object]:
+    live_events_path = meeting_dir / "live_events.jsonl"
+    try:
+        stat = live_events_path.stat()
+    except OSError:
+        return {}
+    cache_key = (
+        str(live_events_path.resolve()),
+        stat.st_mtime_ns,
+        stat.st_size,
+        *_meeting_memory_signature(meeting),
+    )
+    with _LIVE_MEMORY_CONTEXT_CACHE_LOCK:
+        cached = _LIVE_MEMORY_CONTEXT_CACHE.get(cache_key)
+    if cached is not None:
+        return _copy_memory(cached)
+    try:
+        events = read_live_events(meeting_dir, limit=None)
+    except OSError:
+        return {}
+    if not official_live_transcript_events(events):
+        _cache_live_memory_context(cache_key, {})
+        return {}
+    memory = compact_live_meeting_memory(build_live_meeting_memory(events, meeting=meeting))
+    _cache_live_memory_context(cache_key, memory)
+    return _copy_memory(memory)
+
+
+def _cache_live_memory_context(cache_key: tuple[str, int, int, str, str], memory: dict[str, object]) -> None:
+    with _LIVE_MEMORY_CONTEXT_CACHE_LOCK:
+        _LIVE_MEMORY_CONTEXT_CACHE[cache_key] = _copy_memory(memory)
+        while len(_LIVE_MEMORY_CONTEXT_CACHE) > LIVE_MEMORY_CONTEXT_CACHE_LIMIT:
+            oldest_key = next(iter(_LIVE_MEMORY_CONTEXT_CACHE))
+            _LIVE_MEMORY_CONTEXT_CACHE.pop(oldest_key, None)
+
+
+def _copy_memory(memory: dict[str, object]) -> dict[str, object]:
+    return deepcopy(memory)
+
+
+def _meeting_memory_signature(meeting: dict[str, object] | None) -> tuple[str, str]:
+    if not isinstance(meeting, dict):
+        return ("", "")
+    return (
+        clean_lobby_text(meeting.get("meeting_id"), limit=128),
+        clean_lobby_text(meeting.get("display_topic") or meeting.get("topic") or meeting.get("question"), limit=240),
+    )
 
 
 def _summary_item(event: dict[str, object]) -> dict[str, object]:

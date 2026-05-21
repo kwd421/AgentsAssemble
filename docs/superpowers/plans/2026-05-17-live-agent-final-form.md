@@ -4689,6 +4689,35 @@ Operator docs now state that session-run records are restart intent, not stored 
 
 ---
 
+### Task 136: Fresh Shared Memory Room Projection
+
+**Goal:** Keep resident room and prompt context aligned with the current official meeting log even if the durable `shared_memory/index.json` artifact is stale or has untrusted body text.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Modify: `agentsassemble/live_meeting_memory.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_meeting_memory.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED stale/untrusted-index coverage**
+
+Cover `load_live_meeting_memory_context()` and `/api/live-agents/<agent_id>/room` when `shared_memory/index.json` points at an older official event but the live official log contains a newer official reply. Also cover the case where the index metadata matches the current official event but its body contains untrusted provider or prompt text. The compact room memory must use the fresh official log, exclude private turn requests, and leave the artifact file unchanged.
+
+- [x] **Step 2: Project cached compact memory from the official log**
+
+The room memory loader now treats the current official live log as authoritative whenever official events exist. Stale, malformed, missing, or metadata-matching-but-untrusted indexes fall back to a read-only compact projection from the current official log. The projection is cached by the live event file state so repeated room polls reuse the same compact memory until the log changes. Durable index or embedded memory remains a fallback only when no usable current official events exist.
+
+- [x] **Step 3: Document the read-only freshness contract**
+
+Operator docs now state that resident room snapshots and wait-next payloads use cached official-log shared memory when current official events exist, without rewriting artifacts from a read-only room request, and without trusting matching index body text as a prompt source.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

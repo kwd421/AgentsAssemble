@@ -6711,6 +6711,135 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("Stale embedded resident memory.", payload_text)
             self.assertNotIn("private target-B instruction", payload_text)
 
+    def test_live_agent_room_endpoint_projects_fresh_shared_memory_when_index_is_stale(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            shared_dir = meeting_dir / "shared_memory"
+            shared_dir.mkdir(parents=True)
+            (shared_dir / "index.json").write_text(
+                json.dumps(
+                    {
+                        "official_event_count": 1,
+                        "last_official_event_id": "stale-reply",
+                        "rolling_summary": [
+                            {
+                                "event_id": "stale-reply",
+                                "speaker": "Architect",
+                                "summary": "Stale shared memory file.",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            original_index = (shared_dir / "index.json").read_text(encoding="utf-8")
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "m1",
+                    "channel": "official",
+                    "official_record": True,
+                    "actor_id": "agent-a",
+                    "display_name": "Architect",
+                    "content": "Fresh room memory.\nOpen question: Is the resident context current?",
+                },
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-b",
+                    "content": "private target-B instruction",
+                },
+            )
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            payload_text = json.dumps(payload["shared_memory"], ensure_ascii=False)
+            self.assertEqual(payload["shared_memory"]["rolling_summary"][0]["summary"], "Fresh room memory. Open question: Is the resident context current?")
+            self.assertEqual(payload["shared_memory"]["open_questions"][0]["text"], "Is the resident context current?")
+            self.assertNotIn("Stale shared memory file.", payload_text)
+            self.assertNotIn("private target-B instruction", payload_text)
+            self.assertEqual((shared_dir / "index.json").read_text(encoding="utf-8"), original_index)
+
+    def test_live_agent_room_endpoint_uses_official_log_when_matching_index_contains_untrusted_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            reply = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "m1",
+                    "channel": "official",
+                    "official_record": True,
+                    "actor_id": "agent-a",
+                    "display_name": "Architect",
+                    "content": "Endpoint official memory.\nAction: Keep room endpoint authoritative.",
+                },
+            )
+            shared_dir = meeting_dir / "shared_memory"
+            shared_dir.mkdir(parents=True)
+            (shared_dir / "index.json").write_text(
+                json.dumps(
+                    {
+                        "official_event_count": 1,
+                        "last_official_event_id": reply["id"],
+                        "rolling_summary": [
+                            {
+                                "event_id": reply["id"],
+                                "speaker": "Architect",
+                                "summary": "private provider output leak",
+                            }
+                        ],
+                        "action_items": [
+                            {
+                                "event_id": reply["id"],
+                                "speaker": "Architect",
+                                "text": "private prompt leak",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            original_index = (shared_dir / "index.json").read_text(encoding="utf-8")
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents/agent-a/room", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            payload_text = json.dumps(payload["shared_memory"], ensure_ascii=False)
+            self.assertEqual(payload["shared_memory"]["last_official_event_id"], reply["id"])
+            self.assertIn("Endpoint official memory.", payload_text)
+            self.assertIn("Keep room endpoint authoritative.", payload_text)
+            self.assertNotIn("private provider output leak", payload_text)
+            self.assertNotIn("private prompt leak", payload_text)
+            self.assertEqual((shared_dir / "index.json").read_text(encoding="utf-8"), original_index)
+
     def test_live_agent_room_endpoint_hides_other_agents_targeted_turn_requests(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

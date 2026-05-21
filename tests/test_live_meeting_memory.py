@@ -3,6 +3,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agentsassemble.live_meeting_memory import (
     build_live_meeting_memory,
@@ -212,6 +213,151 @@ class LiveMeetingMemoryTests(unittest.TestCase):
             self.assertEqual(memory["last_official_event_id"], "fresh-reply")
             self.assertEqual(memory["rolling_summary"][0]["summary"], "Fresh index memory.")
             self.assertNotIn("Stale embedded memory.", json.dumps(memory, ensure_ascii=False))
+
+    def test_load_live_meeting_memory_context_projects_newer_official_events_over_stale_index_without_writing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            shared_dir = meeting_dir / "shared_memory"
+            shared_dir.mkdir(parents=True)
+            (shared_dir / "index.json").write_text(
+                json.dumps(
+                    {
+                        "official_event_count": 1,
+                        "last_official_event_id": "stale-reply",
+                        "rolling_summary": [
+                            {"event_id": "stale-reply", "speaker": "Architect", "summary": "Stale file memory."}
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            original_index = (shared_dir / "index.json").read_text(encoding="utf-8")
+            append_live_event(
+                meeting_dir,
+                {
+                    "id": "private-request",
+                    "kind": "live_agent_turn_request",
+                    "channel": "system",
+                    "official_record": False,
+                    "content": "private prompt must stay out",
+                },
+            )
+            reply = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "channel": "official",
+                    "official_record": True,
+                    "actor_id": "agent-a",
+                    "display_name": "Architect",
+                    "content": "Fresh official memory.\nAction: Keep room context current.",
+                },
+            )
+
+            memory = load_live_meeting_memory_context(meeting_dir, meeting={"meeting_id": "resident-m1", "topic": "Runtime"})
+
+            self.assertEqual(memory["official_event_count"], 1)
+            self.assertEqual(memory["last_official_event_id"], reply["id"])
+            memory_text = json.dumps(memory, ensure_ascii=False)
+            self.assertIn("Fresh official memory.", memory_text)
+            self.assertIn("Keep room context current.", memory_text)
+            self.assertNotIn("Stale file memory.", memory_text)
+            self.assertNotIn("private prompt must stay out", memory_text)
+            self.assertEqual((shared_dir / "index.json").read_text(encoding="utf-8"), original_index)
+
+    def test_load_live_meeting_memory_context_projects_official_log_when_matching_index_contains_untrusted_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            reply = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "channel": "official",
+                    "official_record": True,
+                    "actor_id": "agent-a",
+                    "display_name": "Architect",
+                    "content": "Official room memory.\nAction: Trust the official event log.",
+                },
+            )
+            shared_dir = meeting_dir / "shared_memory"
+            shared_dir.mkdir(parents=True)
+            (shared_dir / "index.json").write_text(
+                json.dumps(
+                    {
+                        "official_event_count": 1,
+                        "last_official_event_id": reply["id"],
+                        "rolling_summary": [
+                            {
+                                "event_id": reply["id"],
+                                "speaker": "Architect",
+                                "summary": "private provider output leak",
+                            }
+                        ],
+                        "action_items": [
+                            {
+                                "event_id": reply["id"],
+                                "speaker": "Architect",
+                                "text": "private prompt leak",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            original_index = (shared_dir / "index.json").read_text(encoding="utf-8")
+
+            memory = load_live_meeting_memory_context(meeting_dir, meeting={"meeting_id": "resident-m1", "topic": "Runtime"})
+
+            memory_text = json.dumps(memory, ensure_ascii=False)
+            self.assertEqual(memory["official_event_count"], 1)
+            self.assertEqual(memory["last_official_event_id"], reply["id"])
+            self.assertIn("Official room memory.", memory_text)
+            self.assertIn("Trust the official event log.", memory_text)
+            self.assertNotIn("private provider output leak", memory_text)
+            self.assertNotIn("private prompt leak", memory_text)
+            self.assertEqual((shared_dir / "index.json").read_text(encoding="utf-8"), original_index)
+
+    def test_load_live_meeting_memory_context_reuses_cached_official_projection_until_log_changes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "channel": "official",
+                    "official_record": True,
+                    "actor_id": "agent-a",
+                    "display_name": "Architect",
+                    "content": "Initial official memory.",
+                },
+            )
+
+            with patch("agentsassemble.live_meeting_memory.read_live_events", wraps=read_live_events) as read_mock:
+                first = load_live_meeting_memory_context(meeting_dir, meeting={"meeting_id": "resident-m1", "topic": "Runtime"})
+                second = load_live_meeting_memory_context(meeting_dir, meeting={"meeting_id": "resident-m1", "topic": "Runtime"})
+
+                self.assertEqual(read_mock.call_count, 1)
+                self.assertEqual(first, second)
+
+                append_live_event(
+                    meeting_dir,
+                    {
+                        "kind": "message",
+                        "channel": "official",
+                        "official_record": True,
+                        "actor_id": "agent-b",
+                        "display_name": "Planner",
+                        "content": "Second official memory.",
+                    },
+                )
+                third = load_live_meeting_memory_context(meeting_dir, meeting={"meeting_id": "resident-m1", "topic": "Runtime"})
+
+                self.assertEqual(read_mock.call_count, 2)
+                self.assertEqual(third["official_event_count"], 2)
+                self.assertNotEqual(first["last_official_event_id"], third["last_official_event_id"])
+                self.assertIn("Second official memory.", json.dumps(third, ensure_ascii=False))
 
 
 if __name__ == "__main__":
