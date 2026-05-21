@@ -255,7 +255,7 @@ This is closer to direct room participation than the PTY prompt-injection path: 
 
 ## Self-Service Resident Processes
 
-Use `--connection-kind self_service` when the provider process should stay resident and call `wait-next`, `say`, and `official-reply` by itself. In this mode AgentsAssemble registers the agent, starts the configured command with `stdin` closed, exports the live-agent environment variables, sends parent liveness heartbeats, and stops the process on resident shutdown. It does not read room events, build `delegate_prompt` or `official_turn_prompt`, or write event prompts into the child process.
+Use `--connection-kind self_service` when the provider process should stay resident and call `wait-next`, `say`, and `official-reply` by itself. In this mode AgentsAssemble registers the agent, starts the configured command with `stdin` closed, exports the live-agent environment variables, sends parent liveness heartbeats, and stops the process on resident shutdown. A direct `live-agent run` resident treats `SIGTERM` through the same clean shutdown path as `KeyboardInterrupt`: it closes the self-service child or active command runner, restores the temporary signal handler, prints the normal stopped summary, and exits `0` instead of leaking a traceback. It does not read room events, build `delegate_prompt` or `official_turn_prompt`, or write event prompts into the child process.
 
 ```bash
 python3 -m agentsassemble.cli live-agent run \
@@ -1249,7 +1249,7 @@ The supervisor only stops group ids it launched in the current GUI process. It d
 
 On POSIX hosts, supervised `run-group` processes start in their own process group. If a supervised group does not exit after SIGINT, the supervisor escalates stop signals to that process group so ordinary child processes created by the resident group are cleaned up with the failed parent.
 
-Resident `local_cli` workers use an interruptible subprocess runner. When the supervised group receives SIGINT during stop, active local provider commands are terminated through that runner instead of waiting for the provider command timeout. The same cleanup path is used when a provider command hits its timeout. On POSIX hosts, resident local CLI commands start in their own process group so ordinary child processes created by provider wrappers are stopped with the same command. Shutdown-related secondary worker errors are suppressed after the group stop flag is set, so the process record preserves the original failure or operator stop result.
+Resident `local_cli` workers use an interruptible subprocess runner. When the supervised group receives SIGINT during stop, active local provider commands are terminated through that runner instead of waiting for the provider command timeout. The same cleanup path is used when a provider command hits its timeout. On POSIX hosts, resident local CLI commands start in their own process group so ordinary child processes created by provider wrappers are stopped with the same command. Direct resident `SIGTERM` also closes the active command runner and returns the normal stopped summary instead of surfacing `KeyboardInterrupt` to the operator. Shutdown-related secondary worker errors are suppressed after the group stop flag is set, so the process record preserves the original failure or operator stop result.
 
 ## Inspect Runtime State
 

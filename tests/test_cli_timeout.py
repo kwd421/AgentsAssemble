@@ -9494,7 +9494,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(closed, [True])
         self.assertIn((sigterm, previous_handlers[sigterm]), restored_handlers)
 
-    def test_live_agent_run_self_service_shutdown_signal_closes_supervisor(self):
+    def test_live_agent_run_self_service_shutdown_signal_closes_supervisor_cleanly(self):
         installed_shutdown = {}
         restored = threading.Event()
         supervisors = []
@@ -9523,28 +9523,104 @@ class CliTimeoutTests(unittest.TestCase):
             patch("sys.stdout", StringIO()),
             patch("sys.stderr", StringIO()),
         ):
-            with self.assertRaises(KeyboardInterrupt):
-                main(
-                    [
-                        "live-agent",
-                        "run",
-                        "--server",
-                        "http://room.local",
-                        "--agent-id",
-                        "self-service-signal",
-                        "--display-name",
-                        "Self Service Signal",
-                        "--connection-kind",
-                        "self_service",
-                        "--poll-interval",
-                        "0",
-                        "--command",
-                        "fake-provider",
-                    ]
-                )
+            exit_code = main(
+                [
+                    "live-agent",
+                    "run",
+                    "--server",
+                    "http://room.local",
+                    "--agent-id",
+                    "self-service-signal",
+                    "--display-name",
+                    "Self Service Signal",
+                    "--connection-kind",
+                    "self_service",
+                    "--poll-interval",
+                    "0",
+                    "--command",
+                    "fake-provider",
+                ]
+            )
 
+        self.assertEqual(exit_code, 0)
         self.assertTrue(supervisors)
         self.assertTrue(supervisors[0].closed)
+        self.assertTrue(restored.is_set())
+
+    def test_live_agent_run_local_cli_shutdown_signal_closes_runner_cleanly(self):
+        config = ResidentAgentConfig(
+            server="http://room.local",
+            agent_id="local-signal",
+            display_name="Local Signal",
+            provider_kind="local_cli",
+            connection_kind="local_cli",
+            session_id="",
+            endpoint="",
+            auth_ref="",
+            meeting_id="",
+            engagement_mode="always",
+            command=["fake"],
+            timeout_seconds=30,
+            poll_interval=0,
+            heartbeat_interval=30,
+            cooldown=0,
+            max_chain_depth=1,
+            max_ticks=0,
+        )
+        installed_shutdown = {}
+        restored = threading.Event()
+
+        class CloseRecordingRunner:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        command_runner = CloseRecordingRunner()
+
+        class SignalAwareRunner:
+            def __init__(self, *args, **kwargs):
+                del args, kwargs
+
+            def run(self):
+                installed_shutdown["callback"]()
+                raise KeyboardInterrupt()
+
+        def install_shutdown_handler(callback):
+            installed_shutdown["callback"] = callback
+            return lambda: restored.set()
+
+        with (
+            patch("agentsassemble.cli.config_from_args", return_value=config),
+            patch("agentsassemble.cli.resident_config_setup_error", return_value=""),
+            patch("agentsassemble.cli._command_runner_for_config", return_value=command_runner),
+            patch("agentsassemble.cli._install_resident_shutdown_signal_handlers", side_effect=install_shutdown_handler, create=True),
+            patch("agentsassemble.cli.LiveAgentRunner", SignalAwareRunner),
+            patch("sys.stdout", StringIO()),
+            patch("sys.stderr", StringIO()),
+        ):
+            exit_code = main(
+                [
+                    "live-agent",
+                    "run",
+                    "--server",
+                    "http://room.local",
+                    "--agent-id",
+                    "local-signal",
+                    "--display-name",
+                    "Local Signal",
+                    "--connection-kind",
+                    "local_cli",
+                    "--poll-interval",
+                    "0",
+                    "--command",
+                    "fake-provider",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(command_runner.closed)
         self.assertTrue(restored.is_set())
 
     def test_live_agent_run_group_shutdown_signal_closes_active_runners(self):

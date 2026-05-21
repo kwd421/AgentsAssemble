@@ -247,6 +247,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("interruptible subprocess runner", doc)
         self.assertIn("active local provider commands are terminated", doc)
         self.assertIn("provider command hits its timeout", doc)
+        self.assertIn("Direct resident `SIGTERM`", doc)
+        self.assertIn("instead of surfacing `KeyboardInterrupt`", doc)
         self.assertIn("own process group", doc)
         self.assertIn(".agentsassemble/live_agents.json", doc)
         self.assertIn(".agentsassemble/lobby.jsonl", doc)

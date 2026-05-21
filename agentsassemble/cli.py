@@ -1944,10 +1944,13 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
             request_json=_request_json,
             sleep_fn=time.sleep,
         )
+        replies = 0
         restore_signal_handlers = lambda: None
         try:
             restore_signal_handlers = _install_resident_shutdown_signal_handlers(runner.close)
             replies = runner.run()
+        except KeyboardInterrupt:
+            runner.close()
         finally:
             restore_signal_handlers()
         print(f"Self-service resident agent stopped after posting {replies} parent-managed replies")
@@ -1964,6 +1967,8 @@ def _run_live_agent_resident(args: argparse.Namespace) -> int:
     try:
         restore_signal_handlers = _install_resident_shutdown_signal_handlers(lambda: _close_command_runner(command_runner))
         replies = runner.run()
+    except KeyboardInterrupt:
+        _close_command_runner(command_runner)
     finally:
         restore_signal_handlers()
         _close_command_runner(command_runner)

@@ -3650,6 +3650,31 @@ Document that process-control API/GUI error bodies are sanitized separately from
 
 ---
 
+### Task 99: Direct Resident SIGTERM Clean Shutdown
+
+**Goal:** Make direct `live-agent run` shutdown behave like supervised `run-group` shutdown instead of leaking `KeyboardInterrupt` tracebacks when an operator or process manager sends SIGTERM.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED coverage for direct resident shutdown**
+
+Cover direct self-service and local-CLI `live-agent run` paths where the resident shutdown signal handler fires while the runner is active. Both paths must close their supervised child or active command runner, restore the temporary signal handler, return exit code `0`, and print the normal stopped summary rather than letting `KeyboardInterrupt` escape.
+
+- [x] **Step 2: Catch resident shutdown inside the direct run boundary**
+
+Handle `KeyboardInterrupt` inside `_run_live_agent_resident()` for both `self_service` and parent-managed resident command runners. Keep non-shutdown errors on the existing error path, and keep `run-group` worker shutdown behavior unchanged.
+
+- [x] **Step 3: Document direct shutdown semantics**
+
+Document that direct resident SIGTERM uses the same clean shutdown path as KeyboardInterrupt and closes active command runners before returning the normal stopped summary.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
