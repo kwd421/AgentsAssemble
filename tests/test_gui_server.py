@@ -9994,6 +9994,124 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(runs_payload["runs"][0]["result"]["reply_probe"]["status"], "ok")
         self.assertNotIn(str(live_agent_config), str(runs_payload))
 
+    def test_live_agent_session_run_ensure_api_requires_current_approval_for_real_provider_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            live_agent_config = root / "live-agents.real.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "claude-live",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "terminal_session",
+                                "command": ["claude"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/ensure",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                            "live_agent_config_path": str(live_agent_config),
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch("agentsassemble.gui.live_agent_session_ensure_payload") as ensure_payload:
+                    ensure_payload.side_effect = AssertionError("approval gate must stop before durable ensure")
+                    with self.assertRaises(HTTPError) as raised:
+                        urlopen(request, timeout=4)
+                body = raised.exception.read().decode("utf-8")
+                error_payload = json.loads(body)
+                raised.exception.close()
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs?limit=20", timeout=4) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(raised.exception.code, 400)
+        self.assertIn("requires current operator approval", error_payload["error"])
+        self.assertEqual(runs_payload["runs"][0]["status"], "failed")
+        self.assertIn("requires current operator approval", runs_payload["runs"][0]["last_error"])
+        self.assertNotIn(str(live_agent_config), body)
+        self.assertNotIn(str(live_agent_config), json.dumps(runs_payload, ensure_ascii=False))
+
+    def test_live_agent_session_run_ensure_api_uses_current_real_provider_approval_without_persisting_it(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            live_agent_config = root / "live-agents.real.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "claude-live",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "terminal_session",
+                                "command": ["claude"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+
+            def approved_ensure(output_root, process_supervisor, payload, *, default_server):
+                del output_root, process_supervisor, default_server
+                self.assertEqual(payload["approve_real_providers"], True)
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "action": "start",
+                }
+
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/ensure",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "resident-m1",
+                            "group_id": "resident-main",
+                            "live_agent_config_path": str(live_agent_config),
+                            "approve_real_providers": True,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch("agentsassemble.gui.live_agent_session_ensure_payload", side_effect=approved_ensure):
+                    with urlopen(request, timeout=4) as response:
+                        session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs?limit=20", timeout=4) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(session_payload["status"], "ready")
+        self.assertEqual(runs_payload["runs"][0]["status"], "ready")
+        self.assertNotIn("approve_real_providers", json.dumps(runs_payload, ensure_ascii=False))
+        self.assertNotIn(str(live_agent_config), json.dumps(runs_payload, ensure_ascii=False))
+
     def test_live_agent_session_runs_api_filters_meeting_group_before_limit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -10189,6 +10307,153 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(runs_payload["runs"][0]["status"], "ready")
         self.assertEqual(operations_payload["operations"][-1]["operation"], "session_run.retry_now")
         self.assertEqual(operations_payload["operations"][-1]["target_id"], target["run_id"])
+
+    def test_live_agent_session_run_retry_now_api_uses_current_real_provider_approval_without_persisting_it(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            live_agent_config = root / "live-agents.real.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "claude-live",
+                                "display_name": "Claude",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "terminal_session",
+                                "command": ["claude"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            session_run_controller = LiveAgentSessionRunController(root)
+            target = session_run_controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": str(live_agent_config),
+                    "server": "http://room.local",
+                },
+            )
+            session_run_controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, session_run_controller=session_run_controller),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            seen_payloads = []
+
+            def approved_ensure(output_root, process_supervisor, payload, *, default_server):
+                del output_root, process_supervisor, default_server
+                seen_payloads.append(dict(payload))
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "action": "recover",
+                }
+
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/{target['run_id']}/retry-now",
+                    data=json.dumps({"approve_real_providers": True}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch("agentsassemble.gui.live_agent_session_ensure_payload", side_effect=approved_ensure):
+                    with urlopen(request, timeout=4) as response:
+                        retry_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs?limit=20", timeout=4) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(retry_payload["status"], "reconciled")
+        self.assertEqual(retry_payload["session_run"]["status"], "ready")
+        self.assertEqual(seen_payloads[0]["approve_real_providers"], True)
+        self.assertNotIn("approve_real_providers", json.dumps(runs_payload, ensure_ascii=False))
+        self.assertNotIn(str(live_agent_config), json.dumps(runs_payload, ensure_ascii=False))
+
+    def test_live_agent_session_run_retry_now_api_rejects_string_false_real_provider_approval(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            live_agent_config = root / "live-agents.real.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "claude-live",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "terminal_session",
+                                "command": ["claude"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            session_run_controller = LiveAgentSessionRunController(root)
+            target = session_run_controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": str(live_agent_config),
+                    "server": "http://room.local",
+                },
+            )
+            session_run_controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, session_run_controller=session_run_controller),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs/{target['run_id']}/retry-now",
+                    data=json.dumps({"approve_real_providers": "false"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch("agentsassemble.gui.live_agent_session_ensure_payload") as ensure_payload:
+                    ensure_payload.side_effect = AssertionError("string false approval must not relaunch real providers")
+                    with urlopen(request, timeout=4) as response:
+                        retry_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs?limit=20", timeout=4) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(retry_payload["status"], "reconciled")
+        self.assertEqual(retry_payload["session_run"]["status"], "degraded")
+        self.assertIn("requires current operator approval", runs_payload["runs"][0]["last_error"])
+        self.assertNotIn(str(live_agent_config), json.dumps(runs_payload, ensure_ascii=False))
 
     def test_live_agent_session_run_retry_now_api_resolves_latest_matching_meeting_group(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -11123,13 +11388,31 @@ class GuiServerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            live_agent_config = root / "live-agents.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": [sys.executable, "-c", "print('ok')"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
             controller = LiveAgentSessionRunController(root)
             run = controller.begin_run(
                 action="ensure",
                 payload={
                     "meeting_id": "resident-m1",
                     "group_id": "resident-main",
-                    "live_agent_config_path": "configs/live-agents.example.json",
+                    "live_agent_config_path": str(live_agent_config),
                     "server": "http://room.local",
                 },
             )
@@ -11167,7 +11450,7 @@ class GuiServerTests(unittest.TestCase):
             reconciled = controller.list_runs()[0]
 
         self.assertEqual(len(observed_requests), 2)
-        self.assertEqual(observed_requests[0]["live_agent_config_path"], "configs/live-agents.example.json")
+        self.assertEqual(observed_requests[0]["live_agent_config_path"], str(live_agent_config))
         self.assertEqual(reconciled["status"], "ready")
         self.assertEqual(reconciled["reconcile_count"], 2)
         self.assertTrue(all(seconds >= 1.0 for seconds in stop.waits))
@@ -11234,13 +11517,31 @@ class GuiServerTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            live_agent_config = root / "live-agents.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                                "command": [sys.executable, "-c", "print('ok')"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
             controller = LiveAgentSessionRunController(root)
             controller.begin_run(
                 action="ensure",
                 payload={
                     "meeting_id": "resident-m1",
                     "group_id": "resident-main",
-                    "live_agent_config_path": "configs/live-agents.example.json",
+                    "live_agent_config_path": str(live_agent_config),
                     "server": "http://room.local",
                 },
             )
@@ -11270,6 +11571,156 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(operations[-1]["details"]["session_run_count"], 1)
         self.assertEqual(operations[-1]["details"]["session_run_failed_count"], 0)
         self.assertEqual(operations[-1]["details"]["session_run_degraded_count"], 1)
+
+    def test_live_agent_session_run_monitor_requires_current_approval_before_real_provider_reconcile(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor, live_agent_operations_payload
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            live_agent_config = root / "live-agents.real.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "claude-live",
+                                "display_name": "Claude",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "terminal_session",
+                                "command": ["/Users/me/private/bin/claude", "--token", "secret-token"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            controller = LiveAgentSessionRunController(root)
+            controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": str(live_agent_config),
+                    "server": "http://room.local",
+                },
+            )
+            monitor = LiveAgentSessionRunMonitor(root, object(), controller, default_server="http://room.local")
+
+            with patch("agentsassemble.gui.live_agent_session_ensure_payload") as ensure_payload:
+                ensure_payload.side_effect = AssertionError("approval gate must stop before provider ensure")
+                results = monitor.run_once()
+            operations = live_agent_operations_payload(root, limit=10)["operations"]
+            stored_run = controller.list_runs()[0]
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["status"], "degraded")
+        self.assertEqual(stored_run["phase"], "reconcile_failed")
+        self.assertIn("requires current operator approval", stored_run["last_error"])
+        self.assertEqual(stored_run["reconcile_count"], 1)
+        self.assertEqual(operations[-1]["operation"], "session_run.reconcile")
+        self.assertEqual(operations[-1]["status"], "degraded")
+        serialized = json.dumps({"results": results, "operations": operations, "run": stored_run}, ensure_ascii=False)
+        self.assertNotIn("/Users/me/private", serialized)
+        self.assertNotIn("secret-token", serialized)
+        self.assertNotIn(str(live_agent_config), serialized)
+
+    def test_live_agent_session_run_monitor_checks_persisted_process_config_before_recover(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor, live_agent_operations_payload
+
+        class PersistedRealProviderSupervisor:
+            def __init__(self, config_path: Path) -> None:
+                self.config_path = config_path
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "stopped",
+                        "meeting_id": "resident-m1",
+                        "config_path": str(self.config_path),
+                        "server": "http://room.local",
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            live_agent_config = root / "live-agents.real.json"
+            live_agent_config.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "claude-live",
+                                "display_name": "Claude",
+                                "provider_kind": "claude_code",
+                                "connection_kind": "terminal_session",
+                                "command": ["claude"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            controller = LiveAgentSessionRunController(root)
+            controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "server": "http://room.local",
+                },
+            )
+            monitor = LiveAgentSessionRunMonitor(
+                root,
+                PersistedRealProviderSupervisor(live_agent_config),
+                controller,
+                default_server="http://room.local",
+            )
+
+            with patch("agentsassemble.gui.live_agent_session_ensure_payload") as ensure_payload:
+                ensure_payload.side_effect = AssertionError("persisted process config gate must stop before recover")
+                results = monitor.run_once()
+            operations = live_agent_operations_payload(root, limit=10)["operations"]
+            stored_run = controller.list_runs()[0]
+
+        self.assertEqual(results[0]["status"], "degraded")
+        self.assertIn("requires current operator approval", stored_run["last_error"])
+        self.assertEqual(stored_run["reconcile_count"], 1)
+        self.assertEqual(operations[-1]["status"], "degraded")
+        serialized = json.dumps({"results": results, "operations": operations, "run": stored_run}, ensure_ascii=False)
+        self.assertNotIn(str(live_agent_config), serialized)
+
+    def test_live_agent_session_run_monitor_fails_closed_when_process_config_cannot_be_inspected(self):
+        from agentsassemble.gui import LiveAgentSessionRunMonitor
+
+        class BrokenSupervisor:
+            def snapshot_groups(self):
+                raise RuntimeError("snapshot failed near /Users/me/private/live-agents.real.json")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+            controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "server": "http://room.local",
+                },
+            )
+            monitor = LiveAgentSessionRunMonitor(root, BrokenSupervisor(), controller, default_server="http://room.local")
+
+            with patch("agentsassemble.gui.live_agent_session_ensure_payload") as ensure_payload:
+                ensure_payload.side_effect = AssertionError("approval gate must fail closed before reconcile")
+                results = monitor.run_once()
+            stored_run = controller.list_runs()[0]
+
+        self.assertEqual(results[0]["status"], "degraded")
+        self.assertIn("requires current operator approval", stored_run["last_error"])
+        self.assertEqual(stored_run["reconcile_count"], 1)
+        self.assertNotIn("/Users/me/private", json.dumps({"results": results, "run": stored_run}, ensure_ascii=False))
 
     def test_live_agent_session_run_monitor_skips_mutating_ensure_for_current_ready_run(self):
         from agentsassemble.gui import LiveAgentSessionRunMonitor, live_agent_operations_payload

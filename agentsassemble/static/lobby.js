@@ -2379,6 +2379,7 @@ async function runLiveAgentAutoJoin(lobby) {
       failurePrefix: "자동입장 실패",
       notifyRecoverable: true,
       forceProbeBoundAgents: realProviderApproved && liveAgentDiscoveryRequiresApproval(discovery),
+      approveRealProviders: realProviderApproved && liveAgentDiscoveryRequiresApproval(discovery),
     });
   } catch (error) {
     state.liveAgentProcessStatus = { message: `자동입장 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
@@ -2668,7 +2669,7 @@ async function stopRunningLiveAgentProcessGroups() {
 
 async function runLiveAgentSessionAction(
   lobby,
-  { endpoint, includeCouncilConfigs, busyMessage, failurePrefix, notifyRecoverable, forceProbeBoundAgents = false }
+  { endpoint, includeCouncilConfigs, busyMessage, failurePrefix, notifyRecoverable, forceProbeBoundAgents = false, approveRealProviders = false }
 ) {
   const liveAgentConfigPath = lobby.querySelector("#live-agent-process-config")?.value.trim() || "";
   const groupId = lobby.querySelector("#live-agent-process-group")?.value.trim() || "";
@@ -2702,6 +2703,9 @@ async function runLiveAgentSessionAction(
     if (includeCouncilConfigs) {
       requestBody.council_config_path = councilConfigPath;
       requestBody.agent_config_path = agentConfigPath;
+    }
+    if (approveRealProviders) {
+      requestBody.approve_real_providers = true;
     }
     addLiveAgentSessionProbePayload(lobby, requestBody, { force: forceProbeBoundAgents });
     if (runRemainingRounds) {

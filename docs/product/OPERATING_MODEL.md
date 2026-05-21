@@ -36,6 +36,9 @@ games, and informal chatter must not silently become an official record.
 - Config generation is not execution.
 - meeting room startup must not launch real provider CLIs.
 - Real provider CLIs require explicit operator approval before they are started.
+- Durable session-run state is not a stored approval grant; automatic replay,
+  retry, or recovery of real provider residents requires a current operator
+  approval action.
 - Only a host-approved session, group, or agent binding may participate as a
   resident.
 - A stopped session should stay stopped unless the operator explicitly starts,

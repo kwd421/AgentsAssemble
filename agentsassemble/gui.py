@@ -35,6 +35,7 @@ from agentsassemble.live_agent_discovery import (
     validate_distinct_session_bundle_paths,
 )
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
+from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
@@ -428,9 +429,13 @@ def _reconcile_live_agent_session_runs(
     default_server: str,
     summary: str,
     target_run_id: str = "",
+    request_overrides: dict[str, object] | None = None,
 ) -> list[dict[str, object]]:
     def ensure_from_run(run: dict[str, object]) -> dict[str, object]:
         request = _session_run_reconcile_request(run)
+        if isinstance(request_overrides, dict):
+            request.update(request_overrides)
+        _assert_session_run_launch_approved(process_supervisor, request, default_server)
         return live_agent_session_ensure_payload(
             output_root,
             process_supervisor,
@@ -478,6 +483,62 @@ def _session_run_reconcile_request(run: dict[str, object]) -> dict[str, object]:
     if group_id:
         request["group_id"] = group_id
     return request
+
+
+def _session_run_reconcile_launch_policy_targets(
+    process_supervisor: LiveAgentProcessSupervisor,
+    request: dict[str, object],
+    default_server: str,
+) -> list[tuple[object, str]]:
+    targets: list[tuple[object, str]] = []
+    seen: set[str] = set()
+
+    def add_target(config_path: object, server: object) -> None:
+        key = str(config_path or "").strip()
+        if not key or key in seen:
+            return
+        seen.add(key)
+        targets.append((config_path, str(server or default_server)))
+
+    request_server = str(request.get("server") or default_server)
+    add_target(request.get("live_agent_config_path"), request_server)
+
+    group_id = str(request.get("group_id") or "").strip()
+    snapshot_groups = getattr(process_supervisor, "snapshot_groups", None)
+    if not group_id or not callable(snapshot_groups):
+        return targets
+    try:
+        groups = snapshot_groups()
+    except Exception:
+        if not targets:
+            raise ValueError(APPROVAL_REQUIRED_MESSAGE)
+        return targets
+    if not isinstance(groups, list):
+        if not targets:
+            raise ValueError(APPROVAL_REQUIRED_MESSAGE)
+        return targets
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        if str(group.get("group_id") or "").strip() != group_id:
+            continue
+        add_target(group.get("config_path"), group.get("server") or request_server)
+    return targets
+
+
+def _assert_session_run_launch_approved(
+    process_supervisor: LiveAgentProcessSupervisor,
+    request: dict[str, object],
+    default_server: str,
+) -> None:
+    approved = _payload_bool(request.get("approve_real_providers"))
+    for config_path, server in _session_run_reconcile_launch_policy_targets(process_supervisor, request, default_server):
+        assert_resident_launch_approved(
+            config_path,
+            request=request,
+            server=server,
+            approved=approved,
+        )
 
 
 def _session_run_monitor_should_reconcile(
@@ -5867,6 +5928,7 @@ def _make_handler(
                         default_server=self._request_server_url(),
                         summary="retried durable live-agent session run immediately",
                         target_run_id=str(scheduled_run.get("run_id") or run_id),
+                        request_overrides={"approve_real_providers": _payload_bool(payload.get("approve_real_providers"))},
                     )
                 except (OSError, ValueError) as error:
                     safe_error = _session_ensure_error_message(error)
@@ -5909,6 +5971,7 @@ def _make_handler(
                     return
                 session_run = live_agent_session_run_controller.begin_run(action="ensure", payload=dict(payload))
                 try:
+                    _assert_session_run_launch_approved(live_agent_process_supervisor, payload, self._request_server_url())
                     session = live_agent_session_ensure_payload(
                         output_root,
                         live_agent_process_supervisor,

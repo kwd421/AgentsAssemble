@@ -1636,6 +1636,24 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.group_id, "resident-main")
         self.assertTrue(args.as_json)
 
+    def test_live_agent_session_runs_retry_now_parses_current_real_provider_approval(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "session-runs",
+                "retry-now",
+                "--server",
+                "http://room.local",
+                "--run-id",
+                "retry-later",
+                "--approve-real-providers",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "session-runs")
+        self.assertEqual(args.live_agent_session_runs_command, "retry-now")
+        self.assertTrue(args.approve_real_providers)
+
     def test_live_agent_session_runs_pause_resume_parse_run_id_and_json(self):
         pause_args = build_parser().parse_args(
             [
@@ -1916,6 +1934,43 @@ class CliTimeoutTests(unittest.TestCase):
             "http://room.local/api/live-agent-session-runs/exact-run/retry-now",
             method="POST",
             payload={},
+            timeout_seconds=10.0,
+        )
+
+    def test_live_agent_session_runs_retry_now_posts_current_approval_only_when_requested(self):
+        payload = {
+            "status": "reconciled",
+            "session_run": {
+                "run_id": "retry-real",
+                "action": "ensure",
+                "status": "ready",
+                "active": True,
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "phase": "recover",
+            },
+            "results": [{"run_id": "retry-real", "status": "ready"}],
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "session-runs",
+                        "retry-now",
+                        "--server",
+                        "http://room.local",
+                        "--run-id",
+                        "retry-real",
+                        "--approve-real-providers",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-session-runs/retry-real/retry-now",
+            method="POST",
+            payload={"approve_real_providers": True},
             timeout_seconds=10.0,
         )
 

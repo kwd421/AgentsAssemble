@@ -1022,6 +1022,11 @@ def build_parser() -> argparse.ArgumentParser:
     live_session_runs_retry_now.add_argument("--run-id", default="", help="Durable session-run id to retry now.")
     live_session_runs_retry_now.add_argument("--meeting-id", default="", help="Meeting id for the latest matching durable session run.")
     live_session_runs_retry_now.add_argument("--group-id", default="", help="Group id for the latest matching durable session run.")
+    live_session_runs_retry_now.add_argument(
+        "--approve-real-providers",
+        action="store_true",
+        help="Allow this retry-now action to relaunch real provider residents when their saved config requires approval.",
+    )
     live_session_runs_retry_now.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON retry payload.")
     live_session_runs_pause = live_session_runs_subparsers.add_parser(
         "pause",
@@ -1778,7 +1783,7 @@ def _validate_session_auto_restart_args(args: argparse.Namespace) -> None:
 
 
 def _session_start_payload(args: argparse.Namespace) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "meeting_id": str(args.meeting_id or ""),
         "group_id": str(args.group_id or ""),
         "council_config_path": str(args.council_config or ""),
@@ -1790,6 +1795,9 @@ def _session_start_payload(args: argparse.Namespace) -> dict[str, object]:
         "restart_backoff_seconds": float(args.restart_backoff_seconds),
         "stale_restart_after_seconds": float(args.stale_restart_after_seconds),
     }
+    if bool(getattr(args, "approve_real_providers", False)):
+        payload["approve_real_providers"] = True
+    return payload
 
 
 def _run_live_agent_resume_session(args: argparse.Namespace) -> int:
@@ -3564,6 +3572,8 @@ def _run_live_agent_session_runs(args: argparse.Namespace) -> int:
         if run_id:
             path = f"/api/live-agent-session-runs/{urllib.parse.quote(run_id, safe='')}/retry-now"
             payload = {}
+        if bool(getattr(args, "approve_real_providers", False)):
+            payload["approve_real_providers"] = True
         payload = _request_json(
             _server_url(
                 args.server,

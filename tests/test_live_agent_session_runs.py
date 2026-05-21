@@ -58,6 +58,27 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
         self.assertEqual(runs[0]["result"]["connection"]["connected"], 1)
         self.assertEqual(runs[0]["result"]["auto_rounds"]["status"], "answered")
 
+    def test_current_real_provider_approval_is_not_persisted_as_durable_permission(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": "configs/live-agents.example.json",
+                    "server": "http://room.local",
+                    "approve_real_providers": True,
+                },
+            )
+            runs = controller.list_runs()
+
+        self.assertEqual(runs[0]["run_id"], run["run_id"])
+        self.assertNotIn("approve_real_providers", runs[0]["request"])
+        self.assertNotIn("approve_real_providers", json.dumps(runs[0], ensure_ascii=False))
+
     def test_list_runs_filters_by_meeting_and_group_before_limit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

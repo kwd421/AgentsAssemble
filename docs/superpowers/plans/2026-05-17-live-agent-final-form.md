@@ -4655,6 +4655,40 @@ Operator docs now state that frontends and local tools can call `POST /api/live-
 
 ---
 
+### Task 135: Approval-Gated Durable Real-Provider Reconcile
+
+**Goal:** Keep durable session-run recovery automatic for fake/local residents while preventing saved real-provider configs from becoming permanent auto-relaunch permission.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Add: `agentsassemble/live_agent_launch_policy.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/product/OPERATING_MODEL.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_launch_policy.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_live_agent_discovery.py`
+- Test: `tests/test_live_agent_session_runs.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED launch-policy coverage**
+
+Cover credential-free `local_cli` configs, approval-required `claude_code`, `codex_live_session`, `antigravity_cli`, `cursor`, and `remote_bridge` configs, diagnostic bypass behavior, and safe reports that omit commands, endpoints, auth refs, absolute paths, and config filenames.
+
+- [x] **Step 2: Gate durable reconcile and current retry approval**
+
+The durable ensure API and GUI session-run monitor check saved session-run configs and matching persisted process-group configs before invoking resident session ensure/reconcile. Real-provider residents without current approval fail or degrade the run with a safe approval-required error before any provider ensure call. `session-runs retry-now --approve-real-providers` and GUI auto-join approval pass a current-only approval marker into that one reconcile or ensure attempt, while durable session-run storage drops the marker so it cannot become future auto-start permission. String values such as `"false"` are not treated as approval.
+
+- [x] **Step 3: Document the operator contract**
+
+Operator docs now state that session-run records are restart intent, not stored provider approval. Credential-free residents can auto-reconcile; real provider recovery requires an explicit current retry approval and does not expose private launch details.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

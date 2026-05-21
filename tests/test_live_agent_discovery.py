@@ -482,6 +482,7 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                     "max_restarts": 0,
                     "restart_backoff_seconds": 5.0,
                     "stale_restart_after_seconds": 0.0,
+                    "approve_real_providers": True,
                     "probe_bound_agents": True,
                     "probe_timeout_seconds": 12.0,
                 },
