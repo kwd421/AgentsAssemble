@@ -34,6 +34,7 @@ from agentsassemble.live_agent_discovery import (
     fill_discovery_next_command_output,
     validate_distinct_session_bundle_paths,
 )
+from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
@@ -1686,6 +1687,21 @@ def _skipped_session_auto_rounds_result(
 
 def connect_live_agent_payload(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
     return {"agent": connect_live_agent(output_root, payload), "agents": read_live_agents(output_root)}
+
+
+def live_agent_join_brief_payload(payload: dict[str, object], *, default_server: str) -> dict[str, object]:
+    return build_live_agent_join_brief(
+        server=payload.get("server") or default_server,
+        agent_id=payload.get("agent_id") or "",
+        display_name=payload.get("display_name") or "",
+        provider_kind=payload.get("provider_kind") or "manual",
+        connection_kind=payload.get("connection_kind") or "manual",
+        meeting_id=payload.get("meeting_id") or "",
+        engagement_mode=payload.get("engagement_mode") or "mentioned",
+        timeout=payload.get("timeout", 30.0),
+        poll_interval=payload.get("poll_interval", 2.0),
+        max_chain_depth=payload.get("max_chain_depth", 1),
+    )
 
 
 def update_live_agent_engagement_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -5918,6 +5934,23 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json(live_agent)
+                return
+            if parsed.path == "/api/live-agent-join-brief":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    join_brief = live_agent_join_brief_payload(payload, default_server=self._request_server_url())
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(join_brief)
                 return
             review_checkpoint_meeting_id = _meeting_review_checkpoint_path(parsed.path)
             if review_checkpoint_meeting_id is not None:

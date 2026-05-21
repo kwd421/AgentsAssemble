@@ -5875,6 +5875,101 @@ class GuiServerTests(unittest.TestCase):
             self.assertGreaterEqual(listed["agents"][0]["heartbeat_age_seconds"], 0)
             self.assertEqual(listed["agents"][0]["stale_after_seconds"], 180)
 
+    def test_live_agent_join_brief_http_endpoint_returns_safe_packet_without_registering(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                before_paths = sorted(path.relative_to(root).as_posix() for path in root.rglob("*"))
+                request = Request(
+                    f"{server_url}/api/live-agent-join-brief",
+                    data=json.dumps(
+                        {
+                            "agent_id": "external-reviewer",
+                            "display_name": "External Reviewer",
+                            "provider_kind": "manual",
+                            "connection_kind": "manual",
+                            "meeting_id": "resident-m1",
+                            "engagement_mode": "watch",
+                            "timeout": 9,
+                            "poll_interval": 0.5,
+                            "max_chain_depth": 2,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"{server_url}/api/live-agents", timeout=4) as response:
+                    roster = json.loads(response.read().decode("utf-8"))
+                after_paths = sorted(path.relative_to(root).as_posix() for path in root.rglob("*"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "generated")
+            self.assertEqual(payload["agent"]["agent_id"], "external-reviewer")
+            self.assertEqual(payload["agent"]["meeting_id"], "resident-m1")
+            self.assertEqual(payload["commands"]["register"][5:7], ["--server", server_url])
+            self.assertIn("wait-next", payload["commands"]["wait_next"])
+            self.assertIn("--max-chain-depth", payload["commands"]["wait_next"])
+            self.assertIn("2", payload["commands"]["wait_next"])
+            self.assertEqual(payload["templates"]["say"][-2:], ["--", "{message}"])
+            self.assertEqual(payload["safety"]["room_contacted"], False)
+            self.assertEqual(payload["safety"]["provider_executed"], False)
+            self.assertEqual(roster["agents"], [])
+            self.assertEqual(after_paths, before_paths)
+            self.assertFalse((root / "live-agent-runs" / "operations.jsonl").exists())
+            serialized = json.dumps(payload)
+            self.assertNotIn("endpoint", serialized)
+            self.assertNotIn("auth", serialized)
+            self.assertNotIn("session_id", serialized)
+            self.assertNotIn("config_path", serialized)
+            self.assertNotIn("log_path", serialized)
+
+    def test_live_agent_join_brief_http_endpoint_rejects_nested_values_before_echo(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-join-brief",
+                    data=json.dumps(
+                        {
+                            "agent_id": "external-reviewer",
+                            "display_name": {"session_id": "secret-session", "prompt": "private prompt"},
+                            "provider_kind": ["auth_ref=TOKEN", "provider output"],
+                            "server": {"endpoint": "https://example.invalid/private", "config_path": "/tmp/private.json"},
+                            "meeting_id": {"reply": "private reply"},
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=4)
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents", timeout=4) as response:
+                    roster = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(raised.exception.code, 400)
+            body = raised.exception.read().decode("utf-8")
+            raised.exception.close()
+            self.assertNotIn("secret-session", body)
+            self.assertNotIn("TOKEN", body)
+            self.assertNotIn("private prompt", body)
+            self.assertNotIn("private reply", body)
+            self.assertEqual(roster["agents"], [])
+            self.assertFalse((root / "live-agent-runs" / "operations.jsonl").exists())
+
     def test_live_agent_http_endpoint_filters_roster_by_meeting_agent_and_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

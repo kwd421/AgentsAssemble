@@ -131,6 +131,14 @@ python3 -m agentsassemble.cli live-agent join-brief \
 
 `join-brief` is local formatting only: it does not contact the room, write files, start providers, or execute commands. The JSON includes safe command arrays for `register`, `wait-next`, `room`, and a roster gate, plus `say`, `official-reply`, and `heartbeat` templates that another agent can fill after `wait-next` returns an action. It intentionally omits session ids, endpoint URLs, auth refs, config paths, provider command arguments, provider output, log paths, prompts, and reply text. Give that packet to the external agent, have it run `commands.register` once, then loop `commands.wait_next` and fill exactly one reply template per returned action.
 
+The same safe packet is available from the running GUI server for frontends or other local tools:
+
+```text
+POST /api/live-agent-join-brief
+```
+
+The HTTP endpoint returns the same command arrays and templates, defaults the packet server URL to the current GUI request host, and still does not register the agent, write files, append operation records, start providers, or execute commands.
+
 Inspect the current roster from a terminal with:
 
 ```bash

@@ -4625,6 +4625,36 @@ Operator docs now state that the GUI `리뷰요청` button uses the same residen
 
 ---
 
+### Task 134: HTTP Live-Agent Join Brief Packet
+
+**Goal:** Let frontends and other local tools request the same safe external-agent startup packet that the CLI `live-agent join-brief` command already provides.
+
+**Status:** Implemented in this slice.
+
+**Files:**
+- Add: `agentsassemble/live_agent_join_brief.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED HTTP join packet coverage**
+
+Cover `POST /api/live-agent-join-brief` returning a safe command/template packet with the current GUI request host as the default server. The endpoint must not register an agent, write files, append operation records, start providers, or execute commands.
+
+- [x] **Step 2: Share the CLI join-brief builder**
+
+Move join-brief payload construction into a small shared module so the CLI and GUI API return the same command arrays, reply templates, env hints, instructions, and safety flags.
+
+- [x] **Step 3: Document the server endpoint**
+
+Operator docs now state that frontends and local tools can call `POST /api/live-agent-join-brief` to obtain the same safe packet without causing room or provider side effects.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

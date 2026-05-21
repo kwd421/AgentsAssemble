@@ -306,6 +306,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("last_observed_live_event_id", doc)
         self.assertIn("registration acknowledgement", doc)
         self.assertIn("live-agent join-brief", doc)
+        self.assertIn("POST /api/live-agent-join-brief", doc)
         self.assertIn("startup packet", doc)
         self.assertIn("local formatting only", doc)
         self.assertIn("commands.wait_next", doc)

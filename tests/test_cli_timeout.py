@@ -680,6 +680,68 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertNotIn("config_path", serialized)
         self.assertNotIn("log_path", serialized)
 
+    def test_live_agent_join_brief_http_matches_cli_for_scalar_inputs(self):
+        stdout = StringIO()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                cli_args = [
+                    "live-agent",
+                    "join-brief",
+                    "--server",
+                    server_url,
+                    "--agent-id",
+                    "external-reviewer",
+                    "--display-name",
+                    "External Reviewer",
+                    "--provider-kind",
+                    "manual",
+                    "--connection-kind",
+                    "manual",
+                    "--meeting-id",
+                    "resident-m1",
+                    "--engagement-mode",
+                    "watch",
+                    "--timeout",
+                    "9",
+                    "--poll-interval",
+                    "0.5",
+                    "--max-chain-depth",
+                    "2",
+                    "--json",
+                ]
+                with patch("sys.stdout", stdout):
+                    self.assertEqual(main(cli_args), 0)
+                request = urllib.request.Request(
+                    f"{server_url}/api/live-agent-join-brief",
+                    data=json.dumps(
+                        {
+                            "agent_id": "external-reviewer",
+                            "display_name": "External Reviewer",
+                            "provider_kind": "manual",
+                            "connection_kind": "manual",
+                            "meeting_id": "resident-m1",
+                            "engagement_mode": "watch",
+                            "timeout": 9,
+                            "poll_interval": 0.5,
+                            "max_chain_depth": 2,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(request, timeout=4) as response:
+                    http_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(http_payload, json.loads(stdout.getvalue()))
+
     def test_live_agent_join_brief_templates_parse_after_placeholder_replacement(self):
         stdout = StringIO()
         with patch("sys.stdout", stdout):
