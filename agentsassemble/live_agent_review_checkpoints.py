@@ -12,7 +12,7 @@ _REVIEW_CHECKPOINT_ARTIFACT_LOCKS: dict[str, Lock] = {}
 
 
 def write_review_checkpoint_artifacts(meeting_dir: Path, checkpoint: dict[str, object]) -> dict[str, str]:
-    checkpoint_id = _review_checkpoint_identity(checkpoint.get("checkpoint_id")) or "checkpoint"
+    checkpoint_id = _review_checkpoint_identity_or_default(checkpoint.get("checkpoint_id"))
     artifact_lock = _review_checkpoint_artifact_lock(meeting_dir)
     with artifact_lock:
         file_stem = _review_checkpoint_file_stem_for_write(meeting_dir, checkpoint_id)
@@ -32,7 +32,7 @@ def write_review_checkpoint_artifacts(meeting_dir: Path, checkpoint: dict[str, o
 
 
 def review_checkpoint_file_stem(value: object) -> str:
-    text = clean_lobby_text(value, limit=128)
+    text = _checkpoint_filename_text(value, limit=128)
     text = re.sub(r"[^A-Za-z0-9_.-]+", "_", text).strip("._-")
     if not text or text in {".", ".."}:
         return "checkpoint"
@@ -40,7 +40,16 @@ def review_checkpoint_file_stem(value: object) -> str:
 
 
 def _review_checkpoint_identity(value: object) -> str:
-    return str(value or "").strip()
+    return "" if value is None else str(value)
+
+
+def _review_checkpoint_identity_or_default(value: object) -> str:
+    identity = _review_checkpoint_identity(value)
+    return identity if identity.strip() else "checkpoint"
+
+
+def _checkpoint_filename_text(value: object, *, limit: int) -> str:
+    return _review_checkpoint_identity(value).replace("\n", " ").replace("\r", " ").strip()[:limit]
 
 
 def _review_checkpoint_artifact_lock(meeting_dir: Path) -> Lock:
