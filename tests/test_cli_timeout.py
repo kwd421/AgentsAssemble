@@ -18,6 +18,7 @@ from unittest.mock import patch
 from agentsassemble import cli as cli_module
 from agentsassemble.cli import build_parser, main
 from agentsassemble.gui import _make_handler, append_lobby_event, read_lobby
+from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.live_agent_smoke import LiveAgentSmokeFailed
 
@@ -1759,6 +1760,8 @@ class CliTimeoutTests(unittest.TestCase):
                 "op-before",
                 "--limit",
                 "5",
+                "--scan-limit",
+                "1000",
                 "--timeout",
                 "3",
                 "--poll-interval",
@@ -1774,6 +1777,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.status, "success")
         self.assertEqual(args.after_id, "op-before")
         self.assertEqual(args.limit, 5)
+        self.assertEqual(args.scan_limit, 1000)
         self.assertEqual(args.timeout, 3.0)
         self.assertEqual(args.poll_interval, 0.5)
         self.assertTrue(args.as_json)
@@ -1954,6 +1958,113 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(result["status"], "observed")
         self.assertEqual(result["operation"]["id"], "new-match")
 
+    def test_live_agent_operations_wait_uses_scan_limit_without_server_side_operation_filters(self):
+        payload = {
+            "operations": [
+                {
+                    "id": "new-match",
+                    "timestamp": "2026-05-18T01:02:05+00:00",
+                    "operation": "session.start",
+                    "status": "success",
+                    "target_id": "resident-m1",
+                }
+            ],
+            "scan_limit": 1000,
+            "scanned_operation_count": 1,
+            "truncated": False,
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "operations",
+                        "wait",
+                        "--server",
+                        "http://room.local",
+                        "--operation",
+                        "session.start",
+                        "--target-id",
+                        "resident-m1",
+                        "--status",
+                        "success",
+                        "--limit",
+                        "5",
+                        "--scan-limit",
+                        "1000",
+                        "--timeout",
+                        "3",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once()
+        self.assertEqual(
+            request_json.call_args.args,
+            ("http://room.local/api/live-agent-operations?limit=5&scan_limit=1000&scan_tail=1",),
+        )
+        self.assertNotIn("operation=session.start", request_json.call_args.args[0])
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(result["status"], "observed")
+        self.assertEqual(result["operation"]["id"], "new-match")
+
+    def test_live_agent_operations_wait_scan_limit_finds_match_beyond_result_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            append_live_agent_operation(
+                root,
+                operation="session.start",
+                status="success",
+                target_id="resident-m1",
+                summary="matching older operation",
+            )
+            for index in range(205):
+                append_live_agent_operation(
+                    root,
+                    operation="process.start",
+                    status="success",
+                    target_id="resident-m1",
+                    summary=f"newer unrelated operation {index}",
+                )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "operations",
+                            "wait",
+                            "--server",
+                            f"http://127.0.0.1:{server.server_port}",
+                            "--operation",
+                            "session.start",
+                            "--target-id",
+                            "resident-m1",
+                            "--status",
+                            "success",
+                            "--limit",
+                            "1",
+                            "--scan-limit",
+                            "250",
+                            "--timeout",
+                            "1",
+                            "--json",
+                        ]
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(exit_code, 0)
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(result["status"], "observed")
+        self.assertEqual(result["operation"]["summary"], "matching older operation")
+
     def test_live_agent_operations_wait_remembers_after_marker_across_polls(self):
         payloads = [
             {
@@ -2054,6 +2165,60 @@ class CliTimeoutTests(unittest.TestCase):
         output = stdout.getvalue()
         self.assertIn("Timed out waiting for live-agent operation session.start", output)
         self.assertIn("last operation: 2026-05-18T01:02:03+00:00 session.resume success resident-m1", output)
+
+    def test_live_agent_operations_wait_timeout_preserves_scan_metadata(self):
+        payload = {
+            "operations": [
+                {
+                    "id": "other-op",
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "session.resume",
+                    "status": "success",
+                    "target_id": "resident-m1",
+                }
+            ],
+            "scan_limit": 3,
+            "scanned_operation_count": 3,
+            "truncated": True,
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("agentsassemble.cli.time.monotonic", side_effect=[0.0, 0.0, 1.1, 1.1]):
+                with patch("agentsassemble.cli.time.sleep"):
+                    with patch("sys.stdout", stdout):
+                        exit_code = main(
+                            [
+                                "live-agent",
+                                "operations",
+                                "wait",
+                                "--server",
+                                "http://room.local",
+                                "--operation",
+                                "session.start",
+                                "--target-id",
+                                "resident-m1",
+                                "--timeout",
+                                "1",
+                                "--poll-interval",
+                                "0.1",
+                                "--scan-limit",
+                                "3",
+                                "--json",
+                            ]
+                        )
+
+        self.assertEqual(exit_code, 1)
+        request_json.assert_called_once()
+        self.assertEqual(
+            request_json.call_args.args,
+            ("http://room.local/api/live-agent-operations?limit=50&scan_limit=3&scan_tail=1",),
+        )
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(result["status"], "timeout")
+        self.assertTrue(result["truncated"])
+        self.assertEqual(result["scan_limit"], 3)
+        self.assertEqual(result["scanned_operation_count"], 3)
+        self.assertEqual(result["operations"][0]["id"], "other-op")
 
     def test_live_agent_operations_list_fail_on_attention_exits_one_after_printing_summary(self):
         payload = {

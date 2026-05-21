@@ -553,6 +553,7 @@ def live_agent_operations_payload(
     target_id: str = "",
     status: str = "",
     scan_limit: object = None,
+    scan_tail: bool = False,
 ) -> dict[str, object]:
     return read_live_agent_operation_history(
         output_root,
@@ -561,6 +562,7 @@ def live_agent_operations_payload(
         target_id=target_id,
         status=status,
         scan_limit=scan_limit,
+        scan_tail=scan_tail,
     )
 
 
@@ -4243,6 +4245,7 @@ def _make_handler(
                         target_id=str(query.get("target_id", [""])[0] or ""),
                         status=str(query.get("status", [""])[0] or ""),
                         scan_limit=query.get("scan_limit", [""])[0],
+                        scan_tail=_payload_bool(query.get("scan_tail", [""])[0]),
                     )
                 )
                 return

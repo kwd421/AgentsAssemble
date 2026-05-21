@@ -915,6 +915,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_operations_wait.add_argument("--status", default="", help="Optional operation status filter.")
     live_operations_wait.add_argument("--after-id", default="", help="Ignore operations up to and including this operation id.")
     live_operations_wait.add_argument("--limit", type=parse_positive_int, default=50)
+    live_operations_wait.add_argument("--scan-limit", type=parse_positive_int, default=None, help="Maximum recent operations to scan before waiting on the returned tail.")
     live_operations_wait.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
     live_operations_wait.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
     live_operations_wait.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable wait result.")
@@ -3094,8 +3095,17 @@ def _live_agent_operations_path(args: argparse.Namespace, *, include_filters: bo
             query["target_id"] = target_id
         if status:
             query["status"] = status
-        if getattr(args, "scan_limit", None) is not None:
-            query["scan_limit"] = args.scan_limit
+    if getattr(args, "scan_limit", None) is not None:
+        query["scan_limit"] = args.scan_limit
+    return f"/api/live-agent-operations?{urllib.parse.urlencode(query)}"
+
+
+def _live_agent_operations_wait_path(args: argparse.Namespace) -> str:
+    query: dict[str, object] = {"limit": args.limit}
+    scan_limit = getattr(args, "scan_limit", None)
+    if scan_limit is not None:
+        query["scan_limit"] = scan_limit
+        query["scan_tail"] = "1"
     return f"/api/live-agent-operations?{urllib.parse.urlencode(query)}"
 
 
@@ -3316,7 +3326,7 @@ def _run_live_agent_operations_wait(args: argparse.Namespace) -> int:
         attempts += 1
         try:
             payload = _request_json(
-                _server_url(args.server, f"/api/live-agent-operations?limit={args.limit}"),
+                _server_url(args.server, _live_agent_operations_wait_path(args)),
                 timeout_seconds=remaining_before_poll,
             )
         except (TimeoutError, urllib.error.URLError) as error:
@@ -3383,7 +3393,14 @@ def _live_agent_operations_wait_result(
         "operation": operation,
     }
     if status == "timeout":
-        result["operations"] = payload.get("operations") if isinstance(payload, dict) and isinstance(payload.get("operations"), list) else []
+        operations = payload.get("operations") if isinstance(payload, dict) and isinstance(payload.get("operations"), list) else []
+        result["operations"] = operations[-max(1, int(args.limit)) :]
+        if isinstance(payload, dict):
+            result["truncated"] = payload.get("truncated") is True
+            if "scan_limit" in payload:
+                result["scan_limit"] = payload.get("scan_limit")
+            if "scanned_operation_count" in payload:
+                result["scanned_operation_count"] = payload.get("scanned_operation_count")
     if error:
         result["error"] = error
     return result
@@ -3461,6 +3478,9 @@ def _print_live_agent_operations_wait_result(result: dict[str, object], *, as_js
     last_operation = next((item for item in reversed(operations) if isinstance(item, dict)), None)
     if last_operation is not None:
         print(f"last operation: {_format_live_agent_operation(last_operation)}")
+    scan_notice = _format_live_agent_operation_scan_notice(result)
+    if scan_notice:
+        print(scan_notice)
 
 
 def _print_live_agent_operations_payload(payload: dict[str, object], *, as_json: bool) -> None:

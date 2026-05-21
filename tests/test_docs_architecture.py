@@ -310,6 +310,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("filters are applied before the result limit", doc)
         self.assertIn("live-agent operations list --fail-on-attention", doc)
         self.assertIn("live-agent operations wait", doc)
+        self.assertIn("global marker semantics remain unchanged", doc)
         self.assertIn("session-runs.json", doc)
         self.assertIn("/api/live-agent-session-runs/ensure", doc)
         self.assertIn("adds `상주보장` for the durable session-run path", doc)

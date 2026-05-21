@@ -104,6 +104,7 @@ def read_live_agent_operations(
     target_id: str = "",
     status: str = "",
     scan_limit: object = None,
+    scan_tail: bool = False,
 ) -> list[dict[str, object]]:
     return read_live_agent_operation_history(
         output_root,
@@ -112,6 +113,7 @@ def read_live_agent_operations(
         target_id=target_id,
         status=status,
         scan_limit=scan_limit,
+        scan_tail=scan_tail,
     )["operations"]
 
 
@@ -123,9 +125,11 @@ def read_live_agent_operation_history(
     target_id: str = "",
     status: str = "",
     scan_limit: object = None,
+    scan_tail: bool = False,
 ) -> dict[str, object]:
     safe_limit = _operation_limit(limit)
     safe_scan_limit = _operation_scan_limit(scan_limit, operation_limit=safe_limit)
+    result_limit = safe_scan_limit if scan_tail else safe_limit
     operation_filter = _operation_filter(operation)
     target_id_filter = _target_id_filter(target_id)
     target_id_match_filter = _target_id_match_filter(target_id)
@@ -138,6 +142,7 @@ def read_live_agent_operation_history(
         "status": status_filter,
         "scan_limit": safe_scan_limit,
         "scanned_operation_count": 0,
+        "scan_tail": bool(scan_tail),
         "truncated": False,
     }
     path = _operations_path(output_root)
@@ -161,7 +166,7 @@ def read_live_agent_operation_history(
         scanned_operation_count += 1
         if _operation_matches(record, operation=operation_filter, target_id=target_id_match_filter, status=status_filter):
             operations.append(record)
-            if len(operations) >= safe_limit:
+            if not scan_tail and len(operations) >= result_limit:
                 break
     operations.reverse()
     history["operations"] = operations
