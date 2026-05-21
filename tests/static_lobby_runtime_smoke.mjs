@@ -186,6 +186,9 @@ function resetState() {
     liveAgentOperations: [],
     liveAgentOperationsLoaded: true,
     liveAgentOperationsLoading: false,
+    liveAgentSessionRuns: [],
+    liveAgentSessionRunsLoaded: true,
+    liveAgentSessionRunsLoading: false,
     liveAgentProcessStartRunning: false,
     liveAgentSessionStartRunning: false,
     liveAgentSessionRestartRunning: false,
@@ -218,6 +221,7 @@ function installHarness({
   processStartPayload = null,
   processStopRunningPayload = null,
   sessionStartPayload = null,
+  sessionRunEnsurePayload = null,
   sessionEnsurePayload = null,
   sessionResumePayload = null,
   sessionRestartPayload = null,
@@ -236,6 +240,7 @@ function installHarness({
   liveAgentPreflightPayload = null,
   liveAgentProcessEventsPayload = null,
   liveAgentOperationsPayload = null,
+  liveAgentSessionRunsPayload = null,
 } = {}) {
   const requests = [];
   const events = [];
@@ -335,6 +340,28 @@ function installHarness({
           group_id: "resident-main",
           connection: { expected: 3, connected: 3, attention: [] },
           process: { status: "running", attention: [] },
+        }
+      );
+    }
+    if (url === "/api/live-agent-session-runs/ensure") {
+      return jsonResponse(
+        sessionRunEnsurePayload || {
+          status: "ready",
+          action: "resume",
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          connection: { expected: 3, connected: 3, attention: [] },
+          process: { status: "running", attention: [] },
+          session_run: {
+            run_id: "run-1",
+            action: "ensure",
+            status: "ready",
+            active: true,
+            meeting_id: "resident-gui",
+            group_id: "resident-main",
+            phase: "resume",
+            reconcile_count: 0,
+          },
         }
       );
     }
@@ -486,6 +513,9 @@ function installHarness({
     if (url === "/api/live-agent-operations?limit=20") {
       return jsonResponse(liveAgentOperationsPayload || { operations: [] });
     }
+    if (url === "/api/live-agent-session-runs?limit=20") {
+      return jsonResponse(liveAgentSessionRunsPayload || { runs: [] });
+    }
     if (url === "/api/codex-sessions/invite") {
       return jsonResponse(
         codexInvitePayload || {
@@ -503,7 +533,7 @@ function installHarness({
     if (url === "/api/codex-sessions/join") {
       return jsonResponse(codexJoinPayload || { status: "ready", action: "resume" });
     }
-    return jsonResponse({});
+    throw new Error(`Unhandled test fetch: ${url}`);
   };
   return { document, requests, events };
 }
@@ -531,6 +561,10 @@ function sessionStartRequest(requests) {
 
 function sessionEnsureRequest(requests) {
   return requests.find((request) => request.url === "/api/live-agent-sessions/ensure");
+}
+
+function sessionRunEnsureRequest(requests) {
+  return requests.find((request) => request.url === "/api/live-agent-session-runs/ensure");
 }
 
 function sessionResumeRequest(requests) {
@@ -1425,6 +1459,95 @@ test("session ensure button posts one-shot resident session payload", async () =
   assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
 });
 
+test("durable session run ensure button posts persistent resident session payload and renders run status", async () => {
+  resetState();
+  const { document, requests, events } = installHarness({
+    sessionRunEnsurePayload: {
+      status: "ready",
+      action: "resume",
+      meeting_id: "resident-gui",
+      group_id: "resident-main",
+      connection: { expected: 3, connected: 3, attention: [] },
+      process: { status: "running", attention: [] },
+      session_run: {
+        run_id: "run-1",
+        action: "ensure",
+        status: "ready",
+        active: true,
+        meeting_id: "resident-gui",
+        group_id: "resident-main",
+        phase: "resume",
+        reconcile_count: 1,
+      },
+    },
+    liveAgentSessionRunsPayload: {
+      runs: [
+        {
+          run_id: "run-1",
+          action: "ensure",
+          status: "ready",
+          active: true,
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          phase: "resume",
+          reconcile_count: 1,
+          result: { connection: { expected: 3, connected: 3 } },
+        },
+      ],
+    },
+  });
+  renderLobby({ followLatest: false });
+  const lobby = document.querySelector("#lobby");
+  lobby.querySelector("#live-agent-session-meeting-id").value = "resident-gui";
+  lobby.querySelector("#live-agent-session-council-config").value = "configs/demo-council.json";
+  lobby.querySelector("#live-agent-session-agent-config").value = "configs/agents.start-session.example.json";
+  lobby.querySelector("#live-agent-process-config").value = "configs/live-agents.start-session.example.json";
+  lobby.querySelector("#live-agent-process-group").value = "resident-main";
+  lobby.querySelector("#live-agent-session-connect-timeout").value = "7";
+  lobby.querySelector("#live-agent-process-auto-restart").checked = true;
+  lobby.querySelector("#live-agent-process-max-restarts").value = "4";
+  lobby.querySelector("#live-agent-process-restart-backoff").value = "2";
+  lobby.querySelector("#live-agent-process-stale-restart-after").value = "300";
+  lobby.querySelector("#live-agent-session-run-remaining-rounds").checked = true;
+  lobby.querySelector("#live-agent-session-probe-bound-agents").checked = true;
+  lobby.querySelector("#live-agent-session-probe-timeout").value = "4";
+  lobby.querySelector("#live-agent-round-timeout").value = "12";
+  lobby.querySelector("#live-agent-round-max-rounds").value = "2";
+  lobby.querySelector("#live-agent-round-stop-on-timeout").checked = true;
+
+  await lobby.querySelector("#live-agent-session-run-ensure").click();
+
+  assert.deepEqual(sessionRunEnsureRequest(requests).jsonBody, {
+    meeting_id: "resident-gui",
+    group_id: "resident-main",
+    council_config_path: "configs/demo-council.json",
+    agent_config_path: "configs/agents.start-session.example.json",
+    live_agent_config_path: "configs/live-agents.start-session.example.json",
+    connect_timeout_seconds: 7,
+    auto_restart: true,
+    max_restarts: 4,
+    restart_backoff_seconds: 2,
+    stale_restart_after_seconds: 300,
+    probe_bound_agents: true,
+    probe_timeout_seconds: 4,
+    run_remaining_rounds: true,
+    round_timeout_seconds: 12,
+    round_max_rounds: 2,
+    round_stop_on_timeout: true,
+  });
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-session-runs?limit=20"));
+  assert.equal(state.liveAgentProcessStatus.message, "세션 ready: resident-gui · 3/3 connected · run run-1 ready");
+  assert.equal(events.at(-1)?.type, "agentsassemble:meeting-started");
+  assert.equal(events.at(-1)?.detail.meetingId, "resident-gui");
+  const runText = document.querySelector(".live-agent-session-run-row").textContent;
+  assert.match(runText, /run-1/);
+  assert.match(runText, /resident-gui/);
+  assert.match(runText, /resident-main/);
+  assert.match(runText, /ready/);
+  assert.match(runText, /connected 3\/3/);
+  assert.doesNotMatch(runText, /configs\/|http:|https:/);
+});
+
 test("session resume button posts existing meeting and resident config payload", async () => {
   resetState();
   const { document, requests, events } = installHarness({
@@ -1881,6 +2004,46 @@ test("runtime health renders meeting-owned session readiness details", async () 
   assert.match(rowText, /reason stale_watchdog stale manifest agent agent-b/);
 });
 
+test("runtime refresh loads durable session runs and renders safe connection evidence", async () => {
+  resetState();
+  const { document, requests } = installHarness({
+    liveAgentSessionRunsPayload: {
+      runs: [
+        {
+          run_id: "run-2",
+          action: "ensure",
+          status: "degraded",
+          active: true,
+          meeting_id: "resident-gui",
+          group_id: "resident-main",
+          phase: "recover",
+          reconcile_count: 2,
+          request: {
+            live_agent_config_path: "configs/private.json",
+            server: "https://secret.example",
+          },
+          result: {
+            connection: { expected: 3, connected: 2 },
+          },
+        },
+      ],
+    },
+  });
+
+  await refreshLiveAgentRuntimeSurfaces();
+  renderLobby({ followLatest: false });
+
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-session-runs?limit=20"));
+  const runText = document.querySelector(".live-agent-session-run-row").textContent;
+  assert.match(runText, /run-2/);
+  assert.match(runText, /resident-gui/);
+  assert.match(runText, /resident-main/);
+  assert.match(runText, /degraded/);
+  assert.match(runText, /connected 2\/3/);
+  assert.match(runText, /reconcile 2/);
+  assert.doesNotMatch(runText, /configs\/|secret\.example|https:/);
+});
+
 test("runtime health session readiness renders only safe escaped evidence", async () => {
   resetState();
   const { document } = installHarness({
@@ -2011,6 +2174,7 @@ test("process panel refresh reloads lifecycle history", async () => {
   await document.querySelector("#live-agent-process-refresh").click();
 
   assert.ok(requests.some((request) => request.url === "/api/live-agent-process-events?limit=20"));
+  assert.ok(requests.some((request) => request.url === "/api/live-agent-session-runs?limit=20"));
 });
 
 test("live-agent roster renders lobby and official cursors separately", () => {
@@ -2147,9 +2311,15 @@ test("process row action keeps the panel busy while the request is in flight", a
 
   assert.equal(state.liveAgentProcessRowActionRunning, "running-crew");
   assert.equal(document.querySelector("#live-agent-session-smoke").disabled, true);
+  assert.equal(document.querySelector("#live-agent-session-run-ensure").disabled, true);
   await document.querySelector("#live-agent-session-smoke").click();
+  await document.querySelector("#live-agent-session-run-ensure").click();
   assert.equal(
     requests.some((request) => request.url === "/api/live-agent-session-smoke"),
+    false
+  );
+  assert.equal(
+    requests.some((request) => request.url === "/api/live-agent-session-runs/ensure"),
     false
   );
 

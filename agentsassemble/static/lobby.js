@@ -6,6 +6,7 @@ import {
   roleMeta,
   setLiveAgentOperations,
   setLiveAgentProcesses,
+  setLiveAgentSessionRuns,
   setLiveAgents,
   setLobbyEvents,
   state,
@@ -104,6 +105,7 @@ export function renderLobby(options = {}) {
     loadLiveAgentProcesses({ force: true });
     loadLiveAgentProcessEvents({ force: true });
     loadLiveAgentOperations({ force: true });
+    loadLiveAgentSessionRuns({ force: true });
   });
   lobby.querySelector("#live-agent-process-smoke")?.addEventListener("click", async () => {
     await runLiveAgentSmoke(lobby);
@@ -138,6 +140,9 @@ export function renderLobby(options = {}) {
   });
   lobby.querySelector("#live-agent-session-ensure")?.addEventListener("click", async () => {
     await ensureLiveAgentSession(lobby);
+  });
+  lobby.querySelector("#live-agent-session-run-ensure")?.addEventListener("click", async () => {
+    await ensureLiveAgentSessionRun(lobby);
   });
   lobby.querySelector("#live-agent-session-resume")?.addEventListener("click", async () => {
     await resumeLiveAgentSession(lobby);
@@ -206,6 +211,9 @@ export function renderLobby(options = {}) {
   }
   if (!state.liveAgentOperationsLoaded && !state.liveAgentOperationsLoading) {
     loadLiveAgentOperations();
+  }
+  if (!state.liveAgentSessionRunsLoaded && !state.liveAgentSessionRunsLoading) {
+    loadLiveAgentSessionRuns();
   }
   if (shouldFollowLatest) scrollLobbyFeedToLatest(lobby);
   else restoreLobbyFeedScroll(lobby, previousScrollTop);
@@ -565,6 +573,7 @@ function renderLiveAgentProcessControls() {
         <button type="button" id="live-agent-process-stop-running" ${processActionsDisabled ? "disabled" : ""}>실행중지</button>
         <button type="button" id="live-agent-session-start" ${processActionsDisabled ? "disabled" : ""}>세션시작</button>
         <button type="button" id="live-agent-session-ensure" ${processActionsDisabled ? "disabled" : ""}>세션보장</button>
+        <button type="button" id="live-agent-session-run-ensure" ${processActionsDisabled ? "disabled" : ""}>상주보장</button>
         <button type="button" id="live-agent-session-resume" ${processActionsDisabled ? "disabled" : ""}>세션재개</button>
         <button type="button" id="live-agent-session-restart" ${processActionsDisabled ? "disabled" : ""}>세션재시작</button>
         <button type="button" id="live-agent-session-recover" ${processActionsDisabled ? "disabled" : ""}>세션복구</button>
@@ -604,6 +613,7 @@ function renderLiveAgentProcessControls() {
         }
       </div>
       ${renderLiveAgentProcessEvents()}
+      ${renderLiveAgentSessionRuns()}
       ${renderLiveAgentOperations()}
       ${status ? `<p class="live-agent-status" data-tone="${escapeHtml(status.tone || "info")}">${escapeHtml(status.message)}</p>` : ""}
     </section>
@@ -905,6 +915,54 @@ function renderLiveAgentOperations() {
       }
     </div>
   `;
+}
+
+function renderLiveAgentSessionRuns() {
+  const runs = state.liveAgentSessionRuns || [];
+  return `
+    <div class="live-agent-session-run-list" aria-label="상주 세션런">
+      <strong>상주 세션런</strong>
+      ${
+        runs.length
+          ? runs.slice(-6).reverse().map(renderLiveAgentSessionRun).join("")
+          : '<p class="roster-empty">기록된 상주 세션런이 없습니다.</p>'
+      }
+    </div>
+  `;
+}
+
+function renderLiveAgentSessionRun(run) {
+  const status = String(run.status || "unknown");
+  const runId = String(run.run_id || "-");
+  const meetingId = String(run.meeting_id || "-");
+  const groupId = String(run.group_id || "-");
+  const activity = run.active === true ? "active" : "inactive";
+  const details = [
+    `phase ${String(run.phase || status)}`,
+    liveAgentSessionRunConnectionLabel(run),
+    run.reconcile_count ? `reconcile ${Math.max(0, Number(run.reconcile_count || 0))}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `
+    <article class="live-agent-session-run-row live-agent-session-run-${escapeHtml(status)}">
+      <div>
+        <strong>${escapeHtml(runId)}</strong>
+        <span>${escapeHtml(meetingId)} · ${escapeHtml(groupId)}</span>
+        <small>${escapeHtml(details)}</small>
+      </div>
+      <em>${escapeHtml(status)} · ${escapeHtml(activity)}</em>
+    </article>
+  `;
+}
+
+function liveAgentSessionRunConnectionLabel(run) {
+  const result = run?.result && typeof run.result === "object" ? run.result : {};
+  const connection = result.connection && typeof result.connection === "object" ? result.connection : {};
+  const expected = Number(connection.expected || 0);
+  const connected = Number(connection.connected || 0);
+  if (!Number.isFinite(expected) || !Number.isFinite(connected) || expected <= 0) return "";
+  return `connected ${Math.max(0, connected)}/${Math.max(0, expected)}`;
 }
 
 function renderLiveAgentProcessEvents() {
@@ -1590,6 +1648,7 @@ export function refreshLiveAgentRuntimeSurfaces() {
     loadLiveAgentProcesses({ background: true }),
     loadLiveAgentProcessEvents({ background: true }),
     loadLiveAgentOperations({ background: true }),
+    loadLiveAgentSessionRuns({ background: true }),
   ]);
 }
 
@@ -1633,10 +1692,30 @@ async function loadLiveAgentOperations(options = {}) {
   }
 }
 
+async function loadLiveAgentSessionRuns(options = {}) {
+  if (state.liveAgentSessionRunsLoading && !options.force) return;
+  const previousSignature = JSON.stringify(state.liveAgentSessionRuns || []);
+  let shouldRender = !options.background;
+  state.liveAgentSessionRunsLoading = true;
+  try {
+    const payload = await fetchJson("/api/live-agent-session-runs?limit=20");
+    const runs = payload.runs || [];
+    setLiveAgentSessionRuns(runs);
+    state.liveAgentSessionRunsLoaded = true;
+    shouldRender = shouldRender || JSON.stringify(runs) !== previousSignature;
+  } catch {
+    state.liveAgentSessionRunsLoaded = true;
+  } finally {
+    state.liveAgentSessionRunsLoading = false;
+    if (shouldRender) renderLobby({ followLatest: false });
+  }
+}
+
 function refreshLiveAgentProcessHistory() {
   return Promise.all([
     loadLiveAgentProcessEvents({ background: true, force: true }),
     loadLiveAgentOperations({ background: true, force: true }),
+    loadLiveAgentSessionRuns({ background: true, force: true }),
   ]);
 }
 
@@ -2139,6 +2218,17 @@ async function ensureLiveAgentSession(lobby) {
   });
 }
 
+async function ensureLiveAgentSessionRun(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  await runLiveAgentSessionAction(lobby, {
+    endpoint: "/api/live-agent-session-runs/ensure",
+    includeCouncilConfigs: true,
+    busyMessage: "상주 세션런 보장 중",
+    failurePrefix: "상주 세션런 보장 실패",
+    notifyRecoverable: true,
+  });
+}
+
 async function resumeLiveAgentSession(lobby) {
   if (liveAgentProcessActionBusy()) return;
   await runLiveAgentSessionAction(lobby, {
@@ -2495,7 +2585,8 @@ function liveAgentSessionStatusMessage(payload) {
   const connected = Math.max(0, Number(connection.connected || 0));
   const replyProbe = liveAgentSessionReplyProbeLabel(payload);
   const autoRounds = liveAgentSessionAutoRoundsLabel(payload);
-  return `세션 ${status}: ${meetingId} · ${connected}/${expected} connected${replyProbe ? ` · ${replyProbe}` : ""}${autoRounds ? ` · ${autoRounds}` : ""}`;
+  const sessionRun = liveAgentSessionRunResultLabel(payload);
+  return `세션 ${status}: ${meetingId} · ${connected}/${expected} connected${replyProbe ? ` · ${replyProbe}` : ""}${autoRounds ? ` · ${autoRounds}` : ""}${sessionRun ? ` · ${sessionRun}` : ""}`;
 }
 
 function liveAgentSessionStopStatusMessage(payload) {
@@ -2541,6 +2632,12 @@ function liveAgentSessionAutoRoundsLabel(payload) {
   const skipped = Math.max(0, Number(autoRounds.skipped_round_count || 0));
   const completedText = completed ? `, ${completed} already complete` : "";
   return `rounds ${status}: ${roundCount} rounds, ${answered} answered${completedText}, ${timedOut} timed out, ${skipped} skipped`;
+}
+
+function liveAgentSessionRunResultLabel(payload) {
+  const run = payload?.session_run && typeof payload.session_run === "object" ? payload.session_run : null;
+  if (!run) return "";
+  return `run ${run.run_id || "-"} ${run.status || "unknown"}`;
 }
 
 function notifyRecoverableSessionMeeting(error) {

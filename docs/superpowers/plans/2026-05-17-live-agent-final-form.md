@@ -3712,6 +3712,37 @@ Document `session-runs.json`, the durable ensure endpoint, the CLI list command,
 
 ---
 
+### Task 101: Durable Session-Run GUI Surface
+
+**Goal:** Make durable session-run intent visible and usable from the existing Lobby `상주 실행` panel without changing the unrelated page shell or stylesheet work already in progress.
+
+**Files:**
+- Modify: `agentsassemble/static/shared.js`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+- Test: `tests/test_static_ui_assets.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED GUI coverage for durable ensure**
+
+Cover a `상주보장` control that sends the same resident-session payload to `/api/live-agent-session-runs/ensure`, reports the returned `session_run` id/status in the operator status line, refreshes the durable run list, and stays blocked while another live-agent process action is running.
+
+- [x] **Step 2: Add a safe session-run list to the Lobby**
+
+Store `liveAgentSessionRuns` beside the existing live-agent runtime state, load `/api/live-agent-session-runs?limit=20` during initial and periodic runtime refreshes, and render a compact `상주 세션런` list containing run id, meeting id, group id, status, phase, active flag, reconcile count, and connected/expected counts.
+
+- [x] **Step 3: Preserve the redaction boundary in the GUI**
+
+Keep saved config paths, server URLs, commands, prompts, provider output, auth refs, and log tails out of the rendered session-run rows. The GUI list is operator evidence, not a dump of the controller's private recovery payload.
+
+- [x] **Step 4: Verify in tests and a rendered browser smoke**
+
+Run the static runtime smoke, static UI assertions, docs assertion, JS syntax checks, and a real GUI browser smoke against an empty temporary output root so the render path is exercised without starting resident agents.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
