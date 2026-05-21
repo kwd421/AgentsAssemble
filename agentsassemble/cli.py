@@ -2390,6 +2390,7 @@ def _format_live_agent_session_smoke(result: dict[str, object]) -> str:
         f"post-restart {result.get('post_restart_reply_count', 0)}/{expected_reply_total} replies; "
         f"post-recover {result.get('post_recover_reply_count', 0)}/{expected_reply_total} replies; "
         f"{soak_part}"
+        f"post-stop {result.get('post_stop_process_status') or 'unknown'}; "
         f"start {result.get('start_status') or 'unknown'}, "
         f"check {result.get('check_status') or 'unknown'}, "
         f"resume {result.get('resume_status') or 'unknown'}, "
@@ -2611,12 +2612,16 @@ def _session_smoke_summary(smoke: dict[str, object]) -> str:
     if soak_cycle_count:
         soak_expected_total = int(smoke.get("expected_reply_count") or 0) * soak_cycle_count
         soak_part = f", soak {smoke.get('soak_reply_count', 0)}/{soak_expected_total} over {soak_cycle_count} cycles"
+    post_stop_part = ""
+    if smoke.get("post_stop_process_status"):
+        post_stop_part = f", post-stop {smoke.get('post_stop_process_status')}"
     return (
         f"{label} ("
         f"{smoke.get('reply_count', 0)}/{expected_total} replies, "
         f"post-restart {smoke.get('post_restart_reply_count', 0)}/{expected_total}, "
         f"post-recover {smoke.get('post_recover_reply_count', 0)}/{expected_total}"
-        f"{soak_part})"
+        f"{soak_part}"
+        f"{post_stop_part})"
     )
 
 
@@ -3195,6 +3200,7 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
             "soak_cycle_count",
             "soak_reply_count",
             "soak_check_statuses",
+            "post_stop_process_status",
         ]
     if operation_name == "readiness.check":
         return [
@@ -3210,6 +3216,7 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
             "session_smoke_soak_cycle_count",
             "session_smoke_soak_reply_count",
             "session_smoke_soak_check_statuses",
+            "session_smoke_post_stop_process_status",
             "probe_statuses",
         ]
     if operation_name in {"session.start", "session.ensure", "session.resume", "session.restart", "session.recover"}:
@@ -3244,6 +3251,8 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
 
 
 def _live_agent_operation_detail_limit(operation_name: str) -> int:
+    if operation_name == "session.smoke":
+        return 8
     if operation_name == "session.ensure":
         return 11
     if operation_name in {"session.start", "session.resume", "session.restart", "session.recover"}:

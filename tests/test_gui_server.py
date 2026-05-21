@@ -2106,6 +2106,7 @@ class GuiServerTests(unittest.TestCase):
             "restart_status": "ready",
             "recover_status": "ready",
             "stop_status": "stopped",
+            "post_stop_process_status": "stopped",
         }
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
@@ -2168,6 +2169,7 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(session_operations[-1]["details"]["soak_check_statuses"], ["ready", "ready"])
         self.assertEqual(session_operations[-1]["details"]["resume_status"], "ready")
         self.assertEqual(session_operations[-1]["details"]["recover_status"], "ready")
+        self.assertEqual(session_operations[-1]["details"]["post_stop_process_status"], "stopped")
         operation_blob = json.dumps(session_operations, ensure_ascii=False)
         self.assertNotIn("probe-secret", operation_blob)
         self.assertNotIn("probe-secret-2", operation_blob)
@@ -2850,6 +2852,7 @@ class GuiServerTests(unittest.TestCase):
                 "restart_status": "ready",
                 "recover_status": "ready",
                 "stop_status": "stopped",
+                "post_stop_process_status": "stopped",
                 "source_event_id": "secret-source",
                 "post_recover_source_event_id": "secret-recover-source",
                 "soak_source_event_ids": ["secret-soak-source"],
@@ -2915,6 +2918,7 @@ class GuiServerTests(unittest.TestCase):
                 "restart_status": "ready",
                 "recover_status": "ready",
                 "stop_status": "stopped",
+                "post_stop_process_status": "stopped",
             },
         )
         session_smoke.assert_called_once()
@@ -2941,6 +2945,7 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_soak_cycle_count"], 2)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_soak_reply_count"], 6)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_soak_check_statuses"], ["ready", "ready"])
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_post_stop_process_status"], "stopped")
         readiness_blob = json.dumps(readiness_operations, ensure_ascii=False)
         self.assertNotIn("secret session reply", readiness_blob)
         self.assertNotIn("secret soak reply", readiness_blob)

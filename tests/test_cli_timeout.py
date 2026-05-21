@@ -1304,6 +1304,7 @@ class CliTimeoutTests(unittest.TestCase):
                         "soak_cycle_count": 2,
                         "soak_reply_count": 6,
                         "soak_check_statuses": ["ready", "ready"],
+                        "post_stop_process_status": "stopped",
                     },
                 }
             ]
@@ -1331,6 +1332,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("soak_cycle_count=2", output)
         self.assertIn("soak_reply_count=6", output)
         self.assertIn("soak_check_statuses=ready,ready", output)
+        self.assertIn("post_stop_process_status=stopped", output)
 
     def test_live_agent_operations_list_prioritizes_session_control_probe_and_auto_rounds(self):
         payload = {
@@ -5362,6 +5364,7 @@ class CliTimeoutTests(unittest.TestCase):
                 "soak_interval_seconds": 0.5,
                 "soak_reply_count": 6,
                 "recover_status": "ready",
+                "post_stop_process_status": "stopped",
             },
         }
         stdout = StringIO()
@@ -5402,7 +5405,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("readiness: ready", output)
         self.assertIn(
             "session smoke: ok session-smoke "
-            "(3/3 replies, post-restart 3/3, post-recover 3/3, soak 6/6 over 2 cycles)",
+            "(3/3 replies, post-restart 3/3, post-recover 3/3, soak 6/6 over 2 cycles, post-stop stopped)",
             output,
         )
 
@@ -5434,6 +5437,7 @@ class CliTimeoutTests(unittest.TestCase):
                 "post_restart_reply_count": 3,
                 "post_recover_reply_count": 3,
                 "recover_status": "ready",
+                "post_stop_process_status": "stopped",
             },
         }
         stdout = StringIO()
@@ -5469,7 +5473,7 @@ class CliTimeoutTests(unittest.TestCase):
         output = stdout.getvalue()
         self.assertIn("official round smoke: ok doctor-smoke (3 answered, 0 timed out, 0 skipped)", output)
         self.assertIn(
-            "session smoke: ok session-smoke (3/3 replies, post-restart 3/3, post-recover 3/3)",
+            "session smoke: ok session-smoke (3/3 replies, post-restart 3/3, post-recover 3/3, post-stop stopped)",
             output,
         )
 
@@ -5577,6 +5581,7 @@ class CliTimeoutTests(unittest.TestCase):
             "restart_status": "ready",
             "recover_status": "ready",
             "stop_status": "stopped",
+            "post_stop_process_status": "stopped",
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
@@ -5624,6 +5629,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("post-restart 6/6 replies", output)
         self.assertIn("post-recover 6/6 replies", output)
         self.assertIn("soak 6/6 replies over 2 cycles", output)
+        self.assertIn("post-stop stopped", output)
         self.assertIn("start ready, check ready, resume ready, restart ready, recover ready, stop stopped", output)
 
     def test_live_agent_session_smoke_returns_failure_for_non_ok_status(self):

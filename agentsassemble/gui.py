@@ -3123,6 +3123,7 @@ def _safe_readiness_session_smoke_result(smoke: dict[str, object]) -> dict[str, 
         "restart_status": _operation_result_status(smoke.get("restart_status")),
         "recover_status": _operation_result_status(smoke.get("recover_status")),
         "stop_status": _operation_result_status(smoke.get("stop_status")),
+        "post_stop_process_status": _operation_result_status(smoke.get("post_stop_process_status")),
     }
     error = str(smoke.get("error") or "").strip()
     if error:
@@ -3571,6 +3572,7 @@ def _session_smoke_operation_details(smoke: dict[str, object]) -> dict[str, obje
         "restart_status": _operation_result_status(smoke.get("restart_status")),
         "recover_status": _operation_result_status(smoke.get("recover_status")),
         "stop_status": _operation_result_status(smoke.get("stop_status")),
+        "post_stop_process_status": _operation_result_status(smoke.get("post_stop_process_status")),
     }
 
 
@@ -5086,6 +5088,9 @@ def _make_handler(
                         "session_smoke_soak_check_statuses": _safe_payload_strings(
                             session_smoke.get("soak_check_statuses"),
                             limit=32,
+                        ),
+                        "session_smoke_post_stop_process_status": _operation_result_status(
+                            session_smoke.get("post_stop_process_status")
                         ),
                         "session_smoke_recover_status": _operation_result_status(session_smoke.get("recover_status")),
                     },
