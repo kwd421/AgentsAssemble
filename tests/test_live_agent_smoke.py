@@ -23,6 +23,7 @@ from agentsassemble.live_agent_smoke import (
     seed_smoke_agent_cursors,
     _session_smoke_self_service_script,
 )
+from agentsassemble.meeting_events import append_live_event
 
 
 SESSION_SMOKE_AGENT_IDS = [
@@ -195,6 +196,18 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     json.dumps({"meeting_id": payload["meeting_id"], "live_status": "running"}),
                     encoding="utf-8",
                 )
+                append_live_event(
+                    meeting_dir,
+                    {
+                        "kind": "message",
+                        "channel": "official",
+                        "official_record": True,
+                        "actor_id": "session-smoke-self-service",
+                        "target_agent_id": "session-smoke-self-service",
+                        "source_event_id": "stale-official-request",
+                        "content": "stale previous self_service reply",
+                    },
+                )
                 state["started"] = True
                 return {
                     "status": "ready",
@@ -205,6 +218,18 @@ class LiveAgentSmokeTests(unittest.TestCase):
             if url.endswith("/live-agent-turns/rounds"):
                 self.assertEqual(payload["max_rounds"], 1)
                 self.assertFalse(payload["stop_on_timeout"])
+                append_live_event(
+                    state["root"] / "meetings" / "session-smoke-meeting",
+                    {
+                        "kind": "message",
+                        "channel": "official",
+                        "official_record": True,
+                        "actor_id": "session-smoke-self-service",
+                        "target_agent_id": "session-smoke-self-service",
+                        "source_event_id": "official-request-self-service",
+                        "content": "session smoke self_service ok",
+                    },
+                )
                 return {
                     "status": "answered",
                     "meeting_id": "session-smoke-meeting",
@@ -349,6 +374,11 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertEqual(result["round_count"], 1)
         self.assertEqual(result["answered_round_count"], 1)
         self.assertEqual(result["expected_reply_count"], 4)
+        self.assertEqual(result["self_service_official_reply_count"], 1)
+        self.assertEqual(result["self_service_lobby_reply_count"], 1)
+        self.assertEqual(result["self_service_post_restart_reply_count"], 1)
+        self.assertEqual(result["self_service_post_recover_reply_count"], 1)
+        self.assertEqual(result["self_service_soak_reply_count"], 0)
         self.assertEqual(result["reply_count"], 4)
         self.assertEqual(result["post_restart_reply_count"], 4)
         self.assertEqual(result["post_restart_source_event_id"], "session-probe-2")

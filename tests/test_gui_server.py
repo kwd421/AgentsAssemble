@@ -2033,6 +2033,11 @@ class GuiServerTests(unittest.TestCase):
             "timeout_round_count": 0,
             "skipped_round_count": 0,
             "expected_reply_count": 4,
+            "self_service_official_reply_count": 1,
+            "self_service_lobby_reply_count": 2,
+            "self_service_post_restart_reply_count": 2,
+            "self_service_post_recover_reply_count": 2,
+            "self_service_soak_reply_count": 2,
             "lobby_probe_count": 2,
             "source_event_ids": ["probe-secret", "probe-secret-2"],
             "reply_count": 8,
@@ -2164,6 +2169,11 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(session_operations[-1]["details"]["rounds_status"], "answered")
         self.assertEqual(session_operations[-1]["details"]["answered_round_count"], 1)
         self.assertEqual(session_operations[-1]["details"]["lobby_probe_count"], 2)
+        self.assertEqual(session_operations[-1]["details"]["self_service_official_reply_count"], 1)
+        self.assertEqual(session_operations[-1]["details"]["self_service_lobby_reply_count"], 2)
+        self.assertEqual(session_operations[-1]["details"]["self_service_post_restart_reply_count"], 2)
+        self.assertEqual(session_operations[-1]["details"]["self_service_post_recover_reply_count"], 2)
+        self.assertEqual(session_operations[-1]["details"]["self_service_soak_reply_count"], 2)
         self.assertEqual(session_operations[-1]["details"]["reply_count"], 8)
         self.assertEqual(session_operations[-1]["details"]["post_restart_reply_count"], 8)
         self.assertEqual(session_operations[-1]["details"]["post_recover_reply_count"], 8)
@@ -2310,6 +2320,11 @@ class GuiServerTests(unittest.TestCase):
             else:
                 self.assertEqual(payload["terminal_session_reason"], "pty_unavailable")
             self.assertEqual(payload["expected_reply_count"], expected_agent_count)
+            self.assertEqual(payload["self_service_official_reply_count"], 1)
+            self.assertEqual(payload["self_service_lobby_reply_count"], 1)
+            self.assertEqual(payload["self_service_post_restart_reply_count"], 1)
+            self.assertEqual(payload["self_service_post_recover_reply_count"], 1)
+            self.assertEqual(payload["self_service_soak_reply_count"], 0)
             self.assertEqual(payload["reply_count"], expected_agent_count)
             self.assertEqual(payload["post_restart_reply_count"], expected_agent_count)
             self.assertEqual(payload["post_recover_reply_count"], expected_agent_count)
@@ -2854,6 +2869,11 @@ class GuiServerTests(unittest.TestCase):
                 "terminal_session_reason": "pty_unavailable",
                 "lobby_probe_count": 1,
                 "expected_reply_count": 3,
+                "self_service_official_reply_count": 1,
+                "self_service_lobby_reply_count": 1,
+                "self_service_post_restart_reply_count": 1,
+                "self_service_post_recover_reply_count": 1,
+                "self_service_soak_reply_count": 2,
                 "reply_count": 3,
                 "post_restart_reply_count": 3,
                 "post_recover_reply_count": 3,
@@ -2926,6 +2946,11 @@ class GuiServerTests(unittest.TestCase):
                 "answered_round_count": 1,
                 "lobby_probe_count": 1,
                 "expected_reply_count": 3,
+                "self_service_official_reply_count": 1,
+                "self_service_lobby_reply_count": 1,
+                "self_service_post_restart_reply_count": 1,
+                "self_service_post_recover_reply_count": 1,
+                "self_service_soak_reply_count": 2,
                 "reply_count": 3,
                 "post_restart_reply_count": 3,
                 "post_recover_reply_count": 3,
@@ -2962,6 +2987,10 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke"], "ok")
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_terminal_session_status"], "skipped")
         self.assertFalse(readiness_operations[-1]["details"]["session_smoke_terminal_session_included"])
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_self_service_official_reply_count"], 1)
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_self_service_lobby_reply_count"], 1)
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_self_service_post_recover_reply_count"], 1)
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_self_service_soak_reply_count"], 2)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_reply_count"], 3)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_post_recover_reply_count"], 3)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_soak_cycle_count"], 2)

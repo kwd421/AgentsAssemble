@@ -37,6 +37,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("not Claude Code Channels, Antigravity native sessions, tmux ownership, or OS-level sandboxing", doc)
         self.assertIn("Resident `self_service`", doc)
         self.assertIn("wait-next", doc)
+        self.assertIn("scripts/my_self_service_agent.py", doc)
         self.assertIn("advisory", doc)
 
     def test_roadmap_mentions_room_event_log_and_live_session_adapter(self):
@@ -326,6 +327,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("live-agent health --wait-ok", doc)
         self.assertIn("live-agent health --wait-session-ready", doc)
         self.assertIn("live-agent session-readiness", doc)
+        self.assertIn("scripts/my_self_service_agent.py", doc)
+        self.assertIn("self_service_official_reply_count", doc)
         self.assertIn("--wait-ready", doc)
         self.assertIn("live-agent ensure-session", doc)
         self.assertIn("세션보장", doc)

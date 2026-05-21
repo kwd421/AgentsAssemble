@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from agentsassemble.live_session_transport import terminal_sessions_supported
-from agentsassemble.meeting_events import write_live_state
+from agentsassemble.meeting_events import read_live_events, read_live_events_after, write_live_state
 
 
 RequestJson = Callable[..., dict[str, object]]
@@ -387,6 +387,7 @@ def run_live_agent_session_smoke(
     post_recover_probe_event_ids: list[str] = []
     soak_probe_event_ids: list[str] = []
     soak_check_statuses: list[str] = []
+    official_reply_cursor_event_id = ""
     post_stop_process_status = ""
     with _SmokeRemoteBridgeServer(response_message=expected_messages[agent_ids["remote_bridge"]]) as bridge:
         with temp_dir_factory() as temp_dir:
@@ -425,6 +426,10 @@ def run_live_agent_session_smoke(
                 if start_result.get("status") != "ready":
                     raise LiveAgentSmokeFailed("Session smoke start did not become ready.")
                 _mark_session_smoke_meeting_diagnostic(output_root, clean_meeting_id)
+                official_reply_cursor_event_id = _session_smoke_latest_live_event_id(
+                    output_root,
+                    meeting_id=clean_meeting_id,
+                )
                 rounds_result = request_json(
                     _server_url(
                         server,
@@ -577,6 +582,7 @@ def run_live_agent_session_smoke(
     safe_post_restart_replies = _safe_session_smoke_replies(post_restart_replies)
     safe_post_recover_replies = _safe_session_smoke_replies(post_recover_replies)
     safe_soak_replies = _safe_session_smoke_replies(soak_replies)
+    self_service_agent_id = agent_ids.get("self_service", "")
     return {
         "status": "ok" if stop_result.get("status") == "stopped" else "failed",
         "meeting_id": clean_meeting_id,
@@ -605,6 +611,22 @@ def run_live_agent_session_smoke(
         "skipped_round_count": _nonnegative_int(rounds_result.get("skipped_round_count")),
         "stopped_round_count": _nonnegative_int(rounds_result.get("stopped_round_count")),
         "expected_reply_count": len(expected_messages),
+        "self_service_official_reply_count": _session_smoke_self_service_official_reply_count(
+            output_root,
+            meeting_id=clean_meeting_id,
+            agent_id=self_service_agent_id,
+            after_event_id=official_reply_cursor_event_id,
+        ),
+        "self_service_lobby_reply_count": _session_smoke_actor_reply_count(safe_replies, self_service_agent_id),
+        "self_service_post_restart_reply_count": _session_smoke_actor_reply_count(
+            safe_post_restart_replies,
+            self_service_agent_id,
+        ),
+        "self_service_post_recover_reply_count": _session_smoke_actor_reply_count(
+            safe_post_recover_replies,
+            self_service_agent_id,
+        ),
+        "self_service_soak_reply_count": _session_smoke_actor_reply_count(safe_soak_replies, self_service_agent_id),
         "reply_count": len(safe_replies),
         "post_restart_reply_count": len(safe_post_restart_replies),
         "post_recover_reply_count": len(safe_post_recover_replies),
@@ -621,6 +643,45 @@ def run_live_agent_session_smoke(
         "stop_status": str(stop_result.get("status") or ""),
         "post_stop_process_status": post_stop_process_status,
     }
+
+
+def _session_smoke_actor_reply_count(events: list[dict[str, object]], agent_id: str) -> int:
+    if not agent_id:
+        return 0
+    return sum(1 for event in events if event.get("actor_id") == agent_id)
+
+
+def _session_smoke_self_service_official_reply_count(
+    output_root: Path | None,
+    *,
+    meeting_id: str,
+    agent_id: str,
+    after_event_id: str,
+) -> int:
+    if output_root is None or not meeting_id or not agent_id:
+        return 0
+    meeting_dir = output_root / "meetings" / meeting_id
+    if not meeting_dir.exists():
+        return 0
+    return sum(
+        1
+        for event in read_live_events_after(meeting_dir, after_event_id or None)
+        if event.get("kind") == "message"
+        and event.get("official_record") is True
+        and event.get("actor_id") == agent_id
+    )
+
+
+def _session_smoke_latest_live_event_id(output_root: Path | None, *, meeting_id: str) -> str:
+    if output_root is None or not meeting_id:
+        return ""
+    meeting_dir = output_root / "meetings" / meeting_id
+    if not meeting_dir.exists():
+        return ""
+    events = read_live_events(meeting_dir, limit=200)
+    if not events:
+        return ""
+    return str(events[-1].get("id") or "")
 
 
 def build_live_agent_official_round_smoke_config(
