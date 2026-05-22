@@ -60,9 +60,14 @@ def build_live_agent_join_brief(
         "official_reply": _join_official_reply_template(server=normalized_server, agent_id=normalized_agent_id),
         "heartbeat": _join_heartbeat_template(server=normalized_server, agent_id=normalized_agent_id),
     }
+    execution_contract = _execution_contract(
+        provider_kind=normalized_provider_kind,
+        connection_kind=normalized_connection_kind,
+    )
     return {
         "status": "generated",
         "agent": agent,
+        "execution_contract": execution_contract,
         "commands": commands,
         "templates": templates,
         "env": {
@@ -78,6 +83,7 @@ def build_live_agent_join_brief(
             "Run commands.register once before observing the room.",
             "Loop commands.wait_next and inspect the returned action.",
             "Read room.shared_memory as official-only background context when present.",
+            "Use execution_contract.context_durability as the declared agent-private context boundary.",
             "For lobby actions, replace templates.say placeholders and run it once.",
             "For observe_lobby actions, run the returned ack_command and do not post a reply.",
             "For official_turn actions, replace templates.official_reply placeholders and run it once.",
@@ -90,6 +96,27 @@ def build_live_agent_join_brief(
             "provider_executed": False,
             "contains_secrets": False,
         },
+    }
+
+
+def _execution_contract(*, provider_kind: str, connection_kind: str) -> dict[str, str]:
+    contract = {
+        "manual": ("manual_room_loop", "external_owner_managed"),
+        "local_cli": ("stateless_prompt_call", "stateless_prompt"),
+        "terminal_session": ("terminal_pty_prompt_bridge", "process_lifetime"),
+        "remote_bridge": ("remote_bridge_room_loop", "remote_owner_managed"),
+        "self_service": ("self_service_room_loop", "provider_managed_room_loop"),
+    }
+    if connection_kind == "live_session":
+        join_semantics = "codex_exec_resume" if provider_kind == "codex_live_session" else "provider_live_session"
+        context_durability = "provider_managed_resume"
+    else:
+        join_semantics, context_durability = contract.get(connection_kind, ("manual_room_loop", "unknown"))
+    return {
+        "join_semantics": join_semantics,
+        "context_durability": context_durability,
+        "evidence_basis": "operator_supplied_join_brief",
+        "provider_execution": "not_started_by_join_brief",
     }
 
 

@@ -683,6 +683,19 @@ class CliTimeoutTests(unittest.TestCase):
             ],
         )
         self.assertIn("Read room.shared_memory as official-only background context when present.", payload["instructions"])
+        self.assertEqual(
+            payload["execution_contract"],
+            {
+                "join_semantics": "manual_room_loop",
+                "context_durability": "external_owner_managed",
+                "evidence_basis": "operator_supplied_join_brief",
+                "provider_execution": "not_started_by_join_brief",
+            },
+        )
+        self.assertIn(
+            "Use execution_contract.context_durability as the declared agent-private context boundary.",
+            payload["instructions"],
+        )
         self.assertIn("For observe_lobby actions, run the returned ack_command and do not post a reply.", payload["instructions"])
         self.assertIn(
             "For return_packet actions, run the returned read_command before the ack_command and do not post a reply.",
@@ -701,6 +714,40 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertNotIn("session_id", serialized)
         self.assertNotIn("config_path", serialized)
         self.assertNotIn("log_path", serialized)
+
+    def test_live_agent_join_brief_declares_context_contract_by_connection_kind(self):
+        cases = [
+            ("local_cli", "local_cli", "stateless_prompt_call", "stateless_prompt"),
+            ("claude_code", "terminal_session", "terminal_pty_prompt_bridge", "process_lifetime"),
+            ("codex_live_session", "live_session", "codex_exec_resume", "provider_managed_resume"),
+            ("antigravity_cli", "self_service", "self_service_room_loop", "provider_managed_room_loop"),
+            ("remote_http_bridge", "remote_bridge", "remote_bridge_room_loop", "remote_owner_managed"),
+        ]
+        for provider_kind, connection_kind, join_semantics, context_durability in cases:
+            stdout = StringIO()
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "join-brief",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        f"{connection_kind}-agent",
+                        "--provider-kind",
+                        provider_kind,
+                        "--connection-kind",
+                        connection_kind,
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 0)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["execution_contract"]["join_semantics"], join_semantics)
+            self.assertEqual(payload["execution_contract"]["context_durability"], context_durability)
+            self.assertEqual(payload["execution_contract"]["evidence_basis"], "operator_supplied_join_brief")
+            self.assertEqual(payload["execution_contract"]["provider_execution"], "not_started_by_join_brief")
 
     def test_live_agent_join_brief_http_matches_cli_for_scalar_inputs(self):
         stdout = StringIO()
