@@ -96,6 +96,11 @@ resident path. The native Claude Code/Cursor/Antigravity/Grok/Hermes/OpenClaw in
 Ordinary `local_cli`, `terminal_session`, `self_service`, and remote bridge
 participants still rely on policy, approval, and audit metadata unless a real
 sandboxed launcher is added and verified.
+No-Tailscale multi-host is still a separate product axis: the current Phase 5
+slice adds only a LAN invite token PoC for a future
+`native_remote_room_client`, documented in `docs/no-tailscale-multi-host.md`.
+It does not open the room to the internet, start provider CLIs, or make
+relay/WebRTC ready.
 Public room surfaces now expose `sandbox_enforcement` alongside join semantics
 and context durability. The shared `SandboxLauncher` mapping reports
 `codex_readonly` for Codex `codex exec --sandbox read-only --ignore-rules`,

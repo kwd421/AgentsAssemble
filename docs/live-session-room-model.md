@@ -44,11 +44,20 @@ The room should support these participant classes:
 - `mock`: deterministic local demo speaker.
 - `api_provider`: one-shot API meeting provider.
 - `remote_http_bridge`: a friend-owned remote session exposed through an audited bridge.
+- `native_remote_room_client`: a future bridge-free remote client that joins the room API with host admission and its own provider-owned context.
 - `local_cli delegate`: a command invoked with a room prompt and asked to return structured output.
 - `live_session`: a long-running CLI, SDK, PTY, or socket-backed agent session attached to the room.
 - `memory_pack`: imported persona and memory artifacts, not an executable participant by itself.
 
 `local_cli delegate` is useful now, but it is not the final form of a living teammate. The future `live_session` participant is the form that can keep context in a running process, watch the room, speak when scheduled, and return to its own workspace afterward.
+
+For no-Tailscale multi-host work, keep `remote_http_bridge` and
+`native_remote_room_client` separate. A bridge lets the host call a remote
+owner's prompt execution endpoint. A native remote room client joins the room
+itself, presents host-approved admission proof, watches the shared room event
+stream, and posts replies through room APIs. The Phase 5 LAN invite token PoC in
+`docs/no-tailscale-multi-host.md` proves only a signed invite contract; it does
+not solve NAT traversal, relay, WebRTC, provider launch, or OS sandboxing.
 
 ## App Session Limits
 

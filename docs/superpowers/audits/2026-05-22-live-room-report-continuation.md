@@ -43,6 +43,11 @@ Report source:
   Build, Hermes, and OpenClaw. It uses `moderator_called` and documents that it
   is not a native-ready bundle; discovery, explicit approval, preflight, and a
   targeted smoke are still required before starting real provider processes.
+- Added `docs/no-tailscale-multi-host.md` and `live-agent lan-invite
+  create/verify` as the Phase 5 LAN invite token PoC. The token is an
+  HMAC-SHA256 admission proof for a future `native_remote_room_client`, scoped
+  to one room URL, meeting id, and agent id, and it keeps bridge-free room
+  clients distinct from `remote_http_bridge`.
 
 ## What remains incomplete
 
@@ -60,8 +65,9 @@ Report source:
   health, provider capability, and meeting artifact surfaces. Codex is labeled
   `codex_readonly`; generic CLI/PTY/self-service/remote paths remain
   `advisory`; no provider is labeled `os_sandboxed` yet.
-- No-Tailscale multi-host mode remains a design track after single-host
-  resident sessions stay reliable.
+- No-Tailscale multi-host now has a design and token PoC, but actual remote
+  registration, authenticated room endpoints, invite revocation, relay, WebRTC,
+  and real remote-client smoke remain incomplete.
 
 ## Verification Scope
 

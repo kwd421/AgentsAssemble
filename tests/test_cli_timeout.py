@@ -12389,6 +12389,94 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.auth_ref, "env:BRIDGE_TOKEN")
         self.assertEqual(args.resident_command, [])
 
+    def test_live_agent_lan_invite_create_and_verify_round_trip(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "lan-invite",
+                "create",
+                "--server",
+                "http://192.168.1.50:8765",
+                "--meeting-id",
+                "resident-m1",
+                "--agent-id",
+                "friend-claude",
+                "--display-name",
+                "Friend Claude",
+                "--provider-kind",
+                "claude_code",
+                "--secret-ref",
+                "env:LAN_INVITE_SECRET",
+                "--ttl-seconds",
+                "60",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "lan-invite")
+        self.assertEqual(args.lan_invite_command, "create")
+        self.assertEqual(args.server, "http://192.168.1.50:8765")
+        self.assertEqual(args.agent_id, "friend-claude")
+        self.assertEqual(args.secret_ref, "env:LAN_INVITE_SECRET")
+        self.assertEqual(args.ttl_seconds, 60)
+
+        create_stdout = StringIO()
+        with patch.dict(os.environ, {"LAN_INVITE_SECRET": "test-secret"}):
+            with patch("sys.stdout", create_stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "lan-invite",
+                        "create",
+                        "--server",
+                        "http://192.168.1.50:8765",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--agent-id",
+                        "friend-claude",
+                        "--display-name",
+                        "Friend Claude",
+                        "--provider-kind",
+                        "claude_code",
+                        "--secret-ref",
+                        "env:LAN_INVITE_SECRET",
+                        "--ttl-seconds",
+                        "60",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        packet = json.loads(create_stdout.getvalue())
+        self.assertEqual(packet["client_kind"], "native_remote_room_client")
+        self.assertEqual(packet["admission"]["provider_execution"], "not_started_by_invite")
+        self.assertNotIn("test-secret", create_stdout.getvalue())
+
+        verify_stdout = StringIO()
+        with patch.dict(os.environ, {"LAN_INVITE_SECRET": "test-secret"}):
+            with patch("sys.stdout", verify_stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "lan-invite",
+                        "verify",
+                        "--token",
+                        packet["token"],
+                        "--secret-ref",
+                        "env:LAN_INVITE_SECRET",
+                        "--expected-meeting-id",
+                        "resident-m1",
+                        "--expected-agent-id",
+                        "friend-claude",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        verified = json.loads(verify_stdout.getvalue())
+        self.assertEqual(verified["status"], "ok")
+        self.assertEqual(verified["claims"]["agent"]["agent_id"], "friend-claude")
+
     def test_live_agent_delegate_rejects_live_session_connection_kind(self):
         stderr = StringIO()
         with patch("sys.stderr", stderr):

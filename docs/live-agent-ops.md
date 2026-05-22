@@ -262,6 +262,49 @@ POST /api/codex-sessions/join
 
 `join` is intentionally narrower than a generic meeting rebinder. It only accepts an existing live pre-round meeting, refuses meetings that already have debate rounds or official-turn events, writes both `codex-live-session.local.json` and `live-agents.codex-session.local.json`, updates the live meeting's role bindings to the generated Codex live bindings, and then calls the existing `ensure-session` policy for the generated resident group. The selected role keeps the chosen Codex session id; the other meeting roles receive fresh Codex live bindings so the resident manifest still covers the whole meeting. The operation record is `codex_session.join` and includes only safe meeting, role, agent, group, result, and ensure-action evidence. It does not include the Codex session id or local config paths.
 
+## LAN Invite Token PoC
+
+No-Tailscale multi-host support is a separate product axis from local resident
+sessions. The first checked-in proof is `live-agent lan-invite`, which creates
+and verifies a signed LAN admission packet for a future
+`native_remote_room_client`. It does not bind the GUI to `0.0.0.0`, contact a
+remote machine, start provider CLIs, authorize real provider execution, or make
+relay/WebRTC ready.
+
+Create an invite with a secret stored outside the command line:
+
+```bash
+export AGENTSASSEMBLE_LAN_INVITE_SECRET="replace-with-local-secret"
+
+python3 -m agentsassemble.cli live-agent lan-invite create \
+  --server http://192.168.1.50:8765 \
+  --meeting-id resident-m1 \
+  --agent-id friend-claude \
+  --display-name "Friend Claude" \
+  --provider-kind claude_code \
+  --secret-ref env:AGENTSASSEMBLE_LAN_INVITE_SECRET \
+  --ttl-seconds 600 \
+  --json
+```
+
+Verify a token locally:
+
+```bash
+python3 -m agentsassemble.cli live-agent lan-invite verify \
+  --token "$AGENTSASSEMBLE_LAN_INVITE_TOKEN" \
+  --secret-ref env:AGENTSASSEMBLE_LAN_INVITE_SECRET \
+  --expected-meeting-id resident-m1 \
+  --expected-agent-id friend-claude \
+  --json
+```
+
+The packet names `client_kind: "native_remote_room_client"` and
+`admission.provider_execution: "not_started_by_invite"` so it stays distinct
+from `remote_http_bridge`, where the host calls a remote `/agentsassemble/run`
+bridge. Treat this as remote agent admission and identity proof only; actual
+remote registration, token revocation, authenticated room endpoints, relay, and
+WebRTC are later work documented in `docs/no-tailscale-multi-host.md`.
+
 ## Codex Live Session Quickstart
 
 The checked-in Codex live examples are for an experimental local Codex-only

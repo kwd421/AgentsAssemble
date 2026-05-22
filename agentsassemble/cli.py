@@ -74,6 +74,11 @@ from agentsassemble.live_session_transport import JsonlLiveSession, TerminalLive
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.memory_capsules import memory_capsule_gate_report
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
+from agentsassemble.multi_host_invites import (
+    create_lan_invite_packet,
+    resolve_lan_invite_secret_ref,
+    verify_lan_invite_token,
+)
 from agentsassemble.provider_health import provider_health_report
 
 
@@ -291,6 +296,33 @@ def build_parser() -> argparse.ArgumentParser:
     live_join_brief.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
     live_join_brief.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
     live_join_brief.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable join brief.")
+
+    live_lan_invite = live_agent_subparsers.add_parser(
+        "lan-invite",
+        help="Create or verify LAN invite tokens for future native remote room clients.",
+    )
+    lan_invite_subparsers = live_lan_invite.add_subparsers(dest="lan_invite_command", required=True)
+    lan_invite_create = lan_invite_subparsers.add_parser(
+        "create",
+        parents=[live_server],
+        help="Create a signed LAN invite token without starting a provider.",
+    )
+    lan_invite_create.add_argument("--meeting-id", required=True)
+    lan_invite_create.add_argument("--agent-id", required=True)
+    lan_invite_create.add_argument("--display-name", default="")
+    lan_invite_create.add_argument("--provider-kind", default="manual")
+    lan_invite_create.add_argument("--secret-ref", default="env:AGENTSASSEMBLE_LAN_INVITE_SECRET")
+    lan_invite_create.add_argument("--ttl-seconds", type=parse_positive_int, default=600)
+    lan_invite_create.add_argument("--json", action="store_true", dest="as_json", help="Print the invite packet as JSON.")
+    lan_invite_verify = lan_invite_subparsers.add_parser(
+        "verify",
+        help="Verify a signed LAN invite token locally without contacting the room.",
+    )
+    lan_invite_verify.add_argument("--token", required=True)
+    lan_invite_verify.add_argument("--secret-ref", default="env:AGENTSASSEMBLE_LAN_INVITE_SECRET")
+    lan_invite_verify.add_argument("--expected-meeting-id", default="")
+    lan_invite_verify.add_argument("--expected-agent-id", default="")
+    lan_invite_verify.add_argument("--json", action="store_true", dest="as_json", help="Print the verification report as JSON.")
 
     live_list = live_agent_subparsers.add_parser("list", parents=[live_server], help="List live agent roster presence.")
     live_list.add_argument("--json", action="store_true", dest="as_json", help="Print the safe roster response.")
@@ -1273,6 +1305,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return 0
         if args.live_agent_command == "join-brief":
             return _run_live_agent_join_brief(args)
+        if args.live_agent_command == "lan-invite":
+            return _run_live_agent_lan_invite(args)
         if args.live_agent_command == "list":
             return _run_live_agent_list(args)
         if args.live_agent_command == "heartbeat":
@@ -1502,6 +1536,40 @@ def _print_join_brief_command(label: str, value: object) -> None:
     command = [str(item) for item in value]
     print(f"{label}:")
     print(f"  {shlex.join(command)}")
+
+
+def _run_live_agent_lan_invite(args: argparse.Namespace) -> int:
+    secret = resolve_lan_invite_secret_ref(args.secret_ref)
+    if not secret:
+        raise ValueError("LAN invite secret is not available.")
+    if args.lan_invite_command == "create":
+        packet = create_lan_invite_packet(
+            room_url=args.server,
+            meeting_id=args.meeting_id,
+            agent_id=args.agent_id,
+            display_name=args.display_name,
+            provider_kind=args.provider_kind,
+            secret=secret,
+            ttl_seconds=args.ttl_seconds,
+        )
+        if args.as_json:
+            print(json.dumps(packet, ensure_ascii=False, indent=2))
+        else:
+            print(f"LAN invite for {packet.get('meeting_id')}: {packet.get('token')}")
+        return 0
+    if args.lan_invite_command == "verify":
+        report = verify_lan_invite_token(
+            args.token,
+            secret=secret,
+            expected_meeting_id=args.expected_meeting_id,
+            expected_agent_id=args.expected_agent_id,
+        )
+        if args.as_json:
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            print(f"LAN invite verification: {report.get('status')} ({report.get('identity_status')})")
+        return 0 if report.get("status") == "ok" else 1
+    return 1
 
 
 def _run_live_agent_list(args: argparse.Namespace) -> int:

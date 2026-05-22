@@ -727,6 +727,22 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("configs/live-agents.provider-staging.example.json", doc)
         self.assertIn("No non-Codex provider is marked native-ready", doc)
 
+    def test_no_tailscale_multi_host_docs_separate_native_client_from_bridge(self):
+        design = (ROOT / "docs" / "no-tailscale-multi-host.md").read_text(encoding="utf-8")
+        room_model = (ROOT / "docs" / "live-session-room-model.md").read_text(encoding="utf-8")
+        provider_arch = (ROOT / "docs" / "provider-architecture.md").read_text(encoding="utf-8")
+
+        combined = "\n".join([design, room_model, provider_arch])
+        self.assertIn("LAN invite token mode", design)
+        self.assertIn("native_remote_room_client", combined)
+        self.assertIn("remote_http_bridge", combined)
+        self.assertIn("does not solve NAT traversal", design)
+        self.assertIn("HMAC-SHA256", design)
+        self.assertIn("remote agent admission and identity proof", design)
+        self.assertIn("relay", design)
+        self.assertIn("WebRTC", design)
+        self.assertIn("not start provider CLIs", design)
+
     def test_live_agent_ops_and_audit_note_record_report_continuation_slice(self):
         ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
         audit = (ROOT / "docs" / "superpowers" / "audits" / "2026-05-22-live-room-report-continuation.md").read_text(

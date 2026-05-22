@@ -146,6 +146,23 @@ Bridge readiness has three verification levels:
 
 Do not report a friend bridge as fully verified unless the health probe, local execution readiness, and real friend readiness have all been checked.
 
+### Native Remote Room Clients
+
+Use `native_remote_room_client` for the planned bridge-free path where the remote
+machine joins the AgentsAssemble room API directly. This is not the same as
+`remote_http_bridge`: the host is not calling `/agentsassemble/run`, and the
+remote owner is not exposing a prompt execution endpoint to the host. The remote
+client owns its provider session, watches room events, and posts replies as a
+host-admitted live-agent identity.
+
+The first no-Tailscale slice is documented in
+`docs/no-tailscale-multi-host.md`. `live-agent lan-invite` can create and verify
+an expiring HMAC-SHA256 LAN invite packet with
+`client_kind: "native_remote_room_client"`, scoped to one room URL, meeting id,
+and agent id. Invite verification is admission evidence only: it does not start
+provider CLIs, approve real provider execution, prove context quality, solve NAT
+traversal, or provide relay/WebRTC readiness.
+
 ### Local CLI Meeting Providers
 
 Use `local_cli` when a local command can accept a prompt on stdin and return a JSON response on stdout. This is the local "delegate session" foundation for Codex-like, Claude Code-like, legacy Gemini CLI-like, or other shell-driven participants when they are used as read-only council speakers.
