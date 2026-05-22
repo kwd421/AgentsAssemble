@@ -225,6 +225,45 @@ python3 -m agentsassemble.cli sessions live-agent-config \
 
 The generated resident config uses `provider_kind: "codex_live_session"` and `connection_kind: "live_session"` for each Codex binding, preserves configured session ids, and omits command arguments so the resident runner applies its default safe Codex command shape. With `--json`, the response also includes `next_commands.preflight` and `next_commands.ensure_session` arrays so another local agent or wrapper can run the next control-plane checks without parsing prose. Compact output shell-quotes those next commands for copy/paste. `ensure-session` is emitted with the generated resident config path and the same normalized process `group_id` that a supervised start would derive from that config filename, so it can target the same meeting/process pair and no-op, start, resume, restart, or recover depending on the current state. This conversion writes a local config only; it does not start resident sessions, execute Codex, or append operation records.
 
+## Memory Capsule Gate
+
+When a prepared or trained session cannot join as a live process, ask for an
+explicit memory capsule instead of raw hidden session history. The required
+capsule files are:
+
+- `persona.md`
+- `memory_summary.md`
+- `decision_history.md`
+- `lessons_learned.md`
+- `evidence_index.json`
+- `handoff.md`
+- `permissions.json`
+- `provenance.json`
+
+Inspect the capsule before letting it influence meeting context:
+
+```bash
+python3 -m agentsassemble.cli memory-capsule gate \
+  --path /path/to/capsule \
+  --json
+```
+
+The command reports a safe `agentsassemble.memory_capsule.v0` gate result with
+redacted local path evidence, required capsule files status, JSON-object checks for
+`evidence_index.json`, `permissions.json`, and `provenance.json`, denied
+permission flags, raw session dump detection, and compact source/entry counts.
+It does not register an agent, start a provider, import the capsule into a
+meeting, read provider-private session state, or print capsule body text.
+
+The gate exits `0` only for `status: "ok"`. It exits `1` when the report is
+`failed` or otherwise not meeting-safe, for example when required files are
+missing, JSON metadata is malformed, raw dump files such as `session.jsonl` are
+present, or `permissions.json` requests implementation, filesystem writes, git
+writes, pushes, secrets, tool use, shell, deploy, release, or credential access.
+Denied examples include implementation, filesystem writes, git writes, pushes, secrets.
+This is a shape and permission gate only; it does not prove the capsule's claims
+are true or current.
+
 External or manually driven agents can also post a linked lobby reply through the live-agent endpoint:
 
 ```bash

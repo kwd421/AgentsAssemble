@@ -461,3 +461,14 @@ These are not yet implemented. They are the current design hypotheses for transl
 - Reflection: post-meeting synthesis that extracts lessons, unresolved risks, and behavior changes for each agent.
 - Handoff memory: compact successor packet generated when a session is saturated or an agent is replaced.
 - Memory gate: future rule that decides what is allowed to enter long-term memory, rejects unsupported claims, and flags contradictions with existing memory.
+- Implemented first gate slice:
+  - `memory-capsule gate` validates the minimum importable capsule shape before
+    a pack can influence meeting context.
+  - The current gate checks required files, JSON metadata object shape,
+    meeting-safe declared permissions, raw hidden session dump filenames, and
+    credential-like assignments.
+  - It reports only safe metadata, counts, and filenames; it does not execute
+    providers, start sessions, import the pack, print capsule body text, or
+    expose local capsule paths.
+  - Claim truth, staleness, contradiction detection, and meeting-specific
+    suitability remain future memory-gate work.

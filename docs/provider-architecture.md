@@ -69,6 +69,14 @@ The default registry exposes provider kinds with explicit capability snapshots:
 
 `anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `cursor`, `claude_code`, `antigravity_cli`, `gemini_cli_legacy`, `grok_build_cli`, `hermes_cli`, and `openclaw_cli` remain implementation-phase planned providers unless they are launched through the resident live-agent runner's explicit connection-kind contract; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
+Imported memory/profile packs now have a safe inspection surface before they can
+affect meeting context. `assemble memory-capsule gate --path <capsule-dir>`
+produces a memory/profile capsule gate report with redacted local path evidence,
+required-file status, JSON-object validation, permission-policy checks, raw
+session dump detection, and compact evidence-index counts. The report never
+executes providers, starts resident sessions, imports the pack, or prints raw
+persona, memory, handoff, evidence, provenance, or permission body text.
+
 ## Provider Families
 
 ### API Meeting Providers
@@ -184,6 +192,10 @@ Hermes/OpenClaw-style systems should not be treated as magic live providers unti
 - `risk_review.md`
 
 Imported packs should pass a memory gate before they influence a meeting.
+Use `assemble memory-capsule gate --path <capsule-dir> --json` for that first
+gate. A passing report proves only that the pack has the minimum auditable
+shape and meeting-safe declared permissions; it is not proof that the claims are
+true, current, or suitable for a particular meeting.
 
 ## External Provider Notes
 
@@ -230,6 +242,7 @@ Observed limitation: the final moderator synthesis can still fall back to `Undet
 
 1. Add provider-specific evidence provenance for Gemini/Grok web-grounded outputs.
 2. Split meeting adapters from implementation/coding-agent adapters.
-3. Add an importable memory/profile packet schema and memory gate report.
+3. Wire passing memory/profile capsule reports into explicit host admission
+   decisions without treating the pack as an executable participant.
 4. Add implementation-phase adapters for Cursor and Claude Code after `decision.md`.
 5. Keep generation-quality and billing-sufficiency probes separate from provider health. Static provider health (`probe_mode: none`), local loopback OpenAI-compatible `/models` probes (`probe_mode: local`), remote HTTP bridge health probes (`probe_mode: bridge`), explicit Anthropic/Gemini/Grok model-list credential probes (`probe_mode: api`), and resident remote bridge lobby runners are implemented; prompt-bearing generation probes remain future work and must stay explicit.

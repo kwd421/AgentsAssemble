@@ -44,6 +44,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Codex app", doc)
         self.assertIn("CLI", doc)
         self.assertIn("memory capsule", doc)
+        self.assertIn("memory-capsule gate", doc)
+        self.assertIn("does not execute providers", doc)
         self.assertIn("advisory policy envelope", doc)
 
     def test_provider_architecture_points_to_live_session_model(self):
@@ -64,6 +66,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Resident `self_service`", doc)
         self.assertIn("wait-next", doc)
         self.assertIn("scripts/my_self_service_agent.py", doc)
+        self.assertIn("memory/profile capsule gate report", doc)
+        self.assertIn("assemble memory-capsule gate", doc)
         self.assertIn("advisory", doc)
 
     def test_roadmap_mentions_room_event_log_and_live_session_adapter(self):
@@ -210,6 +214,9 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("shared_memory_last_event_id", doc)
         self.assertIn("shared_memory in `/api/live-agents/<agent_id>/room`", doc)
         self.assertIn("Shared meeting memory", doc)
+        self.assertIn("python3 -m agentsassemble.cli memory-capsule gate", doc)
+        self.assertIn("required capsule files", doc)
+        self.assertIn("implementation, filesystem writes, git writes, pushes, secrets", doc)
         self.assertIn("the room read treats the official log as the authoritative source", doc)
         self.assertIn("matching metadata with untrusted body text", doc)
         self.assertIn("cached by the live event file state", doc)

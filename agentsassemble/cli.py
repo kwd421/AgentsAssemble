@@ -71,6 +71,7 @@ from agentsassemble.live_agent_smoke import (
 from agentsassemble.live_agent_sessions import session_ensure_action
 from agentsassemble.live_session_transport import JsonlLiveSession, TerminalLiveSession
 from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.memory_capsules import memory_capsule_gate_report
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 from agentsassemble.provider_health import provider_health_report
 
@@ -247,6 +248,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seconds to wait for an opt-in local, bridge, or API provider probe.",
     )
     provider_health.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable provider health report.")
+
+    memory_capsule = subparsers.add_parser("memory-capsule", help="Inspect importable memory/profile capsules.")
+    memory_capsule_subparsers = memory_capsule.add_subparsers(dest="memory_capsule_command", required=True)
+    memory_capsule_gate = memory_capsule_subparsers.add_parser(
+        "gate",
+        help="Validate a memory/profile capsule before it can influence a meeting.",
+    )
+    memory_capsule_gate.add_argument("--path", required=True, help="Memory capsule directory path.")
+    memory_capsule_gate.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable gate report.")
 
     live_server = argparse.ArgumentParser(add_help=False)
     live_server.add_argument("--server", default="http://127.0.0.1:8765", help="AgentsAssemble GUI server URL.")
@@ -1169,6 +1179,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_live_agent_command(args)
     if args.command == "providers":
         return run_providers_command(args)
+    if args.command == "memory-capsule":
+        return run_memory_capsule_command(args)
     if args.command == "sessions":
         return run_sessions_command(args)
 
@@ -1180,6 +1192,24 @@ def run_providers_command(args: argparse.Namespace) -> int:
         if args.providers_command == "health":
             return _run_provider_health(args)
     except (OSError, ValueError, json.JSONDecodeError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    return 1
+
+
+def run_memory_capsule_command(args: argparse.Namespace) -> int:
+    try:
+        if args.memory_capsule_command == "gate":
+            report = memory_capsule_gate_report(Path(args.path))
+            if args.as_json:
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+            else:
+                print(f"Memory capsule gate: {report['status']}")
+                for check in report.get("checks", []):
+                    if isinstance(check, dict):
+                        print(f"- {check.get('status', 'unknown')}: {check.get('message', '')}")
+            return 0 if report.get("status") == "ok" else 1
+    except OSError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return 1

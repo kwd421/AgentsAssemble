@@ -79,6 +79,15 @@ Minimum capsule contents:
 
 This is not model fine-tuning. It is auditable continuity: a successor can load the capsule, enter the room, and explain what it inherited.
 
+The first public gate for this shape is `memory-capsule gate`. It checks the
+required capsule files, parses the JSON metadata as objects, rejects raw hidden
+session dump files, and blocks meeting influence when `permissions.json` asks
+for implementation, filesystem writes, git writes, pushes, secrets, or other
+execution-side powers. The gate does not execute providers, start sessions,
+import the capsule into a meeting, expose local paths, or print capsule body
+text. It only returns a safe report that says whether the capsule may influence
+future meeting context.
+
 ## Meeting Semantics
 
 Official turns and informal chat must stay separate.
