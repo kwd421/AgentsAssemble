@@ -5358,6 +5358,59 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(connection["connected"], 0)
         self.assertEqual(connection["attention"], [{"agent_id": "agent-a", "status": "wrong_meeting"}])
 
+    def test_live_agent_process_connection_evidence_reports_provider_kind_mismatch(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                return [
+                    {
+                        "group_id": "crew",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                            }
+                        ],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Manual Agent A",
+                                "status": "online",
+                                "meeting_id": "resident-m1",
+                                "provider_kind": "manual",
+                                "connection_kind": "manual",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-processes", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        connection = payload["groups"][0]["agent_connection"]
+        self.assertEqual(connection["expected"], 1)
+        self.assertEqual(connection["connected"], 0)
+        self.assertEqual(connection["attention"], [{"agent_id": "agent-a", "status": "provider_kind_mismatch"}])
+
     def test_live_agent_process_connection_evidence_requires_presence_after_group_start(self):
         class FakeSupervisor:
             def list_groups(self):
@@ -5557,6 +5610,85 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(payload["connections"]["connected"], 0)
         self.assertEqual(payload["connections"]["attention"], ["crew:agent-a:wrong_meeting"])
 
+    def test_live_agent_health_degrades_when_manifest_agent_provider_mismatches_presence(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "crew",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                            }
+                        ],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Manual Agent A",
+                                "status": "online",
+                                "meeting_id": "resident-m1",
+                                "provider_kind": "manual",
+                                "connection_kind": "manual",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["connections"]["expected"], 1)
+        self.assertEqual(payload["connections"]["connected"], 0)
+        self.assertEqual(payload["connections"]["attention"], ["crew:agent-a:provider_kind_mismatch"])
+
+    def test_live_agent_health_sanitizes_connection_attention_id_labels(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "/tmp/secret-group.json",
+                        "status": "running",
+                        "agents": [{"agent_id": "/tmp/secret-agent.json", "display_name": "Agent A"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(json.dumps({"agents": []}), encoding="utf-8")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["connections"]["attention"], ["unknown:unknown:missing"])
+
     def test_live_agent_health_degrades_when_manifest_agent_has_not_reconnected_after_group_start(self):
         class FakeSupervisor:
             def snapshot_groups(self):
@@ -5700,6 +5832,8 @@ class GuiServerTests(unittest.TestCase):
                                 "display_name": "Agent A",
                                 "status": "online",
                                 "meeting_id": "meeting-ready",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
                                 "last_seen_at": "2999-01-01T00:00:01+00:00",
                             },
                             {
@@ -5707,6 +5841,8 @@ class GuiServerTests(unittest.TestCase):
                                 "display_name": "Agent C",
                                 "status": "online",
                                 "meeting_id": "meeting-error",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
                             },
                         ]
                     }
@@ -5877,6 +6013,8 @@ class GuiServerTests(unittest.TestCase):
                                 "display_name": "Agent A",
                                 "status": "offline /tmp/secret log_tail",
                                 "meeting_id": "resident-m1",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
                             }
                         ]
                     }
@@ -5953,6 +6091,8 @@ class GuiServerTests(unittest.TestCase):
                                 "display_name": "Agent A",
                                 "status": "online",
                                 "meeting_id": "resident-m1",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
                             }
                         ]
                     }
@@ -7521,8 +7661,26 @@ class GuiServerTests(unittest.TestCase):
                     "content": "Return packet ready: return_packets/architect.md",
                 },
             )
-            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
-            connect_live_agent_payload(root, {"agent_id": "agent-b", "display_name": "Agent B", "meeting_id": "m1"})
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "m1",
+                },
+            )
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-b",
+                    "display_name": "Agent B",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "m1",
+                },
+            )
 
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -14890,8 +15048,26 @@ class GuiServerTests(unittest.TestCase):
                     "provider_configs": {"local-cli": {"kind": "local_cli", "display_name": "Local CLI"}},
                 },
             )
-            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
-            connect_live_agent_payload(root, {"agent_id": "agent-b", "display_name": "Agent B", "meeting_id": "m1"})
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "m1",
+                },
+            )
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-b",
+                    "display_name": "Agent B",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "m1",
+                },
+            )
 
             responder_done = threading.Event()
 

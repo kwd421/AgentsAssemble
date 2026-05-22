@@ -3227,9 +3227,9 @@ def _live_agent_connection_health_summary(
         group_connection = _agent_connection_evidence(group, visible_agents)
         expected += int(group_connection.get("expected") or 0)
         connected += int(group_connection.get("connected") or 0)
-        group_id = str(group.get("group_id") or "unknown")
+        group_id = _safe_agent_connection_identity(group.get("group_id"))
         for item in _as_dict_list(group_connection.get("attention")):
-            agent_id = str(item.get("agent_id") or "unknown")
+            agent_id = _safe_agent_connection_identity(item.get("agent_id"))
             status = str(item.get("status") or "unknown")
             attention.append(f"{group_id}:{agent_id}:{status}")
     return {"expected": expected, "connected": connected, "attention": attention}
@@ -3652,6 +3652,10 @@ def _process_payload_with_agent_connection_evidence(
     return response
 
 
+def _safe_agent_connection_identity(value: object) -> str:
+    return _safe_session_run_health_identity(value) or "unknown"
+
+
 def _agent_connection_evidence(group: dict[str, object], agents: list[dict[str, object]]) -> dict[str, object]:
     agents_by_id = {str(agent.get("agent_id") or ""): agent for agent in agents if str(agent.get("agent_id") or "")}
     group_meeting_id = _safe_process_meeting_id(group.get("meeting_id"))
@@ -3673,6 +3677,10 @@ def _agent_connection_evidence(group: dict[str, object], agents: list[dict[str, 
         if _agent_last_seen_before_group_start(agent, group):
             attention.append({"agent_id": agent_id, "status": "not_reconnected"})
             continue
+        compatibility_attention = _manifest_agent_connection_attention(agent, manifest_agent)
+        if compatibility_attention:
+            attention.append({"agent_id": agent_id, "status": compatibility_attention})
+            continue
         status = str(agent.get("status") or "offline")
         if status in {"online", "working"}:
             connected += 1
@@ -3681,6 +3689,16 @@ def _agent_connection_evidence(group: dict[str, object], agents: list[dict[str, 
             status = "offline"
         attention.append({"agent_id": agent_id, "status": status})
     return {"expected": expected, "connected": connected, "attention": attention}
+
+
+def _manifest_agent_connection_attention(agent: dict[str, object], manifest_agent: dict[str, object]) -> str:
+    provider_kind = clean_lobby_text(manifest_agent.get("provider_kind"), limit=64)
+    if provider_kind and clean_lobby_text(agent.get("provider_kind"), limit=64) != provider_kind:
+        return "provider_kind_mismatch"
+    connection_kind = clean_lobby_text(manifest_agent.get("connection_kind"), limit=64)
+    if connection_kind and clean_lobby_text(agent.get("connection_kind"), limit=64) != connection_kind:
+        return "connection_kind_mismatch"
+    return ""
 
 
 def _agent_last_seen_before_group_start(agent: dict[str, object], group: dict[str, object]) -> bool:

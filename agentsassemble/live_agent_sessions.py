@@ -26,6 +26,8 @@ SESSION_AGENT_ATTENTION_STATUSES = frozenset(
         "stale",
         "offline",
         "error",
+        "provider_kind_mismatch",
+        "connection_kind_mismatch",
         "not_in_group",
         "extra_in_group",
         "duplicate_in_group",
@@ -150,6 +152,7 @@ def start_live_agent_session(
         output_root,
         meeting_id=clean_meeting_id,
         expected_agent_ids=expected_agent_ids,
+        expected_agents=expected_agents,
         process_group=group,
         timeout_seconds=connect_timeout_seconds,
     )
@@ -226,6 +229,7 @@ def resume_live_agent_session(
         output_root,
         meeting_id=clean_meeting_id,
         expected_agent_ids=expected_agent_ids,
+        expected_agents=expected_agents,
         process_group=group,
         timeout_seconds=connect_timeout_seconds,
     )
@@ -264,6 +268,7 @@ def check_live_agent_session(
         output_root,
         meeting_id=clean_meeting_id,
         expected_agent_ids=expected_agent_ids,
+        expected_agents=expected_agents,
         process_group=group,
     )
     ownership = _session_ownership_snapshot(groups, meeting_id=clean_meeting_id, group_id=clean_group_id)
@@ -316,12 +321,14 @@ def _live_agent_session_readiness_item(
     process_status = _safe_session_process_status(group.get("status"))
     try:
         meeting = _read_existing_meeting(_existing_meeting_dir(output_root, meeting_id))
-        expected_agent_ids = [agent["agent_id"] for agent in _expected_agents_from_meeting(meeting)]
+        expected_agents = _expected_agents_from_meeting(meeting)
+        expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
         process = _check_process_snapshot(group, expected_agent_ids=expected_agent_ids, meeting_id=meeting_id)
         connection = _connection_snapshot(
             output_root,
             meeting_id=meeting_id,
             expected_agent_ids=expected_agent_ids,
+            expected_agents=expected_agents,
             process_group=group,
         )
         process_attention = _safe_session_attention(process["attention"])
@@ -548,6 +555,7 @@ def restart_live_agent_session(
         output_root,
         meeting_id=clean_meeting_id,
         expected_agent_ids=expected_agent_ids,
+        expected_agents=expected_agents,
         process_group=group,
         timeout_seconds=connect_timeout_seconds,
     )
@@ -612,6 +620,7 @@ def recover_live_agent_session(
         output_root,
         meeting_id=clean_meeting_id,
         expected_agent_ids=expected_agent_ids,
+        expected_agents=expected_agents,
         process_group=group,
         timeout_seconds=connect_timeout_seconds,
     )
@@ -1063,6 +1072,7 @@ def _wait_for_connections(
     *,
     meeting_id: str,
     expected_agent_ids: list[str],
+    expected_agents: list[dict[str, str]] | None = None,
     process_group: object = None,
     timeout_seconds: float,
 ) -> dict[str, object]:
@@ -1073,6 +1083,7 @@ def _wait_for_connections(
             output_root,
             meeting_id=meeting_id,
             expected_agent_ids=expected_agent_ids,
+            expected_agents=expected_agents,
             process_group=process_group,
         )
         if connection["connected"] == connection["expected"] or time.monotonic() >= deadline:
@@ -1085,10 +1096,18 @@ def _connection_snapshot(
     *,
     meeting_id: str,
     expected_agent_ids: list[str],
+    expected_agents: list[dict[str, str]] | None = None,
     process_group: object = None,
 ) -> dict[str, object]:
     agents = {str(agent.get("agent_id") or ""): agent for agent in read_live_agents(output_root)}
     group_payload = process_group if isinstance(process_group, dict) else {}
+    expected_by_id = {agent["agent_id"]: agent for agent in expected_agents or [] if agent.get("agent_id")}
+    manifest_agents = group_payload.get("agents") if isinstance(group_payload.get("agents"), list) else []
+    manifest_by_id = {
+        str(agent.get("agent_id") or ""): agent
+        for agent in manifest_agents
+        if isinstance(agent, dict) and str(agent.get("agent_id") or "")
+    }
     connected_agent_ids = []
     attention = []
     for agent_id in expected_agent_ids:
@@ -1104,6 +1123,14 @@ def _connection_snapshot(
         if _agent_last_seen_before_process_start(agent, group_payload):
             attention.append(f"{agent_id}:not_reconnected")
             continue
+        compatibility_attention = _agent_binding_compatibility_attention(
+            agent,
+            expected_by_id.get(agent_id, {}),
+            manifest_by_id.get(agent_id, {}),
+        )
+        if compatibility_attention:
+            attention.append(f"{agent_id}:{compatibility_attention}")
+            continue
         if status in {"online", "working"}:
             connected_agent_ids.append(agent_id)
         else:
@@ -1115,6 +1142,30 @@ def _connection_snapshot(
         "connected_agent_ids": connected_agent_ids,
         "attention": attention,
     }
+
+
+def _agent_binding_compatibility_attention(
+    agent: dict[str, object],
+    expected_agent: dict[str, str],
+    manifest_agent: dict[str, object],
+) -> str:
+    manifest_provider_kind = clean_lobby_text(manifest_agent.get("provider_kind"), limit=64)
+    if manifest_provider_kind and clean_lobby_text(agent.get("provider_kind"), limit=64) != manifest_provider_kind:
+        return "provider_kind_mismatch"
+    manifest_connection_kind = clean_lobby_text(manifest_agent.get("connection_kind"), limit=64)
+    if manifest_connection_kind and clean_lobby_text(agent.get("connection_kind"), limit=64) != manifest_connection_kind:
+        return "connection_kind_mismatch"
+
+    expected_provider_kind = clean_lobby_text(expected_agent.get("provider_kind"), limit=64)
+    if not expected_provider_kind:
+        return ""
+    provider_kind = clean_lobby_text(agent.get("provider_kind"), limit=64)
+    if _requires_resident_provider_kind_match(expected_provider_kind) and provider_kind != expected_provider_kind:
+        return "provider_kind_mismatch"
+    connection_kind = clean_lobby_text(agent.get("connection_kind"), limit=64)
+    if connection_kind not in _allowed_resident_connection_kinds(expected_provider_kind):
+        return "connection_kind_mismatch"
+    return ""
 
 
 def _agent_last_seen_before_process_start(agent: dict[str, object], group: dict[str, object]) -> bool:

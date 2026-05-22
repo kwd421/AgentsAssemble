@@ -139,6 +139,52 @@ class LiveAgentSessionReadinessSummaryTests(unittest.TestCase):
         self.assertEqual([item["group_id"] for item in summary["items"]], ["resident-main"])
         self.assertEqual(summary["items"][0]["ownership_attention"], [])
 
+    def test_session_summary_does_not_count_provider_mismatch_presence_as_connected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"], provider_kind="local_cli")
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Manual Agent A",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "meeting_id": "resident-m1",
+                    "status": "online",
+                },
+            )
+
+            summary = live_agent_session_readiness_summary(
+                root,
+                [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                            }
+                        ],
+                    }
+                ],
+            )
+
+        self.assertEqual(summary["ready"], 0)
+        self.assertEqual(summary["degraded"], 1)
+        self.assertEqual(summary["items"][0]["connected"], 0)
+        self.assertEqual(summary["items"][0]["connection_attention"], ["agent-a:provider_kind_mismatch"])
+
     def test_check_session_degrades_duplicate_active_meeting_group(self):
         class DuplicateSupervisor:
             def snapshot_groups(self):
@@ -753,6 +799,56 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(session["connection"]["connected"], 0)
             self.assertEqual(session["connection"]["attention"], ["agent-a:offline"])
             self.assertTrue((root / "meetings" / "resident-m1" / "live_state.json").exists())
+
+    def test_start_session_does_not_count_provider_mismatch_presence_as_connected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"], provider_kind="local_cli")
+            live_agent_config = _write_live_agent_config(root, ["agent-a"], provider_kind="local_cli")
+
+            class MismatchSupervisor(FakeSessionSupervisor):
+                def start_group(self, **kwargs):
+                    self.started.append(kwargs)
+                    connect_live_agent(
+                        root,
+                        {
+                            "agent_id": "agent-a",
+                            "display_name": "Manual Agent A",
+                            "provider_kind": "manual",
+                            "connection_kind": "manual",
+                            "meeting_id": "resident-m1",
+                            "status": "online",
+                        },
+                    )
+                    return {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "display_name": "Agent A",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                            }
+                        ],
+                    }
+
+            session = start_live_agent_session(
+                root,
+                MismatchSupervisor(root),
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+                connect_timeout_seconds=0,
+            )
+
+            self.assertEqual(session["status"], "starting")
+            self.assertEqual(session["connection"]["connected"], 0)
+            self.assertEqual(session["connection"]["attention"], ["agent-a:provider_kind_mismatch"])
 
     def test_start_session_requires_presence_after_process_start(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -2990,6 +3086,56 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(session["connection"]["connected"], 0)
             self.assertEqual(session["connection"]["attention"], ["agent-a:not_reconnected"])
             self.assertEqual((root / "live_agents.json").read_text(encoding="utf-8"), before_roster)
+
+    def test_check_session_does_not_count_provider_mismatch_presence_as_connected(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"], provider_kind="local_cli")
+            start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Manual Agent A",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "meeting_id": "resident-m1",
+                    "status": "online",
+                },
+            )
+
+            class CheckSupervisor:
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "agents": [
+                                {
+                                    "agent_id": "agent-a",
+                                    "provider_kind": "local_cli",
+                                    "connection_kind": "local_cli",
+                                }
+                            ],
+                        }
+                    ]
+
+            session = check_live_agent_session(
+                root,
+                CheckSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            self.assertEqual(session["status"], "degraded")
+            self.assertEqual(session["connection"]["connected"], 0)
+            self.assertEqual(session["connection"]["attention"], ["agent-a:provider_kind_mismatch"])
 
     def test_check_session_uses_read_only_process_snapshot_when_available(self):
         with tempfile.TemporaryDirectory() as temp_dir:
