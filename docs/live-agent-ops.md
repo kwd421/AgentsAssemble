@@ -119,9 +119,19 @@ Use `--json` when a wrapper needs the registration acknowledgement, including th
 
 The HTTP registration path records a safe `live_agent.register` operation with
 agent id, meeting id, provider kind, connection kind, engagement mode, previous
-status, and registered status. It does not record session ids, endpoint URLs,
-auth refs, config paths, provider command arguments, prompts, provider output,
-or log tails, and it does not start a provider.
+status, registered status, and admission evidence. That evidence includes
+`admission_status`, `host_approved_binding`, and, when a target meeting binding
+exists, safe binding role/provider/permission/join-mode ids plus compact
+`binding_conflicts` such as `provider_kind_mismatch` or
+`binding_provider_missing`. `admission_status` can distinguish no meeting id
+(`lobby_only`), a missing target meeting (`meeting_missing`), a meeting without a
+matching binding (`meeting_lobby_only`), a matching host-approved binding
+(`bound_to_meeting`), and a binding conflict (`binding_conflict`). A bound
+registration is evidence that the roster row matches a host-approved meeting
+binding; lobby-only or conflicting registrations are still allowed as explicit
+manual/external presence. The operation does not record session ids, endpoint
+URLs, auth refs, config paths, provider command arguments, prompts, provider
+output, or log tails, and it does not start a provider.
 
 When handing the room to another AI, generate a startup packet instead of writing ad hoc instructions:
 

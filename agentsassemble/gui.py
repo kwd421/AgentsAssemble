@@ -4105,6 +4105,73 @@ def _codex_session_join_error_details(output_root: Path, payload: dict[str, obje
     return details
 
 
+def _live_agent_register_operation_details(
+    output_root: Path,
+    agent: dict[str, object],
+    *,
+    clean_agent_id: str,
+    previous_agent: dict[str, object],
+) -> dict[str, object]:
+    details = {
+        "agent_id": clean_lobby_text(agent.get("agent_id") or clean_agent_id, limit=64),
+        "meeting_id": clean_lobby_text(agent.get("meeting_id"), limit=128),
+        "provider_kind": clean_lobby_text(agent.get("provider_kind"), limit=64),
+        "connection_kind": clean_lobby_text(agent.get("connection_kind"), limit=64),
+        "engagement_mode": clean_lobby_text(agent.get("engagement_mode"), limit=64),
+        "previous_status": clean_lobby_text(previous_agent.get("status"), limit=32),
+        "registered_status": clean_lobby_text(agent.get("status"), limit=32),
+    }
+    details.update(_live_agent_register_admission_details(output_root, agent))
+    return details
+
+
+def _live_agent_register_admission_details(output_root: Path, agent: dict[str, object]) -> dict[str, object]:
+    agent_id = clean_lobby_text(agent.get("agent_id"), limit=64)
+    meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
+    if not meeting_id:
+        return {"admission_status": "lobby_only", "host_approved_binding": False}
+    try:
+        meeting = _read_meeting_record(_safe_meeting_dir(output_root, meeting_id))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"admission_status": "meeting_missing", "host_approved_binding": False}
+
+    binding = _meeting_binding_for_agent(meeting, agent_id)
+    if not binding:
+        return {"admission_status": "meeting_lobby_only", "host_approved_binding": False}
+
+    provider_id = clean_lobby_text(binding.get("provider_id"), limit=128)
+    providers = meeting.get("provider_configs") if isinstance(meeting.get("provider_configs"), dict) else {}
+    provider = providers.get(provider_id) if isinstance(providers.get(provider_id), dict) else {}
+    binding_provider_kind = clean_lobby_text(provider.get("kind"), limit=64)
+    registered_provider_kind = clean_lobby_text(agent.get("provider_kind"), limit=64)
+    conflicts: list[str] = []
+    if not provider:
+        conflicts.append("binding_provider_missing")
+    elif binding_provider_kind and registered_provider_kind and binding_provider_kind != registered_provider_kind:
+        conflicts.append("provider_kind_mismatch")
+
+    admission_status = "binding_conflict" if conflicts else "bound_to_meeting"
+    details: dict[str, object] = {
+        "admission_status": admission_status,
+        "host_approved_binding": admission_status == "bound_to_meeting",
+        "binding_role_id": clean_lobby_text(binding.get("role_id"), limit=128),
+        "binding_provider_id": provider_id,
+        "binding_provider_kind": binding_provider_kind,
+        "binding_permission_profile_id": clean_lobby_text(binding.get("permission_profile_id"), limit=128),
+        "binding_join_mode": clean_lobby_text(binding.get("join_mode"), limit=64),
+    }
+    if conflicts:
+        details["binding_conflicts"] = conflicts
+    return details
+
+
+def _meeting_binding_for_agent(meeting: dict[str, object], agent_id: str) -> dict[str, object]:
+    for binding in _as_dict_list(meeting.get("agent_bindings")):
+        if clean_lobby_text(binding.get("agent_id"), limit=64) == agent_id:
+            return binding
+    return {}
+
+
 def _live_agent_for_id(output_root: Path, agent_id: str) -> dict[str, object]:
     for agent in read_live_agents(output_root):
         if agent.get("agent_id") == agent_id:
@@ -6815,15 +6882,12 @@ def _make_handler(
                     status="success",
                     target_id=str(agent.get("agent_id") or clean_agent_id),
                     summary="registered live agent",
-                    details={
-                        "agent_id": clean_lobby_text(agent.get("agent_id") or clean_agent_id, limit=64),
-                        "meeting_id": clean_lobby_text(agent.get("meeting_id"), limit=128),
-                        "provider_kind": clean_lobby_text(agent.get("provider_kind"), limit=64),
-                        "connection_kind": clean_lobby_text(agent.get("connection_kind"), limit=64),
-                        "engagement_mode": clean_lobby_text(agent.get("engagement_mode"), limit=64),
-                        "previous_status": clean_lobby_text(previous_agent.get("status"), limit=32),
-                        "registered_status": clean_lobby_text(agent.get("status"), limit=32),
-                    },
+                    details=_live_agent_register_operation_details(
+                        output_root,
+                        agent,
+                        clean_agent_id=clean_agent_id,
+                        previous_agent=previous_agent,
+                    ),
                 )
                 self._send_json(live_agent)
                 return
