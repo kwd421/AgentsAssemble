@@ -667,12 +667,28 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("--poll-interval", payload["commands"]["wait_next"])
         self.assertIn("0.5", payload["commands"]["wait_next"])
         self.assertEqual(payload["commands"]["roster_gate"][-3:], ["--require-match", "--fail-on-attention", "--json"])
+        self.assertEqual(
+            payload["commands"]["leave"],
+            [
+                "python3",
+                "-m",
+                "agentsassemble.cli",
+                "live-agent",
+                "leave",
+                "--server",
+                "http://room.local",
+                "--agent-id",
+                "claude-terminal",
+                "--json",
+            ],
+        )
         self.assertIn("Read room.shared_memory as official-only background context when present.", payload["instructions"])
         self.assertIn("For observe_lobby actions, run the returned ack_command and do not post a reply.", payload["instructions"])
         self.assertIn(
             "For return_packet actions, run the returned read_command before the ack_command and do not post a reply.",
             payload["instructions"],
         )
+        self.assertIn("Run commands.leave before intentionally exiting the room.", payload["instructions"])
         self.assertEqual(payload["templates"]["say"][-2:], ["--", "{message}"])
         self.assertIn("{source_event_id}", payload["templates"]["say"])
         self.assertIn("{auto_chain_depth}", payload["templates"]["say"])
@@ -818,6 +834,10 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(heartbeat_args.status, "error")
         self.assertEqual(heartbeat_args.last_error, "--provider-failed")
 
+        leave_args = build_parser().parse_args(payload["commands"]["leave"][3:])
+        self.assertEqual(leave_args.live_agent_command, "leave")
+        self.assertEqual(leave_args.agent_id, "agent-a")
+
     def test_live_agent_join_brief_compact_output_shell_quotes_commands(self):
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", side_effect=AssertionError("join brief should not contact room")):
@@ -843,8 +863,167 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("Room snapshot:", output)
         self.assertIn("Lobby reply template:", output)
         self.assertIn("Official reply template:", output)
+        self.assertIn("Leave:", output)
         self.assertIn("'http://room.local/with space'", output)
         self.assertIn("'agent one'", output)
+
+    def test_live_agent_leave_marks_agent_offline_and_clears_error(self):
+        stdout = StringIO()
+        response = {
+            "agent": {
+                "agent_id": "claude-code-live",
+                "status": "offline",
+                "last_error": "",
+                "last_observed_event_id": "evt1",
+                "last_observed_live_event_id": "live-evt1",
+            }
+        }
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "leave",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-code-live",
+                        "--last-observed-event-id",
+                        "evt1",
+                        "--last-observed-live-event-id",
+                        "live-evt1",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agents/claude-code-live/heartbeat",
+            method="POST",
+            payload={
+                "status": "offline",
+                "last_error": "",
+                "last_observed_event_id": "evt1",
+                "last_observed_live_event_id": "live-evt1",
+            },
+        )
+        self.assertIn("claude-code-live: offline", stdout.getvalue())
+
+    def test_live_agent_leave_json_prints_heartbeat_response(self):
+        stdout = StringIO()
+        response = {
+            "agent": {
+                "agent_id": "external-reviewer",
+                "display_name": "External Reviewer",
+                "provider_kind": "manual",
+                "connection_kind": "manual",
+                "status": "offline",
+                "meeting_id": "resident-m1",
+                "last_error": "",
+                "last_observed_event_id": "evt1",
+                "session_id": "secret-session",
+                "endpoint": "https://secret.example",
+                "auth_ref": "env:SECRET_TOKEN",
+                "config_path": "/Users/me/private/live-agents.json",
+                "command": ["provider", "--token", "secret"],
+                "provider_output": "private provider output",
+            },
+            "agents": [
+                {
+                    "agent_id": "external-reviewer",
+                    "status": "offline",
+                    "session_id": "secret-session",
+                    "endpoint": "https://secret.example",
+                }
+            ],
+        }
+        with patch("agentsassemble.cli._request_json", return_value=response):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "leave",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "external-reviewer",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["agent"]["agent_id"], "external-reviewer")
+        self.assertEqual(payload["agent"]["status"], "offline")
+        self.assertEqual(payload["agent"]["meeting_id"], "resident-m1")
+        serialized = stdout.getvalue()
+        self.assertNotIn("secret-session", serialized)
+        self.assertNotIn("secret.example", serialized)
+        self.assertNotIn("SECRET_TOKEN", serialized)
+        self.assertNotIn("/Users/me", serialized)
+        self.assertNotIn("provider output", serialized)
+
+    def test_live_agent_leave_marks_real_server_row_offline_without_side_effects(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                register_request = urllib.request.Request(
+                    f"{server_url}/api/live-agents",
+                    data=json.dumps(
+                        {
+                            "agent_id": "agent one",
+                            "display_name": "Agent One",
+                            "provider_kind": "manual",
+                            "connection_kind": "manual",
+                            "status": "online",
+                            "session_id": "secret-session",
+                            "meeting_id": "resident-m1",
+                            "last_error": "old error",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(register_request, timeout=4):
+                    pass
+                stdout = StringIO()
+                with patch("sys.stdout", stdout):
+                    exit_code = main(
+                        [
+                            "live-agent",
+                            "leave",
+                            "--server",
+                            server_url,
+                            "--agent-id",
+                            "agent one",
+                            "--last-observed-event-id",
+                            "evt1",
+                            "--last-observed-live-event-id",
+                            "live1",
+                            "--json",
+                        ]
+                    )
+                with urllib.request.urlopen(f"{server_url}/api/live-agents?safe=1", timeout=4) as response:
+                    safe_roster = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["agent"]["agent_id"], "agent one")
+        self.assertEqual(payload["agent"]["status"], "offline")
+        self.assertEqual(payload["agent"]["last_error"], "")
+        self.assertEqual(payload["agent"]["last_observed_event_id"], "evt1")
+        self.assertEqual(payload["agent"]["last_observed_live_event_id"], "live1")
+        self.assertEqual(safe_roster["agents"][0]["status"], "offline")
+        self.assertFalse((root / "live-agent-runs" / "operations.jsonl").exists())
+        self.assertFalse((root / "live-agent-runs" / "processes.json").exists())
+        serialized = stdout.getvalue()
+        self.assertNotIn("secret-session", serialized)
 
     def test_live_agent_say_posts_lobby_message(self):
         stdout = StringIO()

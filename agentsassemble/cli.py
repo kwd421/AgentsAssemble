@@ -33,6 +33,7 @@ from agentsassemble.live_agents import _looks_sensitive_presence_error
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.live_agent_roster import (
+    safe_live_agent_roster_agent,
     safe_live_agent_roster_number,
     safe_live_agent_roster_payload,
     safe_live_agent_roster_text,
@@ -327,6 +328,12 @@ def build_parser() -> argparse.ArgumentParser:
     live_heartbeat.add_argument("--last-observed-event-id", default=None)
     live_heartbeat.add_argument("--last-observed-live-event-id", default=None)
     live_heartbeat.add_argument("--json", action="store_true", dest="as_json", help="Print the raw heartbeat response.")
+
+    live_leave = live_agent_subparsers.add_parser("leave", parents=[live_server], help="Mark an external live agent offline before exiting.")
+    live_leave.add_argument("--agent-id", required=True)
+    live_leave.add_argument("--last-observed-event-id", default=None)
+    live_leave.add_argument("--last-observed-live-event-id", default=None)
+    live_leave.add_argument("--json", action="store_true", dest="as_json", help="Print the safe leave heartbeat response.")
 
     live_return_packet = live_agent_subparsers.add_parser(
         "return-packet",
@@ -1276,6 +1283,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             else:
                 print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('status') or args.status}")
             return 0
+        if args.live_agent_command == "leave":
+            return _run_live_agent_leave(args)
         if args.live_agent_command == "return-packet":
             return _run_live_agent_return_packet(args)
         if args.live_agent_command == "engagement":
@@ -1399,6 +1408,48 @@ def _is_unreplaced_template_placeholder(value: object) -> bool:
     return bool(re.fullmatch(r"\{[A-Za-z0-9_]+\}", value.strip()))
 
 
+def _run_live_agent_leave(args: argparse.Namespace) -> int:
+    agent_id = urllib.parse.quote(args.agent_id, safe="")
+    response = _request_json(
+        _server_url(args.server, f"/api/live-agents/{agent_id}/heartbeat"),
+        method="POST",
+        payload=_leave_payload(args),
+    )
+    safe_response = _safe_leave_response(response)
+    agent = safe_response.get("agent", {}) if isinstance(safe_response.get("agent"), dict) else {}
+    if args.as_json:
+        print(json.dumps(safe_response, ensure_ascii=False, indent=2))
+    else:
+        print(f"{agent.get('agent_id') or args.agent_id}: {agent.get('status') or 'offline'}")
+    return 0
+
+
+def _safe_leave_response(response: dict[str, object]) -> dict[str, object]:
+    safe: dict[str, object] = {}
+    agent = response.get("agent")
+    if isinstance(agent, dict):
+        safe["agent"] = safe_live_agent_roster_agent(agent)
+    agents = response.get("agents")
+    if isinstance(agents, list):
+        safe["agents"] = safe_live_agent_roster_payload({"agents": agents}).get("agents", [])
+    return safe
+
+
+def _leave_payload(args: argparse.Namespace) -> dict[str, object]:
+    payload = {
+        "status": "offline",
+        "last_error": "",
+    }
+    for key, arg_name in (
+        ("last_observed_event_id", "last_observed_event_id"),
+        ("last_observed_live_event_id", "last_observed_live_event_id"),
+    ):
+        value = getattr(args, arg_name, None)
+        if value is not None:
+            payload[key] = value
+    return payload
+
+
 def _run_live_agent_join_brief(args: argparse.Namespace) -> int:
     payload = _live_agent_join_brief_payload(args)
     if args.as_json:
@@ -1433,6 +1484,7 @@ def _print_live_agent_join_brief(payload: dict[str, object]) -> None:
     _print_join_brief_command("Wait loop", commands.get("wait_next"))
     _print_join_brief_command("Room snapshot", commands.get("room"))
     _print_join_brief_command("Roster gate", commands.get("roster_gate"))
+    _print_join_brief_command("Leave", commands.get("leave"))
     _print_join_brief_command("Lobby reply template", templates.get("say"))
     _print_join_brief_command("Official reply template", templates.get("official_reply"))
     _print_join_brief_command("Heartbeat template", templates.get("heartbeat"))

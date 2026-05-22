@@ -131,7 +131,7 @@ python3 -m agentsassemble.cli live-agent join-brief \
   --json
 ```
 
-`join-brief` is local formatting only: it does not contact the room, write files, start providers, or execute commands. The JSON includes safe command arrays for `register`, `wait-next`, `room`, and a roster gate, plus `say`, `official-reply`, and `heartbeat` templates that another agent can fill after `wait-next` returns an action. It intentionally omits session ids, endpoint URLs, auth refs, config paths, provider command arguments, provider output, log paths, prompts, and reply text. The packet instructions include `Read room.shared_memory as official-only background context when present.` Give that packet to the external agent, have it run `commands.register` once, then loop `commands.wait_next`: lobby and official-turn actions fill exactly one reply template, non-reply `observe_lobby` actions run the returned `ack_command`, and return-packet actions run the returned `read_command` before the `ack_command`, without posting a reply.
+`join-brief` is local formatting only: it does not contact the room, write files, start providers, or execute commands. The JSON includes safe command arrays for `register`, `wait-next`, `room`, a roster gate, and `leave`, plus `say`, `official-reply`, and `heartbeat` templates that another agent can fill after `wait-next` returns an action. It intentionally omits session ids, endpoint URLs, auth refs, config paths, provider command arguments, provider output, log paths, prompts, and reply text. The packet instructions include `Read room.shared_memory as official-only background context when present.` Give that packet to the external agent, have it run `commands.register` once, then loop `commands.wait_next`: lobby and official-turn actions fill exactly one reply template, non-reply `observe_lobby` actions run the returned `ack_command`, and return-packet actions run the returned `read_command` before the `ack_command`, without posting a reply. When the agent intentionally exits the room, it should run `commands.leave`; this marks its roster row `offline`, clears stale error text, and keeps any supplied lobby/official cursors.
 
 The same safe packet is available from the running GUI server for frontends or other local tools:
 
@@ -140,6 +140,19 @@ POST /api/live-agent-join-brief
 ```
 
 The HTTP endpoint returns the same command arrays and templates, defaults the packet server URL to the current GUI request host, and still does not register the agent, write files, append operation records, start providers, or execute commands.
+
+The leave command is also available directly:
+
+```bash
+python3 -m agentsassemble.cli live-agent leave \
+  --server http://127.0.0.1:8765 \
+  --agent-id external-reviewer
+```
+
+It posts one offline heartbeat through the normal room control plane. It does
+not unregister the agent, delete history, stop supervised process groups, or
+start providers; a later `register` or heartbeat can bring the same approved
+agent identity back online.
 
 The GUI `살아있는 에이전트` form exposes the same safe packet through the `초대 패킷` button. It reads the agent id, display name, provider kind, and connection kind from the registration form, attaches the current meeting id, requests `engagement_mode: "mentioned"`, and renders the returned join brief without registering the agent or starting any provider. This lets an operator hand a browser-generated register/wait-next packet to Claude, Cursor, a terminal agent, or another external participant while keeping admission explicit.
 

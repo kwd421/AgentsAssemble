@@ -53,6 +53,7 @@ def build_live_agent_join_brief(
             agent_id=normalized_agent_id,
             meeting_id=normalized_meeting_id,
         ),
+        "leave": _join_leave_command(server=normalized_server, agent_id=normalized_agent_id),
     }
     templates = {
         "say": _join_say_template(server=normalized_server, agent_id=normalized_agent_id),
@@ -82,6 +83,7 @@ def build_live_agent_join_brief(
             "For official_turn actions, replace templates.official_reply placeholders and run it once.",
             "For return_packet actions, run the returned read_command before the ack_command and do not post a reply.",
             "Use templates.heartbeat to report online, working, error, or cursor-only observation.",
+            "Run commands.leave before intentionally exiting the room.",
         ],
         "safety": {
             "room_contacted": False,
@@ -154,6 +156,18 @@ def _join_roster_gate_command(*, server: str, agent_id: str, meeting_id: str) ->
         command.extend(["--meeting-id", meeting_id])
     command.extend(["--require-match", "--fail-on-attention", "--json"])
     return command
+
+
+def _join_leave_command(*, server: str, agent_id: str) -> list[str]:
+    return _module_cli_command(
+        "live-agent",
+        "leave",
+        "--server",
+        server,
+        "--agent-id",
+        agent_id,
+        "--json",
+    )
 
 
 def _join_say_template(*, server: str, agent_id: str) -> list[str]:
