@@ -3206,10 +3206,14 @@ async function retryLiveAgentSessionRunNow(runId) {
   state.liveAgentProcessStatus = { message: `${runId} 재시도 요청 중`, tone: "info" };
   renderLobby({ followLatest: false });
   try {
+    const requestBody = {};
+    if (document.querySelector("#live-agent-auto-join-real-provider-approval")?.checked === true) {
+      requestBody.approve_real_providers = true;
+    }
     const payload = await fetchJson(`/api/live-agent-session-runs/${encodeURIComponent(runId)}/retry-now`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: "{}",
+      body: JSON.stringify(requestBody),
     });
     const run = payload?.session_run && typeof payload.session_run === "object" ? payload.session_run : {};
     const responseStatus = String(payload?.status || "scheduled");

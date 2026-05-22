@@ -5428,6 +5428,41 @@ and provider output.
 
 ---
 
+## Task 159: Pass Current Real-Provider Approval From GUI Session-Run Retry
+
+**Goal:** Make the GUI durable session-run row-level retry action honor the same
+current real-provider approval gate as CLI `session-runs retry-now`, without
+turning durable session-run state into stored provider approval.
+
+**Files:**
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_static_lobby_contract.py`
+
+- [x] **Step 1: Add RED GUI control contract coverage**
+
+Cover the `retryLiveAgentSessionRunNow` source contract so the row-level retry
+must read the existing `#live-agent-auto-join-real-provider-approval` checkbox,
+send `approve_real_providers` when checked, and stop posting a hard-coded empty
+JSON body. The first run failed because the GUI always posted `{}`.
+
+- [x] **Step 2: Send one-shot approval from the GUI retry action**
+
+The GUI retry-now action now builds a request body, includes
+`approve_real_providers: true` only when the operator has checked `실사용 CLI
+승인`, and posts that body to `/api/live-agent-session-runs/<run_id>/retry-now`.
+The backend approval gate and durable redaction behavior remain unchanged.
+
+- [x] **Step 3: Keep operator docs aligned**
+
+Operator docs and roadmap now state that GUI row-level retry-now can use the
+current approval checkbox for that one real-provider retry, and that approval is
+not persisted into `session-runs.json` or public run output.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
