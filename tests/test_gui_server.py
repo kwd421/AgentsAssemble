@@ -6495,6 +6495,8 @@ class GuiServerTests(unittest.TestCase):
                     listed = json.loads(response.read().decode("utf-8"))
                 with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents?safe=0", timeout=4) as response:
                     explicit_raw = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -6505,6 +6507,62 @@ class GuiServerTests(unittest.TestCase):
             self.assertIsInstance(listed["agents"][0]["heartbeat_age_seconds"], int)
             self.assertGreaterEqual(listed["agents"][0]["heartbeat_age_seconds"], 0)
             self.assertEqual(listed["agents"][0]["stale_after_seconds"], 180)
+            register_operations = [item for item in operations["operations"] if item["operation"] == "live_agent.register"]
+            self.assertEqual(len(register_operations), 1)
+            self.assertEqual(register_operations[0]["status"], "success")
+            self.assertEqual(register_operations[0]["target_id"], "gemini-cli")
+            self.assertEqual(register_operations[0]["details"]["agent_id"], "gemini-cli")
+            self.assertEqual(register_operations[0]["details"]["provider_kind"], "gemini")
+            self.assertEqual(register_operations[0]["details"]["connection_kind"], "local_cli")
+            self.assertEqual(register_operations[0]["details"]["registered_status"], "online")
+            self.assertNotIn("session_id", register_operations[0]["details"])
+            self.assertNotIn("gemini-session", json.dumps(operations, ensure_ascii=False))
+
+    def test_live_agent_http_endpoint_records_invalid_registration_json_operation(self):
+        invalid_payloads = [
+            ("malformed", b"{not json"),
+            ("non_object", json.dumps(["not", "an", "object"]).encode("utf-8")),
+            ("invalid_utf8", b"\xff"),
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                for _, body in invalid_payloads:
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agents",
+                        data=body,
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    try:
+                        urlopen(request, timeout=4)
+                    except HTTPError as error:
+                        self.assertEqual(error.code, 400)
+                        error.read()
+                        error.close()
+                    else:
+                        self.fail("invalid registration JSON should return HTTP 400")
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            register_operations = [
+                item for item in operations["operations"] if item["operation"] == "live_agent.register"
+            ]
+            self.assertEqual(len(register_operations), len(invalid_payloads))
+            for operation in register_operations:
+                self.assertEqual(operation["status"], "failed")
+                self.assertEqual(operation["error"], "Invalid JSON")
+                self.assertEqual(operation["target_id"], "")
+                self.assertNotIn("session_id", operation.get("details", {}))
+            operation_text = json.dumps(operations, ensure_ascii=False)
+            self.assertNotIn("not json", operation_text)
+            self.assertNotIn("not\", \"an\", \"object", operation_text)
 
     def test_live_agent_join_brief_http_endpoint_returns_safe_packet_without_registering(self):
         with tempfile.TemporaryDirectory() as temp_dir:

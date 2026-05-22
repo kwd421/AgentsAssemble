@@ -117,6 +117,12 @@ python3 -m agentsassemble.cli live-agent register \
 
 Use `--json` when a wrapper needs the registration acknowledgement, including the server-preserved meeting, session, and engagement fields, instead of parsing the compact `Registered <agent-id>` line.
 
+The HTTP registration path records a safe `live_agent.register` operation with
+agent id, meeting id, provider kind, connection kind, engagement mode, previous
+status, and registered status. It does not record session ids, endpoint URLs,
+auth refs, config paths, provider command arguments, prompts, provider output,
+or log tails, and it does not start a provider.
+
 When handing the room to another AI, generate a startup packet instead of writing ad hoc instructions:
 
 ```bash

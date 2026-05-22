@@ -6784,20 +6784,47 @@ def _make_handler(
                 self._send_json(finalized)
                 return
             if parsed.path == "/api/live-agents":
-                length = int(self.headers.get("Content-Length", "0") or "0")
-                try:
-                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-                except json.JSONDecodeError:
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                payload = self._operation_json_payload(
+                    operation="live_agent.register",
+                    target_id="",
+                )
+                if payload is None:
                     return
-                if not isinstance(payload, dict):
-                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
-                    return
+                clean_agent_id = clean_lobby_text(payload.get("agent_id"), limit=64)
+                previous_agent = next(
+                    (agent for agent in read_live_agents(output_root) if agent.get("agent_id") == clean_agent_id),
+                    {},
+                )
                 try:
                     live_agent = connect_live_agent_payload(output_root, payload)
                 except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="live_agent.register",
+                        status="failed",
+                        target_id=clean_agent_id,
+                        error=str(error),
+                        details={"agent_id": clean_agent_id},
+                    )
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
+                agent = live_agent.get("agent") if isinstance(live_agent.get("agent"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="live_agent.register",
+                    status="success",
+                    target_id=str(agent.get("agent_id") or clean_agent_id),
+                    summary="registered live agent",
+                    details={
+                        "agent_id": clean_lobby_text(agent.get("agent_id") or clean_agent_id, limit=64),
+                        "meeting_id": clean_lobby_text(agent.get("meeting_id"), limit=128),
+                        "provider_kind": clean_lobby_text(agent.get("provider_kind"), limit=64),
+                        "connection_kind": clean_lobby_text(agent.get("connection_kind"), limit=64),
+                        "engagement_mode": clean_lobby_text(agent.get("engagement_mode"), limit=64),
+                        "previous_status": clean_lobby_text(previous_agent.get("status"), limit=32),
+                        "registered_status": clean_lobby_text(agent.get("status"), limit=32),
+                    },
+                )
                 self._send_json(live_agent)
                 return
             if parsed.path == "/api/live-agent-join-brief":

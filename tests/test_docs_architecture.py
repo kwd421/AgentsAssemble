@@ -402,6 +402,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("stale_after_seconds", doc)
         self.assertIn("last_observed_live_event_id", doc)
         self.assertIn("registration acknowledgement", doc)
+        self.assertIn("live_agent.register", doc)
         self.assertIn("live-agent join-brief", doc)
         self.assertIn("POST /api/live-agent-join-brief", doc)
         self.assertIn("startup packet", doc)
