@@ -26,6 +26,7 @@ from agentsassemble.live_agent_runner import (
     resident_connection_kind_error,
 )
 from agentsassemble.remote_bridge_config import remote_bridge_auth_ref_available, remote_bridge_endpoint_error
+from agentsassemble.sandbox_launcher import sandbox_launcher_for
 
 
 def preflight_live_agent_config(
@@ -141,6 +142,7 @@ def _preflight_agent(
         "display_name": config.display_name,
         "provider_kind": config.provider_kind,
         "connection_kind": config.connection_kind,
+        "sandbox_enforcement": sandbox_launcher_for(config.provider_kind, config.connection_kind).enforcement,
         "command": config.command,
         "command_path": command_path,
         "status": status,

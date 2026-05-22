@@ -39,6 +39,7 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertEqual(meeting["permission_profiles"]["meeting_read_only"]["filesystem_write"], False)
             self.assertEqual(meeting["provider_capabilities"]["mock"]["supports_structured_output"], True)
             self.assertEqual(meeting["provider_capabilities"]["mock"]["supports_web_search"], False)
+            self.assertEqual(meeting["provider_capabilities"]["mock"]["sandbox_enforcement"], "advisory")
             self.assertEqual(
                 [binding["provider_id"] for binding in meeting["agent_bindings"]],
                 ["mock", "mock", "mock"],

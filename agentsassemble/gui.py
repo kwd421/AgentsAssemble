@@ -2981,6 +2981,7 @@ def live_agent_health_payload(
         session_summary,
         diagnostic_group_ids=diagnostic_group_ids,
     )
+    sandbox_enforcement_summary = _live_agent_sandbox_enforcement_health_summary(agents)
     process_monitor_summary = _live_agent_process_monitor_health_summary(process_supervisor)
     process_monitor_attention = (
         process_monitor_summary.get("attention")
@@ -3000,6 +3001,11 @@ def live_agent_health_payload(
         if isinstance(session_run_monitor_summary.get("attention"), list)
         else []
     )
+    sandbox_enforcement_attention = (
+        sandbox_enforcement_summary.get("attention")
+        if isinstance(sandbox_enforcement_summary.get("attention"), list)
+        else []
+    )
     status = (
         "degraded"
         if agent_summary["attention"]
@@ -3008,6 +3014,7 @@ def live_agent_health_payload(
         or connection_summary["attention"]
         or session_summary["attention"]
         or observation_summary["attention"]
+        or sandbox_enforcement_attention
         or shared_memory_attention
         or session_run_summary["attention"]
         or session_run_monitor_attention
@@ -3021,6 +3028,7 @@ def live_agent_health_payload(
         "connections": connection_summary,
         "sessions": session_summary,
         "observations": observation_summary,
+        "sandbox_enforcement": sandbox_enforcement_summary,
         "shared_memory": shared_memory_summary,
         "session_runs": session_run_summary,
     }
@@ -3058,6 +3066,22 @@ def _live_agent_admission_health_summary(output_root: Path, agents: list[dict[st
         "counts": counts,
         "attention": attention,
     }
+
+
+def _live_agent_sandbox_enforcement_health_summary(agents: list[dict[str, object]]) -> dict[str, object]:
+    safe_payload = safe_live_agent_roster_payload({"agents": [agent for agent in agents if not _is_diagnostic_agent(agent)]})
+    safe_agents = _as_dict_list(safe_payload.get("agents"))
+    counts = {"advisory": 0, "codex_readonly": 0, "os_sandboxed": 0, "unknown": 0}
+    attention = []
+    for index, agent in enumerate(safe_agents, start=1):
+        enforcement = str(agent.get("sandbox_enforcement") or "")
+        if enforcement not in counts:
+            enforcement = "unknown"
+        counts[enforcement] += 1
+        if enforcement == "unknown":
+            agent_id = _safe_session_run_health_identity(agent.get("agent_id")) or f"missing-agent-id-{index}"
+            attention.append(agent_id)
+    return {"counts": counts, "attention": attention}
 
 
 def _live_agent_shared_memory_health_summary(
@@ -4274,6 +4298,7 @@ def _live_agent_register_operation_details(
         "connection_kind": clean_lobby_text(agent.get("connection_kind"), limit=64),
         "join_semantics": context_contract["join_semantics"],
         "context_durability": context_contract["context_durability"],
+        "sandbox_enforcement": context_contract["sandbox_enforcement"],
         "engagement_mode": clean_lobby_text(agent.get("engagement_mode"), limit=64),
         "previous_status": clean_lobby_text(previous_agent.get("status"), limit=32),
         "registered_status": clean_lobby_text(agent.get("status"), limit=32),
@@ -5076,6 +5101,7 @@ def _discovery_operation_details(discoveries: list[object], approval_filter: obj
     return {
         "join_semantics": _discovery_operation_values(discoveries, "join_semantics"),
         "context_durability": _discovery_operation_values(discoveries, "context_durability"),
+        "sandbox_enforcement": _discovery_operation_values(discoveries, "sandbox_enforcement"),
         "evidence_basis": _discovery_operation_values(discoveries, "evidence_basis"),
         "approval_required": sum(
             1

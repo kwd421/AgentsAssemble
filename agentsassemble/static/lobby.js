@@ -776,6 +776,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const processes = health.processes && typeof health.processes === "object" ? health.processes : {};
   const processMonitor = health.process_monitor && typeof health.process_monitor === "object" ? health.process_monitor : {};
   const connections = health.connections && typeof health.connections === "object" ? health.connections : {};
+  const sandboxEnforcement = health.sandbox_enforcement && typeof health.sandbox_enforcement === "object" ? health.sandbox_enforcement : {};
   const sessions = health.sessions && typeof health.sessions === "object" ? health.sessions : {};
   const observations = health.observations && typeof health.observations === "object" ? health.observations : {};
   const admission = health.admission && typeof health.admission === "object" ? health.admission : {};
@@ -798,6 +799,8 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const sessionAttention = liveAgentHealthAttentionSummary(sessions.attention, "session attention");
   const observationSummary = liveAgentHealthObservationSummary(observations);
   const observationAttention = liveAgentHealthAttentionSummary(observations.attention, "observation attention");
+  const sandboxSummary = liveAgentHealthSandboxSummary(sandboxEnforcement);
+  const sandboxAttention = liveAgentHealthAttentionSummary(sandboxEnforcement.attention, "sandbox attention");
   const admissionSummary = liveAgentHealthAdmissionSummary(admission);
   const admissionAttention = liveAgentHealthAttentionSummary(admission.attention, "admission attention");
   const sharedMemorySummary = liveAgentHealthSharedMemorySummary(sharedMemory);
@@ -819,6 +822,8 @@ function renderLiveAgentRuntimeHealth(health, loading) {
     (sessionAttention ? `<br><small>${escapeHtml(sessionAttention)}</small>` : "") +
     (observationSummary ? `<br><small>${escapeHtml(observationSummary)}</small>` : "") +
     (observationAttention ? `<br><small>${escapeHtml(observationAttention)}</small>` : "") +
+    (sandboxSummary ? `<br><small>${escapeHtml(sandboxSummary)}</small>` : "") +
+    (sandboxAttention ? `<br><small>${escapeHtml(sandboxAttention)}</small>` : "") +
     (admissionSummary ? `<br><small>${escapeHtml(admissionSummary)}</small>` : "") +
     (admissionAttention ? `<br><small>${escapeHtml(admissionAttention)}</small>` : "") +
     (sharedMemorySummary ? `<br><small>${escapeHtml(sharedMemorySummary)}</small>` : "") +
@@ -967,11 +972,27 @@ function renderLiveAgentDiscoveryRow(discovery) {
 }
 
 function liveAgentHealthAttentionCount(health) {
-  const sections = [health?.agents, health?.processes, health?.process_monitor, health?.connections, health?.sessions, health?.observations, health?.shared_memory, health?.session_runs, health?.session_run_monitor];
+  const sections = [health?.agents, health?.processes, health?.process_monitor, health?.connections, health?.sandbox_enforcement, health?.sessions, health?.observations, health?.shared_memory, health?.session_runs, health?.session_run_monitor];
   return sections.reduce((count, section) => {
     const attention = section && typeof section === "object" && Array.isArray(section.attention) ? section.attention : [];
     return count + attention.length;
   }, 0);
+}
+
+function liveAgentHealthSandboxSummary(value) {
+  if (!value || typeof value !== "object" || !value.counts || typeof value.counts !== "object") return "";
+  const counts = value.counts;
+  const advisory = Math.max(0, Number(counts.advisory || 0));
+  const codexReadonly = Math.max(0, Number(counts.codex_readonly || 0));
+  const osSandboxed = Math.max(0, Number(counts.os_sandboxed || 0));
+  const unknown = Math.max(0, Number(counts.unknown || 0));
+  if (!advisory && !codexReadonly && !osSandboxed && !unknown) return "";
+  return (
+    `sandbox advisory ${Math.floor(advisory)} · ` +
+    `codex_readonly ${Math.floor(codexReadonly)} · ` +
+    `os_sandboxed ${Math.floor(osSandboxed)} · ` +
+    `unknown ${Math.floor(unknown)}`
+  );
 }
 
 function liveAgentHealthProcessMonitorSummary(value) {

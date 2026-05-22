@@ -12,16 +12,19 @@ DEFAULT_DISCOVERY_SERVER = "http://127.0.0.1:8765"
 TERMINAL_PROMPT_BRIDGE_CONTRACT = {
     "join_semantics": "terminal_pty_prompt_bridge",
     "context_durability": "process_lifetime",
+    "sandbox_enforcement": "advisory",
     "evidence_basis": "path_and_pty_preflight",
 }
 CODEX_LIVE_SESSION_CONTRACT = {
     "join_semantics": "codex_exec_resume",
     "context_durability": "provider_managed_resume",
+    "sandbox_enforcement": "codex_readonly",
     "evidence_basis": "path_and_codex_safety_preflight",
 }
 SELF_SERVICE_CONTRACT = {
     "join_semantics": "self_service_room_loop",
     "context_durability": "provider_managed_room_loop",
+    "sandbox_enforcement": "advisory",
     "evidence_basis": "path_and_self_service_preflight",
 }
 
@@ -57,6 +60,7 @@ def build_discovered_live_agent_config(
                 "entry_status": entry_status,
                 "join_semantics": spec["join_semantics"],
                 "context_durability": spec["context_durability"],
+                "sandbox_enforcement": spec["sandbox_enforcement"],
                 "evidence_basis": spec["evidence_basis"],
                 "operator_action": _operator_action(entry_status),
                 "requires_approval": _requires_approval(entry_status),
@@ -249,6 +253,7 @@ def _agent_entry(spec: dict[str, Any], *, meeting_id: str, engagement_mode: str)
         "timeout_seconds": spec["timeout_seconds"],
         "join_semantics": spec["join_semantics"],
         "context_durability": spec["context_durability"],
+        "sandbox_enforcement": spec["sandbox_enforcement"],
         "evidence_basis": spec["evidence_basis"],
     }
     if not spec.get("omit_command"):
@@ -362,6 +367,7 @@ def build_discovered_session_bundle(config: dict[str, Any]) -> dict[str, Any]:
         provider_kind = str(agent.get("provider_kind") or "local_cli")
         join_semantics = str(agent.get("join_semantics") or "unknown")
         context_durability = str(agent.get("context_durability") or "unknown")
+        sandbox_enforcement = str(agent.get("sandbox_enforcement") or "unknown")
         evidence_basis = str(agent.get("evidence_basis") or "unknown")
         role_id = _session_role_id(agent_id)
         provider_id = f"{agent_id}-provider"
@@ -372,10 +378,12 @@ def build_discovered_session_bundle(config: dict[str, Any]) -> dict[str, Any]:
                 "lens": f"Live resident perspective from {display_name}.",
                 "research_focus": (
                     f"Join the resident session through {join_semantics}. "
-                    f"Context durability is {context_durability}; discovery evidence is {evidence_basis}."
+                    f"Context durability is {context_durability}; "
+                    f"sandbox enforcement is {sandbox_enforcement}; discovery evidence is {evidence_basis}."
                 ),
                 "join_semantics": join_semantics,
                 "context_durability": context_durability,
+                "sandbox_enforcement": sandbox_enforcement,
                 "evidence_basis": evidence_basis,
             }
         )
@@ -386,6 +394,7 @@ def build_discovered_session_bundle(config: dict[str, Any]) -> dict[str, Any]:
             "default_model": agent_id,
             "join_semantics": join_semantics,
             "context_durability": context_durability,
+            "sandbox_enforcement": sandbox_enforcement,
             "evidence_basis": evidence_basis,
         }
         if agent.get("timeout_seconds"):
@@ -402,6 +411,7 @@ def build_discovered_session_bundle(config: dict[str, Any]) -> dict[str, Any]:
                 "join_mode": "fresh",
                 "join_semantics": join_semantics,
                 "context_durability": context_durability,
+                "sandbox_enforcement": sandbox_enforcement,
                 "evidence_basis": evidence_basis,
             }
         )

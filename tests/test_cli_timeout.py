@@ -690,12 +690,17 @@ class CliTimeoutTests(unittest.TestCase):
             {
                 "join_semantics": "manual_room_loop",
                 "context_durability": "external_owner_managed",
+                "sandbox_enforcement": "advisory",
                 "evidence_basis": "operator_supplied_join_brief",
                 "provider_execution": "not_started_by_join_brief",
             },
         )
         self.assertIn(
             "Use execution_contract.context_durability as the declared agent-private context boundary.",
+            payload["instructions"],
+        )
+        self.assertIn(
+            "Use execution_contract.sandbox_enforcement as the declared sandbox boundary.",
             payload["instructions"],
         )
         self.assertIn("For observe_lobby actions, run the returned ack_command and do not post a reply.", payload["instructions"])
@@ -719,15 +724,15 @@ class CliTimeoutTests(unittest.TestCase):
 
     def test_live_agent_join_brief_declares_context_contract_by_connection_kind(self):
         cases = [
-            ("local_cli", "local_cli", "stateless_prompt_call", "stateless_prompt"),
-            ("claude_code", "terminal_session", "terminal_pty_prompt_bridge", "process_lifetime"),
-            ("codex_live_session", "codex_resume", "codex_exec_resume", "provider_managed_resume"),
-            ("codex_live_session", "live_session", "codex_exec_resume", "provider_managed_resume"),
-            ("claude_code", "live_session", "jsonl_live_session", "process_lifetime"),
-            ("antigravity_cli", "self_service", "self_service_room_loop", "provider_managed_room_loop"),
-            ("remote_http_bridge", "remote_bridge", "remote_bridge_room_loop", "remote_owner_managed"),
+            ("local_cli", "local_cli", "stateless_prompt_call", "stateless_prompt", "advisory"),
+            ("claude_code", "terminal_session", "terminal_pty_prompt_bridge", "process_lifetime", "advisory"),
+            ("codex_live_session", "codex_resume", "codex_exec_resume", "provider_managed_resume", "codex_readonly"),
+            ("codex_live_session", "live_session", "codex_exec_resume", "provider_managed_resume", "codex_readonly"),
+            ("claude_code", "live_session", "jsonl_live_session", "process_lifetime", "advisory"),
+            ("antigravity_cli", "self_service", "self_service_room_loop", "provider_managed_room_loop", "advisory"),
+            ("remote_http_bridge", "remote_bridge", "remote_bridge_room_loop", "remote_owner_managed", "advisory"),
         ]
-        for provider_kind, connection_kind, join_semantics, context_durability in cases:
+        for provider_kind, connection_kind, join_semantics, context_durability, sandbox_enforcement in cases:
             stdout = StringIO()
             with patch("sys.stdout", stdout):
                 exit_code = main(
@@ -750,6 +755,7 @@ class CliTimeoutTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["execution_contract"]["join_semantics"], join_semantics)
             self.assertEqual(payload["execution_contract"]["context_durability"], context_durability)
+            self.assertEqual(payload["execution_contract"]["sandbox_enforcement"], sandbox_enforcement)
             self.assertEqual(payload["execution_contract"]["evidence_basis"], "operator_supplied_join_brief")
             self.assertEqual(payload["execution_contract"]["provider_execution"], "not_started_by_join_brief")
 
@@ -1292,6 +1298,7 @@ class CliTimeoutTests(unittest.TestCase):
                     "connection_kind": "terminal_session",
                     "join_semantics": "codex_exec_resume",
                     "context_durability": "provider_managed_resume",
+                    "sandbox_enforcement": "os_sandboxed",
                     "status": "online",
                     "engagement_mode": "always",
                     "meeting_id": "resident-m1",
@@ -1323,6 +1330,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("agent-a Agent A claude_code/terminal_session online meeting=resident-m1", output)
         self.assertIn("join=terminal_pty_prompt_bridge", output)
         self.assertIn("context=process_lifetime", output)
+        self.assertIn("sandbox=advisory", output)
         self.assertIn("admission=bound_to_meeting", output)
         self.assertIn("host_approved=yes", output)
         self.assertIn("admission_source=meeting_record", output)
@@ -4871,6 +4879,7 @@ class CliTimeoutTests(unittest.TestCase):
                         "discovered": 3,
                         "join_semantics": ["terminal_pty_prompt_bridge", "codex_exec_resume"],
                         "context_durability": ["process_lifetime", "provider_managed_resume"],
+                        "sandbox_enforcement": ["advisory", "codex_readonly"],
                         "evidence_basis": ["path_and_pty_preflight", "path_and_codex_safety_preflight"],
                         "approval_required": 1,
                         "result_status": "ok",
@@ -5093,6 +5102,10 @@ class CliTimeoutTests(unittest.TestCase):
                 "connected": 1,
                 "attention": ["crew:friend-b:missing"],
             },
+            "sandbox_enforcement": {
+                "counts": {"advisory": 1, "codex_readonly": 1, "os_sandboxed": 0, "unknown": 0},
+                "attention": [],
+            },
             "sessions": {
                 "total": 2,
                 "ready": 1,
@@ -5179,6 +5192,7 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("connections: 1 connected / 2 expected", output)
         self.assertIn("connection attention: crew:friend-b:missing", output)
+        self.assertIn("sandbox: advisory 1, codex_readonly 1, os_sandboxed 0, unknown 0", output)
         self.assertIn("sessions: 1 ready / 2 total", output)
         self.assertIn("session attention: resident-m1:resident-main:agent-b:missing", output)
         self.assertIn("session runs: 1 active / 2 total", output)

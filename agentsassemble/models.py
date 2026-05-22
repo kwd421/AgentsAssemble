@@ -53,6 +53,7 @@ class ProviderCapabilities:
     supports_structured_output: bool
     context_window: int | None = None
     cost_class: str = "unknown"
+    sandbox_enforcement: str = "advisory"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -64,6 +65,7 @@ class ProviderCapabilities:
             "supports_structured_output": self.supports_structured_output,
             "context_window": self.context_window,
             "cost_class": self.cost_class,
+            "sandbox_enforcement": self.sandbox_enforcement,
         }
 
 

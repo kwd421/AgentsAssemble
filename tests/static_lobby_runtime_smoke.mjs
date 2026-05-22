@@ -2427,6 +2427,10 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
         last_error_type: "",
       },
       connections: { expected: 2, connected: 1, attention: ["resident-main:agent-b:stale"] },
+      sandbox_enforcement: {
+        counts: { advisory: 1, codex_readonly: 1, os_sandboxed: 0, unknown: 0 },
+        attention: ["unknown-agent"],
+      },
       sessions: { total: 2, ready: 0, degraded: 2, attention: ["resident-m1:resident-main:meeting:duplicate_active_group"] },
       session_runs: {
         total: 2,
@@ -2509,7 +2513,10 @@ test("runtime refresh renders authoritative live-agent health snapshot", async (
   assert.match(health.textContent, /connections 1\/2 connected/);
   assert.match(health.textContent, /sessions 0\/2 ready/);
   assert.match(health.textContent, /session-runs 1\/2 active/);
-  assert.match(health.textContent, /attention 6/);
+  assert.match(health.textContent, /attention 7/);
+  assert.match(health.textContent, /sandbox advisory 1/);
+  assert.match(health.textContent, /codex_readonly 1/);
+  assert.match(health.textContent, /sandbox attention unknown-agent/);
   assert.match(health.textContent, /observations 2 ready agents/);
   assert.match(health.textContent, /lobby behind 1/);
   assert.match(health.textContent, /admission 1\/3 host-approved/);

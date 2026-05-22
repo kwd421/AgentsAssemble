@@ -34,6 +34,10 @@ smoke before starting any real provider process from it.
 - Do not mark `os_sandboxed` until the process is actually constrained by a
   verified OS-level sandbox, restricted worktree, env scrubber, or equivalent
   launcher.
+- The shared `SandboxLauncher` mapping is the source of truth for
+  `sandbox_enforcement`: `NoSandboxLauncher` means `advisory`, Codex read-only
+  execution means `codex_readonly`, and no current non-Codex provider is
+  hard-sandboxed.
 - Keep `terminal_session` experimental until each provider has a prompt boundary
   and completion detector.
 - Keep Play Mode and Work Mode separate; lobby chatter becomes official input

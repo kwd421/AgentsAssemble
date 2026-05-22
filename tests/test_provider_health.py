@@ -79,6 +79,7 @@ class ProviderHealthTests(unittest.TestCase):
             providers = {provider["provider_id"]: provider for provider in report["providers"]}
             self.assertEqual(providers["local-model"]["status"], "ok")
             self.assertEqual(providers["cli-provider"]["command_path"], "/usr/local/bin/fake-agent")
+            self.assertEqual(providers["cli-provider"]["capabilities"]["sandbox_enforcement"], "advisory")
 
     def test_provider_health_probe_none_does_not_call_probe_requester(self):
         with tempfile.TemporaryDirectory() as temp_dir:

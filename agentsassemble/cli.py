@@ -1582,6 +1582,7 @@ def _format_live_agent_roster_agent(agent: dict[str, object]) -> str:
     _append_live_agent_roster_text(suffix_parts, "meeting", agent.get("meeting_id"))
     _append_live_agent_roster_text(suffix_parts, "join", agent.get("join_semantics"))
     _append_live_agent_roster_text(suffix_parts, "context", agent.get("context_durability"))
+    _append_live_agent_roster_text(suffix_parts, "sandbox", agent.get("sandbox_enforcement"))
     _append_live_agent_roster_text(suffix_parts, "admission", agent.get("admission_status"))
     _append_live_agent_roster_bool(suffix_parts, "host_approved", agent.get("host_approved_binding"))
     _append_live_agent_roster_text(suffix_parts, "admission_source", agent.get("admission_evidence_source"))
@@ -2992,10 +2993,21 @@ def _format_live_agent_discovery_entry(item: dict[str, object]) -> str:
     entry_mode = str(item.get("entry_mode") or item.get("connection_kind") or "").strip()
     join_semantics = str(item.get("join_semantics") or "").strip()
     context_durability = str(item.get("context_durability") or "").strip()
+    sandbox_enforcement = str(item.get("sandbox_enforcement") or "").strip()
     evidence_basis = str(item.get("evidence_basis") or "").strip()
     operator_action = str(item.get("operator_action") or "").strip()
     approval = "approval required" if item.get("requires_approval") else ""
-    parts = [command, entry_status, entry_mode, join_semantics, context_durability, evidence_basis, operator_action, approval]
+    parts = [
+        command,
+        entry_status,
+        entry_mode,
+        join_semantics,
+        context_durability,
+        sandbox_enforcement,
+        evidence_basis,
+        operator_action,
+        approval,
+    ]
     clean = [part for part in parts if part]
     return "entry " + " ".join(clean) if clean else ""
 
@@ -3395,6 +3407,7 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
     processes = payload.get("processes") if isinstance(payload.get("processes"), dict) else {}
     process_monitor = payload.get("process_monitor") if isinstance(payload.get("process_monitor"), dict) else {}
     connections = payload.get("connections") if isinstance(payload.get("connections"), dict) else {}
+    sandbox_enforcement = payload.get("sandbox_enforcement") if isinstance(payload.get("sandbox_enforcement"), dict) else {}
     sessions = payload.get("sessions") if isinstance(payload.get("sessions"), dict) else {}
     observations = payload.get("observations") if isinstance(payload.get("observations"), dict) else {}
     session_runs = payload.get("session_runs") if isinstance(payload.get("session_runs"), dict) else {}
@@ -3407,6 +3420,16 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
     process_attention = processes.get("attention") if isinstance(processes.get("attention"), list) else []
     process_reasons = _process_reason_summary(processes.get("reasons"))
     connection_attention = connections.get("attention") if isinstance(connections.get("attention"), list) else []
+    sandbox_counts = (
+        sandbox_enforcement.get("counts")
+        if isinstance(sandbox_enforcement.get("counts"), dict)
+        else {}
+    )
+    sandbox_attention = (
+        sandbox_enforcement.get("attention")
+        if isinstance(sandbox_enforcement.get("attention"), list)
+        else []
+    )
     session_attention = sessions.get("attention") if isinstance(sessions.get("attention"), list) else []
     observation_attention = observations.get("attention") if isinstance(observations.get("attention"), list) else []
     session_run_attention = session_runs.get("attention") if isinstance(session_runs.get("attention"), list) else []
@@ -3452,6 +3475,13 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
         [
             f"connections: {connections.get('connected', 0)} connected / {connections.get('expected', 0)} expected",
             f"connection attention: {_attention_summary(connection_attention)}",
+            (
+                f"sandbox: advisory {sandbox_counts.get('advisory', 0)}, "
+                f"codex_readonly {sandbox_counts.get('codex_readonly', 0)}, "
+                f"os_sandboxed {sandbox_counts.get('os_sandboxed', 0)}, "
+                f"unknown {sandbox_counts.get('unknown', 0)}"
+            ),
+            f"sandbox attention: {_attention_summary(sandbox_attention)}",
             f"sessions: {sessions.get('ready', 0)} ready / {sessions.get('total', 0)} total",
             f"session attention: {_attention_summary(session_attention)}",
         ]

@@ -108,6 +108,7 @@ def connect_live_agent(
             "connection_kind": connection_kind,
             "join_semantics": context_contract["join_semantics"],
             "context_durability": context_contract["context_durability"],
+            "sandbox_enforcement": context_contract["sandbox_enforcement"],
             "status": _normalize_persisted_status(payload.get("status") or existing.get("status") or "online"),
             "engagement_mode": effective_engagement_mode,
             "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128)
@@ -212,6 +213,7 @@ def heartbeat_live_agent(
                 "connection_kind": "manual",
                 "join_semantics": "manual_room_loop",
                 "context_durability": "external_owner_managed",
+                "sandbox_enforcement": "advisory",
                 "status": normalized_status,
                 "engagement_mode": "mentioned",
                 "meeting_id": "",

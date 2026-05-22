@@ -6,6 +6,7 @@ from agentsassemble.live_agent_context import (
     live_agent_context_contract,
     safe_live_agent_context_durability,
     safe_live_agent_join_semantics,
+    safe_live_agent_sandbox_enforcement,
 )
 from agentsassemble.live_agents import PRESENCE_ERROR_REDACTED, _looks_sensitive_presence_error
 from agentsassemble.meeting_events import clean_lobby_text
@@ -18,6 +19,7 @@ SAFE_LIVE_AGENT_ROSTER_FIELDS = (
     "connection_kind",
     "join_semantics",
     "context_durability",
+    "sandbox_enforcement",
     "status",
     "meeting_id",
     "engagement_mode",
@@ -122,6 +124,8 @@ def safe_live_agent_roster_agent(agent: dict[str, object]) -> dict[str, object]:
             safe_agent[field] = safe_live_agent_join_semantics(context_contract["join_semantics"])
         elif field == "context_durability":
             safe_agent[field] = safe_live_agent_context_durability(context_contract["context_durability"])
+        elif field == "sandbox_enforcement":
+            safe_agent[field] = safe_live_agent_sandbox_enforcement(context_contract["sandbox_enforcement"])
         else:
             safe_agent[field] = safe_live_agent_roster_text(value, limit=_live_agent_roster_field_limit(field))
     if admission_evidence_source != "meeting_record":
@@ -153,6 +157,8 @@ def safe_live_agent_roster_agent(agent: dict[str, object]) -> dict[str, object]:
         safe_agent["join_semantics"] = safe_live_agent_join_semantics(context_contract["join_semantics"])
     if "context_durability" not in safe_agent and ("provider_kind" in agent or "connection_kind" in agent):
         safe_agent["context_durability"] = safe_live_agent_context_durability(context_contract["context_durability"])
+    if "sandbox_enforcement" not in safe_agent and ("provider_kind" in agent or "connection_kind" in agent):
+        safe_agent["sandbox_enforcement"] = safe_live_agent_sandbox_enforcement(context_contract["sandbox_enforcement"])
     return safe_agent
 
 
@@ -218,6 +224,7 @@ def _live_agent_roster_field_limit(field: str) -> int:
         "connection_kind",
         "join_semantics",
         "context_durability",
+        "sandbox_enforcement",
         "status",
         "engagement_mode",
         "admission_status",

@@ -96,6 +96,12 @@ resident path. The native Claude Code/Cursor/Antigravity/Grok/Hermes/OpenClaw in
 Ordinary `local_cli`, `terminal_session`, `self_service`, and remote bridge
 participants still rely on policy, approval, and audit metadata unless a real
 sandboxed launcher is added and verified.
+Public room surfaces now expose `sandbox_enforcement` alongside join semantics
+and context durability. The shared `SandboxLauncher` mapping reports
+`codex_readonly` for Codex `codex exec --sandbox read-only --ignore-rules`,
+`advisory` for generic local CLI/PTY/self-service/remote bridge paths, and
+`os_sandboxed` only for a future provider launched through a verified OS-level
+sandbox.
 
 Safe fake resident session quickstart:
 
@@ -165,7 +171,7 @@ The Codex adapter has a first smoke path through `codex exec`.
 The current implementation:
 
 - uses the shared local Codex authentication/config
-- invokes `codex exec --skip-git-repo-check`
+- invokes `codex exec --sandbox read-only --ignore-rules --skip-git-repo-check`
 - writes each call's final response with `--output-last-message`
 - records Codex command metadata and session id when available
 - keeps role files, history files, and research artifacts isolated by role

@@ -4663,6 +4663,59 @@ class GuiServerTests(unittest.TestCase):
             ],
         )
 
+    def test_live_agent_health_reports_sandbox_enforcement_levels(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "codex-live",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "claude-live",
+                    "provider_kind": "claude_code",
+                    "connection_kind": "terminal_session",
+                    "sandbox_enforcement": "os_sandboxed",
+                },
+            )
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            *json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"],
+                            {
+                                "agent_id": "unknown-live",
+                                "display_name": "Unknown Live",
+                                "provider_kind": "mystery_provider",
+                                "connection_kind": "mystery_connection",
+                                "status": "online",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(
+            payload["sandbox_enforcement"],
+            {
+                "counts": {"advisory": 1, "codex_readonly": 1, "os_sandboxed": 0, "unknown": 1},
+                "attention": ["unknown-live"],
+            },
+        )
+
     def test_live_agent_health_endpoint_summarizes_durable_session_run_retry(self):
         class FakeSupervisor:
             def list_groups(self):
@@ -7305,6 +7358,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["agent"]["connection_kind"], "local_cli")
             self.assertEqual(payload["agent"]["join_semantics"], "stateless_prompt_call")
             self.assertEqual(payload["agent"]["context_durability"], "stateless_prompt")
+            self.assertEqual(payload["agent"]["sandbox_enforcement"], "advisory")
             self.assertEqual(live_agents_payload(root)["agents"][0]["display_name"], "Claude Code Live")
 
     def test_live_agent_http_endpoint_registers_and_lists_presence(self):
@@ -7325,6 +7379,7 @@ class GuiServerTests(unittest.TestCase):
                             "session_id": "gemini-session",
                             "join_semantics": "env:SECRET_TOKEN",
                             "context_durability": "/private/provider-context",
+                            "sandbox_enforcement": "os_sandboxed",
                         }
                     ).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
@@ -7357,6 +7412,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(register_operations[0]["details"]["connection_kind"], "local_cli")
             self.assertEqual(register_operations[0]["details"]["join_semantics"], "stateless_prompt_call")
             self.assertEqual(register_operations[0]["details"]["context_durability"], "stateless_prompt")
+            self.assertEqual(register_operations[0]["details"]["sandbox_enforcement"], "advisory")
             self.assertEqual(register_operations[0]["details"]["registered_status"], "online")
             self.assertEqual(register_operations[0]["details"]["admission_status"], "lobby_only")
             self.assertFalse(register_operations[0]["details"]["host_approved_binding"])

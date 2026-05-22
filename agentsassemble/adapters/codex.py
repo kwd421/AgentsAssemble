@@ -8,6 +8,7 @@ from typing import Any
 
 from agentsassemble.adapters.base import ProviderAdapter
 from agentsassemble.codex_session_ids import extract_codex_session_id
+from agentsassemble.codex_resident import codex_exec_prefix
 from agentsassemble.models import ResearchDepth, ResearchSteering, Role
 from agentsassemble.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
 
@@ -232,17 +233,15 @@ Return only this JSON shape:
         command = ["codex"]
         if self.search_enabled and use_search:
             command.append("--search")
-        command.extend(
-            [
-                "exec",
-                "--skip-git-repo-check",
-                "--cd",
-                str(meeting_path),
-                "--output-last-message",
-                str(output_path),
-                "-",
-            ]
-        )
+        command = [
+            *codex_exec_prefix(command),
+            "--skip-git-repo-check",
+            "--cd",
+            str(meeting_path),
+            "--output-last-message",
+            str(output_path),
+            "-",
+        ]
         try:
             completed = self.command_runner(
                 command,

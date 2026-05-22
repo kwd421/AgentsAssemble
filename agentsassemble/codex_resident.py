@@ -8,16 +8,14 @@ from subprocess import TimeoutExpired
 from typing import TYPE_CHECKING, Any
 
 from agentsassemble.codex_session_ids import extract_codex_session_id
+from agentsassemble.sandbox_launcher import CODEX_EXEC_SAFETY_FLAGS, sandbox_launcher_for
 
 if TYPE_CHECKING:
     from agentsassemble.live_agent_runner import ResidentAgentConfig
 
 
-CODEX_EXEC_SAFETY_FLAGS = ("--sandbox", "read-only", "--ignore-rules")
-
-
 def codex_exec_prefix(base_command: list[str]) -> list[str]:
-    return [*base_command, "exec", *CODEX_EXEC_SAFETY_FLAGS]
+    return sandbox_launcher_for("codex_live_session", "live_session").command(base_command)
 
 
 class CodexResidentCommandRunner:

@@ -210,6 +210,8 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertEqual(catalog["local_openai_compatible"]["status"], "available")
         self.assertTrue(catalog["gemini"]["capabilities"]["supports_web_search"])
         self.assertTrue(catalog["cursor"]["capabilities"]["supports_filesystem"])
+        self.assertEqual(catalog["codex_live_session"]["capabilities"]["sandbox_enforcement"], "codex_readonly")
+        self.assertEqual(catalog["local_cli"]["capabilities"]["sandbox_enforcement"], "advisory")
 
     def test_default_registry_creates_http_provider_adapters(self):
         registry = default_provider_registry()

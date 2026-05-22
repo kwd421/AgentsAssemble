@@ -132,6 +132,7 @@ def default_provider_registry(
             supports_session_resume=True,
             supports_structured_output=True,
             cost_class="subscription",
+            sandbox_enforcement="codex_readonly",
         ),
     )
     registry.register(
@@ -148,6 +149,7 @@ def default_provider_registry(
             supports_session_resume=True,
             supports_structured_output=True,
             cost_class="subscription",
+            sandbox_enforcement="codex_readonly",
         ),
     )
     register_http_provider_kinds(registry)

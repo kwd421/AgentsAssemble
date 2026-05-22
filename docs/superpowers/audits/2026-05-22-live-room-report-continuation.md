@@ -55,6 +55,11 @@ Report source:
   current intended connection shapes, not verified native provider semantics.
 - Non-Codex local CLI read-only is still advisory until a hard sandbox launcher
   is implemented and verified.
+- Phase 4 adds the shared `SandboxLauncher`/`NoSandboxLauncher` contract and
+  exposes `sandbox_enforcement` on roster, join brief, discovery, preflight,
+  health, provider capability, and meeting artifact surfaces. Codex is labeled
+  `codex_readonly`; generic CLI/PTY/self-service/remote paths remain
+  `advisory`; no provider is labeled `os_sandboxed` yet.
 - No-Tailscale multi-host mode remains a design track after single-host
   resident sessions stay reliable.
 

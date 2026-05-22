@@ -69,6 +69,11 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("memory/profile capsule gate report", doc)
         self.assertIn("assemble memory-capsule gate", doc)
         self.assertIn("advisory", doc)
+        self.assertIn("SandboxLauncher", doc)
+        self.assertIn("NoSandboxLauncher", doc)
+        self.assertIn("sandbox_enforcement", doc)
+        self.assertIn("codex_readonly", doc)
+        self.assertIn("os_sandboxed", doc)
 
     def test_roadmap_mentions_room_event_log_and_live_session_adapter(self):
         doc = (ROOT / "docs" / "roadmap.md").read_text(encoding="utf-8")
@@ -692,6 +697,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("no-model fake Codex lifecycle regression", doc)
         self.assertIn("native Claude Code/Cursor/Antigravity/Grok/Hermes/OpenClaw integrations are not complete", doc)
         self.assertIn("non-Codex local CLI read-only is not a hard OS sandbox", doc)
+        self.assertIn("SandboxLauncher", doc)
+        self.assertIn("sandbox_enforcement", doc)
 
     def test_provider_live_session_matrix_records_current_provider_readiness(self):
         doc = (ROOT / "docs" / "provider-live-session-matrix.md").read_text(encoding="utf-8")

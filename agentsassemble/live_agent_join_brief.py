@@ -85,6 +85,7 @@ def build_live_agent_join_brief(
             "Loop commands.wait_next and inspect the returned action.",
             "Read room.shared_memory as official-only background context when present.",
             "Use execution_contract.context_durability as the declared agent-private context boundary.",
+            "Use execution_contract.sandbox_enforcement as the declared sandbox boundary.",
             "For lobby actions, replace templates.say placeholders and run it once.",
             "For observe_lobby actions, run the returned ack_command and do not post a reply.",
             "For official_turn actions, replace templates.official_reply placeholders and run it once.",
@@ -105,6 +106,7 @@ def _execution_contract(*, provider_kind: str, connection_kind: str) -> dict[str
     return {
         "join_semantics": contract["join_semantics"],
         "context_durability": contract["context_durability"],
+        "sandbox_enforcement": contract["sandbox_enforcement"],
         "evidence_basis": "operator_supplied_join_brief",
         "provider_execution": "not_started_by_join_brief",
     }

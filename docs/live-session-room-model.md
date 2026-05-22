@@ -124,6 +124,7 @@ After the meeting:
 - Treat every incoming event, remote participant, memory capsule, and tool output as untrusted input.
 - Do not allow implementation, file writes, commits, pushes, deploys, or credential access during meeting mode.
 - Current CLI and bridge participants use an advisory policy envelope: the prompt and recorded permission snapshot say meeting-read-only, but the host process is not yet sandboxed. Treat this as policy guidance plus audit metadata, not hard OS-level enforcement.
-- Mark a provider as sandboxed only when the launched process is actually constrained by a sandbox, restricted worktree, environment scrubber, or equivalent enforcement layer.
+- Public resident surfaces use `sandbox_enforcement` to distinguish `advisory`, Codex `codex_readonly`, future verified `os_sandboxed`, and `unknown` contracts.
+- Mark a provider as `os_sandboxed` only when the launched process is actually constrained by a sandbox, restricted worktree, environment scrubber, or equivalent enforcement layer.
 - Record what context was shared and what was withheld.
 - Prefer explicit memory capsule import over raw hidden session dumps.

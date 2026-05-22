@@ -688,6 +688,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
             self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 0, "checks_failed": 0})
             friend = report["agents"][0]
             self.assertEqual(friend["connection_kind"], "remote_bridge")
+            self.assertEqual(friend["sandbox_enforcement"], "advisory")
             self.assertEqual(friend["command"], [])
             self.assertEqual(friend["command_path"], "")
             self.assertIn(
@@ -733,6 +734,7 @@ class LiveAgentPreflightTests(unittest.TestCase):
             agent = report["agents"][0]
             self.assertEqual(agent["provider_kind"], "codex_live_session")
             self.assertEqual(agent["connection_kind"], "live_session")
+            self.assertEqual(agent["sandbox_enforcement"], "codex_readonly")
             self.assertEqual(agent["command"], ["codex"])
             self.assertEqual(agent["command_path"], "/usr/local/bin/codex")
             self.assertIn(

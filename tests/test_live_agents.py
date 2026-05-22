@@ -6,23 +6,38 @@ from pathlib import Path
 
 from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
+from agentsassemble.sandbox_launcher import NoSandboxLauncher, sandbox_launcher_for
 
 
 class LiveAgentPresenceTests(unittest.TestCase):
     def test_context_contract_labels_match_actual_connection_semantics(self):
         cases = [
-            ("codex_live_session", "codex_resume", "codex_exec_resume", "provider_managed_resume"),
-            ("codex_live_session", "live_session", "codex_exec_resume", "provider_managed_resume"),
-            ("claude_code", "live_session", "jsonl_live_session", "process_lifetime"),
-            ("local_cli", "live_session", "jsonl_live_session", "process_lifetime"),
-            ("remote_http_bridge", "remote_bridge", "remote_bridge_room_loop", "remote_owner_managed"),
+            ("codex_live_session", "codex_resume", "codex_exec_resume", "provider_managed_resume", "codex_readonly"),
+            ("codex_live_session", "live_session", "codex_exec_resume", "provider_managed_resume", "codex_readonly"),
+            ("codex", "codex_resume", "codex_exec_resume", "provider_managed_resume", "codex_readonly"),
+            ("", "", "manual_room_loop", "external_owner_managed", "advisory"),
+            ("claude_code", "live_session", "jsonl_live_session", "process_lifetime", "advisory"),
+            ("local_cli", "live_session", "jsonl_live_session", "process_lifetime", "advisory"),
+            ("remote_http_bridge", "remote_bridge", "remote_bridge_room_loop", "remote_owner_managed", "advisory"),
         ]
 
-        for provider_kind, connection_kind, join_semantics, context_durability in cases:
+        for provider_kind, connection_kind, join_semantics, context_durability, sandbox_enforcement in cases:
             with self.subTest(provider_kind=provider_kind, connection_kind=connection_kind):
                 contract = live_agent_context_contract(provider_kind, connection_kind)
                 self.assertEqual(contract["join_semantics"], join_semantics)
                 self.assertEqual(contract["context_durability"], context_durability)
+                self.assertEqual(contract["sandbox_enforcement"], sandbox_enforcement)
+
+    def test_sandbox_launcher_declares_current_enforcement_without_claiming_os_sandbox(self):
+        self.assertEqual(NoSandboxLauncher().enforcement, "advisory")
+        self.assertEqual(sandbox_launcher_for("codex_live_session", "live_session").enforcement, "codex_readonly")
+        self.assertEqual(sandbox_launcher_for("codex", "codex_resume").enforcement, "codex_readonly")
+        self.assertEqual(
+            sandbox_launcher_for("codex_live_session", "live_session").command(["codex"]),
+            ["codex", "exec", "--sandbox", "read-only", "--ignore-rules"],
+        )
+        self.assertEqual(sandbox_launcher_for("claude_code", "terminal_session").enforcement, "advisory")
+        self.assertNotEqual(sandbox_launcher_for("claude_code", "terminal_session").enforcement, "os_sandboxed")
 
     def test_connect_live_agent_upserts_sanitized_presence(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -48,6 +63,7 @@ class LiveAgentPresenceTests(unittest.TestCase):
             self.assertEqual(agent["display_name"], "Claude Code")
             self.assertEqual(agent["provider_kind"], "claude_code")
             self.assertEqual(agent["connection_kind"], "local_cli")
+            self.assertEqual(agent["sandbox_enforcement"], "advisory")
             self.assertEqual(agent["status"], "online")
             self.assertEqual(agent["last_seen_at"], "2026-05-17T12:00:00+00:00")
             self.assertEqual(agent["capabilities"], ["room_chat", "mentions"])
