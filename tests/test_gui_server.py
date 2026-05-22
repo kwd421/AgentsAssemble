@@ -12367,6 +12367,8 @@ class GuiServerTests(unittest.TestCase):
                     "group_id": "resident-main",
                     "live_agent_config_path": str(live_agent_config),
                     "server": "http://room.local",
+                    "probe_bound_agents": True,
+                    "probe_timeout_seconds": 7,
                 },
             )
             controller.finish_run(
@@ -12404,6 +12406,10 @@ class GuiServerTests(unittest.TestCase):
 
         self.assertEqual(len(observed_requests), 2)
         self.assertEqual(observed_requests[0]["live_agent_config_path"], str(live_agent_config))
+        self.assertTrue(observed_requests[0]["probe_bound_agents"])
+        self.assertEqual(observed_requests[0]["probe_timeout_seconds"], 7)
+        self.assertTrue(observed_requests[1]["probe_bound_agents"])
+        self.assertEqual(observed_requests[1]["probe_timeout_seconds"], 7)
         self.assertEqual(reconciled["status"], "ready")
         self.assertEqual(reconciled["reconcile_count"], 2)
         self.assertTrue(all(seconds >= 1.0 for seconds in stop.waits))

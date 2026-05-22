@@ -273,7 +273,7 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
         self.assertEqual(stored[sibling["run_id"]]["status"], "degraded")
         self.assertTrue(stored[sibling["run_id"]]["active"])
 
-    def test_finish_run_consumes_successful_post_ready_request_fields(self):
+    def test_finish_run_keeps_probe_intent_and_consumes_successful_one_shot_post_ready_fields(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             controller = LiveAgentSessionRunController(root)
@@ -320,9 +320,11 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
             public_run = reloaded.list_runs()[0]
 
         self.assertEqual(public_run["status"], "ready")
+        self.assertTrue(public_run["request"]["probe_bound_agents"])
+        self.assertEqual(public_run["request"]["probe_timeout_seconds"], 3)
+        self.assertTrue(observed_requests[0]["probe_bound_agents"])
+        self.assertEqual(observed_requests[0]["probe_timeout_seconds"], 3)
         for key in (
-            "probe_bound_agents",
-            "probe_timeout_seconds",
             "run_remaining_rounds",
             "round_timeout_seconds",
             "round_max_rounds",
@@ -332,7 +334,7 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
             self.assertNotIn(key, public_run["request"])
             self.assertNotIn(key, observed_requests[0])
 
-    def test_legacy_ready_run_consumes_successful_post_ready_request_fields_on_read(self):
+    def test_legacy_ready_run_keeps_probe_intent_and_consumes_one_shot_fields_on_read(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             runs_dir = root / "live-agent-runs"
@@ -399,9 +401,11 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
                 }
             )
 
+        self.assertTrue(public_run["request"]["probe_bound_agents"])
+        self.assertEqual(public_run["request"]["probe_timeout_seconds"], 3)
+        self.assertTrue(observed_requests[0]["probe_bound_agents"])
+        self.assertEqual(observed_requests[0]["probe_timeout_seconds"], 3)
         for key in (
-            "probe_bound_agents",
-            "probe_timeout_seconds",
             "run_remaining_rounds",
             "round_timeout_seconds",
             "round_max_rounds",

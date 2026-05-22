@@ -20,9 +20,7 @@ MAX_RECONCILE_BACKOFF_SECONDS = 300
 ACTIVE_SESSION_RUN_STATUSES = {"running", "recovering", "ready", "starting", "degraded"}
 TERMINAL_SESSION_RUN_STATUSES = {"failed", "stopped"}
 PAUSED_SESSION_RUN_STATUSES = {"paused"}
-POST_READY_REQUEST_KEYS = {
-    "probe_bound_agents",
-    "probe_timeout_seconds",
+ONE_SHOT_POST_READY_REQUEST_KEYS = {
     "run_remaining_rounds",
     "round_timeout_seconds",
     "round_max_rounds",
@@ -665,7 +663,7 @@ def _result_status(value: object) -> str:
 
 
 def _request_without_post_ready_fields(request: dict[str, object]) -> dict[str, object]:
-    return {key: value for key, value in request.items() if key not in POST_READY_REQUEST_KEYS}
+    return {key: value for key, value in request.items() if key not in ONE_SHOT_POST_READY_REQUEST_KEYS}
 
 
 def _reconcile_due(record: dict[str, object], now: datetime) -> bool:
