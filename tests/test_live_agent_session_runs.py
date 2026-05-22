@@ -670,6 +670,48 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
         self.assertFalse(stored_run["active"])
         self.assertEqual(stored_run["phase"], "operator_paused")
 
+    def test_resume_run_makes_backoff_run_due_without_losing_failure_evidence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            now = {"value": datetime(2026, 5, 21, 10, 0, tzinfo=UTC)}
+            controller = LiveAgentSessionRunController(root, now_fn=lambda: now["value"])
+            run = controller.begin_run(action="ensure", payload={"meeting_id": "resident-m1", "group_id": "resident-main"})
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "degraded",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                },
+            )
+            now["value"] = datetime(2026, 5, 21, 10, 0, 20, tzinfo=UTC)
+
+            paused = controller.pause_run(run["run_id"])
+            resumed = controller.resume_run(run["run_id"])
+            calls = []
+            results = controller.reconcile_active_runs(
+                lambda reconcile_run: calls.append(reconcile_run)
+                or {
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "recover",
+                }
+            )
+
+        self.assertEqual(paused["status"], "paused")
+        self.assertEqual(paused["next_reconcile_at"], "2026-05-21T10:01:00+00:00")
+        self.assertEqual(paused["reconcile_failure_count"], 1)
+        self.assertEqual(resumed["status"], "degraded")
+        self.assertEqual(resumed["phase"], "resume_requested")
+        self.assertEqual(resumed["next_reconcile_at"], "")
+        self.assertEqual(resumed["reconcile_failure_count"], 1)
+        self.assertEqual(resumed["reconcile_backoff_seconds"], 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["run_id"], run["run_id"])
+        self.assertEqual(results[0]["status"], "ready")
+
     def test_pause_run_skips_reconcile_until_resumed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

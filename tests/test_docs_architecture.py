@@ -486,6 +486,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("session_run.pause", doc)
         self.assertIn("session_run.resume", doc)
         self.assertIn("session_run.stop", doc)
+        self.assertIn("clears any saved retry delay", doc)
         self.assertIn("durable session-run status gate", doc)
         self.assertIn("without the exact run id", doc)
         self.assertIn("latest matching meeting/group session-run", doc)

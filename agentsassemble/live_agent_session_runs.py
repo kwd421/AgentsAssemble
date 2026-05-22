@@ -171,6 +171,7 @@ class LiveAgentSessionRunController:
             record["active"] = True
             record["phase"] = "resume_requested"
             record["paused_status"] = ""
+            self._clear_reconcile_delay(record)
             record["updated_at"] = now
             self._write_records()
             return _public_record(record)
@@ -218,8 +219,7 @@ class LiveAgentSessionRunController:
             now = self.now_fn().isoformat()
             record["active"] = True
             record["phase"] = "retry_requested"
-            record["next_reconcile_at"] = ""
-            record["reconcile_backoff_seconds"] = 0
+            self._clear_reconcile_delay(record)
             record["updated_at"] = now
             self._write_records()
             return _public_record(record)
@@ -345,8 +345,11 @@ class LiveAgentSessionRunController:
         record["next_reconcile_at"] = (self.now_fn() + timedelta(seconds=backoff_seconds)).isoformat()
 
     def _clear_reconcile_retry(self, record: dict[str, object]) -> None:
-        record["next_reconcile_at"] = ""
+        self._clear_reconcile_delay(record)
         record["reconcile_failure_count"] = 0
+
+    def _clear_reconcile_delay(self, record: dict[str, object]) -> None:
+        record["next_reconcile_at"] = ""
         record["reconcile_backoff_seconds"] = 0
 
     def _fail_record(self, record: dict[str, object], error: object) -> dict[str, object]:

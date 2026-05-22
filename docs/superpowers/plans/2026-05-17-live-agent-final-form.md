@@ -5272,6 +5272,33 @@ Operator docs and roadmap now state that session readiness requires each bound a
 
 ---
 
+## Task 156: Resume Durable Session Runs Without Stale Backoff
+
+**Goal:** Make an explicit operator resume of a paused durable session-run eligible for the next monitor reconcile immediately, even when the run was paused while carrying a future retry backoff.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_session_runs.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_session_runs.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED resume/backoff coverage**
+
+Cover a degraded durable session-run with a future `next_reconcile_at`, pause it before that retry is due, resume it, and require the resumed run to clear `next_reconcile_at` and `reconcile_backoff_seconds` while preserving `reconcile_failure_count`. The first controller and API tests failed because resume restored the paused status but left the stale backoff in place.
+
+- [x] **Step 2: Clear only the retry delay on resume**
+
+`resume_run()` now clears the durable retry delay fields without clearing retry failure evidence, matching the operator intent of `retry-now` while keeping historical failure count visible. The next session-run monitor tick can reconcile the resumed run immediately, and real-provider approval gates remain unchanged because this only updates durable run metadata.
+
+- [x] **Step 3: Keep docs aligned with operator behavior**
+
+Operator docs and roadmap now state that resume clears any saved retry delay while preserving retry failure evidence, so a resumed durable run is eligible for the next reconcile instead of silently waiting behind stale backoff.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -12572,7 +12572,11 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(resume_payload["status"], "resumed")
         self.assertEqual(resume_payload["session_run"]["status"], "degraded")
         self.assertTrue(resume_payload["session_run"]["active"])
+        self.assertEqual(resume_payload["session_run"]["next_reconcile_at"], "")
+        self.assertEqual(resume_payload["session_run"]["reconcile_backoff_seconds"], 0)
         self.assertEqual(runs_payload["runs"][0]["phase"], "resume_requested")
+        self.assertEqual(runs_payload["runs"][0]["next_reconcile_at"], "")
+        self.assertEqual(runs_payload["runs"][0]["reconcile_backoff_seconds"], 0)
         self.assertEqual([item["operation"] for item in operations_payload["operations"][-2:]], ["session_run.pause", "session_run.resume"])
 
     def test_live_agent_session_run_pause_resume_api_resolves_latest_matching_meeting_group(self):
