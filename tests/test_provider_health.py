@@ -1016,6 +1016,278 @@ class ProviderHealthTests(unittest.TestCase):
         self.assertEqual(report["status"], "failed")
         self.assertEqual(proxy_paths, [])
 
+    def test_provider_health_api_probe_checks_supported_provider_model_lists_without_prompts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "claude",
+                            "kind": "anthropic",
+                            "display_name": "Claude",
+                            "auth_ref": "literal:anthropic-key",
+                        },
+                        {
+                            "id": "gemini",
+                            "kind": "gemini",
+                            "display_name": "Gemini",
+                            "auth_ref": "literal:gemini-key",
+                        },
+                        {
+                            "id": "grok",
+                            "kind": "grok",
+                            "display_name": "Grok",
+                            "auth_ref": "literal:xai-key",
+                        },
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+            calls = []
+
+            def requester(url, headers, timeout_seconds):
+                calls.append({"url": url, "headers": dict(headers), "timeout_seconds": timeout_seconds})
+                if "anthropic" in url:
+                    return {"data": [{"id": "claude-sonnet-test"}]}
+                if "generativelanguage" in url:
+                    return {"models": [{"name": "models/gemini-test"}]}
+                if "api.x.ai" in url:
+                    return {"data": [{"id": "grok-test"}]}
+                raise AssertionError(f"unexpected API probe URL: {url}")
+
+            report = provider_health_report(
+                config_path,
+                probe_mode="api",
+                api_probe_requester=requester,
+                probe_timeout_seconds=0.75,
+            )
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(report["probe_mode"], "api")
+            self.assertEqual(
+                calls,
+                [
+                    {
+                        "url": "https://api.anthropic.com/v1/models",
+                        "headers": {
+                            "Accept": "application/json",
+                            "x-api-key": "anthropic-key",
+                            "anthropic-version": "2023-06-01",
+                        },
+                        "timeout_seconds": 0.75,
+                    },
+                    {
+                        "url": "https://generativelanguage.googleapis.com/v1beta/models",
+                        "headers": {"Accept": "application/json", "x-goog-api-key": "gemini-key"},
+                        "timeout_seconds": 0.75,
+                    },
+                    {
+                        "url": "https://api.x.ai/v1/models",
+                        "headers": {"Accept": "application/json", "Authorization": "Bearer xai-key"},
+                        "timeout_seconds": 0.75,
+                    },
+                ],
+            )
+            checks = {
+                provider["provider_id"]: {check["id"]: check for check in provider["checks"]}
+                for provider in report["providers"]
+            }
+            self.assertEqual(checks["claude"]["api_probe"]["status"], "ok")
+            self.assertEqual(checks["gemini"]["api_probe"]["models"], 1)
+            self.assertEqual(checks["grok"]["api_probe"]["status"], "ok")
+            serialized = json.dumps(report, ensure_ascii=False)
+            self.assertNotIn("anthropic-key", serialized)
+            self.assertNotIn("gemini-key", serialized)
+            self.assertNotIn("xai-key", serialized)
+            self.assertEqual(report["config_path"], "[redacted]")
+            self.assertNotIn(str(config_path), serialized)
+
+    def test_provider_health_api_probe_rejects_generation_endpoint_without_calling_it(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "gemini",
+                            "kind": "gemini",
+                            "display_name": "Gemini",
+                            "default_model": "gemini-missing",
+                            "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+                            "auth_ref": "literal:gemini-key",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, headers, timeout_seconds):
+                raise AssertionError("api probe must reject prompt-bearing endpoints before network")
+
+            report = provider_health_report(config_path, probe_mode="api", api_probe_requester=requester)
+
+            self.assertEqual(report["status"], "failed")
+            api_probe = next(check for check in report["providers"][0]["checks"] if check["id"] == "api_probe")
+            self.assertEqual(api_probe["status"], "failed")
+            self.assertIn("official", api_probe["message"])
+
+    def test_provider_health_api_probe_reports_configured_model_missing_without_leaking_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "gemini",
+                            "kind": "gemini",
+                            "display_name": "Gemini",
+                            "default_model": "gemini-missing",
+                            "auth_ref": "literal:gemini-key",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, headers, timeout_seconds):
+                return {"models": [{"name": "models/gemini-other"}]}
+
+            report = provider_health_report(config_path, probe_mode="api", api_probe_requester=requester)
+
+            self.assertEqual(report["status"], "degraded")
+            api_probe = next(check for check in report["providers"][0]["checks"] if check["id"] == "api_probe")
+            self.assertEqual(api_probe["status"], "warning")
+            self.assertEqual(api_probe["configured_model"], "gemini-missing")
+            self.assertFalse(api_probe["configured_model_available"])
+            serialized = json.dumps(report, ensure_ascii=False)
+            self.assertNotIn(str(config_path), serialized)
+            self.assertNotIn("gemini-key", serialized)
+
+    def test_provider_health_probe_none_does_not_call_api_probe_requester(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "claude",
+                            "kind": "anthropic",
+                            "display_name": "Claude",
+                            "auth_ref": "literal:anthropic-key",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, headers, timeout_seconds):
+                raise AssertionError("probe_mode none must not call the API probe")
+
+            report = provider_health_report(config_path, api_probe_requester=requester)
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(report["probe_mode"], "none")
+            self.assertNotIn("api_probe", {check["id"] for check in report["providers"][0]["checks"]})
+
+    def test_provider_health_api_probe_requires_available_auth_without_calling_endpoint(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "claude",
+                            "kind": "anthropic",
+                            "display_name": "Claude",
+                            "auth_ref": "literal:<redacted>",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, headers, timeout_seconds):
+                raise AssertionError("api probe must not call without an available auth_ref")
+
+            report = provider_health_report(config_path, probe_mode="api", api_probe_requester=requester)
+
+            self.assertEqual(report["status"], "failed")
+            self.assertIn(
+                {
+                    "id": "api_probe",
+                    "status": "failed",
+                    "message": "API probe requires an available auth_ref.",
+                },
+                report["providers"][0]["checks"],
+            )
+
+    def test_provider_health_api_probe_skips_non_api_provider_kinds_without_calling_network(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {"id": "mock-provider", "kind": "mock", "display_name": "Mock"},
+                        {
+                            "id": "local-model",
+                            "kind": "local_openai_compatible",
+                            "display_name": "Local",
+                        },
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, headers, timeout_seconds):
+                raise AssertionError("api probe must skip non-API provider kinds")
+
+            report = provider_health_report(config_path, probe_mode="api", api_probe_requester=requester)
+
+            self.assertEqual(report["status"], "ok")
+            for provider in report["providers"]:
+                checks = {check["id"]: check for check in provider["checks"]}
+                self.assertEqual(checks["api_probe"]["status"], "ok")
+                self.assertIn("not applicable", checks["api_probe"]["message"])
+
+    def test_provider_health_api_probe_rejects_non_official_endpoint_without_calling_it(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = self.write_config(
+                temp_dir,
+                {
+                    "providers": [
+                        {
+                            "id": "claude",
+                            "kind": "anthropic",
+                            "display_name": "Claude",
+                            "endpoint": "https://example.invalid/v1/messages?secret=endpoint-token",
+                            "auth_ref": "literal:anthropic-key",
+                        }
+                    ],
+                    "permission_profiles": [{"id": "meeting"}],
+                    "agent_bindings": [],
+                },
+            )
+
+            def requester(url, headers, timeout_seconds):
+                raise AssertionError("api probe must reject non-official endpoints before network")
+
+            report = provider_health_report(config_path, probe_mode="api", api_probe_requester=requester)
+
+            self.assertEqual(report["status"], "failed")
+            check = next(check for check in report["providers"][0]["checks"] if check["id"] == "api_probe")
+            self.assertEqual(check["status"], "failed")
+            self.assertIn("official", check["message"])
+            serialized = json.dumps(report, ensure_ascii=False)
+            self.assertNotIn("endpoint-token", serialized)
+            self.assertNotIn("anthropic-key", serialized)
+
     def test_provider_health_reports_missing_auth_planned_kinds_bad_commands_and_binding_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "agents.json"
@@ -1222,8 +1494,25 @@ class ProviderHealthTests(unittest.TestCase):
             report = provider_health_report(config_path)
 
             self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["config_path"], "[redacted]")
             self.assertEqual(report["summary"]["checks_failed"], 1)
             self.assertEqual(report["checks"][0]["id"], "config_load")
+            self.assertEqual(report["checks"][0]["message"], "Agent runtime config could not be loaded.")
+            self.assertNotIn(str(config_path), json.dumps(report, ensure_ascii=False))
+
+    def test_provider_health_config_load_failure_redacts_path_and_loader_detail(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "private" / "agents.secret.json"
+
+            report = provider_health_report(config_path)
+
+            serialized = json.dumps(report, ensure_ascii=False)
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["config_path"], "[redacted]")
+            self.assertEqual(report["checks"][0]["message"], "Agent runtime config could not be loaded.")
+            self.assertNotIn(str(config_path), serialized)
+            self.assertNotIn("agents.secret.json", serialized)
+            self.assertNotIn("No such file", serialized)
 
     def test_provider_health_checks_environment_auth_presence_without_revealing_value(self):
         with tempfile.TemporaryDirectory() as temp_dir:

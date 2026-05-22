@@ -25,16 +25,25 @@ ENDPOINT_REQUIRED_PROVIDER_KINDS = {"remote_http_bridge"}
 LOCAL_COMMAND_PROVIDER_KINDS = {"local_cli"}
 CODEX_COMMAND_PROVIDER_KINDS = {"codex", "codex_live_session"}
 DEFAULT_LOCAL_OPENAI_ENDPOINT = "http://127.0.0.1:1234/v1"
-PROBE_MODES = {"none", "local", "bridge"}
+REDACTED_CONFIG_PATH = "[redacted]"
+PROBE_MODES = {"none", "local", "bridge", "api"}
 LOCAL_PROBE_PROVIDER_KINDS = {"local_openai_compatible"}
 BRIDGE_PROBE_PROVIDER_KINDS = {"remote_http_bridge"}
+API_PROBE_PROVIDER_KINDS = {"anthropic", "gemini", "grok"}
 LOOPBACK_HOSTS = {"localhost"}
 
 ProbeRequester = Callable[[str, float], dict[str, object]]
 BridgeProbeRequester = Callable[[str, dict[str, str], float], dict[str, object]]
+ApiProbeRequester = Callable[[str, dict[str, str], float], dict[str, object]]
 
 
 class BridgeProbeError(Exception):
+    def __init__(self, kind: str) -> None:
+        super().__init__(kind)
+        self.kind = kind
+
+
+class ApiProbeError(Exception):
     def __init__(self, kind: str) -> None:
         super().__init__(kind)
         self.kind = kind
@@ -47,10 +56,11 @@ def provider_health_report(
     probe_mode: str = "none",
     probe_requester: ProbeRequester | None = None,
     bridge_probe_requester: BridgeProbeRequester | None = None,
+    api_probe_requester: ApiProbeRequester | None = None,
     probe_timeout_seconds: float = 2.0,
 ) -> dict[str, object]:
     if probe_mode not in PROBE_MODES:
-        raise ValueError("Provider health probe_mode must be 'none', 'local', or 'bridge'.")
+        raise ValueError("Provider health probe_mode must be 'none', 'local', 'bridge', or 'api'.")
     try:
         probe_timeout = float(probe_timeout_seconds)
     except (TypeError, ValueError) as error:
@@ -60,6 +70,7 @@ def provider_health_report(
     resolver = command_resolver or _resolve_command_path
     requester = probe_requester or _request_probe_json
     bridge_requester = bridge_probe_requester or _request_bridge_probe_json
+    api_requester = api_probe_requester or _request_api_probe_json
     try:
         data = load_agent_runtime_config(config_path)
         if not isinstance(data, dict):
@@ -67,8 +78,8 @@ def provider_health_report(
         providers = providers_from_config(data)
         permissions = permissions_from_config(data)
         bindings = agent_bindings_from_config(data)
-    except Exception as error:
-        return _failed_config_report(config_path, str(error), probe_mode=probe_mode)
+    except Exception:
+        return _failed_config_report(probe_mode=probe_mode)
 
     registry = default_provider_registry()
     catalog = {entry["kind"]: entry for entry in registry.catalog()}
@@ -84,6 +95,7 @@ def provider_health_report(
             probe_mode=probe_mode,
             probe_requester=requester,
             bridge_probe_requester=bridge_requester,
+            api_probe_requester=api_requester,
             probe_timeout_seconds=probe_timeout,
         )
         for provider in providers.values()
@@ -97,7 +109,7 @@ def provider_health_report(
     status = "failed" if summary["checks_failed"] else "degraded" if summary["warnings"] else "ok"
     return {
         "status": status,
-        "config_path": str(config_path),
+        "config_path": REDACTED_CONFIG_PATH,
         "probe_mode": probe_mode,
         "summary": summary,
         "checks": top_checks,
@@ -106,10 +118,10 @@ def provider_health_report(
     }
 
 
-def _failed_config_report(config_path: Path, message: str, *, probe_mode: str = "none") -> dict[str, object]:
+def _failed_config_report(*, probe_mode: str = "none") -> dict[str, object]:
     return {
         "status": "failed",
-        "config_path": str(config_path),
+        "config_path": REDACTED_CONFIG_PATH,
         "probe_mode": probe_mode,
         "summary": {
             "providers": 0,
@@ -119,7 +131,7 @@ def _failed_config_report(config_path: Path, message: str, *, probe_mode: str = 
             "checks_failed": 1,
             "warnings": 0,
         },
-        "checks": [{"id": "config_load", "status": "failed", "message": message}],
+        "checks": [{"id": "config_load", "status": "failed", "message": "Agent runtime config could not be loaded."}],
         "providers": [],
         "bindings": [],
     }
@@ -178,6 +190,7 @@ def _provider_report(
     probe_mode: str,
     probe_requester: ProbeRequester,
     bridge_probe_requester: BridgeProbeRequester,
+    api_probe_requester: ApiProbeRequester,
     probe_timeout_seconds: float,
 ) -> dict[str, object]:
     checks: list[dict[str, object]] = [
@@ -190,6 +203,8 @@ def _provider_report(
         checks.append(_local_probe_check(provider, probe_requester, probe_timeout_seconds))
     elif probe_mode == "bridge":
         checks.append(_bridge_probe_check(provider, bridge_probe_requester, probe_timeout_seconds))
+    elif probe_mode == "api":
+        checks.append(_api_probe_check(provider, api_probe_requester, probe_timeout_seconds))
     status = _status_from_checks(checks)
     command_path = ""
     for check in checks:
@@ -508,6 +523,10 @@ def _bridge_health_url(endpoint: str) -> str | None:
 
 
 def _resolve_bridge_probe_auth_ref(auth_ref: object) -> str | None:
+    return _resolve_probe_auth_ref(auth_ref)
+
+
+def _resolve_probe_auth_ref(auth_ref: object) -> str | None:
     if not isinstance(auth_ref, str) or not auth_ref:
         return None
     if _is_redacted_auth_placeholder(auth_ref):
@@ -523,6 +542,186 @@ def _resolve_bridge_probe_auth_ref(auth_ref: object) -> str | None:
             return None
         return value
     return auth_ref
+
+
+def _api_probe_check(
+    provider: ProviderConfig,
+    requester: ApiProbeRequester,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    if not isinstance(provider.kind, str):
+        return {"id": "api_probe", "status": "ok", "message": "API probe skipped until provider kind is valid."}
+    if provider.kind not in API_PROBE_PROVIDER_KINDS:
+        return {
+            "id": "api_probe",
+            "status": "ok",
+            "message": "API probe is not applicable for this provider kind.",
+        }
+    if provider.endpoint is not None and not isinstance(provider.endpoint, str):
+        return {"id": "api_probe", "status": "failed", "message": "Endpoint must be a string."}
+    token = _resolve_probe_auth_ref(provider.auth_ref)
+    if not token:
+        return {
+            "id": "api_probe",
+            "status": "failed",
+            "message": "API probe requires an available auth_ref.",
+        }
+    probe_request = _api_models_probe_request(provider, token)
+    if probe_request is None:
+        return {
+            "id": "api_probe",
+            "status": "failed",
+            "message": "API probe requires the official provider HTTPS models endpoint without userinfo, query, or fragment.",
+        }
+    url, headers = probe_request
+    try:
+        payload = requester(url, headers, timeout_seconds)
+    except ApiProbeError as error:
+        if error.kind == "auth":
+            return {
+                "id": "api_probe",
+                "status": "failed",
+                "message": "API model list endpoint rejected authentication.",
+            }
+        return {
+            "id": "api_probe",
+            "status": "failed",
+            "message": "API model list endpoint is unreachable.",
+        }
+    except Exception:
+        return {
+            "id": "api_probe",
+            "status": "failed",
+            "message": "API model list endpoint is unreachable.",
+        }
+    models = _model_list_from_probe_payload(payload)
+    if models is None:
+        return {
+            "id": "api_probe",
+            "status": "failed",
+            "message": "API model list endpoint did not return a model list.",
+        }
+    if not models:
+        return {
+            "id": "api_probe",
+            "status": "failed",
+            "message": "API model list endpoint returned no models.",
+            "models": 0,
+        }
+    configured_model = str(provider.default_model or "").strip()
+    configured_model_available = (
+        _model_list_contains_configured_model(models, configured_model)
+        if configured_model
+        else None
+    )
+    check: dict[str, object] = {
+        "id": "api_probe",
+        "status": "ok",
+        "message": "API model list endpoint is reachable.",
+        "models": len(models),
+    }
+    if configured_model:
+        check["configured_model"] = configured_model
+        check["configured_model_available"] = bool(configured_model_available)
+        if not configured_model_available:
+            check["status"] = "warning"
+            check["message"] = "API model list endpoint is reachable, but configured model was not listed."
+    return check
+
+
+def _api_models_probe_request(provider: ProviderConfig, token: str) -> tuple[str, dict[str, str]] | None:
+    if provider.kind == "anthropic":
+        url = _official_models_url(provider.endpoint, host="api.anthropic.com", versions={"v1"})
+        if url is None:
+            return None
+        return (
+            url,
+            {
+                "Accept": "application/json",
+                "x-api-key": token,
+                "anthropic-version": "2023-06-01",
+            },
+        )
+    if provider.kind == "gemini":
+        url = _official_models_url(
+            provider.endpoint,
+            host="generativelanguage.googleapis.com",
+            versions={"v1", "v1beta"},
+            default_version="v1beta",
+        )
+        if url is None:
+            return None
+        return (url, {"Accept": "application/json", "x-goog-api-key": token})
+    if provider.kind == "grok":
+        url = _official_models_url(provider.endpoint, host="api.x.ai", versions={"v1"})
+        if url is None:
+            return None
+        return (url, {"Accept": "application/json", "Authorization": f"Bearer {token}"})
+    return None
+
+
+def _official_models_url(
+    endpoint: str | None,
+    *,
+    host: str,
+    versions: set[str],
+    default_version: str = "v1",
+) -> str | None:
+    if not endpoint:
+        return f"https://{host}/{default_version}/models"
+    parsed = urlsplit(endpoint)
+    if parsed.scheme != "https" or parsed.hostname != host:
+        return None
+    if parsed.username or parsed.password or parsed.query or parsed.fragment or _parsed_url_has_port(parsed):
+        return None
+    version = _official_endpoint_version(parsed.path, versions)
+    if version is None:
+        return None
+    return urlunsplit(("https", host, f"/{version}/models", "", ""))
+
+
+def _official_endpoint_version(path: str, versions: set[str]) -> str | None:
+    parts = [part for part in path.split("/") if part]
+    if not parts:
+        return None
+    version = parts[0]
+    if version not in versions:
+        return None
+    if len(parts) == 1:
+        return version
+    if len(parts) == 2 and parts[1] == "models":
+        return version
+    return None
+
+
+def _parsed_url_has_port(parsed: object) -> bool:
+    try:
+        return getattr(parsed, "port") is not None
+    except ValueError:
+        return True
+
+
+def _model_list_contains_configured_model(models: list[object], configured_model: str) -> bool:
+    model_ids: set[str] = set()
+    for model in models:
+        if isinstance(model, dict):
+            for key in ("id", "name", "model"):
+                value = str(model.get(key) or "").strip()
+                if value:
+                    model_ids.add(value)
+                    if value.startswith("models/"):
+                        model_ids.add(value.removeprefix("models/"))
+                    else:
+                        model_ids.add(f"models/{value}")
+        elif isinstance(model, str):
+            value = model.strip()
+            if value:
+                model_ids.add(value)
+                if value.startswith("models/"):
+                    model_ids.add(value.removeprefix("models/"))
+                else:
+                    model_ids.add(f"models/{value}")
+    return configured_model in model_ids or f"models/{configured_model}" in model_ids
 
 
 def _request_bridge_probe_json(url: str, headers: dict[str, str], timeout_seconds: float) -> dict[str, object]:
@@ -544,6 +743,37 @@ def _request_bridge_probe_json(url: str, headers: dict[str, str], timeout_second
             raise BridgeProbeError("auth")
         if response.status != 200:
             raise BridgeProbeError("unreachable")
+    finally:
+        connection.close()
+    payload = json.loads(data.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("response JSON is not an object")
+    return payload
+
+
+def _request_api_probe_json(url: str, headers: dict[str, str], timeout_seconds: float) -> dict[str, object]:
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError("API probe URL is not an approved HTTPS URL")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment or _parsed_url_has_port(parsed):
+        raise ValueError("API probe URL includes disallowed URL components")
+    allowed_paths = {
+        "api.anthropic.com": {"/v1/models"},
+        "generativelanguage.googleapis.com": {"/v1/models", "/v1beta/models"},
+        "api.x.ai": {"/v1/models"},
+    }
+    if parsed.path.rstrip("/") not in allowed_paths.get(parsed.hostname, set()):
+        raise ValueError("API probe URL path is not an approved models endpoint")
+
+    connection = HTTPSConnection(parsed.hostname, timeout=timeout_seconds)
+    try:
+        connection.request("GET", parsed.path or "/", headers=headers)
+        response = connection.getresponse()
+        data = response.read(1_000_000)
+        if response.status in {401, 403}:
+            raise ApiProbeError("auth")
+        if response.status != 200:
+            raise ApiProbeError("unreachable")
     finally:
         connection.close()
     payload = json.loads(data.decode("utf-8"))

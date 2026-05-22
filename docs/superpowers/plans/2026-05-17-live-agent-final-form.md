@@ -5067,6 +5067,36 @@ Review checkpoint completion now renders deterministic Markdown and JSON artifac
 
 ---
 
+## Task 149: Explicit API Credential Model-List Probe
+
+**Goal:** Let an operator explicitly verify real Anthropic, Gemini, and Grok API credentials against provider model-list endpoints without starting a meeting, sending prompts, executing provider commands, or treating the result as generation readiness.
+
+**Files:**
+- Modify: `agentsassemble/provider_health.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/provider-architecture.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_provider_health.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED API probe coverage**
+
+Cover `providers health --probe api`, injected API requester calls for Anthropic, Gemini, and Grok official model-list endpoints, `probe_mode: none` staying API-network-free, non-API provider skips, redacted/missing auth refusing before network access, prompt endpoint and non-official endpoint rejection without leaking auth or endpoint query details, and direct report/GUI payload redaction for local config paths and loader details.
+
+- [x] **Step 2: Implement model-list-only API probe mode**
+
+Add `probe_mode: api` while preserving `none` as the default. Only `anthropic`, `gemini`, and `grok` providers are probed. The probe reads `auth_ref` only inside this explicit mode, sends HTTPS `GET` requests only to official model-list endpoints, uses provider-specific auth headers, follows no redirects or environment proxies, rejects endpoint userinfo/query/fragment/custom hosts and prompt endpoints before network access, redacts config path and loader details at the provider-health report source, and reports only generic status, model count, and configured-model availability.
+
+- [x] **Step 3: Document the operator contract**
+
+Document that `--probe api` does not call Messages, generateContent, chat/completions, or any prompt-bearing endpoint. It proves only credentialed model-list reachability, not generation quality, prompt compliance, live resident readiness, CLI login, billing sufficiency, web access, tool access, or future prompt calls.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -16085,8 +16085,10 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(payload["status"], "ok")
             self.assertEqual(payload["probe_mode"], "local")
+            self.assertEqual(payload["config_path"], "[redacted]")
             self.assertEqual(payload["summary"]["providers"], 1)
             self.assertEqual(payload["providers"][0]["provider_id"], "mock-provider")
+            self.assertNotIn(str(config_path), json.dumps(payload, ensure_ascii=False))
 
     def test_provider_health_endpoint_redacts_sensitive_config_failure_payload(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -16184,6 +16186,48 @@ class GuiServerTests(unittest.TestCase):
             provider_health.assert_called_once_with(
                 config_path,
                 probe_mode="bridge",
+                probe_timeout_seconds=0.75,
+            )
+
+    def test_provider_health_endpoint_forwards_api_probe_options(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "agents.json"
+            config_path.write_text("{}", encoding="utf-8")
+            report = {
+                "status": "ok",
+                "probe_mode": "api",
+                "summary": {"providers": 0, "failed_providers": 0, "bindings": 0, "failed_bindings": 0, "checks_failed": 0, "warnings": 0},
+                "providers": [],
+                "bindings": [],
+            }
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/provider-health",
+                    data=json.dumps(
+                        {
+                            "config_path": str(config_path),
+                            "probe_mode": "api",
+                            "probe_timeout_seconds": 0.75,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch("agentsassemble.gui.provider_health_report", return_value=report) as provider_health:
+                    with urlopen(request, timeout=4) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["probe_mode"], "api")
+            provider_health.assert_called_once_with(
+                config_path,
+                probe_mode="api",
                 probe_timeout_seconds=0.75,
             )
 
