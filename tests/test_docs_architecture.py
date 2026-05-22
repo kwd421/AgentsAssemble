@@ -135,6 +135,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("GUI `상주 실행` panel reads `/api/live-agent-health`", doc)
         self.assertIn("meeting-owned session readiness", doc)
         self.assertIn("binding-compatible rather than id-only", doc)
+        self.assertIn("binding_provider_missing", doc)
         self.assertIn("connection_kind_mismatch", doc)
         self.assertIn("active/total durable session-runs", doc)
         self.assertIn("process monitor liveness evidence in `process_monitor`", doc)

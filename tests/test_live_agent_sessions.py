@@ -18,6 +18,7 @@ from agentsassemble.live_agent_sessions import (
     session_ensure_action,
 )
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
+from agentsassemble.meeting_events import write_live_state
 
 
 class FakeSessionSupervisor:
@@ -185,6 +186,57 @@ class LiveAgentSessionReadinessSummaryTests(unittest.TestCase):
         self.assertEqual(summary["items"][0]["connected"], 0)
         self.assertEqual(summary["items"][0]["connection_attention"], ["agent-a:provider_kind_mismatch"])
 
+    def test_session_summary_degrades_binding_with_missing_provider_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            result = start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            meeting = dict(result["meeting"])
+            meeting["agent_bindings"] = [
+                {
+                    "role_id": "architect",
+                    "agent_id": "agent-a",
+                    "provider_id": "missing-provider",
+                }
+            ]
+            meeting["provider_configs"] = {}
+            write_live_state(root / "meetings" / "resident-m1", meeting)
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            summary = live_agent_session_readiness_summary(
+                root,
+                [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                            }
+                        ],
+                    }
+                ],
+            )
+
+        self.assertEqual(summary["total"], 1)
+        self.assertEqual(summary["ready"], 0)
+        self.assertEqual(summary["degraded"], 1)
+        self.assertEqual(summary["attention"], ["resident-m1:resident-main:agent-a:binding_provider_missing"])
+        self.assertEqual(summary["items"][0]["expected"], 1)
+        self.assertEqual(summary["items"][0]["connected"], 0)
+        self.assertEqual(summary["items"][0]["connection_attention"], ["agent-a:binding_provider_missing"])
+        payload_blob = json.dumps(summary, ensure_ascii=False)
+        self.assertNotIn("missing-provider", payload_blob)
+
     def test_check_session_degrades_duplicate_active_meeting_group(self):
         class DuplicateSupervisor:
             def snapshot_groups(self):
@@ -224,6 +276,61 @@ class LiveAgentSessionReadinessSummaryTests(unittest.TestCase):
 
         self.assertEqual(session["status"], "degraded")
         self.assertEqual(session["ownership"]["attention"], ["meeting:duplicate_active_group"])
+
+    def test_check_session_degrades_binding_with_missing_provider_config(self):
+        class CheckSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                            }
+                        ],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            result = start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            meeting = dict(result["meeting"])
+            meeting["agent_bindings"] = [
+                {
+                    "role_id": "architect",
+                    "agent_id": "agent-a",
+                    "provider_id": "missing-provider",
+                }
+            ]
+            meeting["provider_configs"] = {}
+            write_live_state(root / "meetings" / "resident-m1", meeting)
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            session = check_live_agent_session(
+                root,
+                CheckSupervisor(),
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+        self.assertEqual(session["status"], "degraded")
+        self.assertEqual(session["process"]["attention"], [])
+        self.assertEqual(session["connection"]["connected"], 0)
+        self.assertEqual(session["connection"]["attention"], ["agent-a:binding_provider_missing"])
+        self.assertEqual(session["ownership"]["attention"], [])
+        payload_blob = json.dumps(session, ensure_ascii=False)
+        self.assertNotIn("missing-provider", payload_blob)
 
 
 class LiveAgentSessionStartTests(unittest.TestCase):
@@ -1060,6 +1167,50 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(supervisor.started, [])
             meeting = json.loads((root / "meetings" / "resident-m1" / "live_state.json").read_text(encoding="utf-8"))
             self.assertEqual(meeting["meeting_id"], "resident-m1")
+
+    def test_resume_session_refuses_binding_with_missing_provider_config(self):
+        class NoProcessSupervisor:
+            def list_groups(self):
+                raise AssertionError("resume must fail before reading process groups")
+
+            def start_group(self, **kwargs):
+                raise AssertionError("resume must fail before starting a group")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(root, ["agent-a"])
+            result = start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            meeting = dict(result["meeting"])
+            meeting["agent_bindings"] = [
+                {
+                    "role_id": "architect",
+                    "agent_id": "agent-a",
+                    "provider_id": "missing-provider",
+                }
+            ]
+            meeting["provider_configs"] = {}
+            write_live_state(root / "meetings" / "resident-m1", meeting)
+
+            with self.assertRaises(ValueError) as raised:
+                resume_live_agent_session(
+                    root,
+                    NoProcessSupervisor(),
+                    server="http://127.0.0.1:8765",
+                    live_agent_config_path=live_agent_config,
+                    meeting_id="resident-m1",
+                    group_id="resident-main",
+                    preflight_checker=lambda *args, **kwargs: {"status": "ok"},
+                )
+
+        self.assertIn("binding_provider_missing", str(raised.exception))
+        self.assertNotIn("missing-provider", str(raised.exception))
 
     def test_resume_session_requires_presence_after_reused_process_start(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1940,6 +2091,68 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(session["connection"]["connected"], 2)
             self.assertTrue((root / "meetings" / "resident-m1" / "live_state.json").exists())
 
+    def test_restart_session_refuses_binding_with_missing_provider_config_before_mutating_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            result = start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            meeting = dict(result["meeting"])
+            meeting["agent_bindings"] = [
+                {
+                    "role_id": "architect",
+                    "agent_id": "agent-a",
+                    "provider_id": "missing-provider",
+                }
+            ]
+            meeting["provider_configs"] = {}
+            write_live_state(root / "meetings" / "resident-m1", meeting)
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RestartSupervisor:
+                def __init__(self) -> None:
+                    self.stopped = []
+                    self.restarted = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "running",
+                            "meeting_id": "resident-m1",
+                            "agents": [
+                                {
+                                    "agent_id": "agent-a",
+                                    "provider_kind": "local_cli",
+                                    "connection_kind": "local_cli",
+                                }
+                            ],
+                        }
+                    ]
+
+                def stop_group(self, group_id):
+                    self.stopped.append(group_id)
+                    raise AssertionError("restart must fail before stopping the group")
+
+                def restart_group(self, group_id):
+                    self.restarted.append(group_id)
+                    raise AssertionError("restart must fail before restarting the group")
+
+            supervisor = RestartSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                restart_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+        self.assertIn("binding_provider_missing", str(raised.exception))
+        self.assertNotIn("missing-provider", str(raised.exception))
+        self.assertEqual(supervisor.stopped, [])
+        self.assertEqual(supervisor.restarted, [])
+
     def test_restart_session_stops_restarting_group_before_clearing_presence(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -2586,6 +2799,62 @@ class LiveAgentSessionStartTests(unittest.TestCase):
             self.assertEqual(session["connection"]["attention"], ["agent-a:offline"])
             agents = {agent["agent_id"]: agent for agent in read_live_agents(root)}
             self.assertEqual(agents["agent-a"]["status"], "offline")
+
+    def test_recover_session_refuses_binding_with_missing_provider_config_before_mutating_group(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            result = start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+            meeting = dict(result["meeting"])
+            meeting["agent_bindings"] = [
+                {
+                    "role_id": "architect",
+                    "agent_id": "agent-a",
+                    "provider_id": "missing-provider",
+                }
+            ]
+            meeting["provider_configs"] = {}
+            write_live_state(root / "meetings" / "resident-m1", meeting)
+            heartbeat_live_agent(root, "agent-a", status="online")
+
+            class RecoverSupervisor:
+                def __init__(self) -> None:
+                    self.recovered = []
+
+                def snapshot_groups(self):
+                    return [
+                        {
+                            "group_id": "resident-main",
+                            "status": "unknown",
+                            "meeting_id": "resident-m1",
+                            "agents": [
+                                {
+                                    "agent_id": "agent-a",
+                                    "provider_kind": "local_cli",
+                                    "connection_kind": "local_cli",
+                                }
+                            ],
+                        }
+                    ]
+
+                def recover_group(self, group_id):
+                    self.recovered.append(group_id)
+                    raise AssertionError("recover must fail before recovering the group")
+
+            supervisor = RecoverSupervisor()
+
+            with self.assertRaises(ValueError) as raised:
+                recover_live_agent_session(root, supervisor, meeting_id="resident-m1", group_id="resident-main")
+
+        self.assertIn("binding_provider_missing", str(raised.exception))
+        self.assertNotIn("missing-provider", str(raised.exception))
+        self.assertEqual(supervisor.recovered, [])
 
     def test_recover_session_reports_ready_only_after_recovered_agents_heartbeat(self):
         with tempfile.TemporaryDirectory() as temp_dir:

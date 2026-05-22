@@ -5241,6 +5241,37 @@ Operator docs and roadmap now state that health admission evidence is read-only,
 
 ---
 
+## Task 155: Enforce Binding Provider Presence In Session Readiness
+
+**Goal:** Prevent a resident session from looking ready when a meeting binding still names an agent but the binding's provider config is missing, so host-approved resident participation cannot be inferred from agent id and heartbeat alone.
+
+**Files:**
+- Modify: `agentsassemble/live_agent_sessions.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_live_agent_sessions.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED session-readiness coverage**
+
+Cover `/api/live-agent-sessions/readiness` with a live meeting whose `agent_bindings` reference a missing provider id while a same-id live-agent row is online and the resident process manifest matches. The test first failed because readiness returned `ready`, proving the bug was at the shared readiness decision point rather than only in presentation.
+
+- [x] **Step 2: Degrade missing-provider bindings at the shared decision point**
+
+Expected meeting agents now carry safe `binding_provider_missing` attention when a binding has no resolvable provider config. Mutating resume/restart/recover paths refuse before process inspection or mutation, including historical groups without persisted config paths; persisted manifest validation also refuses such a resident config. Check/readiness connection snapshots stay read-only, keep the agent expected, and count it disconnected with `agent-a:binding_provider_missing` instead of trusting the heartbeat.
+
+- [x] **Step 3: Add module and health evidence**
+
+Direct `live_agent_session_readiness_summary()` and `check_live_agent_session()` tests now cover the same missing-provider case, and `/api/live-agent-health` session readiness reports the safe attention without exposing the missing provider id or appending operation history.
+
+- [x] **Step 4: Keep docs aligned with operator evidence**
+
+Operator docs and roadmap now state that session readiness requires each bound agent's provider config to remain resolvable, and that `binding_provider_missing` is safe connection attention rather than a leaked provider id.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

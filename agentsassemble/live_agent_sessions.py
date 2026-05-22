@@ -28,6 +28,7 @@ SESSION_AGENT_ATTENTION_STATUSES = frozenset(
         "error",
         "provider_kind_mismatch",
         "connection_kind_mismatch",
+        "binding_provider_missing",
         "not_in_group",
         "extra_in_group",
         "duplicate_in_group",
@@ -187,6 +188,7 @@ def resume_live_agent_session(
     meeting_dir = _existing_meeting_dir(output_root, clean_meeting_id)
     meeting = _read_existing_meeting(meeting_dir)
     expected_agents = _expected_agents_from_meeting(meeting)
+    _validate_expected_agent_bindings(expected_agents, action="resume")
     expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
 
     preflight = (preflight_checker or preflight_live_agent_config)(
@@ -512,6 +514,7 @@ def restart_live_agent_session(
     meeting_dir = _existing_meeting_dir(output_root, clean_meeting_id)
     meeting = _read_existing_meeting(meeting_dir)
     expected_agents = _expected_agents_from_meeting(meeting)
+    _validate_expected_agent_bindings(expected_agents, action="restart")
     expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
     existing_group = _validate_restart_group_matches_meeting(
         process_supervisor,
@@ -587,6 +590,7 @@ def recover_live_agent_session(
     meeting_dir = _existing_meeting_dir(output_root, clean_meeting_id)
     meeting = _read_existing_meeting(meeting_dir)
     expected_agents = _expected_agents_from_meeting(meeting)
+    _validate_expected_agent_bindings(expected_agents, action="recover")
     expected_agent_ids = [agent["agent_id"] for agent in expected_agents]
     existing_group = _validate_recover_group_matches_meeting(
         process_supervisor,
@@ -720,7 +724,10 @@ def _expected_agents_from_meeting(meeting: dict[str, object]) -> list[dict[str, 
         provider = providers.get(provider_id) if isinstance(providers, dict) else None
         provider_kind = str(provider.get("kind") or "") if isinstance(provider, dict) else ""
         if agent_id:
-            agents.append({"agent_id": agent_id, "provider_kind": provider_kind})
+            agent = {"agent_id": agent_id, "provider_kind": provider_kind}
+            if not provider_id or not isinstance(provider, dict):
+                agent["binding_attention"] = "binding_provider_missing"
+            agents.append(agent)
     if not agents:
         raise ValueError("Meeting has no bound live agents to resume.")
     return agents
@@ -742,6 +749,12 @@ def _validate_resident_manifest(configs: object, expected_agents: list[dict[str,
         raise ValueError(f"Resident group config does not match meeting agents: extra {', '.join(extra_agent_ids)}.")
     for expected in expected_agents:
         agent_id = expected["agent_id"]
+        binding_attention = _expected_agent_binding_attention(expected)
+        if binding_attention:
+            raise ValueError(
+                "Resident group config does not match meeting agents: "
+                f"{agent_id} has {binding_attention}."
+            )
         config = configs_by_id[agent_id]
         expected_provider_kind = expected["provider_kind"]
         actual_provider_kind = str(getattr(config, "provider_kind", "") or "")
@@ -758,6 +771,22 @@ def _validate_resident_manifest(configs: object, expected_agents: list[dict[str,
                 "Resident group config connection_kind mismatch for "
                 f"{agent_id}: expected one of {expected_kinds}, got {actual_connection_kind or 'blank'}."
             )
+
+
+def _validate_expected_agent_bindings(expected_agents: list[dict[str, str]], *, action: str) -> None:
+    attention = []
+    for expected in expected_agents:
+        binding_attention = _expected_agent_binding_attention(expected)
+        if not binding_attention:
+            continue
+        agent_id = clean_lobby_text(expected.get("agent_id"), limit=64) or "unknown"
+        attention.append(f"{agent_id}:{binding_attention}")
+    if attention:
+        clean_action = clean_lobby_text(action, limit=32) or "use"
+        raise ValueError(
+            "Meeting bindings are not valid enough to "
+            f"{clean_action} resident agents: {', '.join(attention)}."
+        )
 
 
 def _allowed_resident_connection_kinds(provider_kind: str) -> frozenset[str]:
@@ -1149,6 +1178,9 @@ def _agent_binding_compatibility_attention(
     expected_agent: dict[str, str],
     manifest_agent: dict[str, object],
 ) -> str:
+    binding_attention = _expected_agent_binding_attention(expected_agent)
+    if binding_attention:
+        return binding_attention
     manifest_provider_kind = clean_lobby_text(manifest_agent.get("provider_kind"), limit=64)
     if manifest_provider_kind and clean_lobby_text(agent.get("provider_kind"), limit=64) != manifest_provider_kind:
         return "provider_kind_mismatch"
@@ -1166,6 +1198,11 @@ def _agent_binding_compatibility_attention(
     if connection_kind not in _allowed_resident_connection_kinds(expected_provider_kind):
         return "connection_kind_mismatch"
     return ""
+
+
+def _expected_agent_binding_attention(expected_agent: dict[str, str]) -> str:
+    attention = clean_lobby_text(expected_agent.get("binding_attention"), limit=64)
+    return attention if attention == "binding_provider_missing" else ""
 
 
 def _agent_last_seen_before_process_start(agent: dict[str, object], group: dict[str, object]) -> bool:

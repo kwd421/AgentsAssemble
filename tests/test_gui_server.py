@@ -6041,6 +6041,68 @@ class GuiServerTests(unittest.TestCase):
         self.assertNotIn("meeting-diagnostic", session_blob)
         self.assertNotIn("manual-no-meeting", session_blob)
 
+    def test_live_agent_health_session_readiness_degrades_missing_binding_provider_config(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                            }
+                        ],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "resident-m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "resident-m1",
+                    "agent_bindings": [
+                        {
+                            "role_id": "architect",
+                            "agent_id": "agent-a",
+                            "provider_id": "missing-provider",
+                        }
+                    ],
+                    "provider_configs": {},
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "status": "online",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["sessions"]["ready"], 0)
+        self.assertEqual(payload["sessions"]["degraded"], 1)
+        self.assertEqual(payload["sessions"]["attention"], ["resident-m1:resident-main:agent-a:binding_provider_missing"])
+        self.assertEqual(payload["sessions"]["items"][0]["connected"], 0)
+        self.assertEqual(payload["sessions"]["items"][0]["connection_attention"], ["agent-a:binding_provider_missing"])
+        self.assertEqual(payload["connections"]["connected"], 1)
+        self.assertEqual(payload["connections"]["attention"], [])
+        self.assertEqual(payload["admission"]["attention"], ["resident-m1:agent-a:meeting_missing"])
+        payload_blob = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("missing-provider", payload_blob)
+
     def test_live_agent_health_marks_owned_group_with_missing_meeting_degraded(self):
         class FakeSupervisor:
             def __init__(self):
@@ -11340,6 +11402,77 @@ class GuiServerTests(unittest.TestCase):
             payload_blob = json.dumps(session_payload, ensure_ascii=False)
             self.assertNotIn("/private/live-agents.json", payload_blob)
             self.assertNotIn("secret provider output", payload_blob)
+
+    def test_live_agent_session_readiness_degrades_when_binding_provider_is_missing(self):
+        class ReadinessSessionSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "provider_kind": "local_cli",
+                                "connection_kind": "local_cli",
+                            }
+                        ],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "resident-m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "resident-m1",
+                    "agent_bindings": [
+                        {
+                            "role_id": "architect",
+                            "agent_id": "agent-a",
+                            "provider_id": "missing-provider",
+                        }
+                    ],
+                    "provider_configs": {},
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, process_supervisor=ReadinessSessionSupervisor()),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/readiness?meeting_id=resident-m1&group_id=resident-main",
+                    timeout=4,
+                ) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(session_payload["status"], "degraded")
+        self.assertEqual(session_payload["connection"]["connected"], 0)
+        self.assertEqual(session_payload["connection"]["attention"], ["agent-a:binding_provider_missing"])
+        self.assertEqual(operations["operations"], [])
+        payload_blob = json.dumps(session_payload, ensure_ascii=False)
+        self.assertNotIn("missing-provider", payload_blob)
 
     def test_live_agent_session_readiness_endpoint_returns_degraded_missing_group_without_operation_record(self):
         class ReadinessSessionSupervisor:
