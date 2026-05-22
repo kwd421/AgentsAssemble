@@ -11063,6 +11063,138 @@ class GuiServerTests(unittest.TestCase):
             agents = {agent["agent_id"]: agent for agent in read_live_agents(root) if agent.get("meeting_id") == meeting_id}
             self.assertEqual({agents[agent_id]["status"] for agent_id in ("agent-a", "agent-b", "agent-c")}, {"offline"})
 
+    def test_start_session_codex_live_fake_cli_preserves_sessions_through_remaining_rounds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            bin_dir = Path(temp_dir) / "bin"
+            bin_dir.mkdir()
+            fake_codex_log = Path(temp_dir) / "fake-codex.jsonl"
+            _write_fake_codex_executable(bin_dir / "codex")
+            supervisor = LiveAgentProcessSupervisor(root)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            meeting_id = "codex-live-fake-complete"
+            group_id = "codex-live-fake-complete"
+            restart_payload = {}
+            stop_payload = {}
+            env = {
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+                "AGENTSASSEMBLE_FAKE_CODEX_LOG": str(fake_codex_log),
+            }
+            try:
+                with patch.dict(os.environ, env, clear=False):
+                    start_request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/start",
+                        data=json.dumps(
+                            {
+                                "meeting_id": meeting_id,
+                                "group_id": group_id,
+                                "council_config_path": "configs/demo-council.json",
+                                "agent_config_path": "configs/codex-live-session.example.json",
+                                "live_agent_config_path": "configs/live-agents.codex-session.example.json",
+                                "connect_timeout_seconds": 8,
+                                "run_remaining_rounds": True,
+                                "round_timeout_seconds": 12,
+                                "round_max_rounds": 1,
+                                "round_stop_on_timeout": True,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(start_request, timeout=80) as response:
+                        session_payload = json.loads(response.read().decode("utf-8"))
+                    restart_request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/restart",
+                        data=json.dumps(
+                            {
+                                "meeting_id": meeting_id,
+                                "group_id": group_id,
+                                "connect_timeout_seconds": 8,
+                                "run_remaining_rounds": True,
+                                "round_timeout_seconds": 12,
+                                "round_max_rounds": 2,
+                                "round_stop_on_timeout": True,
+                                "finalize_after_rounds": True,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(restart_request, timeout=80) as response:
+                        restart_payload = json.loads(response.read().decode("utf-8"))
+                    stop_request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/stop",
+                        data=json.dumps({"meeting_id": meeting_id, "group_id": group_id}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(stop_request, timeout=12) as response:
+                        stop_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                if not stop_payload:
+                    try:
+                        cleanup_request = Request(
+                            f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/stop",
+                            data=json.dumps({"meeting_id": meeting_id, "group_id": group_id}).encode("utf-8"),
+                            headers={"Content-Type": "application/json"},
+                            method="POST",
+                        )
+                        with urlopen(cleanup_request, timeout=12) as response:
+                            response.read()
+                    except Exception:
+                        pass
+                supervisor.close()
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(session_payload["status"], "ready")
+            self.assertEqual(session_payload["connection"]["expected"], 3)
+            self.assertEqual(session_payload["connection"]["connected"], 3)
+            self.assertEqual(session_payload["auto_rounds"]["status"], "answered")
+            self.assertEqual(session_payload["auto_rounds"]["round_count"], 1)
+            self.assertEqual(session_payload["auto_rounds"]["answered_round_count"], 1)
+            self.assertEqual(restart_payload["status"], "ready")
+            self.assertEqual(restart_payload["auto_rounds"]["status"], "answered")
+            self.assertEqual(restart_payload["auto_rounds"]["round_count"], 1)
+            self.assertEqual(restart_payload["auto_rounds"]["answered_round_count"], 1)
+            self.assertEqual(restart_payload["finalization"]["status"], "finalized")
+            self.assertEqual(restart_payload["finalization"]["official_event_count"], 6)
+
+            invocations = [
+                json.loads(line)
+                for line in fake_codex_log.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            run_invocations = [entry for entry in invocations if entry["mode"] in {"fresh", "resume"}]
+            self.assertEqual(len(run_invocations), 6)
+            self.assertEqual([entry["mode"] for entry in run_invocations].count("fresh"), 3)
+            self.assertEqual([entry["mode"] for entry in run_invocations].count("resume"), 3)
+            self.assertEqual(
+                {entry["session_id"] for entry in run_invocations if entry["mode"] == "resume"},
+                {
+                    "019e0000-0000-7000-a000-000000000001",
+                    "019e0000-0000-7000-a000-000000000002",
+                    "019e0000-0000-7000-a000-000000000003",
+                },
+            )
+            self.assertTrue(all(entry["sandbox_flags"] == ["--sandbox", "read-only", "--ignore-rules"] for entry in run_invocations))
+
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root) if agent.get("meeting_id") == meeting_id}
+            self.assertEqual(
+                {agents[agent_id]["session_id"] for agent_id in ("codex-live-lore", "codex-live-feats", "codex-live-skeptic")},
+                {
+                    "019e0000-0000-7000-a000-000000000001",
+                    "019e0000-0000-7000-a000-000000000002",
+                    "019e0000-0000-7000-a000-000000000003",
+                },
+            )
+            self.assertEqual({agents[agent_id]["status"] for agent_id in agents}, {"offline"})
+            self.assertEqual(stop_payload["status"], "stopped")
+            self.assertEqual(stop_payload["offline"]["offline"], 3)
+
     def test_live_agent_session_start_probe_failure_skips_auto_rounds_and_records_safe_operation(self):
         class FakeSessionSupervisor:
             def __init__(self, output_root: Path) -> None:
@@ -18622,6 +18754,76 @@ def _write_three_agent_fake_session_configs(council_config: Path, agent_config: 
         ),
         encoding="utf-8",
     )
+
+
+def _write_fake_codex_executable(path: Path) -> None:
+    path.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+
+SESSION_IDS = {
+    "codex-live-lore": "019e0000-0000-7000-a000-000000000001",
+    "codex-live-feats": "019e0000-0000-7000-a000-000000000002",
+    "codex-live-skeptic": "019e0000-0000-7000-a000-000000000003",
+}
+
+
+def sandbox_flags(args):
+    if "exec" not in args:
+        return []
+    index = args.index("exec")
+    return args[index + 1:index + 4]
+
+
+def record(payload):
+    log_path = os.environ.get("AGENTSASSEMBLE_FAKE_CODEX_LOG")
+    if not log_path:
+        return
+    with open(log_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\\n")
+
+
+args = sys.argv[1:]
+if "--help" in args:
+    record({"mode": "help", "sandbox_flags": sandbox_flags(args)})
+    print("Usage: codex exec [OPTIONS] resume --help")
+    raise SystemExit(0)
+
+try:
+    output_path = Path(args[args.index("--output-last-message") + 1])
+except (ValueError, IndexError):
+    print("missing --output-last-message", file=sys.stderr)
+    raise SystemExit(2)
+
+agent_id = output_path.name.removesuffix("-last-message.txt")
+mode = "resume" if "resume" in args else "fresh"
+if mode == "resume":
+    try:
+        session_id = args[args.index("--output-last-message") + 2]
+    except (ValueError, IndexError):
+        session_id = ""
+else:
+    session_id = SESSION_IDS.get(agent_id, "019e0000-0000-7000-a000-000000000099")
+
+output_path.write_text(f"{agent_id} fake Codex {mode} reply", encoding="utf-8")
+record(
+    {
+        "mode": mode,
+        "agent_id": agent_id,
+        "session_id": session_id,
+        "sandbox_flags": sandbox_flags(args),
+    }
+)
+if mode == "fresh":
+    print(json.dumps({"type": "session.started", "session": {"id": session_id}}))
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
 
 
 if __name__ == "__main__":

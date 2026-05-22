@@ -841,6 +841,43 @@ class LiveAgentPreflightTests(unittest.TestCase):
             self.assertTrue(calls[0]["kwargs"]["capture_output"])
             self.assertFalse(calls[0]["kwargs"]["check"])
 
+    def test_codex_capability_probe_failure_names_exit_code_and_probe_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "codex-live",
+                                "provider_kind": "codex_live_session",
+                                "connection_kind": "live_session",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            class Completed:
+                returncode = 2
+                stdout = ""
+                stderr = "unexpected flag"
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/codex" if command == "codex" else None,
+                codex_command_runner=lambda command, **kwargs: Completed(),
+            )
+
+            self.assertEqual(report["status"], "failed")
+            failed_check = next(
+                check for check in report["agents"][0]["checks"] if check["id"] == "codex_exec_safety_flags"
+            )
+            self.assertEqual(failed_check["status"], "failed")
+            self.assertIn("exit 2", failed_check["message"])
+            self.assertIn("codex exec --sandbox read-only --ignore-rules resume --skip-git-repo-check --help", failed_check["message"])
+
     def test_preflight_rejects_codex_live_session_with_non_codex_executable_before_probe(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"

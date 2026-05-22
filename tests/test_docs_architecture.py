@@ -687,6 +687,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("--finalize-after-rounds", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent stop-session", doc)
         self.assertIn("Experimental Codex live session quickstart", doc)
+        self.assertIn("no-model fake Codex lifecycle regression", doc)
         self.assertIn("native Claude Code/Cursor/Antigravity/Grok/Hermes/OpenClaw integrations are not complete", doc)
         self.assertIn("non-Codex local CLI read-only is not a hard OS sandbox", doc)
 
@@ -712,6 +713,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("stateless-prompt", doc)
         self.assertIn("advisory", doc)
         self.assertIn("codex_readonly", doc)
+        self.assertIn("fake `codex` executable", doc)
+        self.assertIn("real Codex smoke", doc)
         self.assertIn("No non-Codex provider is marked native-ready", doc)
 
     def test_live_agent_ops_and_audit_note_record_report_continuation_slice(self):
@@ -724,10 +727,12 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("configs/codex-live-session.example.json", ops)
         self.assertIn("configs/live-agents.codex-session.example.json", ops)
         self.assertIn("moderator_called", ops)
+        self.assertIn("session id continuity through restart", ops)
         self.assertIn("sessions invite <codex-session-id>", ops)
         self.assertNotIn("sessions invite 019e", ops)
         self.assertIn("Report source", audit)
         self.assertIn("What changed", audit)
+        self.assertIn("fake Codex lifecycle regression", audit)
         self.assertIn("What remains incomplete", audit)
 
 

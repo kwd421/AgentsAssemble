@@ -29,11 +29,22 @@ Report source:
   `start-session --run-remaining-rounds --finalize-after-rounds` followed by
   `stop-session`, while keeping `session-smoke --json` documented as the
   stronger diagnostic route.
+- Added a fake Codex lifecycle regression that places a temporary `codex`
+  executable on `PATH`, starts the checked-in three-agent Codex resident config,
+  runs one official round, restarts the resident group, resumes the captured
+  session ids for the remaining round, finalizes, and stops offline without
+  making real model calls.
+- Replaced one-string Codex session id parsing with a shared parser that accepts
+  labeled text and JSONL session event shapes, and improved Codex preflight
+  failures so they report the exit code plus the exact read-only probe command
+  without copying stderr into public output.
 
 ## What remains incomplete
 
 - Real Codex three-agent resident execution still needs an explicit operator run
-  and recorded smoke evidence before claiming real-provider readiness.
+  and recorded smoke evidence before claiming real-provider generation
+  readiness. The fake Codex lifecycle proof verifies local resident plumbing,
+  not account login, model availability, subscription state, or answer quality.
 - Claude Code, Cursor, Antigravity, Grok Build, Hermes, and OpenClaw are not
   provider-native resident connectors yet.
 - Non-Codex local CLI read-only is still advisory until a hard sandbox launcher

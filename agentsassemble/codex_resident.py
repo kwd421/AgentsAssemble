@@ -7,6 +7,8 @@ from pathlib import Path
 from subprocess import TimeoutExpired
 from typing import TYPE_CHECKING, Any
 
+from agentsassemble.codex_session_ids import extract_codex_session_id
+
 if TYPE_CHECKING:
     from agentsassemble.live_agent_runner import ResidentAgentConfig
 
@@ -57,7 +59,7 @@ class CodexResidentCommandRunner:
             raise RuntimeError(f"Codex live session command failed with return code {returncode}.")
         stdout = _text(getattr(completed, "stdout", ""))
         stderr = _text(getattr(completed, "stderr", ""))
-        extracted_session_id = _extract_session_id(stdout + "\n" + stderr)
+        extracted_session_id = extract_codex_session_id(stdout + "\n" + stderr)
         if extracted_session_id:
             self.session_id = extracted_session_id
         message = output_path.read_text(encoding="utf-8") if output_path.exists() else stdout
@@ -114,11 +116,6 @@ def codex_provider_connection_check(provider_kind: str, connection_kind: str) ->
         "status": "failed",
         "message": "codex_live_session residents require live_session connection_kind.",
     }
-
-
-def _extract_session_id(output: str) -> str:
-    match = re.search(r"session id:\s*([0-9a-fA-F-]+)", output)
-    return match.group(1) if match else ""
 
 
 def _text(value: Any) -> str:

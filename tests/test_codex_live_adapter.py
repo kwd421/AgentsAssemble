@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.adapters.codex_live import CodexLiveSessionAdapter
+from agentsassemble.codex_session_ids import extract_codex_session_id
 from agentsassemble.models import ResearchSteering, Role, get_research_depth
 
 
@@ -66,6 +67,20 @@ class CodexLiveSessionAdapterTests(unittest.TestCase):
             self.assertIn("019e02af-c287-7cd1-aab7-c1e059c5ed44", calls[1]["command"])
             self.assertEqual(calls[1]["cwd"], str(meeting_dir))
             self.assertEqual(message["codex"]["session_mode"], "resumed")
+
+    def test_session_id_extractor_accepts_jsonl_and_label_variants(self):
+        self.assertEqual(
+            extract_codex_session_id('{"type":"session.started","session":{"id":"019e02af-c287-7cd1-aab7-c1e059c5ed44"}}\n'),
+            "019e02af-c287-7cd1-aab7-c1e059c5ed44",
+        )
+        self.assertEqual(
+            extract_codex_session_id("Session ID: 019e3038-39cc-76a2-a746-5ba8c0f3b408\n"),
+            "019e3038-39cc-76a2-a746-5ba8c0f3b408",
+        )
+        self.assertEqual(
+            extract_codex_session_id('{"msg":{"session_id":"019e0346-f384-74f2-914e-c95f535edf46"}}\n'),
+            "019e0346-f384-74f2-914e-c95f535edf46",
+        )
 
     def test_live_session_uses_configured_session_id_on_first_call(self):
         with tempfile.TemporaryDirectory() as temp_dir:

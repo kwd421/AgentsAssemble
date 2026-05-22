@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -413,10 +414,15 @@ def _codex_exec_safety_flags_check(
             "status": "ok",
             "message": "Codex exec read-only safety flags are available.",
         }
+    returncode = int(getattr(completed, "returncode", 1) or 0)
+    display_probe = shlex.join([Path(probe_command[0]).name, *probe_command[1:]])
     return {
         "id": "codex_exec_safety_flags",
         "status": "failed",
-        "message": "Codex command does not accept required live-session safety flags.",
+        "message": (
+            f"Codex command rejected the required live-session safety flags with exit {returncode}. "
+            f"Run `{display_probe}` to inspect the local Codex CLI."
+        ),
     }
 
 

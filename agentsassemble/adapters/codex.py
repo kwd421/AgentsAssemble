@@ -7,6 +7,7 @@ from subprocess import TimeoutExpired
 from typing import Any
 
 from agentsassemble.adapters.base import ProviderAdapter
+from agentsassemble.codex_session_ids import extract_codex_session_id
 from agentsassemble.models import ResearchDepth, ResearchSteering, Role
 from agentsassemble.speech_policy import ROUND_RESPONSE_SCHEMA, ROUND_SPEECH_POLICY
 
@@ -281,8 +282,7 @@ Return only this JSON shape:
 
     @staticmethod
     def _extract_session_id(output: str) -> str | None:
-        match = re.search(r"session id:\s*([0-9a-fA-F-]+)", output)
-        return match.group(1) if match else None
+        return extract_codex_session_id(output) or None
 
     @staticmethod
     def _text(value: Any) -> str:

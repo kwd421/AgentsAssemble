@@ -260,6 +260,15 @@ sessions and later continue them through `codex exec resume` when Codex emits a
 session id. It is not proof that Claude Code, Cursor, Antigravity, Grok, Hermes,
 or OpenClaw have provider-native live connectors.
 
+The regression suite includes a no-model Codex lifecycle proof with a temporary
+fake `codex` executable on `PATH`. That proof uses these checked-in configs
+through the real GUI session API, runs one official round, restarts the
+supervised resident group, proves session id continuity through restart by
+resuming the captured session ids for the remaining round, finalizes the
+meeting, and stops the group offline. It verifies Codex resident plumbing and
+`codex exec --sandbox read-only --ignore-rules` command shape without proving
+real Codex login, model availability, subscription state, or generation quality.
+
 Check the resident config without starting Codex:
 
 ```bash

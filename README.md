@@ -151,6 +151,13 @@ residents and no checked-in real session ids. To attach an existing Codex CLI
 session, use the GUI/CLI Codex invite or join flow so the local generated config
 records the current session id outside the checked-in examples.
 
+The no-model fake Codex lifecycle regression covers the same checked-in Codex
+configs with a temporary `codex` executable. It proves the control plane can
+start three Codex residents, run one official round, restart the resident group,
+resume from the captured session ids for the remaining round, finalize, and stop
+offline without making real model calls. A real Codex smoke still requires an
+explicit operator run.
+
 ## Codex Adapter
 
 The Codex adapter has a first smoke path through `codex exec`.
