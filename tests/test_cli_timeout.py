@@ -897,7 +897,7 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         request_json.assert_called_once_with(
-            "http://room.local/api/live-agents/claude-code-live/heartbeat",
+            "http://room.local/api/live-agents/claude-code-live/leave",
             method="POST",
             payload={
                 "status": "offline",
@@ -908,7 +908,7 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("claude-code-live: offline", stdout.getvalue())
 
-    def test_live_agent_leave_json_prints_heartbeat_response(self):
+    def test_live_agent_leave_json_prints_safe_response(self):
         stdout = StringIO()
         response = {
             "agent": {
@@ -962,7 +962,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertNotIn("/Users/me", serialized)
         self.assertNotIn("provider output", serialized)
 
-    def test_live_agent_leave_marks_real_server_row_offline_without_side_effects(self):
+    def test_live_agent_leave_marks_real_server_row_offline_and_records_operation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
@@ -1008,6 +1008,8 @@ class CliTimeoutTests(unittest.TestCase):
                     )
                 with urllib.request.urlopen(f"{server_url}/api/live-agents?safe=1", timeout=4) as response:
                     safe_roster = json.loads(response.read().decode("utf-8"))
+                with urllib.request.urlopen(f"{server_url}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -1020,10 +1022,14 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["agent"]["last_observed_event_id"], "evt1")
         self.assertEqual(payload["agent"]["last_observed_live_event_id"], "live1")
         self.assertEqual(safe_roster["agents"][0]["status"], "offline")
-        self.assertFalse((root / "live-agent-runs" / "operations.jsonl").exists())
+        leave_operations = [operation for operation in operations["operations"] if operation["operation"] == "live_agent.leave"]
+        self.assertEqual(len(leave_operations), 1)
+        self.assertEqual(leave_operations[0]["target_id"], "agent one")
+        self.assertEqual(leave_operations[0]["details"]["meeting_id"], "resident-m1")
         self.assertFalse((root / "live-agent-runs" / "processes.json").exists())
-        serialized = stdout.getvalue()
+        serialized = stdout.getvalue() + json.dumps(operations, ensure_ascii=False)
         self.assertNotIn("secret-session", serialized)
+        self.assertNotIn("old error", serialized)
 
     def test_live_agent_say_posts_lobby_message(self):
         stdout = StringIO()

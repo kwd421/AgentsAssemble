@@ -149,10 +149,12 @@ python3 -m agentsassemble.cli live-agent leave \
   --agent-id external-reviewer
 ```
 
-It posts one offline heartbeat through the normal room control plane. It does
-not unregister the agent, delete history, stop supervised process groups, or
-start providers; a later `register` or heartbeat can bring the same approved
-agent identity back online.
+It calls `POST /api/live-agents/<agent_id>/leave`, which posts one offline
+heartbeat through the normal room control plane and records a safe
+`live_agent.leave` operation with the agent id, meeting id, previous status, and
+cursor ids. It does not unregister the agent, delete history, stop supervised
+process groups, or start providers; a later `register` or heartbeat can bring
+the same approved agent identity back online.
 
 The GUI `살아있는 에이전트` form exposes the same safe packet through the `초대 패킷` button. It reads the agent id, display name, provider kind, and connection kind from the registration form, attaches the current meeting id, requests `engagement_mode: "mentioned"`, and renders the returned join brief without registering the agent or starting any provider. This lets an operator hand a browser-generated register/wait-next packet to Claude, Cursor, a terminal agent, or another external participant while keeping admission explicit.
 

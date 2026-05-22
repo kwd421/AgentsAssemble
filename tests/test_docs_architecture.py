@@ -409,6 +409,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("commands.wait_next", doc)
         self.assertIn("commands.leave", doc)
         self.assertIn("live-agent leave", doc)
+        self.assertIn("POST /api/live-agents/<agent_id>/leave", doc)
+        self.assertIn("live_agent.leave", doc)
         self.assertIn("offline heartbeat", doc)
         self.assertIn('action: "observe_lobby"', doc)
         self.assertIn("non-reply `observe_lobby` actions", doc)

@@ -1976,6 +1976,16 @@ def live_agent_heartbeat_payload(output_root: Path, agent_id: str, payload: dict
     return {"agent": agent, "agents": read_live_agents(output_root)}
 
 
+def live_agent_leave_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
+    _live_agent_for_id(output_root, agent_id)
+    metadata: dict[str, object] = {"last_error": ""}
+    for key in ("last_observed_event_id", "last_observed_live_event_id"):
+        if key in payload:
+            metadata[key] = payload.get(key)
+    agent = heartbeat_live_agent(output_root, agent_id, status="offline", metadata=metadata)
+    return {"agent": agent, "agents": read_live_agents(output_root)}
+
+
 def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
     agent = heartbeat_live_agent(output_root, agent_id, status="online")
     message = str(payload.get("message") or "").strip()
@@ -7784,6 +7794,46 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json(heartbeat)
+                return
+            live_agent_leave_id = _live_agent_action_path(parsed.path, "leave")
+            if live_agent_leave_id is not None:
+                payload = self._operation_json_payload(
+                    operation="live_agent.leave",
+                    target_id=live_agent_leave_id,
+                    details={"agent_id": clean_lobby_text(live_agent_leave_id, limit=64)},
+                )
+                if payload is None:
+                    return
+                try:
+                    previous_agent = _live_agent_for_id(output_root, live_agent_leave_id)
+                    leave = live_agent_leave_payload(output_root, live_agent_leave_id, payload)
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="live_agent.leave",
+                        status="failed",
+                        target_id=live_agent_leave_id,
+                        error=str(error),
+                        details={"agent_id": clean_lobby_text(live_agent_leave_id, limit=64)},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                agent = leave.get("agent") if isinstance(leave.get("agent"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="live_agent.leave",
+                    status="success",
+                    target_id=live_agent_leave_id,
+                    summary="marked live agent offline",
+                    details={
+                        "agent_id": clean_lobby_text(agent.get("agent_id") or live_agent_leave_id, limit=64),
+                        "meeting_id": clean_lobby_text(agent.get("meeting_id"), limit=128),
+                        "previous_status": clean_lobby_text(previous_agent.get("status"), limit=32),
+                        "last_observed_event_id": clean_lobby_text(agent.get("last_observed_event_id"), limit=128),
+                        "last_observed_live_event_id": clean_lobby_text(agent.get("last_observed_live_event_id"), limit=128),
+                    },
+                )
+                self._send_json(leave)
                 return
             live_agent_lobby_id = _live_agent_action_path(parsed.path, "lobby")
             if live_agent_lobby_id is not None:

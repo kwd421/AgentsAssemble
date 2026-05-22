@@ -1411,7 +1411,7 @@ def _is_unreplaced_template_placeholder(value: object) -> bool:
 def _run_live_agent_leave(args: argparse.Namespace) -> int:
     agent_id = urllib.parse.quote(args.agent_id, safe="")
     response = _request_json(
-        _server_url(args.server, f"/api/live-agents/{agent_id}/heartbeat"),
+        _server_url(args.server, f"/api/live-agents/{agent_id}/leave"),
         method="POST",
         payload=_leave_payload(args),
     )

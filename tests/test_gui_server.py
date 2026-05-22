@@ -15402,6 +15402,61 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(agent["last_observed_event_id"], "evt1")
             self.assertEqual(agent["last_reply_at"], "2026-05-17T12:00:00+00:00")
 
+    def test_live_agent_leave_endpoint_marks_offline_and_records_safe_operation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "external-reviewer",
+                    "display_name": "External Reviewer",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "meeting_id": "resident-m1",
+                    "session_id": "secret-session",
+                    "last_error": "old error",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                leave_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/external-reviewer/leave",
+                    data=json.dumps(
+                        {
+                            "last_observed_event_id": "evt1",
+                            "last_observed_live_event_id": "live1",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(leave_request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        agent = payload["agent"]
+        self.assertEqual(agent["status"], "offline")
+        self.assertEqual(agent["last_error"], "")
+        self.assertEqual(agent["last_observed_event_id"], "evt1")
+        self.assertEqual(agent["last_observed_live_event_id"], "live1")
+        leave_operations = [item for item in operations["operations"] if item["operation"] == "live_agent.leave"]
+        self.assertEqual(len(leave_operations), 1)
+        self.assertEqual(leave_operations[0]["status"], "success")
+        self.assertEqual(leave_operations[0]["target_id"], "external-reviewer")
+        self.assertEqual(leave_operations[0]["details"]["agent_id"], "external-reviewer")
+        self.assertEqual(leave_operations[0]["details"]["meeting_id"], "resident-m1")
+        self.assertEqual(leave_operations[0]["details"]["previous_status"], "online")
+        self.assertFalse((root / "live-agent-runs" / "processes.json").exists())
+        serialized = json.dumps(operations, ensure_ascii=False)
+        self.assertNotIn("secret-session", serialized)
+        self.assertNotIn("old error", serialized)
+
     def test_live_agent_lobby_message_records_actor_source_and_chain_depth(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
