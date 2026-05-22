@@ -2927,6 +2927,140 @@ class GuiServerTests(unittest.TestCase):
         self.assertNotIn("/private", details_blob)
         self.assertNotIn("env:", details_blob)
 
+    def test_readiness_health_operation_details_preserves_long_session_causes(self):
+        details = _readiness_health_operation_details(
+            {
+                "status": "degraded",
+                "observations": {
+                    "lobby_behind_count": 1,
+                    "live_behind_count": 2,
+                    "error_count": 3,
+                    "attention": [
+                        "resident-m1:resident-main:agent-a:lobby_cursor_behind",
+                        "env:SECRET_TOKEN",
+                    ],
+                },
+                "shared_memory": {
+                    "ready_sessions": 2,
+                    "with_memory": 1,
+                    "attention": [
+                        "resident-m1:resident-main:memory_unavailable",
+                        "/private/shared-memory.json",
+                    ],
+                },
+                "session_runs": {
+                    "active": 1,
+                    "retrying": 1,
+                    "attention": [
+                        "resident-m1:resident-main:run-a:ready:no_current_readiness",
+                        "resident-m1:/private/live-agents.json:run-b:degraded:retrying",
+                    ],
+                },
+                "session_run_monitor": {
+                    "last_result_count": 1,
+                    "attention": ["failed:RuntimeError", "failed:/private/monitor.json"],
+                },
+            }
+        )
+
+        self.assertEqual(details["health_status"], "degraded")
+        self.assertEqual(
+            details["health_observation_attention"],
+            ["resident-m1:resident-main:agent-a:lobby_cursor_behind"],
+        )
+        self.assertEqual(details["health_observation_lobby_behind_count"], 1)
+        self.assertEqual(details["health_observation_live_behind_count"], 2)
+        self.assertEqual(details["health_observation_error_count"], 3)
+        self.assertEqual(details["health_shared_memory_attention"], ["resident-m1:resident-main:memory_unavailable"])
+        self.assertEqual(details["health_shared_memory_ready_sessions"], 2)
+        self.assertEqual(details["health_shared_memory_with_memory"], 1)
+        self.assertEqual(
+            details["health_session_run_attention"],
+            ["resident-m1:resident-main:run-a:ready:no_current_readiness"],
+        )
+        self.assertEqual(details["health_session_run_active"], 1)
+        self.assertEqual(details["health_session_run_retrying"], 1)
+        self.assertEqual(details["health_session_run_monitor_attention"], ["failed:RuntimeError"])
+        self.assertEqual(details["health_session_run_monitor_last_result_count"], 1)
+        details_blob = json.dumps(details, ensure_ascii=False)
+        self.assertNotIn("SECRET_TOKEN", details_blob)
+        self.assertNotIn("/private", details_blob)
+        self.assertNotIn("shared-memory.json", details_blob)
+        self.assertNotIn("env:", details_blob)
+
+    def test_live_agent_readiness_operation_records_observation_health_cause(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            _write_lobby_jsonl_event(
+                root,
+                event_id="latest-lobby-event",
+                actor_id="human",
+                created_at="2026-05-21T10:00:00+00:00",
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "last_observed_event_id": "older-lobby-event",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=FakeSupervisor()))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch(
+                    "agentsassemble.gui.run_live_agent_smoke",
+                    return_value={"status": "ok", "group_id": "doctor-smoke", "replies": []},
+                ):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-readiness",
+                        data=json.dumps({"group_id": "doctor-smoke", "timeout": 8}).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "Host": "127.0.0.1:1"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=12) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(payload["status"], "degraded")
+        readiness_operations = [
+            operation for operation in operations["operations"] if operation["operation"] == "readiness.check"
+        ]
+        details = readiness_operations[-1]["details"]
+        self.assertEqual(details["health_status"], "degraded")
+        self.assertEqual(
+            details["health_observation_attention"],
+            ["resident-m1:resident-main:agent-a:lobby_cursor_behind"],
+        )
+        self.assertEqual(details["health_observation_lobby_behind_count"], 1)
+        details_blob = json.dumps(details, ensure_ascii=False)
+        self.assertNotIn("stale event text", details_blob)
+        self.assertNotIn("latest-lobby-event", details_blob)
+
     def test_session_start_operation_details_drops_unrecognized_ensure_reason(self):
         details = _session_start_operation_details(
             {

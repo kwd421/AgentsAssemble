@@ -45,9 +45,13 @@ SENSITIVE_TEXT_PATTERNS = (
 HEALTH_OPERATION_DETAIL_KEYS = {
     "health_agent_attention",
     "health_connection_attention",
+    "health_observation_attention",
     "health_process_attention",
     "health_process_reasons",
     "health_session_attention",
+    "health_session_run_attention",
+    "health_session_run_monitor_attention",
+    "health_shared_memory_attention",
 }
 PUBLIC_ENUM_DETAIL_VALUES = {
     "join_semantics": LIVE_AGENT_JOIN_SEMANTICS,

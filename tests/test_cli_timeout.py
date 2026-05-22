@@ -4619,6 +4619,50 @@ class CliTimeoutTests(unittest.TestCase):
             output.index("session_smoke_reply_count=3"),
         )
 
+    def test_live_agent_operations_list_prioritizes_readiness_long_session_health_causes(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "readiness.check",
+                    "status": "degraded",
+                    "target_id": "doctor-smoke",
+                    "summary": "",
+                    "details": {
+                        "result_status": "degraded",
+                        "health_process_reasons": [
+                            "orphan-group recovered_unknown orphan running record marked unknown"
+                        ],
+                        "health_process_attention": ["orphan-group"],
+                        "session_smoke_reply_count": 3,
+                        "health_observation_attention": ["resident-m1:resident-main:agent-a:lobby_cursor_behind"],
+                        "health_observation_lobby_behind_count": 1,
+                        "health_observation_live_behind_count": 1,
+                        "health_observation_error_count": 1,
+                        "health_shared_memory_attention": ["resident-m1:resident-main:memory_unavailable"],
+                        "health_session_run_attention": ["resident-m1:resident-main:run-a:ready:no_current_readiness"],
+                        "health_session_run_retrying": 1,
+                        "health_session_run_monitor_attention": ["failed:RuntimeError"],
+                        "probe_statuses": ["agent-a:ok"],
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "operations", "list", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("health_observation_attention=resident-m1:resident-main:agent-a:lobby_cursor_behind", output)
+        self.assertIn("health_session_run_attention=resident-m1:resident-main:run-a:ready:no_current_readiness", output)
+        self.assertIn("health_session_run_monitor_attention=failed:RuntimeError", output)
+        self.assertLess(
+            output.index("health_observation_attention="),
+            output.index("session_smoke_reply_count=3"),
+        )
+
     def test_live_agent_operations_list_prioritizes_session_smoke_soak_evidence(self):
         payload = {
             "operations": [

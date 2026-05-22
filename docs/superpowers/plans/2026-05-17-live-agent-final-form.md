@@ -5379,6 +5379,55 @@ backslash-bearing relative path-like strings as well.
 
 ---
 
+## Task 158: Preserve Long-Session Health Causes In Readiness Operations
+
+**Goal:** Make `readiness.check` operation records explain degraded long-running
+resident sessions from the same safe health causes operators see in
+`/api/live-agent-health`, without storing raw health payloads or sensitive
+runtime details.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/live_agent_operations.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_live_agent_operations.py`
+
+- [x] **Step 1: Add RED operation-evidence coverage**
+
+Cover `_readiness_health_operation_details()` with degraded observations,
+shared-memory, durable session-run, and session-run monitor health causes, plus
+an HTTP `POST /api/live-agent-readiness` flow where health is degraded by a
+ready resident's stale lobby cursor. The first run failed because
+`health_observation_attention` was missing from the operation details, proving
+that health already knew the cause but the operation ledger did not preserve it.
+
+- [x] **Step 2: Preserve safe long-session causes**
+
+`readiness.check` operation details now preserve bounded, sanitized health
+cause labels and counts for observation cursor lag, shared-memory attention,
+durable session-run retry/drift attention, and session-run monitor attention.
+The operation sanitizer treats those attention fields as health labels, so
+token-like, `env:`, URL, config/path-like, and JSON-shaped strings are redacted
+or omitted before persistence. CLI and GUI compact operation rows prioritize the
+new long-session cause fields before lower-value probe or smoke details, so
+default operation history can explain the degraded readiness without requiring
+raw JSON.
+
+- [x] **Step 3: Keep operator docs aligned**
+
+Operator docs and roadmap now state that degraded readiness checks preserve
+compact long-session health causes in operation history while omitting raw
+health JSON, event text, prompts, replies, config paths, endpoints, auth refs,
+and provider output.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -5396,6 +5396,35 @@ def _readiness_health_operation_details(health: object) -> dict[str, object]:
         attention = _safe_health_operation_strings(section.get("attention"), limit=128)
         if attention:
             details[f"health_{detail_name}_attention"] = attention
+    long_session_sections = {
+        "observations": (
+            "observation",
+            ("lobby_behind_count", "live_behind_count", "error_count"),
+        ),
+        "shared_memory": (
+            "shared_memory",
+            ("ready_sessions", "with_memory"),
+        ),
+        "session_runs": (
+            "session_run",
+            ("active", "retrying"),
+        ),
+        "session_run_monitor": (
+            "session_run_monitor",
+            ("last_result_count",),
+        ),
+    }
+    for section_name, (detail_name, count_names) in long_session_sections.items():
+        section = health.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        attention = _safe_health_operation_strings(section.get("attention"), limit=128)
+        if attention:
+            details[f"health_{detail_name}_attention"] = attention
+        for count_name in count_names:
+            count = _payload_nonnegative_int(section.get(count_name), 0)
+            if count:
+                details[f"health_{detail_name}_{count_name}"] = count
     process_reasons = _health_process_reason_labels(health.get("processes"))
     if process_reasons:
         details["health_process_reasons"] = process_reasons

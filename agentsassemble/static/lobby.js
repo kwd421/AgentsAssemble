@@ -1396,6 +1396,14 @@ function liveAgentOperationDetailPriority(operationName = "") {
       "result_status",
       "health_process_reasons",
       "health_process_attention",
+      "health_observation_attention",
+      "health_observation_lobby_behind_count",
+      "health_observation_live_behind_count",
+      "health_observation_error_count",
+      "health_shared_memory_attention",
+      "health_session_run_attention",
+      "health_session_run_retrying",
+      "health_session_run_monitor_attention",
       "health_session_attention",
       "health_connection_attention",
       "health_agent_attention",
@@ -1453,6 +1461,7 @@ function liveAgentOperationDetailPriority(operationName = "") {
 function liveAgentOperationDetailLimit(operationName = "") {
   if (operationName === "session.ensure") return 9;
   if (["session.start", "session.resume", "session.restart", "session.recover"].includes(operationName)) return 8;
+  if (operationName === "readiness.check") return 12;
   if (operationName === "discovery.run") return 10;
   if (operationName === "review.checkpoint") return 8;
   return 7;

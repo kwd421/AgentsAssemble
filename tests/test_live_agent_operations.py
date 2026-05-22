@@ -174,6 +174,73 @@ class LiveAgentOperationTests(unittest.TestCase):
         self.assertNotIn("password hunter2", persisted)
         self.assertNotIn("--api-key abc123", persisted)
 
+    def test_readiness_health_details_preserve_long_session_health_keys(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            operation = append_live_agent_operation(
+                root,
+                operation="readiness.check",
+                status="degraded",
+                target_id="doctor-smoke",
+                details={
+                    "health_observation_attention": [
+                        "resident-m1:resident-main:agent-a:lobby_cursor_behind",
+                        "resident-m1:/private/live-agents.json:agent-b:live_cursor_behind",
+                    ],
+                    "health_observation_lobby_behind_count": 1,
+                    "health_observation_live_behind_count": 2,
+                    "health_observation_error_count": 3,
+                    "health_shared_memory_attention": [
+                        "resident-m1:resident-main:memory_unavailable",
+                        "env:SECRET_TOKEN",
+                    ],
+                    "health_shared_memory_ready_sessions": 2,
+                    "health_shared_memory_with_memory": 1,
+                    "health_session_run_attention": [
+                        "resident-m1:resident-main:run-a:ready:no_current_readiness",
+                        "resident-m1:resident-main:/private/run.json:degraded:retrying",
+                    ],
+                    "health_session_run_active": 1,
+                    "health_session_run_retrying": 1,
+                    "health_session_run_monitor_attention": [
+                        "failed:RuntimeError",
+                        "failed:/private/monitor.json",
+                    ],
+                    "health_session_run_monitor_last_result_count": 1,
+                },
+                now=datetime(2026, 5, 18, 1, 2, 3, tzinfo=UTC),
+            )
+
+            operations = read_live_agent_operations(root)
+            persisted = (root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8")
+
+        self.assertEqual(operations, [operation])
+        details = operations[0]["details"]
+        self.assertEqual(
+            details["health_observation_attention"][0],
+            "resident-m1:resident-main:agent-a:lobby_cursor_behind",
+        )
+        self.assertEqual(details["health_observation_lobby_behind_count"], 1)
+        self.assertEqual(details["health_observation_live_behind_count"], 2)
+        self.assertEqual(details["health_observation_error_count"], 3)
+        self.assertEqual(details["health_shared_memory_attention"][0], "resident-m1:resident-main:memory_unavailable")
+        self.assertEqual(details["health_shared_memory_ready_sessions"], 2)
+        self.assertEqual(details["health_shared_memory_with_memory"], 1)
+        self.assertEqual(
+            details["health_session_run_attention"][0],
+            "resident-m1:resident-main:run-a:ready:no_current_readiness",
+        )
+        self.assertEqual(details["health_session_run_active"], 1)
+        self.assertEqual(details["health_session_run_retrying"], 1)
+        self.assertEqual(details["health_session_run_monitor_attention"][0], "failed:RuntimeError")
+        self.assertEqual(details["health_session_run_monitor_last_result_count"], 1)
+        operation_blob = json.dumps(operations[0], ensure_ascii=False)
+        self.assertNotIn("/private", operation_blob)
+        self.assertNotIn("SECRET_TOKEN", operation_blob)
+        self.assertNotIn("live-agents.json", persisted)
+        self.assertNotIn("SECRET_TOKEN", persisted)
+        self.assertNotIn("/private", persisted)
+
     def test_read_operations_does_not_load_whole_history_file_at_once(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
