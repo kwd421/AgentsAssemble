@@ -117,6 +117,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("fake-alpha", doc)
         self.assertIn("fake-beta", doc)
         self.assertIn("configs/live-agents.example.json", doc)
+        self.assertIn("configs/live-agents.provider-staging.example.json", doc)
+        self.assertIn("contract example, not a native-ready bundle", doc)
         self.assertIn("Do not start it until the real-provider checklist below is satisfied.", doc)
         self.assertIn("auto-refresh in the GUI every 5 seconds", doc)
         self.assertIn("ignore volatile heartbeat age and monitor tick timestamps", doc)
@@ -715,6 +717,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("codex_readonly", doc)
         self.assertIn("fake `codex` executable", doc)
         self.assertIn("real Codex smoke", doc)
+        self.assertIn("configs/live-agents.provider-staging.example.json", doc)
         self.assertIn("No non-Codex provider is marked native-ready", doc)
 
     def test_live_agent_ops_and_audit_note_record_report_continuation_slice(self):

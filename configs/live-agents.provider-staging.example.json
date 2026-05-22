@@ -1,0 +1,74 @@
+{
+  "server": "http://127.0.0.1:8765",
+  "poll_interval": 2,
+  "heartbeat_interval": 30,
+  "cooldown": 5,
+  "max_chain_depth": 1,
+  "agents": [
+    {
+      "agent_id": "claude-code-live",
+      "display_name": "Claude Code",
+      "provider_kind": "claude_code",
+      "connection_kind": "terminal_session",
+      "meeting_id": "",
+      "engagement_mode": "moderator_called",
+      "command": ["claude"],
+      "terminal_idle_timeout": 0.75,
+      "timeout_seconds": 120
+    },
+    {
+      "agent_id": "cursor-agent-live",
+      "display_name": "Cursor Agent",
+      "provider_kind": "cursor",
+      "connection_kind": "terminal_session",
+      "meeting_id": "",
+      "engagement_mode": "moderator_called",
+      "command": ["cursor-agent"],
+      "terminal_idle_timeout": 0.75,
+      "timeout_seconds": 120
+    },
+    {
+      "agent_id": "antigravity-cli-live",
+      "display_name": "Antigravity CLI",
+      "provider_kind": "antigravity_cli",
+      "connection_kind": "self_service",
+      "meeting_id": "",
+      "engagement_mode": "moderator_called",
+      "command": ["antigravity"],
+      "timeout_seconds": 120
+    },
+    {
+      "agent_id": "grok-build-live",
+      "display_name": "Grok Build",
+      "provider_kind": "grok_build_cli",
+      "connection_kind": "terminal_session",
+      "meeting_id": "",
+      "engagement_mode": "moderator_called",
+      "command": ["grok"],
+      "terminal_idle_timeout": 0.75,
+      "timeout_seconds": 120
+    },
+    {
+      "agent_id": "hermes-cli-live",
+      "display_name": "Hermes CLI",
+      "provider_kind": "hermes_cli",
+      "connection_kind": "terminal_session",
+      "meeting_id": "",
+      "engagement_mode": "moderator_called",
+      "command": ["hermes"],
+      "terminal_idle_timeout": 0.75,
+      "timeout_seconds": 120
+    },
+    {
+      "agent_id": "openclaw-cli-live",
+      "display_name": "OpenClaw CLI",
+      "provider_kind": "openclaw_cli",
+      "connection_kind": "terminal_session",
+      "meeting_id": "",
+      "engagement_mode": "moderator_called",
+      "command": ["openclaw"],
+      "terminal_idle_timeout": 0.75,
+      "timeout_seconds": 120
+    }
+  ]
+}

@@ -318,6 +318,44 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual({config.engagement_mode for config in resident_configs}, {"moderator_called"})
         self.assertEqual({config.session_id for config in resident_configs}, {""})
 
+    def test_provider_staging_live_agent_example_covers_non_codex_cli_candidates_conservatively(self):
+        resident_configs = load_group_configs(Path("configs/live-agents.provider-staging.example.json"))
+
+        self.assertEqual(
+            [config.agent_id for config in resident_configs],
+            [
+                "claude-code-live",
+                "cursor-agent-live",
+                "antigravity-cli-live",
+                "grok-build-live",
+                "hermes-cli-live",
+                "openclaw-cli-live",
+            ],
+        )
+        self.assertEqual(
+            {config.agent_id: config.provider_kind for config in resident_configs},
+            {
+                "claude-code-live": "claude_code",
+                "cursor-agent-live": "cursor",
+                "antigravity-cli-live": "antigravity_cli",
+                "grok-build-live": "grok_build_cli",
+                "hermes-cli-live": "hermes_cli",
+                "openclaw-cli-live": "openclaw_cli",
+            },
+        )
+        self.assertEqual(
+            {config.agent_id: config.connection_kind for config in resident_configs},
+            {
+                "claude-code-live": "terminal_session",
+                "cursor-agent-live": "terminal_session",
+                "antigravity-cli-live": "self_service",
+                "grok-build-live": "terminal_session",
+                "hermes-cli-live": "terminal_session",
+                "openclaw-cli-live": "terminal_session",
+            },
+        )
+        self.assertEqual({config.engagement_mode for config in resident_configs}, {"moderator_called"})
+
 
 if __name__ == "__main__":
     unittest.main()

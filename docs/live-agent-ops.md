@@ -50,7 +50,13 @@ When `ensure-session` changes an otherwise ready session into `restart`, the ses
 
 Session controls also enforce that ownership. `start-session` with an explicit meeting id, `resume-session`, `restart-session`, `recover-session`, and `stop-session` refuse to reuse or mutate an existing process group that already belongs to a different meeting. `resume-session`, `restart-session`, and `recover-session` also refuse to mutate resident processes when the current meeting binding has `binding_provider_missing`; `check-session` and readiness stay read-only and report `degraded` instead of treating that group as ready. A non-empty but unsafe stored owner id is treated as a different meeting without echoing the unsafe value.
 
-The real-provider `configs/live-agents.example.json` contains real `claude` and `antigravity` commands. Do not start it until the real-provider checklist below is satisfied.
+The real-provider `configs/live-agents.example.json` contains real `claude` and
+`antigravity` commands. Do not start it until the real-provider checklist below is satisfied.
+`configs/live-agents.provider-staging.example.json` is a broader
+contract example, not a native-ready bundle: it shows the current conservative
+Claude Code, Cursor, Antigravity, Grok Build, Hermes, and OpenClaw resident
+shapes with `moderator_called`, but each row still needs local install,
+explicit approval, preflight, and a provider-specific smoke before use.
 
 ## GUI Startup Autostart
 

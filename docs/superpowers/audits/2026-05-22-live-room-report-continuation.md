@@ -38,6 +38,11 @@ Report source:
   labeled text and JSONL session event shapes, and improved Codex preflight
   failures so they report the exit code plus the exact read-only probe command
   without copying stderr into public output.
+- Added `configs/live-agents.provider-staging.example.json` as the conservative
+  Phase 3 provider contract example for Claude Code, Cursor, Antigravity, Grok
+  Build, Hermes, and OpenClaw. It uses `moderator_called` and documents that it
+  is not a native-ready bundle; discovery, explicit approval, preflight, and a
+  targeted smoke are still required before starting real provider processes.
 
 ## What remains incomplete
 
@@ -46,7 +51,8 @@ Report source:
   readiness. The fake Codex lifecycle proof verifies local resident plumbing,
   not account login, model availability, subscription state, or answer quality.
 - Claude Code, Cursor, Antigravity, Grok Build, Hermes, and OpenClaw are not
-  provider-native resident connectors yet.
+  provider-native resident connectors yet. The provider staging config records
+  current intended connection shapes, not verified native provider semantics.
 - Non-Codex local CLI read-only is still advisory until a hard sandbox launcher
   is implemented and verified.
 - No-Tailscale multi-host mode remains a design track after single-host

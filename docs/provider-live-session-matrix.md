@@ -10,6 +10,11 @@ a provider-specific connector plus a smoke that proves start, observe, official
 turn, reply, heartbeat, stop, resume, and restart semantics, it remains
 experimental or planned.
 
+`configs/live-agents.provider-staging.example.json` is the conservative
+non-Codex config reference for the rows below. It is a contract example, not a
+native-ready bundle; run discovery, explicit approval, preflight, and a targeted
+smoke before starting any real provider process from it.
+
 | Provider kind | Current status | Supported connection_kind | Context durability | Sandbox enforcement | Required wrapper | Next smoke test |
 | --- | --- | --- | --- | --- | --- | --- |
 | `codex_live_session` | Experimental Codex resident MVP; first-class compared with other CLIs, but still `codex exec resume` rather than a provider channel. A no-model regression uses a fake `codex` executable to prove lifecycle plumbing. | `live_session` compatibility gate, implemented by the Codex resident runner. | `codex_exec_resume`; provider-managed session history after Codex returns a session id. | `codex_readonly` via `codex exec --sandbox read-only --ignore-rules`; Codex CLI owns actual enforcement. | None for checked-in examples; optional GUI/CLI invite writes local session ids. | Next real Codex smoke: run three approved `moderator_called` agents through `start-session`, official rounds, restart/resume, finalization, and stop with safe artifacts. |
