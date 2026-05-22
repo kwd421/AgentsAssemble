@@ -401,6 +401,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("live-agent heartbeat", doc)
         self.assertIn("assemble live-agent list", doc)
         self.assertIn("live-agent list --fail-on-attention", doc)
+        self.assertIn("live-agent list --require-host-approved", doc)
         self.assertIn("live-agent list --require-match", doc)
         self.assertIn("live-agent list --require-all-agents", doc)
         self.assertIn("meeting_id, agent_id, and status query filters", doc)

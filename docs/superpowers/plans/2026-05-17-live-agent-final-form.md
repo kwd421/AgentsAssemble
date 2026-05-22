@@ -5185,6 +5185,32 @@ Operator docs and roadmap now state that safe roster reads and CLI roster output
 
 ---
 
+## Task 153: Add Host-Approved Roster Gate
+
+**Goal:** Let automation fail fast when a filtered live-agent roster contains a visible agent that is not host-approved for the current meeting binding, without overloading the existing liveness-focused `--fail-on-attention` gate.
+
+**Files:**
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED host-approval gate coverage**
+
+Cover parser acceptance for `live-agent list --require-host-approved`, exit `1` after printing the normal roster summary when any returned row has `host_approved_binding` other than `true`, and exit `0` for bound rows. The tests keep `--fail-on-attention` separate so status liveness and meeting admission remain distinct scriptable checks.
+
+- [x] **Step 2: Add a separate admission gate**
+
+`live-agent list --require-host-approved` now evaluates only the returned safe roster rows after printing the summary. It exits `1` when a row is not `host_approved_binding: true`, exits `0` for an empty roster unless paired with `--require-match`, and preserves existing URL filtering, JSON/compact output, `--require-match`, `--require-all-agents`, and `--fail-on-attention` behavior.
+
+- [x] **Step 3: Keep docs aligned with gate semantics**
+
+Operator docs and roadmap now describe `--require-host-approved` as the admission gate and `--fail-on-attention` as the liveness gate. The recommended targeted roster gate combines `--meeting-id`, `--agent-id`, `--require-match`, `--require-host-approved`, and `--fail-on-attention`.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

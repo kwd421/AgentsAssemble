@@ -319,6 +319,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Exit 1 when any returned live agent is not online or working.",
     )
+    live_list.add_argument(
+        "--require-host-approved",
+        action="store_true",
+        help="Exit 1 when any returned live agent is not host-approved for its meeting binding.",
+    )
 
     live_heartbeat = live_agent_subparsers.add_parser("heartbeat", parents=[live_server], help="Update live agent presence.")
     live_heartbeat.add_argument("--agent-id", required=True)
@@ -1504,12 +1509,15 @@ def _run_live_agent_list(args: argparse.Namespace) -> int:
         payload = _request_json(_server_url(args.server, _live_agent_list_path(args)))
     except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
         raise ValueError(_live_agent_list_fetch_error(error)) from error
-    _print_live_agent_list_payload(payload, as_json=args.as_json)
-    if args.require_match and _live_agent_list_payload_empty(payload):
+    safe_payload = _safe_live_agent_list_payload(payload)
+    _print_live_agent_list_payload(safe_payload, as_json=args.as_json)
+    if args.require_match and _live_agent_list_payload_empty(safe_payload):
         return 1
-    if args.require_all_agents and _live_agent_list_missing_required_agents(payload, args.agent_ids):
+    if args.require_all_agents and _live_agent_list_missing_required_agents(safe_payload, args.agent_ids):
         return 1
-    if args.fail_on_attention and _live_agent_list_payload_needs_attention(payload):
+    if args.fail_on_attention and _live_agent_list_payload_needs_attention(safe_payload):
+        return 1
+    if args.require_host_approved and _live_agent_list_payload_has_unapproved_agents(safe_payload):
         return 1
     return 0
 
@@ -1622,6 +1630,11 @@ def _append_live_agent_roster_seconds(parts: list[str], label: str, value: objec
 def _live_agent_list_payload_needs_attention(payload: dict[str, object]) -> bool:
     agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
     return any(isinstance(item, dict) and _live_agent_roster_agent_needs_attention(item) for item in agents)
+
+
+def _live_agent_list_payload_has_unapproved_agents(payload: dict[str, object]) -> bool:
+    agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
+    return any(isinstance(item, dict) and item.get("host_approved_binding") is not True for item in agents)
 
 
 def _live_agent_list_payload_empty(payload: dict[str, object]) -> bool:

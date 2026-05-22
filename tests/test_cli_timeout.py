@@ -1244,12 +1244,14 @@ class CliTimeoutTests(unittest.TestCase):
                 "http://room.local",
                 "--json",
                 "--fail-on-attention",
+                "--require-host-approved",
             ]
         )
 
         self.assertEqual(args.live_agent_command, "list")
         self.assertTrue(args.as_json)
         self.assertTrue(args.fail_on_attention)
+        self.assertTrue(args.require_host_approved)
 
     def test_live_agent_list_parses_target_filters_and_require_match(self):
         args = build_parser().parse_args(
@@ -1631,6 +1633,373 @@ class CliTimeoutTests(unittest.TestCase):
                 )
 
         self.assertEqual(exit_code, 0)
+
+    def test_live_agent_list_require_host_approved_exits_one_after_printing_summary(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-approved",
+                    "display_name": "Agent Approved",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "online",
+                    "admission_status": "bound_to_meeting",
+                    "host_approved_binding": True,
+                    "admission_evidence_source": "meeting_record",
+                },
+                {
+                    "agent_id": "agent-lobby",
+                    "display_name": "Agent Lobby",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "status": "online",
+                    "admission_status": "meeting_lobby_only",
+                    "host_approved_binding": False,
+                    "admission_evidence_source": "meeting_record",
+                },
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--require-host-approved",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        output = stdout.getvalue()
+        self.assertIn("agent-approved Agent Approved local_cli/local_cli online", output)
+        self.assertIn("host_approved=yes", output)
+        self.assertIn("agent-lobby Agent Lobby manual/manual online", output)
+        self.assertIn("host_approved=no", output)
+        self.assertIn("admission=meeting_lobby_only", output)
+
+    def test_live_agent_list_require_host_approved_accepts_bound_rows(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-approved",
+                    "display_name": "Agent Approved",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "working",
+                    "admission_status": "bound_to_meeting",
+                    "host_approved_binding": True,
+                    "admission_evidence_source": "meeting_record",
+                }
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--require-host-approved",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+
+    def test_live_agent_list_require_host_approved_accepts_empty_roster_without_require_match(self):
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value={"agents": []}):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--require-host-approved",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("no live agents", stdout.getvalue())
+
+    def test_live_agent_list_require_host_approved_uses_safe_projection_before_gate(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "spoofed-agent",
+                    "display_name": "Spoofed Agent",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "status": "online",
+                    "admission_status": "bound_to_meeting",
+                    "host_approved_binding": True,
+                    "binding_role_id": "spoofed",
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--require-host-approved",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        output = stdout.getvalue()
+        self.assertIn("spoofed-agent Spoofed Agent manual/manual online", output)
+        self.assertNotIn("host_approved=yes", output)
+        self.assertNotIn("spoofed", output.split("online", 1)[1])
+
+    def test_live_agent_list_require_host_approved_compact_output_redacts_sensitive_fields(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-bridge",
+                    "display_name": "Agent Bridge",
+                    "provider_kind": "remote_bridge",
+                    "connection_kind": "remote_bridge",
+                    "status": "online",
+                    "admission_status": "meeting_lobby_only",
+                    "host_approved_binding": False,
+                    "admission_evidence_source": "meeting_record",
+                    "endpoint": "http://secret.local/bridge",
+                    "auth_ref": "literal:secret-token",
+                    "config_path": "/Users/me/private/live-agents.json",
+                    "session_id": "private-session-id",
+                    "provider_output": "secret provider text",
+                    "last_error": "failed with token=secret-token in /Users/me/private/live-agents.json",
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--require-host-approved",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        output = stdout.getvalue()
+        self.assertIn("agent-bridge Agent Bridge remote_bridge/remote_bridge online", output)
+        self.assertIn("host_approved=no", output)
+        self.assertNotIn("secret.local", output)
+        self.assertNotIn("secret-token", output)
+        self.assertNotIn("live-agents.json", output)
+        self.assertNotIn("private-session-id", output)
+        self.assertNotIn("secret provider text", output)
+
+    def test_live_agent_list_require_host_approved_is_separate_from_fail_on_attention(self):
+        unapproved_online = {
+            "agents": [
+                {
+                    "agent_id": "agent-lobby",
+                    "display_name": "Agent Lobby",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "status": "online",
+                    "admission_status": "meeting_lobby_only",
+                    "host_approved_binding": False,
+                    "admission_evidence_source": "meeting_record",
+                }
+            ]
+        }
+        approved_stale = {
+            "agents": [
+                {
+                    "agent_id": "agent-stale",
+                    "display_name": "Agent Stale",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "stale",
+                    "admission_status": "bound_to_meeting",
+                    "host_approved_binding": True,
+                    "admission_evidence_source": "meeting_record",
+                }
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=unapproved_online):
+            with patch("sys.stdout", StringIO()):
+                liveness_exit = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--fail-on-attention",
+                    ]
+                )
+        with patch("agentsassemble.cli._request_json", return_value=approved_stale):
+            with patch("sys.stdout", StringIO()):
+                admission_exit = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--require-host-approved",
+                    ]
+                )
+
+        self.assertEqual(liveness_exit, 0)
+        self.assertEqual(admission_exit, 0)
+
+    def test_live_agent_list_require_host_approved_preserves_target_gates(self):
+        with patch("agentsassemble.cli._request_json", return_value={"agents": []}):
+            with patch("sys.stdout", StringIO()) as empty_stdout:
+                empty_exit = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "missing-agent",
+                        "--require-match",
+                        "--require-host-approved",
+                    ]
+                )
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "online",
+                    "admission_status": "bound_to_meeting",
+                    "host_approved_binding": True,
+                    "admission_evidence_source": "meeting_record",
+                }
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", StringIO()) as partial_stdout:
+                partial_exit = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "agent-a",
+                        "--agent-id",
+                        "agent-b",
+                        "--require-all-agents",
+                        "--require-host-approved",
+                    ]
+                )
+
+        self.assertEqual(empty_exit, 1)
+        self.assertIn("no live agents", empty_stdout.getvalue())
+        self.assertEqual(partial_exit, 1)
+        self.assertIn("agent-a Agent A local_cli/local_cli online", partial_stdout.getvalue())
+
+    def test_live_agent_list_require_host_approved_json_prints_safe_projection_before_exit(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-bridge",
+                    "display_name": "Agent Bridge",
+                    "provider_kind": "remote_bridge",
+                    "connection_kind": "remote_bridge",
+                    "status": "online",
+                    "admission_status": "meeting_lobby_only",
+                    "host_approved_binding": False,
+                    "admission_evidence_source": "meeting_record",
+                    "endpoint": "http://secret.local/bridge",
+                    "auth_ref": "literal:secret-token",
+                    "config_path": "/Users/me/private/live-agents.json",
+                    "session_id": "private-session-id",
+                    "last_error": "failed with token=secret-token in /Users/me/private/live-agents.json",
+                }
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", StringIO()) as stdout:
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--json",
+                        "--require-host-approved",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        output = stdout.getvalue()
+        parsed = json.loads(output)
+        self.assertEqual(parsed["agents"][0]["admission_status"], "meeting_lobby_only")
+        self.assertFalse(parsed["agents"][0]["host_approved_binding"])
+        self.assertNotIn("endpoint", parsed["agents"][0])
+        self.assertNotIn("auth_ref", parsed["agents"][0])
+        self.assertNotIn("config_path", parsed["agents"][0])
+        self.assertNotIn("session_id", parsed["agents"][0])
+        self.assertNotIn("secret.local", output)
+        self.assertNotIn("secret-token", output)
+        self.assertNotIn("live-agents.json", output)
+
+    def test_live_agent_list_require_host_approved_keeps_safe_filtered_request(self):
+        payload = {
+            "agents": [
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "online",
+                    "admission_status": "bound_to_meeting",
+                    "host_approved_binding": True,
+                    "admission_evidence_source": "meeting_record",
+                }
+            ]
+        }
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", StringIO()):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "list",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--agent-id",
+                        "agent-a",
+                        "--agent-id",
+                        "agent-b",
+                        "--status",
+                        "online",
+                        "--require-host-approved",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        requested = urllib.parse.urlparse(request_json.call_args.args[0])
+        self.assertEqual(requested.path, "/api/live-agents")
+        query = urllib.parse.parse_qs(requested.query)
+        self.assertEqual(query["safe"], ["1"])
+        self.assertEqual(query["meeting_id"], ["resident-m1"])
+        self.assertEqual(query["agent_id"], ["agent-a", "agent-b"])
+        self.assertEqual(query["status"], ["online"])
+        self.assertNotIn("require_host_approved", query)
 
     def test_live_agent_heartbeat_can_clear_stale_error_metadata(self):
         with patch(

@@ -203,7 +203,7 @@ GET /api/live-agents?safe=1
 
 That safe roster projection uses the same allowlisted presence fields as `assemble live-agent list`, including derived `join_semantics`, `context_durability`, and read-only admission evidence derived from the current meeting record. The safe admission fields include `admission_status`, `host_approved_binding`, `admission_evidence_source: "meeting_record"`, and safe binding role/provider/permission/join labels only when a matching binding exists; caller-supplied spoofed admission fields are not enough to make an unbound row appear approved. The projection omits endpoint URLs, auth refs, config paths, session ids, command arguments, provider output, and raw suspicious presence errors. The raw `/api/live-agents` response remains available for the local GUI and legacy in-room tooling that already expects full local presence records.
 
-For scriptable roster gates, use `live-agent list --fail-on-attention`. The command prints the normal roster summary first, then exits `1` if any returned agent is not `online` or `working`, including `stale`, `offline`, `error`, or unknown statuses. An empty roster exits `0` because there is no agent row claiming unhealthy presence.
+For scriptable roster gates, use `live-agent list --fail-on-attention` for liveness and `live-agent list --require-host-approved` for meeting admission. The command prints the normal roster summary first. `--fail-on-attention` exits `1` if any returned agent is not `online` or `working`, including `stale`, `offline`, `error`, or unknown statuses. `--require-host-approved` exits `1` if any returned agent is not currently `host_approved_binding: true` in the safe roster projection. An empty roster exits `0` for both gates because there is no agent row claiming unhealthy or unapproved presence; combine either gate with `--require-match` when the target must exist.
 
 When a room has multiple resident sessions or historical roster rows, target the roster read before using it as a gate:
 
@@ -213,10 +213,11 @@ python3 -m agentsassemble.cli live-agent list \
   --meeting-id resident-1 \
   --agent-id claude-code-live \
   --require-match \
+  --require-host-approved \
   --fail-on-attention
 ```
 
-The CLI sends `safe=1` plus meeting_id, agent_id, and status query filters to `/api/live-agents`, with repeatable `--agent-id` and `--status`. Use `live-agent list --require-match` when the filtered roster must contain at least one row; it prints the normal empty summary first and exits `1` if no agent matches. Use `live-agent list --require-all-agents` when every requested `--agent-id` must be present in the filtered roster. This lets automation check one session's expected agents without unrelated stale rows from another session failing the gate, while still failing when the requested target is missing.
+The CLI sends `safe=1` plus meeting_id, agent_id, and status query filters to `/api/live-agents`, with repeatable `--agent-id` and `--status`. Use `live-agent list --require-match` when the filtered roster must contain at least one row; it prints the normal empty summary first and exits `1` if no agent matches. Use `live-agent list --require-all-agents` when every requested `--agent-id` must be present in the filtered roster. This lets automation check one session's expected agents without unrelated stale rows or unapproved lobby rows from another session failing the gate, while still failing when the requested target is missing.
 
 `--fail-on-attention` evaluates only the returned rows. If you want to detect stale, offline, or error rows for a target, filter by `--meeting-id` or `--agent-id` and leave `--status` unset; adding `--status online --status working` intentionally hides non-ready rows before the gate runs.
 
