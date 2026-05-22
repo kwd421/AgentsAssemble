@@ -8,6 +8,7 @@ from math import ceil
 from pathlib import Path
 from typing import Any
 
+from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.models import ENGAGEMENT_MODES, normalize_engagement_mode
 from agentsassemble.remote_bridge_config import remote_bridge_endpoint_error
@@ -89,6 +90,12 @@ def connect_live_agent(
             endpoint_error = remote_bridge_endpoint_error(endpoint)
             if endpoint_error:
                 raise ValueError(endpoint_error)
+        provider_kind = (
+            clean_lobby_text(payload.get("provider_kind"), limit=64)
+            or clean_lobby_text(existing.get("provider_kind"), limit=64)
+            or "manual"
+        )
+        context_contract = live_agent_context_contract(provider_kind, connection_kind)
         requested_engagement_mode = normalize_engagement_mode(payload.get("engagement_mode"), default="mentioned")
         operator_engagement_mode = _operator_engagement_mode(existing)
         effective_engagement_mode = operator_engagement_mode or requested_engagement_mode
@@ -97,10 +104,10 @@ def connect_live_agent(
             "display_name": clean_lobby_text(payload.get("display_name"), limit=64)
             or clean_lobby_text(existing.get("display_name"), limit=64)
             or agent_id,
-            "provider_kind": clean_lobby_text(payload.get("provider_kind"), limit=64)
-            or clean_lobby_text(existing.get("provider_kind"), limit=64)
-            or "manual",
+            "provider_kind": provider_kind,
             "connection_kind": connection_kind,
+            "join_semantics": context_contract["join_semantics"],
+            "context_durability": context_contract["context_durability"],
             "status": _normalize_persisted_status(payload.get("status") or existing.get("status") or "online"),
             "engagement_mode": effective_engagement_mode,
             "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128)
@@ -203,6 +210,8 @@ def heartbeat_live_agent(
                 "display_name": clean_agent_id,
                 "provider_kind": "manual",
                 "connection_kind": "manual",
+                "join_semantics": "manual_room_loop",
+                "context_durability": "external_owner_managed",
                 "status": normalized_status,
                 "engagement_mode": "mentioned",
                 "meeting_id": "",
@@ -232,6 +241,7 @@ def heartbeat_live_agent(
                     agent[key] = clean_lobby_text(metadata.get(key), limit=limit)
         if "diagnostic" in metadata:
             agent["diagnostic"] = _bool_value(metadata.get("diagnostic"))
+        agent.update(live_agent_context_contract(agent.get("provider_kind"), agent.get("connection_kind")))
         _upsert_agent(agents, agent)
         _write_state(output_root, {"agents": agents})
         return agent
@@ -306,6 +316,7 @@ def _with_inferred_status(
     stale_after_seconds: int,
 ) -> dict[str, object]:
     visible = _without_output_only_freshness(agent)
+    visible.update(live_agent_context_contract(visible.get("provider_kind"), visible.get("connection_kind")))
     stale_after = max(0, int(stale_after_seconds))
     visible["stale_after_seconds"] = stale_after
     last_seen = _parse_timestamp(visible.get("last_seen_at"))

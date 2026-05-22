@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from agentsassemble.live_agent_context import LIVE_AGENT_CONTEXT_DURABILITY, LIVE_AGENT_JOIN_SEMANTICS
+
 OPERATION_TEXT_LIMIT = 500
 OPERATION_FIELD_LIMIT = 128
 DEFAULT_OPERATION_LIMIT = 50
@@ -48,16 +50,8 @@ HEALTH_OPERATION_DETAIL_KEYS = {
     "health_session_attention",
 }
 PUBLIC_ENUM_DETAIL_VALUES = {
-    "join_semantics": {
-        "terminal_pty_prompt_bridge",
-        "codex_exec_resume",
-        "self_service_room_loop",
-    },
-    "context_durability": {
-        "process_lifetime",
-        "provider_managed_resume",
-        "provider_managed_room_loop",
-    },
+    "join_semantics": LIVE_AGENT_JOIN_SEMANTICS,
+    "context_durability": LIVE_AGENT_CONTEXT_DURABILITY,
     "evidence_basis": {
         "path_and_pty_preflight",
         "path_and_codex_safety_preflight",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 
+from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.meeting_events import clean_lobby_text
 
 
@@ -100,21 +101,10 @@ def build_live_agent_join_brief(
 
 
 def _execution_contract(*, provider_kind: str, connection_kind: str) -> dict[str, str]:
-    contract = {
-        "manual": ("manual_room_loop", "external_owner_managed"),
-        "local_cli": ("stateless_prompt_call", "stateless_prompt"),
-        "terminal_session": ("terminal_pty_prompt_bridge", "process_lifetime"),
-        "remote_bridge": ("remote_bridge_room_loop", "remote_owner_managed"),
-        "self_service": ("self_service_room_loop", "provider_managed_room_loop"),
-    }
-    if connection_kind == "live_session":
-        join_semantics = "codex_exec_resume" if provider_kind == "codex_live_session" else "provider_live_session"
-        context_durability = "provider_managed_resume"
-    else:
-        join_semantics, context_durability = contract.get(connection_kind, ("manual_room_loop", "unknown"))
+    contract = live_agent_context_contract(provider_kind, connection_kind)
     return {
-        "join_semantics": join_semantics,
-        "context_durability": context_durability,
+        "join_semantics": contract["join_semantics"],
+        "context_durability": contract["context_durability"],
         "evidence_basis": "operator_supplied_join_brief",
         "provider_execution": "not_started_by_join_brief",
     }

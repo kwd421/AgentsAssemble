@@ -6629,6 +6629,8 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["agent"]["agent_id"], "claude-code-live")
             self.assertEqual(payload["agent"]["provider_kind"], "claude_code")
             self.assertEqual(payload["agent"]["connection_kind"], "local_cli")
+            self.assertEqual(payload["agent"]["join_semantics"], "stateless_prompt_call")
+            self.assertEqual(payload["agent"]["context_durability"], "stateless_prompt")
             self.assertEqual(live_agents_payload(root)["agents"][0]["display_name"], "Claude Code Live")
 
     def test_live_agent_http_endpoint_registers_and_lists_presence(self):
@@ -6647,6 +6649,8 @@ class GuiServerTests(unittest.TestCase):
                             "provider_kind": "gemini",
                             "connection_kind": "local_cli",
                             "session_id": "gemini-session",
+                            "join_semantics": "env:SECRET_TOKEN",
+                            "context_durability": "/private/provider-context",
                         }
                     ).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
@@ -6677,11 +6681,15 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(register_operations[0]["details"]["agent_id"], "gemini-cli")
             self.assertEqual(register_operations[0]["details"]["provider_kind"], "gemini")
             self.assertEqual(register_operations[0]["details"]["connection_kind"], "local_cli")
+            self.assertEqual(register_operations[0]["details"]["join_semantics"], "stateless_prompt_call")
+            self.assertEqual(register_operations[0]["details"]["context_durability"], "stateless_prompt")
             self.assertEqual(register_operations[0]["details"]["registered_status"], "online")
             self.assertEqual(register_operations[0]["details"]["admission_status"], "lobby_only")
             self.assertFalse(register_operations[0]["details"]["host_approved_binding"])
             self.assertNotIn("session_id", register_operations[0]["details"])
             self.assertNotIn("gemini-session", json.dumps(operations, ensure_ascii=False))
+            self.assertNotIn("SECRET_TOKEN", json.dumps(operations, ensure_ascii=False))
+            self.assertNotIn("/private", json.dumps(operations, ensure_ascii=False))
 
     def test_live_agent_register_operation_records_bound_meeting_admission(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -7127,6 +7135,8 @@ class GuiServerTests(unittest.TestCase):
             state = json.loads(state_path.read_text(encoding="utf-8"))
             state["agents"][0]["auth_ref"] = "env:SECRET_TOKEN"
             state["agents"][0]["config_path"] = "/Users/seinel/private/live-agents.json"
+            state["agents"][0]["join_semantics"] = "codex_exec_resume"
+            state["agents"][0]["context_durability"] = "provider_managed_resume"
             state_path.write_text(json.dumps(state), encoding="utf-8")
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -7141,6 +7151,8 @@ class GuiServerTests(unittest.TestCase):
             agent = listed["agents"][0]
             self.assertEqual(agent["agent_id"], "agent-a")
             self.assertEqual(agent["meeting_id"], "resident-m1")
+            self.assertEqual(agent["join_semantics"], "remote_bridge_room_loop")
+            self.assertEqual(agent["context_durability"], "remote_owner_managed")
             self.assertEqual(agent["last_error"], "Live-agent presence error details redacted.")
             self.assertNotIn("session_id", agent)
             self.assertNotIn("endpoint", agent)

@@ -1572,6 +1572,8 @@ def _format_live_agent_roster_agent(agent: dict[str, object]) -> str:
     parts = [agent_id, display_name, f"{provider_kind}/{connection_kind}", status]
     suffix_parts = []
     _append_live_agent_roster_text(suffix_parts, "meeting", agent.get("meeting_id"))
+    _append_live_agent_roster_text(suffix_parts, "join", agent.get("join_semantics"))
+    _append_live_agent_roster_text(suffix_parts, "context", agent.get("context_durability"))
     _append_live_agent_roster_text(suffix_parts, "engagement", agent.get("engagement_mode"))
     _append_live_agent_roster_seconds(suffix_parts, "heartbeat_age", agent.get("heartbeat_age_seconds"))
     _append_live_agent_roster_seconds(suffix_parts, "stale_after", agent.get("stale_after_seconds"))

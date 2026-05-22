@@ -35,6 +35,7 @@ from agentsassemble.live_agent_discovery import (
     fill_discovery_next_command_output,
     validate_distinct_session_bundle_paths,
 )
+from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
@@ -4154,11 +4155,14 @@ def _live_agent_register_operation_details(
     clean_agent_id: str,
     previous_agent: dict[str, object],
 ) -> dict[str, object]:
+    context_contract = live_agent_context_contract(agent.get("provider_kind"), agent.get("connection_kind"))
     details = {
         "agent_id": clean_lobby_text(agent.get("agent_id") or clean_agent_id, limit=64),
         "meeting_id": clean_lobby_text(agent.get("meeting_id"), limit=128),
         "provider_kind": clean_lobby_text(agent.get("provider_kind"), limit=64),
         "connection_kind": clean_lobby_text(agent.get("connection_kind"), limit=64),
+        "join_semantics": context_contract["join_semantics"],
+        "context_durability": context_contract["context_durability"],
         "engagement_mode": clean_lobby_text(agent.get("engagement_mode"), limit=64),
         "previous_status": clean_lobby_text(previous_agent.get("status"), limit=32),
         "registered_status": clean_lobby_text(agent.get("status"), limit=32),

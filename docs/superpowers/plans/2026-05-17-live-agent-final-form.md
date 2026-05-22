@@ -5124,6 +5124,39 @@ Operator docs and roadmap now state that the restart reason is bounded evidence 
 
 ---
 
+## Task 151: Surface Live-Agent Context Contracts
+
+**Goal:** Make the operator roster and admission history say how each live agent keeps private context, so long-running rooms can distinguish stateless prompt calls, process-lifetime terminal or JSONL sessions, Codex exec resume, self-service room loops, external/manual ownership, and remote-owner-managed bridges without exposing private session state.
+
+**Files:**
+- Add: `agentsassemble/live_agent_context.py`
+- Modify: `agentsassemble/live_agents.py`
+- Modify: `agentsassemble/live_agent_roster.py`
+- Modify: `agentsassemble/live_agent_join_brief.py`
+- Modify: `agentsassemble/live_agent_operations.py`
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/product/OPERATING_MODEL.md`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED context-contract coverage**
+
+Cover live-agent registration, safe HTTP roster projection, CLI compact roster output, CLI JSON roster output, and registration operation evidence. The tests require `join_semantics` and `context_durability` to come from provider/connection kind rather than caller-supplied strings.
+
+- [x] **Step 2: Derive labels at the shared boundary**
+
+`live_agent_context_contract()` now owns the contract mapping. Registration, heartbeat/readback, join-brief packets, operation sanitization, and safe roster projection use that shared mapping so local CLI, terminal, JSONL live-session, Codex live-session, self-service, manual, and remote bridge rows do not drift.
+
+- [x] **Step 3: Keep docs aligned with operator evidence**
+
+Operator docs, product memory, and roadmap now state that context contract labels are safe operational evidence only. They do not expose session ids, endpoints, auth refs, config paths, command arguments, prompts, provider output, or log tails.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

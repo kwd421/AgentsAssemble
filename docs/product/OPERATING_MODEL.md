@@ -96,8 +96,9 @@ explicit promote      -> selected informal context becomes official input
 
 Near-term work should favor backend contracts over visual polish:
 - Add discovery rows that say how a provider can join and what evidence supports it.
-- Add context durability labels such as provider-managed, process-lifetime, and
-  stateless-prompt where they are accurate.
+- Keep context durability labels such as provider-managed, process-lifetime, and
+  stateless-prompt visible on admission, roster, and startup-packet surfaces
+  where they are accurate.
 - Keep `shared_memory/` resident meeting artifacts deterministic, official-only,
   and refreshed during long-running sessions.
 - Keep the compact shared-memory room payload and resident prompt block aligned

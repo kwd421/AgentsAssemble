@@ -719,7 +719,9 @@ class CliTimeoutTests(unittest.TestCase):
         cases = [
             ("local_cli", "local_cli", "stateless_prompt_call", "stateless_prompt"),
             ("claude_code", "terminal_session", "terminal_pty_prompt_bridge", "process_lifetime"),
+            ("codex_live_session", "codex_resume", "codex_exec_resume", "provider_managed_resume"),
             ("codex_live_session", "live_session", "codex_exec_resume", "provider_managed_resume"),
+            ("claude_code", "live_session", "jsonl_live_session", "process_lifetime"),
             ("antigravity_cli", "self_service", "self_service_room_loop", "provider_managed_room_loop"),
             ("remote_http_bridge", "remote_bridge", "remote_bridge_room_loop", "remote_owner_managed"),
         ]
@@ -1284,6 +1286,8 @@ class CliTimeoutTests(unittest.TestCase):
                     "display_name": "Agent A",
                     "provider_kind": "claude_code",
                     "connection_kind": "terminal_session",
+                    "join_semantics": "codex_exec_resume",
+                    "context_durability": "provider_managed_resume",
                     "status": "online",
                     "engagement_mode": "always",
                     "meeting_id": "resident-m1",
@@ -1308,6 +1312,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(urllib.parse.parse_qs(requested.query), {"safe": ["1"]})
         output = stdout.getvalue()
         self.assertIn("agent-a Agent A claude_code/terminal_session online meeting=resident-m1", output)
+        self.assertIn("join=terminal_pty_prompt_bridge", output)
+        self.assertIn("context=process_lifetime", output)
         self.assertIn("engagement=always", output)
         self.assertIn("heartbeat_age=7s", output)
         self.assertIn("stale_after=180s", output)
@@ -1422,6 +1428,8 @@ class CliTimeoutTests(unittest.TestCase):
                     "display_name": "Agent A",
                     "provider_kind": "remote_bridge",
                     "connection_kind": "remote_bridge",
+                    "join_semantics": "codex_exec_resume",
+                    "context_durability": "provider_managed_resume",
                     "status": "error",
                     "meeting_id": "resident-m1",
                     "endpoint": "http://secret.local/bridge",
@@ -1446,6 +1454,8 @@ class CliTimeoutTests(unittest.TestCase):
         loaded = json.loads(output)
         agent = loaded["agents"][0]
         self.assertEqual(agent["agent_id"], "agent-a")
+        self.assertEqual(agent["join_semantics"], "remote_bridge_room_loop")
+        self.assertEqual(agent["context_durability"], "remote_owner_managed")
         self.assertEqual(agent["last_error"], "Live-agent presence error details redacted.")
         self.assertNotIn("endpoint", agent)
         self.assertNotIn("auth_ref", agent)

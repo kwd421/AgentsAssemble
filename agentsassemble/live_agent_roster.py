@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import math
 
+from agentsassemble.live_agent_context import (
+    live_agent_context_contract,
+    safe_live_agent_context_durability,
+    safe_live_agent_join_semantics,
+)
 from agentsassemble.live_agents import PRESENCE_ERROR_REDACTED, _looks_sensitive_presence_error
 from agentsassemble.meeting_events import clean_lobby_text
 
@@ -11,6 +16,8 @@ SAFE_LIVE_AGENT_ROSTER_FIELDS = (
     "display_name",
     "provider_kind",
     "connection_kind",
+    "join_semantics",
+    "context_durability",
     "status",
     "meeting_id",
     "engagement_mode",
@@ -70,6 +77,7 @@ def safe_live_agent_roster_payload(payload: dict[str, object]) -> dict[str, obje
 
 def safe_live_agent_roster_agent(agent: dict[str, object]) -> dict[str, object]:
     safe_agent: dict[str, object] = {}
+    context_contract = live_agent_context_contract(agent.get("provider_kind"), agent.get("connection_kind"))
     for field in SAFE_LIVE_AGENT_ROSTER_FIELDS:
         if field not in agent:
             continue
@@ -80,8 +88,16 @@ def safe_live_agent_roster_agent(agent: dict[str, object]) -> dict[str, object]:
             safe_agent[field] = safe_live_agent_roster_capabilities(value)
         elif field == "last_error":
             safe_agent[field] = safe_live_agent_roster_error(value)
+        elif field == "join_semantics":
+            safe_agent[field] = safe_live_agent_join_semantics(context_contract["join_semantics"])
+        elif field == "context_durability":
+            safe_agent[field] = safe_live_agent_context_durability(context_contract["context_durability"])
         else:
             safe_agent[field] = safe_live_agent_roster_text(value, limit=_live_agent_roster_field_limit(field))
+    if "join_semantics" not in safe_agent and ("provider_kind" in agent or "connection_kind" in agent):
+        safe_agent["join_semantics"] = safe_live_agent_join_semantics(context_contract["join_semantics"])
+    if "context_durability" not in safe_agent and ("provider_kind" in agent or "connection_kind" in agent):
+        safe_agent["context_durability"] = safe_live_agent_context_durability(context_contract["context_durability"])
     return safe_agent
 
 
@@ -120,7 +136,15 @@ def safe_live_agent_roster_number(value: object) -> int | float:
 
 
 def _live_agent_roster_field_limit(field: str) -> int:
-    if field in {"agent_id", "provider_kind", "connection_kind", "status", "engagement_mode"}:
+    if field in {
+        "agent_id",
+        "provider_kind",
+        "connection_kind",
+        "join_semantics",
+        "context_durability",
+        "status",
+        "engagement_mode",
+    }:
         return 64
     if field in {"display_name", "meeting_id", "last_observed_event_id", "last_observed_live_event_id"}:
         return 128

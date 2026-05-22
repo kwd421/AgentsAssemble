@@ -4,10 +4,26 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from agentsassemble.live_agent_context import live_agent_context_contract
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 
 
 class LiveAgentPresenceTests(unittest.TestCase):
+    def test_context_contract_labels_match_actual_connection_semantics(self):
+        cases = [
+            ("codex_live_session", "codex_resume", "codex_exec_resume", "provider_managed_resume"),
+            ("codex_live_session", "live_session", "codex_exec_resume", "provider_managed_resume"),
+            ("claude_code", "live_session", "jsonl_live_session", "process_lifetime"),
+            ("local_cli", "live_session", "jsonl_live_session", "process_lifetime"),
+            ("remote_http_bridge", "remote_bridge", "remote_bridge_room_loop", "remote_owner_managed"),
+        ]
+
+        for provider_kind, connection_kind, join_semantics, context_durability in cases:
+            with self.subTest(provider_kind=provider_kind, connection_kind=connection_kind):
+                contract = live_agent_context_contract(provider_kind, connection_kind)
+                self.assertEqual(contract["join_semantics"], join_semantics)
+                self.assertEqual(contract["context_durability"], context_durability)
+
     def test_connect_live_agent_upserts_sanitized_presence(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

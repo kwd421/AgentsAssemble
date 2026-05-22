@@ -131,9 +131,13 @@ matching binding (`meeting_lobby_only`), a matching host-approved binding
 (`bound_to_meeting`), and a binding conflict (`binding_conflict`). A bound
 registration is evidence that the roster row matches a host-approved meeting
 binding; lobby-only or conflicting registrations are still allowed as explicit
-manual/external presence. The operation does not record session ids, endpoint
-URLs, auth refs, config paths, provider command arguments, prompts, provider
-output, or log tails, and it does not start a provider.
+manual/external presence. The operation records the derived `join_semantics` and
+`context_durability` contract for the registered provider/connection pair, such
+as stateless prompt calls, process-lifetime terminal or JSONL sessions, Codex
+exec resume, self-service room loops, or remote-owner-managed bridges. It does
+not trust caller-supplied contract labels, record session ids, endpoint URLs,
+auth refs, config paths, provider command arguments, prompts, provider output,
+or log tails, and it does not start a provider.
 
 When handing the room to another AI, generate a startup packet instead of writing ad hoc instructions:
 
@@ -149,7 +153,7 @@ python3 -m agentsassemble.cli live-agent join-brief \
   --json
 ```
 
-`join-brief` is local formatting only: it does not contact the room, write files, start providers, or execute commands. The JSON includes safe command arrays for `register`, `wait-next`, `room`, a roster gate, and `leave`, plus `say`, `official-reply`, and `heartbeat` templates that another agent can fill after `wait-next` returns an action. It also includes an `execution_contract` with `join_semantics`, `context_durability`, `evidence_basis`, and `provider_execution: "not_started_by_join_brief"` so the receiving agent and operator can see whether the packet describes a manual room loop, stateless prompt calls, a terminal PTY prompt bridge, Codex exec resume, self-service room loop, or remote bridge room loop. It intentionally omits session ids, endpoint URLs, auth refs, config paths, provider command arguments, provider output, log paths, prompts, and reply text. The packet instructions include `Read room.shared_memory as official-only background context when present.` and `Use execution_contract.context_durability as the declared agent-private context boundary.` Give that packet to the external agent, have it run `commands.register` once, then loop `commands.wait_next`: lobby and official-turn actions fill exactly one reply template, non-reply `observe_lobby` actions run the returned `ack_command`, and return-packet actions run the returned `read_command` before the `ack_command`, without posting a reply. When the agent intentionally exits the room, it should run `commands.leave`; this marks its roster row `offline`, clears stale error text, and keeps any supplied lobby/official cursors.
+`join-brief` is local formatting only: it does not contact the room, write files, start providers, or execute commands. The JSON includes safe command arrays for `register`, `wait-next`, `room`, a roster gate, and `leave`, plus `say`, `official-reply`, and `heartbeat` templates that another agent can fill after `wait-next` returns an action. It also includes an `execution_contract` with `join_semantics`, `context_durability`, `evidence_basis`, and `provider_execution: "not_started_by_join_brief"` so the receiving agent and operator can see whether the packet describes a manual room loop, stateless prompt calls, a terminal PTY prompt bridge, JSONL live-session bridge, Codex exec resume, self-service room loop, or remote bridge room loop. It intentionally omits session ids, endpoint URLs, auth refs, config paths, provider command arguments, provider output, log paths, prompts, and reply text. The packet instructions include `Read room.shared_memory as official-only background context when present.` and `Use execution_contract.context_durability as the declared agent-private context boundary.` Give that packet to the external agent, have it run `commands.register` once, then loop `commands.wait_next`: lobby and official-turn actions fill exactly one reply template, non-reply `observe_lobby` actions run the returned `ack_command`, and return-packet actions run the returned `read_command` before the `ack_command`, without posting a reply. When the agent intentionally exits the room, it should run `commands.leave`; this marks its roster row `offline`, clears stale error text, and keeps any supplied lobby/official cursors.
 
 The same safe packet is available from the running GUI server for frontends or other local tools:
 
@@ -189,7 +193,7 @@ python3 -m agentsassemble.cli live-agent list \
   --server http://127.0.0.1:8765
 ```
 
-The compact roster output shows each agent's id, display name, provider/connection kind, status, meeting, engagement mode, heartbeat age, stale threshold, lobby cursor, and official cursor. It intentionally does not print endpoint URLs, auth references, command arguments, config paths, provider output, or presence error text. `--json` uses the same safe roster projection for local wrappers; it does not expose endpoint URLs, auth refs, command arguments, config paths, session ids, or raw presence errors.
+The compact roster output shows each agent's id, display name, provider/connection kind, status, meeting, join semantics, context durability, engagement mode, heartbeat age, stale threshold, lobby cursor, and official cursor. It intentionally does not print endpoint URLs, auth references, command arguments, config paths, provider output, or presence error text. `--json` uses the same safe roster projection for local wrappers; it does not expose endpoint URLs, auth refs, command arguments, config paths, session ids, or raw presence errors.
 
 For wrappers that read the roster directly over HTTP, prefer:
 
@@ -197,7 +201,7 @@ For wrappers that read the roster directly over HTTP, prefer:
 GET /api/live-agents?safe=1
 ```
 
-That safe roster projection uses the same allowlisted presence fields as `assemble live-agent list` and omits endpoint URLs, auth refs, config paths, session ids, command arguments, provider output, and raw suspicious presence errors. The raw `/api/live-agents` response remains available for the local GUI and legacy in-room tooling that already expects full local presence records.
+That safe roster projection uses the same allowlisted presence fields as `assemble live-agent list`, including derived `join_semantics` and `context_durability`, and omits endpoint URLs, auth refs, config paths, session ids, command arguments, provider output, and raw suspicious presence errors. The raw `/api/live-agents` response remains available for the local GUI and legacy in-room tooling that already expects full local presence records.
 
 For scriptable roster gates, use `live-agent list --fail-on-attention`. The command prints the normal roster summary first, then exits `1` if any returned agent is not `online` or `working`, including `stale`, `offline`, `error`, or unknown statuses. An empty roster exits `0` because there is no agent row claiming unhealthy presence.
 
