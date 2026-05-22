@@ -3391,6 +3391,7 @@ def _session_smoke_summary(smoke: dict[str, object]) -> str:
 
 def _format_live_agent_health(payload: dict[str, object]) -> str:
     agents = payload.get("agents") if isinstance(payload.get("agents"), dict) else {}
+    admission = payload.get("admission") if isinstance(payload.get("admission"), dict) else {}
     processes = payload.get("processes") if isinstance(payload.get("processes"), dict) else {}
     process_monitor = payload.get("process_monitor") if isinstance(payload.get("process_monitor"), dict) else {}
     connections = payload.get("connections") if isinstance(payload.get("connections"), dict) else {}
@@ -3399,8 +3400,10 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
     session_runs = payload.get("session_runs") if isinstance(payload.get("session_runs"), dict) else {}
     session_run_monitor = payload.get("session_run_monitor") if isinstance(payload.get("session_run_monitor"), dict) else {}
     agent_counts = agents.get("counts") if isinstance(agents.get("counts"), dict) else {}
+    admission_counts = admission.get("counts") if isinstance(admission.get("counts"), dict) else {}
     process_counts = processes.get("counts") if isinstance(processes.get("counts"), dict) else {}
     agent_attention = agents.get("attention") if isinstance(agents.get("attention"), list) else []
+    admission_attention = admission.get("attention") if isinstance(admission.get("attention"), list) else []
     process_attention = processes.get("attention") if isinstance(processes.get("attention"), list) else []
     process_reasons = _process_reason_summary(processes.get("reasons"))
     connection_attention = connections.get("attention") if isinstance(connections.get("attention"), list) else []
@@ -3423,6 +3426,23 @@ def _format_live_agent_health(payload: dict[str, object]) -> str:
         ),
         f"process attention: {_attention_summary(process_attention)}",
     ]
+    if admission:
+        lines.extend(
+            [
+                (
+                    f"admission: {admission.get('host_approved', 0)} host-approved / "
+                    f"{admission.get('total', 0)} total "
+                    f"(unapproved {admission.get('unapproved', 0)}, "
+                    f"bound {admission_counts.get('bound_to_meeting', 0)}, "
+                    f"binding conflict {admission_counts.get('binding_conflict', 0)}, "
+                    f"meeting lobby {admission_counts.get('meeting_lobby_only', 0)}, "
+                    f"missing meeting {admission_counts.get('meeting_missing', 0)}, "
+                    f"lobby-only {admission_counts.get('lobby_only', 0)}, "
+                    f"unknown {admission_counts.get('unknown', 0)})"
+                ),
+                f"admission attention: {_attention_summary(admission_attention)}",
+            ]
+        )
     process_monitor_summary = _process_monitor_summary(process_monitor)
     if process_monitor_summary:
         lines.append(f"process monitor: {process_monitor_summary}")

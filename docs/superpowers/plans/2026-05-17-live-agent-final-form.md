@@ -5211,6 +5211,36 @@ Operator docs and roadmap now describe `--require-host-approved` as the admissio
 
 ---
 
+## Task 154: Surface Admission Evidence In Health
+
+**Goal:** Make `/api/live-agent-health`, `live-agent health`, and the GUI runtime health row show whether visible live-agent rows are currently host-approved for their meeting binding, without turning manual/lobby-only staging presence into a room-level health failure.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `agentsassemble/static/lobby.js`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+- Test: `tests/test_docs_architecture.py`
+- Test: `tests/static_lobby_runtime_smoke.mjs`
+
+- [x] **Step 1: Add RED health admission coverage**
+
+Cover a health snapshot with one bound row, one binding conflict, one meeting-lobby-only row, and one lobby-only row. The test requires the `admission` section to derive its evidence from the current meeting record through the safe roster projection, ignore spoofed stored admission fields, keep private session/error text out of the payload, and leave overall `status` as `ok`.
+
+- [x] **Step 2: Add read-only admission health summaries**
+
+`live_agent_health_payload()` now adds an `admission` section with total, host-approved, unapproved, status counts, and compact attention labels. CLI and GUI runtime health render the same summary. Admission attention is deliberately excluded from the overall health status calculation because explicit manual/lobby-only presence can be legitimate staging; `live-agent list --require-host-approved` remains the hard admission gate for automation.
+
+- [x] **Step 3: Keep docs aligned with operator evidence**
+
+Operator docs and roadmap now state that health admission evidence is read-only, safe, and non-gating. It must not expose session ids, endpoints, auth refs, config paths, command arguments, prompts, provider output, presence error text, or spoofed stored admission fields.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

@@ -143,6 +143,14 @@ HEALTH_WATCHDOG_REASON_EVENT_TYPES = {"stale_watchdog", "stale_watchdog_stop_fai
 HEALTH_RESTART_FAILED_REASON_EVENT_TYPE = "restart_failed"
 HEALTH_RECOVERED_UNKNOWN_REASON_EVENT_TYPE = "recovered_unknown"
 HEALTH_RECOVERED_UNKNOWN_REASON = "orphan running record marked unknown"
+LIVE_AGENT_ADMISSION_HEALTH_STATUSES = (
+    "bound_to_meeting",
+    "binding_conflict",
+    "meeting_lobby_only",
+    "meeting_missing",
+    "lobby_only",
+    "unknown",
+)
 SAFE_HEALTH_WATCHDOG_REASON_PATTERN = re.compile(
     r"^(?:(?:missing|stale|offline|error) manifest agent|wrong meeting manifest agent) [A-Za-z0-9_.-]{1,64}$"
 )
@@ -2950,6 +2958,7 @@ def live_agent_health_payload(
     groups = process_supervisor.snapshot_groups()
     diagnostic_group_ids = _diagnostic_agent_group_ids(agents)
     agent_summary = _live_agent_health_summary(agents)
+    admission_summary = _live_agent_admission_health_summary(output_root, agents)
     process_summary = _live_agent_process_health_summary(groups, diagnostic_group_ids=diagnostic_group_ids)
     connection_summary = _live_agent_connection_health_summary(
         groups,
@@ -3003,6 +3012,7 @@ def live_agent_health_payload(
     payload = {
         "status": status,
         "agents": agent_summary,
+        "admission": admission_summary,
         "processes": process_summary,
         "connections": connection_summary,
         "sessions": session_summary,
@@ -3015,6 +3025,35 @@ def live_agent_health_payload(
     if session_run_monitor_summary:
         payload["session_run_monitor"] = session_run_monitor_summary
     return payload
+
+
+def _live_agent_admission_health_summary(output_root: Path, agents: list[dict[str, object]]) -> dict[str, object]:
+    visible_agents = [agent for agent in agents if not _is_diagnostic_agent(agent)]
+    safe_payload = safe_live_agent_roster_payload(
+        _live_agent_roster_with_admission_evidence(output_root, {"agents": visible_agents})
+    )
+    safe_agents = _as_dict_list(safe_payload.get("agents"))
+    counts = {status: 0 for status in LIVE_AGENT_ADMISSION_HEALTH_STATUSES}
+    host_approved = 0
+    attention: list[str] = []
+    for index, agent in enumerate(safe_agents, start=1):
+        status = str(agent.get("admission_status") or "")
+        if status not in counts:
+            status = "unknown"
+        counts[status] += 1
+        if agent.get("host_approved_binding") is True:
+            host_approved += 1
+            continue
+        meeting_id = _safe_session_run_health_identity(agent.get("meeting_id")) or "lobby"
+        agent_id = _safe_session_run_health_identity(agent.get("agent_id")) or f"missing-agent-id-{index}"
+        attention.append(f"{meeting_id}:{agent_id}:{status}")
+    return {
+        "total": len(safe_agents),
+        "host_approved": host_approved,
+        "unapproved": len(safe_agents) - host_approved,
+        "counts": counts,
+        "attention": attention,
+    }
 
 
 def _live_agent_shared_memory_health_summary(

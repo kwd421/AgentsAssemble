@@ -4743,6 +4743,105 @@ class GuiServerTests(unittest.TestCase):
         self.assertNotIn("provider output", serialized)
         self.assertNotIn("raw model reply", serialized)
 
+    def test_live_agent_health_includes_safe_admission_summary_without_degrading(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a", "agent-b"])
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-session-a",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-b",
+                    "display_name": "Agent B",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-session-b",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "guest-agent",
+                    "display_name": "Guest Agent",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-session-c",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "lobby-agent",
+                    "display_name": "Lobby Agent",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "session_id": "private-session-d",
+                    "last_error": "provider output raw model reply should stay out",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "diagnostic-agent",
+                    "display_name": "Diagnostic Agent",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-session-diagnostic",
+                    "diagnostic": True,
+                },
+            )
+            state_path = root / "live_agents.json"
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            state["agents"][2]["admission_status"] = "bound_to_meeting"
+            state["agents"][2]["host_approved_binding"] = True
+            state["agents"][2]["binding_role_id"] = "spoofed"
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "ok")
+        admission = payload["admission"]
+        self.assertEqual(admission["total"], 4)
+        self.assertEqual(admission["host_approved"], 1)
+        self.assertEqual(admission["unapproved"], 3)
+        self.assertEqual(admission["counts"]["bound_to_meeting"], 1)
+        self.assertEqual(admission["counts"]["binding_conflict"], 1)
+        self.assertEqual(admission["counts"]["meeting_lobby_only"], 1)
+        self.assertEqual(admission["counts"]["lobby_only"], 1)
+        self.assertEqual(
+            admission["attention"],
+            [
+                "resident-m1:agent-b:binding_conflict",
+                "resident-m1:guest-agent:meeting_lobby_only",
+                "lobby:lobby-agent:lobby_only",
+            ],
+        )
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("private-session", serialized)
+        self.assertNotIn("spoofed", serialized)
+        self.assertNotIn("provider output", serialized)
+        self.assertNotIn("raw model reply", serialized)
+
     def test_live_agent_health_degrades_ready_session_when_official_turn_cursor_lags_request(self):
         class FakeSupervisor:
             def list_groups(self):

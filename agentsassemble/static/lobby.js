@@ -778,6 +778,7 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const connections = health.connections && typeof health.connections === "object" ? health.connections : {};
   const sessions = health.sessions && typeof health.sessions === "object" ? health.sessions : {};
   const observations = health.observations && typeof health.observations === "object" ? health.observations : {};
+  const admission = health.admission && typeof health.admission === "object" ? health.admission : {};
   const sharedMemory = health.shared_memory && typeof health.shared_memory === "object" ? health.shared_memory : {};
   const sessionRuns = health.session_runs && typeof health.session_runs === "object" ? health.session_runs : {};
   const sessionRunMonitor = health.session_run_monitor && typeof health.session_run_monitor === "object" ? health.session_run_monitor : {};
@@ -797,6 +798,8 @@ function renderLiveAgentRuntimeHealth(health, loading) {
   const sessionAttention = liveAgentHealthAttentionSummary(sessions.attention, "session attention");
   const observationSummary = liveAgentHealthObservationSummary(observations);
   const observationAttention = liveAgentHealthAttentionSummary(observations.attention, "observation attention");
+  const admissionSummary = liveAgentHealthAdmissionSummary(admission);
+  const admissionAttention = liveAgentHealthAttentionSummary(admission.attention, "admission attention");
   const sharedMemorySummary = liveAgentHealthSharedMemorySummary(sharedMemory);
   const sharedMemoryAttention = liveAgentHealthAttentionSummary(sharedMemory.attention, "shared-memory attention");
   const sessionRunAttention = liveAgentHealthAttentionSummary(sessionRuns.attention, "session-run attention");
@@ -816,6 +819,8 @@ function renderLiveAgentRuntimeHealth(health, loading) {
     (sessionAttention ? `<br><small>${escapeHtml(sessionAttention)}</small>` : "") +
     (observationSummary ? `<br><small>${escapeHtml(observationSummary)}</small>` : "") +
     (observationAttention ? `<br><small>${escapeHtml(observationAttention)}</small>` : "") +
+    (admissionSummary ? `<br><small>${escapeHtml(admissionSummary)}</small>` : "") +
+    (admissionAttention ? `<br><small>${escapeHtml(admissionAttention)}</small>` : "") +
     (sharedMemorySummary ? `<br><small>${escapeHtml(sharedMemorySummary)}</small>` : "") +
     (sharedMemoryAttention ? `<br><small>${escapeHtml(sharedMemoryAttention)}</small>` : "") +
     (sessionRunAttention ? `<br><small>${escapeHtml(sessionRunAttention)}</small>` : "") +
@@ -1002,6 +1007,22 @@ function liveAgentHealthObservationSummary(value) {
   const liveBehind = Math.max(0, Number(value.live_behind_count || 0));
   const errors = Math.max(0, Number(value.error_count || 0));
   return `observations ${Math.floor(readyAgents)} ready agents · lobby behind ${Math.floor(lobbyBehind)} · live behind ${Math.floor(liveBehind)} · errors ${Math.floor(errors)}`;
+}
+
+function liveAgentHealthAdmissionSummary(value) {
+  if (!value || typeof value !== "object" || !("total" in value || "host_approved" in value || "unapproved" in value)) return "";
+  const counts = value.counts && typeof value.counts === "object" ? value.counts : {};
+  const total = Math.max(0, Number(value.total || 0));
+  const approved = Math.max(0, Number(value.host_approved || 0));
+  const unapproved = Math.max(0, Number(value.unapproved || 0));
+  const bound = Math.max(0, Number(counts.bound_to_meeting || 0));
+  const conflicts = Math.max(0, Number(counts.binding_conflict || 0));
+  const meetingLobby = Math.max(0, Number(counts.meeting_lobby_only || 0));
+  return (
+    `admission ${Math.floor(approved)}/${Math.floor(total)} host-approved · ` +
+    `unapproved ${Math.floor(unapproved)} · bound ${Math.floor(bound)} · ` +
+    `binding conflict ${Math.floor(conflicts)} · meeting lobby ${Math.floor(meetingLobby)}`
+  );
 }
 
 function liveAgentHealthSharedMemorySummary(value) {

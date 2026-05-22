@@ -5088,6 +5088,23 @@ class CliTimeoutTests(unittest.TestCase):
                 "latest_live_request_count": 0,
                 "attention": ["resident-m1:resident-main:agent-b:lobby_cursor_behind"],
             },
+            "admission": {
+                "total": 3,
+                "host_approved": 1,
+                "unapproved": 2,
+                "counts": {
+                    "bound_to_meeting": 1,
+                    "binding_conflict": 1,
+                    "meeting_lobby_only": 1,
+                    "meeting_missing": 0,
+                    "lobby_only": 0,
+                    "unknown": 0,
+                },
+                "attention": [
+                    "resident-m1:agent-b:binding_conflict",
+                    "resident-m1:guest-agent:meeting_lobby_only",
+                ],
+            },
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
@@ -5130,6 +5147,10 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("last tick 2026-05-21T10:08:00+00:00", output)
         self.assertIn("observations: 2 ready agents, lobby behind 1, live behind 0, errors 0", output)
         self.assertIn("observation attention: resident-m1:resident-main:agent-b:lobby_cursor_behind", output)
+        self.assertIn("admission: 1 host-approved / 3 total", output)
+        self.assertIn("binding conflict 1", output)
+        self.assertIn("meeting lobby 1", output)
+        self.assertIn("admission attention: resident-m1:agent-b:binding_conflict, resident-m1:guest-agent:meeting_lobby_only", output)
 
     def test_live_agent_health_can_emit_json_and_fail_on_degraded(self):
         payload = {"status": "degraded", "agents": {"counts": {}, "attention": []}, "processes": {"counts": {}, "attention": []}}
