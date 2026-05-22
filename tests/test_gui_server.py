@@ -4459,6 +4459,48 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("private/token", json.dumps(payload, ensure_ascii=False))
             self.assertFalse(supervisor.list_called)
 
+    def test_live_agent_health_redacts_sensitive_agent_attention_ids(self):
+        sensitive_token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {"agent_id": "env:SECRET_AGENT", "status": "error"},
+                            {"agent_id": "literal:SECRET_AGENT", "status": "offline"},
+                            {"agent_id": sensitive_token, "status": "stale"},
+                            {"agent_id": "/Users/me/private/config.json", "status": "error"},
+                            {"agent_id": "safe-agent", "status": "offline"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("SECRET_AGENT", serialized)
+        self.assertNotIn(sensitive_token, serialized)
+        self.assertNotIn("Users/me/private", serialized)
+        self.assertNotIn("config.json", serialized)
+        self.assertEqual(
+            payload["agents"]["attention"],
+            [
+                "missing-agent-id-1",
+                "missing-agent-id-2",
+                "missing-agent-id-3",
+                "missing-agent-id-4",
+                "safe-agent",
+            ],
+        )
+
     def test_live_agent_health_endpoint_summarizes_durable_session_run_retry(self):
         class FakeSupervisor:
             def list_groups(self):
@@ -4514,6 +4556,217 @@ class GuiServerTests(unittest.TestCase):
         serialized = json.dumps(payload, ensure_ascii=False)
         self.assertNotIn("configs/private.json", serialized)
         self.assertNotIn("secret.example", serialized)
+
+    def test_live_agent_health_degrades_ready_session_run_without_current_readiness(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": "configs/private.json",
+                    "server": "https://secret.example",
+                },
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+            operations_path_exists = (root / "live-agent-runs" / "operations.jsonl").exists()
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertFalse(operations_path_exists)
+        self.assertEqual(
+            payload["session_runs"]["attention"],
+            [f"resident-m1:resident-main:{run['run_id']}:ready:no_current_readiness"],
+        )
+        self.assertEqual(payload["session_runs"]["items"][0]["status"], "ready")
+        self.assertEqual(payload["session_runs"]["items"][0]["readiness"]["status"], "degraded")
+        self.assertEqual(
+            payload["session_runs"]["items"][0]["readiness"]["attention"],
+            ["session_run:no_current_readiness"],
+        )
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("configs/private.json", serialized)
+        self.assertNotIn("secret.example", serialized)
+
+    def test_live_agent_health_keeps_old_active_ready_session_runs_outside_recent_tail(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            controller = LiveAgentSessionRunController(root)
+            active_ready_run = controller.begin_run(
+                action="ensure",
+                payload={
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "live_agent_config_path": "configs/private.json",
+                },
+            )
+            controller.finish_run(
+                active_ready_run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+            for index in range(60):
+                run = controller.begin_run(
+                    action="ensure",
+                    payload={"meeting_id": f"resident-done-{index}", "group_id": "resident-main"},
+                )
+                controller.finish_run(
+                    run["run_id"],
+                    session={
+                        "status": "ready",
+                        "meeting_id": f"resident-done-{index}",
+                        "group_id": "resident-main",
+                        "action": "none",
+                    },
+                )
+                controller.stop_run(run["run_id"])
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        run_ids = [item["run_id"] for item in payload["session_runs"]["items"]]
+        self.assertIn(active_ready_run["run_id"], run_ids)
+        self.assertIn(
+            f"resident-m1:resident-main:{active_ready_run['run_id']}:ready:no_current_readiness",
+            payload["session_runs"]["attention"],
+        )
+
+    def test_live_agent_health_accepts_ready_session_run_with_current_ready_overlay(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                },
+            )
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["session_runs"]["attention"], [])
+        self.assertEqual(payload["session_runs"]["items"][0]["readiness"]["status"], "ready")
+
+    def test_live_agent_health_degrades_ready_session_run_with_duplicate_current_owner(self):
+        class FakeSupervisor:
+            def list_groups(self):
+                raise AssertionError("health endpoint must not refresh process groups")
+
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    },
+                    {
+                        "group_id": "resident-shadow",
+                        "status": "running",
+                        "meeting_id": "resident-m1",
+                        "agents": [{"agent_id": "agent-a"}],
+                    },
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                },
+            )
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        self.assertEqual(payload["status"], "degraded")
+        self.assertIn(
+            f"resident-m1:resident-main:{run['run_id']}:ready:current_readiness_degraded",
+            payload["session_runs"]["attention"],
+        )
+        self.assertIn("meeting:duplicate_active_group", payload["session_runs"]["items"][0]["readiness"]["attention"])
 
     def test_live_agent_health_endpoint_includes_process_monitor_liveness(self):
         class MonitorSupervisor:
@@ -5810,6 +6063,104 @@ class GuiServerTests(unittest.TestCase):
                 server.server_close()
 
         self.assertEqual(payload["connections"]["attention"], ["unknown:unknown:missing"])
+
+    def test_live_agent_health_redacts_sensitive_process_and_session_owner_ids(self):
+        sensitive_group_token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "literal:SECRET_GROUP",
+                        "status": "running",
+                        "meeting_id": "env:SECRET_TOKEN",
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    },
+                    {
+                        "group_id": sensitive_group_token,
+                        "status": "error",
+                        "meeting_id": "env:SECRET_TOKEN",
+                        "recent_events": [
+                            {
+                                "event_type": "stale_watchdog",
+                                "reason": "missing manifest agent agent-b",
+                            }
+                        ],
+                        "agents": [{"agent_id": "agent-b", "display_name": "Agent B"}],
+                    },
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "live_agents.json").write_text(json.dumps({"agents": []}), encoding="utf-8")
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("SECRET_TOKEN", serialized)
+        self.assertNotIn("SECRET_GROUP", serialized)
+        self.assertNotIn("literal:", serialized)
+        self.assertNotIn("env:", serialized)
+        self.assertNotIn(sensitive_group_token, serialized)
+        self.assertEqual(payload["processes"]["meeting_ids"], {})
+        self.assertEqual(payload["processes"]["attention"], ["missing-process-group-id-2"])
+        self.assertEqual(
+            payload["processes"]["reasons"],
+            {
+                "missing-process-group-id-2": {
+                    "event_type": "stale_watchdog",
+                    "reason": "missing manifest agent agent-b",
+                }
+            },
+        )
+        self.assertEqual(payload["connections"]["attention"], ["unknown:agent-a:missing"])
+        self.assertEqual(payload["sessions"]["items"], [])
+
+    def test_live_agent_health_redacts_token_like_process_reasons(self):
+        sensitive_agent_token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "error",
+                        "meeting_id": "resident-m1",
+                        "recent_events": [
+                            {
+                                "event_type": "stale_watchdog",
+                                "reason": f"missing manifest agent {sensitive_agent_token}",
+                            }
+                        ],
+                        "agents": [{"agent_id": "agent-a", "display_name": "Agent A"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            controller = LiveAgentSessionRunController(root)
+            run = controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+
+            payload = live_agent_health_payload(root, FakeSupervisor())
+
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn(sensitive_agent_token, serialized)
+        self.assertEqual(payload["processes"]["reasons"], {})
+        self.assertNotIn("process_reason", payload["sessions"]["items"][0])
+        self.assertNotIn("process_reason", payload["session_runs"]["items"][0]["readiness"])
 
     def test_live_agent_health_degrades_when_manifest_agent_has_not_reconnected_after_group_start(self):
         class FakeSupervisor:
@@ -13143,6 +13494,272 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(run["readiness"]["connected"], 0)
         self.assertEqual(operations["operations"], [])
         self.assertNotIn(str(live_agent_config), str(runs_payload))
+
+    def test_live_agent_session_runs_api_redacts_token_like_readiness_process_reason(self):
+        sensitive_agent_token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
+
+        class ReadinessSessionSupervisor:
+            def snapshot_groups(self):
+                return [
+                    {
+                        "group_id": "resident-main",
+                        "status": "error",
+                        "meeting_id": "resident-m1",
+                        "recent_events": [
+                            {
+                                "event_type": "stale_watchdog",
+                                "reason": f"missing manifest agent {sensitive_agent_token}",
+                            }
+                        ],
+                        "agents": [{"agent_id": "agent-a"}],
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _write_health_resident_meeting(root, agent_ids=["agent-a"])
+            session_run_controller = LiveAgentSessionRunController(root)
+            target = session_run_controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            session_run_controller.finish_run(
+                target["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "none",
+                },
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(
+                    root,
+                    process_supervisor=ReadinessSessionSupervisor(),
+                    session_run_controller=session_run_controller,
+                ),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs"
+                    "?limit=1&meeting_id=resident-m1&group_id=resident-main&include_readiness=1",
+                    timeout=4,
+                ) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        serialized = json.dumps(runs_payload, ensure_ascii=False)
+        self.assertNotIn(sensitive_agent_token, serialized)
+        run = runs_payload["runs"][0]
+        self.assertEqual(run["run_id"], target["run_id"])
+        self.assertEqual(run["readiness"]["status"], "degraded")
+        self.assertNotIn("process_reason", run["readiness"])
+
+    def test_live_agent_session_runs_api_redacts_sensitive_legacy_ids_with_readiness(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir(parents=True)
+            (runs_dir / "session-runs.json").write_text(
+                json.dumps(
+                    {
+                        "runs": [
+                            {
+                                "run_id": "ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+                                "action": "ensure",
+                                "status": "ready",
+                                "active": True,
+                                "phase": "/Users/me/private/live-agents.secret.json token sk-test-secret",
+                                "meeting_id": "env:SECRET_MEETING",
+                                "group_id": "literal:SECRET_GROUP",
+                                "request": {
+                                    "meeting_id": "env:SECRET_MEETING",
+                                    "group_id": "literal:SECRET_GROUP",
+                                },
+                                "result": {
+                                    "status": "ready",
+                                    "process": {
+                                        "env:SECRET_TOKEN": "ok",
+                                        "nested": {"ghp_abcdefghijklmnopqrstuvwxyz1234567890": "ok"},
+                                    },
+                                    "connection": {"/Users/me/private/config.json": "ok"},
+                                },
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, process_supervisor=FakeSupervisor()),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs?limit=20&include_readiness=1",
+                    timeout=4,
+                ) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        serialized = json.dumps(runs_payload, ensure_ascii=False)
+        self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz1234567890", serialized)
+        self.assertNotIn("SECRET_MEETING", serialized)
+        self.assertNotIn("SECRET_GROUP", serialized)
+        self.assertNotIn("SECRET_TOKEN", serialized)
+        self.assertNotIn("Users/me/private", serialized)
+        self.assertNotIn("config.json", serialized)
+        self.assertNotIn("live-agents.secret.json", serialized)
+        self.assertNotIn("sk-test-secret", serialized)
+        self.assertEqual(runs_payload["runs"][0]["run_id"], "")
+        self.assertEqual(runs_payload["runs"][0]["phase"], "")
+        self.assertEqual(runs_payload["runs"][0]["meeting_id"], "")
+        self.assertEqual(runs_payload["runs"][0]["group_id"], "")
+        self.assertEqual(runs_payload["runs"][0]["readiness"]["attention"], ["session_run:missing_target"])
+
+    def test_live_agent_session_runs_api_redacts_relative_path_like_legacy_values(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir(parents=True)
+            (runs_dir / "session-runs.json").write_text(
+                json.dumps(
+                    {
+                        "runs": [
+                            {
+                                "run_id": "run-relative-paths",
+                                "action": "ensure",
+                                "status": "ready",
+                                "active": True,
+                                "phase": "configs/private.yaml",
+                                "meeting_id": "resident-m1",
+                                "group_id": "resident-main",
+                                "request": {
+                                    "meeting_id": "resident-m1",
+                                    "group_id": "resident-main",
+                                    "live_agent_config_path": "configs/private.yaml",
+                                },
+                                "result": {
+                                    "status": "ready",
+                                    "process": {
+                                        "relative/private.txt": "ok",
+                                        "safe_key": "relative/private.txt",
+                                    },
+                                },
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, process_supervisor=FakeSupervisor()),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs?limit=20&include_readiness=1",
+                    timeout=4,
+                ) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        serialized = json.dumps(runs_payload, ensure_ascii=False)
+        self.assertNotIn("configs/private.yaml", serialized)
+        self.assertNotIn("relative/private.txt", serialized)
+        run = runs_payload["runs"][0]
+        self.assertEqual(run["phase"], "")
+        self.assertNotIn("live_agent_config_path", run["request"])
+        self.assertEqual(run["result"]["process"], {"safe_key": "[redacted]"})
+
+    def test_live_agent_session_runs_api_redacts_backslash_relative_path_like_legacy_values(self):
+        class FakeSupervisor:
+            def snapshot_groups(self):
+                return []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            runs_dir = root / "live-agent-runs"
+            runs_dir.mkdir(parents=True)
+            (runs_dir / "session-runs.json").write_text(
+                json.dumps(
+                    {
+                        "runs": [
+                            {
+                                "run_id": "run-backslash-paths",
+                                "action": "ensure",
+                                "status": "ready",
+                                "active": True,
+                                "phase": "configs\\private.yaml",
+                                "meeting_id": "resident-m1",
+                                "group_id": "resident-main",
+                                "request": {
+                                    "meeting_id": "resident-m1",
+                                    "group_id": "resident-main",
+                                },
+                                "result": {
+                                    "status": "ready",
+                                    "process": {
+                                        "relative\\private.txt": "ok",
+                                        "safe_key": "..\\private.txt",
+                                    },
+                                },
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                _make_handler(root, process_supervisor=FakeSupervisor()),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-session-runs?limit=20&include_readiness=1",
+                    timeout=4,
+                ) as response:
+                    runs_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        serialized = json.dumps(runs_payload, ensure_ascii=False)
+        self.assertNotIn("configs\\\\private.yaml", serialized)
+        self.assertNotIn("relative\\\\private.txt", serialized)
+        self.assertNotIn("..\\\\private.txt", serialized)
+        run = runs_payload["runs"][0]
+        self.assertEqual(run["phase"], "")
+        self.assertEqual(run["result"]["process"], {"safe_key": "[redacted]"})
 
     def test_live_agent_session_run_monitor_reconciles_active_runs_on_each_tick(self):
         from agentsassemble.gui import LiveAgentSessionRunMonitor

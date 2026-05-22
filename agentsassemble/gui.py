@@ -986,12 +986,7 @@ def _session_runs_with_readiness(
 ) -> list[dict[str, object]]:
     groups = _session_process_groups_snapshot(process_supervisor)
     summary = live_agent_session_readiness_summary(output_root, groups)
-    items = summary.get("items") if isinstance(summary.get("items"), list) else []
-    readiness_by_target = {
-        (str(item.get("meeting_id") or ""), str(item.get("group_id") or "")): item
-        for item in items
-        if isinstance(item, dict)
-    }
+    readiness_by_target = _session_readiness_by_target(summary)
     return [
         {
             **run,
@@ -1001,12 +996,21 @@ def _session_runs_with_readiness(
     ]
 
 
+def _session_readiness_by_target(summary: dict[str, object]) -> dict[tuple[str, str], dict[str, object]]:
+    items = summary.get("items") if isinstance(summary.get("items"), list) else []
+    return {
+        (str(item.get("meeting_id") or ""), str(item.get("group_id") or "")): item
+        for item in items
+        if isinstance(item, dict)
+    }
+
+
 def _session_run_readiness_overlay(
     run: dict[str, object],
     readiness_by_target: dict[tuple[str, str], dict[str, object]],
 ) -> dict[str, object]:
-    meeting_id = str(run.get("meeting_id") or "").strip()
-    group_id = str(run.get("group_id") or "").strip()
+    meeting_id = _safe_session_run_health_identity(run.get("meeting_id"))
+    group_id = _safe_session_run_health_identity(run.get("group_id"))
     if not meeting_id or not group_id:
         return {"status": "degraded", "attention": ["session_run:missing_target"]}
     readiness = readiness_by_target.get((meeting_id, group_id))
@@ -2989,7 +2993,7 @@ def live_agent_health_payload(
         if isinstance(shared_memory_summary.get("attention"), list)
         else []
     )
-    session_run_summary = _live_agent_session_run_health_summary(output_root)
+    session_run_summary = _live_agent_session_run_health_summary(output_root, session_summary=session_summary)
     session_run_monitor_summary = _live_agent_session_run_monitor_health_summary(session_run_monitor)
     session_run_monitor_attention = (
         session_run_monitor_summary.get("attention")
@@ -3150,7 +3154,7 @@ def _live_agent_health_summary(agents: list[dict[str, object]]) -> dict[str, obj
         status = raw_status if raw_status in counts else "offline"
         counts[status] += 1
         if status in {"error", "stale", "offline"}:
-            attention.append(str(agent.get("agent_id") or f"missing-agent-id-{index}"))
+            attention.append(_safe_session_run_health_identity(agent.get("agent_id")) or f"missing-agent-id-{index}")
     return {"total": len(agents), "live": counts["online"] + counts["working"], "counts": counts, "attention": attention}
 
 
@@ -3169,7 +3173,7 @@ def _live_agent_process_health_summary(
         raw_status = str(group.get("status") or "unknown")
         status = raw_status if raw_status in counts else "unknown"
         counts[status] += 1
-        group_id = str(group.get("group_id") or f"missing-process-group-id-{index}")
+        group_id = _safe_process_group_id(group.get("group_id"), fallback=f"missing-process-group-id-{index}")
         meeting_id = _safe_process_meeting_id(group.get("meeting_id"))
         if group_id and meeting_id:
             meeting_ids[group_id] = meeting_id
@@ -3268,7 +3272,7 @@ def _safe_health_watchdog_reason(value: object) -> str:
 
 def _looks_sensitive_health_watchdog_reason(reason: str) -> bool:
     lowered = reason.casefold()
-    return "/" in reason or "\\" in reason or ".json" in lowered or "env:" in lowered
+    return _looks_sensitive_session_run_health_text(reason) or "/" in reason or "\\" in reason or ".json" in lowered or "env:" in lowered
 
 
 def _safe_health_restart_failed_reason(value: object, *, group_id: str) -> str:
@@ -3564,9 +3568,14 @@ def _live_agent_observation_has_active_error(agent: dict[str, object]) -> bool:
     return clean_lobby_text(agent.get("status"), limit=64) == "error"
 
 
-def _live_agent_session_run_health_summary(output_root: Path) -> dict[str, object]:
+def _live_agent_session_run_health_summary(
+    output_root: Path,
+    *,
+    session_summary: dict[str, object] | None = None,
+) -> dict[str, object]:
     snapshot = LiveAgentSessionRunController(output_root).health_snapshot()
     runs = snapshot.get("runs") if isinstance(snapshot.get("runs"), list) else []
+    readiness_by_target = _session_readiness_by_target(session_summary or {})
     items = []
     attention = []
     retrying_count = 0
@@ -3578,21 +3587,26 @@ def _live_agent_session_run_health_summary(output_root: Path) -> dict[str, objec
         retrying = _live_agent_session_run_retrying(run)
         if retrying:
             retrying_count += 1
+        readiness = _session_run_readiness_overlay(run, readiness_by_target) if active else {}
+        readiness_issue = _live_agent_session_run_readiness_issue(readiness) if active and status == "ready" else ""
         if active and status != "ready":
             attention.append(_live_agent_session_run_attention_label(run, status=status, retrying=retrying))
-        items.append(
-            {
-                "run_id": _safe_session_run_health_identity(run.get("run_id")),
-                "meeting_id": _safe_session_run_health_identity(run.get("meeting_id")),
-                "group_id": _safe_session_run_health_identity(run.get("group_id")),
-                "status": clean_lobby_text(status, limit=64),
-                "active": active,
-                "phase": _safe_session_run_health_phase(run.get("phase")),
-                "reconcile_failure_count": _safe_session_run_health_int(run.get("reconcile_failure_count")),
-                "reconcile_backoff_seconds": _safe_session_run_health_int(run.get("reconcile_backoff_seconds")),
-                "next_reconcile_at": _safe_session_run_health_timestamp(run.get("next_reconcile_at")),
-            }
-        )
+        elif readiness_issue:
+            attention.append(_live_agent_session_run_attention_label(run, status=status, reason=readiness_issue))
+        item = {
+            "run_id": _safe_session_run_health_identity(run.get("run_id")),
+            "meeting_id": _safe_session_run_health_identity(run.get("meeting_id")),
+            "group_id": _safe_session_run_health_identity(run.get("group_id")),
+            "status": clean_lobby_text(status, limit=64),
+            "active": active,
+            "phase": _safe_session_run_health_phase(run.get("phase")),
+            "reconcile_failure_count": _safe_session_run_health_int(run.get("reconcile_failure_count")),
+            "reconcile_backoff_seconds": _safe_session_run_health_int(run.get("reconcile_backoff_seconds")),
+            "next_reconcile_at": _safe_session_run_health_timestamp(run.get("next_reconcile_at")),
+        }
+        if active:
+            item["readiness"] = readiness
+        items.append(item)
     return {
         "total": _safe_session_run_health_int(snapshot.get("total")),
         "active": _safe_session_run_health_int(snapshot.get("active")),
@@ -3653,16 +3667,45 @@ def _live_agent_session_run_retrying(run: dict[str, object]) -> bool:
     )
 
 
-def _live_agent_session_run_attention_label(run: dict[str, object], *, status: str, retrying: bool) -> str:
+def _live_agent_session_run_readiness_issue(readiness: dict[str, object]) -> str:
+    if clean_lobby_text(readiness.get("status"), limit=64) == "ready":
+        return ""
+    attention = readiness.get("attention") if isinstance(readiness.get("attention"), list) else []
+    if "session_run:no_current_readiness" in attention:
+        return "no_current_readiness"
+    if "session_run:missing_target" in attention:
+        return "missing_target"
+    process_status = clean_lobby_text(readiness.get("process_status"), limit=64)
+    if process_status and process_status != "running":
+        return f"process_{process_status}"
+    return "current_readiness_degraded"
+
+
+def _live_agent_session_run_attention_label(
+    run: dict[str, object],
+    *,
+    status: str,
+    retrying: bool = False,
+    reason: str = "",
+) -> str:
     parts = [
         _safe_session_run_health_identity(run.get("meeting_id")) or "-",
         _safe_session_run_health_identity(run.get("group_id")) or "-",
         _safe_session_run_health_identity(run.get("run_id")) or "-",
         clean_lobby_text(status, limit=64) or "unknown",
     ]
-    if retrying:
+    if reason:
+        parts.append(_safe_session_run_health_reason(reason))
+    elif retrying:
         parts.append("retrying")
     return ":".join(parts)
+
+
+def _safe_session_run_health_reason(value: object) -> str:
+    reason = clean_lobby_text(value, limit=64)
+    if not reason or _looks_sensitive_session_run_health_text(reason):
+        return "current_readiness_degraded"
+    return reason if re.fullmatch(r"[A-Za-z0-9_:-]{1,64}", reason) else "current_readiness_degraded"
 
 
 def _safe_session_run_health_identity(value: object) -> str:
@@ -3714,12 +3757,11 @@ def _safe_session_run_health_timestamp(value: object) -> str:
 
 
 def _safe_process_meeting_id(value: object) -> str:
-    meeting_id = clean_lobby_text(value, limit=128)
-    if not meeting_id or meeting_id in {".", ".."}:
-        return ""
-    if "/" in meeting_id or "\\" in meeting_id or Path(meeting_id).name != meeting_id:
-        return ""
-    return meeting_id
+    return _safe_session_run_health_identity(value)
+
+
+def _safe_process_group_id(value: object, *, fallback: str) -> str:
+    return _safe_session_run_health_identity(value) or fallback
 
 
 def _groups_with_agent_connection_evidence(

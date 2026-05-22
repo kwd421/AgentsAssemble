@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -18,6 +19,13 @@ from agentsassemble.meeting_setup import prepare_meeting_setup
 SUPPORTED_SESSION_CONNECTION_KINDS = frozenset({"local_cli", "live_session", "terminal_session", "remote_bridge", "self_service"})
 SESSION_PROCESS_STATUSES = frozenset({"running", "restarting", "error", "unknown", "stopped"})
 SESSION_ACTIVE_PROCESS_STATUSES = frozenset({"running", "restarting"})
+SENSITIVE_SESSION_PUBLIC_IDENTITY_PATTERNS = (
+    re.compile(r"https?://\S+", re.IGNORECASE),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{6,}\b"),
+    re.compile(r"\bgh[opusr]_[A-Za-z0-9_]{20,}\b", re.IGNORECASE),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b", re.IGNORECASE),
+    re.compile(r"(?<!\w)[^\s,;)'\"]*\.json\b", re.IGNORECASE),
+)
 SESSION_AGENT_ATTENTION_STATUSES = frozenset(
     {
         "missing",
@@ -481,21 +489,11 @@ def _session_group_is_diagnostic(group: dict[str, object]) -> bool:
 
 
 def _safe_session_group_id(value: object) -> str:
-    group_id = clean_lobby_text(value, limit=128)
-    if not group_id or group_id in {".", ".."}:
-        return "unknown"
-    if "/" in group_id or "\\" in group_id or Path(group_id).name != group_id:
-        return "unknown"
-    return group_id
+    return _safe_session_public_identity(value, fallback="unknown")
 
 
 def _safe_session_agent_id(value: object) -> str:
-    agent_id = clean_lobby_text(value, limit=128)
-    if not agent_id or agent_id in {".", ".."}:
-        return "unknown-agent"
-    if "/" in agent_id or "\\" in agent_id or Path(agent_id).name != agent_id:
-        return "unknown-agent"
-    return agent_id
+    return _safe_session_public_identity(value, fallback="unknown-agent")
 
 
 def restart_live_agent_session(
@@ -1416,7 +1414,7 @@ def _safe_meeting_summary(value: object) -> dict[str, object]:
     roles = value.get("roles") if isinstance(value.get("roles"), list) else []
     bindings = value.get("agent_bindings") if isinstance(value.get("agent_bindings"), list) else []
     return {
-        "meeting_id": str(value.get("meeting_id") or ""),
+        "meeting_id": _safe_optional_meeting_id(value.get("meeting_id")),
         "live_status": str(value.get("live_status") or ""),
         "role_count": len(roles),
         "bound_agent_count": len(bindings),
@@ -1437,12 +1435,25 @@ def _safe_group_summary(value: object) -> dict[str, object]:
 
 
 def _safe_optional_meeting_id(value: object) -> str:
-    meeting_id = clean_lobby_text(value, limit=128)
-    if not meeting_id or meeting_id in {".", ".."}:
-        return ""
-    if "/" in meeting_id or "\\" in meeting_id or Path(meeting_id).name != meeting_id:
-        return ""
-    return meeting_id
+    return _safe_session_public_identity(value, fallback="")
+
+
+def _safe_session_public_identity(value: object, *, fallback: str) -> str:
+    text = clean_lobby_text(value, limit=128)
+    if not text or text in {".", ".."}:
+        return fallback
+    if "/" in text or "\\" in text or Path(text).name != text:
+        return fallback
+    if _looks_sensitive_session_public_identity(text):
+        return fallback
+    return text
+
+
+def _looks_sensitive_session_public_identity(text: str) -> bool:
+    lowered = text.casefold()
+    if "env:" in lowered or "literal:" in lowered:
+        return True
+    return any(pattern.search(text) for pattern in SENSITIVE_SESSION_PUBLIC_IDENTITY_PATTERNS)
 
 
 def _preflight_failure_message(report: dict[str, object]) -> str:

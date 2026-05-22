@@ -5103,6 +5103,7 @@ Document that `--probe api` does not call Messages, generateContent, chat/comple
 
 **Files:**
 - Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/live_agent_sessions.py`
 - Modify: `agentsassemble/live_agent_session_runs.py`
 - Modify: `docs/live-agent-ops.md`
 - Modify: `docs/roadmap.md`
@@ -5296,6 +5297,85 @@ Cover a degraded durable session-run with a future `next_reconcile_at`, pause it
 - [x] **Step 3: Keep docs aligned with operator behavior**
 
 Operator docs and roadmap now state that resume clears any saved retry delay while preserving retry failure evidence, so a resumed durable run is eligible for the next reconcile instead of silently waiting behind stale backoff.
+
+---
+
+## Task 157: Surface Stored-Ready Session-Run Drift In Health
+
+**Goal:** Make `/api/live-agent-health` degrade when an active durable session-run is historically `ready` but no longer has current read-only session readiness evidence.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/live_agent_session_runs.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_docs_architecture.py`
+
+- [x] **Step 1: Add RED stored-ready drift coverage**
+
+Cover an active stored `ready` session-run with no matching current process/readiness evidence. The first health test failed because `/api/live-agent-health` returned `ok`, proving health was trusting durable history without checking current readiness. A second RED test covered an older active ready run hidden behind newer stopped records, exposing that the health snapshot only force-included active non-ready runs outside the recent tail.
+
+- [x] **Step 2: Reuse the current readiness overlay in health**
+
+Health now passes the already computed read-only session readiness summary into the durable session-run summary. Active stored-ready runs carry a safe current readiness overlay in `session_runs.items`, and a degraded or missing overlay adds `session-run attention` such as `resident-m1:resident-main:<run_id>:ready:no_current_readiness`. Durable session-run health snapshots now force-include all active runs, not only active non-ready runs, so old active ready intent cannot disappear from health.
+
+- [x] **Step 3: Keep docs aligned with operator evidence**
+
+Operator docs and roadmap now state that stored-ready durable intent is checked against current readiness in health, and that a historical ready run without current evidence degrades health without calling providers, appending operations, or exposing private launch details.
+
+- [x] **Step 4: Close review leak on process/session owner ids**
+
+Review found that `/api/live-agent-health` could still leak unsafe persisted
+process or session owner ids outside the durable session-run projection. RED
+coverage reproduced `env:`, `literal:`, and token-like group/meeting ids in
+`processes.meeting_ids`, `processes.attention`, `processes.reasons`,
+`sessions.items`, and `sessions.attention`. Process health now sanitizes
+public group keys and meeting ids through the stricter health identity path, and
+session readiness now drops or placeholders unsafe meeting, group, and agent ids
+before building public health rows.
+
+- [x] **Step 5: Close review leak on token-like watchdog reasons**
+
+Review found a second leak path where a safe-shaped watchdog reason such as
+`missing manifest agent ghp_...` could pass the watchdog allowlist, then appear
+in `processes.reasons`, `sessions.items[*].process_reason`, and health
+session-run readiness overlays. RED coverage now checks both direct health and
+`include_readiness=1` overlays, and watchdog reasons reuse the stricter
+credential/path-sensitive text classifier before any allowlisted reason is
+published.
+
+- [x] **Step 6: Close review leak on agent attention and nested result keys**
+
+Re-review found two more public-health/session-run leak paths: raw unsafe
+`agent_id` values in `agents.attention`, and unsafe nested keys inside public
+durable session-run `result` dictionaries. RED coverage now reproduces
+`env:`, `literal:`, token-like, and path-like roster ids plus nested `process`
+and `connection` result keys. Agent health attention now uses the same public
+health identity sanitizer with stable missing-agent placeholders, and public
+session-run result dictionaries drop sensitive nested keys before publishing the
+remaining safe scalar evidence.
+
+- [x] **Step 7: Close review leak on relative path-like session-run values**
+
+Re-review found that public durable session-run reads still treated ordinary
+relative path-like strings such as `configs/private.yaml` and
+`relative/private.txt` as safe because the sensitive-text patterns only caught
+URLs, tokens, absolute paths, dot-relative paths, Windows paths, and `.json`
+files. RED coverage now reproduces relative path-like leaks in legacy `phase`
+and nested result keys/values, and the session-run sensitive-text classifier now
+rejects slash-bearing relative path-like strings before publishing public
+request/result/phase evidence.
+
+- [x] **Step 8: Close review leak on backslash relative session-run values**
+
+Final re-review found that backslash relative path-like values such as
+`configs\\private.yaml`, `relative\\private.txt`, and `..\\private.txt` still
+escaped the forward-slash relative path classifier. RED coverage now reproduces
+those legacy values in public durable session-run `phase` and nested result
+keys/values, and the session-run sensitive-text classifier now rejects
+backslash-bearing relative path-like strings as well.
 
 ---
 

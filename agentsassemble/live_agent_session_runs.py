@@ -70,7 +70,11 @@ SENSITIVE_TEXT_PATTERNS = (
     re.compile(r"\benv:[^\s,;]+", re.IGNORECASE),
     re.compile(r"\bliteral:[^\s,;]+", re.IGNORECASE),
     re.compile(r"\bsk-[A-Za-z0-9_-]{6,}\b"),
+    re.compile(r"\bgh[opusr]_[A-Za-z0-9_]{20,}\b", re.IGNORECASE),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b", re.IGNORECASE),
     re.compile(r"\b[A-Za-z]:\\[^\s,;)'\"]+"),
+    re.compile(r"(?<!\w)(?:\.{1,2}\\|~\\|[A-Za-z0-9_.-]+\\)[^\s,;)'\"]+", re.IGNORECASE),
+    re.compile(r"(?<!\w)(?:\.{1,2}/|~/|[A-Za-z0-9_.-]+/)[^\s,;)'\"]+", re.IGNORECASE),
     re.compile(r"(?<!\w)[^\s,;)'\"]*\.json\b", re.IGNORECASE),
     re.compile(r"(?<!\w)['\"]?/[^\s,;)'\"]+"),
 )
@@ -428,7 +432,7 @@ class LiveAgentSessionRunController:
         selected_run_ids.update(
             str(record.get("run_id") or "")
             for record in visible_records
-            if record.get("active") is True and str(record.get("status") or "") != "ready"
+            if record.get("active") is True
         )
         return {
             "total": len(visible_records),
@@ -512,13 +516,13 @@ def _safe_record(value: object) -> dict[str, object]:
 def _public_record(record: dict[str, object]) -> dict[str, object]:
     status = _safe_status(record.get("status"))
     return {
-        "run_id": _safe_identity(record.get("run_id")),
+        "run_id": _public_identity(record.get("run_id")),
         "action": _safe_action(record.get("action")),
         "status": status,
         "active": bool(record.get("active")) and status not in TERMINAL_SESSION_RUN_STATUSES and status != "paused",
-        "phase": _safe_phase(record.get("phase")) or status,
-        "meeting_id": _safe_identity(record.get("meeting_id")) or _record_meeting_id(record),
-        "group_id": _safe_identity(record.get("group_id")) or _record_group_id(record),
+        "phase": _public_phase(record.get("phase"), fallback=status),
+        "meeting_id": _public_identity(record.get("meeting_id")) or _public_identity(_record_meeting_id(record)),
+        "group_id": _public_identity(record.get("group_id")) or _public_identity(_record_group_id(record)),
         "request": _public_request(record.get("request") if isinstance(record.get("request"), dict) else {}),
         "result": _public_result(record.get("result") if isinstance(record.get("result"), dict) else {}),
         "last_error": _safe_error(record.get("last_error")) if record.get("last_error") else "",
@@ -603,11 +607,18 @@ def _safe_result_value(value: object) -> object:
     if isinstance(value, dict):
         safe: dict[str, object] = {}
         for key, item in value.items():
-            safe_key = clean_lobby_text(key, limit=SESSION_RUN_FIELD_LIMIT)
+            safe_key = _safe_result_key(key)
             if safe_key:
                 safe[safe_key] = _safe_result_value(item)
         return safe
     return clean_lobby_text(value, limit=SESSION_RUN_TEXT_LIMIT)
+
+
+def _safe_result_key(value: object) -> str:
+    key = clean_lobby_text(value, limit=SESSION_RUN_FIELD_LIMIT)
+    if not key or _contains_sensitive_text(key):
+        return ""
+    return key
 
 
 def _record_meeting_id(record: dict[str, object]) -> str:
@@ -638,6 +649,13 @@ def _safe_identity(value: object) -> str:
     if not text or text in {".", ".."}:
         return ""
     if "/" in text or "\\" in text:
+        return ""
+    return text
+
+
+def _public_identity(value: object) -> str:
+    text = _safe_identity(value)
+    if not text or _contains_sensitive_text(text):
         return ""
     return text
 
@@ -719,6 +737,15 @@ def _reconcile_backoff_seconds(failure_count: int) -> int:
 
 def _safe_phase(value: object) -> str:
     return clean_lobby_text(value, limit=SESSION_RUN_FIELD_LIMIT)
+
+
+def _public_phase(value: object, *, fallback: str) -> str:
+    phase = _safe_phase(value)
+    if not phase:
+        return fallback
+    if _contains_sensitive_text(phase):
+        return ""
+    return phase
 
 
 def _safe_timestamp(value: object) -> str:
