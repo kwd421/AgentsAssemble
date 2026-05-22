@@ -440,11 +440,19 @@ def run_live_agent_session_smoke(
                         "max_rounds": 1,
                         "timeout_seconds": float(timeout_seconds),
                         "stop_on_timeout": False,
+                        "finalize_after_rounds": True,
                     },
                     timeout_seconds=_smoke_operation_http_timeout(float(timeout_seconds), windows=4),
                 )
                 if rounds_result.get("status") != "answered" or _nonnegative_int(rounds_result.get("answered_round_count")) < 1:
                     raise LiveAgentSmokeFailed("Session smoke official round did not answer.")
+                finalization_result = (
+                    rounds_result.get("finalization")
+                    if isinstance(rounds_result.get("finalization"), dict)
+                    else {}
+                )
+                if _session_smoke_finalization_status(finalization_result) not in {"finalized", "already_finalized"}:
+                    raise LiveAgentSmokeFailed("Session smoke finalization did not complete.")
                 _set_session_smoke_engagement(server, agent_ids.values(), request_json=request_json)
                 probe_event_ids, replies = _session_smoke_lobby_probe_replies(
                     server,
@@ -583,8 +591,17 @@ def run_live_agent_session_smoke(
     safe_post_recover_replies = _safe_session_smoke_replies(post_recover_replies)
     safe_soak_replies = _safe_session_smoke_replies(soak_replies)
     self_service_agent_id = agent_ids.get("self_service", "")
+    finalization = rounds_result.get("finalization") if isinstance(rounds_result.get("finalization"), dict) else {}
+    finalization_status = _session_smoke_finalization_status(finalization)
+    artifact_paths = _session_smoke_artifact_paths(
+        finalization,
+        output_root=output_root,
+        meeting_id=clean_meeting_id,
+    )
     return {
-        "status": "ok" if stop_result.get("status") == "stopped" else "failed",
+        "status": "ok"
+        if stop_result.get("status") == "stopped" and finalization_status in {"finalized", "already_finalized"}
+        else "failed",
         "meeting_id": clean_meeting_id,
         "group_id": clean_group_id,
         "agent_ids": list(agent_ids.values()),
@@ -610,6 +627,11 @@ def run_live_agent_session_smoke(
         "timeout_round_count": _nonnegative_int(rounds_result.get("timeout_round_count")),
         "skipped_round_count": _nonnegative_int(rounds_result.get("skipped_round_count")),
         "stopped_round_count": _nonnegative_int(rounds_result.get("stopped_round_count")),
+        "finalization_status": finalization_status,
+        "finalization_official_event_count": _nonnegative_int(finalization.get("official_event_count")),
+        "return_packet_event_count": _nonnegative_int(finalization.get("return_packet_event_count")),
+        "artifact_status": _session_smoke_artifact_status(artifact_paths),
+        "artifact_paths": artifact_paths,
         "expected_reply_count": len(expected_messages),
         "self_service_official_reply_count": _session_smoke_self_service_official_reply_count(
             output_root,
@@ -643,6 +665,62 @@ def run_live_agent_session_smoke(
         "stop_status": str(stop_result.get("status") or ""),
         "post_stop_process_status": post_stop_process_status,
     }
+
+
+def _session_smoke_finalization_status(finalization: object) -> str:
+    if not isinstance(finalization, dict):
+        return ""
+    return str(finalization.get("status") or "")
+
+
+def _session_smoke_artifact_paths(
+    finalization: object,
+    *,
+    output_root: Path | None = None,
+    meeting_id: str = "",
+) -> list[str]:
+    if not isinstance(finalization, dict):
+        return []
+    artifacts = finalization.get("artifacts")
+    paths = _session_smoke_artifact_paths_from_payload(artifacts)
+    if not paths and _session_smoke_finalization_status(finalization) == "already_finalized":
+        paths = _existing_session_smoke_artifact_paths(output_root, meeting_id=meeting_id)
+    return paths
+
+
+def _session_smoke_artifact_paths_from_payload(artifacts: object) -> list[str]:
+    if not isinstance(artifacts, dict):
+        return []
+    paths: list[str] = []
+    for key in ("agenda", "transcript", "decision", "return_packets"):
+        value = artifacts.get(key)
+        if isinstance(value, str) and value.strip():
+            paths.append(value.strip())
+    return paths
+
+
+def _existing_session_smoke_artifact_paths(output_root: Path | None, *, meeting_id: str) -> list[str]:
+    if output_root is None or not meeting_id:
+        return []
+    meeting_dir = output_root / "meetings" / meeting_id
+    paths = []
+    if (meeting_dir / "agenda.md").exists():
+        paths.append("agenda.md")
+    if (meeting_dir / "transcript.md").exists():
+        paths.append("transcript.md")
+    if (meeting_dir / "decision.md").exists():
+        paths.append("decision.md")
+    if (meeting_dir / "return_packets").is_dir():
+        paths.append("return_packets/")
+    return paths
+
+
+def _session_smoke_artifact_status(artifact_paths: list[str]) -> str:
+    paths = set(artifact_paths)
+    expected = {"agenda.md", "transcript.md", "decision.md", "return_packets/"}
+    if expected.issubset(paths):
+        return "present"
+    return "missing" if paths else "unknown"
 
 
 def run_live_agent_real_session_smoke(

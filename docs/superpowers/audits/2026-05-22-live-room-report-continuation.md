@@ -18,6 +18,17 @@ Report source:
   smoke tests without claiming native readiness for non-Codex providers.
 - Added regression tests for the corrected Codex config pair and the required
   documentation surfaces.
+- Extended the credential-free resident `session-smoke` path so its official
+  round call requests finalization and reports safe `finalization_status`,
+  official event count, return-packet count, artifact status, and relative
+  artifact refs.
+- Added a real local HTTP/supervisor regression proving three fake resident
+  agents can start, answer all remaining official rounds, finalize artifacts and
+  return packets, then stop with matching offline roster evidence.
+- Updated the safe fake quickstart to use
+  `start-session --run-remaining-rounds --finalize-after-rounds` followed by
+  `stop-session`, while keeping `session-smoke --json` documented as the
+  stronger diagnostic route.
 
 ## What remains incomplete
 

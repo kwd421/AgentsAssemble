@@ -2573,6 +2573,14 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["round_count"], 1)
             self.assertEqual(payload["answered_round_count"], 1)
             expected_agent_count = len(payload["agent_ids"])
+            self.assertEqual(payload["finalization_status"], "finalized")
+            self.assertEqual(payload["finalization_official_event_count"], expected_agent_count)
+            self.assertEqual(payload["return_packet_event_count"], expected_agent_count)
+            self.assertEqual(payload["artifact_status"], "present")
+            self.assertEqual(
+                payload["artifact_paths"],
+                ["agenda.md", "transcript.md", "decision.md", "return_packets/"],
+            )
             self.assertEqual(payload["terminal_session_supported"], terminal_sessions_supported())
             self.assertEqual(payload["terminal_session_included"], payload["terminal_session_supported"])
             self.assertEqual(payload["terminal_session_status"], "covered" if payload["terminal_session_included"] else "skipped")
@@ -2630,6 +2638,11 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(health["status"], "ok")
             self.assertEqual(health["agents"]["total"], 0)
             self.assertEqual(health["processes"]["total"], 0)
+            session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.smoke"]
+            self.assertEqual(session_operations[-1]["details"]["finalization_status"], "finalized")
+            self.assertEqual(session_operations[-1]["details"]["finalization_official_event_count"], expected_agent_count)
+            self.assertEqual(session_operations[-1]["details"]["return_packet_event_count"], expected_agent_count)
+            self.assertEqual(session_operations[-1]["details"]["artifact_status"], "present")
             operation_blob = json.dumps(operations["operations"], ensure_ascii=False)
             self.assertNotIn("session smoke local_cli ok", operation_blob)
             self.assertNotIn("session smoke live_session ok", operation_blob)
@@ -3299,6 +3312,11 @@ class GuiServerTests(unittest.TestCase):
                 "soak_check_statuses": ["ready", "ready"],
                 "rounds_status": "answered",
                 "answered_round_count": 1,
+                "finalization_status": "finalized",
+                "finalization_official_event_count": 4,
+                "return_packet_event_count": 4,
+                "artifact_status": "present",
+                "artifact_paths": ["agenda.md", "transcript.md", "decision.md", "return_packets/"],
                 "start_status": "ready",
                 "check_status": "ready",
                 "resume_status": "ready",
@@ -3361,6 +3379,11 @@ class GuiServerTests(unittest.TestCase):
                 "terminal_session_reason": "pty_unavailable",
                 "rounds_status": "answered",
                 "answered_round_count": 1,
+                "finalization_status": "finalized",
+                "finalization_official_event_count": 4,
+                "return_packet_event_count": 4,
+                "artifact_status": "present",
+                "artifact_paths": ["agenda.md", "transcript.md", "decision.md", "return_packets/"],
                 "lobby_probe_count": 1,
                 "expected_reply_count": 3,
                 "self_service_official_reply_count": 1,
@@ -3404,6 +3427,10 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke"], "ok")
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_terminal_session_status"], "skipped")
         self.assertFalse(readiness_operations[-1]["details"]["session_smoke_terminal_session_included"])
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_finalization_status"], "finalized")
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_finalization_official_event_count"], 4)
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_return_packet_event_count"], 4)
+        self.assertEqual(readiness_operations[-1]["details"]["session_smoke_artifact_status"], "present")
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_self_service_official_reply_count"], 1)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_self_service_lobby_reply_count"], 1)
         self.assertEqual(readiness_operations[-1]["details"]["session_smoke_self_service_post_recover_reply_count"], 1)
@@ -10939,6 +10966,103 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn(str(live_agent_config), operation_blob)
             self.assertNotIn("auto round reply", operation_blob)
 
+    def test_start_session_fake_three_agents_runs_remaining_rounds_finalizes_and_stop_marks_offline(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            config_dir = Path(temp_dir) / "configs"
+            config_dir.mkdir()
+            council_config = config_dir / "council.json"
+            agent_config = config_dir / "agents.json"
+            live_agent_config = config_dir / "live-agents.json"
+            _write_three_agent_fake_session_configs(council_config, agent_config, live_agent_config)
+            supervisor = LiveAgentProcessSupervisor(root)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, process_supervisor=supervisor))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            meeting_id = "resident-fake-complete"
+            group_id = "resident-fake-complete"
+            stop_payload = {}
+            try:
+                start_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/start",
+                    data=json.dumps(
+                        {
+                            "meeting_id": meeting_id,
+                            "group_id": group_id,
+                            "council_config_path": str(council_config),
+                            "agent_config_path": str(agent_config),
+                            "live_agent_config_path": str(live_agent_config),
+                            "connect_timeout_seconds": 8,
+                            "run_remaining_rounds": True,
+                            "round_timeout_seconds": 6,
+                            "round_max_rounds": 2,
+                            "round_stop_on_timeout": True,
+                            "finalize_after_rounds": True,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(start_request, timeout=60) as response:
+                    session_payload = json.loads(response.read().decode("utf-8"))
+                stop_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/stop",
+                    data=json.dumps({"meeting_id": meeting_id, "group_id": group_id}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(stop_request, timeout=12) as response:
+                    stop_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                if not stop_payload:
+                    try:
+                        cleanup_request = Request(
+                            f"http://127.0.0.1:{server.server_port}/api/live-agent-sessions/stop",
+                            data=json.dumps({"meeting_id": meeting_id, "group_id": group_id}).encode("utf-8"),
+                            headers={"Content-Type": "application/json"},
+                            method="POST",
+                        )
+                        with urlopen(cleanup_request, timeout=12) as response:
+                            response.read()
+                    except Exception:
+                        pass
+                supervisor.close()
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(session_payload["status"], "ready")
+            self.assertEqual(session_payload["connection"]["expected"], 3)
+            self.assertEqual(session_payload["connection"]["connected"], 3)
+            self.assertEqual(session_payload["auto_rounds"]["status"], "answered")
+            self.assertEqual(session_payload["auto_rounds"]["round_count"], 2)
+            self.assertEqual(session_payload["auto_rounds"]["answered_round_count"], 2)
+            self.assertEqual(session_payload["finalization"]["status"], "finalized")
+            self.assertEqual(session_payload["finalization"]["official_event_count"], 6)
+            self.assertEqual(session_payload["finalization"]["return_packet_event_count"], 3)
+
+            meeting_dir = root / "meetings" / meeting_id
+            for relative_path in ("agenda.md", "transcript.md", "decision.md", "meeting.json"):
+                self.assertTrue((meeting_dir / relative_path).exists(), relative_path)
+            shared_memory = json.loads((meeting_dir / "shared_memory" / "index.json").read_text(encoding="utf-8"))
+            self.assertEqual(shared_memory["official_event_count"], 6)
+            for role_id in ("architect", "critic", "operator"):
+                self.assertTrue((meeting_dir / "return_packets" / f"{role_id}.md").exists())
+                self.assertTrue((meeting_dir / "return_packets" / f"{role_id}.json").exists())
+            return_packet_events = [
+                event
+                for event in read_live_events(meeting_dir, limit=None)
+                if event.get("kind") == "artifact" and event.get("artifact_kind") == "return_packet"
+            ]
+            self.assertEqual({event.get("target_agent_id") for event in return_packet_events}, {"agent-a", "agent-b", "agent-c"})
+            self.assertEqual({event.get("official_record") for event in return_packet_events}, {False})
+
+            self.assertEqual(stop_payload["status"], "stopped")
+            self.assertEqual(stop_payload["offline"]["expected"], 3)
+            self.assertEqual(stop_payload["offline"]["offline"], 3)
+            agents = {agent["agent_id"]: agent for agent in read_live_agents(root) if agent.get("meeting_id") == meeting_id}
+            self.assertEqual({agents[agent_id]["status"] for agent_id in ("agent-a", "agent-b", "agent-c")}, {"offline"})
+
     def test_live_agent_session_start_probe_failure_skips_auto_rounds_and_records_safe_operation(self):
         class FakeSessionSupervisor:
             def __init__(self, output_root: Path) -> None:
@@ -18386,6 +18510,113 @@ def _write_single_agent_session_configs(council_config: Path, agent_config: Path
                         "command": [sys.executable, "-c", "print('ok')"],
                     }
                 ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_three_agent_fake_session_configs(council_config: Path, agent_config: Path, live_agent_config: Path) -> None:
+    council_config.write_text(
+        json.dumps(
+            {
+                "topic": "resident fake completion",
+                "question": "Can three resident fake agents complete and finalize?",
+                "roles": [
+                    {"id": "architect", "display_name": "Architect", "lens": "Architecture", "research_focus": "system"},
+                    {"id": "critic", "display_name": "Critic", "lens": "Risk", "research_focus": "gaps"},
+                    {"id": "operator", "display_name": "Operator", "lens": "Operations", "research_focus": "runbook"},
+                ],
+                "meeting_template": {
+                    "id": "resident_fake_completion",
+                    "display_name": "Resident Fake Completion",
+                    "rounds": [
+                        {
+                            "id": "round_1",
+                            "title": "Round 1",
+                            "instruction": "Reply with one concise fake resident answer.",
+                            "turn_control": {"selection": "all_roles"},
+                        },
+                        {
+                            "id": "round_2",
+                            "title": "Round 2",
+                            "instruction": "Reply again so finalization proves all template rounds are complete.",
+                            "turn_control": {"selection": "all_roles"},
+                        },
+                    ],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    agent_config.write_text(
+        json.dumps(
+            {
+                "providers": [{"id": "local-cli", "kind": "local_cli", "display_name": "Local CLI"}],
+                "permission_profiles": [{"id": "meeting_readonly", "meeting_read": True, "official_turn": True}],
+                "agent_bindings": [
+                    {
+                        "agent_id": "agent-a",
+                        "role_id": "architect",
+                        "provider_id": "local-cli",
+                        "permission_profile_id": "meeting_readonly",
+                    },
+                    {
+                        "agent_id": "agent-b",
+                        "role_id": "critic",
+                        "provider_id": "local-cli",
+                        "permission_profile_id": "meeting_readonly",
+                    },
+                    {
+                        "agent_id": "agent-c",
+                        "role_id": "operator",
+                        "provider_id": "local-cli",
+                        "permission_profile_id": "meeting_readonly",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    live_agent_config.write_text(
+        json.dumps(
+            {
+                "poll_interval": 0.05,
+                "heartbeat_interval": 0,
+                "cooldown": 0,
+                "max_chain_depth": 0,
+                "agents": [
+                    {
+                        "agent_id": "agent-a",
+                        "display_name": "Agent A",
+                        "provider_kind": "local_cli",
+                        "connection_kind": "local_cli",
+                        "engagement_mode": "moderator_called",
+                        "command": [sys.executable, "-c", "import sys; sys.stdin.read(); print('agent-a official reply')"],
+                        "timeout_seconds": 5,
+                    },
+                    {
+                        "agent_id": "agent-b",
+                        "display_name": "Agent B",
+                        "provider_kind": "local_cli",
+                        "connection_kind": "local_cli",
+                        "engagement_mode": "moderator_called",
+                        "command": [sys.executable, "-c", "import sys; sys.stdin.read(); print('agent-b official reply')"],
+                        "timeout_seconds": 5,
+                    },
+                    {
+                        "agent_id": "agent-c",
+                        "display_name": "Agent C",
+                        "provider_kind": "local_cli",
+                        "connection_kind": "local_cli",
+                        "engagement_mode": "moderator_called",
+                        "command": [sys.executable, "-c", "import sys; sys.stdin.read(); print('agent-c official reply')"],
+                        "timeout_seconds": 5,
+                    },
+                ],
             },
             ensure_ascii=False,
         ),

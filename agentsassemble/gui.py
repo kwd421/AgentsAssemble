@@ -5261,6 +5261,14 @@ def _safe_readiness_session_smoke_result(smoke: dict[str, object]) -> dict[str, 
         "terminal_session_reason": clean_lobby_text(smoke.get("terminal_session_reason"), limit=128),
         "rounds_status": _operation_result_status(smoke.get("rounds_status")),
         "answered_round_count": _payload_nonnegative_int(smoke.get("answered_round_count"), 0),
+        "finalization_status": _operation_result_status(smoke.get("finalization_status")),
+        "finalization_official_event_count": _payload_nonnegative_int(
+            smoke.get("finalization_official_event_count"),
+            0,
+        ),
+        "return_packet_event_count": _payload_nonnegative_int(smoke.get("return_packet_event_count"), 0),
+        "artifact_status": _operation_result_status(smoke.get("artifact_status")),
+        "artifact_paths": _safe_payload_strings(smoke.get("artifact_paths"), limit=128),
         "lobby_probe_count": _payload_nonnegative_int(smoke.get("lobby_probe_count"), 1),
         "expected_reply_count": _payload_nonnegative_int(smoke.get("expected_reply_count"), 0),
         "self_service_official_reply_count": _payload_nonnegative_int(smoke.get("self_service_official_reply_count"), 0),
@@ -5840,6 +5848,14 @@ def _session_smoke_operation_details(smoke: dict[str, object]) -> dict[str, obje
         "completed_round_count": _payload_nonnegative_int(smoke.get("completed_round_count"), 0),
         "timeout_round_count": _payload_nonnegative_int(smoke.get("timeout_round_count"), 0),
         "skipped_round_count": _payload_nonnegative_int(smoke.get("skipped_round_count"), 0),
+        "finalization_status": _operation_result_status(smoke.get("finalization_status")),
+        "finalization_official_event_count": _payload_nonnegative_int(
+            smoke.get("finalization_official_event_count"),
+            0,
+        ),
+        "return_packet_event_count": _payload_nonnegative_int(smoke.get("return_packet_event_count"), 0),
+        "artifact_status": _operation_result_status(smoke.get("artifact_status")),
+        "artifact_paths": _safe_payload_strings(smoke.get("artifact_paths"), limit=128),
         "lobby_probe_count": _payload_nonnegative_int(smoke.get("lobby_probe_count"), 1),
         "expected_reply_count": _payload_nonnegative_int(smoke.get("expected_reply_count"), 0),
         "self_service_official_reply_count": _payload_nonnegative_int(smoke.get("self_service_official_reply_count"), 0),
@@ -7830,6 +7846,18 @@ def _make_handler(
                             session_smoke.get("terminal_session_status")
                         ),
                         "session_smoke_terminal_session_included": session_smoke.get("terminal_session_included") is True,
+                        "session_smoke_finalization_status": _operation_result_status(
+                            session_smoke.get("finalization_status")
+                        ),
+                        "session_smoke_finalization_official_event_count": _payload_nonnegative_int(
+                            session_smoke.get("finalization_official_event_count"),
+                            0,
+                        ),
+                        "session_smoke_return_packet_event_count": _payload_nonnegative_int(
+                            session_smoke.get("return_packet_event_count"),
+                            0,
+                        ),
+                        "session_smoke_artifact_status": _operation_result_status(session_smoke.get("artifact_status")),
                         "session_smoke_self_service_official_reply_count": _payload_nonnegative_int(
                             session_smoke.get("self_service_official_reply_count"),
                             0,

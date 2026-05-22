@@ -22,6 +22,8 @@ from agentsassemble.live_agent_smoke import (
     run_live_agent_official_round_smoke,
     run_live_agent_smoke,
     seed_smoke_agent_cursors,
+    _session_smoke_artifact_paths,
+    _session_smoke_artifact_status,
     _session_smoke_self_service_script,
 )
 from agentsassemble.meeting_events import append_live_event
@@ -59,6 +61,21 @@ SESSION_SMOKE_MESSAGES = {
     "session-smoke-remote-bridge": "session smoke remote_bridge ok",
     "session-smoke-self-service": "session smoke self_service ok",
 }
+
+
+def _session_smoke_finalization_payload(official_event_count: int = 4, return_packet_event_count: int = 4) -> dict[str, object]:
+    return {
+        "status": "finalized",
+        "meeting_id": "session-smoke-meeting",
+        "official_event_count": official_event_count,
+        "return_packet_event_count": return_packet_event_count,
+        "artifacts": {
+            "agenda": "agenda.md",
+            "transcript": "transcript.md",
+            "decision": "decision.md",
+            "return_packets": "return_packets/",
+        },
+    }
 
 
 def _argv_option_value(argv: list[str], option: str) -> str:
@@ -376,6 +393,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
             if url.endswith("/live-agent-turns/rounds"):
                 self.assertEqual(payload["max_rounds"], 1)
                 self.assertFalse(payload["stop_on_timeout"])
+                self.assertIs(payload["finalize_after_rounds"], True)
                 append_live_event(
                     state["root"] / "meetings" / "session-smoke-meeting",
                     {
@@ -398,6 +416,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "skipped_round_count": 0,
                     "stopped_round_count": 0,
                     "results": [{"round_id": "session_smoke_round", "status": "answered"}],
+                    "finalization": _session_smoke_finalization_payload(),
                 }
             if url.endswith("/engagement"):
                 self.assertEqual(payload, {"engagement_mode": "always"})
@@ -563,6 +582,133 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertNotIn("agentsassemble-smoke-token", serialized)
         self.assertNotIn("command", serialized)
 
+    def test_session_smoke_finalizes_after_official_round_and_reports_artifacts(self):
+        state = {"probe_ids": []}
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            if url.endswith("/api/live-agent-sessions/start"):
+                meeting_dir = state["root"] / "meetings" / payload["meeting_id"]
+                meeting_dir.mkdir(parents=True, exist_ok=True)
+                (meeting_dir / "live_state.json").write_text(
+                    json.dumps({"meeting_id": payload["meeting_id"], "live_status": "running"}),
+                    encoding="utf-8",
+                )
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
+                }
+            if url.endswith("/live-agent-turns/rounds"):
+                self.assertIs(payload["finalize_after_rounds"], True)
+                return {
+                    "status": "answered",
+                    "meeting_id": "session-smoke-meeting",
+                    "round_count": 1,
+                    "answered_round_count": 1,
+                    "completed_round_count": 0,
+                    "timeout_round_count": 0,
+                    "skipped_round_count": 0,
+                    "stopped_round_count": 0,
+                    "results": [{"round_id": "session_smoke_round", "status": "answered"}],
+                    "finalization": {
+                        "status": "finalized",
+                        "meeting_id": "session-smoke-meeting",
+                        "official_event_count": 4,
+                        "return_packet_event_count": 4,
+                        "artifacts": {
+                            "agenda": "agenda.md",
+                            "transcript": "transcript.md",
+                            "decision": "decision.md",
+                            "return_packets": "return_packets/",
+                        },
+                    },
+                }
+            if url.endswith("/engagement"):
+                return {"agent": {"agent_id": url.rsplit("/", 2)[-2], "engagement_mode": "always"}}
+            if url.endswith("/api/lobby") and method == "POST":
+                probe_id = f"session-probe-{len(state['probe_ids']) + 1}"
+                state["probe_ids"].append(probe_id)
+                return {"event": {"id": probe_id}}
+            if url.endswith("/api/lobby") and method == "GET":
+                events = []
+                for probe_id in state["probe_ids"]:
+                    events.extend(_session_smoke_lobby_reply_events(probe_id))
+                return {"events": events}
+            if (
+                url.endswith("/api/live-agent-sessions/check")
+                or url.endswith("/api/live-agent-sessions/resume")
+                or url.endswith("/api/live-agent-sessions/restart")
+                or url.endswith("/api/live-agent-sessions/recover")
+            ):
+                return {
+                    "status": "ready",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "connection": {"expected": 4, "connected": 4, "attention": []},
+                }
+            if url.endswith("/api/live-agent-processes"):
+                return {
+                    "groups": [
+                        {
+                            "group_id": "session-smoke",
+                            "status": "error",
+                            "meeting_id": "session-smoke-meeting",
+                            "diagnostic": True,
+                            "agents": [{"agent_id": agent_id} for agent_id in SESSION_SMOKE_AGENT_IDS],
+                        }
+                    ]
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                return {
+                    "status": "stopped",
+                    "meeting_id": payload["meeting_id"],
+                    "group_id": payload["group_id"],
+                    "offline": {"expected": 4, "offline": 4, "attention": []},
+                }
+            return {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state["root"] = Path(temp_dir) / "room"
+            result = run_live_agent_session_smoke(
+                server="http://room.local",
+                group_id="session-smoke",
+                meeting_id="session-smoke-meeting",
+                timeout_seconds=8,
+                request_json=request_json,
+                output_root=state["root"],
+                sleep_fn=lambda seconds: None,
+                temp_dir_factory=lambda: _FixedTemporaryDirectory(Path(temp_dir) / "config"),
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["finalization_status"], "finalized")
+        self.assertEqual(result["finalization_official_event_count"], 4)
+        self.assertEqual(result["return_packet_event_count"], 4)
+        self.assertEqual(result["artifact_status"], "present")
+        self.assertEqual(
+            result["artifact_paths"],
+            ["agenda.md", "transcript.md", "decision.md", "return_packets/"],
+        )
+
+    def test_session_smoke_already_finalized_artifact_status_reads_existing_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "session-smoke-meeting"
+            meeting_dir.mkdir(parents=True)
+            for relative_path in ("agenda.md", "transcript.md", "decision.md"):
+                (meeting_dir / relative_path).write_text("ok", encoding="utf-8")
+            (meeting_dir / "return_packets").mkdir()
+
+            artifact_paths = _session_smoke_artifact_paths(
+                {"status": "already_finalized"},
+                output_root=root,
+                meeting_id="session-smoke-meeting",
+            )
+
+        self.assertEqual(artifact_paths, ["agenda.md", "transcript.md", "decision.md", "return_packets/"])
+        self.assertEqual(_session_smoke_artifact_status(artifact_paths), "present")
+
     def test_session_smoke_includes_terminal_session_when_pty_is_supported(self):
         calls = []
         state = {"probe_ids": []}
@@ -626,6 +772,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "timeout_round_count": 0,
                     "skipped_round_count": 0,
                     "stopped_round_count": 0,
+                    "finalization": _session_smoke_finalization_payload(official_event_count=5, return_packet_event_count=5),
                 }
             if url.endswith("/engagement"):
                 return {"agent": {"agent_id": url.rsplit("/", 2)[-2], "engagement_mode": "always"}}
@@ -1664,6 +1811,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "timeout_round_count": 0,
                     "skipped_round_count": 0,
                     "stopped_round_count": 0,
+                    "finalization": _session_smoke_finalization_payload(),
                 }
             if url.endswith("/engagement"):
                 return {"agent": {"agent_id": url.rsplit("/", 2)[-2], "engagement_mode": "always"}}
@@ -2035,6 +2183,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "timeout_round_count": 0,
                     "skipped_round_count": 0,
                     "stopped_round_count": 0,
+                    "finalization": _session_smoke_finalization_payload(),
                 }
             if url.endswith("/engagement"):
                 return {"agent": {"agent_id": url.rsplit("/", 2)[-2], "engagement_mode": "always"}}
@@ -2130,6 +2279,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                     "timeout_round_count": 0,
                     "skipped_round_count": 0,
                     "stopped_round_count": 0,
+                    "finalization": _session_smoke_finalization_payload(),
                 }
             if url.endswith("/engagement"):
                 return {"agent": {"agent_id": url.rsplit("/", 2)[-2], "engagement_mode": "always"}}
@@ -2282,7 +2432,12 @@ class LiveAgentSmokeTests(unittest.TestCase):
                 )
                 return {"status": "ready", "meeting_id": payload["meeting_id"], "group_id": payload["group_id"]}
             if url.endswith("/live-agent-turns/rounds"):
-                return {"status": "answered", "answered_round_count": 1}
+                return {
+                    "status": "answered",
+                    "meeting_id": "session-smoke-meeting",
+                    "answered_round_count": 1,
+                    "finalization": _session_smoke_finalization_payload(),
+                }
             if url.endswith("/engagement"):
                 return {"agent": {"agent_id": url.rsplit("/", 2)[-2], "engagement_mode": "always"}}
             if url.endswith("/api/lobby") and method == "POST":
@@ -2377,6 +2532,7 @@ class LiveAgentSmokeTests(unittest.TestCase):
                         "skipped_round_count": 0,
                         "stopped_round_count": 0,
                         "results": [{"round_id": "session_smoke_round", "status": "answered"}],
+                        "finalization": _session_smoke_finalization_payload(),
                     }
                 if url.endswith("/engagement"):
                     return {"agent": {"agent_id": url.rsplit("/", 2)[-2], "engagement_mode": "always"}}

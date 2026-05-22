@@ -4477,6 +4477,10 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
     if operation_name == "session.smoke":
         return [
             "result_status",
+            "finalization_status",
+            "finalization_official_event_count",
+            "return_packet_event_count",
+            "artifact_status",
             "reply_count",
             "post_restart_reply_count",
             "post_recover_reply_count",
@@ -4514,6 +4518,10 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
             "health_connection_attention",
             "health_agent_attention",
             "session_smoke_reply_count",
+            "session_smoke_finalization_status",
+            "session_smoke_finalization_official_event_count",
+            "session_smoke_return_packet_event_count",
+            "session_smoke_artifact_status",
             "session_smoke_post_restart_reply_count",
             "session_smoke_post_recover_reply_count",
             "session_smoke_soak_cycle_count",

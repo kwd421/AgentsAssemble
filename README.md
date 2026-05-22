@@ -99,11 +99,38 @@ sandboxed launcher is added and verified.
 
 Safe fake resident session quickstart:
 
+Terminal 1:
+
 ```bash
 python3 -m agentsassemble.cli gui --host 127.0.0.1 --port 8765 --output-root .agentsassemble
-python3 -m agentsassemble.cli live-agent preflight --config configs/live-agents.start-session.example.json
-python3 -m agentsassemble.cli live-agent session-smoke --server http://127.0.0.1:8765 --json
 ```
+
+Terminal 2:
+
+```bash
+python3 -m agentsassemble.cli live-agent preflight --config configs/live-agents.start-session.example.json
+python3 -m agentsassemble.cli live-agent start-session \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-fake-demo \
+  --group-id resident-fake-demo \
+  --council-config configs/demo-council.json \
+  --agent-config configs/agents.start-session.example.json \
+  --live-agent-config configs/live-agents.start-session.example.json \
+  --connect-timeout 5 \
+  --run-remaining-rounds \
+  --round-timeout 8 \
+  --max-rounds 2 \
+  --finalize-after-rounds \
+  --wait-ready
+python3 -m agentsassemble.cli live-agent stop-session \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-fake-demo \
+  --group-id resident-fake-demo
+```
+
+`live-agent session-smoke --server http://127.0.0.1:8765 --json` remains the
+stronger diagnostic path for local fake transports, restart/recover, cleanup,
+and the same finalization evidence.
 
 Experimental Codex live session quickstart:
 
