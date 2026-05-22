@@ -10,9 +10,8 @@
       "display_name": "Codex Live Lore",
       "provider_kind": "codex_live_session",
       "connection_kind": "live_session",
-      "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44",
       "meeting_id": "",
-      "engagement_mode": "always",
+      "engagement_mode": "moderator_called",
       "timeout_seconds": 240
     },
     {
@@ -21,7 +20,16 @@
       "provider_kind": "codex_live_session",
       "connection_kind": "live_session",
       "meeting_id": "",
-      "engagement_mode": "always",
+      "engagement_mode": "moderator_called",
+      "timeout_seconds": 240
+    },
+    {
+      "agent_id": "codex-live-skeptic",
+      "display_name": "Codex Live Skeptic",
+      "provider_kind": "codex_live_session",
+      "connection_kind": "live_session",
+      "meeting_id": "",
+      "engagement_mode": "moderator_called",
       "timeout_seconds": 240
     }
   ]

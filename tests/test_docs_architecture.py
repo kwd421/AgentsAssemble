@@ -258,6 +258,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("python3 -m agentsassemble.cli live-agent official-reply", doc)
         self.assertIn("AGENTSASSEMBLE_WAIT_NEXT_COMMAND", doc)
         self.assertIn("AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE", doc)
+
         self.assertIn("AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE", doc)
         self.assertIn("AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE", doc)
         self.assertIn("AGENTSASSEMBLE_LEAVE_COMMAND", doc)
@@ -671,6 +672,55 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("The `terminal_session` transport is a local PTY bridge", doc)
         self.assertIn("Fake CLI", doc)
         self.assertIn("approval", doc)
+
+    def test_readme_documents_live_room_status_and_honest_limits(self):
+        doc = (ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("## Live Room Status", doc)
+        self.assertIn("Safe fake resident session quickstart", doc)
+        self.assertIn("Experimental Codex live session quickstart", doc)
+        self.assertIn("native Claude Code/Cursor/Antigravity/Grok/Hermes/OpenClaw integrations are not complete", doc)
+        self.assertIn("non-Codex local CLI read-only is not a hard OS sandbox", doc)
+
+    def test_provider_live_session_matrix_records_current_provider_readiness(self):
+        doc = (ROOT / "docs" / "provider-live-session-matrix.md").read_text(encoding="utf-8")
+
+        for provider in (
+            "codex_live_session",
+            "claude_code",
+            "cursor",
+            "antigravity_cli",
+            "grok_build_cli",
+            "hermes_cli",
+            "openclaw_cli",
+            "local_cli",
+            "remote_http_bridge",
+            "memory_pack",
+        ):
+            self.assertIn(provider, doc)
+        self.assertIn("codex_exec_resume", doc)
+        self.assertIn("provider-managed", doc)
+        self.assertIn("process-lifetime", doc)
+        self.assertIn("stateless-prompt", doc)
+        self.assertIn("advisory", doc)
+        self.assertIn("codex_readonly", doc)
+        self.assertIn("No non-Codex provider is marked native-ready", doc)
+
+    def test_live_agent_ops_and_audit_note_record_report_continuation_slice(self):
+        ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
+        audit = (ROOT / "docs" / "superpowers" / "audits" / "2026-05-22-live-room-report-continuation.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Codex Live Session Quickstart", ops)
+        self.assertIn("configs/codex-live-session.example.json", ops)
+        self.assertIn("configs/live-agents.codex-session.example.json", ops)
+        self.assertIn("moderator_called", ops)
+        self.assertIn("sessions invite <codex-session-id>", ops)
+        self.assertNotIn("sessions invite 019e", ops)
+        self.assertIn("Report source", audit)
+        self.assertIn("What changed", audit)
+        self.assertIn("What remains incomplete", audit)
 
 
 if __name__ == "__main__":

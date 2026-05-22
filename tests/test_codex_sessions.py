@@ -174,6 +174,22 @@ class CodexSessionTests(unittest.TestCase):
             ],
         )
 
+    def test_build_codex_live_agent_config_defaults_to_moderator_called(self):
+        resident_config = build_codex_live_agent_config(
+            {
+                "agent_bindings": [
+                    {
+                        "agent_id": "codex-live-lore",
+                        "role_id": "lore_lawyer",
+                        "provider_id": "codex-live",
+                    }
+                ]
+            },
+            server="http://room.local",
+        )
+
+        self.assertEqual(resident_config["agents"][0]["engagement_mode"], "moderator_called")
+
     def test_built_codex_live_agent_config_loads_as_resident_group_config(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "live-agents.codex-session.local.json"

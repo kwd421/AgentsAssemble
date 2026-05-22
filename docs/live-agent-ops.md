@@ -249,17 +249,56 @@ POST /api/codex-sessions/join
 
 `join` is intentionally narrower than a generic meeting rebinder. It only accepts an existing live pre-round meeting, refuses meetings that already have debate rounds or official-turn events, writes both `codex-live-session.local.json` and `live-agents.codex-session.local.json`, updates the live meeting's role bindings to the generated Codex live bindings, and then calls the existing `ensure-session` policy for the generated resident group. The selected role keeps the chosen Codex session id; the other meeting roles receive fresh Codex live bindings so the resident manifest still covers the whole meeting. The operation record is `codex_session.join` and includes only safe meeting, role, agent, group, result, and ensure-action evidence. It does not include the Codex session id or local config paths.
 
+## Codex Live Session Quickstart
+
+The checked-in Codex live examples are for an experimental local Codex-only
+resident session. They intentionally cover the same three demo roles in both
+`configs/codex-live-session.example.json` and
+`configs/live-agents.codex-session.example.json`, use `moderator_called`, and do
+not contain real session ids by default. This path can start fresh Codex CLI
+sessions and later continue them through `codex exec resume` when Codex emits a
+session id. It is not proof that Claude Code, Cursor, Antigravity, Grok, Hermes,
+or OpenClaw have provider-native live connectors.
+
+Check the resident config without starting Codex:
+
+```bash
+python3 -m agentsassemble.cli live-agent preflight \
+  --config configs/live-agents.codex-session.example.json
+```
+
+Start the matching visible meeting and resident group only after you intend to
+run local Codex CLI model calls:
+
+```bash
+python3 -m agentsassemble.cli live-agent start-session \
+  --server http://127.0.0.1:8765 \
+  --council-config configs/demo-council.json \
+  --agent-config configs/codex-live-session.example.json \
+  --live-agent-config configs/live-agents.codex-session.example.json \
+  --meeting-id codex-live-demo \
+  --group-id codex-live-demo \
+  --wait-ready
+```
+
+To attach an existing Codex session instead of using the fresh checked-in
+example, use `sessions invite`, the GUI `Codex 세션 초대` panel, or the GUI
+`입장` flow so real session ids live in `.agentsassemble/*.local.json` rather
+than in repository examples.
+
 The same operation-recorded invite path is available from the CLI when the GUI room is running:
 
 ```bash
-python3 -m agentsassemble.cli sessions invite 019e3038-39cc-76a2-a746-5ba8c0f3b408 \
+python3 -m agentsassemble.cli sessions invite <codex-session-id> \
   --server http://127.0.0.1:8765 \
   --meeting-id resident-1 \
   --role lore_lawyer \
   --json
 ```
 
-Without `--server`, `sessions invite` keeps its local file mode and writes only the selected `--output` config.
+Replace `<codex-session-id>` with a current local Codex CLI session id. Without
+`--server`, `sessions invite` keeps its local file mode and writes only the
+selected `--output` config.
 
 Convert the invite config into a resident `run-group` config before starting the invited Codex live sessions:
 

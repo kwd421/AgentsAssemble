@@ -1167,7 +1167,7 @@ def build_parser() -> argparse.ArgumentParser:
     session_live_agent_config.add_argument("--output", default=str(DEFAULT_LIVE_AGENT_CONFIG_PATH))
     session_live_agent_config.add_argument("--server", default="http://127.0.0.1:8765")
     session_live_agent_config.add_argument("--meeting-id", default="")
-    session_live_agent_config.add_argument("--engagement-mode", default="always")
+    session_live_agent_config.add_argument("--engagement-mode", default="moderator_called")
     session_live_agent_config.add_argument("--json", action="store_true", dest="as_json")
 
     return parser

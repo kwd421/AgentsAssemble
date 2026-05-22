@@ -910,6 +910,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual([agent["agent_id"] for agent in resident_config["agents"]], ["codex-live-lore-lawyer", "codex-live-show-me-the-feats"])
             self.assertEqual(resident_config["agents"][0]["session_id"], "019e02af-c287-7cd1-aab7-c1e059c5ed44")
             self.assertEqual(resident_config["agents"][0]["meeting_id"], "m1")
+            self.assertEqual({agent["engagement_mode"] for agent in resident_config["agents"]}, {"moderator_called"})
 
             join_operations = [operation for operation in operations["operations"] if operation["operation"] == "codex_session.join"]
             self.assertEqual(len(join_operations), 1)

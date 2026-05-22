@@ -34,8 +34,8 @@
       "provider_id": "codex-live",
       "model_id": "local-codex-session",
       "permission_profile_id": "codex_live_meeting_readonly",
-      "join_mode": "current_session",
-      "session_id": "019e02af-c287-7cd1-aab7-c1e059c5ed44"
+      "join_mode": "fresh",
+      "engagement_mode": "moderator_called"
     },
     {
       "agent_id": "codex-live-feats",
@@ -44,7 +44,8 @@
       "provider_id": "codex-live",
       "model_id": "local-codex-session",
       "permission_profile_id": "codex_live_meeting_readonly",
-      "join_mode": "fresh"
+      "join_mode": "fresh",
+      "engagement_mode": "moderator_called"
     },
     {
       "agent_id": "codex-live-skeptic",
@@ -53,7 +54,8 @@
       "provider_id": "codex-live",
       "model_id": "local-codex-session",
       "permission_profile_id": "codex_live_meeting_readonly",
-      "join_mode": "fresh"
+      "join_mode": "fresh",
+      "engagement_mode": "moderator_called"
     }
   ]
 }

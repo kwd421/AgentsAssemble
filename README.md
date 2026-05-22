@@ -83,6 +83,47 @@ The GUI has four tabs:
 - `board` / 작전판: structured claims, rebuttals, and synthesis
 - `archive` / 아카이브: generated artifacts and research notes
 
+## Live Room Status
+
+The live-room branch now has a local GUI room, file-backed event streams,
+live-agent roster and presence records, supervised resident process groups,
+moderator-controlled official turns, session start/resume/restart/recover/stop
+commands, credential-free smoke checks, shared meeting memory artifacts, and an
+experimental Codex CLI resident path based on `codex exec resume`.
+
+This is not yet the final native multi-provider room. Codex is the most advanced
+resident path. The native Claude Code/Cursor/Antigravity/Grok/Hermes/OpenClaw integrations are not complete, and non-Codex local CLI read-only is not a hard OS sandbox.
+Ordinary `local_cli`, `terminal_session`, `self_service`, and remote bridge
+participants still rely on policy, approval, and audit metadata unless a real
+sandboxed launcher is added and verified.
+
+Safe fake resident session quickstart:
+
+```bash
+python3 -m agentsassemble.cli gui --host 127.0.0.1 --port 8765 --output-root .agentsassemble
+python3 -m agentsassemble.cli live-agent preflight --config configs/live-agents.start-session.example.json
+python3 -m agentsassemble.cli live-agent session-smoke --server http://127.0.0.1:8765 --json
+```
+
+Experimental Codex live session quickstart:
+
+```bash
+python3 -m agentsassemble.cli live-agent preflight --config configs/live-agents.codex-session.example.json
+python3 -m agentsassemble.cli live-agent start-session \
+  --server http://127.0.0.1:8765 \
+  --council-config configs/demo-council.json \
+  --agent-config configs/codex-live-session.example.json \
+  --live-agent-config configs/live-agents.codex-session.example.json \
+  --meeting-id codex-live-demo \
+  --group-id codex-live-demo \
+  --wait-ready
+```
+
+The Codex example configs intentionally use three fresh `moderator_called`
+residents and no checked-in real session ids. To attach an existing Codex CLI
+session, use the GUI/CLI Codex invite or join flow so the local generated config
+records the current session id outside the checked-in examples.
+
 ## Codex Adapter
 
 The Codex adapter has a first smoke path through `codex exec`.

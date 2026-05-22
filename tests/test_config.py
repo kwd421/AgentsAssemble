@@ -10,6 +10,7 @@ from agentsassemble.config import (
     permissions_from_config,
     providers_from_config,
 )
+from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.models import normalize_engagement_mode
 
 
@@ -297,6 +298,25 @@ class ConfigTests(unittest.TestCase):
                     [binding.role_id for binding in bindings],
                     ["lore_lawyer", "show_me_the_feats", "fanboard_skeptic"],
                 )
+
+    def test_codex_live_session_examples_share_one_three_agent_manifest(self):
+        agent_data = load_agent_runtime_config(Path("configs/codex-live-session.example.json"))
+        self.assertIsNotNone(agent_data)
+        bindings = agent_bindings_from_config(agent_data)
+        resident_configs = load_group_configs(Path("configs/live-agents.codex-session.example.json"))
+
+        binding_ids = [binding.agent_id for binding in bindings]
+        resident_ids = [config.agent_id for config in resident_configs]
+
+        self.assertEqual(binding_ids, ["codex-live-lore", "codex-live-feats", "codex-live-skeptic"])
+        self.assertEqual(resident_ids, binding_ids)
+        self.assertEqual({binding.join_mode for binding in bindings}, {"fresh"})
+        self.assertEqual({binding.engagement_mode for binding in bindings}, {"moderator_called"})
+        self.assertEqual({binding.session_id for binding in bindings}, {None})
+        self.assertEqual({config.provider_kind for config in resident_configs}, {"codex_live_session"})
+        self.assertEqual({config.connection_kind for config in resident_configs}, {"live_session"})
+        self.assertEqual({config.engagement_mode for config in resident_configs}, {"moderator_called"})
+        self.assertEqual({config.session_id for config in resident_configs}, {""})
 
 
 if __name__ == "__main__":

@@ -1,0 +1,36 @@
+# Live Room Report Continuation Audit
+
+Report source:
+`/Users/seinel/Downloads/AgentsAssemble_live_room_audit_codex_plan.md`
+
+## What changed
+
+- Added a README `Live Room Status` section that separates the safe fake
+  resident session path from the experimental Codex live session path.
+- Corrected the checked-in Codex live example pair so
+  `configs/codex-live-session.example.json` and
+  `configs/live-agents.codex-session.example.json` cover the same three demo
+  agents.
+- Removed checked-in real Codex session ids from the Codex live examples and set
+  the example residents to `moderator_called`.
+- Added `docs/provider-live-session-matrix.md` to record current provider
+  readiness, context durability, sandbox enforcement, wrapper needs, and next
+  smoke tests without claiming native readiness for non-Codex providers.
+- Added regression tests for the corrected Codex config pair and the required
+  documentation surfaces.
+
+## What remains incomplete
+
+- Real Codex three-agent resident execution still needs an explicit operator run
+  and recorded smoke evidence before claiming real-provider readiness.
+- Claude Code, Cursor, Antigravity, Grok Build, Hermes, and OpenClaw are not
+  provider-native resident connectors yet.
+- Non-Codex local CLI read-only is still advisory until a hard sandbox launcher
+  is implemented and verified.
+- No-Tailscale multi-host mode remains a design track after single-host
+  resident sessions stay reliable.
+
+## Verification Scope
+
+This audit note covers the report-continuation baseline slice only. It does not
+claim the full live-room goal is complete.

@@ -4055,7 +4055,7 @@ def codex_session_join_payload(
             config,
             server=effective_server,
             meeting_id=meeting_id,
-            engagement_mode=str(payload.get("engagement_mode") or "always"),
+            engagement_mode=str(payload.get("engagement_mode") or "moderator_called"),
         )
         write_agent_config(config_path, config)
         write_agent_config(live_agent_config_path, resident_config)

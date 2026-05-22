@@ -452,6 +452,8 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertIn("'http://room.local/with space'", output)
             self.assertIn("'resident m1'", output)
             self.assertIn("--group-id live-agents", output)
+            written = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(written["agents"][0]["engagement_mode"], "moderator_called")
 
     def test_live_agent_register_posts_connection_payload(self):
         stdout = StringIO()

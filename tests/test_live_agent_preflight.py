@@ -112,9 +112,9 @@ class LiveAgentPreflightTests(unittest.TestCase):
         )
 
         self.assertEqual(report["status"], "ok")
-        self.assertEqual(report["summary"]["agents"], 2)
+        self.assertEqual(report["summary"]["agents"], 3)
         self.assertEqual(report["summary"]["checks_failed"], 0)
-        self.assertEqual([agent["command"] for agent in report["agents"]], [["codex"], ["codex"]])
+        self.assertEqual([agent["command"] for agent in report["agents"]], [["codex"], ["codex"], ["codex"]])
 
     def test_preflight_reports_ok_without_running_commands(self):
         with tempfile.TemporaryDirectory() as temp_dir:

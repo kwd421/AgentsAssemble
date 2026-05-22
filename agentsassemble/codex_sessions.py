@@ -156,7 +156,7 @@ def build_codex_live_agent_config(
     *,
     server: str,
     meeting_id: str = "",
-    engagement_mode: str = "always",
+    engagement_mode: str = "moderator_called",
 ) -> dict[str, Any]:
     agents: list[dict[str, Any]] = []
     for binding in _dict_list(invite_config.get("agent_bindings")):
