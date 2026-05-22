@@ -12039,6 +12039,11 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("--last-reply-at={last_reply_at}", heartbeat_template)
         self.assertIn("--last-observed-event-id={last_observed_event_id}", heartbeat_template)
         self.assertIn("--last-observed-live-event-id={last_observed_live_event_id}", heartbeat_template)
+        leave_command = shlex.split(env["AGENTSASSEMBLE_LEAVE_COMMAND"])
+        self.assertIn("leave", leave_command)
+        self.assertIn("--agent-id", leave_command)
+        self.assertIn("selfer", leave_command)
+        self.assertIn("--json", leave_command)
         self.assertFalse(any(call["url"].endswith("/room") for call in calls))
 
     def test_self_service_child_failure_keeps_error_presence(self):
@@ -12280,6 +12285,10 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("--last-reply-at={last_reply_at}", heartbeat_template)
         self.assertIn("--last-observed-event-id={last_observed_event_id}", heartbeat_template)
         self.assertIn("--last-observed-live-event-id={last_observed_live_event_id}", heartbeat_template)
+        leave_command = shlex.split(env["AGENTSASSEMBLE_LEAVE_COMMAND"])
+        self.assertIn("http://room.local/path with space?x=1&y=$two", leave_command)
+        self.assertIn("agent with spaces;$", leave_command)
+        self.assertIn("leave", leave_command)
         say_template = shlex.split(env["AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE"])
         self.assertIn("{message}", say_template)
         self.assertLess(say_template.index("--"), say_template.index("{message}"))
@@ -12303,6 +12312,7 @@ class CliTimeoutTests(unittest.TestCase):
         say_args = build_parser().parse_args(say_argv[3:])
         official_args = build_parser().parse_args(official_argv[3:])
         heartbeat_args = build_parser().parse_args(heartbeat_argv[3:])
+        leave_args = build_parser().parse_args(leave_command[3:])
         self.assertEqual(say_args.message, ["-h"])
         self.assertEqual(official_args.message, ["-h"])
         self.assertEqual(heartbeat_args.status, "error")
@@ -12310,6 +12320,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(heartbeat_args.last_reply_at, "2026-05-20T00:00:00+00:00")
         self.assertEqual(heartbeat_args.last_observed_event_id, "evt-1")
         self.assertEqual(heartbeat_args.last_observed_live_event_id, "live-1")
+        self.assertEqual(leave_args.live_agent_command, "leave")
+        self.assertEqual(leave_args.agent_id, "agent with spaces;$")
 
     def test_heartbeat_payload_ignores_unreplaced_optional_template_placeholders(self):
         args = build_parser().parse_args(

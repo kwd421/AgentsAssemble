@@ -5894,6 +5894,7 @@ def _self_service_room_command_env(config: ResidentAgentConfig) -> dict[str, str
                 "--json",
             ]
         ),
+        "AGENTSASSEMBLE_LEAVE_COMMAND": shlex.join([*base, "leave", *identity, "--json"]),
     }
 
 
