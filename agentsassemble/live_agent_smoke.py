@@ -645,6 +645,216 @@ def run_live_agent_session_smoke(
     }
 
 
+def run_live_agent_real_session_smoke(
+    *,
+    server: str,
+    live_agent_config_path: str,
+    council_config_path: str = "",
+    agent_config_path: str = "",
+    group_id: str = "",
+    meeting_id: str = "",
+    timeout_seconds: float = 12.0,
+    approve_real_providers: bool = False,
+    request_json: RequestJson,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    output_root: Path | None = None,
+) -> dict[str, object]:
+    clean_group_id = session_smoke_group_id(group_id) if group_id else session_smoke_group_id(
+        f"real-session-smoke-{int(time.time() * 1000)}"
+    )
+    clean_meeting_id = smoke_group_id(meeting_id) if meeting_id else smoke_group_id(f"real-session-{clean_group_id}")
+    if not approve_real_providers:
+        return {
+            "status": "approval_required",
+            "meeting_id": clean_meeting_id,
+            "group_id": clean_group_id,
+            "approval_required": True,
+            "approved": False,
+            "diagnostic": True,
+            "reason": "current_operator_approval_required",
+        }
+    if not _real_session_smoke_has_required_configs(
+        live_agent_config_path=live_agent_config_path,
+        council_config_path=council_config_path,
+        agent_config_path=agent_config_path,
+    ):
+        return {
+            "status": "failed",
+            "meeting_id": clean_meeting_id,
+            "group_id": clean_group_id,
+            "approval_required": True,
+            "approved": True,
+            "diagnostic": True,
+            "reason": "matching_configs_required",
+            "start_status": "skipped",
+            "expected_agent_count": 0,
+            "connected_agent_count": 0,
+            "reply_probe_status": "skipped",
+            "reply_probe_count": 0,
+            "reply_probe_ok_count": 0,
+            "stop_status": "skipped",
+            "post_stop_process_status": "skipped",
+        }
+
+    start_result: dict[str, object] = {}
+    stop_result: dict[str, object] = {}
+    post_stop_process_status = ""
+    start_failed = False
+    cleanup_failed = False
+    start_attempted = False
+    timeout = max(0.0, float(timeout_seconds))
+    try:
+        start_attempted = True
+        payload: dict[str, object] = {
+            "meeting_id": clean_meeting_id,
+            "group_id": clean_group_id,
+            "live_agent_config_path": str(live_agent_config_path or ""),
+            "connect_timeout_seconds": timeout,
+            "diagnostic": True,
+            "approve_real_providers": True,
+            "probe_bound_agents": True,
+            "redact_probe_events": True,
+            "probe_timeout_seconds": timeout,
+        }
+        if council_config_path:
+            payload["council_config_path"] = str(council_config_path)
+        if agent_config_path:
+            payload["agent_config_path"] = str(agent_config_path)
+        start_result = request_json(
+            _server_url(server, "/api/live-agent-sessions/start"),
+            method="POST",
+            payload=payload,
+            timeout_seconds=_smoke_operation_http_timeout(timeout, windows=25),
+        )
+        _mark_session_smoke_meeting_diagnostic(output_root, clean_meeting_id, diagnostic_kind="real_session_smoke")
+    except Exception:
+        start_failed = True
+    finally:
+        if start_attempted:
+            try:
+                stop_result = request_json(
+                    _server_url(server, "/api/live-agent-sessions/stop"),
+                    method="POST",
+                    payload={"meeting_id": clean_meeting_id, "group_id": clean_group_id},
+                    timeout_seconds=20.0,
+                )
+            except Exception:
+                stop_result = {"status": "failed"}
+                cleanup_failed = True
+            post_stop_process_status = _real_session_smoke_process_status(
+                server,
+                clean_group_id,
+                request_json=request_json,
+                sleep_fn=sleep_fn,
+                timeout_seconds=min(2.0, max(0.1, timeout)),
+            )
+
+    return _safe_real_session_smoke_result(
+        start_result,
+        stop_result,
+        meeting_id=clean_meeting_id,
+        group_id=clean_group_id,
+        post_stop_process_status=post_stop_process_status,
+        start_failed=start_failed,
+        cleanup_failed=cleanup_failed,
+    )
+
+
+def _safe_real_session_smoke_result(
+    start_result: dict[str, object],
+    stop_result: dict[str, object],
+    *,
+    meeting_id: str,
+    group_id: str,
+    post_stop_process_status: str,
+    start_failed: bool,
+    cleanup_failed: bool,
+) -> dict[str, object]:
+    connection = start_result.get("connection") if isinstance(start_result.get("connection"), dict) else {}
+    reply_probe = start_result.get("reply_probe") if isinstance(start_result.get("reply_probe"), dict) else {}
+    start_status = str(start_result.get("status") or ("failed" if start_failed else "unknown"))
+    stop_status = str(stop_result.get("status") or "unknown")
+    reply_probe_status = str(reply_probe.get("status") or "")
+    status = _real_session_smoke_status(
+        start_status=start_status,
+        reply_probe_status=reply_probe_status,
+        stop_status=stop_status,
+        post_stop_process_status=post_stop_process_status,
+        start_failed=start_failed,
+        cleanup_failed=cleanup_failed,
+    )
+    return {
+        "status": status,
+        "meeting_id": meeting_id,
+        "group_id": group_id,
+        "approval_required": True,
+        "approved": True,
+        "diagnostic": True,
+        "start_status": start_status,
+        "expected_agent_count": _nonnegative_int(connection.get("expected")),
+        "connected_agent_count": _nonnegative_int(connection.get("connected")),
+        "reply_probe_status": reply_probe_status,
+        "reply_probe_count": _nonnegative_int(reply_probe.get("probe_count")),
+        "reply_probe_ok_count": _nonnegative_int(reply_probe.get("ok_count")),
+        "stop_status": stop_status,
+        "post_stop_process_status": post_stop_process_status,
+    }
+
+
+def _real_session_smoke_status(
+    *,
+    start_status: str,
+    reply_probe_status: str,
+    stop_status: str,
+    post_stop_process_status: str,
+    start_failed: bool,
+    cleanup_failed: bool,
+) -> str:
+    if cleanup_failed or stop_status != "stopped" or post_stop_process_status not in {"stopped", "missing"}:
+        return "degraded"
+    if start_failed or start_status != "ready":
+        return "failed"
+    if reply_probe_status != "ok":
+        return "failed"
+    return "ok"
+
+
+def _real_session_smoke_process_status(
+    server: str,
+    group_id: str,
+    *,
+    request_json: RequestJson,
+    sleep_fn: Callable[[float], None],
+    timeout_seconds: float,
+) -> str:
+    try:
+        payload = wait_for_smoke_group_to_settle(
+            server,
+            group_id,
+            request_json=request_json,
+            sleep_fn=sleep_fn,
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception:
+        return "unknown"
+    group = find_process_group(payload, group_id)
+    if group is None:
+        return "missing"
+    return str(group.get("status") or "unknown")
+
+
+def _real_session_smoke_has_required_configs(
+    *,
+    live_agent_config_path: str,
+    council_config_path: str,
+    agent_config_path: str,
+) -> bool:
+    return all(
+        str(value or "").strip()
+        for value in (live_agent_config_path, council_config_path, agent_config_path)
+    )
+
+
 def _session_smoke_actor_reply_count(events: list[dict[str, object]], agent_id: str) -> int:
     if not agent_id:
         return 0
@@ -872,7 +1082,12 @@ def _write_session_smoke_configs(
     )
 
 
-def _mark_session_smoke_meeting_diagnostic(output_root: Path | None, meeting_id: str) -> None:
+def _mark_session_smoke_meeting_diagnostic(
+    output_root: Path | None,
+    meeting_id: str,
+    *,
+    diagnostic_kind: str = "session_smoke",
+) -> None:
     if output_root is None:
         return
     live_state_path = output_root / "meetings" / meeting_id / "live_state.json"
@@ -885,7 +1100,7 @@ def _mark_session_smoke_meeting_diagnostic(output_root: Path | None, meeting_id:
     if not isinstance(data, dict):
         return
     data["diagnostic"] = True
-    data["diagnostic_kind"] = "session_smoke"
+    data["diagnostic_kind"] = diagnostic_kind
     write_live_state(live_state_path.parent, data)
 
 

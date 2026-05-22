@@ -826,6 +826,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_session_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable session smoke result.")
 
+    live_real_session_smoke = live_agent_subparsers.add_parser(
+        "real-session-smoke",
+        parents=[live_server],
+        help="Run an explicitly approved diagnostic start/probe/stop smoke for a real resident config.",
+    )
+    live_real_session_smoke.add_argument("--group-id", default="", help="Optional supervised process group id for the smoke run.")
+    live_real_session_smoke.add_argument("--meeting-id", default="", help="Optional resident meeting id for the smoke run.")
+    live_real_session_smoke.add_argument("--live-agent-config", required=True, help="Resident live-agent run-group config path.")
+    live_real_session_smoke.add_argument("--council-config", required=True, help="Council config path for bound resident roles.")
+    live_real_session_smoke.add_argument("--agent-config", required=True, help="Agent runtime config with approved resident bindings.")
+    live_real_session_smoke.add_argument(
+        "--timeout",
+        type=parse_nonnegative_float,
+        default=12.0,
+        help="Seconds to wait for real session readiness and probes.",
+    )
+    live_real_session_smoke.add_argument(
+        "--approve-real-providers",
+        action="store_true",
+        help="Allow this one smoke command to start real provider resident CLIs.",
+    )
+    live_real_session_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable real session smoke result.")
+
     live_official_round_smoke = live_agent_subparsers.add_parser(
         "official-round-smoke",
         parents=[live_server],
@@ -1330,6 +1353,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_smoke(args)
         if args.live_agent_command == "session-smoke":
             return _run_live_agent_session_smoke(args)
+        if args.live_agent_command == "real-session-smoke":
+            return _run_live_agent_real_session_smoke(args)
         if args.live_agent_command == "official-round-smoke":
             return _run_live_agent_official_round_smoke(args)
         if args.live_agent_command == "doctor":
@@ -2944,6 +2969,48 @@ def _run_live_agent_session_smoke(args: argparse.Namespace) -> int:
     return 0 if result.get("status") == "ok" else 1
 
 
+def _run_live_agent_real_session_smoke(args: argparse.Namespace) -> int:
+    if not bool(args.approve_real_providers):
+        result = _unapproved_real_session_smoke_result(args)
+    else:
+        result = _request_json(
+            _server_url(args.server, "/api/live-agent-real-session-smoke"),
+            method="POST",
+            payload={
+                "group_id": str(args.group_id or ""),
+                "meeting_id": str(args.meeting_id or ""),
+                "timeout": float(args.timeout),
+                "live_agent_config_path": str(args.live_agent_config or ""),
+                "council_config_path": str(args.council_config or ""),
+                "agent_config_path": str(args.agent_config or ""),
+                "approve_real_providers": True,
+            },
+            timeout_seconds=_real_session_smoke_http_timeout(float(args.timeout)),
+        )
+    if args.as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_real_session_smoke(result))
+    return 0 if result.get("status") == "ok" else 1
+
+
+def _unapproved_real_session_smoke_result(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "status": "approval_required",
+        "meeting_id": _safe_cli_smoke_id(args.meeting_id),
+        "group_id": _safe_cli_smoke_id(args.group_id),
+        "approval_required": True,
+        "approved": False,
+        "diagnostic": True,
+        "reason": "current_operator_approval_required",
+    }
+
+
+def _safe_cli_smoke_id(value: object) -> str:
+    text = clean_lobby_text(value, limit=128)
+    return "".join(char if char.isalnum() or char in "_.-" else "-" for char in text).strip(".-")
+
+
 def _run_live_agent_official_round_smoke(args: argparse.Namespace) -> int:
     result = _request_json(
         _server_url(args.server, "/api/live-agent-official-round-smoke"),
@@ -2962,6 +3029,19 @@ def _run_live_agent_official_round_smoke(args: argparse.Namespace) -> int:
             f"{result.get('skipped_count', 0)} skipped)"
         )
     return 0 if result.get("status") == "ok" else 1
+
+
+def _format_live_agent_real_session_smoke(result: dict[str, object]) -> str:
+    return (
+        f"real resident session smoke {result.get('status') or 'unknown'}: "
+        f"{result.get('meeting_id') or 'real-session-smoke'} "
+        f"group {result.get('group_id') or 'real-session-smoke'}; "
+        f"start {result.get('start_status') or 'unknown'}; "
+        f"probes {result.get('reply_probe_status') or 'unknown'}: "
+        f"{result.get('reply_probe_ok_count', 0)}/{result.get('reply_probe_count', 0)} ok; "
+        f"stop {result.get('stop_status') or 'unknown'}; "
+        f"post-stop {result.get('post_stop_process_status') or 'unknown'}"
+    )
 
 
 def _format_live_agent_session_smoke(result: dict[str, object]) -> str:
@@ -4295,6 +4375,18 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
             "soak_check_statuses",
             "post_stop_process_status",
         ]
+    if operation_name == "session.real_smoke":
+        return [
+            "result_status",
+            "start_status",
+            "connected_agent_count",
+            "expected_agent_count",
+            "reply_probe_status",
+            "reply_probe_ok_count",
+            "reply_probe_count",
+            "stop_status",
+            "post_stop_process_status",
+        ]
     if operation_name == "readiness.check":
         return [
             "result_status",
@@ -4368,6 +4460,8 @@ def _live_agent_operation_detail_priority(operation_name: str) -> list[str]:
 
 
 def _live_agent_operation_detail_limit(operation_name: str) -> int:
+    if operation_name == "session.real_smoke":
+        return 9
     if operation_name == "session.smoke":
         return 8
     if operation_name == "session.ensure":
@@ -6004,6 +6098,11 @@ def _session_smoke_http_timeout(
         + (soak_cycles * (10.0 + timeout + soak_interval))
         + 20.0
     )
+
+
+def _real_session_smoke_http_timeout(wait_seconds: float) -> float:
+    timeout = max(0.0, float(wait_seconds))
+    return _operation_http_timeout(timeout, windows=25) + 22.0
 
 
 def _request_json(

@@ -68,6 +68,7 @@ from agentsassemble.live_agent_smoke import (
     MAX_SESSION_SMOKE_SOAK_CYCLES,
     MAX_SESSION_SMOKE_SOAK_INTERVAL_SECONDS,
     run_live_agent_official_round_smoke,
+    run_live_agent_real_session_smoke,
     run_live_agent_session_smoke,
     run_live_agent_smoke,
 )
@@ -111,8 +112,17 @@ REMOTE_LOBBY_REQUESTER = None
 MAX_READINESS_PROBE_AGENTS = 10
 OFFICIAL_ROUND_SMOKE_ERROR = "official round smoke could not be run"
 SESSION_SMOKE_ERROR = "session smoke could not be run"
+REAL_SESSION_SMOKE_APPROVAL_REQUIRED_MESSAGE = (
+    "Real session smoke requires current operator approval before starting real providers."
+)
+REAL_SESSION_SMOKE_CONFIG_REQUIRED_MESSAGE = (
+    "Real session smoke requires explicit live-agent, council, and agent config paths."
+)
+REAL_SESSION_SMOKE_PROBE_REDACTION = "[redacted real session smoke probe]"
+REAL_SESSION_SMOKE_REPLY_REDACTION = "[redacted real session smoke reply]"
 LIVE_AGENT_TURN_LOCK = threading.Lock()
-LIVE_AGENT_LOBBY_LOCK = threading.Lock()
+LIVE_AGENT_LOBBY_LOCK = threading.RLock()
+REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS: set[str] = set()
 MAX_LIVE_AGENT_SEQUENCE_TURNS = 12
 MAX_LIVE_AGENT_ROUND_BATCH = 8
 LIVE_AGENT_ROUND_SCHEDULER_LOCKS: dict[str, threading.RLock] = {}
@@ -722,7 +732,8 @@ def read_lobby(output_root: Path, limit: int | None = 80) -> list[dict[str, obje
 
 
 def append_lobby_event(output_root: Path, event: dict[str, object], *, live_agent_endpoint: bool = False) -> dict[str, object]:
-    return append_lobby_event_to_file(output_root / "lobby.jsonl", event, live_agent_endpoint=live_agent_endpoint)
+    with LIVE_AGENT_LOBBY_LOCK:
+        return append_lobby_event_to_file(output_root / "lobby.jsonl", event, live_agent_endpoint=live_agent_endpoint)
 
 
 def read_side_chat(output_root: Path, limit: int = 120) -> list[dict[str, object]]:
@@ -1635,9 +1646,15 @@ def _session_bound_agent_reply_probe_payload(
             reason="no_bound_agents",
         )
     probes = []
+    redact_probe_events = _payload_bool(payload.get("redact_probe_events"))
     for agent_id in agent_ids:
         try:
-            probe = _run_session_bound_agent_probe(output_root, agent_id, timeout_seconds=timeout_seconds)
+            probe = _run_session_bound_agent_probe(
+                output_root,
+                agent_id,
+                timeout_seconds=timeout_seconds,
+                redact_events=redact_probe_events,
+            )
         except ValueError:
             probe = {"status": "failed", "agent_id": agent_id, "reason": "probe could not be run"}
         probes.append(_safe_readiness_probe_result(probe))
@@ -1655,17 +1672,82 @@ def _session_bound_agent_ids(session: dict[str, object]) -> list[str]:
     return _safe_payload_strings(process.get("agent_ids"), limit=64)
 
 
-def _run_session_bound_agent_probe(output_root: Path, agent_id: str, *, timeout_seconds: float) -> dict[str, object]:
+def _run_session_bound_agent_probe(
+    output_root: Path,
+    agent_id: str,
+    *,
+    timeout_seconds: float,
+    redact_events: bool = False,
+) -> dict[str, object]:
     previous_engagement = _live_agent_engagement_snapshot(output_root, agent_id)
     previous_mode = str(previous_engagement.get("engagement_mode") or "")
     switch_for_probe = previous_mode in {"manual", "watch", "moderator_called"}
     if switch_for_probe:
         update_live_agent_engagement(output_root, agent_id, "human_only")
     try:
-        return run_live_agent_probe(output_root, agent_id, timeout_seconds=timeout_seconds)
+        result = run_live_agent_probe(output_root, agent_id, timeout_seconds=timeout_seconds)
     finally:
         if switch_for_probe:
             _restore_live_agent_engagement_snapshot(output_root, agent_id, previous_engagement)
+    if redact_events:
+        source_event_id = str(result.get("source_event_id") or "").strip()
+        if source_event_id:
+            result["redaction"] = _redact_real_session_smoke_lobby_events(output_root, [source_event_id])
+    return result
+
+
+def _redact_real_session_smoke_lobby_events(
+    output_root: Path,
+    source_event_ids: list[str],
+) -> dict[str, object]:
+    source_ids = {str(value or "").strip() for value in source_event_ids}
+    source_ids.discard("")
+    result = {"probe_event_count": 0, "reply_event_count": 0}
+    if not source_ids:
+        return result
+    lobby_path = output_root / "lobby.jsonl"
+    with LIVE_AGENT_LOBBY_LOCK:
+        REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS.update(source_ids)
+        if not lobby_path.exists():
+            return result
+        changed = False
+        rewritten_lines: list[str] = []
+        for line in lobby_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                rewritten_lines.append(line)
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                rewritten_lines.append(line)
+                continue
+            if not isinstance(event, dict):
+                rewritten_lines.append(line)
+                continue
+            event_id = str(event.get("id") or "")
+            source_event_id = str(event.get("source_event_id") or "")
+            if event_id in source_ids:
+                result["probe_event_count"] += 1
+                if event.get("message") != REAL_SESSION_SMOKE_PROBE_REDACTION:
+                    event["message"] = REAL_SESSION_SMOKE_PROBE_REDACTION
+                    changed = True
+            elif source_event_id in source_ids and event.get("live_agent_endpoint") is True:
+                result["reply_event_count"] += 1
+                if event.get("message") != REAL_SESSION_SMOKE_REPLY_REDACTION:
+                    event["message"] = REAL_SESSION_SMOKE_REPLY_REDACTION
+                    changed = True
+            rewritten_lines.append(json.dumps(event, ensure_ascii=False, sort_keys=True))
+        if changed:
+            tmp_path = lobby_path.with_name(f"{lobby_path.name}.tmp")
+            tmp_path.write_text("\n".join(rewritten_lines) + ("\n" if rewritten_lines else ""), encoding="utf-8")
+            tmp_path.replace(lobby_path)
+    return result
+
+
+def _real_session_smoke_reply_message(source_event_id: str, message: str) -> str:
+    if source_event_id and source_event_id in REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS:
+        return REAL_SESSION_SMOKE_REPLY_REDACTION
+    return message
 
 
 def _live_agent_engagement_snapshot(output_root: Path, agent_id: str) -> dict[str, object]:
@@ -1904,6 +1986,17 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
     with LIVE_AGENT_LOBBY_LOCK:
         existing_event = _existing_live_agent_lobby_reply(output_root, actor_id=actor_id, source_event_id=source_event_id)
         if existing_event is not None:
+            if (
+                source_event_id
+                and source_event_id in REAL_SESSION_SMOKE_REDACTED_SOURCE_EVENT_IDS
+                and existing_event.get("message") != REAL_SESSION_SMOKE_REPLY_REDACTION
+            ):
+                _redact_real_session_smoke_lobby_events(output_root, [source_event_id])
+                existing_event = _existing_live_agent_lobby_reply(
+                    output_root,
+                    actor_id=actor_id,
+                    source_event_id=source_event_id,
+                ) or existing_event
             updated_agent = heartbeat_live_agent(
                 output_root,
                 actor_id,
@@ -1921,7 +2014,7 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
                 "name": agent.get("display_name") or agent.get("agent_id") or agent_id,
                 "side": "other-agent",
                 "kind": payload.get("kind") or "message",
-                "message": message,
+                "message": _real_session_smoke_reply_message(source_event_id, message),
                 "actor_id": actor_id,
                 "source_event_id": source_event_id,
                 "auto_chain_depth": payload.get("auto_chain_depth") or 0,
@@ -2613,6 +2706,26 @@ def live_agent_session_smoke_payload(
         lobby_probe_count=_payload_nonnegative_int(payload.get("lobby_probe_count"), 1),
         soak_cycle_count=_payload_session_smoke_soak_cycle_count(payload.get("soak_cycle_count")),
         soak_interval_seconds=_payload_session_smoke_soak_interval_seconds(payload.get("soak_interval_seconds")),
+        request_json=_request_json,
+        output_root=output_root,
+    )
+
+
+def live_agent_real_session_smoke_payload(
+    output_root: Path,
+    payload: dict[str, object],
+    *,
+    default_server: str,
+) -> dict[str, object]:
+    return run_live_agent_real_session_smoke(
+        server=default_server,
+        group_id=str(payload.get("group_id") or ""),
+        meeting_id=str(payload.get("meeting_id") or ""),
+        live_agent_config_path=str(payload.get("live_agent_config_path") or payload.get("live_agent_config") or ""),
+        council_config_path=str(payload.get("council_config_path") or payload.get("council_config") or ""),
+        agent_config_path=str(payload.get("agent_config_path") or payload.get("agent_config") or ""),
+        timeout_seconds=_payload_nonnegative_float(payload.get("timeout"), 12.0),
+        approve_real_providers=_payload_bool(payload.get("approve_real_providers")),
         request_json=_request_json,
         output_root=output_root,
     )
@@ -4926,6 +5039,25 @@ def _safe_readiness_session_smoke_result(smoke: dict[str, object]) -> dict[str, 
     return safe
 
 
+def _safe_real_session_smoke_result(smoke: dict[str, object]) -> dict[str, object]:
+    return {
+        "status": _operation_result_status(smoke.get("status")),
+        "meeting_id": clean_lobby_text(smoke.get("meeting_id"), limit=128),
+        "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
+        "approval_required": smoke.get("approval_required") is True,
+        "approved": smoke.get("approved") is True,
+        "diagnostic": smoke.get("diagnostic") is True,
+        "start_status": _operation_result_status(smoke.get("start_status")),
+        "expected_agent_count": _payload_nonnegative_int(smoke.get("expected_agent_count"), 0),
+        "connected_agent_count": _payload_nonnegative_int(smoke.get("connected_agent_count"), 0),
+        "reply_probe_status": _operation_result_status(smoke.get("reply_probe_status")),
+        "reply_probe_count": _payload_nonnegative_int(smoke.get("reply_probe_count"), 0),
+        "reply_probe_ok_count": _payload_nonnegative_int(smoke.get("reply_probe_ok_count"), 0),
+        "stop_status": _operation_result_status(smoke.get("stop_status")),
+        "post_stop_process_status": _operation_result_status(smoke.get("post_stop_process_status")),
+    }
+
+
 def _safe_readiness_probe_groups(
     probe_groups: list[dict[str, object]],
     *,
@@ -5455,6 +5587,43 @@ def _session_smoke_error_details(payload: dict[str, object]) -> dict[str, object
         "group_id": clean_lobby_text(payload.get("group_id"), limit=128),
         "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
     }
+
+
+def _real_session_smoke_operation_details(smoke: dict[str, object]) -> dict[str, object]:
+    return {
+        "group_id": clean_lobby_text(smoke.get("group_id"), limit=128),
+        "meeting_id": clean_lobby_text(smoke.get("meeting_id"), limit=128),
+        "result_status": _operation_result_status(smoke.get("status")),
+        "approval_required": smoke.get("approval_required") is True,
+        "approved": smoke.get("approved") is True,
+        "diagnostic": smoke.get("diagnostic") is True,
+        "start_status": _operation_result_status(smoke.get("start_status")),
+        "expected_agent_count": _payload_nonnegative_int(smoke.get("expected_agent_count"), 0),
+        "connected_agent_count": _payload_nonnegative_int(smoke.get("connected_agent_count"), 0),
+        "reply_probe_status": _operation_result_status(smoke.get("reply_probe_status")),
+        "reply_probe_count": _payload_nonnegative_int(smoke.get("reply_probe_count"), 0),
+        "reply_probe_ok_count": _payload_nonnegative_int(smoke.get("reply_probe_ok_count"), 0),
+        "stop_status": _operation_result_status(smoke.get("stop_status")),
+        "post_stop_process_status": _operation_result_status(smoke.get("post_stop_process_status")),
+    }
+
+
+def _real_session_smoke_error_details(payload: dict[str, object]) -> dict[str, object]:
+    return {
+        "group_id": clean_lobby_text(payload.get("group_id"), limit=128),
+        "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
+    }
+
+
+def _real_session_smoke_has_explicit_configs(payload: dict[str, object]) -> bool:
+    return all(
+        str(value or "").strip()
+        for value in (
+            payload.get("live_agent_config_path") or payload.get("live_agent_config"),
+            payload.get("council_config_path") or payload.get("council_config"),
+            payload.get("agent_config_path") or payload.get("agent_config"),
+        )
+    )
 
 
 def _session_start_operation_details(session: dict[str, object]) -> dict[str, object]:
@@ -7199,6 +7368,77 @@ def _make_handler(
                     target_id=str(smoke.get("group_id") or payload.get("group_id") or ""),
                     summary="ran credential-free resident session smoke",
                     details=_session_smoke_operation_details(smoke),
+                )
+                self._send_json(smoke)
+                return
+            if parsed.path == "/api/live-agent-real-session-smoke":
+                payload = self._operation_json_payload(operation="session.real_smoke")
+                if payload is None:
+                    return
+                if not _payload_bool(payload.get("approve_real_providers")):
+                    safe_details = _real_session_smoke_error_details(payload)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.real_smoke",
+                        status="failed",
+                        target_id=str(safe_details.get("meeting_id") or ""),
+                        error=REAL_SESSION_SMOKE_APPROVAL_REQUIRED_MESSAGE,
+                        details=safe_details,
+                    )
+                    self._send_error(
+                        HTTPStatus.BAD_REQUEST,
+                        REAL_SESSION_SMOKE_APPROVAL_REQUIRED_MESSAGE,
+                        details=safe_details,
+                    )
+                    return
+                if not _real_session_smoke_has_explicit_configs(payload):
+                    safe_details = _real_session_smoke_error_details(payload)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.real_smoke",
+                        status="failed",
+                        target_id=str(safe_details.get("meeting_id") or ""),
+                        error=REAL_SESSION_SMOKE_CONFIG_REQUIRED_MESSAGE,
+                        details=safe_details,
+                    )
+                    self._send_error(
+                        HTTPStatus.BAD_REQUEST,
+                        REAL_SESSION_SMOKE_CONFIG_REQUIRED_MESSAGE,
+                        details=safe_details,
+                    )
+                    return
+                try:
+                    smoke = _safe_real_session_smoke_result(
+                        live_agent_real_session_smoke_payload(
+                            output_root,
+                            payload,
+                            default_server=self._local_server_url(),
+                        )
+                    )
+                except (LiveAgentSmokeFailed, ValueError, urllib.error.URLError) as error:
+                    del error
+                    safe_error = "Real session smoke could not be run."
+                    safe_details = _real_session_smoke_error_details(payload)
+                    record_live_agent_operation(
+                        output_root,
+                        operation="session.real_smoke",
+                        status="failed",
+                        target_id=str(safe_details.get("meeting_id") or ""),
+                        error=safe_error,
+                        details=safe_details,
+                    )
+                    self._send_error(HTTPStatus.BAD_GATEWAY, safe_error, details=safe_details)
+                    return
+                result_status = _operation_result_status(smoke.get("status"))
+                record_live_agent_operation(
+                    output_root,
+                    operation="session.real_smoke",
+                    status="degraded"
+                    if result_status == "degraded"
+                    else _operation_success_for_result(result_status, success_values={"ok"}),
+                    target_id=str(smoke.get("meeting_id") or payload.get("meeting_id") or ""),
+                    summary="ran approved real resident session smoke",
+                    details=_real_session_smoke_operation_details(smoke),
                 )
                 self._send_json(smoke)
                 return

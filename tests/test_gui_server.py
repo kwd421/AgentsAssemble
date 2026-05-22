@@ -35,7 +35,9 @@ from agentsassemble.gui import (
     live_agent_turn_rounds_payload,
     _live_agent_turn_rounds_payload_locked,
     _run_session_bound_agent_probe,
+    _redact_real_session_smoke_lobby_events,
     _readiness_health_operation_details,
+    live_agent_lobby_message_payload,
     LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT,
     live_agents_payload,
     live_agent_health_payload,
@@ -3299,6 +3301,299 @@ class GuiServerTests(unittest.TestCase):
         for secret in ("SECRET", "private-live-agents", "/Users/me", "config_path", "token="):
             self.assertNotIn(secret, serialized_payload)
             self.assertNotIn(secret, serialized_operations)
+
+    def test_live_agent_real_session_smoke_endpoint_rejects_missing_approval_without_launching(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-real-session-smoke",
+                    data=json.dumps(
+                        {
+                            "group_id": "real-smoke",
+                            "meeting_id": "real-smoke-meeting",
+                            "live_agent_config_path": "/Users/me/private/live-agents.real.json",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch("agentsassemble.gui.run_live_agent_real_session_smoke") as real_smoke:
+                    real_smoke.side_effect = AssertionError("missing approval must not start a real smoke")
+                    with self.assertRaises(HTTPError) as raised:
+                        urlopen(request, timeout=4)
+                body = raised.exception.read().decode("utf-8")
+                error_payload = json.loads(body)
+                raised.exception.close()
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(raised.exception.code, 400)
+        self.assertIn("requires current operator approval", error_payload["error"])
+        serialized = json.dumps({"error": error_payload, "operations": operations}, ensure_ascii=False)
+        self.assertNotIn("/Users/me", serialized)
+        self.assertNotIn("live-agents.real.json", serialized)
+
+    def test_live_agent_real_session_smoke_endpoint_rejects_string_false_approval(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-real-session-smoke",
+                    data=json.dumps(
+                        {
+                            "group_id": "real-smoke",
+                            "meeting_id": "real-smoke-meeting",
+                            "live_agent_config_path": "/Users/me/private/live-agents.real.json",
+                            "approve_real_providers": "false",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch("agentsassemble.gui.run_live_agent_real_session_smoke") as real_smoke:
+                    real_smoke.side_effect = AssertionError("string false approval must not start a real smoke")
+                    with self.assertRaises(HTTPError) as raised:
+                        urlopen(request, timeout=4)
+                raised.exception.close()
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(raised.exception.code, 400)
+
+    def test_live_agent_real_session_smoke_endpoint_requires_matching_configs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-real-session-smoke",
+                    data=json.dumps(
+                        {
+                            "group_id": "real-smoke",
+                            "meeting_id": "real-smoke-meeting",
+                            "live_agent_config_path": "/Users/me/private/live-agents.real.json",
+                            "approve_real_providers": True,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with patch("agentsassemble.gui.run_live_agent_real_session_smoke") as real_smoke:
+                    real_smoke.side_effect = AssertionError("missing matching configs must not start a real smoke")
+                    with self.assertRaises(HTTPError) as raised:
+                        urlopen(request, timeout=4)
+                body = raised.exception.read().decode("utf-8")
+                error_payload = json.loads(body)
+                raised.exception.close()
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(raised.exception.code, 400)
+        self.assertIn("requires explicit", error_payload["error"])
+        serialized = json.dumps({"error": error_payload, "operations": operations}, ensure_ascii=False)
+        self.assertNotIn("/Users/me", serialized)
+        self.assertNotIn("live-agents.real.json", serialized)
+
+    def test_live_agent_real_session_smoke_endpoint_returns_safe_approved_result(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            root.mkdir()
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            smoke_result = {
+                "status": "ok",
+                "meeting_id": "real-smoke-meeting",
+                "group_id": "real-smoke",
+                "approval_required": True,
+                "approved": True,
+                "diagnostic": True,
+                "start_status": "ready",
+                "expected_agent_count": 2,
+                "connected_agent_count": 2,
+                "reply_probe_status": "ok",
+                "reply_probe_count": 2,
+                "reply_probe_ok_count": 2,
+                "stop_status": "stopped",
+                "post_stop_process_status": "stopped",
+                "live_agent_config_path": "/Users/me/private/live-agents.real.json",
+                "reply_probe": {"replies": [{"message": "secret provider output"}]},
+                "process": {"config_path": "/Users/me/private/live-agents.real.json"},
+            }
+            try:
+                with patch("agentsassemble.gui.run_live_agent_real_session_smoke", return_value=smoke_result) as real_smoke:
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/live-agent-real-session-smoke",
+                        data=json.dumps(
+                            {
+                                "group_id": "real-smoke",
+                                "meeting_id": "real-smoke-meeting",
+                                "live_agent_config_path": "/Users/me/private/live-agents.real.json",
+                                "council_config_path": "/Users/me/private/council.json",
+                                "agent_config_path": "/Users/me/private/agents.json",
+                                "timeout": 9,
+                                "approve_real_providers": True,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=4) as response:
+                        payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20",
+                    timeout=4,
+                ) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        real_smoke.assert_called_once()
+        kwargs = real_smoke.call_args.kwargs
+        self.assertEqual(kwargs["server"], f"http://127.0.0.1:{server.server_port}")
+        self.assertEqual(kwargs["group_id"], "real-smoke")
+        self.assertEqual(kwargs["meeting_id"], "real-smoke-meeting")
+        self.assertEqual(kwargs["timeout_seconds"], 9.0)
+        self.assertTrue(kwargs["approve_real_providers"])
+        self.assertEqual(kwargs["output_root"], root)
+        self.assertEqual(
+            payload,
+            {
+                "status": "ok",
+                "meeting_id": "real-smoke-meeting",
+                "group_id": "real-smoke",
+                "approval_required": True,
+                "approved": True,
+                "diagnostic": True,
+                "start_status": "ready",
+                "expected_agent_count": 2,
+                "connected_agent_count": 2,
+                "reply_probe_status": "ok",
+                "reply_probe_count": 2,
+                "reply_probe_ok_count": 2,
+                "stop_status": "stopped",
+                "post_stop_process_status": "stopped",
+            },
+        )
+        operations_for_smoke = [
+            operation for operation in operations["operations"] if operation["operation"] == "session.real_smoke"
+        ]
+        self.assertEqual(operations_for_smoke[-1]["status"], "success")
+        self.assertEqual(operations_for_smoke[-1]["details"]["reply_probe_ok_count"], 2)
+        serialized = json.dumps({"payload": payload, "operations": operations}, ensure_ascii=False)
+        self.assertNotIn("/Users/me", serialized)
+        self.assertNotIn("private", serialized)
+        self.assertNotIn("secret provider output", serialized)
+        self.assertNotIn("config_path", serialized)
+
+    def test_real_session_smoke_lobby_redaction_removes_probe_and_reply_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            probe = append_lobby_event(
+                root,
+                {
+                    "name": "Smoke",
+                    "side": "mine",
+                    "message": "probe contains private prompt text",
+                    "actor_id": "human",
+                },
+            )
+            reply = append_lobby_event(
+                root,
+                {
+                    "name": "Claude",
+                    "side": "other-agent",
+                    "message": "provider reply contains private output",
+                    "actor_id": "claude-live",
+                    "source_event_id": probe["id"],
+                },
+                live_agent_endpoint=True,
+            )
+            unrelated = append_lobby_event(
+                root,
+                {
+                    "name": "User",
+                    "side": "mine",
+                    "message": "keep this visible",
+                    "actor_id": "human",
+                },
+            )
+
+            result = _redact_real_session_smoke_lobby_events(root, [str(probe["id"])])
+            events = read_lobby(root, limit=None)
+
+        self.assertEqual(result["probe_event_count"], 1)
+        self.assertEqual(result["reply_event_count"], 1)
+        by_id = {str(event["id"]): event for event in events}
+        self.assertEqual(by_id[str(probe["id"])]["message"], "[redacted real session smoke probe]")
+        self.assertEqual(by_id[str(reply["id"])]["message"], "[redacted real session smoke reply]")
+        self.assertEqual(by_id[str(reply["id"])]["source_event_id"], probe["id"])
+        self.assertTrue(by_id[str(reply["id"])]["live_agent_endpoint"])
+        self.assertEqual(by_id[str(unrelated["id"])]["message"], "keep this visible")
+
+    def test_real_session_smoke_late_reply_is_redacted_at_append_time(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "claude-live",
+                    "display_name": "Claude Live",
+                    "provider_kind": "claude_code",
+                    "connection_kind": "live_session",
+                    "status": "online",
+                },
+            )
+            probe = append_lobby_event(
+                root,
+                {
+                    "name": "Smoke",
+                    "side": "mine",
+                    "message": "probe contains private prompt text",
+                    "actor_id": "human",
+                },
+            )
+            _redact_real_session_smoke_lobby_events(root, [str(probe["id"])])
+
+            result = live_agent_lobby_message_payload(
+                root,
+                "claude-live",
+                {
+                    "message": "late provider reply contains private output",
+                    "source_event_id": probe["id"],
+                },
+            )
+            events = read_lobby(root, limit=None)
+
+        self.assertEqual(result["event"]["message"], "[redacted real session smoke reply]")
+        serialized = json.dumps({"result": result, "events": events}, ensure_ascii=False)
+        self.assertNotIn("late provider reply contains private output", serialized)
 
     def test_live_agent_readiness_endpoint_rejects_negative_session_smoke_soak_payload(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -4028,6 +4028,47 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("soak_check_statuses=ready,ready", output)
         self.assertIn("post_stop_process_status=stopped", output)
 
+    def test_live_agent_operations_list_prioritizes_real_session_smoke_evidence(self):
+        payload = {
+            "operations": [
+                {
+                    "timestamp": "2026-05-18T01:02:03+00:00",
+                    "operation": "session.real_smoke",
+                    "status": "success",
+                    "target_id": "real-smoke",
+                    "summary": "ran approved real resident session smoke",
+                    "details": {
+                        "group_id": "real-smoke",
+                        "meeting_id": "real-smoke-meeting",
+                        "approval_required": True,
+                        "approved": True,
+                        "diagnostic": True,
+                        "result_status": "ok",
+                        "start_status": "ready",
+                        "expected_agent_count": 2,
+                        "connected_agent_count": 2,
+                        "reply_probe_status": "ok",
+                        "reply_probe_count": 2,
+                        "reply_probe_ok_count": 2,
+                        "stop_status": "stopped",
+                        "post_stop_process_status": "stopped",
+                    },
+                }
+            ]
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(["live-agent", "operations", "list", "--server", "http://room.local"])
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("session.real_smoke", output)
+        self.assertIn("result_status=ok", output)
+        self.assertIn("reply_probe_ok_count=2", output)
+        self.assertIn("post_stop_process_status=stopped", output)
+        self.assertLess(output.index("reply_probe_ok_count=2"), output.index("stop_status=stopped"))
+
     def test_live_agent_operations_list_prioritizes_session_control_probe_and_auto_rounds(self):
         payload = {
             "operations": [
@@ -4797,6 +4838,65 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.soak_cycle_count, 2)
         self.assertEqual(args.soak_interval_seconds, 0.5)
         self.assertTrue(args.as_json)
+
+    def test_live_agent_real_session_smoke_parses_explicit_approval_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "real-session-smoke",
+                "--server",
+                "http://room.local",
+                "--live-agent-config",
+                "configs/live-agents.example.json",
+                "--council-config",
+                "configs/demo-council.json",
+                "--agent-config",
+                "configs/agents.example.json",
+                "--group-id",
+                "real-smoke",
+                "--meeting-id",
+                "real-smoke-meeting",
+                "--timeout",
+                "9",
+                "--approve-real-providers",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "real-session-smoke")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.live_agent_config, "configs/live-agents.example.json")
+        self.assertEqual(args.council_config, "configs/demo-council.json")
+        self.assertEqual(args.agent_config, "configs/agents.example.json")
+        self.assertEqual(args.group_id, "real-smoke")
+        self.assertEqual(args.meeting_id, "real-smoke-meeting")
+        self.assertEqual(args.timeout, 9.0)
+        self.assertTrue(args.approve_real_providers)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_real_session_smoke_requires_matching_config_paths(self):
+        with self.assertRaises(SystemExit):
+            build_parser().parse_args(
+                [
+                    "live-agent",
+                    "real-session-smoke",
+                    "--live-agent-config",
+                    "configs/live-agents.example.json",
+                    "--agent-config",
+                    "configs/agents.example.json",
+                ]
+            )
+        with self.assertRaises(SystemExit):
+            build_parser().parse_args(
+                [
+                    "live-agent",
+                    "real-session-smoke",
+                    "--live-agent-config",
+                    "configs/live-agents.example.json",
+                    "--council-config",
+                    "configs/demo-council.json",
+                ]
+            )
 
     def test_live_agent_session_smoke_rejects_unbounded_lobby_probes(self):
         with self.assertRaises(SystemExit):
@@ -8595,6 +8695,89 @@ class CliTimeoutTests(unittest.TestCase):
                 exit_code = main(["live-agent", "session-smoke", "--server", "http://room.local"])
 
         self.assertEqual(exit_code, 1)
+
+    def test_live_agent_real_session_smoke_refuses_missing_approval_without_network(self):
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json") as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "real-session-smoke",
+                        "--server",
+                        "http://room.local",
+                        "--live-agent-config",
+                        "/Users/me/private/live-agents.real.json",
+                        "--council-config",
+                        "/Users/me/private/council.json",
+                        "--agent-config",
+                        "/Users/me/private/agents.json",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        request_json.assert_not_called()
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "approval_required")
+        self.assertNotIn("/Users/me", stdout.getvalue())
+        self.assertNotIn("live-agents.real.json", stdout.getvalue())
+
+    def test_live_agent_real_session_smoke_posts_endpoint_with_explicit_approval(self):
+        payload = {
+            "status": "ok",
+            "meeting_id": "real-smoke-meeting",
+            "group_id": "real-smoke",
+            "start_status": "ready",
+            "reply_probe_status": "ok",
+            "reply_probe_ok_count": 2,
+            "reply_probe_count": 2,
+            "stop_status": "stopped",
+            "post_stop_process_status": "stopped",
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "real-session-smoke",
+                        "--server",
+                        "http://room.local",
+                        "--live-agent-config",
+                        "configs/live-agents.example.json",
+                        "--council-config",
+                        "configs/demo-council.json",
+                        "--agent-config",
+                        "configs/agents.example.json",
+                        "--group-id",
+                        "real-smoke",
+                        "--meeting-id",
+                        "real-smoke-meeting",
+                        "--timeout",
+                        "9",
+                        "--approve-real-providers",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/live-agent-real-session-smoke",
+            method="POST",
+            payload={
+                "group_id": "real-smoke",
+                "meeting_id": "real-smoke-meeting",
+                "timeout": 9.0,
+                "live_agent_config_path": "configs/live-agents.example.json",
+                "council_config_path": "configs/demo-council.json",
+                "agent_config_path": "configs/agents.example.json",
+                "approve_real_providers": True,
+            },
+            timeout_seconds=253.0,
+        )
+        self.assertIn("real resident session smoke ok: real-smoke-meeting", stdout.getvalue())
+        self.assertIn("probes ok: 2/2 ok", stdout.getvalue())
+        self.assertIn("post-stop stopped", stdout.getvalue())
 
     def test_live_agent_doctor_json_exits_one_when_not_ready(self):
         payload = {

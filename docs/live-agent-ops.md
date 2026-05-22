@@ -1755,7 +1755,43 @@ python3 -m agentsassemble.cli live-agent preflight \
   --config configs/live-agents.codex-session.example.json
 ```
 
-After approval, start a bounded real-provider group:
+After approval, run the bounded real resident config smoke:
+
+```bash
+python3 -m agentsassemble.cli live-agent real-session-smoke \
+  --server http://127.0.0.1:8765 \
+  --live-agent-config /path/to/approved-live-agents.real.json \
+  --council-config /path/to/matching-council.json \
+  --agent-config /path/to/matching-agents.json \
+  --group-id real-provider-smoke \
+  --meeting-id real-provider-smoke \
+  --timeout 12 \
+  --approve-real-providers
+```
+
+That command calls `POST /api/live-agent-real-session-smoke`. It requires
+current explicit approval plus explicit live-agent, council, and agent config
+paths before contacting the room, starts the supplied resident config in
+diagnostic mode, requires bounded `probe_bound_agents` evidence from the bound
+agents, then calls `stop-session` for the same meeting/group even when start or
+probe fails. The diagnostic probe source events and matching live-agent replies
+are redacted from the durable lobby log, including late replies that arrive
+after the initial probe wait. The response and
+`session.real_smoke` operation expose only safe ids and counts/statuses:
+start status, connected/expected counts, reply-probe counts, stop status, and
+post-stop process status. They do not expose config paths, commands, endpoint
+URLs, auth refs, prompt text, reply text, provider output, log tails, or a
+durable approval grant. A stop or post-stop failure reports `degraded` so an
+operator knows cleanup still needs attention.
+
+The supplied council and agent configs must bind the same `agent_id` values as
+the resident config. `configs/live-agents.example.json` is useful as the command
+shape reference for Claude and Antigravity, but it is not paired with the demo
+`configs/agents.start-session.example.json`; generate or provide a matching
+host-approved bundle before running the real smoke.
+
+For lower-level debugging after the same approval, you can still start a
+bounded process group directly:
 
 ```bash
 python3 -m agentsassemble.cli live-agent run-group \

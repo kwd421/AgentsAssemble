@@ -18,6 +18,7 @@ from agentsassemble.live_agent_smoke import (
     build_live_agent_official_round_smoke_config,
     build_live_agent_smoke_config,
     run_live_agent_session_smoke,
+    run_live_agent_real_session_smoke,
     run_live_agent_official_round_smoke,
     run_live_agent_smoke,
     seed_smoke_agent_cursors,
@@ -1748,6 +1749,269 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertEqual({reply["source_event_id"] for reply in result["replies"]}, {"probe-1", "probe-2"})
         self.assertEqual({reply["source_event_id"] for reply in result["post_restart_replies"]}, {"probe-3", "probe-4"})
         self.assertEqual({reply["source_event_id"] for reply in result["post_recover_replies"]}, {"probe-5", "probe-6"})
+
+    def test_real_session_smoke_requires_current_approval_before_any_room_request(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            calls.append((url, method, payload, timeout_seconds))
+            return {}
+
+        result = run_live_agent_real_session_smoke(
+            server="http://room.local",
+            live_agent_config_path="/Users/me/private/live-agents.real.json",
+            request_json=request_json,
+        )
+
+        self.assertEqual(result["status"], "approval_required")
+        self.assertTrue(result["approval_required"])
+        self.assertFalse(result["approved"])
+        self.assertEqual(calls, [])
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("/Users/me", serialized)
+        self.assertNotIn("live-agents.real.json", serialized)
+
+    def test_real_session_smoke_requires_matching_configs_before_any_room_request(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            calls.append((url, method, payload, timeout_seconds))
+            return {}
+
+        result = run_live_agent_real_session_smoke(
+            server="http://room.local",
+            live_agent_config_path="/Users/me/private/live-agents.real.json",
+            group_id="real-group",
+            meeting_id="real-meeting",
+            approve_real_providers=True,
+            request_json=request_json,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertTrue(result["approval_required"])
+        self.assertTrue(result["approved"])
+        self.assertEqual(result["reason"], "matching_configs_required")
+        self.assertEqual(calls, [])
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("/Users/me", serialized)
+        self.assertNotIn("live-agents.real.json", serialized)
+
+    def test_real_session_smoke_starts_probe_and_stops_approved_config_with_safe_result(self):
+        calls = []
+        state = {}
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            calls.append((url, method, payload, timeout_seconds))
+            if url.endswith("/api/live-agent-sessions/start"):
+                meeting_dir = state["root"] / "meetings" / payload["meeting_id"]
+                meeting_dir.mkdir(parents=True, exist_ok=True)
+                (meeting_dir / "live_state.json").write_text(
+                    json.dumps({"meeting_id": payload["meeting_id"], "live_status": "running"}),
+                    encoding="utf-8",
+                )
+                self.assertEqual(payload["meeting_id"], "real-meeting")
+                self.assertEqual(payload["group_id"], "real-group")
+                self.assertEqual(payload["live_agent_config_path"], "/Users/me/private/live-agents.real.json")
+                self.assertEqual(payload["council_config_path"], "/Users/me/private/council.json")
+                self.assertEqual(payload["agent_config_path"], "/Users/me/private/agents.json")
+                self.assertTrue(payload["diagnostic"])
+                self.assertTrue(payload["approve_real_providers"])
+                self.assertTrue(payload["probe_bound_agents"])
+                self.assertTrue(payload["redact_probe_events"])
+                self.assertEqual(payload["probe_timeout_seconds"], 9.0)
+                return {
+                    "status": "ready",
+                    "meeting_id": "real-meeting",
+                    "group_id": "real-group",
+                    "connection": {"expected": 2, "connected": 2, "agent_ids": ["claude-live", "codex-live"]},
+                    "reply_probe": {
+                        "status": "ok",
+                        "probe_count": 2,
+                        "ok_count": 2,
+                        "replies": [{"message": "secret provider output"}],
+                    },
+                    "process": {"status": "running", "config_path": "/Users/me/private/live-agents.real.json"},
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                self.assertEqual(payload, {"meeting_id": "real-meeting", "group_id": "real-group"})
+                return {
+                    "status": "stopped",
+                    "meeting_id": "real-meeting",
+                    "group_id": "real-group",
+                    "offline": {"expected": 2, "offline": 2},
+                }
+            if url.endswith("/api/live-agent-processes"):
+                return {"groups": [{"group_id": "real-group", "status": "stopped"}]}
+            return {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state["root"] = Path(temp_dir) / "room"
+            result = run_live_agent_real_session_smoke(
+                server="http://room.local",
+                live_agent_config_path="/Users/me/private/live-agents.real.json",
+                council_config_path="/Users/me/private/council.json",
+                agent_config_path="/Users/me/private/agents.json",
+                group_id="real-group",
+                meeting_id="real-meeting",
+                timeout_seconds=9,
+                approve_real_providers=True,
+                request_json=request_json,
+                output_root=state["root"],
+                sleep_fn=lambda seconds: None,
+            )
+            live_state = json.loads(
+                (state["root"] / "meetings" / "real-meeting" / "live_state.json").read_text(encoding="utf-8")
+            )
+
+        urls = [url for url, method, payload, timeout_seconds in calls]
+        self.assertEqual(urls[0], "http://room.local/api/live-agent-sessions/start")
+        self.assertIn("http://room.local/api/live-agent-sessions/stop", urls)
+        self.assertIn("http://room.local/api/live-agent-processes", urls)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["start_status"], "ready")
+        self.assertEqual(result["reply_probe_status"], "ok")
+        self.assertEqual(result["reply_probe_ok_count"], 2)
+        self.assertEqual(result["reply_probe_count"], 2)
+        self.assertEqual(result["stop_status"], "stopped")
+        self.assertEqual(result["post_stop_process_status"], "stopped")
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("/Users/me", serialized)
+        self.assertNotIn("secret provider output", serialized)
+        self.assertNotIn("config_path", serialized)
+        self.assertTrue(live_state["diagnostic"])
+        self.assertEqual(live_state["diagnostic_kind"], "real_session_smoke")
+
+    def test_real_session_smoke_stops_group_when_probe_fails(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            calls.append((url, method, payload, timeout_seconds))
+            if url.endswith("/api/live-agent-sessions/start"):
+                return {
+                    "status": "ready",
+                    "meeting_id": "real-meeting",
+                    "group_id": "real-group",
+                    "connection": {"expected": 1, "connected": 1},
+                    "reply_probe": {"status": "failed", "probe_count": 1, "ok_count": 0},
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                return {"status": "stopped", "meeting_id": "real-meeting", "group_id": "real-group"}
+            if url.endswith("/api/live-agent-processes"):
+                return {"groups": [{"group_id": "real-group", "status": "stopped"}]}
+            return {}
+
+        result = run_live_agent_real_session_smoke(
+            server="http://room.local",
+            live_agent_config_path="/tmp/live-agents.real.json",
+            council_config_path="/tmp/council.json",
+            agent_config_path="/tmp/agents.json",
+            group_id="real-group",
+            meeting_id="real-meeting",
+            approve_real_providers=True,
+            request_json=request_json,
+            sleep_fn=lambda seconds: None,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["reply_probe_status"], "failed")
+        self.assertIn("http://room.local/api/live-agent-sessions/stop", [call[0] for call in calls])
+
+    def test_real_session_smoke_reports_degraded_when_cleanup_fails(self):
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            if url.endswith("/api/live-agent-sessions/start"):
+                return {
+                    "status": "ready",
+                    "meeting_id": "real-meeting",
+                    "group_id": "real-group",
+                    "connection": {"expected": 1, "connected": 1},
+                    "reply_probe": {"status": "ok", "probe_count": 1, "ok_count": 1},
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                raise RuntimeError("stop failed with /Users/me/private/token")
+            if url.endswith("/api/live-agent-processes"):
+                return {"groups": [{"group_id": "real-group", "status": "running"}]}
+            return {}
+
+        result = run_live_agent_real_session_smoke(
+            server="http://room.local",
+            live_agent_config_path="/Users/me/private/live-agents.real.json",
+            council_config_path="/Users/me/private/council.json",
+            agent_config_path="/Users/me/private/agents.json",
+            group_id="real-group",
+            meeting_id="real-meeting",
+            approve_real_providers=True,
+            request_json=request_json,
+            sleep_fn=lambda seconds: None,
+        )
+
+        self.assertEqual(result["status"], "degraded")
+        self.assertEqual(result["stop_status"], "failed")
+        self.assertEqual(result["post_stop_process_status"], "running")
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("/Users/me", serialized)
+        self.assertNotIn("token", serialized)
+
+    def test_real_session_smoke_degrades_when_post_stop_process_status_is_error(self):
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            if url.endswith("/api/live-agent-sessions/start"):
+                return {
+                    "status": "ready",
+                    "meeting_id": "real-meeting",
+                    "group_id": "real-group",
+                    "connection": {"expected": 1, "connected": 1},
+                    "reply_probe": {"status": "ok", "probe_count": 1, "ok_count": 1},
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                return {"status": "stopped", "meeting_id": "real-meeting", "group_id": "real-group"}
+            if url.endswith("/api/live-agent-processes"):
+                return {"groups": [{"group_id": "real-group", "status": "error"}]}
+            return {}
+
+        result = run_live_agent_real_session_smoke(
+            server="http://room.local",
+            live_agent_config_path="/tmp/live-agents.real.json",
+            council_config_path="/tmp/council.json",
+            agent_config_path="/tmp/agents.json",
+            group_id="real-group",
+            meeting_id="real-meeting",
+            approve_real_providers=True,
+            request_json=request_json,
+            sleep_fn=lambda seconds: None,
+        )
+
+        self.assertEqual(result["status"], "degraded")
+        self.assertEqual(result["post_stop_process_status"], "error")
+
+    def test_real_session_smoke_degrades_when_post_stop_process_status_is_unexpected(self):
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            if url.endswith("/api/live-agent-sessions/start"):
+                return {
+                    "status": "ready",
+                    "meeting_id": "real-meeting",
+                    "group_id": "real-group",
+                    "connection": {"expected": 1, "connected": 1},
+                    "reply_probe": {"status": "ok", "probe_count": 1, "ok_count": 1},
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                return {"status": "stopped", "meeting_id": "real-meeting", "group_id": "real-group"}
+            if url.endswith("/api/live-agent-processes"):
+                return {"groups": [{"group_id": "real-group", "status": "stopping"}]}
+            return {}
+
+        result = run_live_agent_real_session_smoke(
+            server="http://room.local",
+            live_agent_config_path="/tmp/live-agents.real.json",
+            council_config_path="/tmp/council.json",
+            agent_config_path="/tmp/agents.json",
+            group_id="real-group",
+            meeting_id="real-meeting",
+            approve_real_providers=True,
+            request_json=request_json,
+            sleep_fn=lambda seconds: None,
+        )
+
+        self.assertEqual(result["status"], "degraded")
+        self.assertEqual(result["post_stop_process_status"], "stopping")
 
     def test_session_smoke_fails_when_stop_leaves_process_group_running(self):
         state = {"probe_ids": [], "stopped": False}
