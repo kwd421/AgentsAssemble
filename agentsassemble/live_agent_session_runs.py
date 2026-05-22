@@ -53,11 +53,17 @@ PUBLIC_RESULT_KEYS = {
     "meeting_id",
     "group_id",
     "action",
+    "ensure_reason",
     "process",
     "connection",
     "reply_probe",
     "auto_rounds",
     "finalization",
+}
+PUBLIC_ENSURE_REASONS = {
+    "resident_session_id_drift",
+    "stale_lobby_observation",
+    "stale_live_observation",
 }
 SENSITIVE_TEXT_PATTERNS = (
     re.compile(r"https?://\S+", re.IGNORECASE),
@@ -565,8 +571,18 @@ def _public_result(session: dict[str, object]) -> dict[str, object]:
     for key in PUBLIC_RESULT_KEYS:
         if key not in session:
             continue
+        if key == "ensure_reason":
+            safe_reason = _safe_ensure_reason(session.get(key))
+            if safe_reason:
+                result[key] = safe_reason
+            continue
         result[key] = _safe_result_value(session.get(key))
     return result
+
+
+def _safe_ensure_reason(value: object) -> str:
+    reason = clean_lobby_text(value, limit=SESSION_RUN_FIELD_LIMIT)
+    return reason if reason in PUBLIC_ENSURE_REASONS else ""
 
 
 def _safe_result_value(value: object) -> object:

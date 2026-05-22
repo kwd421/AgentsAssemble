@@ -37,6 +37,7 @@ from agentsassemble.gui import (
     _run_session_bound_agent_probe,
     _redact_real_session_smoke_lobby_events,
     _readiness_health_operation_details,
+    _session_start_operation_details,
     live_agent_lobby_message_payload,
     LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT,
     live_agents_payload,
@@ -2922,6 +2923,28 @@ class GuiServerTests(unittest.TestCase):
         )
         details_blob = json.dumps(details, ensure_ascii=False)
         self.assertNotIn("live-agents.json", details_blob)
+        self.assertNotIn("SECRET_TOKEN", details_blob)
+        self.assertNotIn("/private", details_blob)
+        self.assertNotIn("env:", details_blob)
+
+    def test_session_start_operation_details_drops_unrecognized_ensure_reason(self):
+        details = _session_start_operation_details(
+            {
+                "status": "ready",
+                "meeting_id": "resident-m1",
+                "group_id": "resident-main",
+                "action": "restart",
+                "ensure_reason": "session drift from old-session to /private/new-session env:SECRET_TOKEN",
+                "connection": {"expected": 1, "connected": 1},
+                "process": {"status": "running"},
+            }
+        )
+
+        self.assertEqual(details["ensure_action"], "restart")
+        self.assertNotIn("ensure_reason", details)
+        details_blob = json.dumps(details, ensure_ascii=False)
+        self.assertNotIn("old-session", details_blob)
+        self.assertNotIn("new-session", details_blob)
         self.assertNotIn("SECRET_TOKEN", details_blob)
         self.assertNotIn("/private", details_blob)
         self.assertNotIn("env:", details_blob)
@@ -13218,7 +13241,9 @@ class GuiServerTests(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["status"], "ready")
+        self.assertEqual(results[0]["result"]["ensure_reason"], "stale_lobby_observation")
         self.assertEqual(stored_run["phase"], "restart")
+        self.assertEqual(stored_run["result"]["ensure_reason"], "stale_lobby_observation")
         self.assertEqual(stored_run["reconcile_count"], 1)
         self.assertEqual(supervisor.stopped, ["resident-main"])
         self.assertEqual(supervisor.restarted, ["resident-main"])
@@ -13678,15 +13703,23 @@ class GuiServerTests(unittest.TestCase):
                 ):
                     with urlopen(request, timeout=4) as response:
                         session_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations?limit=20", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
             finally:
                 server.shutdown()
                 server.server_close()
 
             self.assertEqual(session_payload["status"], "ready")
             self.assertEqual(session_payload["action"], "restart")
+            self.assertEqual(session_payload["ensure_reason"], "resident_session_id_drift")
+            serialized_session = json.dumps(session_payload, ensure_ascii=False)
+            self.assertNotIn("old-session", serialized_session)
+            self.assertNotIn("new-session", serialized_session)
             self.assertEqual(supervisor.started, [])
             self.assertEqual(supervisor.stopped, ["resident-main"])
             self.assertEqual(supervisor.restarted, ["resident-main"])
+            session_operations = [operation for operation in operations["operations"] if operation["operation"] == "session.ensure"]
+            self.assertEqual(session_operations[-1]["details"]["ensure_reason"], "resident_session_id_drift")
             agent = next(agent for agent in read_live_agents(root) if agent["agent_id"] == "agent-a")
             self.assertEqual(agent["session_id"], "new-session")
 
@@ -13773,6 +13806,7 @@ class GuiServerTests(unittest.TestCase):
 
         self.assertEqual(session["status"], "ready")
         self.assertEqual(session["action"], "restart")
+        self.assertEqual(session["ensure_reason"], "stale_lobby_observation")
         self.assertEqual(supervisor.started, [])
         self.assertEqual(supervisor.stopped, ["resident-main"])
         self.assertEqual(supervisor.restarted, ["resident-main"])
@@ -13857,6 +13891,7 @@ class GuiServerTests(unittest.TestCase):
 
         self.assertEqual(session["status"], "ready")
         self.assertEqual(session["action"], "restart")
+        self.assertEqual(session["ensure_reason"], "stale_live_observation")
         self.assertEqual(supervisor.started, [])
         self.assertEqual(supervisor.stopped, ["resident-main"])
         self.assertEqual(supervisor.restarted, ["resident-main"])

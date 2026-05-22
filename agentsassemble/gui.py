@@ -130,6 +130,14 @@ LIVE_AGENT_ROUND_SCHEDULER_LOCKS_LOCK = threading.Lock()
 DEFAULT_SESSION_RUN_MONITOR_INTERVAL_SECONDS = 30.0
 MIN_SESSION_RUN_MONITOR_INTERVAL_SECONDS = 1.0
 SESSION_RUN_MONITOR_ERROR = "Live-agent session run monitor failed."
+SESSION_ENSURE_REASON_RESIDENT_SESSION_ID_DRIFT = "resident_session_id_drift"
+SESSION_ENSURE_REASON_STALE_LOBBY_OBSERVATION = "stale_lobby_observation"
+SESSION_ENSURE_REASON_STALE_LIVE_OBSERVATION = "stale_live_observation"
+SESSION_ENSURE_REASONS = {
+    SESSION_ENSURE_REASON_RESIDENT_SESSION_ID_DRIFT,
+    SESSION_ENSURE_REASON_STALE_LOBBY_OBSERVATION,
+    SESSION_ENSURE_REASON_STALE_LIVE_OBSERVATION,
+}
 HEALTH_WATCHDOG_REASON_EVENT_TYPES = {"stale_watchdog", "stale_watchdog_stop_failed"}
 HEALTH_RESTART_FAILED_REASON_EVENT_TYPE = "restart_failed"
 HEALTH_RECOVERED_UNKNOWN_REASON_EVENT_TYPE = "recovered_unknown"
@@ -1067,6 +1075,7 @@ def live_agent_session_ensure_payload(
     current = _live_agent_session_optional_readiness_payload(output_root, process_supervisor, payload)
     action = session_ensure_action(current)
     stale_observation_restart_count = 0
+    ensure_reason = ""
     if action == "none" and _ready_session_requires_restart_for_resident_session_drift(
         output_root,
         process_supervisor,
@@ -1075,8 +1084,9 @@ def live_agent_session_ensure_payload(
         default_server=default_server,
     ):
         action = "restart"
+        ensure_reason = SESSION_ENSURE_REASON_RESIDENT_SESSION_ID_DRIFT
     if action == "none":
-        stale_observation_restart_count = _stale_observation_restart_count(
+        stale_observation_restart_count, ensure_reason = _stale_observation_restart_decision(
             output_root,
             process_supervisor,
             payload,
@@ -1111,6 +1121,8 @@ def live_agent_session_ensure_payload(
         )
     ensured = _live_agent_session_ensured_readiness_payload(output_root, process_supervisor, payload, session)
     ensured["action"] = action
+    if ensure_reason:
+        ensured["ensure_reason"] = ensure_reason
     return ensured
 
 
@@ -1224,45 +1236,57 @@ def _stale_observation_restart_count(
     payload: dict[str, object],
     current: dict[str, object] | None,
 ) -> int:
+    restart_count, _reason = _stale_observation_restart_decision(output_root, process_supervisor, payload, current)
+    return restart_count
+
+
+def _stale_observation_restart_decision(
+    output_root: Path,
+    process_supervisor: LiveAgentProcessSupervisor,
+    payload: dict[str, object],
+    current: dict[str, object] | None,
+) -> tuple[int, str]:
     if not isinstance(current, dict) or _operation_result_status(current.get("status")) != "ready":
-        return 0
+        return 0, ""
     meeting_id = str(current.get("meeting_id") or payload.get("meeting_id") or "").strip()
     group_id = str(current.get("group_id") or payload.get("group_id") or "").strip()
     if not meeting_id or not group_id:
-        return 0
+        return 0, ""
     group = _find_session_process_group(_session_process_groups_snapshot(process_supervisor), group_id)
     if str(group.get("status") or "") != "running":
-        return 0
+        return 0, ""
     stale_after_seconds = _observation_restart_stale_after_seconds(group)
     if stale_after_seconds <= 0:
-        return 0
+        return 0, ""
     agent_ids = [
         _safe_session_run_health_identity(agent.get("agent_id"))
         for agent in _as_dict_list(group.get("agents"))
         if _safe_session_run_health_identity(agent.get("agent_id"))
     ]
     if not agent_ids:
-        return 0
+        return 0, ""
     agents_by_id = {
         _safe_session_run_health_identity(agent.get("agent_id")): agent
         for agent in read_live_agents(output_root)
         if _safe_session_run_health_identity(agent.get("agent_id"))
     }
-    has_stale_lag = _ready_session_has_stale_lobby_observation_lag(
+    restart_count = _payload_nonnegative_int(group.get("restart_count"), 0) + 1
+    if _ready_session_has_stale_lobby_observation_lag(
         output_root,
         agent_ids,
         agents_by_id,
         stale_after_seconds=stale_after_seconds,
-    ) or _ready_session_has_stale_live_observation_lag(
+    ):
+        return restart_count, SESSION_ENSURE_REASON_STALE_LOBBY_OBSERVATION
+    if _ready_session_has_stale_live_observation_lag(
         output_root,
         meeting_id,
         agent_ids,
         agents_by_id,
         stale_after_seconds=stale_after_seconds,
-    )
-    if not has_stale_lag:
-        return 0
-    return _payload_nonnegative_int(group.get("restart_count"), 0) + 1
+    ):
+        return restart_count, SESSION_ENSURE_REASON_STALE_LIVE_OBSERVATION
+    return 0, ""
 
 
 def _observation_restart_stale_after_seconds(group: dict[str, object]) -> float:
@@ -5743,6 +5767,9 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
     ensure_action = clean_lobby_text(session.get("action"), limit=64)
     if ensure_action:
         details["ensure_action"] = ensure_action
+    ensure_reason = _safe_session_ensure_reason(session.get("ensure_reason"))
+    if ensure_reason:
+        details["ensure_reason"] = ensure_reason
     if offline:
         details.update(
             {
@@ -5761,6 +5788,11 @@ def _session_start_operation_details(session: dict[str, object]) -> dict[str, ob
     if finalization is not None:
         details.update(_rounds_finalization_operation_details(finalization, str(session.get("meeting_id") or "")))
     return details
+
+
+def _safe_session_ensure_reason(value: object) -> str:
+    reason = clean_lobby_text(value, limit=64)
+    return reason if reason in SESSION_ENSURE_REASONS else ""
 
 
 def _session_stop_operation_details(session: dict[str, object]) -> dict[str, object]:

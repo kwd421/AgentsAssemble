@@ -5097,6 +5097,33 @@ Document that `--probe api` does not call Messages, generateContent, chat/comple
 
 ---
 
+## Task 150: Record Reasoned Ensure Restarts
+
+**Goal:** Preserve a safe reason when `ensure-session` restarts an already-ready resident session, so operators can tell whether automation reacted to resident session-id drift, stale lobby observation, or stale official/live observation without exposing private session state or transcript content.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/live_agent_session_runs.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_live_agent_session_runs.py`
+
+- [x] **Step 1: Add RED restart-reason coverage**
+
+Cover resident session-id drift, stale lobby observation, stale official/live observation, and durable session-run reconciliation. The tests require `ensure_reason` to be present only as an allowlisted enum and preserved under `session_run.result.ensure_reason`.
+
+- [x] **Step 2: Propagate safe restart reasons**
+
+`live_agent_session_ensure_payload()` now records `resident_session_id_drift`, `stale_lobby_observation`, or `stale_live_observation` when a ready session is promoted from no-op to restart. Operation details and session-run public results keep only those enum values and drop anything outside the allowlist.
+
+- [x] **Step 3: Keep docs aligned with operator evidence**
+
+Operator docs and roadmap now state that the restart reason is bounded evidence only and must not include old or new session ids, lobby text, official request or reply text, provider output, config paths, endpoint URLs, auth refs, or command arguments.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:

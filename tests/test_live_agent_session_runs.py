@@ -34,6 +34,7 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
                     "meeting_id": "resident-m1",
                     "group_id": "resident-main",
                     "action": "none",
+                    "ensure_reason": "stale_lobby_observation",
                     "process": {"status": "running"},
                     "connection": {"expected": 1, "connected": 1},
                     "auto_rounds": {"status": "answered", "round_count": 1},
@@ -52,6 +53,7 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
         self.assertEqual(runs[0]["phase"], "none")
         self.assertEqual(runs[0]["meeting_id"], "resident-m1")
         self.assertEqual(runs[0]["group_id"], "resident-main")
+        self.assertEqual(runs[0]["result"]["ensure_reason"], "stale_lobby_observation")
         self.assertNotIn("live_agent_config_path", runs[0]["request"])
         self.assertNotIn("http://room.local", str(runs[0]))
         self.assertNotIn("configs/live-agents.example.json", str(runs[0]))
@@ -78,6 +80,33 @@ class LiveAgentSessionRunControllerTests(unittest.TestCase):
         self.assertEqual(runs[0]["run_id"], run["run_id"])
         self.assertNotIn("approve_real_providers", runs[0]["request"])
         self.assertNotIn("approve_real_providers", json.dumps(runs[0], ensure_ascii=False))
+
+    def test_finish_run_drops_unrecognized_ensure_reason(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            controller = LiveAgentSessionRunController(root)
+
+            run = controller.begin_run(
+                action="ensure",
+                payload={"meeting_id": "resident-m1", "group_id": "resident-main"},
+            )
+            controller.finish_run(
+                run["run_id"],
+                session={
+                    "status": "ready",
+                    "meeting_id": "resident-m1",
+                    "group_id": "resident-main",
+                    "action": "restart",
+                    "ensure_reason": "session drift from old-session to /private/new-session env:SECRET_TOKEN",
+                },
+            )
+            runs = controller.list_runs()
+
+        self.assertNotIn("ensure_reason", runs[0]["result"])
+        result_blob = json.dumps(runs[0]["result"], ensure_ascii=False)
+        self.assertNotIn("old-session", result_blob)
+        self.assertNotIn("new-session", result_blob)
+        self.assertNotIn("SECRET_TOKEN", result_blob)
 
     def test_list_runs_filters_by_meeting_and_group_before_limit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
