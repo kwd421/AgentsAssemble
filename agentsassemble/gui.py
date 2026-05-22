@@ -898,8 +898,38 @@ def live_agents_payload(
         )
     }
     if safe:
-        return safe_live_agent_roster_payload(payload)
+        return safe_live_agent_roster_payload(_live_agent_roster_with_admission_evidence(output_root, payload))
     return payload
+
+
+def _live_agent_roster_with_admission_evidence(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
+    agents = payload.get("agents") if isinstance(payload.get("agents"), list) else []
+    return {
+        "agents": [
+            {
+                **_live_agent_without_admission_evidence(agent),
+                **_live_agent_roster_admission_details(output_root, agent),
+                "admission_evidence_source": "meeting_record",
+            }
+            for agent in agents
+            if isinstance(agent, dict)
+        ]
+    }
+
+
+def _live_agent_without_admission_evidence(agent: dict[str, object]) -> dict[str, object]:
+    admission_fields = {
+        "admission_status",
+        "host_approved_binding",
+        "binding_role_id",
+        "binding_provider_id",
+        "binding_provider_kind",
+        "binding_permission_profile_id",
+        "binding_join_mode",
+        "binding_conflicts",
+        "admission_evidence_source",
+    }
+    return {key: value for key, value in agent.items() if key not in admission_fields}
 
 
 def live_agent_operations_payload(
@@ -4180,7 +4210,31 @@ def _live_agent_register_admission_details(output_root: Path, agent: dict[str, o
         meeting = _read_meeting_record(_safe_meeting_dir(output_root, meeting_id))
     except (OSError, ValueError, json.JSONDecodeError):
         return {"admission_status": "meeting_missing", "host_approved_binding": False}
+    return _live_agent_admission_details_from_meeting(meeting, agent, agent_id=agent_id)
 
+
+def _live_agent_roster_admission_details(output_root: Path, agent: dict[str, object]) -> dict[str, object]:
+    agent_id = clean_lobby_text(agent.get("agent_id"), limit=64)
+    meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
+    if not meeting_id:
+        return {"admission_status": "lobby_only", "host_approved_binding": False}
+    try:
+        meeting_dir = _safe_meeting_dir(output_root, meeting_id)
+        meeting_path = meeting_dir / "meeting.json"
+        if not meeting_path.exists():
+            raise ValueError("Meeting record is missing.")
+        meeting = json.loads(meeting_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"admission_status": "meeting_missing", "host_approved_binding": False}
+    return _live_agent_admission_details_from_meeting(meeting, agent, agent_id=agent_id)
+
+
+def _live_agent_admission_details_from_meeting(
+    meeting: dict[str, object],
+    agent: dict[str, object],
+    *,
+    agent_id: str,
+) -> dict[str, object]:
     binding = _meeting_binding_for_agent(meeting, agent_id)
     if not binding:
         return {"admission_status": "meeting_lobby_only", "host_approved_binding": False}

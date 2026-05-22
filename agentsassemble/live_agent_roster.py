@@ -30,8 +30,29 @@ SAFE_LIVE_AGENT_ROSTER_FIELDS = (
     "heartbeat_age_seconds",
     "stale_after_seconds",
     "capabilities",
+    "admission_status",
+    "host_approved_binding",
+    "binding_role_id",
+    "binding_provider_id",
+    "binding_provider_kind",
+    "binding_permission_profile_id",
+    "binding_join_mode",
+    "binding_conflicts",
+    "admission_evidence_source",
 )
 SAFE_LIVE_AGENT_ROSTER_NUMERIC_FIELDS = {"heartbeat_age_seconds", "stale_after_seconds"}
+SAFE_LIVE_AGENT_ADMISSION_STATUSES = {
+    "lobby_only",
+    "meeting_missing",
+    "meeting_lobby_only",
+    "bound_to_meeting",
+    "binding_conflict",
+}
+SAFE_LIVE_AGENT_BINDING_CONFLICTS = {
+    "binding_provider_missing",
+    "provider_kind_mismatch",
+}
+SAFE_LIVE_AGENT_ADMISSION_EVIDENCE_SOURCES = {"meeting_record"}
 
 
 def filter_live_agent_roster(
@@ -78,6 +99,7 @@ def safe_live_agent_roster_payload(payload: dict[str, object]) -> dict[str, obje
 def safe_live_agent_roster_agent(agent: dict[str, object]) -> dict[str, object]:
     safe_agent: dict[str, object] = {}
     context_contract = live_agent_context_contract(agent.get("provider_kind"), agent.get("connection_kind"))
+    admission_evidence_source = safe_live_agent_admission_evidence_source(agent.get("admission_evidence_source"))
     for field in SAFE_LIVE_AGENT_ROSTER_FIELDS:
         if field not in agent:
             continue
@@ -88,12 +110,45 @@ def safe_live_agent_roster_agent(agent: dict[str, object]) -> dict[str, object]:
             safe_agent[field] = safe_live_agent_roster_capabilities(value)
         elif field == "last_error":
             safe_agent[field] = safe_live_agent_roster_error(value)
+        elif field == "admission_status":
+            safe_agent[field] = safe_live_agent_admission_status(value)
+        elif field == "host_approved_binding":
+            safe_agent[field] = value is True
+        elif field == "binding_conflicts":
+            safe_agent[field] = safe_live_agent_binding_conflicts(value)
+        elif field == "admission_evidence_source":
+            safe_agent[field] = admission_evidence_source
         elif field == "join_semantics":
             safe_agent[field] = safe_live_agent_join_semantics(context_contract["join_semantics"])
         elif field == "context_durability":
             safe_agent[field] = safe_live_agent_context_durability(context_contract["context_durability"])
         else:
             safe_agent[field] = safe_live_agent_roster_text(value, limit=_live_agent_roster_field_limit(field))
+    if admission_evidence_source != "meeting_record":
+        for admission_field in (
+            "admission_status",
+            "host_approved_binding",
+            "binding_role_id",
+            "binding_provider_id",
+            "binding_provider_kind",
+            "binding_permission_profile_id",
+            "binding_join_mode",
+            "binding_conflicts",
+            "admission_evidence_source",
+        ):
+            safe_agent.pop(admission_field, None)
+    if safe_agent.get("admission_status") != "bound_to_meeting" and "host_approved_binding" in safe_agent:
+        safe_agent["host_approved_binding"] = False
+    if safe_agent.get("admission_status") not in {"bound_to_meeting", "binding_conflict"}:
+        for binding_field in (
+            "binding_role_id",
+            "binding_provider_id",
+            "binding_provider_kind",
+            "binding_permission_profile_id",
+            "binding_join_mode",
+            "binding_conflicts",
+        ):
+            safe_agent.pop(binding_field, None)
     if "join_semantics" not in safe_agent and ("provider_kind" in agent or "connection_kind" in agent):
         safe_agent["join_semantics"] = safe_live_agent_join_semantics(context_contract["join_semantics"])
     if "context_durability" not in safe_agent and ("provider_kind" in agent or "connection_kind" in agent):
@@ -121,6 +176,27 @@ def safe_live_agent_roster_error(value: object) -> str:
     return text
 
 
+def safe_live_agent_admission_status(value: object) -> str:
+    text = clean_lobby_text(value, limit=64)
+    return text if text in SAFE_LIVE_AGENT_ADMISSION_STATUSES else ""
+
+
+def safe_live_agent_admission_evidence_source(value: object) -> str:
+    text = clean_lobby_text(value, limit=64)
+    return text if text in SAFE_LIVE_AGENT_ADMISSION_EVIDENCE_SOURCES else ""
+
+
+def safe_live_agent_binding_conflicts(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    conflicts = []
+    for item in value:
+        conflict = clean_lobby_text(item, limit=64)
+        if conflict in SAFE_LIVE_AGENT_BINDING_CONFLICTS:
+            conflicts.append(conflict)
+    return conflicts
+
+
 def safe_live_agent_roster_text(value: object, *, limit: int, default: str = "") -> str:
     text = clean_lobby_text(value, limit=limit)
     if not text:
@@ -144,9 +220,21 @@ def _live_agent_roster_field_limit(field: str) -> int:
         "context_durability",
         "status",
         "engagement_mode",
+        "admission_status",
+        "binding_provider_kind",
+        "binding_join_mode",
+        "admission_evidence_source",
     }:
         return 64
-    if field in {"display_name", "meeting_id", "last_observed_event_id", "last_observed_live_event_id"}:
+    if field in {
+        "display_name",
+        "meeting_id",
+        "last_observed_event_id",
+        "last_observed_live_event_id",
+        "binding_role_id",
+        "binding_provider_id",
+        "binding_permission_profile_id",
+    }:
         return 128
     return 240
 

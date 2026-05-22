@@ -1574,6 +1574,15 @@ def _format_live_agent_roster_agent(agent: dict[str, object]) -> str:
     _append_live_agent_roster_text(suffix_parts, "meeting", agent.get("meeting_id"))
     _append_live_agent_roster_text(suffix_parts, "join", agent.get("join_semantics"))
     _append_live_agent_roster_text(suffix_parts, "context", agent.get("context_durability"))
+    _append_live_agent_roster_text(suffix_parts, "admission", agent.get("admission_status"))
+    _append_live_agent_roster_bool(suffix_parts, "host_approved", agent.get("host_approved_binding"))
+    _append_live_agent_roster_text(suffix_parts, "admission_source", agent.get("admission_evidence_source"))
+    _append_live_agent_roster_text(suffix_parts, "binding_role", agent.get("binding_role_id"))
+    _append_live_agent_roster_text(suffix_parts, "binding_provider", agent.get("binding_provider_id"))
+    _append_live_agent_roster_text(suffix_parts, "binding_kind", agent.get("binding_provider_kind"))
+    _append_live_agent_roster_text(suffix_parts, "binding_profile", agent.get("binding_permission_profile_id"))
+    _append_live_agent_roster_text(suffix_parts, "binding_join", agent.get("binding_join_mode"))
+    _append_live_agent_roster_list(suffix_parts, "binding_conflicts", agent.get("binding_conflicts"))
     _append_live_agent_roster_text(suffix_parts, "engagement", agent.get("engagement_mode"))
     _append_live_agent_roster_seconds(suffix_parts, "heartbeat_age", agent.get("heartbeat_age_seconds"))
     _append_live_agent_roster_seconds(suffix_parts, "stale_after", agent.get("stale_after_seconds"))
@@ -1585,6 +1594,20 @@ def _format_live_agent_roster_agent(agent: dict[str, object]) -> str:
 
 def _append_live_agent_roster_text(parts: list[str], label: str, value: object) -> None:
     text = _safe_live_agent_roster_text(value, limit=128)
+    if text:
+        parts.append(f"{label}={text}")
+
+
+def _append_live_agent_roster_bool(parts: list[str], label: str, value: object) -> None:
+    if isinstance(value, bool):
+        parts.append(f"{label}={'yes' if value else 'no'}")
+
+
+def _append_live_agent_roster_list(parts: list[str], label: str, value: object) -> None:
+    if not isinstance(value, list):
+        return
+    items = [_safe_live_agent_roster_text(item, limit=64) for item in value]
+    text = ",".join(item for item in items if item)
     if text:
         parts.append(f"{label}={text}")
 

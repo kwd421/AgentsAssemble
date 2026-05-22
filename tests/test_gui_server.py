@@ -7164,6 +7164,174 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("private-session", encoded)
             self.assertNotIn("live-agents.json", encoded)
 
+    def test_live_agent_http_endpoint_safe_projection_derives_admission_evidence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "resident-m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "resident-m1",
+                        "agent_bindings": [
+                            {
+                                "agent_id": "agent-a",
+                                "role_id": "architect",
+                                "provider_id": "local-cli",
+                                "permission_profile_id": "meeting_readonly",
+                                "join_mode": "resident",
+                            },
+                            {
+                                "agent_id": "agent-b",
+                                "role_id": "critic",
+                                "provider_id": "local-cli",
+                                "permission_profile_id": "meeting_readonly",
+                            },
+                        ],
+                        "provider_configs": {
+                            "local-cli": {
+                                "id": "local-cli",
+                                "kind": "local_cli",
+                                "display_name": "Local CLI",
+                            }
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-session-a",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-b",
+                    "display_name": "Agent B",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-session-b",
+                },
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "guest-agent",
+                    "display_name": "Guest Agent",
+                    "provider_kind": "manual",
+                    "connection_kind": "manual",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-session-c",
+                },
+            )
+            state_path = root / "live_agents.json"
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            state["agents"][2]["admission_status"] = "bound_to_meeting"
+            state["agents"][2]["host_approved_binding"] = True
+            state["agents"][2]["admission_evidence_source"] = "meeting_record"
+            state["agents"][2]["binding_role_id"] = "spoofed"
+            state["agents"][0]["binding_conflicts"] = ["provider_kind_mismatch"]
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents?safe=1&meeting_id=resident-m1",
+                    timeout=4,
+                ) as response:
+                    listed = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            by_agent = {agent["agent_id"]: agent for agent in listed["agents"]}
+            self.assertEqual(by_agent["agent-a"]["admission_status"], "bound_to_meeting")
+            self.assertEqual(by_agent["agent-a"]["admission_evidence_source"], "meeting_record")
+            self.assertTrue(by_agent["agent-a"]["host_approved_binding"])
+            self.assertEqual(by_agent["agent-a"]["binding_role_id"], "architect")
+            self.assertEqual(by_agent["agent-a"]["binding_provider_id"], "local-cli")
+            self.assertEqual(by_agent["agent-a"]["binding_provider_kind"], "local_cli")
+            self.assertEqual(by_agent["agent-a"]["binding_permission_profile_id"], "meeting_readonly")
+            self.assertEqual(by_agent["agent-a"]["binding_join_mode"], "resident")
+            self.assertNotIn("binding_conflicts", by_agent["agent-a"])
+            self.assertEqual(by_agent["agent-b"]["admission_status"], "binding_conflict")
+            self.assertFalse(by_agent["agent-b"]["host_approved_binding"])
+            self.assertEqual(by_agent["agent-b"]["binding_conflicts"], ["provider_kind_mismatch"])
+            self.assertEqual(by_agent["guest-agent"]["admission_status"], "meeting_lobby_only")
+            self.assertEqual(by_agent["guest-agent"]["admission_evidence_source"], "meeting_record")
+            self.assertFalse(by_agent["guest-agent"]["host_approved_binding"])
+            self.assertNotIn("binding_role_id", by_agent["guest-agent"])
+            encoded = json.dumps(listed, ensure_ascii=False)
+            self.assertNotIn("private-session", encoded)
+            self.assertNotIn("spoofed", encoded)
+
+    def test_live_agent_http_endpoint_safe_projection_refuses_live_state_only_admission(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "resident-m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "live_state.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "resident-m1",
+                        "agent_bindings": [
+                            {
+                                "agent_id": "agent-a",
+                                "role_id": "architect",
+                                "provider_id": "local-cli",
+                                "permission_profile_id": "meeting_readonly",
+                            }
+                        ],
+                        "provider_configs": {
+                            "local-cli": {
+                                "id": "local-cli",
+                                "kind": "local_cli",
+                            }
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-session-a",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agents?safe=1", timeout=4) as response:
+                    listed = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            agent = listed["agents"][0]
+            self.assertEqual(agent["admission_status"], "meeting_missing")
+            self.assertEqual(agent["admission_evidence_source"], "meeting_record")
+            self.assertFalse(agent["host_approved_binding"])
+            self.assertNotIn("binding_role_id", agent)
+            self.assertNotIn("binding_provider_id", agent)
+            self.assertNotIn("private-session", json.dumps(listed, ensure_ascii=False))
+
     def test_live_agent_http_endpoint_safe_projection_combines_with_filters(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

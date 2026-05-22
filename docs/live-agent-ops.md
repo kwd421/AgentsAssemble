@@ -193,7 +193,7 @@ python3 -m agentsassemble.cli live-agent list \
   --server http://127.0.0.1:8765
 ```
 
-The compact roster output shows each agent's id, display name, provider/connection kind, status, meeting, join semantics, context durability, engagement mode, heartbeat age, stale threshold, lobby cursor, and official cursor. It intentionally does not print endpoint URLs, auth references, command arguments, config paths, provider output, or presence error text. `--json` uses the same safe roster projection for local wrappers; it does not expose endpoint URLs, auth refs, command arguments, config paths, session ids, or raw presence errors.
+The compact roster output shows each agent's id, display name, provider/connection kind, status, meeting, join semantics, context durability, host-admission status, host-approved binding flag, admission evidence source, safe binding labels when present, engagement mode, heartbeat age, stale threshold, lobby cursor, and official cursor. It intentionally does not print endpoint URLs, auth references, command arguments, config paths, provider output, or presence error text. `--json` uses the same safe roster projection for local wrappers; it does not expose endpoint URLs, auth refs, command arguments, config paths, session ids, or raw presence errors.
 
 For wrappers that read the roster directly over HTTP, prefer:
 
@@ -201,7 +201,7 @@ For wrappers that read the roster directly over HTTP, prefer:
 GET /api/live-agents?safe=1
 ```
 
-That safe roster projection uses the same allowlisted presence fields as `assemble live-agent list`, including derived `join_semantics` and `context_durability`, and omits endpoint URLs, auth refs, config paths, session ids, command arguments, provider output, and raw suspicious presence errors. The raw `/api/live-agents` response remains available for the local GUI and legacy in-room tooling that already expects full local presence records.
+That safe roster projection uses the same allowlisted presence fields as `assemble live-agent list`, including derived `join_semantics`, `context_durability`, and read-only admission evidence derived from the current meeting record. The safe admission fields include `admission_status`, `host_approved_binding`, `admission_evidence_source: "meeting_record"`, and safe binding role/provider/permission/join labels only when a matching binding exists; caller-supplied spoofed admission fields are not enough to make an unbound row appear approved. The projection omits endpoint URLs, auth refs, config paths, session ids, command arguments, provider output, and raw suspicious presence errors. The raw `/api/live-agents` response remains available for the local GUI and legacy in-room tooling that already expects full local presence records.
 
 For scriptable roster gates, use `live-agent list --fail-on-attention`. The command prints the normal roster summary first, then exits `1` if any returned agent is not `online` or `working`, including `stale`, `offline`, `error`, or unknown statuses. An empty roster exits `0` because there is no agent row claiming unhealthy presence.
 

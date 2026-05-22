@@ -1291,6 +1291,11 @@ class CliTimeoutTests(unittest.TestCase):
                     "status": "online",
                     "engagement_mode": "always",
                     "meeting_id": "resident-m1",
+                    "admission_status": "bound_to_meeting",
+                    "host_approved_binding": True,
+                    "admission_evidence_source": "meeting_record",
+                    "binding_role_id": "architect",
+                    "binding_conflicts": ["provider_kind_mismatch"],
                     "endpoint": "http://secret.local/bridge",
                     "heartbeat_age_seconds": 7,
                     "stale_after_seconds": 180,
@@ -1314,6 +1319,11 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("agent-a Agent A claude_code/terminal_session online meeting=resident-m1", output)
         self.assertIn("join=terminal_pty_prompt_bridge", output)
         self.assertIn("context=process_lifetime", output)
+        self.assertIn("admission=bound_to_meeting", output)
+        self.assertIn("host_approved=yes", output)
+        self.assertIn("admission_source=meeting_record", output)
+        self.assertIn("binding_role=architect", output)
+        self.assertIn("binding_conflicts=provider_kind_mismatch", output)
         self.assertIn("engagement=always", output)
         self.assertIn("heartbeat_age=7s", output)
         self.assertIn("stale_after=180s", output)
@@ -1437,6 +1447,14 @@ class CliTimeoutTests(unittest.TestCase):
                     "config_path": "/Users/me/private/live-agents.json",
                     "session_id": "private-session-id",
                     "last_error": "failed with token=secret-token in /Users/me/private/live-agents.json",
+                    "admission_status": "bound_to_meeting",
+                    "host_approved_binding": True,
+                    "admission_evidence_source": "meeting_record",
+                    "binding_role_id": "remote-reviewer",
+                    "binding_provider_id": "friend-bridge",
+                    "binding_provider_kind": "remote_http_bridge",
+                    "binding_permission_profile_id": "meeting_readonly",
+                    "binding_join_mode": "resident",
                     "last_observed_event_id": "evt-1",
                     "last_observed_live_event_id": "live-1",
                     "heartbeat_age_seconds": 7,
@@ -1457,6 +1475,14 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(agent["join_semantics"], "remote_bridge_room_loop")
         self.assertEqual(agent["context_durability"], "remote_owner_managed")
         self.assertEqual(agent["last_error"], "Live-agent presence error details redacted.")
+        self.assertEqual(agent["admission_status"], "bound_to_meeting")
+        self.assertEqual(agent["admission_evidence_source"], "meeting_record")
+        self.assertTrue(agent["host_approved_binding"])
+        self.assertEqual(agent["binding_role_id"], "remote-reviewer")
+        self.assertEqual(agent["binding_provider_id"], "friend-bridge")
+        self.assertEqual(agent["binding_provider_kind"], "remote_http_bridge")
+        self.assertEqual(agent["binding_permission_profile_id"], "meeting_readonly")
+        self.assertEqual(agent["binding_join_mode"], "resident")
         self.assertNotIn("endpoint", agent)
         self.assertNotIn("auth_ref", agent)
         self.assertNotIn("config_path", agent)
@@ -1476,6 +1502,9 @@ class CliTimeoutTests(unittest.TestCase):
                     "status": "online",
                     "meeting_id": "/Users/me/private/live-agents.json",
                     "engagement_mode": "always",
+                    "admission_status": "bound_to_meeting",
+                    "host_approved_binding": True,
+                    "binding_role_id": "spoofed",
                     "last_observed_event_id": "token=secret-token",
                     "last_observed_live_event_id": "live-1",
                 }
@@ -1490,6 +1519,9 @@ class CliTimeoutTests(unittest.TestCase):
         output = stdout.getvalue()
         self.assertIn("agent-a [redacted] local_cli/local_cli online meeting=[redacted]", output)
         self.assertIn("cursor=[redacted]", output)
+        self.assertNotIn("admission=bound_to_meeting", output)
+        self.assertNotIn("host_approved=yes", output)
+        self.assertNotIn("spoofed", output)
         self.assertNotIn("secret.local", output)
         self.assertNotIn("secret-token", output)
         self.assertNotIn("live-agents.json", output)

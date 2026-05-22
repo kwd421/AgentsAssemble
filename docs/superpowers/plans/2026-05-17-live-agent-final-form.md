@@ -5157,6 +5157,34 @@ Operator docs, product memory, and roadmap now state that context contract label
 
 ---
 
+## Task 152: Surface Safe Roster Admission Evidence
+
+**Goal:** Make current roster reads say whether a visible live agent is host-approved for the target meeting, so operators do not have to reconstruct admission state from historical registration operations during a long-running room.
+
+**Files:**
+- Modify: `agentsassemble/gui.py`
+- Modify: `agentsassemble/live_agent_roster.py`
+- Modify: `agentsassemble/cli.py`
+- Modify: `docs/live-agent-ops.md`
+- Modify: `docs/roadmap.md`
+- Modify: `docs/superpowers/plans/2026-05-17-live-agent-final-form.md`
+- Test: `tests/test_gui_server.py`
+- Test: `tests/test_cli_timeout.py`
+
+- [x] **Step 1: Add RED roster admission coverage**
+
+Cover `GET /api/live-agents?safe=1` for bound, binding-conflict, and lobby-only rows. The test requires the safe roster to derive `admission_status`, `host_approved_binding`, `admission_evidence_source`, and binding/conflict labels from the current meeting record, ignore spoofed stored admission fields, and keep private session ids out of the response. CLI compact and JSON roster tests require the same safe fields to be visible without endpoint, auth, config, or session leakage.
+
+- [x] **Step 2: Derive safe admission fields at roster read time**
+
+Safe roster reads now enrich live-agent presence rows with read-only admission evidence before applying the allowlist projection. The projection preserves only allowlisted admission status values, safe binding labels, and safe conflict labels when the evidence source is the server-derived `meeting_record`; it clears binding fields for non-binding statuses and only keeps `host_approved_binding` true for `bound_to_meeting`.
+
+- [x] **Step 3: Keep docs aligned with operator evidence**
+
+Operator docs and roadmap now state that safe roster reads and CLI roster output show current host-admission evidence derived from meeting records, while still omitting session ids, endpoints, auth refs, config paths, command arguments, provider output, prompts, log tails, and raw presence errors.
+
+---
+
 ## Full Verification
 
 Run after each task that changes code:
