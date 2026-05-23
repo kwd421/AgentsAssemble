@@ -610,71 +610,91 @@ function renderLiveAgentProcessControls() {
         <input id="live-agent-session-council-config" maxlength="240" value="configs/demo-council.json" />
         <input id="live-agent-session-agent-config" maxlength="240" value="configs/agents.start-session.example.json" />
         <input id="live-agent-session-connect-timeout" type="number" min="0" max="120" step="1" value="5" aria-label="session connect timeout seconds" />
-        <input id="live-agent-round-id" maxlength="128" value="${escapeHtml(defaultRoundId)}" data-default-value="${escapeHtml(defaultRoundId)}" aria-label="official round id" />
-        <input id="live-agent-round-timeout" type="number" min="0" max="600" step="1" value="30" aria-label="official round timeout seconds" />
-        <input id="live-agent-round-max-rounds" type="number" min="1" max="8" step="1" value="8" aria-label="maximum remaining official rounds" />
-        <label class="live-agent-process-options">
-          <input id="live-agent-round-stop-on-timeout" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
-          <span>timeout stop</span>
-        </label>
-        <label class="live-agent-process-options">
-          <input id="live-agent-session-run-remaining-rounds" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
-          <span>세션 후 남은라운드</span>
-        </label>
-        <label class="live-agent-process-options">
-          <input id="live-agent-session-probe-bound-agents" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
-          <span>응답검증</span>
-        </label>
-        <input id="live-agent-session-probe-timeout" type="number" min="0" max="60" step="0.5" value="12" aria-label="session reply probe timeout seconds" />
-        <label class="live-agent-process-options">
-          <input id="live-agent-process-auto-restart" type="checkbox" />
-          <span>auto restart</span>
-        </label>
-        <input id="live-agent-process-max-restarts" type="number" min="0" max="99" value="3" aria-label="max restarts" />
-        <input id="live-agent-process-restart-backoff" type="number" min="0" max="3600" step="1" value="5" aria-label="restart backoff seconds" />
-        <input id="live-agent-process-stale-restart-after" type="number" min="0" max="86400" step="1" value="0" aria-label="stale restart after seconds" />
-        <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
-        <button type="button" id="live-agent-process-stop-running" ${processActionsDisabled ? "disabled" : ""}>실행중지</button>
-        <button type="button" id="live-agent-session-start" ${processActionsDisabled ? "disabled" : ""}>세션시작</button>
-        <button type="button" id="live-agent-session-ensure" ${processActionsDisabled ? "disabled" : ""}>세션보장</button>
-        <button type="button" id="live-agent-session-run-ensure" ${processActionsDisabled ? "disabled" : ""}>상주보장</button>
-        <button type="button" id="live-agent-session-resume" ${processActionsDisabled ? "disabled" : ""}>세션재개</button>
-        <button type="button" id="live-agent-session-restart" ${processActionsDisabled ? "disabled" : ""}>세션재시작</button>
-        <button type="button" id="live-agent-session-recover" ${processActionsDisabled ? "disabled" : ""}>세션복구</button>
-        <button type="button" id="live-agent-session-check" ${processActionsDisabled ? "disabled" : ""}>세션점검</button>
-        <button type="button" id="live-agent-session-stop" ${processActionsDisabled ? "disabled" : ""}>세션중지</button>
-        <button type="button" id="live-agent-call-round" ${processActionsDisabled ? "disabled" : ""}>라운드호출</button>
-        <button type="button" id="live-agent-call-remaining-rounds" ${processActionsDisabled ? "disabled" : ""}>남은라운드</button>
-        <input id="live-agent-review-checkpoint-message" data-live-agent-review-checkpoint-input maxlength="240" value="Review this resident slice before commit." aria-label="review checkpoint message" />
-        <input id="live-agent-review-checkpoint-id" data-live-agent-review-checkpoint-input maxlength="128" placeholder="checkpoint id" aria-label="review checkpoint id" />
-        <input id="live-agent-review-checkpoint-timeout" data-live-agent-review-checkpoint-input type="number" min="0" max="600" step="1" value="30" aria-label="review checkpoint timeout seconds" />
-        <button type="button" id="live-agent-review-checkpoint" ${processActionsDisabled ? "disabled" : ""}>리뷰요청</button>
-        <label class="live-agent-process-options">
-          <input id="live-agent-discovery-session-bundle" type="checkbox" checked ${processActionsDisabled ? "disabled" : ""} />
-          <span>세션번들</span>
-        </label>
-        <label class="live-agent-process-options">
-          <input id="live-agent-auto-join-real-provider-approval" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
-          <span>실사용 CLI 승인</span>
-        </label>
-        <button type="button" id="live-agent-discover" ${processActionsDisabled ? "disabled" : ""}>CLI발견</button>
-        <button type="button" id="live-agent-auto-join" ${processActionsDisabled ? "disabled" : ""}>자동입장</button>
-        <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
-        <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
-        <button type="button" id="live-agent-official-round-smoke" ${processActionsDisabled ? "disabled" : ""}>공식진단</button>
-        <button type="button" id="live-agent-session-smoke" ${processActionsDisabled ? "disabled" : ""}>세션진단</button>
-        <input id="live-agent-session-smoke-soak-cycles" type="number" min="0" max="5" step="1" value="0" aria-label="session smoke soak cycles" />
-        <input id="live-agent-session-smoke-soak-interval" type="number" min="0" max="60" step="0.5" value="0" aria-label="session smoke soak interval seconds" />
-        <label class="live-agent-process-options">
-          <input id="live-agent-readiness-official-round" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
-          <span>공식 포함</span>
-        </label>
-        <label class="live-agent-process-options">
-          <input id="live-agent-readiness-session-smoke" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
-          <span>세션 포함</span>
-        </label>
-        <button type="button" id="live-agent-readiness-check" ${processActionsDisabled ? "disabled" : ""}>점검</button>
-        <button type="button" id="live-agent-process-refresh">상태</button>
+
+        <div class="live-agent-btn-group" role="group" aria-label="기본 흐름">
+          <span class="live-agent-btn-group-label">기본 흐름</span>
+          <button type="submit" id="live-agent-process-start" ${processActionsDisabled ? "disabled" : ""}>시작</button>
+          <button type="button" id="live-agent-process-stop-running" ${processActionsDisabled ? "disabled" : ""}>실행중지</button>
+          <button type="button" id="live-agent-session-start" ${processActionsDisabled ? "disabled" : ""}>세션시작</button>
+          <button type="button" id="live-agent-session-ensure" ${processActionsDisabled ? "disabled" : ""}>세션보장</button>
+          <button type="button" id="live-agent-session-run-ensure" ${processActionsDisabled ? "disabled" : ""}>상주보장</button>
+          <button type="button" id="live-agent-session-stop" ${processActionsDisabled ? "disabled" : ""}>세션중지</button>
+          <button type="button" id="live-agent-process-refresh">상태</button>
+        </div>
+
+        <div class="live-agent-btn-group" role="group" aria-label="공식 턴">
+          <span class="live-agent-btn-group-label">공식 턴</span>
+          <input id="live-agent-round-id" maxlength="128" value="${escapeHtml(defaultRoundId)}" data-default-value="${escapeHtml(defaultRoundId)}" aria-label="official round id" />
+          <input id="live-agent-round-timeout" type="number" min="0" max="600" step="1" value="30" aria-label="official round timeout seconds" />
+          <input id="live-agent-round-max-rounds" type="number" min="1" max="8" step="1" value="8" aria-label="maximum remaining official rounds" />
+          <label class="live-agent-process-options">
+            <input id="live-agent-round-stop-on-timeout" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+            <span>timeout stop</span>
+          </label>
+          <label class="live-agent-process-options">
+            <input id="live-agent-session-run-remaining-rounds" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+            <span>세션 후 남은라운드</span>
+          </label>
+          <button type="button" id="live-agent-call-round" ${processActionsDisabled ? "disabled" : ""}>라운드호출</button>
+          <button type="button" id="live-agent-call-remaining-rounds" ${processActionsDisabled ? "disabled" : ""}>남은라운드</button>
+          <button type="button" id="live-agent-session-resume" ${processActionsDisabled ? "disabled" : ""}>세션재개</button>
+          <button type="button" id="live-agent-session-restart" ${processActionsDisabled ? "disabled" : ""}>세션재시작</button>
+          <button type="button" id="live-agent-session-recover" ${processActionsDisabled ? "disabled" : ""}>세션복구</button>
+          <button type="button" id="live-agent-session-check" ${processActionsDisabled ? "disabled" : ""}>세션점검</button>
+        </div>
+
+        <details class="live-agent-collapsed-group">
+          <summary>진단</summary>
+          <div class="live-agent-btn-group" role="group" aria-label="진단">
+            <label class="live-agent-process-options">
+              <input id="live-agent-session-probe-bound-agents" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+              <span>응답검증</span>
+            </label>
+            <input id="live-agent-session-probe-timeout" type="number" min="0" max="60" step="0.5" value="12" aria-label="session reply probe timeout seconds" />
+            <button type="button" id="live-agent-preflight-check" ${processActionsDisabled ? "disabled" : ""}>예비점검</button>
+            <button type="button" id="live-agent-process-smoke" ${processActionsDisabled ? "disabled" : ""}>진단</button>
+            <button type="button" id="live-agent-official-round-smoke" ${processActionsDisabled ? "disabled" : ""}>공식진단</button>
+            <button type="button" id="live-agent-session-smoke" ${processActionsDisabled ? "disabled" : ""}>세션진단</button>
+            <input id="live-agent-session-smoke-soak-cycles" type="number" min="0" max="5" step="1" value="0" aria-label="session smoke soak cycles" />
+            <input id="live-agent-session-smoke-soak-interval" type="number" min="0" max="60" step="0.5" value="0" aria-label="session smoke soak interval seconds" />
+            <label class="live-agent-process-options">
+              <input id="live-agent-readiness-official-round" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+              <span>공식 포함</span>
+            </label>
+            <label class="live-agent-process-options">
+              <input id="live-agent-readiness-session-smoke" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+              <span>세션 포함</span>
+            </label>
+            <button type="button" id="live-agent-readiness-check" ${processActionsDisabled ? "disabled" : ""}>점검</button>
+          </div>
+        </details>
+
+        <details class="live-agent-collapsed-group">
+          <summary>고급</summary>
+          <div class="live-agent-btn-group" role="group" aria-label="고급 설정">
+            <label class="live-agent-process-options">
+              <input id="live-agent-process-auto-restart" type="checkbox" />
+              <span>auto restart</span>
+            </label>
+            <input id="live-agent-process-max-restarts" type="number" min="0" max="99" value="3" aria-label="max restarts" />
+            <input id="live-agent-process-restart-backoff" type="number" min="0" max="3600" step="1" value="5" aria-label="restart backoff seconds" />
+            <input id="live-agent-process-stale-restart-after" type="number" min="0" max="86400" step="1" value="0" aria-label="stale restart after seconds" />
+            <input id="live-agent-review-checkpoint-message" data-live-agent-review-checkpoint-input maxlength="240" value="Review this resident slice before commit." aria-label="review checkpoint message" />
+            <input id="live-agent-review-checkpoint-id" data-live-agent-review-checkpoint-input maxlength="128" placeholder="checkpoint id" aria-label="review checkpoint id" />
+            <input id="live-agent-review-checkpoint-timeout" data-live-agent-review-checkpoint-input type="number" min="0" max="600" step="1" value="30" aria-label="review checkpoint timeout seconds" />
+            <button type="button" id="live-agent-review-checkpoint" ${processActionsDisabled ? "disabled" : ""}>리뷰요청</button>
+            <label class="live-agent-process-options">
+              <input id="live-agent-discovery-session-bundle" type="checkbox" checked ${processActionsDisabled ? "disabled" : ""} />
+              <span>세션번들</span>
+            </label>
+            <label class="live-agent-process-options">
+              <input id="live-agent-auto-join-real-provider-approval" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+              <span>실사용 CLI 승인</span>
+            </label>
+            <button type="button" id="live-agent-discover" ${processActionsDisabled ? "disabled" : ""}>CLI발견</button>
+            <button type="button" id="live-agent-auto-join" ${processActionsDisabled ? "disabled" : ""}>자동입장</button>
+          </div>
+        </details>
       </form>
       ${renderLiveAgentDiscoveryReport(state.liveAgentDiscoveryReport)}
       <div class="live-agent-process-list">
@@ -1140,9 +1160,11 @@ function renderLiveAgentProcessCard(group) {
 
 function renderLiveAgentOperations() {
   const operations = state.liveAgentOperations || [];
+  const latest = operations.length ? operations[operations.length - 1] : null;
+  const latestLabel = latest ? `latest: ${String(latest.operation || latest.target_id || "-")} ${String(latest.status || "")}` : "";
   return `
     <div class="live-agent-operation-list" aria-label="최근 상주 작업">
-      <strong>최근 작업</strong>
+      <strong>최근 작업 <small>${operations.length}건${latestLabel ? ` · ${escapeHtml(latestLabel)}` : ""}</small></strong>
       ${
         operations.length
           ? operations.slice(-6).reverse().map(renderLiveAgentOperation).join("")
@@ -1154,9 +1176,10 @@ function renderLiveAgentOperations() {
 
 function renderLiveAgentSessionRuns() {
   const runs = state.liveAgentSessionRuns || [];
+  const activeCount = runs.filter((r) => r.active).length;
   return `
     <div class="live-agent-session-run-list" aria-label="상주 세션런">
-      <strong>상주 세션런</strong>
+      <strong>상주 세션런 <small>${runs.length}건${activeCount ? ` · ${activeCount} active` : ""}</small></strong>
       ${
         runs.length
           ? runs.slice(-6).reverse().map(renderLiveAgentSessionRun).join("")
@@ -1287,9 +1310,11 @@ function liveAgentSessionRunPausedLabel(run) {
 function renderLiveAgentProcessEvents() {
   const events = state.liveAgentProcessEvents || [];
   const meta = state.liveAgentProcessEventsMeta;
+  const latest = events.length ? events[events.length - 1] : null;
+  const latestLabel = latest ? `latest: ${String(latest.event_type || "updated")} ${String(latest.status || "")}` : "";
   return `
     <div class="live-agent-lifecycle-list" aria-label="최근 프로세스 lifecycle">
-      <strong>최근 lifecycle</strong>
+      <strong>최근 lifecycle <small>${events.length}건${latestLabel ? ` · ${escapeHtml(latestLabel)}` : ""}</small></strong>
       ${
         events.length
           ? events.slice().reverse().map(renderLiveAgentProcessEvent).join("")
