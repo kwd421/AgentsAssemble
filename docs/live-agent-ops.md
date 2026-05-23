@@ -26,6 +26,15 @@ The GUI's `세션시작` button pairs that resident config with `configs/demo-co
 
 The live-agent roster and supervised process panel auto-refresh in the GUI every 5 seconds. This keeps stale presence, process crashes, pending auto-restart state, and recovered groups visible during long sessions without relying only on the manual refresh buttons. Background refreshes ignore volatile heartbeat age and monitor tick timestamps when deciding whether to re-render the lobby, so the room stays live without visually resetting every poll. The GUI server also starts a backend supervisor monitor, so owned process crash detection and due auto-restarts continue without an open browser or `/api/live-agent-processes` polling client. The manual refresh buttons remain useful when you want an immediate read after changing files or process state from another terminal.
 
+The current frontend is still the dependency-light vanilla HTML/CSS/JS operator
+console. Natural-language room text should keep human-readable tokens intact
+(`Kiro Opus 4.7`, `0.5`, `80kg`, ellipses, and similar prose tokens), while
+technical surfaces such as URLs, ids, logs, paths, and command output may use
+stronger wrapping to avoid horizontal overflow. Live-event stream updates should
+append or update event rows without replacing the whole live panel when possible,
+so input drafts, scroll position, and the latest-message control remain stable
+during SSE refreshes.
+
 Session-owned supervised groups persist the safe `meeting_id` in `live-agent-runs/processes.json`. That meeting ownership is preserved through manual restart, recovery, delayed auto-restart, and stale-watchdog restart, and is visible through `/api/live-agent-processes`, `/api/live-agent-health` as `processes.meeting_ids`, `/api/live-agent-health` meeting-owned session readiness, and the GUI process row as `meeting <id>`. This is operator evidence only; it does not store command arguments, endpoint URLs, auth refs, prompts, replies, log tails, or provider output.
 
 `/api/live-agent-health` also includes an `observations` overlay for ready resident sessions. It compares the latest bounded lobby event and each bound agent's latest official turn request against that agent's preserved lobby/live cursors and reply timestamp, then reports compact counts such as ready agents, lobby-behind, live-behind, active error count, and observation attention labels. This is read-only: health refreshes do not call providers, run probes, append operation rows, start or stop processes, post lobby messages, or expose lobby text, official request content, presence error text, provider output, config paths, endpoints, or auth refs.
@@ -503,7 +512,7 @@ python3 -m agentsassemble.cli live-agent wait-official-turn \
   --json
 ```
 
-`wait-turn-request` is accepted as an alias for older scripts. The wait command reads the agent-visible `live_events` from `/api/live-agents/<agent_id>/room`, starts after `--after-event-id` or the roster's `last_observed_live_event_id`, skips requests for other agents, and skips visible requests that already have an official reply from the same agent. When the live cursor event is no longer in the bounded room snapshot, the command falls back to scanning the visible snapshot instead of treating the missing cursor as fatal. A JSON event response includes `meeting_id`, `source_event_id`, the raw `live_agent_turn_request`, compact room counts, and a `reply_command` array using `live-agent official-reply`.
+`wait-turn-request` is accepted as an alias for older scripts. The wait command reads the agent-visible `live_events` from `/api/live-agents/<agent_id>/room`, starts after `--after-event-id` or the roster's `last_observed_live_event_id`, skips requests for other agents, and skips visible requests that already have an official reply or matching cancellation for the same agent. When the live cursor event is no longer in the bounded room snapshot, the command falls back to scanning the visible snapshot instead of treating the missing cursor as fatal. A JSON event response includes `meeting_id`, `source_event_id`, the raw `live_agent_turn_request`, compact room counts, and a `reply_command` array using `live-agent official-reply`.
 
 Post the official reply through the same endpoint used by resident runners:
 
@@ -519,6 +528,9 @@ python3 -m agentsassemble.cli live-agent official-reply \
 `answer-turn` is accepted as an alias for older scripts.
 
 Successful official replies advance `last_observed_live_event_id` separately from the lobby cursor, so a terminal agent can move between official meeting turns and lobby chat without mixing the two streams.
+If the source request has been closed with `live_agent_turn_cancelled`,
+`official-reply` refuses the reply instead of turning a closed control event into
+new transcript evidence.
 
 This is closer to direct room participation than the PTY prompt-injection path: the model running inside the terminal can pull the room snapshot, wait for a fresh lobby event or official turn request, and publish its own linked reply. It is still a bounded CLI polling surface, not Claude Code Channels, Antigravity native sessions, a tmux subscription protocol, or OS-level sandbox enforcement.
 
@@ -849,7 +861,7 @@ python3 -m agentsassemble.cli live-agent call \
   "Give the official architecture recommendation."
 ```
 
-The wait path creates the same turn request, then polls the meeting's full `live_events.jsonl` until it finds a verified official reply or reaches the timeout. A reply is accepted only when it is a `kind: "message"` event with `channel: "official"`, `official_record: true`, the requested `actor_id`, and the request event id in `source_event_id`. Lobby messages, wrong-agent replies, wrong-source replies, and generic official messages do not complete the wait. The API returns `status: "answered"` with `request_event`, `reply_event`, timing fields, and visible live events, or `status: "timeout"` with the request event and no fabricated reply. The CLI exits `0` for answered, `1` for timeout, and `2` for transport or validation errors.
+The wait path creates the same turn request, then polls the meeting's full `live_events.jsonl` until it finds a verified official reply, finds a matching turn cancellation, or reaches the timeout. A reply is accepted only when it is a `kind: "message"` event with `channel: "official"`, `official_record: true`, the requested `actor_id`, and the request event id in `source_event_id`. A cancellation is accepted only when it is a non-official `live_agent_turn_cancelled` system event for the same target agent and source request. Lobby messages, wrong-agent replies, wrong-source replies, generic official messages, and unrelated cancellations do not complete the wait. The API returns `status: "answered"` with `request_event`, `reply_event`, timing fields, and visible live events, `status: "cancelled"` with the cancellation event in `reply_event`, or `status: "timeout"` with the request event and no fabricated reply. The CLI exits `0` for answered, `1` for cancellation or timeout, and `2` for transport or validation errors.
 
 Automation can call multiple official turns in order through:
 
@@ -876,7 +888,7 @@ with:
 }
 ```
 
-The sequence path validates the meeting and every listed agent/content before appending the first request, then runs request → bounded wait one turn at a time. Repeated agents are allowed because replies are matched by `source_event_id`. Top-level `status` is `answered` when every turn answered, `timeout` when at least one turn timed out and the sequence continued, or `stopped` when `stop_on_timeout` skipped remaining turns. Per-turn status is `answered`, `timeout`, or `skipped`.
+The sequence path validates the meeting and every listed agent/content before appending the first request, then runs request -> bounded wait one turn at a time. Repeated agents are allowed because replies are matched by `source_event_id`. Top-level `status` is `answered` when every turn answered, `cancelled` when at least one turn was explicitly closed and no timeout/skip occurred, `timeout` when at least one turn timed out and the sequence continued, or `stopped` when `stop_on_timeout` skipped remaining turns. Per-turn status is `answered`, `cancelled`, `timeout`, or `skipped`.
 
 The CLI wrapper is:
 
@@ -888,7 +900,7 @@ python3 -m agentsassemble.cli live-agent call-sequence \
   --timeout 30
 ```
 
-Use `--turns-json` for inline JSON or `--turns-file` for a JSON array. The CLI exits `0` only when the sequence status is `answered`, exits `1` for `timeout` or `stopped`, and exits `2` for transport or validation errors. The sequence endpoint records one sanitized aggregate `official_turn.sequence` operation with ids, counts, statuses, and timing only. The existing `/api/live-agents/<agent_id>/official-turn` reply endpoint still records its normal sanitized `official_turn.reply` entries when residents answer. Neither operation type records turn prompts, reply content, endpoints, config paths, auth refs, command arguments, or logs.
+Use `--turns-json` for inline JSON or `--turns-file` for a JSON array. The CLI exits `0` only when the sequence status is `answered`, exits `1` for `cancelled`, `timeout`, or `stopped`, and exits `2` for transport or validation errors. The sequence endpoint records one sanitized aggregate `official_turn.sequence` operation with ids, counts, statuses, and timing only. The existing `/api/live-agents/<agent_id>/official-turn` reply endpoint still records its normal sanitized `official_turn.reply` entries when residents answer. Neither operation type records turn prompts, reply content, endpoints, config paths, auth refs, command arguments, or logs.
 
 To run a full official round without hand-writing every turn object, call:
 
@@ -924,6 +936,44 @@ Repeat `--role` to override speaker order, for example `--role critic --role arc
 
 In the GUI, the Lobby `상주 실행` panel exposes the same moderator-called path as `라운드호출`. It uses the panel's `meeting id`, `official round id`, timeout, and `timeout stop` fields, posts to `/api/meetings/<meeting_id>/live-agent-turns/round`, reports only answered/timed-out/skipped counts in the status line, and asks the meeting view to refresh after a successful call.
 
+For Play Mode, a small preset surface can enqueue repeatable debate prompts
+without starting providers or granting new admission:
+
+```text
+POST /api/meetings/<meeting_id>/live-agent-turns/preset
+```
+
+with:
+
+```json
+{
+  "preset": "meme_debate_fast",
+  "role_ids": ["architect", "critic"],
+  "timeout_seconds": 30,
+  "stop_on_timeout": false
+}
+```
+
+The CLI wrapper is:
+
+```bash
+python3 -m agentsassemble.cli live-agent call-preset \
+  --server http://127.0.0.1:8765 \
+  --meeting-id meeting-1 \
+  --preset meme_debate_fast \
+  --timeout 30
+```
+
+Available checked-in preset ids are `meme_debate_fast`,
+`meme_debate_argument`, and `concession_round`. Presets expand into ordinary
+moderator-called official turn requests for the meeting's already bound agents,
+then delegate to the same sequence path. They do not start local CLIs, discover
+providers, approve real providers, create a meeting, or promote informal lobby
+chat into Work Mode. The operation ledger records a sanitized
+`official_turn.preset` aggregate with preset id, ids, statuses, counts, and
+timing only; it does not record preset prompt text, replies, endpoints, config
+paths, auth refs, command arguments, or logs.
+
 To advance a resident meeting without pressing each round manually, call the bounded remaining-round path:
 
 ```text
@@ -943,6 +993,44 @@ with:
 This path reads the meeting template, skips round ids already recorded in `debate_rounds` with `status: "answered"` using either the `id` or legacy `round` field, runs the remaining template rounds in order through the same single-round primitive, and records answered rounds back into `live_state.json` so future calls and the GUI can advance. If `meeting.json` also exists, live round progress is merged into the read payload without replacing the meeting's roles, template, or provider data. Draft or placeholder round records remain runnable. It is bounded by `max_rounds` and the existing per-turn timeout. The CLI wrapper is `python3 -m agentsassemble.cli live-agent call-remaining-rounds --meeting-id meeting-1 --timeout 30 --max-rounds 8`; add `--finalize-after-rounds` when the same command should write resident final artifacts after the final remaining template round has answered. A capped batch that still leaves template rounds unrun reports `finalization.status: "skipped"` and `finalization.reason: "rounds_still_remaining"` instead of prematurely completing the meeting. The operation ledger records a sanitized `official_turn.rounds` aggregate with round ids, statuses, counts, completed-round counts, timing, and requested finalization status/reason/counts only.
 
 The GUI Lobby `상주 실행` panel exposes the same bounded path as `남은라운드`. It uses the panel's `meeting id`, timeout, `max remaining official rounds`, and `timeout stop` fields, then refreshes the selected meeting after the batch returns.
+
+Finalize a resident meeting only after official turn requests are either
+answered or explicitly closed:
+
+```bash
+python3 -m agentsassemble.cli live-agent finalize-meeting \
+  --server http://127.0.0.1:8765 \
+  --meeting-id meeting-1
+```
+
+The HTTP control-plane path is:
+
+```text
+POST /api/meetings/<meeting_id>/finalize
+```
+
+By default, finalization refuses unanswered `live_agent_turn_request` events and
+returns the pending request ids. It does not fabricate placeholder agent
+messages, does not treat lobby replies as official answers, and does not let a
+non-official review checkpoint close a normal official turn. When the operator
+intentionally wants to finish with pending turns closed, use:
+
+```bash
+python3 -m agentsassemble.cli live-agent finalize-meeting \
+  --server http://127.0.0.1:8765 \
+  --meeting-id meeting-1 \
+  --close-pending
+```
+
+`--close-pending` appends one non-official `live_agent_turn_cancelled` system
+event per still-pending official request, then finalizes from the real official
+messages that exist. Cancellation events carry the target agent, role, turn id,
+and source request id, but not the private request prompt. They are terminal
+control events for waiters and resident runners, not transcript evidence, shared
+memory, decision evidence, or return-packet content. The finalization response
+and sanitized `meeting.finalize` operation include only counts and event/request
+ids such as `cancelled_pending_count`, `cancelled_event_ids`, and
+`cancelled_turn_request_ids`.
 
 Use a review checkpoint when the operator wants ready resident agents to review a slice of work without turning that review into official meeting transcript evidence:
 
@@ -1756,6 +1844,10 @@ What to check:
 - `/api/live-agents`: roster entries add output-only `heartbeat_age_seconds` and `stale_after_seconds` so operators can see why an agent is fresh or stale. These freshness fields are inferred at read time and are not persisted in `live_agents.json`. The GUI live-agent card shows both the lobby `cursor` from `last_observed_event_id` and the `official cursor` from `last_observed_live_event_id`, so external/manual agents can prove which room event and official meeting event they last observed.
 - Slow resident replies keep sending `working` heartbeats while the provider command is still in flight, so a long Claude, Gemini, local CLI, live session, or remote bridge turn does not look stale merely because it is still answering.
 - `.agentsassemble/lobby.jsonl`: human lobby messages and live-agent replies. Live-agent auto replies include `actor_id`, `source_event_id`, `auto_chain_depth`, and the server-issued `live_agent_endpoint` evidence flag when they were posted through the resident live-agent lobby endpoint. A repeated live-agent lobby post with the same `actor_id` and `source_event_id` returns the existing endpoint reply instead of appending a duplicate, so overlapping resident processes cannot multiply-answer one source event after restart or recovery races.
+- `meetings/<meeting_id>/live_events.jsonl`: official room control and meeting
+  events. `live_agent_turn_request` and `live_agent_turn_cancelled` are
+  non-official control events; only official `message`/`synthesis` events feed
+  transcript, shared memory, decision artifacts, tasks, and return packets.
 - `.agentsassemble/live-agent-runs/processes.json`: durable group records with `group_id`, `status`, `pid`, `config_path`, `server`, `log_path`, timestamps, `returncode`, `last_error`, and a safe launch-time `agents` manifest. Process list/API/GUI output redacts suspicious `last_error` text before display, and new auto-restart `restart_failed` records store a compact redacted restart-failure label when the relaunch exception contains tokens, endpoints, config paths, command options, env refs, or path-like values. Safe short failures such as a missing agent command remain visible.
 - `.agentsassemble/live-agent-runs/session-runs.json`: durable high-level session-run records created by `/api/live-agent-session-runs/ensure`. These records are the operator intent layer above process mechanics: they track `run_id`, `action`, `status`, `active`, `phase`, safe meeting/group ids, timestamps, reconcile count, retry backoff fields, and safe session result summaries. Use `assemble live-agent session-runs list` or `GET /api/live-agent-session-runs` to inspect them.
 - agents manifest entries contain only `agent_id`, `display_name`, `provider_kind`, and `connection_kind`. The manifest does not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.
@@ -1764,7 +1856,7 @@ What to check:
 - The GUI `상주 실행` panel reads `/api/live-agent-health` during runtime refresh and shows the backend health snapshot directly: overall status, live/total agents, running/total process groups, process monitor liveness evidence in `process_monitor`, connected/expected manifest agents, ready/total meeting-owned sessions, active/total durable session-runs, session-run monitor liveness evidence in `session_run_monitor`, the combined attention count, a compact `session attention` reason when meeting-owned session health is degraded, and a compact `session-run attention` reason when durable session-run intent is active but not ready. This is the same read-only health summary used by `assemble live-agent health`, so diagnostic smoke artifacts stay excluded and manifest-aware connection gaps remain visible without mentally merging roster, process rows, and durable retry records. An `unknown` group whose latest relevant lifecycle event is `recovered_unknown` reports the safe process reason `orphan running record marked unknown`, so a GUI restart recovery is visible as persisted-state recovery rather than proof that a process was relaunched.
 - auto-restart fields in `processes.json`: `auto_restart`, `restart_count`, `max_restarts`, `restart_backoff_seconds`, `stale_restart_after_seconds`, and `next_restart_at`.
 - `.agentsassemble/live-agent-runs/events.jsonl`: safe lifecycle event history for supervised groups. It records bounded operator facts such as `started`, `stopped`, `error`, `restart_scheduled`, `restart_failed`, `stale_watchdog`, `stale_watchdog_stop_failed`, and `recovered_unknown` with `timestamp`, `group_id`, `status`, `pid`, `returncode`, and restart counters. Stale-watchdog events include a sanitized `reason` such as a missing, stale, offline, error, or wrong-meeting manifest agent so bounded lifecycle history still explains why a live group was restarted. Lifecycle stop, error, `restart_scheduled`, and `restart_failed` events can include offline reconciliation summaries with expected/offline/skipped counts, safe `offline_agent_ids`, and compact attention entries. The process API and GUI expose each group's bounded `recent_events` view, and `/api/live-agent-process-events` exposes a bounded sanitized lifecycle history for scripts. Lifecycle events do not include command arguments, endpoint URLs, auth references, command paths, prompts, log tails, provider output, or environment-derived values.
-- `.agentsassemble/live-agent-runs/operations.jsonl`: safe control-operation history for API, GUI, and CLI operator actions. It records bounded entries for process start/stop/restart, engagement updates, official turn requests/replies, preflight checks, smoke runs, and readiness checks, including success, degraded, and refused/failed attempts. Browser-visible preflight and provider-health config-load failures redact local config paths and raw loader detail before returning JSON, and provider-health reports redact that path and loader detail at the report source. The operation ledger does not include command arguments, endpoint URLs, auth references, prompts, log tails, config paths, environment-derived values, provider secrets, or official turn content. Ordinary heartbeat polling and health reads are intentionally not operation records.
+- `.agentsassemble/live-agent-runs/operations.jsonl`: safe control-operation history for API, GUI, and CLI operator actions. It records bounded entries for process start/stop/restart, engagement updates, official turn requests/replies, official turn presets, meeting finalization, preflight checks, smoke runs, and readiness checks, including success, degraded, and refused/failed attempts. Browser-visible preflight and provider-health config-load failures redact local config paths and raw loader detail before returning JSON, and provider-health reports redact that path and loader detail at the report source. Meeting finalization rows may include pending-turn cancellation counts and event/request ids, but not the cancelled prompt text. The operation ledger does not include command arguments, endpoint URLs, auth references, prompts, log tails, config paths, environment-derived values, provider secrets, or official turn content. Ordinary heartbeat polling and health reads are intentionally not operation records.
 - `.agentsassemble/live-agent-runs/<group_id>.log`: stdout/stderr for the supervised `run-group` process. Delegate provider subprocess stdout/stderr is captured by the runner, not streamed directly into this file. The raw local log file is not scrubbed. The GUI and process API expose only a bounded `log_tail`; safe short tails remain visible, but tails containing auth markers, tokens, endpoints, config filenames, option strings, env references, or path-like values are replaced with `log tail redacted.` before leaving the process supervisor output.
 
 Recent operation views read from the JSONL tail and stop after the requested result window. Recent lifecycle event queries also read from the JSONL tail and stop after the requested result window, with an optional safe group-id filter and a separate `scan_limit` budget for how many recent lifecycle events may be considered before the query stops. If `truncated` is true, the scan budget was exhausted and older matching events may still exist outside the searched tail window. Process rows split bounded `recent_events` by group from the same recent lifecycle tail instead of iterating the full history file; a quiet group with only old lifecycle events may show an empty compact row history, and operators should use `live-agent processes events --group-id <id> --scan-limit <n>` for deeper inspection. Room snapshots used by resident polling and GUI refresh read bounded lobby, side-chat, and live-event tails for their default limited views instead of loading whole JSONL files. If a resident runner's persisted lobby or official cursor has fallen outside the bounded room tail, the runner treats the current tail as newly visible instead of going permanently idle; successful lobby replies keep the source event id as the local cursor so repeated snapshots still avoid duplicate answers. Return-packet projection is the narrow exception: when packet artifacts exist but the targeted event is outside the bounded live-event tail, `/room` may consult full live-event history only to recover the original event id or prove the packet is no longer pending. Full live-event reads remain available through `read_live_events(..., limit=None)` for archive and transcript reconstruction paths that explicitly need complete meeting history. Long sessions can keep historical JSONL artifacts without forcing operator history queries, ordinary room polling, GUI refresh, or process rows to load the whole file or rescan lifecycle history once per group.
@@ -1830,7 +1922,7 @@ python3 -m agentsassemble.cli live-agent operations list \
   --json
 ```
 
-The `operations list` CLI uses the same optional `--operation`, `--target-id`, and `--status` filters as the HTTP query. These filters are applied before the result limit, so unrelated newer operations do not hide the matching rows a monitor is watching for. The filtered read remains bounded by `scan_limit` / `--scan-limit`, and a truncated response includes `scanned_operation_count` plus `truncated: true` so scripts know older matches may exist. The GUI list and the default CLI output include compact safe `details` values, such as readiness result status, reply counts, probe ids, or restart settings. For `session.smoke` and `readiness.check`, those compact details prioritize high-signal liveness evidence such as bounded sanitized health process reasons and attention, observation cursor-lag counts, shared-memory attention/counts, durable session-run attention/retry counts, session-run monitor attention/counts, reply counts, post-restart and post-recover counts, session-smoke soak cycle/reply counts, and soak check statuses before lower-value identifiers; the operation record stores those health summaries, not the raw health payload. For `session.start`, `session.ensure`, `session.resume`, `session.restart`, and `session.recover`, the compact rows prioritize the chosen ensure action and allowlisted ensure reason when present, connected-agent counts, bound-agent reply probe status, optional auto-round status/reason/counts, and requested `finalization_status`, `finalization_reason`, and official event count before lower-value identifiers, so long-session proof remains visible in the recent operation rows. For `discovery.run`, exact approval evidence is prioritized before lower-signal discovery counts so one-shot real-provider approval decisions stay audit-visible without becoming durable provider permission. For `official_turn.rounds`, finalization status and reason are also prioritized before lower-value round ids, so a degraded auto-finalize batch explains whether artifacts were skipped, failed, or finalized. Use `--json` when an operator script needs the full sanitized operation payload.
+The `operations list` CLI uses the same optional `--operation`, `--target-id`, and `--status` filters as the HTTP query. These filters are applied before the result limit, so unrelated newer operations do not hide the matching rows a monitor is watching for. The filtered read remains bounded by `scan_limit` / `--scan-limit`, and a truncated response includes `scanned_operation_count` plus `truncated: true` so scripts know older matches may exist. The GUI list and the default CLI output include compact safe `details` values, such as readiness result status, reply counts, probe ids, or restart settings. For `session.smoke` and `readiness.check`, those compact details prioritize high-signal liveness evidence such as bounded sanitized health process reasons and attention, observation cursor-lag counts, shared-memory attention/counts, durable session-run attention/retry counts, session-run monitor attention/counts, reply counts, post-restart and post-recover counts, session-smoke soak cycle/reply counts, and soak check statuses before lower-value identifiers; the operation record stores those health summaries, not the raw health payload. For `session.start`, `session.ensure`, `session.resume`, `session.restart`, and `session.recover`, the compact rows prioritize the chosen ensure action and allowlisted ensure reason when present, connected-agent counts, bound-agent reply probe status, optional auto-round status/reason/counts, and requested `finalization_status`, `finalization_reason`, and official event count before lower-value identifiers, so long-session proof remains visible in the recent operation rows. For `discovery.run`, exact approval evidence is prioritized before lower-signal discovery counts so one-shot real-provider approval decisions stay audit-visible without becoming durable provider permission. For `official_turn.rounds`, finalization status and reason are also prioritized before lower-value round ids, so a degraded auto-finalize batch explains whether artifacts were skipped, failed, or finalized. For `meeting.finalize`, cancellation counts are prioritized before lower-value artifact ids, so an operator can see whether pending turns were explicitly closed without exposing the prompt text. Use `--json` when an operator script needs the full sanitized operation payload.
 
 For scriptable operation-history gates, use `live-agent operations list --fail-on-attention`. The command still prints the normal operation summary first, then exits `1` when any returned operation status is not `success`, such as `failed`, `degraded`, or `unknown`. Without that flag, listing operations exits `0` whenever the history was fetched successfully.
 

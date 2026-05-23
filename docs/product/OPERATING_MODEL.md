@@ -29,6 +29,9 @@ Play Mode:
 
 Play Mode can feed Work Mode only through an explicit promote action. Lobby banter,
 games, and informal chatter must not silently become an official record.
+Play Mode presets may enqueue official-turn requests for an already approved
+meeting, but they must not start provider CLIs, grant admission, or promote play
+context into Work Mode by themselves.
 
 ## Non-Negotiable Rules
 
@@ -48,6 +51,9 @@ games, and informal chatter must not silently become an official record.
   or stateless prompt call.
 - frontend polish is deferred until the backend state and data contracts are
   stable enough for another AI or human designer to refine.
+- The current GUI remains a dependency-light vanilla HTML/CSS/JS operator
+  console until that contract is stable; React, Vite, and Tailwind are a later
+  frontend track, not part of live-room stabilization.
 
 ## Context Model
 
@@ -91,6 +97,25 @@ lobby or play chatter -> visible room history
 official turn         -> transcript and decision evidence
 explicit promote      -> selected informal context becomes official input
 ```
+
+Pending official turn requests are control state, not evidence. A meeting with
+unanswered official requests must not be finalized by inventing agent replies.
+The operator may explicitly close pending requests, which records non-official
+`live_agent_turn_cancelled` events and then finalizes from the real official
+messages that exist.
+
+## GUI Text And Refresh Policy
+
+The vanilla GUI should optimize for trustworthy operations before polish:
+
+- Natural-language room text should preserve readable tokens such as model
+  versions, decimals, units, ellipses, and speaker names.
+- Forced mid-token wrapping belongs on technical strings such as URLs, logs,
+  ids, paths, and command-like output.
+- Live room updates should append or update new event rows without replacing
+  the whole panel when the existing DOM can be preserved.
+- Input drafts, scroll position, and latest navigation are operator state and
+  should survive background refreshes.
 
 ## What To Build Next
 
