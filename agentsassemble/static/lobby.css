@@ -381,7 +381,8 @@
 .lobby-empty {
   color: inherit;
   line-height: 1.55;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: keep-all;
 }
 
 .lobby-roster {

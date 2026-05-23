@@ -200,6 +200,7 @@
   background: var(--other-bg);
   border: 1px solid var(--other-line);
   border-radius: 10px 10px 10px 4px;
+  max-width: 100%;
   min-width: min(100%, 88px);
   padding: 8px 10px;
   width: fit-content;
@@ -256,6 +257,8 @@
   font-size: 12px;
   line-height: 1.5;
   margin: 3px 0 0;
+  overflow-wrap: break-word;
+  word-break: keep-all;
 }
 
 .side-chat-form {
@@ -485,9 +488,9 @@
   line-height: 1.7;
   margin: 0;
   max-width: 72ch;
+  overflow-wrap: break-word;
   white-space: normal;
   word-break: keep-all;
-  overflow-wrap: anywhere;
 }
 
 .research-card p + p {
@@ -585,9 +588,9 @@
 .message-body p {
   line-height: 1.65;
   max-width: 78ch;
+  overflow-wrap: break-word;
   white-space: normal;
   word-break: keep-all;
-  overflow-wrap: anywhere;
 }
 
 .message-body p + p {

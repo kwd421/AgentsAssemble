@@ -636,16 +636,46 @@ function hasInternalDiagnostics(text) {
 }
 
 function renderTextBlocks(text, options = {}) {
-  return paragraphize(text)
+  return paragraphizeForDisplay(text)
     .map((line) => `<p>${highlightImportant(escapeHtml(line), options.highlight)}</p>`)
     .join("");
 }
 
-function paragraphize(text) {
+export function paragraphizeForDisplay(text) {
   const normalized = String(text || "").replace(/\s+/g, " ").trim();
   if (!normalized) return [""];
-  const sentences = normalized.match(/[^.!?。！？]+[.!?。！？]?/g) || [normalized];
+  const sentences = splitDisplaySentences(normalized);
   return sentences.flatMap((sentence) => splitLongSentence(sentence.trim())).filter(Boolean);
+}
+
+function splitDisplaySentences(text) {
+  const sentences = [];
+  let start = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const end = sentenceBoundaryEnd(text, index);
+    if (!end) continue;
+    sentences.push(text.slice(start, end).trim());
+    start = end;
+    index = end - 1;
+  }
+  if (start < text.length) sentences.push(text.slice(start).trim());
+  return sentences.filter(Boolean);
+}
+
+function sentenceBoundaryEnd(text, index) {
+  const char = text[index];
+  if (!".!?。！？".includes(char)) return 0;
+  if (char === "." && isDecimalOrVersionPoint(text, index)) return 0;
+  let end = index + 1;
+  while (end < text.length && ".!?。！？".includes(text[end]) && !isDecimalOrVersionPoint(text, end)) {
+    end += 1;
+  }
+  while (end < text.length && text[end] === " ") end += 1;
+  return end;
+}
+
+function isDecimalOrVersionPoint(text, index) {
+  return text[index] === "." && /\d/.test(text[index - 1] || "") && /\d/.test(text[index + 1] || "");
 }
 
 function splitLongSentence(sentence) {
@@ -668,9 +698,15 @@ function splitLongSentence(sentence) {
 function splitOverlongText(text) {
   if (text.length <= 150) return [text];
   const chunks = [];
-  for (let index = 0; index < text.length; index += 110) {
-    chunks.push(text.slice(index, index + 110).trim());
+  let remaining = text.trim();
+  while (remaining.length > 150) {
+    const slice = remaining.slice(0, 110);
+    const breakAt = Math.max(slice.lastIndexOf(" "), slice.lastIndexOf("\t"));
+    const cut = breakAt > 40 ? breakAt : 110;
+    chunks.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
   }
+  if (remaining) chunks.push(remaining);
   return chunks.filter(Boolean);
 }
 

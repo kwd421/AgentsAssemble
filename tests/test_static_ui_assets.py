@@ -559,8 +559,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("room-log.md", script)
         self.assertIn("function splitLongSentence", script)
         self.assertIn("function splitOverlongText", script)
+        self.assertIn("function splitDisplaySentences", script)
+        self.assertIn("function isDecimalOrVersionPoint", script)
         self.assertIn("sentence.length <= 150", script)
-        self.assertIn("index += 110", script)
+        self.assertIn("const cut = breakAt > 40 ? breakAt : 110", script)
         self.assertIn("Codex moderator synthesis did not return parseable JSON", script)
         self.assertIn(".message {\n  align-items: flex-start;\n  contain: layout;", css)
         self.assertNotIn(".message {\n  align-items: flex-start;\n  contain: layout paint;", css)
@@ -634,6 +636,25 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertLess(script.index("renderSystemEventStack(systemLiveEvents)"), script.index('<main class="message-list live-transcript live-chat-feed"'))
         self.assertIn("max-height: clamp(300px, 34vh, 430px);", css)
         self.assertIn("min-height: clamp(220px, 28vh, 340px);", css)
+
+    def test_natural_language_surfaces_do_not_force_mid_token_wrapping(self):
+        css = static_css()
+
+        natural_selectors = [
+            ".message-body p",
+            ".research-card p",
+            ".side-chat-event p,\n.side-chat-empty",
+            ".lobby-event p,\n.lobby-empty",
+            ".archive-preview",
+        ]
+        for selector in natural_selectors:
+            with self.subTest(selector=selector):
+                block = css[css.index(selector) : css.index("}", css.index(selector))]
+                self.assertIn("overflow-wrap: break-word;", block)
+                self.assertNotIn("overflow-wrap: anywhere;", block)
+
+        technical_block = css[css.index(".live-agent-process-row span,") : css.index(".live-agent-process-row button")]
+        self.assertIn("overflow-wrap: anywhere;", technical_block)
 
     def test_board_cards_are_dynamic_and_scrollable(self):
         script = static_js()
