@@ -1,6 +1,6 @@
 import { renderArchive } from "./archive.js";
 import { refreshLiveAgentRuntimeSurfaces, renderLobby } from "./lobby.js";
-import { refreshSideChatFeed, renderBoard, renderLive } from "./meeting-views.js";
+import { refreshLiveStreamEvents, refreshSideChatFeed, renderBoard, renderLive } from "./meeting-views.js";
 import {
   displayTopic,
   fetchJson,
@@ -247,7 +247,9 @@ function applyMeetingStreamPayload(payload) {
   if (!events.length) return;
   state.payload.live_events = mergeEventsById(state.payload.live_events || [], events);
   state.payloadSignature = payloadSignature(state.payload);
-  renderLive(state.payload, { followLatest: false });
+  if (!refreshLiveStreamEvents(state.payload, events)) {
+    renderLive(state.payload, { followLatest: false });
+  }
 }
 
 function applyFullMeetingPayloadFromStream(payload) {

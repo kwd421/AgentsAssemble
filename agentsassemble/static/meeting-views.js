@@ -1,28 +1,12 @@
 import { bindingSummary, displayQuestion, escapeHtml, fetchJson, focusLabels, lensLabels, roleMeta, roundLabel, setSideChatEvents, state } from "./shared.js";
 
 export function renderLive(payload, options = {}) {
-  const roles = payload.meeting.roles || [];
-  const rounds = payload.meeting.debate_rounds || [];
-  const isFreeChat = payload.meeting.meeting_mode === "free_chat";
-  const isGame = payload.meeting.meeting_mode === "game";
+  const view = liveDisplayState(payload);
+  const { roles, systemLiveEvents, liveMessages, liveOverviewItems, synthesis, gate, roundStatus } = view;
   const live = document.querySelector("#live");
   const sideChatFocused = document.activeElement?.id === "side-chat-message";
   const sideChatDraft = live?.querySelector("#side-chat-message")?.value || "";
   const shouldFollowLatest = options.followLatest || isLiveTranscriptNearBottom(live);
-  const messages = rounds.flatMap((round) =>
-    (round.messages || []).map((message) => ({ ...message, roundTitle: roundLabel(payload.meeting, round.id, round.title) }))
-  );
-  const liveEvents = payload.live_events || [];
-  const officialLiveEvents = liveEvents.filter(isOfficialLiveItem);
-  const gameLiveEvents = liveEvents.filter((event) => event.kind !== "room_chat");
-  const roomChatEvents = liveEvents.filter((event) => event.kind === "room_chat");
-  const systemLiveEvents = isGame ? [] : liveEvents.filter((event) => !isOfficialLiveItem(event) && event.kind !== "room_chat");
-  const liveMessages = isFreeChat ? roomChatEvents : isGame && liveEvents.length ? gameLiveEvents : liveEvents.length ? officialLiveEvents : messages;
-  const liveOverviewItems = liveEvents.length ? liveEvents : messages;
-  const synthesis = payload.meeting.moderator_synthesis || {};
-  const gate = payload.meeting.decision_gate || {};
-  const isComplete = payload.meeting.live_status === "complete" || Boolean(synthesis.winner);
-  const roundStatus = liveStatusLabel(payload.meeting, rounds, isComplete);
   live.innerHTML = `
     <div class="live-room">
       <section class="live-chat-header">
@@ -85,6 +69,63 @@ export function renderLive(payload, options = {}) {
   if (!sideChatFocused) scrollSideChatToLatest(live);
   if (shouldFollowLatest) scrollLiveTranscriptToLatest(live);
   updateLatestJump(live);
+}
+
+export function refreshLiveStreamEvents(payload, events) {
+  const live = document.querySelector("#live");
+  const feed = live?.querySelector(".live-chat-feed");
+  if (!feed) return false;
+  const incomingIds = new Set((events || []).map((event) => event?.id).filter(Boolean));
+  if (!incomingIds.size) return false;
+  const visibleItems = liveDisplayState(payload).liveMessages.filter((item) => incomingIds.has(item.id));
+  if (visibleItems.length !== incomingIds.size) return false;
+  const shouldFollowLatest = isLiveTranscriptNearBottom(live);
+  for (const item of visibleItems) {
+    upsertLiveFeedItem(feed, item);
+  }
+  bindLatestJump(live);
+  if (shouldFollowLatest) scrollLiveTranscriptToLatest(live);
+  updateLatestJump(live);
+  return true;
+}
+
+function liveDisplayState(payload) {
+  const roles = payload.meeting.roles || [];
+  const rounds = payload.meeting.debate_rounds || [];
+  const isFreeChat = payload.meeting.meeting_mode === "free_chat";
+  const isGame = payload.meeting.meeting_mode === "game";
+  const messages = rounds.flatMap((round) =>
+    (round.messages || []).map((message) => ({ ...message, roundTitle: roundLabel(payload.meeting, round.id, round.title) }))
+  );
+  const liveEvents = payload.live_events || [];
+  const officialLiveEvents = liveEvents.filter(isOfficialLiveItem);
+  const gameLiveEvents = liveEvents.filter((event) => event.kind !== "room_chat");
+  const roomChatEvents = liveEvents.filter((event) => event.kind === "room_chat");
+  const systemLiveEvents = isGame ? [] : liveEvents.filter((event) => !isOfficialLiveItem(event) && event.kind !== "room_chat");
+  const liveMessages = isFreeChat ? roomChatEvents : isGame && liveEvents.length ? gameLiveEvents : liveEvents.length ? officialLiveEvents : messages;
+  const liveOverviewItems = liveEvents.length ? liveEvents : messages;
+  const synthesis = payload.meeting.moderator_synthesis || {};
+  const gate = payload.meeting.decision_gate || {};
+  const isComplete = payload.meeting.live_status === "complete" || Boolean(synthesis.winner);
+  const roundStatus = liveStatusLabel(payload.meeting, rounds, isComplete);
+  return { roles, systemLiveEvents, liveMessages, liveOverviewItems, synthesis, gate, roundStatus };
+}
+
+function upsertLiveFeedItem(feed, item) {
+  const selector = liveFeedItemSelector(item.id);
+  const html = renderLiveItem(item);
+  const existing = selector ? feed.querySelector(selector) : null;
+  if (existing) existing.outerHTML = html;
+  else feed.insertAdjacentHTML("beforeend", html);
+}
+
+function liveFeedItemSelector(id) {
+  if (!id) return "";
+  return `[data-live-event-id="${String(id).replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"]`;
+}
+
+function liveFeedItemAttribute(item) {
+  return item?.id ? ` data-live-event-id="${escapeHtml(item.id)}"` : "";
 }
 
 export function refreshSideChatFeed() {
@@ -242,7 +283,7 @@ function renderRoomChatEvent(event) {
   const meta = roleMeta[event.role_id] || { color: "purple", badge: "자유채팅", avatar: "/static/avatar-moderator.svg" };
   const displayName = displayNameLabel(event);
   return `
-    <article class="message message-${escapeHtml(meta.color)} message-room-chat">
+    <article class="message message-${escapeHtml(meta.color)} message-room-chat"${liveFeedItemAttribute(event)}>
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
       <div class="message-body">
         <div class="message-header">
@@ -282,7 +323,7 @@ function renderLiveEvent(event) {
   const displayName = displayNameLabel(event);
   const route = event.round ? `${roundKindLabel(event.round)} · ${eventKindLabel(event.kind)}` : eventKindLabel(event.kind);
   return `
-    <article class="message message-${escapeHtml(meta.color)} live-event-bubble">
+    <article class="message message-${escapeHtml(meta.color)} live-event-bubble"${liveFeedItemAttribute(event)}>
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
       <div class="message-body">
         <div class="message-header">
@@ -304,7 +345,7 @@ function renderSystemLine(event) {
   const content = userVisibleSummary(event.content || "");
   const showName = name !== "시스템" && !content.includes(name);
   return `
-    <div class="system-line" role="status">
+    <div class="system-line" role="status"${liveFeedItemAttribute(event)}>
       <span>${escapeHtml(eventKindLabel(event.kind))}</span>
       ${showName ? `<strong>${escapeHtml(name)}</strong>` : ""}
       <p>${escapeHtml(content)}</p>
@@ -316,7 +357,7 @@ function renderResearchEvent(event) {
   const meta = roleMeta[event.role_id] || { color: "cyan", badge: "리서치", avatar: "/static/avatar-moderator.svg" };
   const displayName = displayNameLabel(event);
   return `
-    <details class="research-card research-${escapeHtml(meta.color)}">
+    <details class="research-card research-${escapeHtml(meta.color)}"${liveFeedItemAttribute(event)}>
       <summary>
         <img class="profile profile-tiny" src="${escapeHtml(meta.avatar)}" alt="" />
         <span><strong>${escapeHtml(displayName)}</strong><em>리서치 요약 · ${escapeHtml(confidenceLabel(event.confidence))}${renderRetryBadge(event)}</em></span>
@@ -525,7 +566,7 @@ function renderMessage(message) {
   const stance = stanceLabel(message.stance_status);
   const position = messagePosition(message, state.payload?.meeting);
   return `
-    <article class="message message-${meta.color}">
+    <article class="message message-${meta.color}"${liveFeedItemAttribute(message)}>
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
       <div class="message-body">
       <div class="message-header">

@@ -39,6 +39,7 @@ class FakeElement {
   }
 
   set innerHTML(html) {
+    this.innerHTMLSetCount = (this.innerHTMLSetCount || 0) + 1;
     this._innerHTML = html;
     this.children = [];
     if (this.tagName === "SELECT") return;
@@ -65,6 +66,11 @@ class FakeElement {
 
   append(element) {
     this.children.push(element);
+  }
+
+  insertAdjacentHTML(_position, html) {
+    this._innerHTML = `${this._innerHTML || ""}${html}`;
+    this.ownerDocument?.loadInnerHtml(html);
   }
 
   setAttribute(name, value) {
@@ -222,6 +228,94 @@ test("meeting refresh event reloads meetings and syncs the selector", async () =
   assert.ok(requests.includes("/api/meetings/resident-gui"));
   assert.equal(document.querySelector("#meeting-select").value, "resident-gui");
 });
+
+test("meeting stream events append without replacing the live panel", async () => {
+  Object.assign(state, {
+    currentTab: "live",
+    meetings: [],
+    payload: null,
+    lobbyEvents: [],
+    lobbySignature: "[]",
+    sideChatEvents: [],
+    sideChatSignature: "[]",
+    liveAgentsLoaded: true,
+    liveAgentProcessesLoaded: true,
+    liveAgentOperationsLoaded: true,
+    codexSessionsLoaded: true,
+  });
+  const document = new FakeDocument();
+  const requests = [];
+  globalThis.document = document;
+  globalThis.localStorage = { getItem: () => "", setItem() {} };
+  globalThis.requestAnimationFrame = (callback) => callback();
+  globalThis.setInterval = () => 0;
+  globalThis.setTimeout = () => 0;
+  globalThis.clearTimeout = () => {};
+  globalThis.window = {
+    EventSource: FakeEventSource,
+    addEventListener() {},
+  };
+  globalThis.EventSource = FakeEventSource;
+  FakeEventSource.instances = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    if (url === "/api/lobby") return jsonResponse({ events: [] });
+    if (url === "/api/side-chat") return jsonResponse({ events: [] });
+    if (url === "/api/meetings") return jsonResponse({ meetings: [{ meeting_id: "live-meeting", topic: "live", live_status: "running" }] });
+    if (url === "/api/meetings/live-meeting") return jsonResponse(meetingResponse("live-meeting"));
+    return jsonResponse({});
+  };
+
+  await import(`../agentsassemble/static/app.js?runtime-smoke=${Date.now()}-meeting-stream`);
+  await flushAsyncWork();
+  await flushAsyncWork();
+  const livePanel = document.querySelector("#live");
+  const initialRenderCount = livePanel.innerHTMLSetCount || 0;
+  const meetingStream = FakeEventSource.instances.find((source) => source.url === "/api/meetings/live-meeting/events");
+  assert.ok(meetingStream, `meeting stream not opened; saw ${FakeEventSource.instances.map((source) => source.url).join(", ")}`);
+
+  meetingStream.dispatch("meeting", {
+    meeting_id: "live-meeting",
+    events: [
+      {
+        id: "event-1",
+        kind: "message",
+        role_id: "agent",
+        display_name: "Kiro Opus 4.7",
+        content: "0.5초 조건을 말했다.",
+        confidence: "high",
+      },
+    ],
+  });
+  await flushAsyncWork();
+
+  assert.equal((document.querySelector("#live").innerHTMLSetCount || 0), initialRenderCount);
+  assert.match(document.querySelector(".live-chat-feed").innerHTML, /0\.5초 조건/);
+});
+
+class FakeEventSource {
+  static instances = [];
+
+  constructor(url) {
+    this.url = String(url);
+    this.listeners = new Map();
+    FakeEventSource.instances.push(this);
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) || [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  dispatch(type, payload) {
+    for (const listener of this.listeners.get(type) || []) {
+      listener({ data: JSON.stringify(payload) });
+    }
+  }
+
+  close() {}
+}
 
 function meetingResponse(meetingId) {
   return {
