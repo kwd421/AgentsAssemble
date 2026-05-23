@@ -1,32 +1,14 @@
 /* Archive */
 .archive-vault {
-  background:
-    radial-gradient(circle at 14% 12%, rgba(91, 215, 255, 0.16), transparent 18rem),
-    radial-gradient(circle at 88% 0%, rgba(242, 184, 75, 0.13), transparent 24rem),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.052), transparent 48%),
-    rgba(7, 10, 16, 0.58);
-  border: 1px solid rgba(212, 225, 255, 0.14);
-  border-radius: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
   display: grid;
   gap: clamp(12px, calc(18px * var(--ui-scale)), 18px);
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.52fr);
   margin-bottom: clamp(12px, calc(16px * var(--ui-scale)), 18px);
-  overflow: hidden;
   padding: clamp(14px, calc(18px * var(--ui-scale)), 22px);
   position: relative;
-}
-
-.archive-vault::after {
-  background:
-    linear-gradient(90deg, transparent, rgba(91, 215, 255, 0.5), rgba(242, 184, 75, 0.42), transparent),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.075) 0 1px, transparent 1px 42px);
-  bottom: 0;
-  content: "";
-  height: 1px;
-  left: 28px;
-  opacity: 0.74;
-  position: absolute;
-  right: 28px;
 }
 
 .archive-vault-copy {
@@ -36,15 +18,16 @@
 .archive-vault-copy strong {
   color: var(--text);
   display: block;
-  font-size: clamp(24px, calc(32px * var(--text-scale)), 36px);
-  line-height: 1.05;
-  margin-top: 8px;
+  font-size: clamp(20px, calc(26px * var(--text-scale)), 28px);
+  font-weight: 700;
+  line-height: 1.2;
+  margin-top: 6px;
 }
 
 .archive-vault-copy p {
-  color: #d6d0c5;
-  font-size: clamp(13px, calc(15px * var(--text-scale)), 16px);
-  line-height: 1.58;
+  color: var(--muted-strong);
+  font-size: clamp(13px, calc(14px * var(--text-scale)), 15px);
+  line-height: 1.6;
   margin-top: 12px;
   max-width: 76ch;
 }
@@ -56,9 +39,9 @@
 }
 
 .archive-stat {
-  background: rgba(8, 11, 17, 0.54);
-  border: 1px solid rgba(212, 225, 255, 0.12);
-  border-radius: 13px;
+  background: var(--panel-3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
   min-width: 0;
   padding: 13px;
 }
@@ -70,23 +53,23 @@
 
 .archive-stat span {
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .archive-stat strong {
   color: var(--text);
-  font-size: clamp(20px, calc(27px * var(--text-scale)), 30px);
+  font-size: clamp(18px, calc(24px * var(--text-scale)), 28px);
+  font-weight: 700;
   margin-top: 5px;
 }
 
 .archive-layout {
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.028), transparent 42%),
-    rgba(7, 10, 16, 0.44);
-  border: 1px solid rgba(212, 225, 255, 0.11);
-  border-radius: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
   display: grid;
   grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   min-height: 620px;
@@ -101,11 +84,11 @@
 }
 
 .archive-head {
-  background: rgba(7, 10, 16, 0.86);
-  border: 1px solid rgba(212, 225, 255, 0.1);
-  border-radius: 12px;
+  background: var(--panel-3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
   margin-bottom: 12px;
-  padding: 10px;
+  padding: 10px 12px;
   position: sticky;
   top: 12px;
   z-index: 2;
@@ -116,8 +99,13 @@
   display: block;
 }
 
+.archive-head strong {
+  font-weight: 700;
+}
+
 .archive-head span {
   color: var(--muted);
+  font-family: var(--mono);
   font-size: 12px;
   margin-top: 4px;
 }
@@ -128,9 +116,9 @@
 
 .archive-group {
   contain: layout paint;
-  background: rgba(10, 13, 20, 0.44);
-  border: 1px solid rgba(212, 225, 255, 0.1);
-  border-radius: 14px;
+  background: var(--panel-3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
   padding: 10px;
 }
 
@@ -178,20 +166,20 @@
   width: 100%;
   text-align: left;
   margin-bottom: 8px;
-  background: rgba(7, 10, 16, 0.5);
+  background: var(--surface-soft);
   overflow: hidden;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: background 120ms ease, border-color 120ms ease;
 }
 
 .archive-list button.is-active {
-  background: rgba(242, 184, 75, 0.1);
+  background: var(--panel-3);
   border-color: var(--accent);
   color: var(--accent);
 }
 
 .archive-list button:hover {
-  background: rgba(18, 23, 34, 0.8);
-  transform: translateX(1px);
+  background: var(--panel-3);
+  border-color: var(--line-strong);
 }
 
 .archive-list button strong,
@@ -206,10 +194,12 @@
 .archive-list button strong {
   color: inherit;
   font-size: 13px;
+  font-weight: 700;
 }
 
 .archive-list button span {
   color: var(--muted);
+  font-family: var(--mono);
   font-size: 11px;
 }
 
@@ -243,6 +233,7 @@
 
 .archive-document-head small {
   color: var(--muted);
+  font-family: var(--mono);
   font-size: 12px;
   margin-top: 4px;
 }
@@ -257,13 +248,13 @@
 }
 
 .archive-actions span {
-  border: 1px solid rgba(240, 168, 60, 0.28);
-  border-radius: 999px;
-  color: var(--accent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--muted-strong);
   font-size: 11px;
   min-width: 0;
   overflow: hidden;
-  padding: 5px 7px;
+  padding: 4px 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -271,17 +262,17 @@
 .archive-actions button {
   min-height: 28px;
   min-width: 58px;
-  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
 
 .archive-actions button.is-confirmed {
-  background: rgba(130, 209, 115, 0.13);
+  background: transparent;
   border-color: var(--green-line);
   color: var(--green);
 }
 
 .archive-actions button.is-error {
-  background: rgba(255, 112, 104, 0.13);
+  background: transparent;
   border-color: var(--red-line);
   color: var(--red);
 }
@@ -289,36 +280,35 @@
 .archive-preview {
   flex: 1;
   margin: 0;
-  padding: 20px;
+  padding: 22px 24px;
   overflow: auto;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   word-break: keep-all;
-  color: #edf2ff;
-  line-height: 1.65;
-  font-size: clamp(12px, calc(14px * var(--text-scale)), 15px);
+  color: #e8ecf6;
+  font-family: var(--mono);
+  line-height: 1.7;
+  font-size: clamp(12px, calc(13px * var(--text-scale)), 14px);
   tab-size: 2;
-  background:
-    linear-gradient(90deg, rgba(242, 184, 75, 0.045), transparent 2px) 0 0 / 48px 100%,
-    rgba(7, 10, 16, 0.25);
+  background: var(--panel-3);
 }
 
 @keyframes messageEnter {
   from {
     opacity: 0;
-    transform: translateY(7px) scale(0.992);
+    transform: translateY(4px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
 @keyframes panelEnter {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(6px);
   }
 
   to {
