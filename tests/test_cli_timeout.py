@@ -5903,6 +5903,35 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(args.as_json)
         self.assertEqual(args.instruction, ["Discuss", "this", "round"])
 
+    def test_live_agent_call_preset_parser_accepts_role_filters(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "call-preset",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "m1",
+                "--preset",
+                "meme_debate_argument",
+                "--role",
+                "critic",
+                "--timeout",
+                "8",
+                "--stop-on-timeout",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "call-preset")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertEqual(args.meeting_id, "m1")
+        self.assertEqual(args.preset_id, "meme_debate_argument")
+        self.assertEqual(args.role_ids, ["critic"])
+        self.assertEqual(args.timeout, 8.0)
+        self.assertTrue(args.stop_on_timeout)
+        self.assertTrue(args.as_json)
+
     def test_live_agent_call_remaining_rounds_parser_accepts_bounds(self):
         args = build_parser().parse_args(
             [
@@ -6103,6 +6132,50 @@ class CliTimeoutTests(unittest.TestCase):
         )
         self.assertIn("Official round round_1 answered: 2 answered, 0 timed out, 0 skipped", stdout.getvalue())
         self.assertIn("- agent-b: answered reply-b", stdout.getvalue())
+
+    def test_live_agent_call_preset_posts_request_and_prints_summary(self):
+        response = {
+            "status": "answered",
+            "preset_id": "meme_debate_argument",
+            "answered_count": 1,
+            "timeout_count": 0,
+            "skipped_count": 0,
+            "results": [{"agent_id": "agent-b", "status": "answered", "reply_event": {"id": "reply-b"}}],
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "call-preset",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "m1",
+                        "--preset",
+                        "meme_debate_argument",
+                        "--role",
+                        "critic",
+                        "--timeout",
+                        "8",
+                        "--stop-on-timeout",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/meetings/m1/live-agent-turns/preset",
+            method="POST",
+            payload={
+                "preset_id": "meme_debate_argument",
+                "role_ids": ["critic"],
+                "timeout_seconds": 8.0,
+                "stop_on_timeout": True,
+            },
+            timeout_seconds=14.0,
+        )
+        self.assertIn("Play preset meme_debate_argument answered: 1 answered, 0 timed out, 0 skipped", stdout.getvalue())
 
     def test_live_agent_call_remaining_rounds_posts_request_and_prints_summary(self):
         response = {

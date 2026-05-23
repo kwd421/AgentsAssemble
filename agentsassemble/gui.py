@@ -51,6 +51,7 @@ from agentsassemble.live_agent_processes import (
     read_live_agent_process_event_history,
 )
 from agentsassemble.live_agent_probe import PROBE_REPLY_EVENT_TAIL_LIMIT, run_live_agent_probe, safe_probe_timeout
+from agentsassemble.live_agent_play_presets import build_play_preset_turns
 from agentsassemble.live_agent_review_checkpoints import write_review_checkpoint_artifacts
 from agentsassemble.live_agent_rounds import build_official_round_turns, completed_official_round_ids, remaining_official_round_ids
 from agentsassemble.live_agent_sessions import (
@@ -1048,6 +1049,36 @@ def live_agent_meeting_start_payload(output_root: Path, payload: dict[str, objec
 def live_agent_finalize_meeting_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
     meeting_dir = _safe_meeting_dir(output_root, meeting_id)
     return finalize_live_agent_meeting(meeting_dir, force=_payload_bool(payload.get("force")))
+
+
+def live_agent_turn_preset_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    meeting_dir = _safe_meeting_dir(output_root, clean_meeting_id)
+    if not clean_meeting_id or not meeting_dir.exists():
+        raise ValueError(f"Meeting {clean_meeting_id or '(blank)'} was not found.")
+    preset_turns = build_play_preset_turns(
+        _read_meeting_record(meeting_dir),
+        read_live_agents(output_root),
+        meeting_id=clean_meeting_id,
+        preset_id=str(payload.get("preset_id") or payload.get("preset") or ""),
+        role_ids=_payload_role_ids(payload.get("role_ids")),
+    )
+    sequence = live_agent_turn_sequence_payload(
+        output_root,
+        clean_meeting_id,
+        {
+            "turns": preset_turns["turns"],
+            "timeout_seconds": _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0),
+            "stop_on_timeout": _payload_bool(payload.get("stop_on_timeout")),
+        },
+    )
+    return {
+        **sequence,
+        "preset_id": preset_turns["preset_id"],
+        "label": preset_turns["label"],
+        "round_id": preset_turns["round_id"],
+        "role_ids": preset_turns["role_ids"],
+    }
 
 
 def live_agent_session_start_payload(
@@ -4791,6 +4822,10 @@ def _meeting_live_agent_turn_round_path(path: str) -> str | None:
     return _meeting_live_agent_turn_action_path(path, "round")
 
 
+def _meeting_live_agent_turn_preset_path(path: str) -> str | None:
+    return _meeting_live_agent_turn_action_path(path, "preset")
+
+
 def _meeting_finalize_path(path: str) -> str | None:
     parts = path.strip("/").split("/")
     if len(parts) == 4 and parts[0] == "api" and parts[1] == "meetings" and parts[3] == "finalize":
@@ -6413,6 +6448,24 @@ def _turn_round_request_operation_details(payload: dict[str, object], meeting_id
     }
 
 
+def _turn_preset_request_operation_details(payload: dict[str, object], meeting_id: str) -> dict[str, object]:
+    return {
+        "meeting_id": meeting_id,
+        "preset_id": clean_lobby_text(payload.get("preset_id") or payload.get("preset"), limit=128),
+        "role_ids": _safe_payload_role_ids(payload.get("role_ids")),
+        "timeout_seconds": _payload_nonnegative_float(payload.get("timeout_seconds", payload.get("timeout")), 30.0),
+        "stop_on_timeout": _payload_bool(payload.get("stop_on_timeout")),
+    }
+
+
+def _turn_preset_operation_details(preset_result: dict[str, object], meeting_id: str) -> dict[str, object]:
+    details = _turn_sequence_operation_details(preset_result, meeting_id)
+    details["preset_id"] = clean_lobby_text(preset_result.get("preset_id"), limit=128)
+    details["round_id"] = clean_lobby_text(preset_result.get("round_id"), limit=128)
+    details["role_ids"] = _safe_payload_role_ids(preset_result.get("role_ids"))
+    return details
+
+
 def _request_json(
     url: str,
     *,
@@ -7285,6 +7338,38 @@ def _make_handler(
                     details=_turn_round_operation_details(round_result, turn_round_meeting_id),
                 )
                 self._send_json(round_result)
+                return
+            turn_preset_meeting_id = _meeting_live_agent_turn_preset_path(parsed.path)
+            if turn_preset_meeting_id is not None:
+                payload = self._operation_json_payload(operation="official_turn.preset")
+                if payload is None:
+                    return
+                try:
+                    preset_result = live_agent_turn_preset_payload(output_root, turn_preset_meeting_id, payload)
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="official_turn.preset",
+                        status="failed",
+                        target_id=turn_preset_meeting_id,
+                        error=str(error),
+                        details=_turn_preset_request_operation_details(payload, turn_preset_meeting_id),
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                record_live_agent_operation(
+                    output_root,
+                    operation="official_turn.preset",
+                    status="success" if preset_result.get("status") == "answered" else "degraded",
+                    target_id=turn_preset_meeting_id,
+                    summary=(
+                        "completed live-agent play preset"
+                        if preset_result.get("status") == "answered"
+                        else "live-agent play preset had timeouts"
+                    ),
+                    details=_turn_preset_operation_details(preset_result, turn_preset_meeting_id),
+                )
+                self._send_json(preset_result)
                 return
             turn_sequence_meeting_id = _meeting_live_agent_turn_sequence_path(parsed.path)
             if turn_sequence_meeting_id is not None:

@@ -16530,6 +16530,57 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(round_operations[0]["status"], "failed")
             self.assertNotIn("private round instruction", json.dumps(operations["operations"], ensure_ascii=False))
 
+    def test_live_agent_play_preset_endpoint_enqueues_turn_without_process_start(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "meeting_mode": "free_chat",
+                    "roles": [{"id": "architect", "display_name": "Architect"}],
+                    "agent_bindings": [{"role_id": "architect", "agent_id": "agent-a"}],
+                },
+            )
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                preset_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/live-agent-turns/preset",
+                    data=json.dumps(
+                        {
+                            "preset_id": "meme_debate_argument",
+                            "role_ids": ["architect"],
+                            "timeout_seconds": 0,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(preset_request, timeout=4) as response:
+                    result = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(result["preset_id"], "meme_debate_argument")
+            self.assertEqual(result["turn_count"], 1)
+            self.assertEqual(result["status"], "timeout")
+            live_events = read_live_events(meeting_dir, limit=None)
+            self.assertEqual(live_events[0]["kind"], "live_agent_turn_request")
+            self.assertEqual(live_events[0]["target_agent_id"], "agent-a")
+            operation = [item for item in operations["operations"] if item["operation"] == "official_turn.preset"][0]
+            self.assertEqual(operation["status"], "degraded")
+            operations_text = json.dumps(operations["operations"], ensure_ascii=False)
+            self.assertNotIn("심판처럼 판정하지 말고", operations_text)
+            self.assertFalse((root / "live-agent-runs" / "processes.json").exists())
+
     def test_live_agent_review_checkpoint_answers_ready_resident_agents_without_official_record(self):
         class ReadySupervisor:
             def snapshot_groups(self):
