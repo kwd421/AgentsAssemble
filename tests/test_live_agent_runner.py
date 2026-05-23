@@ -1572,6 +1572,33 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
         self.assertIsNone(official_turn_request_candidate(events, "agent-a", ""))
 
+    def test_official_turn_candidate_skips_cancelled_request(self):
+        events = [
+            {
+                "id": "turn-request-1",
+                "kind": "live_agent_turn_request",
+                "target_agent_id": "agent-a",
+                "content": "닫힌 요청",
+            },
+            {
+                "id": "turn-cancel-1",
+                "kind": "live_agent_turn_cancelled",
+                "target_agent_id": "agent-a",
+                "source_event_id": "turn-request-1",
+                "content": "official turn request cancelled",
+                "channel": "system",
+                "official_record": False,
+            },
+            {
+                "id": "turn-request-2",
+                "kind": "live_agent_turn_request",
+                "target_agent_id": "agent-a",
+                "content": "아직 열려 있는 요청",
+            },
+        ]
+
+        self.assertEqual(official_turn_request_candidate(events, "agent-a", ""), events[2])
+
     def test_moderator_called_skips_visible_already_answered_request_without_model_call(self):
         clock = FakeClock()
         room = {

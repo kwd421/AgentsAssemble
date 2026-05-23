@@ -75,8 +75,10 @@ from agentsassemble.live_agent_smoke import (
     run_live_agent_smoke,
 )
 from agentsassemble.live_agent_turns import (
+    is_official_turn_cancellation_event,
     is_official_turn_reply_event,
     is_review_checkpoint_reply_event,
+    official_turn_cancellation,
     wait_for_official_turn_reply,
     wait_for_review_checkpoint_reply,
 )
@@ -1048,7 +1050,11 @@ def live_agent_meeting_start_payload(output_root: Path, payload: dict[str, objec
 
 def live_agent_finalize_meeting_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
     meeting_dir = _safe_meeting_dir(output_root, meeting_id)
-    return finalize_live_agent_meeting(meeting_dir, force=_payload_bool(payload.get("force")))
+    return finalize_live_agent_meeting(
+        meeting_dir,
+        force=_payload_bool(payload.get("force")),
+        close_pending=_payload_bool(payload.get("close_pending")),
+    )
 
 
 def live_agent_turn_preset_payload(output_root: Path, meeting_id: str, payload: dict[str, object]) -> dict[str, object]:
@@ -2254,13 +2260,21 @@ def live_agent_turn_sequence_payload(output_root: Path, meeting_id: str, payload
     answered_count = sum(1 for result in results if result["status"] == "answered")
     timeout_count = sum(1 for result in results if result["status"] == "timeout")
     skipped_count = sum(1 for result in results if result["status"] == "skipped")
+    cancelled_count = sum(1 for result in results if result["status"] == "cancelled")
     return {
-        "status": _live_agent_turn_sequence_status(answered_count, timeout_count, skipped_count),
+        "status": _live_agent_turn_sequence_status(
+            answered_count,
+            timeout_count,
+            skipped_count,
+            cancelled_count,
+            turn_count=len(turns),
+        ),
         "meeting_id": clean_meeting_id,
         "turn_count": len(turns),
         "answered_count": answered_count,
         "timeout_count": timeout_count,
         "skipped_count": skipped_count,
+        "cancelled_count": cancelled_count,
         "stopped": stopped,
         "stop_on_timeout": stop_on_timeout,
         "timeout_seconds": timeout_seconds,
@@ -2357,8 +2371,15 @@ def live_agent_review_checkpoint_payload(
     answered_count = sum(1 for result in results if result["status"] == "answered")
     timeout_count = sum(1 for result in results if result["status"] == "timeout")
     skipped_count = sum(1 for result in results if result["status"] == "skipped")
+    cancelled_count = sum(1 for result in results if result["status"] == "cancelled")
     checkpoint = {
-        "status": _live_agent_turn_sequence_status(answered_count, timeout_count, skipped_count),
+        "status": _live_agent_turn_sequence_status(
+            answered_count,
+            timeout_count,
+            skipped_count,
+            cancelled_count,
+            turn_count=len(target_agent_ids),
+        ),
         "checkpoint_id": checkpoint_id,
         "meeting_id": clean_meeting_id,
         "group_id": group_id,
@@ -2366,6 +2387,7 @@ def live_agent_review_checkpoint_payload(
         "answered_count": answered_count,
         "timeout_count": timeout_count,
         "skipped_count": skipped_count,
+        "cancelled_count": cancelled_count,
         "timeout_seconds": timeout_seconds,
         "agent_ids": target_agent_ids,
         "results": results,
@@ -2630,6 +2652,8 @@ def live_agent_official_turn_payload(output_root: Path, agent_id: str, payload: 
         request_event = _matching_live_agent_turn_request(meeting_dir, agent_id, source_event_id)
         if request_event is None:
             raise ValueError("Matching official turn request was not found.")
+        if official_turn_cancellation(read_live_events(meeting_dir, limit=None), agent_id=agent_id, source_event_id=source_event_id):
+            raise ValueError("Official turn request was cancelled.")
         existing_reply = _live_agent_reply_for_request(meeting_dir, agent_id, source_event_id, request_event)
         if existing_reply is not None:
             event = existing_reply
@@ -3584,14 +3608,37 @@ def _live_agent_live_observation_status(
 ) -> str:
     if not latest_request_id:
         return "none"
-    if _live_agent_reply_for_request_in_events(events, agent_id=agent_id, source_event_id=latest_request_id):
-        return "answered"
+    terminal_status = _live_agent_turn_terminal_status_in_events(events, agent_id=agent_id, source_event_id=latest_request_id)
+    if terminal_status:
+        return terminal_status
     event_index = _live_event_index_by_id(events)
     latest_index = event_index.get(latest_request_id)
     observed_index = event_index.get(last_observed_live_event_id)
     if latest_index is not None and observed_index is not None and observed_index >= latest_index:
         return "current"
     return "current" if last_observed_live_event_id == latest_request_id else "behind"
+
+
+def _live_agent_turn_terminal_status_in_events(
+    events: list[dict[str, object]],
+    *,
+    agent_id: str,
+    source_event_id: str,
+) -> str:
+    for event in events:
+        if is_official_turn_cancellation_event(event):
+            if _safe_session_run_health_identity(event.get("target_agent_id")) != agent_id:
+                continue
+            if _safe_session_run_health_identity(event.get("source_event_id")) == source_event_id:
+                return "cancelled"
+            continue
+        if not is_official_turn_reply_event(event) and not is_review_checkpoint_reply_event(event):
+            continue
+        if _safe_session_run_health_identity(event.get("actor_id")) != agent_id:
+            continue
+        if _safe_session_run_health_identity(event.get("source_event_id")) == source_event_id:
+            return "answered"
+    return ""
 
 
 def _live_agent_reply_for_request_in_events(
@@ -5743,12 +5790,23 @@ def _skipped_turn_sequence_results(turns: list[dict[str, object]], *, start_inde
     return skipped
 
 
-def _live_agent_turn_sequence_status(answered_count: int, timeout_count: int, skipped_count: int) -> str:
-    if timeout_count == 0 and skipped_count == 0:
-        return "answered"
+def _live_agent_turn_sequence_status(
+    answered_count: int,
+    timeout_count: int,
+    skipped_count: int,
+    cancelled_count: int,
+    *,
+    turn_count: int,
+) -> str:
     if skipped_count:
         return "stopped"
-    return "timeout"
+    if timeout_count:
+        return "timeout"
+    if cancelled_count:
+        return "cancelled"
+    if answered_count == turn_count:
+        return "answered"
+    return "degraded"
 
 
 def _turn_sequence_operation_details(sequence: dict[str, object], meeting_id: str) -> dict[str, object]:
@@ -5776,6 +5834,7 @@ def _turn_sequence_operation_details(sequence: dict[str, object], meeting_id: st
         "answered_count": _payload_nonnegative_int(sequence.get("answered_count"), 0),
         "timeout_count": _payload_nonnegative_int(sequence.get("timeout_count"), 0),
         "skipped_count": _payload_nonnegative_int(sequence.get("skipped_count"), 0),
+        "cancelled_count": _payload_nonnegative_int(sequence.get("cancelled_count"), 0),
         "stopped": sequence.get("stopped") is True,
         "agent_ids": agent_ids,
         "statuses": statuses,
@@ -6072,6 +6131,9 @@ def _meeting_finalize_operation_details(result: dict[str, object], meeting_id: s
         "meeting_id": clean_lobby_text(result.get("meeting_id") or meeting_id, limit=128),
         "official_event_count": _payload_nonnegative_int(result.get("official_event_count"), 0),
         "artifact_event_id": clean_lobby_text(result.get("artifact_event_id"), limit=128),
+        "cancelled_pending_count": _payload_nonnegative_int(result.get("cancelled_pending_count"), 0),
+        "cancelled_event_ids": _safe_payload_strings(result.get("cancelled_event_ids"), limit=128),
+        "cancelled_turn_request_ids": _safe_payload_strings(result.get("cancelled_turn_request_ids"), limit=128),
     }
     shared_memory = result.get("shared_memory") if isinstance(result.get("shared_memory"), dict) else {}
     if shared_memory:
@@ -7301,7 +7363,7 @@ def _make_handler(
                         if rounds_success and finalization_success
                         else "completed live-agent remaining official rounds with degraded finalization"
                         if rounds_success
-                        else "live-agent remaining official rounds had timeouts"
+                        else "live-agent remaining official rounds did not fully answer"
                     ),
                     details=_turn_rounds_operation_details(rounds_result, turn_rounds_meeting_id),
                 )
@@ -7333,7 +7395,7 @@ def _make_handler(
                     summary=(
                         "completed live-agent official round"
                         if round_result.get("status") in {"answered", "complete"}
-                        else "live-agent official round had timeouts"
+                        else "live-agent official round did not fully answer"
                     ),
                     details=_turn_round_operation_details(round_result, turn_round_meeting_id),
                 )
@@ -7365,7 +7427,7 @@ def _make_handler(
                     summary=(
                         "completed live-agent play preset"
                         if preset_result.get("status") == "answered"
-                        else "live-agent play preset had timeouts"
+                        else "live-agent play preset did not fully answer"
                     ),
                     details=_turn_preset_operation_details(preset_result, turn_preset_meeting_id),
                 )
@@ -7402,7 +7464,7 @@ def _make_handler(
                     summary=(
                         "completed live-agent official turn sequence"
                         if sequence.get("status") == "answered"
-                        else "live-agent official turn sequence had timeouts"
+                        else "live-agent official turn sequence did not fully answer"
                     ),
                     details=_turn_sequence_operation_details(sequence, turn_sequence_meeting_id),
                 )

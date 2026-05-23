@@ -7,15 +7,26 @@ from typing import Any
 
 from agentsassemble.artifacts import write_public_artifacts
 from agentsassemble.live_meeting_memory import build_live_meeting_memory, write_live_meeting_memory_artifacts
+from agentsassemble.live_agent_turns import LIVE_AGENT_TURN_CANCELLED_KIND, official_turn_cancellation
 from agentsassemble.live_transcript import official_live_transcript_events, render_live_transcript
 from agentsassemble.meeting_events import append_live_event, clean_lobby_text, read_live_events, write_live_state
 from agentsassemble.meeting_record import derive_failure_state
 
 
-def finalize_live_agent_meeting(meeting_dir: Path, *, force: bool = False) -> dict[str, object]:
+def finalize_live_agent_meeting(
+    meeting_dir: Path,
+    *,
+    force: bool = False,
+    close_pending: bool = False,
+) -> dict[str, object]:
     if not meeting_dir.exists():
         raise ValueError(f"Meeting {meeting_dir.name} was not found.")
     events = read_live_events(meeting_dir, limit=None)
+    cancellation_result = _empty_pending_cancellation_result()
+    if close_pending:
+        cancellation_result = cancel_pending_turn_requests(meeting_dir, events=events)
+        if cancellation_result["cancelled_pending_count"]:
+            events = read_live_events(meeting_dir, limit=None)
     pending_requests = _pending_turn_requests(events)
     if pending_requests:
         pending_ids = ", ".join(str(event.get("id") or "unknown") for event in pending_requests)
@@ -29,6 +40,7 @@ def finalize_live_agent_meeting(meeting_dir: Path, *, force: bool = False) -> di
             "shared_memory": _shared_memory_result(
                 meeting.get("shared_memory") if isinstance(meeting.get("shared_memory"), dict) else {}
             ),
+            **cancellation_result,
         }
 
     live_meeting = _read_live_meeting(meeting_dir)
@@ -62,7 +74,44 @@ def finalize_live_agent_meeting(meeting_dir: Path, *, force: bool = False) -> di
         ],
         "artifacts": meeting["artifacts"],
         "shared_memory": _shared_memory_result(shared_memory),
+        **cancellation_result,
     }
+
+
+def cancel_pending_turn_requests(
+    meeting_dir: Path,
+    *,
+    events: list[dict[str, object]] | None = None,
+    reason: str = "operator_closed_pending_turns",
+) -> dict[str, object]:
+    source_events = events if events is not None else read_live_events(meeting_dir, limit=None)
+    cancelled_events: list[dict[str, object]] = []
+    for request in _pending_turn_requests(source_events):
+        request_id = clean_lobby_text(request.get("id"), limit=128)
+        agent_id = clean_lobby_text(request.get("target_agent_id"), limit=64)
+        if not request_id or not agent_id:
+            continue
+        cancelled_events.append(
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": LIVE_AGENT_TURN_CANCELLED_KIND,
+                    "meeting_id": clean_lobby_text(request.get("meeting_id"), limit=128) or meeting_dir.name,
+                    "channel": "system",
+                    "audience": f"agent:{agent_id}",
+                    "official_record": False,
+                    "actor_id": "system",
+                    "target_agent_id": agent_id,
+                    "source_event_id": request_id,
+                    "role_id": request.get("role_id"),
+                    "display_name": request.get("display_name"),
+                    "turn_id": clean_lobby_text(request.get("turn_id"), limit=128),
+                    "turn_index": request.get("turn_index"),
+                    "content": f"Pending official turn request cancelled: {clean_lobby_text(reason, limit=128)}.",
+                },
+            )
+        )
+    return _pending_cancellation_result(cancelled_events)
 
 
 def build_finalized_live_meeting_record(
@@ -276,6 +325,28 @@ def _read_json(path: Path) -> dict[str, object]:
     return payload
 
 
+def _empty_pending_cancellation_result() -> dict[str, object]:
+    return {
+        "cancelled_pending_count": 0,
+        "cancelled_event_ids": [],
+        "cancelled_turn_request_ids": [],
+    }
+
+
+def _pending_cancellation_result(cancelled_events: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "cancelled_pending_count": len(cancelled_events),
+        "cancelled_event_ids": [
+            str(event.get("id") or "") for event in cancelled_events if str(event.get("id") or "").strip()
+        ],
+        "cancelled_turn_request_ids": [
+            str(event.get("source_event_id") or "")
+            for event in cancelled_events
+            if str(event.get("source_event_id") or "").strip()
+        ],
+    }
+
+
 def _pending_turn_requests(events: list[dict[str, object]]) -> list[dict[str, object]]:
     pending = []
     for event in events:
@@ -285,7 +356,12 @@ def _pending_turn_requests(events: list[dict[str, object]]) -> list[dict[str, ob
             continue
         request_id = str(event.get("id") or "")
         agent_id = str(event.get("target_agent_id") or "")
-        if not request_id or not agent_id or _official_transcript_reply(events, agent_id=agent_id, source_event_id=request_id) is None:
+        if not request_id or not agent_id:
+            pending.append(event)
+            continue
+        if _official_turn_closed(events, agent_id=agent_id, source_event_id=request_id):
+            continue
+        if _official_transcript_reply(events, agent_id=agent_id, source_event_id=request_id) is None:
             pending.append(event)
     return pending
 
@@ -313,6 +389,15 @@ def _official_transcript_reply(
             continue
         return event
     return None
+
+
+def _official_turn_closed(
+    events: list[dict[str, object]],
+    *,
+    agent_id: str,
+    source_event_id: str,
+) -> bool:
+    return official_turn_cancellation(events, agent_id=agent_id, source_event_id=source_event_id) is not None
 
 
 def _round_definitions_by_id(meeting: dict[str, object]) -> dict[str, dict[str, object]]:

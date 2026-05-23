@@ -28,6 +28,7 @@ LiveEventKind = Literal[
     "synthesis",
     "artifact",
     "live_agent_turn_request",
+    "live_agent_turn_cancelled",
 ]
 
 LOBBY_SIDES: set[str] = {"mine", "my-agent", "other", "other-agent"}

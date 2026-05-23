@@ -12,7 +12,11 @@ from typing import Callable
 
 from agentsassemble.codex_resident import default_codex_resident_command
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
-from agentsassemble.live_agent_turns import is_official_turn_reply_event, is_review_checkpoint_reply_event
+from agentsassemble.live_agent_turns import (
+    is_official_turn_cancellation_event,
+    is_official_turn_reply_event,
+    is_review_checkpoint_reply_event,
+)
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
 from agentsassemble.remote_bridge_config import (
     remote_bridge_auth_ref_available,
@@ -592,10 +596,14 @@ def official_turn_request_candidate(
 def _visible_official_reply_source_ids(events: list[dict[str, object]], agent_id: str) -> set[str]:
     source_ids: set[str] = set()
     for event in events:
-        if not is_official_turn_reply_event(event) and not is_review_checkpoint_reply_event(event):
-            continue
-        if str(event.get("actor_id") or "") != agent_id:
-            continue
+        if is_official_turn_cancellation_event(event):
+            if str(event.get("target_agent_id") or "") != agent_id:
+                continue
+        else:
+            if not is_official_turn_reply_event(event) and not is_review_checkpoint_reply_event(event):
+                continue
+            if str(event.get("actor_id") or "") != agent_id:
+                continue
         source_event_id = str(event.get("source_event_id") or "").strip()
         if source_event_id:
             source_ids.add(source_event_id)

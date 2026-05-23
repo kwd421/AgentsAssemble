@@ -9491,6 +9491,65 @@ class GuiServerTests(unittest.TestCase):
             ]
             self.assertEqual([event["target_agent_id"] for event in request_events], ["agent-a"])
 
+    def test_live_agent_official_turn_sequence_reports_cancelled_turn(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            connect_live_agent_payload(root, {"agent_id": "agent-a", "display_name": "Agent A", "meeting_id": "m1"})
+            errors = []
+            result_holder = {}
+
+            def run_sequence():
+                try:
+                    result_holder["sequence"] = live_agent_turn_sequence_payload(
+                        root,
+                        "m1",
+                        {
+                            "timeout_seconds": 2,
+                            "turns": [{"agent_id": "agent-a", "content": "cancel me"}],
+                        },
+                    )
+                except Exception as error:  # pragma: no cover - asserted below
+                    errors.append(error)
+
+            sequence_thread = threading.Thread(target=run_sequence)
+            sequence_thread.start()
+            deadline = time.time() + 2
+            request_event = None
+            while time.time() < deadline and request_event is None:
+                for event in read_live_events(meeting_dir, limit=None):
+                    if event.get("kind") == "live_agent_turn_request":
+                        request_event = event
+                        break
+                time.sleep(0.01)
+            self.assertIsNotNone(request_event)
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_cancelled",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "source_event_id": request_event["id"],
+                    "content": "official turn request cancelled",
+                    "channel": "system",
+                    "official_record": False,
+                },
+            )
+            sequence_thread.join(timeout=3)
+
+            if errors:
+                raise errors[0]
+            self.assertFalse(sequence_thread.is_alive())
+            sequence = result_holder["sequence"]
+            self.assertEqual(sequence["status"], "cancelled")
+            self.assertEqual(sequence["cancelled_count"], 1)
+            self.assertEqual(sequence["answered_count"], 0)
+            self.assertEqual(sequence["timeout_count"], 0)
+            self.assertEqual(sequence["results"][0]["status"], "cancelled")
+            self.assertEqual(sequence["results"][0]["reply_event"]["kind"], "live_agent_turn_cancelled")
+
     def test_live_agent_official_turn_sequence_validates_all_turns_before_append(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -17034,6 +17093,125 @@ class GuiServerTests(unittest.TestCase):
             operations_text = json.dumps(operations["operations"], ensure_ascii=False)
             self.assertNotIn("official answer for final artifacts", operations_text)
             self.assertNotIn("private prompt", operations_text)
+
+    def test_live_agent_finalize_meeting_endpoint_closes_pending_turns_without_prompt_leak(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "question": "Finalize resident meeting?",
+                    "display_question": "Finalize resident meeting?",
+                    "topic": "runtime",
+                    "display_topic": "runtime",
+                    "meeting_mode": "debate",
+                    "moderator": {"enabled": True},
+                    "roles": [
+                        {"id": "architect", "display_name": "Architect", "lens": "shape"},
+                        {"id": "critic", "display_name": "Critic", "lens": "risk"},
+                    ],
+                    "meeting_template": {
+                        "display_name": "Resident live",
+                        "rounds": [
+                            {
+                                "id": "round_1",
+                                "title": "Round 1",
+                                "instruction": "Answer.",
+                                "turn_control": {"selection": "all_roles"},
+                            }
+                        ],
+                    },
+                    "research_depth": {"name": "resident_live"},
+                    "research_steering": {"prompt": None},
+                    "memory_context": {"recent_episodes": [], "agent_memories": {}},
+                    "memory_input": {"research_summaries": []},
+                    "agent_bindings": [
+                        {"role_id": "architect", "agent_id": "agent-a", "provider_id": "local-cli"},
+                        {"role_id": "critic", "agent_id": "agent-b", "provider_id": "local-cli"},
+                    ],
+                    "provider_configs": {"local-cli": {"kind": "local_cli", "display_name": "Local CLI"}},
+                    "debate_rounds": [],
+                    "moderator_synthesis": {},
+                    "decision_gate": {},
+                    "artifacts": {"agenda": "agenda.md"},
+                    "live_status": "running",
+                },
+            )
+            answered_request = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "content": "private prompt",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                },
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "m1",
+                    "actor_id": "agent-a",
+                    "target_agent_id": "agent-a",
+                    "source_event_id": answered_request["id"],
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "content": "official answer for final artifacts",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                },
+            )
+            pending_request = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-b",
+                    "role_id": "critic",
+                    "display_name": "Critic",
+                    "content": "secret pending prompt",
+                    "turn_id": "round_1:1:critic",
+                    "turn_index": 1,
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                finalize_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/finalize",
+                    data=json.dumps({"close_pending": True}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(finalize_request, timeout=4) as response:
+                    finalized = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-operations", timeout=4) as response:
+                    operations = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(finalized["status"], "finalized")
+            self.assertEqual(finalized["cancelled_pending_count"], 1)
+            self.assertEqual(finalized["cancelled_turn_request_ids"], [pending_request["id"]])
+            cancellation_events = [
+                event for event in read_live_events(meeting_dir, limit=None) if event.get("kind") == "live_agent_turn_cancelled"
+            ]
+            self.assertEqual(len(cancellation_events), 1)
+            self.assertEqual(cancellation_events[0]["source_event_id"], pending_request["id"])
+            self.assertEqual(operations["operations"][0]["operation"], "meeting.finalize")
+            self.assertEqual(operations["operations"][0]["status"], "success")
+            self.assertEqual(operations["operations"][0]["details"]["cancelled_pending_count"], 1)
+            operations_text = json.dumps(operations["operations"], ensure_ascii=False)
+            self.assertNotIn("secret pending prompt", operations_text)
 
     def test_live_agent_finalize_meeting_endpoint_failure_operation_omits_prompt_content(self):
         with tempfile.TemporaryDirectory() as temp_dir:

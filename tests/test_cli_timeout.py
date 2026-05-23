@@ -7340,11 +7340,29 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(args.force)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_finalize_meeting_parser_accepts_close_pending(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "finalize-meeting",
+                "--server",
+                "http://room.local",
+                "--meeting-id",
+                "resident-m1",
+                "--close-pending",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "finalize-meeting")
+        self.assertEqual(args.meeting_id, "resident-m1")
+        self.assertTrue(args.close_pending)
+
     def test_live_agent_finalize_meeting_posts_request_and_prints_summary(self):
         response = {
             "status": "finalized",
             "meeting_id": "resident-m1",
             "official_event_count": 2,
+            "cancelled_pending_count": 1,
         }
         stdout = StringIO()
         with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
@@ -7364,10 +7382,41 @@ class CliTimeoutTests(unittest.TestCase):
         request_json.assert_called_once_with(
             "http://room.local/api/meetings/resident-m1/finalize",
             method="POST",
-            payload={"force": False},
+            payload={"force": False, "close_pending": False},
             timeout_seconds=20.0,
         )
-        self.assertIn("Finalized resident-m1: 2 official events", stdout.getvalue())
+        self.assertIn("Finalized resident-m1: 2 official events, 1 pending turn cancelled", stdout.getvalue())
+
+    def test_live_agent_finalize_meeting_posts_close_pending_request(self):
+        response = {
+            "status": "finalized",
+            "meeting_id": "resident-m1",
+            "official_event_count": 2,
+            "cancelled_pending_count": 2,
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=response) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "finalize-meeting",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--close-pending",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with(
+            "http://room.local/api/meetings/resident-m1/finalize",
+            method="POST",
+            payload={"force": False, "close_pending": True},
+            timeout_seconds=20.0,
+        )
+        self.assertIn("2 pending turns cancelled", stdout.getvalue())
 
     def test_live_agent_check_session_parser_accepts_meeting_group_and_fail_flag(self):
         args = build_parser().parse_args(

@@ -160,6 +160,55 @@ class LiveAgentTurnsTests(unittest.TestCase):
             self.assertIsNone(result["reply_event"])
             self.assertEqual(result["source_event_id"], request["id"])
 
+    def test_wait_returns_cancelled_for_matching_turn_cancellation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir)
+            request = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "official turn",
+                },
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_cancelled",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-b",
+                    "source_event_id": request["id"],
+                    "content": "wrong agent cancellation",
+                    "channel": "system",
+                    "official_record": False,
+                },
+            )
+            cancellation = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_cancelled",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "source_event_id": request["id"],
+                    "content": "official turn request cancelled",
+                    "channel": "system",
+                    "official_record": False,
+                },
+            )
+
+            result = wait_for_official_turn_reply(
+                meeting_dir,
+                agent_id="agent-a",
+                source_event_id=str(request["id"]),
+                timeout_seconds=0,
+                poll_interval=0,
+            )
+
+            self.assertEqual(result["status"], "cancelled")
+            self.assertEqual(result["reply_event"]["id"], cancellation["id"])
+            self.assertEqual(result["source_event_id"], request["id"])
+
 
 if __name__ == "__main__":
     unittest.main()

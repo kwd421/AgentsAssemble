@@ -488,6 +488,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_finalize_meeting.add_argument("--meeting-id", required=True, help="Resident meeting id to finalize.")
     live_finalize_meeting.add_argument("--force", action="store_true", help="Overwrite existing final artifacts.")
+    live_finalize_meeting.add_argument(
+        "--close-pending",
+        action="store_true",
+        help="Cancel pending official turn requests before finalizing.",
+    )
     live_finalize_meeting.add_argument("--json", action="store_true", dest="as_json", help="Print the raw finalization payload.")
 
     live_start_session = live_agent_subparsers.add_parser(
@@ -2042,7 +2047,7 @@ def _run_live_agent_finalize_meeting(args: argparse.Namespace) -> int:
     response = _request_json(
         _server_url(args.server, f"/api/meetings/{meeting_id}/finalize"),
         method="POST",
-        payload={"force": bool(args.force)},
+        payload={"force": bool(args.force), "close_pending": bool(args.close_pending)},
         timeout_seconds=20.0,
     )
     if args.as_json:
@@ -2057,7 +2062,15 @@ def _format_live_agent_finalize_meeting(response: dict[str, object]) -> str:
     meeting_id = str(response.get("meeting_id") or "unknown")
     official_count = response.get("official_event_count", 0)
     prefix = "Already finalized" if status == "already_finalized" else "Finalized"
-    return f"{prefix} {meeting_id}: {official_count} official events"
+    try:
+        cancelled_count = max(0, int(response.get("cancelled_pending_count", 0)))
+    except (TypeError, ValueError):
+        cancelled_count = 0
+    if cancelled_count:
+        suffix = f", {cancelled_count} pending turn{'s' if cancelled_count != 1 else ''} cancelled"
+    else:
+        suffix = ""
+    return f"{prefix} {meeting_id}: {official_count} official events{suffix}"
 
 
 def _run_live_agent_start_session(args: argparse.Namespace) -> int:

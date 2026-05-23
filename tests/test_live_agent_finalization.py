@@ -213,6 +213,83 @@ class LiveAgentFinalizationTests(unittest.TestCase):
             self.assertFalse((meeting_dir / "decision.md").exists())
             self.assertFalse((meeting_dir / "meeting.json").exists())
 
+    def test_finalize_live_agent_meeting_can_close_pending_turns_with_cancellation_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir) / "meetings" / "resident-m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, _resident_live_meeting())
+            answered_request = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "resident-m1",
+                    "target_agent_id": "agent-a",
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "content": "private architect prompt",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                },
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "resident-m1",
+                    "actor_id": "agent-a",
+                    "target_agent_id": "agent-a",
+                    "source_event_id": answered_request["id"],
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "content": "Architect official answer.",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                },
+            )
+            pending_request = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "resident-m1",
+                    "target_agent_id": "agent-b",
+                    "role_id": "critic",
+                    "display_name": "Critic",
+                    "content": "secret pending critic prompt",
+                    "turn_id": "round_1:1:critic",
+                    "turn_index": 1,
+                },
+            )
+
+            with self.assertRaisesRegex(ValueError, pending_request["id"]):
+                finalize_live_agent_meeting(meeting_dir)
+
+            result = finalize_live_agent_meeting(meeting_dir, close_pending=True)
+
+            self.assertEqual(result["status"], "finalized")
+            self.assertEqual(result["official_event_count"], 1)
+            self.assertEqual(result["cancelled_pending_count"], 1)
+            self.assertEqual(result["cancelled_turn_request_ids"], [pending_request["id"]])
+            cancellation_events = [
+                event for event in read_live_events(meeting_dir, limit=None) if event.get("kind") == "live_agent_turn_cancelled"
+            ]
+            self.assertEqual(len(cancellation_events), 1)
+            cancellation = cancellation_events[0]
+            self.assertEqual(cancellation["source_event_id"], pending_request["id"])
+            self.assertEqual(cancellation["target_agent_id"], "agent-b")
+            self.assertEqual(cancellation["role_id"], "critic")
+            self.assertFalse(cancellation["official_record"])
+            self.assertEqual(cancellation["channel"], "system")
+            public_text = "\n".join(
+                [
+                    (meeting_dir / "transcript.md").read_text(encoding="utf-8"),
+                    (meeting_dir / "decision.md").read_text(encoding="utf-8"),
+                    (meeting_dir / "shared_memory" / "rolling-summary.md").read_text(encoding="utf-8"),
+                    json.dumps(cancellation_events, ensure_ascii=False),
+                ]
+            )
+            self.assertIn("Architect official answer.", public_text)
+            self.assertNotIn("secret pending critic prompt", public_text)
+
     def test_finalize_live_agent_meeting_refuses_legacy_nonofficial_reply_as_pending(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "resident-m1"

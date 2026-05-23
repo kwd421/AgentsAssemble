@@ -6,6 +6,8 @@ from typing import Callable
 
 from agentsassemble.meeting_events import read_live_events
 
+LIVE_AGENT_TURN_CANCELLED_KIND = "live_agent_turn_cancelled"
+
 
 def wait_for_official_turn_reply(
     meeting_dir: Path,
@@ -25,13 +27,18 @@ def wait_for_official_turn_reply(
     deadline = started_at + safe_timeout
 
     while True:
-        reply = official_turn_reply(read_live_events(meeting_dir, limit=None), agent_id=agent_id, source_event_id=source_event_id)
+        terminal = official_turn_terminal_event(
+            read_live_events(meeting_dir, limit=None),
+            agent_id=agent_id,
+            source_event_id=source_event_id,
+        )
         elapsed = max(0.0, now() - started_at)
-        if reply is not None:
+        if terminal is not None:
+            status, event = terminal
             return {
-                "status": "answered",
+                "status": status,
                 "source_event_id": source_event_id,
-                "reply_event": reply,
+                "reply_event": event,
                 "elapsed_seconds": elapsed,
                 "timeout_seconds": safe_timeout,
             }
@@ -110,6 +117,40 @@ def official_turn_reply(
     return None
 
 
+def official_turn_cancellation(
+    events: list[dict[str, object]],
+    *,
+    agent_id: str,
+    source_event_id: str,
+) -> dict[str, object] | None:
+    for event in events:
+        if not is_official_turn_cancellation_event(event):
+            continue
+        if str(event.get("target_agent_id") or "") != agent_id:
+            continue
+        if str(event.get("source_event_id") or "") != source_event_id:
+            continue
+        return event
+    return None
+
+
+def official_turn_terminal_event(
+    events: list[dict[str, object]],
+    *,
+    agent_id: str,
+    source_event_id: str,
+) -> tuple[str, dict[str, object]] | None:
+    for event in events:
+        if is_official_turn_reply_event(event):
+            if str(event.get("actor_id") or "") == agent_id and str(event.get("source_event_id") or "") == source_event_id:
+                return "answered", event
+            continue
+        if is_official_turn_cancellation_event(event):
+            if str(event.get("target_agent_id") or "") == agent_id and str(event.get("source_event_id") or "") == source_event_id:
+                return "cancelled", event
+    return None
+
+
 def review_checkpoint_reply(
     events: list[dict[str, object]],
     *,
@@ -128,6 +169,14 @@ def review_checkpoint_reply(
             continue
         return event
     return None
+
+
+def is_official_turn_cancellation_event(event: dict[str, object]) -> bool:
+    if event.get("kind") != LIVE_AGENT_TURN_CANCELLED_KIND:
+        return False
+    if event.get("official_record") is not False:
+        return False
+    return str(event.get("channel") or "").strip() == "system"
 
 
 def is_official_turn_reply_event(event: dict[str, object]) -> bool:
