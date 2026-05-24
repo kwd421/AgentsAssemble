@@ -1,10 +1,17 @@
 import importlib.util
 import json
+import sys
+import tempfile
+import threading
 import unittest
+from http.server import ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from agentsassemble.cli import build_parser
+from agentsassemble.gui import _make_handler, append_lobby_event, read_lobby
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
+from agentsassemble.live_agents import read_live_agents
 
 
 MCP_AVAILABLE = importlib.util.find_spec("mcp") is not None
@@ -258,6 +265,111 @@ class McpServerToolTests(unittest.TestCase):
         self.assertTrue(all(call.method == "GET" for call in requester.calls))
         self.assertFalse(any("/api/live-agents" in call.url for call in requester.calls))
 
+    def test_stdio_participant_smoke_posts_lobby_reply(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                source_event = append_lobby_event(root, {"name": "Human", "side": "me", "kind": "message", "message": "ping"})
+
+                result = _run_mcp_stdio_session(
+                    [
+                        "mcp",
+                        "serve",
+                        "--profile",
+                        "participant",
+                        "--server",
+                        server_url,
+                        "--agent-id",
+                        "mcp-agent",
+                        "--display-name",
+                        "MCP Agent",
+                        "--meeting-id",
+                        "m1",
+                        "--engagement-mode",
+                        "always",
+                    ],
+                    [
+                        ("register", {}),
+                        ("wait_next", {"timeout": 0, "poll_interval": 0}),
+                        (
+                            "say",
+                            {
+                                "message": "pong",
+                                "source_event_id": source_event["id"],
+                                "auto_chain_depth": 1,
+                            },
+                        ),
+                    ],
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            wait_payload = _mcp_result_json(result[1])
+            self.assertEqual(wait_payload["action"], "lobby")
+            self.assertEqual(wait_payload["source_event_id"], source_event["id"])
+            lobby = read_lobby(root)
+            reply = lobby[-1]
+            self.assertEqual(reply["actor_id"], "mcp-agent")
+            self.assertEqual(reply["source_event_id"], source_event["id"])
+            self.assertEqual(reply["auto_chain_depth"], 1)
+            self.assertEqual(reply["message"], "pong")
+            agents = read_live_agents(root)
+            self.assertEqual(agents[0]["last_observed_event_id"], source_event["id"])
+
+    def test_stdio_archive_smoke_reads_without_presence_mutation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            (meeting_dir / "shared_memory").mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps({"meeting_id": "m1", "topic": "MCP topic", "question": "MCP question"}),
+                encoding="utf-8",
+            )
+            (meeting_dir / "transcript.md").write_text("Transcript body", encoding="utf-8")
+            (meeting_dir / "decision.md").write_text("Decision body", encoding="utf-8")
+            (meeting_dir / "shared_memory" / "rolling-summary.md").write_text("Rolling body", encoding="utf-8")
+            (meeting_dir / "shared_memory" / "open-questions.md").write_text("Questions body", encoding="utf-8")
+            (meeting_dir / "shared_memory" / "action-items.md").write_text("Actions body", encoding="utf-8")
+            (meeting_dir / "shared_memory" / "index.json").write_text('{"official_event_count": 1}', encoding="utf-8")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                result = _run_mcp_stdio_session(
+                    [
+                        "mcp",
+                        "serve",
+                        "--profile",
+                        "archive",
+                        "--server",
+                        server_url,
+                        "--meeting-id",
+                        "m1",
+                    ],
+                    [
+                        ("list_meetings", {}),
+                        ("read_transcript", {}),
+                        ("read_shared_memory", {"meeting_id": "m1"}),
+                    ],
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            meetings = _mcp_result_json(result[0])
+            transcript = _mcp_result_text(result[1])
+            memory = _mcp_result_json(result[2])
+            self.assertEqual(meetings["meetings"][0]["meeting_id"], "m1")
+            self.assertIn("Transcript body", transcript)
+            self.assertEqual(memory["rolling_summary"], "Rolling body")
+            self.assertFalse((root / "live_agents.json").exists())
+
 
 def _tool_names(server) -> set[str]:
     import anyio
@@ -291,6 +403,36 @@ def _tool_text(result) -> str:
     if isinstance(result, tuple):
         result = result[0]
     return "\n".join(str(item.text) for item in result if getattr(item, "type", "") == "text")
+
+
+def _run_mcp_stdio_session(command_args: list[str], calls: list[tuple[str, dict[str, object]]]):
+    import anyio
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+
+    async def run():
+        params = StdioServerParameters(command=sys.executable, args=["-m", "agentsassemble.cli", *command_args])
+        async with stdio_client(params) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                results = []
+                for name, arguments in calls:
+                    results.append(await session.call_tool(name, arguments))
+                return results
+
+    return anyio.run(run)
+
+
+def _mcp_result_text(result) -> str:
+    content = getattr(result, "content", result)
+    return _tool_text(content)
+
+
+def _mcp_result_json(result) -> dict[str, object]:
+    structured = getattr(result, "structuredContent", None)
+    if isinstance(structured, dict):
+        return structured
+    return json.loads(_mcp_result_text(result))
 
 
 class _Call:
