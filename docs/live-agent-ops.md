@@ -35,6 +35,30 @@ append or update event rows without replacing the whole live panel when possible
 so input drafts, scroll position, and the latest-message control remain stable
 during SSE refreshes.
 
+## Room-first / Agent-owned Context
+
+The room is a room, not a hidden moderator. A resident agent should treat
+AgentsAssemble as shared room tooling: it provides public events, official
+artifacts, shared memory, and cursor/diff reads, while the provider or CLI keeps
+its own private context and compression behavior.
+
+Agents decide what extra context to read before replying. The normal loop is:
+read the room, compare the new public room events against the agent's cursor,
+optionally inspect transcript, decision, return-packet, or shared-memory
+artifacts, then post one lobby or official reply through the room. The room
+records `last_observed_event_id` for lobby events and
+`last_observed_live_event_id` for official live events so a returning agent can
+ask "what changed since I last looked?" without receiving a giant prompt dump.
+Those cursor/diff reads are room evidence, not provider execution.
+
+The moderator does not sit between every room event and every agent reply. It
+may start a meeting, call an official turn, close pending turns, or finalize a
+record, but agent-owned room loops should not require a host to rewrite each
+event into a bespoke hidden prompt. If a provider has a durable native session,
+it remains responsible for its own private context; if it is stateless, the
+stateless wrapper may read the room artifacts it needs and include them in that
+provider call.
+
 Session-owned supervised groups persist the safe `meeting_id` in `live-agent-runs/processes.json`. That meeting ownership is preserved through manual restart, recovery, delayed auto-restart, and stale-watchdog restart, and is visible through `/api/live-agent-processes`, `/api/live-agent-health` as `processes.meeting_ids`, `/api/live-agent-health` meeting-owned session readiness, and the GUI process row as `meeting <id>`. This is operator evidence only; it does not store command arguments, endpoint URLs, auth refs, prompts, replies, log tails, or provider output.
 
 `/api/live-agent-health` also includes an `observations` overlay for ready resident sessions. It compares the latest bounded lobby event and each bound agent's latest official turn request against that agent's preserved lobby/live cursors and reply timestamp, then reports compact counts such as ready agents, lobby-behind, live-behind, active error count, and observation attention labels. This is read-only: health refreshes do not call providers, run probes, append operation rows, start or stop processes, post lobby messages, or expose lobby text, official request content, presence error text, provider output, config paths, endpoints, or auth refs.

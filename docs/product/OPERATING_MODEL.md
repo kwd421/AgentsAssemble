@@ -64,6 +64,20 @@ context into Work Mode by themselves.
 
 Each provider or CLI owns its agent-private context.
 
+Room-first / Agent-owned Context:
+- The room is a room, not a hidden moderator or per-model context packer.
+- AgentsAssemble owns room-visible records: event logs, official artifacts,
+  shared meeting memory, agent cursors, and cursor/diff reads over the room.
+- Agents decide what extra context to read before speaking. They may inspect
+  the room diff since their cursor, archive artifacts, shared memory, and their
+  provider-owned private context, then choose one public room reply.
+- The moderator does not sit between every room event and every agent reply.
+  It starts meetings, records official turn boundaries, and may request turns,
+  but it should not become a hidden per-turn context broker.
+- Resident prompts may include a thin envelope with identity, the triggering
+  event, cursor ids, and explicit shared meeting memory. They should not invent
+  another private "inner meaning" channel behind the agent's public utterance.
+
 AgentsAssemble should preserve that boundary:
 - Do not merge one agent's private context into another agent.
 - Do not dump raw project history into every provider by default.

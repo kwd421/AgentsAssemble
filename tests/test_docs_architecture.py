@@ -32,6 +32,19 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("docs/product/OPERATING_MODEL.md", agents)
         self.assertIn("docs/product/OPERATING_MODEL.md", roadmap)
 
+    def test_operating_model_records_room_first_agent_owned_context(self):
+        operating_model = (ROOT / "docs" / "product" / "OPERATING_MODEL.md").read_text(encoding="utf-8")
+        live_agent_ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
+        combined = "\n".join([operating_model, live_agent_ops])
+
+        self.assertIn("Room-first / Agent-owned Context", combined)
+        self.assertIn("The room is a room, not a hidden moderator", combined)
+        self.assertIn("Agents decide what extra context to read", combined)
+        self.assertIn("cursor/diff", combined)
+        self.assertIn("last_observed_event_id", combined)
+        self.assertIn("last_observed_live_event_id", combined)
+        self.assertIn("moderator does not sit between every room event and every agent reply", combined)
+
     def test_live_session_room_model_documents_shared_room_semantics(self):
         doc = (ROOT / "docs" / "live-session-room-model.md").read_text(encoding="utf-8")
 
