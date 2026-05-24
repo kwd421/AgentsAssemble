@@ -74,6 +74,10 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("sandbox_enforcement", doc)
         self.assertIn("codex_readonly", doc)
         self.assertIn("os_sandboxed", doc)
+        self.assertIn("MCP participant profile", doc)
+        self.assertIn("agent-owned room tooling", doc)
+        self.assertIn("not host-side prompt injection", doc)
+        self.assertIn("Host Control MCP", doc)
 
     def test_roadmap_mentions_room_event_log_and_live_session_adapter(self):
         doc = (ROOT / "docs" / "roadmap.md").read_text(encoding="utf-8")
@@ -109,6 +113,10 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("artifact_paths", doc)
         self.assertIn("`초대 패킷` button", doc)
         self.assertIn("browser-generated register/wait-next packet", doc)
+        self.assertIn("python3 -m agentsassemble.cli mcp serve --profile participant", doc)
+        self.assertIn("participant MCP connection does not start provider CLIs", doc)
+        self.assertIn("archive MCP profile is read-only", doc)
+        self.assertIn("LAN or trusted local network", doc)
         self.assertIn("five resident transports when PTY terminal sessions are available", doc)
         self.assertIn("skips the `terminal_session` fake and reports `terminal_session_reason: pty_unavailable`", doc)
         self.assertIn("python3 -m agentsassemble.cli live-agent processes start", doc)

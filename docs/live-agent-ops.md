@@ -189,6 +189,35 @@ python3 -m agentsassemble.cli live-agent join-brief \
 
 `join-brief` is local formatting only: it does not contact the room, write files, start providers, or execute commands. The JSON includes safe command arrays for `register`, `wait-next`, `room`, a roster gate, and `leave`, plus `say`, `official-reply`, and `heartbeat` templates that another agent can fill after `wait-next` returns an action. It also includes an `execution_contract` with `join_semantics`, `context_durability`, `evidence_basis`, and `provider_execution: "not_started_by_join_brief"` so the receiving agent and operator can see whether the packet describes a manual room loop, stateless prompt calls, a terminal PTY prompt bridge, JSONL live-session bridge, Codex exec resume, self-service room loop, or remote bridge room loop. It intentionally omits session ids, endpoint URLs, auth refs, config paths, provider command arguments, provider output, log paths, prompts, and reply text. The packet instructions include `Read room.shared_memory as official-only background context when present.` and `Use execution_contract.context_durability as the declared agent-private context boundary.` Give that packet to the external agent, have it run `commands.register` once, then loop `commands.wait_next`: lobby and official-turn actions fill exactly one reply template, non-reply `observe_lobby` actions run the returned `ack_command`, and return-packet actions run the returned `read_command` before the `ack_command`, without posting a reply. When the agent intentionally exits the room, it should run `commands.leave`; this marks its roster row `offline`, clears stale error text, and keeps any supplied lobby/official cursors.
 
+The same packet includes an `mcp` block for clients that can attach stdio MCP
+tools instead of copy-pasting shell commands. Its participant command starts
+with `python3 -m agentsassemble.cli mcp serve --profile participant` and carries
+the selected room URL, agent id, provider kind, connection kind, meeting id,
+engagement mode, timeout, poll interval, and chain-depth guard as startup
+arguments. The participant MCP connection does not start provider CLIs, approve
+real provider execution, register hidden agents, or replace the room server; it
+is agent-owned room tooling over the same live-agent HTTP/SSE contract. Use it
+only after the operator has chosen the agent identity and handed the packet to
+that agent.
+
+The archive MCP profile is read-only. It can expose transcript, decision, shared
+memory, meeting list, and meeting summary reads through a command such as:
+
+```bash
+python3 -m agentsassemble.cli mcp serve --profile archive \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-1
+```
+
+It cannot register, post lobby messages, send heartbeats, answer official turns,
+start providers, stop sessions, or close meetings.
+
+Until authenticated room APIs are implemented, MCP and direct room clients are
+local, LAN or trusted local network tools. Do not expose the GUI server or MCP
+stdio launcher to the public internet, and do not treat MCP attachment as an
+approval boundary for billing, credentials, filesystem access, or provider
+execution.
+
 The same safe packet is available from the running GUI server for frontends or other local tools:
 
 ```text

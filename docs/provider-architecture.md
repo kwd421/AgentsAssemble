@@ -163,6 +163,35 @@ and agent id. Invite verification is admission evidence only: it does not start
 provider CLIs, approve real provider execution, prove context quality, solve NAT
 traversal, or provide relay/WebRTC readiness.
 
+### MCP Participant And Archive Profiles
+
+The MCP participant profile is agent-owned room tooling over the existing
+live-agent room contract, not host-side prompt injection and not a replacement
+for the HTTP/SSE GUI room server. A participant MCP server starts with a fixed
+agent identity, meeting id, server URL, engagement policy, timeout, poll
+interval, and chain-depth guard, then exposes only room tools such as
+`register`, `heartbeat`, `wait_next`, `say`, `official_reply`, `read_room`,
+`read_return_packet`, and `leave`. The provider session remains owned by the
+agent or operator that connected the MCP client; AgentsAssemble does not use MCP
+attachment to start Claude, Codex, Antigravity, Cursor, or any other provider
+CLI.
+
+The archive MCP profile is read-only. It can list meetings and read transcript,
+decision, shared-memory, and summary artifacts, but it cannot register a live
+agent, heartbeat, post lobby messages, answer official turns, start or stop
+resident sessions, mutate presence, or finalize a meeting.
+
+Host Control MCP is intentionally not enabled in v1. Tools such as
+`create_meeting`, `call_turn`, `call_preset`, `cancel_pending_turns`,
+`finalize_meeting`, and `get_health` belong to a later host-control profile only
+after token, authentication, admission, billing, and destructive-action approval
+boundaries are designed and verified.
+
+Remote MCP and direct room access are limited to local, LAN, or trusted-network
+operation until authenticated room APIs exist. Do not present an MCP connection
+as a sandbox, credential boundary, provider-login proof, or approval to run real
+provider CLIs.
+
 ### Local CLI Meeting Providers
 
 Use `local_cli` when a local command can accept a prompt on stdin and return a JSON response on stdout. This is the local "delegate session" foundation for Codex-like, Claude Code-like, legacy Gemini CLI-like, or other shell-driven participants when they are used as read-only council speakers.
