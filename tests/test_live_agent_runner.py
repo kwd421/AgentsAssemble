@@ -1858,8 +1858,14 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(official_payloads[0]["source_event_id"], "turn-request-1")
         self.assertEqual(lobby_payloads[0]["source_event_id"], "lobby2")
 
-    def test_official_turn_prompt_omits_other_agents_targeted_request_content(self):
+    def test_official_turn_prompt_uses_thin_room_envelope_without_recent_event_dump(self):
         room = {
+            "agent": {
+                "agent_id": "agent-a",
+                "last_observed_event_id": "lobby-cursor",
+                "last_observed_live_event_id": "live-cursor",
+            },
+            "meeting_id": "m1",
             "live_events": [
                 {
                     "id": "target-b",
@@ -1892,7 +1898,12 @@ class LiveAgentRunnerTests(unittest.TestCase):
         prompt = official_turn_prompt(config(agent_id="agent-a", display_name="Agent A"), room, room["live_events"][2])
 
         self.assertIn("agent A private request", prompt)
-        self.assertIn("public official statement", prompt)
+        self.assertIn("Source event id: target-a", prompt)
+        self.assertIn("Meeting id: m1", prompt)
+        self.assertIn("Lobby cursor: lobby-cursor", prompt)
+        self.assertIn("Official cursor: live-cursor", prompt)
+        self.assertIn("minimal room delivery envelope", prompt)
+        self.assertNotIn("public official statement", prompt)
         self.assertNotIn("private target-B instruction", prompt)
 
     def test_official_turn_prompt_includes_compact_shared_meeting_memory(self):
@@ -1936,6 +1947,11 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
     def test_lobby_delegate_prompt_includes_shared_memory_without_turn_requests(self):
         room = {
+            "agent": {
+                "agent_id": "agent-a",
+                "last_observed_event_id": "evt-before",
+                "last_observed_live_event_id": "reply-1",
+            },
             "shared_memory": {
                 "official_event_count": 1,
                 "last_official_event_id": "reply-1",
@@ -1946,7 +1962,10 @@ class LiveAgentRunnerTests(unittest.TestCase):
                     {"event_id": "reply-1", "speaker": "Architect", "text": "Keep room prompts compact."}
                 ],
             },
-            "lobby_events": [{"id": "evt-human", "name": "나", "message": "공유기억 보고 있어?"}],
+            "lobby_events": [
+                {"id": "evt-before", "name": "나", "message": "이전 로비는 통째로 싣지 마"},
+                {"id": "evt-human", "name": "나", "message": "공유기억 보고 있어?"},
+            ],
             "live_events": [
                 {
                     "id": "secret-request",
@@ -1960,12 +1979,17 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
         from agentsassemble.live_agent_runner import delegate_prompt
 
-        prompt = delegate_prompt(config(agent_id="agent-a", display_name="Agent A"), room, room["lobby_events"][0])
+        prompt = delegate_prompt(config(agent_id="agent-a", display_name="Agent A"), room, room["lobby_events"][1])
 
         self.assertIn("Shared meeting memory", prompt)
         self.assertIn("Official context only.", prompt)
         self.assertIn("Keep room prompts compact.", prompt)
         self.assertIn("공유기억 보고 있어?", prompt)
+        self.assertIn("Source event id: evt-human", prompt)
+        self.assertIn("Lobby cursor: evt-before", prompt)
+        self.assertIn("Official cursor: reply-1", prompt)
+        self.assertIn("minimal room delivery envelope", prompt)
+        self.assertNotIn("이전 로비는 통째로 싣지 마", prompt)
         self.assertNotIn("private prompt must stay out", prompt)
 
     def test_official_turn_prompt_labels_review_checkpoint_as_review_not_official_record(self):
@@ -1991,7 +2015,8 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertIn("Reply with one concise review message only.", prompt)
         self.assertNotIn("official meeting record", prompt)
         self.assertIn("검토 기준", prompt)
-        self.assertIn("최근 맥락", prompt)
+        self.assertIn("Source event id: checkpoint-request", prompt)
+        self.assertNotIn("최근 맥락", prompt)
 
     def test_runner_uses_room_engagement_mode_to_pause_active_agent(self):
         clock = FakeClock()

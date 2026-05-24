@@ -644,18 +644,15 @@ def delegate_prompt(config: ResidentAgentConfig, room: dict[str, object], source
         f"Agent id: {config.agent_id}",
         f"Display name: {config.display_name or config.agent_id}",
         "Reply with one concise lobby message only.",
+        "Do not include markdown fences or multiple alternatives.",
+        "",
+        *_room_delivery_envelope_lines(config, room, source_event),
         "",
         *_shared_memory_prompt_lines(room),
         "",
         "New event to answer:",
         f"- {source_event.get('name') or 'participant'}: {source_event.get('message') or ''}",
-        "",
-        "Recent lobby events:",
     ]
-    for event in _lobby_events(room)[-12:]:
-        message = str(event.get("message") or "").strip()
-        if message:
-            lines.append(f"- {event.get('name') or 'participant'}: {message}")
     return "\n".join(lines).strip() + "\n"
 
 
@@ -665,12 +662,10 @@ def official_turn_prompt(config: ResidentAgentConfig, room: dict[str, object], s
         intro = f"You are a live AgentsAssemble participant called into review checkpoint {review_checkpoint_id}."
         reply_rule = "Reply with one concise review message only."
         request_label = "Review request:"
-        events_label = "Recent review-visible meeting events:"
     else:
         intro = "You are a live AgentsAssemble participant called into the official meeting record."
         reply_rule = "Reply with one concise official meeting turn only."
         request_label = "Moderator request:"
-        events_label = "Recent official meeting events:"
     lines = [
         intro,
         f"Agent id: {config.agent_id}",
@@ -678,30 +673,41 @@ def official_turn_prompt(config: ResidentAgentConfig, room: dict[str, object], s
         reply_rule,
         "Do not include lobby chatter, markdown fences, or multiple alternatives.",
         "",
+        *_room_delivery_envelope_lines(config, room, source_event),
+        "",
         *_shared_memory_prompt_lines(room),
         "",
         request_label,
         f"- {source_event.get('content') or ''}",
-        "",
-        events_label,
     ]
-    for event in _live_events(room)[-12:]:
-        if not _live_event_visible_to_agent(event, config.agent_id, source_event):
-            continue
-        content = str(event.get("content") or "").strip()
-        if content:
-            lines.append(f"- {event.get('display_name') or event.get('actor_id') or event.get('kind') or 'participant'}: {content}")
-    recent_lobby = [
-        str(event.get("message") or "").strip()
-        for event in _lobby_events(room)[-6:]
-        if str(event.get("message") or "").strip()
-    ]
-    if recent_lobby:
-        lines.append("")
-        lines.append("Recent lobby context, for awareness only:")
-        for message in recent_lobby:
-            lines.append(f"- {message}")
     return "\n".join(lines).strip() + "\n"
+
+
+def _room_delivery_envelope_lines(
+    config: ResidentAgentConfig,
+    room: dict[str, object],
+    source_event: dict[str, object],
+) -> list[str]:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    meeting_id = str(
+        source_event.get("meeting_id")
+        or room.get("meeting_id")
+        or agent.get("meeting_id")
+        or config.meeting_id
+        or ""
+    ).strip()
+    source_event_id = _prompt_text(source_event.get("id"), limit=128) or "(none)"
+    lobby_cursor = _prompt_text(agent.get("last_observed_event_id"), limit=128) or "(none)"
+    live_cursor = _prompt_text(agent.get("last_observed_live_event_id"), limit=128) or "(none)"
+    return [
+        "Room delivery envelope (minimal room delivery envelope; not hidden moderator context):",
+        f"- Source event id: {source_event_id}",
+        f"- Meeting id: {meeting_id or '(none)'}",
+        f"- Lobby cursor: {lobby_cursor}",
+        f"- Official cursor: {live_cursor}",
+        "- AgentsAssemble owns room records and shared memory; your provider/session owns private context.",
+        "- If your transport has room tools, inspect read-since, archive artifacts, or shared memory before deciding.",
+    ]
 
 
 def _shared_memory_prompt_lines(room: dict[str, object]) -> list[str]:
@@ -914,24 +920,6 @@ def _live_events(room: dict[str, object]) -> list[dict[str, object]]:
     if not isinstance(events, list):
         return []
     return [event for event in events if isinstance(event, dict)]
-
-
-def _live_event_visible_to_agent(
-    event: dict[str, object],
-    agent_id: str,
-    source_event: dict[str, object],
-) -> bool:
-    if event.get("id") and event.get("id") == source_event.get("id"):
-        return True
-    if event.get("official_record") is True:
-        return True
-    target_agent_id = str(event.get("target_agent_id") or "")
-    if target_agent_id:
-        return target_agent_id == agent_id
-    audience = str(event.get("audience") or "")
-    if audience.startswith("agent:"):
-        return audience == f"agent:{agent_id}"
-    return str(event.get("kind") or "") != "live_agent_turn_request"
 
 
 def _official_turn_meeting_id(

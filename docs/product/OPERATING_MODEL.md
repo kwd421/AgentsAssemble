@@ -82,8 +82,7 @@ AgentsAssemble should preserve that boundary:
 - Do not merge one agent's private context into another agent.
 - Do not dump raw project history into every provider by default.
 - Do not pretend to own or compress a provider's hidden session state.
-- Pass only the current room event, relevant recent public room context, role
-  identity, and explicit shared meeting memory.
+- Pass only the source event, cursor metadata, identity, and explicit shared meeting memory.
 - Feed compact shared memory into resident prompts as background, not as a new
   event to answer.
 

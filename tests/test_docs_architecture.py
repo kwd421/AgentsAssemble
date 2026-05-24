@@ -26,6 +26,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("shared_memory/action-items.md", doc)
         self.assertIn("shared_memory/index.json", doc)
         self.assertIn("compact shared memory into resident prompts", doc)
+        self.assertIn("source event, cursor metadata, identity, and explicit shared meeting memory", doc)
         self.assertIn("frontend polish is deferred", doc)
         self.assertIn("Viewooa", doc)
         self.assertIn("Do not copy Viewooa files", doc)
