@@ -4,6 +4,7 @@ import unittest
 from urllib.parse import parse_qs, urlparse
 
 from agentsassemble.cli import build_parser
+from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 
 
 MCP_AVAILABLE = importlib.util.find_spec("mcp") is not None
@@ -44,6 +45,62 @@ class McpCliParserTests(unittest.TestCase):
     def test_mcp_rejects_unknown_profile(self):
         with self.assertRaises(SystemExit):
             build_parser().parse_args(["mcp", "serve", "--profile", "host"])
+
+
+class McpJoinBriefTests(unittest.TestCase):
+    def test_join_brief_includes_safe_participant_mcp_command(self):
+        payload = build_live_agent_join_brief(
+            server="http://127.0.0.1:8765",
+            agent_id="external-reviewer",
+            display_name="External Reviewer",
+            provider_kind="manual",
+            connection_kind="manual",
+            meeting_id="resident-m1",
+            engagement_mode="watch",
+            timeout=9,
+            poll_interval=0.5,
+            max_chain_depth=2,
+        )
+
+        self.assertEqual(payload["mcp"]["profile"], "participant")
+        self.assertEqual(payload["mcp"]["transport"], "stdio")
+        self.assertEqual(
+            payload["mcp"]["command"],
+            [
+                "python3",
+                "-m",
+                "agentsassemble.cli",
+                "mcp",
+                "serve",
+                "--profile",
+                "participant",
+                "--server",
+                "http://127.0.0.1:8765",
+                "--agent-id",
+                "external-reviewer",
+                "--display-name",
+                "External Reviewer",
+                "--provider-kind",
+                "manual",
+                "--connection-kind",
+                "manual",
+                "--meeting-id",
+                "resident-m1",
+                "--engagement-mode",
+                "watch",
+                "--timeout",
+                "9",
+                "--poll-interval",
+                "0.5",
+                "--max-chain-depth",
+                "2",
+            ],
+        )
+        serialized = json.dumps(payload["mcp"])
+        self.assertNotIn("endpoint", serialized)
+        self.assertNotIn("auth", serialized)
+        self.assertFalse(payload["mcp"]["safety"]["room_contacted"])
+        self.assertFalse(payload["mcp"]["safety"]["provider_executed"])
 
 
 @unittest.skipUnless(MCP_AVAILABLE, "mcp SDK is not installed")

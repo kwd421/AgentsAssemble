@@ -61,6 +61,27 @@ def build_live_agent_join_brief(
         "official_reply": _join_official_reply_template(server=normalized_server, agent_id=normalized_agent_id),
         "heartbeat": _join_heartbeat_template(server=normalized_server, agent_id=normalized_agent_id),
     }
+    mcp = {
+        "profile": "participant",
+        "transport": "stdio",
+        "command": _join_mcp_command(
+            server=normalized_server,
+            agent=agent,
+            timeout=normalized_timeout,
+            poll_interval=normalized_poll_interval,
+            max_chain_depth=normalized_max_chain_depth,
+        ),
+        "instructions": [
+            "Connect this command as a stdio MCP server in the receiving agent.",
+            "Call register once, then wait_next, say or official_reply, heartbeat, and leave through MCP tools.",
+            "MCP startup does not contact the room or start provider execution.",
+        ],
+        "safety": {
+            "room_contacted": False,
+            "provider_executed": False,
+            "contains_secrets": False,
+        },
+    }
     execution_contract = _execution_contract(
         provider_kind=normalized_provider_kind,
         connection_kind=normalized_connection_kind,
@@ -71,6 +92,7 @@ def build_live_agent_join_brief(
         "execution_contract": execution_contract,
         "commands": commands,
         "templates": templates,
+        "mcp": mcp,
         "env": {
             "AGENTSASSEMBLE_SERVER": normalized_server,
             "AGENTSASSEMBLE_AGENT_ID": normalized_agent_id,
@@ -241,6 +263,48 @@ def _join_heartbeat_template(*, server: str, agent_id: str) -> list[str]:
         "--last-observed-live-event-id={last_observed_live_event_id}",
         "--json",
     )
+
+
+def _join_mcp_command(
+    *,
+    server: str,
+    agent: dict[str, object],
+    timeout: str,
+    poll_interval: str,
+    max_chain_depth: str,
+) -> list[str]:
+    command = _module_cli_command(
+        "mcp",
+        "serve",
+        "--profile",
+        "participant",
+        "--server",
+        server,
+        "--agent-id",
+        str(agent["agent_id"]),
+        "--display-name",
+        str(agent["display_name"]),
+        "--provider-kind",
+        str(agent["provider_kind"]),
+        "--connection-kind",
+        str(agent["connection_kind"]),
+    )
+    meeting_id = str(agent.get("meeting_id") or "")
+    if meeting_id:
+        command.extend(["--meeting-id", meeting_id])
+    command.extend(
+        [
+            "--engagement-mode",
+            str(agent["engagement_mode"]),
+            "--timeout",
+            timeout,
+            "--poll-interval",
+            poll_interval,
+            "--max-chain-depth",
+            max_chain_depth,
+        ]
+    )
+    return command
 
 
 def _module_cli_command(*args: str) -> list[str]:
