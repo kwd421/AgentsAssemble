@@ -1,5 +1,7 @@
 import { bindingSummary, displayQuestion, escapeHtml, fetchJson, focusLabels, lensLabels, roleMeta, roundLabel, setSideChatEvents, state } from "./shared.js";
 
+let liveTranscriptPinnedToLatest = true;
+
 export function renderLive(payload, options = {}) {
   const roles = payload.meeting.roles || [];
   const rounds = payload.meeting.debate_rounds || [];
@@ -8,7 +10,9 @@ export function renderLive(payload, options = {}) {
   const live = document.querySelector("#live");
   const sideChatFocused = document.activeElement?.id === "side-chat-message";
   const sideChatDraft = live?.querySelector("#side-chat-message")?.value || "";
-  const shouldFollowLatest = options.followLatest || isLiveTranscriptNearBottom(live);
+  const previousTranscript = live?.querySelector(".live-transcript");
+  const previousTranscriptScrollTop = previousTranscript?.scrollTop || 0;
+  const shouldFollowLatest = shouldFollowLiveLatest(live, previousTranscript, options);
   const messages = rounds.flatMap((round) =>
     (round.messages || []).map((message) => ({ ...message, roundTitle: roundLabel(payload.meeting, round.id, round.title) }))
   );
@@ -84,6 +88,39 @@ export function renderLive(payload, options = {}) {
   }
   if (!sideChatFocused) scrollSideChatToLatest(live);
   if (shouldFollowLatest) scrollLiveTranscriptToLatest(live);
+  else restoreLiveTranscriptScroll(live, previousTranscriptScrollTop);
+  updateLatestJump(live);
+}
+
+export function refreshLiveTranscript(payload, options = {}) {
+  const live = document.querySelector("#live");
+  const feed = live?.querySelector(".live-transcript");
+  if (!live || !feed) {
+    renderLive(payload, options);
+    return;
+  }
+  const previousScrollTop = feed.scrollTop;
+  const shouldFollowLatest = shouldFollowLiveLatest(live, feed, options);
+  const messages = liveMessagesForPayload(payload);
+  const existing = new Map(
+    Array.from(feed.querySelectorAll("[data-live-item-id]")).map((element) => [element.dataset.liveItemId, element])
+  );
+  const messageIds = new Set();
+  for (const message of messages) {
+    const messageId = liveItemId(message);
+    if (!messageId) {
+      renderLive(payload, options);
+      return;
+    }
+    messageIds.add(messageId);
+    if (existing.has(messageId)) continue;
+    feed.insertAdjacentHTML("beforeend", renderLiveItem(message));
+  }
+  for (const [messageId, element] of existing.entries()) {
+    if (!messageIds.has(messageId)) element.remove();
+  }
+  if (shouldFollowLatest) scrollLiveTranscriptToLatest(live);
+  else restoreLiveTranscriptScroll(live, previousScrollTop);
   updateLatestJump(live);
 }
 
@@ -202,7 +239,7 @@ function isSideChatFeedNearBottom(root) {
 function scrollSideChatToLatest(root) {
   const feed = root?.querySelector(".side-chat-feed");
   if (!feed) return;
-  requestAnimationFrame(() => {
+  applyScrollPosition(() => {
     feed.scrollTop = feed.scrollHeight;
   });
 }
@@ -210,7 +247,7 @@ function scrollSideChatToLatest(root) {
 function restoreSideChatScroll(root, scrollTop) {
   const feed = root?.querySelector(".side-chat-feed");
   if (!feed) return;
-  requestAnimationFrame(() => {
+  applyScrollPosition(() => {
     feed.scrollTop = scrollTop;
   });
 }
@@ -242,7 +279,7 @@ function renderRoomChatEvent(event) {
   const meta = roleMeta[event.role_id] || { color: "purple", badge: "자유채팅", avatar: "/static/avatar-moderator.svg" };
   const displayName = displayNameLabel(event);
   return `
-    <article class="message message-${escapeHtml(meta.color)} message-room-chat">
+    <article class="message message-${escapeHtml(meta.color)} message-room-chat" data-live-item-id="${escapeHtml(liveItemId(event))}">
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
       <div class="message-body">
         <div class="message-header">
@@ -282,7 +319,7 @@ function renderLiveEvent(event) {
   const displayName = displayNameLabel(event);
   const route = event.round ? `${roundKindLabel(event.round)} · ${eventKindLabel(event.kind)}` : eventKindLabel(event.kind);
   return `
-    <article class="message message-${escapeHtml(meta.color)} live-event-bubble">
+    <article class="message message-${escapeHtml(meta.color)} live-event-bubble" data-live-item-id="${escapeHtml(liveItemId(event))}">
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
       <div class="message-body">
         <div class="message-header">
@@ -304,7 +341,7 @@ function renderSystemLine(event) {
   const content = userVisibleSummary(event.content || "");
   const showName = name !== "시스템" && !content.includes(name);
   return `
-    <div class="system-line" role="status">
+    <div class="system-line" role="status" data-live-item-id="${escapeHtml(liveItemId(event))}">
       <span>${escapeHtml(eventKindLabel(event.kind))}</span>
       ${showName ? `<strong>${escapeHtml(name)}</strong>` : ""}
       <p>${escapeHtml(content)}</p>
@@ -316,7 +353,7 @@ function renderResearchEvent(event) {
   const meta = roleMeta[event.role_id] || { color: "cyan", badge: "리서치", avatar: "/static/avatar-moderator.svg" };
   const displayName = displayNameLabel(event);
   return `
-    <details class="research-card research-${escapeHtml(meta.color)}">
+    <details class="research-card research-${escapeHtml(meta.color)}" data-live-item-id="${escapeHtml(liveItemId(event))}">
       <summary>
         <img class="profile profile-tiny" src="${escapeHtml(meta.avatar)}" alt="" />
         <span><strong>${escapeHtml(displayName)}</strong><em>리서치 요약 · ${escapeHtml(confidenceLabel(event.confidence))}${renderRetryBadge(event)}</em></span>
@@ -343,10 +380,28 @@ function isLiveTranscriptNearBottom(live) {
 function scrollLiveTranscriptToLatest(live) {
   const feed = live?.querySelector(".live-transcript");
   if (!feed) return;
-  requestAnimationFrame(() => {
+  liveTranscriptPinnedToLatest = true;
+  applyScrollPosition(() => {
     feed.scrollTop = feed.scrollHeight;
     updateLatestJump(live);
   });
+}
+
+function restoreLiveTranscriptScroll(live, scrollTop) {
+  const feed = live?.querySelector(".live-transcript");
+  if (!feed) return;
+  liveTranscriptPinnedToLatest = false;
+  applyScrollPosition(() => {
+    feed.scrollTop = scrollTop;
+    updateLatestJump(live);
+  });
+}
+
+function applyScrollPosition(write) {
+  write();
+  requestAnimationFrame(write);
+  setTimeout(write, 0);
+  setTimeout(write, 120);
 }
 
 function bindLatestJump(live) {
@@ -354,13 +409,27 @@ function bindLatestJump(live) {
   const button = live?.querySelector(".latest-jump");
   if (!feed || !button) return;
   button.addEventListener("click", () => scrollLiveTranscriptToLatest(live));
-  feed.addEventListener("scroll", () => updateLatestJump(live), { passive: true });
+  feed.addEventListener(
+    "scroll",
+    () => {
+      liveTranscriptPinnedToLatest = isLiveTranscriptNearBottom(live);
+      updateLatestJump(live);
+    },
+    { passive: true }
+  );
 }
 
 function updateLatestJump(live) {
   const button = live?.querySelector(".latest-jump");
   if (!button) return;
   button.hidden = isLiveTranscriptNearBottom(live);
+}
+
+function shouldFollowLiveLatest(live, previousFeed, options = {}) {
+  if (!previousFeed) return true;
+  if (options.followLatest === true) return true;
+  if (options.followLatest === false) return liveTranscriptPinnedToLatest;
+  return liveTranscriptPinnedToLatest || isLiveTranscriptNearBottom(live);
 }
 
 function renderLiveTimeline(payload, messages) {
@@ -525,7 +594,7 @@ function renderMessage(message) {
   const stance = stanceLabel(message.stance_status);
   const position = messagePosition(message, state.payload?.meeting);
   return `
-    <article class="message message-${meta.color}">
+    <article class="message message-${meta.color}" data-live-item-id="${escapeHtml(liveItemId(message))}">
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
       <div class="message-body">
       <div class="message-header">
@@ -606,6 +675,29 @@ function shouldRenderModeratorMessage(meeting, synthesis) {
   if (meeting?.meeting_mode === "free_chat") return false;
   if (synthesis?.status === "moderator_disabled" || synthesis?.status === "not_applicable") return false;
   return Boolean(synthesis?.summary);
+}
+
+function liveMessagesForPayload(payload) {
+  const rounds = payload.meeting.debate_rounds || [];
+  const isFreeChat = payload.meeting.meeting_mode === "free_chat";
+  const isGame = payload.meeting.meeting_mode === "game";
+  const messages = rounds.flatMap((round) =>
+    (round.messages || []).map((message) => ({ ...message, roundTitle: roundLabel(payload.meeting, round.id, round.title) }))
+  );
+  const liveEvents = payload.live_events || [];
+  const officialLiveEvents = liveEvents.filter(isOfficialLiveItem);
+  const gameLiveEvents = liveEvents.filter((event) => event.kind !== "room_chat");
+  const roomChatEvents = liveEvents.filter((event) => event.kind === "room_chat");
+  return isFreeChat ? roomChatEvents : isGame && liveEvents.length ? gameLiveEvents : liveEvents.length ? officialLiveEvents : messages;
+}
+
+function liveItemId(item) {
+  return String(
+    item.id ||
+      item.event_id ||
+      item.turn_id ||
+      [item.role_id, item.round, item.roundTitle, item.created_at, item.content].filter(Boolean).join(":")
+  ).trim();
 }
 
 function outcomeEmptyText(meeting) {

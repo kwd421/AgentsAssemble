@@ -13,10 +13,13 @@ import {
 } from "./shared.js";
 
 const lobbySides = new Set(["mine", "my-agent", "other", "other-agent"]);
+let lobbyFeedHasPainted = false;
+let lobbyFeedPinnedToLatest = true;
 
 export function renderLobby(options = {}) {
   const lobby = document.querySelector("#lobby");
   if (!lobby) return;
+  const previousWindowScroll = readWindowScroll();
   const focusedId = document.activeElement?.id;
   const focusedSelection = readFocusedSelection(document.activeElement);
   const draftMessage = lobby.querySelector("#lobby-message")?.value || "";
@@ -25,7 +28,7 @@ export function renderLobby(options = {}) {
   const previousFeed = lobby.querySelector(".lobby-feed");
   const previousScrollTop = previousFeed?.scrollTop || 0;
   const roster = buildLobbyRoster(state.lobbyEvents);
-  const shouldFollowLatest = options.followLatest ?? isLobbyFeedNearBottom(lobby);
+  const shouldFollowLatest = shouldFollowLobbyLatest(lobby, previousFeed, options);
   lobby.innerHTML = `
     <section class="lobby-layout">
       <div class="room-strip">
@@ -86,6 +89,7 @@ export function renderLobby(options = {}) {
   askRemoteButton?.addEventListener("click", async () => {
     await sendLobbyEvent("message", { askRemote: true });
   });
+  bindLobbyFeedScroll(lobby);
   const myNameInput = lobby.querySelector("#lobby-my-name");
   myNameInput?.addEventListener("input", () => {
     localStorage.setItem("agentsassemble.name", myNameInput.value.trim());
@@ -220,26 +224,66 @@ export function renderLobby(options = {}) {
     await sendCodexSessionInvite(event.currentTarget);
   });
   if (!state.codexSessionsLoaded && !state.codexSessionsLoading) {
-    loadCodexSessions();
+    loadCodexSessions({ background: true });
   }
   if (!state.liveAgentsLoaded && !state.liveAgentsLoading) {
-    loadLiveAgents();
+    loadLiveAgents({ background: true });
   }
   if (!state.liveAgentHealthLoaded && !state.liveAgentHealthLoading) {
-    loadLiveAgentHealth();
+    loadLiveAgentHealth({ background: true });
   }
   if (!state.liveAgentProcessesLoaded && !state.liveAgentProcessesLoading) {
-    loadLiveAgentProcesses();
+    loadLiveAgentProcesses({ background: true });
   }
   if (!state.liveAgentProcessEventsLoaded && !state.liveAgentProcessEventsLoading) {
-    loadLiveAgentProcessEvents();
+    loadLiveAgentProcessEvents({ background: true });
   }
   if (!state.liveAgentOperationsLoaded && !state.liveAgentOperationsLoading) {
-    loadLiveAgentOperations();
+    loadLiveAgentOperations({ background: true });
   }
   if (!state.liveAgentSessionRunsLoaded && !state.liveAgentSessionRunsLoading) {
-    loadLiveAgentSessionRuns();
+    loadLiveAgentSessionRuns({ background: true });
   }
+  if (shouldFollowLatest) scrollLobbyFeedToLatest(lobby);
+  else restoreLobbyFeedScroll(lobby, previousScrollTop);
+  restoreWindowScroll(previousWindowScroll);
+  lobbyFeedHasPainted = true;
+}
+
+export function refreshLobbyFeed(options = {}) {
+  const lobby = document.querySelector("#lobby");
+  const feed = lobby?.querySelector(".lobby-feed");
+  if (!lobby || !feed) {
+    renderLobby(options);
+    return;
+  }
+  const previousScrollTop = feed.scrollTop;
+  const shouldFollowLatest = shouldFollowLobbyLatest(lobby, feed, options);
+  const events = state.lobbyEvents || [];
+  const existing = new Map(
+    Array.from(feed.querySelectorAll("[data-lobby-event-id]")).map((element) => [element.dataset.lobbyEventId, element])
+  );
+  const eventIds = new Set();
+  if (!events.length) {
+    feed.innerHTML = '<p class="lobby-empty">아직 로비 메시지가 없습니다.</p>';
+  } else {
+    feed.querySelector(".lobby-empty")?.remove();
+    for (const event of events) {
+      const eventId = String(event.id || "").trim();
+      if (!eventId) {
+        renderLobby(options);
+        return;
+      }
+      eventIds.add(eventId);
+      if (existing.has(eventId)) continue;
+      feed.insertAdjacentHTML("beforeend", renderLobbyEvent(event));
+    }
+    for (const [eventId, element] of existing.entries()) {
+      if (!eventIds.has(eventId)) element.remove();
+    }
+  }
+  const count = lobby.querySelector(".lobby-feed-head em");
+  if (count) count.textContent = `${events.length} events`;
   if (shouldFollowLatest) scrollLobbyFeedToLatest(lobby);
   else restoreLobbyFeedScroll(lobby, previousScrollTop);
 }
@@ -396,10 +440,30 @@ function isLobbyFeedNearBottom(lobby) {
   return distanceFromBottom < 48;
 }
 
+function shouldFollowLobbyLatest(lobby, previousFeed, options = {}) {
+  if (!lobbyFeedHasPainted || !previousFeed) return true;
+  if (options.followLatest === true) return true;
+  if (options.followLatest === false) return lobbyFeedPinnedToLatest;
+  return lobbyFeedPinnedToLatest || isLobbyFeedNearBottom(lobby);
+}
+
+function bindLobbyFeedScroll(lobby) {
+  const feed = lobby.querySelector(".lobby-feed");
+  if (!feed) return;
+  feed.addEventListener(
+    "scroll",
+    () => {
+      lobbyFeedPinnedToLatest = isLobbyFeedNearBottom(lobby);
+    },
+    { passive: true }
+  );
+}
+
 function scrollLobbyFeedToLatest(lobby) {
   const feed = lobby.querySelector(".lobby-feed");
   if (!feed) return;
-  requestAnimationFrame(() => {
+  lobbyFeedPinnedToLatest = true;
+  applyScrollPosition(() => {
     feed.scrollTop = feed.scrollHeight;
   });
 }
@@ -407,8 +471,28 @@ function scrollLobbyFeedToLatest(lobby) {
 function restoreLobbyFeedScroll(lobby, scrollTop) {
   const feed = lobby.querySelector(".lobby-feed");
   if (!feed) return;
-  requestAnimationFrame(() => {
+  lobbyFeedPinnedToLatest = false;
+  applyScrollPosition(() => {
     feed.scrollTop = scrollTop;
+  });
+}
+
+function applyScrollPosition(write) {
+  write();
+  requestAnimationFrame(write);
+  setTimeout(write, 0);
+  setTimeout(write, 120);
+}
+
+function readWindowScroll() {
+  return { x: window.scrollX || 0, y: window.scrollY || 0 };
+}
+
+function restoreWindowScroll(position) {
+  if (!position) return;
+  window.scrollTo(position.x, position.y);
+  requestAnimationFrame(() => {
+    window.scrollTo(position.x, position.y);
   });
 }
 
@@ -457,7 +541,7 @@ function renderLobbyEvent(event) {
   const sideLabel = lobbySideLabel(side);
   const showSideLabel = name !== sideLabel;
   return `
-    <article class="lobby-event lobby-${escapeHtml(event.kind || "message")} lobby-${side}">
+    <article class="lobby-event lobby-${escapeHtml(event.kind || "message")} lobby-${side}" data-lobby-event-id="${escapeHtml(event.id || "")}">
       <div class="lobby-avatar">${escapeHtml(initials(name))}</div>
       <div class="lobby-bubble">
         <div class="lobby-meta">
@@ -1916,7 +2000,7 @@ async function sendLobbyEvent(kind, options = {}) {
     throw error;
   }
   setLobbyEvents(payload.events || []);
-  renderLobby({ followLatest: shouldFollowLatest });
+  refreshLobbyFeed({ followLatest: shouldFollowLatest });
   document.querySelector("#lobby-message")?.focus();
   if (options.askRemote && message) {
     await sendLobbyRemote(message, name, { followLatest: shouldFollowLatest });
@@ -1934,7 +2018,7 @@ async function sendLobbyRemote(message, speakerName, options = {}) {
     }),
   });
   setLobbyEvents(payload.events || []);
-  renderLobby({ followLatest: options.followLatest ?? isLobbyFeedNearBottom(document.querySelector("#lobby")) });
+  refreshLobbyFeed({ followLatest: options.followLatest ?? isLobbyFeedNearBottom(document.querySelector("#lobby")) });
   document.querySelector("#lobby-message")?.focus();
 }
 
@@ -3441,24 +3525,30 @@ async function runLiveAgentProbe(agentId) {
 
 async function loadCodexSessions(options = {}) {
   if (state.codexSessionsLoading && !options.force) return;
+  const previousSignature = JSON.stringify(state.codexSessions || []);
+  let shouldRender = !options.background;
   state.codexSessionsLoading = true;
   if (options.force) state.codexInviteStatus = { message: "Codex 세션 목록 갱신 중", tone: "info" };
-  renderLobby({ followLatest: false });
+  if (!options.background) renderLobby({ followLatest: false });
   try {
     const payload = await fetchJson("/api/codex-sessions?limit=20");
     state.codexSessions = payload.sessions || [];
     state.codexSessionsLoaded = true;
+    shouldRender = shouldRender || JSON.stringify(state.codexSessions) !== previousSignature;
     if (!state.codexSessions.length) {
       state.codexInviteStatus = { message: "최근 Codex 세션 없음", tone: "info" };
+      shouldRender = true;
     } else if (state.codexInviteStatus?.message === "Codex 세션 목록 갱신 중") {
       state.codexInviteStatus = null;
+      shouldRender = true;
     }
   } catch {
     state.codexInviteStatus = { message: "Codex 세션 목록을 불러오지 못했습니다.", tone: "error" };
     state.codexSessionsLoaded = true;
+    shouldRender = true;
   } finally {
     state.codexSessionsLoading = false;
-    renderLobby({ followLatest: false });
+    if (shouldRender) renderLobby({ followLatest: false });
   }
 }
 

@@ -1,6 +1,6 @@
 import { renderArchive } from "./archive.js";
-import { refreshLiveAgentRuntimeSurfaces, renderLobby } from "./lobby.js";
-import { refreshSideChatFeed, renderBoard, renderLive } from "./meeting-views.js";
+import { refreshLiveAgentRuntimeSurfaces, refreshLobbyFeed, renderLobby } from "./lobby.js";
+import { refreshLiveTranscript, refreshSideChatFeed, renderBoard, renderLive } from "./meeting-views.js";
 import {
   displayTopic,
   fetchJson,
@@ -98,7 +98,7 @@ async function loadLobby(options = {}) {
   const signature = lobbyEventsSignature(events);
   if (options.onlyIfChanged && signature === state.lobbySignature) return;
   setLobbyEvents(events);
-  renderLobby();
+  refreshLobbyFeed();
 }
 
 async function loadLobbySafely() {
@@ -224,7 +224,7 @@ function applyLobbyStreamPayload(payload) {
   showAppStatus("", "info");
   if (!events.length) return;
   setLobbyEvents(mergeEventsById(state.lobbyEvents, events));
-  renderLobby();
+  refreshLobbyFeed();
 }
 
 function applySideChatStreamPayload(payload) {
@@ -247,7 +247,7 @@ function applyMeetingStreamPayload(payload) {
   if (!events.length) return;
   state.payload.live_events = mergeEventsById(state.payload.live_events || [], events);
   state.payloadSignature = payloadSignature(state.payload);
-  renderLive(state.payload, { followLatest: false });
+  refreshLiveTranscript(state.payload);
 }
 
 function applyFullMeetingPayloadFromStream(payload) {

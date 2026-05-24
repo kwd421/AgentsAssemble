@@ -167,7 +167,6 @@
   min-height: clamp(220px, 28vh, 340px);
   overflow: auto;
   padding: 2px clamp(10px, calc(12px * var(--ui-scale)), 14px) 2px 2px;
-  scroll-behavior: smooth;
 }
 
 .side-chat-event {
