@@ -187,6 +187,13 @@ Resident `terminal_session` is the first local PTY-backed slice for Claude-like 
 
 Resident `self_service` is the first local process-supervision slice that stops AgentsAssemble from injecting each room prompt into the provider process. The supervisor registers the live agent, starts the configured command with `stdin` closed, exports `AGENTSASSEMBLE_*` environment variables plus shell-escaped room command templates such as `AGENTSASSEMBLE_WAIT_NEXT_COMMAND`, `AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE`, `AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE`, `AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE`, and `AGENTSASSEMBLE_LEAVE_COMMAND`, and lets the child call `wait-next`, `say`, `official-reply`, `heartbeat`, and intentional `leave` itself after splitting those templates into argv and replacing placeholders. Use it for Antigravity CLI or custom wrappers that can own their own room loop. `scripts/my_self_service_agent.py` is the runnable local example for that wrapper shape.
 
+Play Mode `flow` is a room policy over already-running, host-approved resident
+agents. It temporarily changes their engagement mode and appends scoped lobby
+events, but it is not a provider adapter and does not launch, resume, approve,
+or recover provider CLIs. Flow decisions are provider-owned replies to the room
+snapshot, while AgentsAssemble records only the visible lobby message and safe
+metadata needed for cursors, cooldown, chain-depth, and audit.
+
 Local stdio MCP is an adapter over the same room contract, not a replacement
 control plane. `assemble mcp serve --profile participant` exposes
 agent-owned tools for register, heartbeat, wait_next, read_since, say,

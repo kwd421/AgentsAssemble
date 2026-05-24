@@ -50,9 +50,27 @@ class LobbyEvent:
     audience: str = "room"
     official_record: bool = False
     actor_id: str = ""
+    target_agent_id: str = ""
     source_event_id: str = ""
     auto_chain_depth: int = 0
     live_agent_endpoint: bool = False
+    flow_id: str = ""
+    flow_meeting_id: str = ""
+    flow_event_type: str = ""
+    flow_status: str = ""
+    flow_topic: str = ""
+    flow_action: str = ""
+    flow_reason: str = ""
+    flow_duration_seconds: int = 0
+    flow_tick_interval: int = 0
+    flow_cooldown: int = 0
+    flow_max_agent_turns: int = 0
+    flow_max_total_turns: int = 0
+    flow_max_silence_seconds: int = 0
+    flow_total_turns: int = 0
+    flow_agent_count: int = 0
+    flow_started_at: str = ""
+    flow_deadline_at: str = ""
 
     @classmethod
     def from_payload(cls, payload: dict[str, object], channel: Literal["lobby", "side_chat"] = "lobby") -> LobbyEvent:
@@ -71,8 +89,26 @@ class LobbyEvent:
             message=message,
             channel=channel,
             actor_id=clean_lobby_text(payload.get("actor_id", ""), limit=64),
+            target_agent_id=clean_lobby_text(payload.get("target_agent_id", ""), limit=64),
             source_event_id=clean_lobby_text(payload.get("source_event_id", ""), limit=128),
             auto_chain_depth=normalize_chain_depth(payload.get("auto_chain_depth")),
+            flow_id=clean_lobby_text(payload.get("flow_id", ""), limit=128),
+            flow_meeting_id=clean_lobby_text(payload.get("flow_meeting_id", ""), limit=128),
+            flow_event_type=clean_lobby_text(payload.get("flow_event_type", ""), limit=64),
+            flow_status=clean_lobby_text(payload.get("flow_status", ""), limit=64),
+            flow_topic=clean_lobby_text(payload.get("flow_topic", ""), limit=240),
+            flow_action=clean_lobby_text(payload.get("flow_action", ""), limit=64),
+            flow_reason=clean_lobby_text(payload.get("flow_reason", ""), limit=400),
+            flow_duration_seconds=normalize_flow_int(payload.get("flow_duration_seconds")),
+            flow_tick_interval=normalize_flow_int(payload.get("flow_tick_interval")),
+            flow_cooldown=normalize_flow_int(payload.get("flow_cooldown")),
+            flow_max_agent_turns=normalize_flow_int(payload.get("flow_max_agent_turns")),
+            flow_max_total_turns=normalize_flow_int(payload.get("flow_max_total_turns")),
+            flow_max_silence_seconds=normalize_flow_int(payload.get("flow_max_silence_seconds")),
+            flow_total_turns=normalize_flow_int(payload.get("flow_total_turns")),
+            flow_agent_count=normalize_flow_int(payload.get("flow_agent_count")),
+            flow_started_at=clean_lobby_text(payload.get("flow_started_at", ""), limit=64),
+            flow_deadline_at=clean_lobby_text(payload.get("flow_deadline_at", ""), limit=64),
         )
 
     @classmethod
@@ -94,13 +130,31 @@ class LobbyEvent:
             audience=clean_lobby_text(payload.get("audience", "room"), limit=32) or "room",
             official_record=False,
             actor_id=clean_lobby_text(payload.get("actor_id", ""), limit=64),
+            target_agent_id=clean_lobby_text(payload.get("target_agent_id", ""), limit=64),
             source_event_id=clean_lobby_text(payload.get("source_event_id", ""), limit=128),
             auto_chain_depth=normalize_chain_depth(payload.get("auto_chain_depth")),
             live_agent_endpoint=payload.get("live_agent_endpoint") is True,
+            flow_id=clean_lobby_text(payload.get("flow_id", ""), limit=128),
+            flow_meeting_id=clean_lobby_text(payload.get("flow_meeting_id", ""), limit=128),
+            flow_event_type=clean_lobby_text(payload.get("flow_event_type", ""), limit=64),
+            flow_status=clean_lobby_text(payload.get("flow_status", ""), limit=64),
+            flow_topic=clean_lobby_text(payload.get("flow_topic", ""), limit=240),
+            flow_action=clean_lobby_text(payload.get("flow_action", ""), limit=64),
+            flow_reason=clean_lobby_text(payload.get("flow_reason", ""), limit=400),
+            flow_duration_seconds=normalize_flow_int(payload.get("flow_duration_seconds")),
+            flow_tick_interval=normalize_flow_int(payload.get("flow_tick_interval")),
+            flow_cooldown=normalize_flow_int(payload.get("flow_cooldown")),
+            flow_max_agent_turns=normalize_flow_int(payload.get("flow_max_agent_turns")),
+            flow_max_total_turns=normalize_flow_int(payload.get("flow_max_total_turns")),
+            flow_max_silence_seconds=normalize_flow_int(payload.get("flow_max_silence_seconds")),
+            flow_total_turns=normalize_flow_int(payload.get("flow_total_turns")),
+            flow_agent_count=normalize_flow_int(payload.get("flow_agent_count")),
+            flow_started_at=clean_lobby_text(payload.get("flow_started_at", ""), limit=64),
+            flow_deadline_at=clean_lobby_text(payload.get("flow_deadline_at", ""), limit=64),
         )
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "id": self.id,
             "created_at": self.created_at,
             "name": self.name,
@@ -111,10 +165,39 @@ class LobbyEvent:
             "audience": self.audience,
             "official_record": self.official_record,
             "actor_id": self.actor_id,
+            "target_agent_id": self.target_agent_id,
             "source_event_id": self.source_event_id,
             "auto_chain_depth": self.auto_chain_depth,
             "live_agent_endpoint": self.live_agent_endpoint,
         }
+        for key in (
+            "flow_id",
+            "flow_meeting_id",
+            "flow_event_type",
+            "flow_status",
+            "flow_topic",
+            "flow_action",
+            "flow_reason",
+            "flow_started_at",
+            "flow_deadline_at",
+        ):
+            value = getattr(self, key)
+            if value:
+                payload[key] = value
+        for key in (
+            "flow_duration_seconds",
+            "flow_tick_interval",
+            "flow_cooldown",
+            "flow_max_agent_turns",
+            "flow_max_total_turns",
+            "flow_max_silence_seconds",
+            "flow_total_turns",
+            "flow_agent_count",
+        ):
+            value = getattr(self, key)
+            if value:
+                payload[key] = value
+        return payload
 
 
 @dataclass(frozen=True)
@@ -168,9 +251,40 @@ def read_side_chat_events_after(path: Path, last_event_id: str | None, limit: in
     return _events_after_id(read_side_chat_events(path, limit=limit), last_event_id)
 
 
-def append_lobby_event_to_file(path: Path, payload: dict[str, object], *, live_agent_endpoint: bool = False) -> dict[str, object]:
+FLOW_METADATA_KEYS: set[str] = {
+    "flow_id",
+    "flow_meeting_id",
+    "flow_event_type",
+    "flow_status",
+    "flow_topic",
+    "flow_action",
+    "flow_reason",
+    "flow_duration_seconds",
+    "flow_tick_interval",
+    "flow_cooldown",
+    "flow_max_agent_turns",
+    "flow_max_total_turns",
+    "flow_max_silence_seconds",
+    "flow_total_turns",
+    "flow_agent_count",
+    "flow_started_at",
+    "flow_deadline_at",
+}
+
+
+def append_lobby_event_to_file(
+    path: Path,
+    payload: dict[str, object],
+    *,
+    live_agent_endpoint: bool = False,
+    allow_flow_metadata: bool = False,
+) -> dict[str, object]:
     path.parent.mkdir(parents=True, exist_ok=True)
-    event = LobbyEvent.from_payload(payload)
+    event_payload_input = dict(payload)
+    if not allow_flow_metadata:
+        for key in FLOW_METADATA_KEYS:
+            event_payload_input.pop(key, None)
+    event = LobbyEvent.from_payload(event_payload_input)
     event_payload = event.to_dict()
     event_payload["live_agent_endpoint"] = live_agent_endpoint
     with path.open("a", encoding="utf-8") as file:
@@ -338,6 +452,20 @@ def normalize_lobby_channel(value: object, default: Literal["lobby", "side_chat"
 def normalize_chain_depth(value: object) -> int:
     if isinstance(value, int) and not isinstance(value, bool):
         return max(0, value)
+    if isinstance(value, float) and value.is_integer():
+        return max(0, int(value))
+    if isinstance(value, str) and value.strip().isdigit():
+        return max(0, int(value.strip()))
+    return 0
+
+
+def normalize_flow_int(value: object) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return max(0, value)
+    if isinstance(value, float) and value.is_integer():
+        return max(0, int(value))
+    if isinstance(value, str) and value.strip().isdigit():
+        return max(0, int(value.strip()))
     return 0
 
 

@@ -116,6 +116,11 @@ Engagement mode means when a participant should react to room messages.
 - `human_only`: reacts to human messages but ignores agent chatter by default.
 - `always`: reacts to all visible room messages and must be treated as loop-prone.
 - `watch`: observes without speaking.
+- `flow`: temporary Play Mode mode for host-approved meeting residents during a
+  timeboxed free-conversation loop. It is lobby-only and unofficial; the runner
+  may choose to speak, wait, ask, challenge, clarify, summarize, or call for a
+  human, but those actions are stored as safe metadata on lobby events rather
+  than official transcript turns.
 
 Default council policy should be `mentioned` for free chat and `moderator_called` for official turns.
 

@@ -1227,3 +1227,31 @@
   border-color: rgba(255, 123, 123, 0.36);
   color: #ffc3c3;
 }
+
+.live-agent-flow-panel {
+  align-items: center;
+  background: rgba(69, 217, 245, 0.08);
+  border: 1px solid rgba(69, 217, 245, 0.2);
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  grid-column: 1 / -1;
+  grid-template-columns: auto auto minmax(180px, 1fr) 88px auto auto;
+  padding: 8px;
+}
+
+.live-agent-flow-panel strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.live-agent-flow-panel span {
+  color: #bdf2b4;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.live-agent-flow-panel input,
+.live-agent-flow-panel button {
+  min-height: 30px;
+}

@@ -8,7 +8,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -36,6 +36,7 @@ from agentsassemble.live_agent_discovery import (
     validate_distinct_session_bundle_paths,
 )
 from agentsassemble.live_agent_context import live_agent_context_contract
+from agentsassemble.live_agent_flow import FlowOptions, flow_turn_count
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
@@ -123,6 +124,291 @@ REAL_SESSION_SMOKE_CONFIG_REQUIRED_MESSAGE = (
     "Real session smoke requires explicit live-agent, council, and agent config paths."
 )
 REAL_SESSION_SMOKE_PROBE_REDACTION = "[redacted real session smoke probe]"
+
+
+class LiveAgentFlowSupervisor:
+    def __init__(self, output_root: Path) -> None:
+        self.output_root = output_root
+        self._lock = threading.RLock()
+        self._runs: dict[str, dict[str, object]] = {}
+
+    def start(self, payload: dict[str, object]) -> dict[str, object]:
+        meeting_id = clean_lobby_text(payload.get("meeting_id"), limit=128)
+        if not meeting_id:
+            raise ValueError("Meeting id is required.")
+        meeting_dir = _safe_meeting_dir(self.output_root, meeting_id)
+        if not meeting_dir.exists():
+            raise _meeting_not_found_error(meeting_id)
+        meeting = _read_meeting_record(meeting_dir)
+        topic = (
+            clean_lobby_text(payload.get("topic"), limit=240)
+            or clean_lobby_text(meeting.get("display_topic") or meeting.get("topic") or meeting.get("question"), limit=240)
+            or "자유토론"
+        )
+        options = FlowOptions.from_payload(payload)
+        with self._lock:
+            existing = self._runs.get(meeting_id)
+            if existing and self._public_state(existing).get("status") == "running":
+                return self.status(meeting_id=meeting_id)
+            flow_id = f"flow-{uuid4().hex[:8]}"
+            now = datetime.now(UTC)
+            deadline = now + timedelta(seconds=options.duration_seconds)
+            previous_modes, agent_count = self._set_bound_agents_to_flow(meeting, meeting_id)
+            state: dict[str, object] = {
+                "flow_id": flow_id,
+                "meeting_id": meeting_id,
+                "topic": topic,
+                "status": "running",
+                "started_at": now.isoformat(),
+                "deadline_at": deadline.isoformat(),
+                "duration_seconds": options.duration_seconds,
+                "tick_interval": options.tick_interval,
+                "cooldown": options.cooldown,
+                "max_agent_turns": options.max_agent_turns,
+                "max_total_turns": options.max_total_turns,
+                "max_silence_seconds": options.max_silence_seconds,
+                "agent_count": agent_count,
+                "total_turns": 0,
+                "last_activity_at": now.isoformat(),
+            }
+            append_lobby_event(
+                self.output_root,
+                {
+                    "name": "Play Mode",
+                    "side": "other",
+                    "kind": "message",
+                    "message": f"시간제 자유토론 시작: {topic}",
+                    "actor_id": "flow",
+                    **self._flow_event_metadata(state, event_type="started"),
+                },
+                allow_flow_metadata=True,
+            )
+            stop_event = threading.Event()
+            run = {
+                "state": state,
+                "options": options,
+                "previous_modes": previous_modes,
+                "stop_event": stop_event,
+                "last_nudge_at": now,
+            }
+            thread = threading.Thread(
+                target=self._run_flow,
+                args=(meeting_id,),
+                daemon=True,
+                name=f"AgentsAssembleFlow-{meeting_id}",
+            )
+            run["thread"] = thread
+            self._runs[meeting_id] = run
+            thread.start()
+            return self.status(meeting_id=meeting_id)
+
+    def status(self, *, meeting_id: str = "") -> dict[str, object]:
+        with self._lock:
+            run = self._selected_run(meeting_id)
+            if run is None:
+                return {"flow": {"status": "idle"}}
+            self._refresh_counts_locked(run)
+            return {
+                "flow": self._public_state(run),
+                "agents": read_live_agents(self.output_root),
+                "events": read_lobby(self.output_root),
+            }
+
+    def stop(self, payload: dict[str, object]) -> dict[str, object]:
+        meeting_id = clean_lobby_text(payload.get("meeting_id"), limit=128)
+        with self._lock:
+            run = self._selected_run(meeting_id)
+            if run is None:
+                return {"flow": {"status": "idle"}}
+            stop_event = run.get("stop_event")
+            if isinstance(stop_event, threading.Event):
+                stop_event.set()
+        thread = run.get("thread")
+        if isinstance(thread, threading.Thread):
+            thread.join(timeout=2)
+        with self._lock:
+            if self._public_state(run).get("status") == "running":
+                self._finish_locked(run, "stopped")
+            return {
+                "flow": self._public_state(run),
+                "agents": read_live_agents(self.output_root),
+                "events": read_lobby(self.output_root),
+            }
+
+    def _run_flow(self, meeting_id: str) -> None:
+        while True:
+            with self._lock:
+                run = self._runs.get(meeting_id)
+                if run is None:
+                    return
+                state = run["state"] if isinstance(run.get("state"), dict) else {}
+                options = run["options"] if isinstance(run.get("options"), FlowOptions) else FlowOptions()
+                stop_event = run.get("stop_event")
+                if not isinstance(stop_event, threading.Event):
+                    return
+                if stop_event.is_set():
+                    self._finish_locked(run, "stopped")
+                    return
+                self._refresh_counts_locked(run)
+                if self._flow_time_expired(state) or self._flow_turn_budget_exhausted(state):
+                    self._finish_locked(run, "finished")
+                    return
+                self._maybe_append_silence_nudge_locked(run)
+            if stop_event.wait(max(0.01, options.tick_interval)):
+                continue
+
+    def _selected_run(self, meeting_id: str) -> dict[str, object] | None:
+        clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+        if clean_meeting_id:
+            return self._runs.get(clean_meeting_id)
+        if not self._runs:
+            return None
+        return next(reversed(self._runs.values()))
+
+    def _set_bound_agents_to_flow(self, meeting: dict[str, object], meeting_id: str) -> tuple[dict[str, str], int]:
+        previous_modes: dict[str, str] = {}
+        for agent in read_live_agents(self.output_root):
+            agent_id = clean_lobby_text(agent.get("agent_id"), limit=64)
+            if not agent_id:
+                continue
+            if clean_lobby_text(agent.get("meeting_id"), limit=128) != meeting_id:
+                continue
+            admission = _live_agent_admission_details_from_meeting(meeting, agent, agent_id=agent_id)
+            if admission.get("host_approved_binding") is not True:
+                continue
+            previous_modes[agent_id] = clean_lobby_text(agent.get("engagement_mode"), limit=64) or "mentioned"
+            update_live_agent_engagement(self.output_root, agent_id, "flow")
+        return previous_modes, len(previous_modes)
+
+    def _restore_previous_modes(self, run: dict[str, object]) -> None:
+        previous_modes = run.get("previous_modes")
+        if not isinstance(previous_modes, dict):
+            return
+        for agent_id, mode in previous_modes.items():
+            try:
+                update_live_agent_engagement(self.output_root, str(agent_id), str(mode))
+            except ValueError:
+                continue
+
+    def _refresh_counts_locked(self, run: dict[str, object]) -> None:
+        state = run["state"] if isinstance(run.get("state"), dict) else {}
+        flow_id = clean_lobby_text(state.get("flow_id"), limit=128)
+        if not flow_id:
+            return
+        events = read_lobby(self.output_root, limit=None)
+        total_turns = flow_turn_count(events, flow_id=flow_id)
+        state["total_turns"] = total_turns
+        last_activity = _latest_flow_activity_at(events, flow_id=flow_id) or clean_lobby_text(state.get("started_at"), limit=64)
+        if last_activity:
+            state["last_activity_at"] = last_activity
+
+    def _flow_time_expired(self, state: dict[str, object]) -> bool:
+        deadline = _parse_iso_datetime(state.get("deadline_at"))
+        return deadline is not None and datetime.now(UTC) >= deadline
+
+    def _flow_turn_budget_exhausted(self, state: dict[str, object]) -> bool:
+        max_total = int(state.get("max_total_turns") or 0)
+        total = int(state.get("total_turns") or 0)
+        return bool(max_total and total >= max_total)
+
+    def _maybe_append_silence_nudge_locked(self, run: dict[str, object]) -> None:
+        state = run["state"] if isinstance(run.get("state"), dict) else {}
+        max_silence = float(state.get("max_silence_seconds") or 0)
+        if max_silence <= 0:
+            return
+        last_activity = _parse_iso_datetime(state.get("last_activity_at"))
+        if last_activity is None:
+            return
+        now = datetime.now(UTC)
+        if (now - last_activity).total_seconds() < max_silence:
+            return
+        last_nudge_at = run.get("last_nudge_at")
+        if isinstance(last_nudge_at, datetime) and (now - last_nudge_at).total_seconds() < max_silence:
+            return
+        append_lobby_event(
+            self.output_root,
+            {
+                "name": "Play Mode",
+                "side": "other",
+                "kind": "message",
+                "message": "열린 쟁점을 하나 골라 다음 말을 이어가세요.",
+                "actor_id": "flow",
+                "auto_chain_depth": 1,
+                **self._flow_event_metadata(state, event_type="nudge"),
+            },
+            allow_flow_metadata=True,
+        )
+        run["last_nudge_at"] = now
+        state["last_activity_at"] = now.isoformat()
+
+    def _finish_locked(self, run: dict[str, object], status: str) -> None:
+        state = run["state"] if isinstance(run.get("state"), dict) else {}
+        if state.get("status") != "running":
+            return
+        self._refresh_counts_locked(run)
+        state["status"] = status
+        state["finished_at"] = datetime.now(UTC).isoformat()
+        append_lobby_event(
+            self.output_root,
+            {
+                "name": "Play Mode",
+                "side": "other",
+                "kind": "message",
+                "message": "시간제 자유토론 종료" if status == "finished" else "시간제 자유토론 중지",
+                "actor_id": "flow",
+                **self._flow_event_metadata(state, event_type=status),
+            },
+            allow_flow_metadata=True,
+        )
+        self._restore_previous_modes(run)
+
+    def _flow_event_metadata(self, state: dict[str, object], *, event_type: str) -> dict[str, object]:
+        return {
+            "flow_id": state.get("flow_id") or "",
+            "flow_meeting_id": state.get("meeting_id") or "",
+            "flow_event_type": event_type,
+            "flow_status": state.get("status") or "",
+            "flow_topic": state.get("topic") or "",
+            "flow_duration_seconds": int(float(state.get("duration_seconds") or 0)),
+            "flow_tick_interval": int(float(state.get("tick_interval") or 0)),
+            "flow_cooldown": int(float(state.get("cooldown") or 0)),
+            "flow_max_agent_turns": int(state.get("max_agent_turns") or 0),
+            "flow_max_total_turns": int(state.get("max_total_turns") or 0),
+            "flow_max_silence_seconds": int(float(state.get("max_silence_seconds") or 0)),
+            "flow_total_turns": int(state.get("total_turns") or 0),
+            "flow_agent_count": int(state.get("agent_count") or 0),
+            "flow_started_at": state.get("started_at") or "",
+            "flow_deadline_at": state.get("deadline_at") or "",
+        }
+
+    def _public_state(self, run: dict[str, object]) -> dict[str, object]:
+        state = dict(run["state"] if isinstance(run.get("state"), dict) else {})
+        deadline = _parse_iso_datetime(state.get("deadline_at"))
+        if deadline is not None and state.get("status") == "running":
+            state["remaining_seconds"] = max(0.0, (deadline - datetime.now(UTC)).total_seconds())
+        return state
+
+
+def _latest_flow_activity_at(events: list[dict[str, object]], *, flow_id: str) -> str:
+    for event in reversed(events):
+        if str(event.get("flow_id") or "") != flow_id:
+            continue
+        if str(event.get("flow_action") or "") or str(event.get("flow_event_type") or "") in {"started", "nudge"}:
+            return clean_lobby_text(event.get("created_at"), limit=64)
+    return ""
+
+
+def _parse_iso_datetime(value: object) -> datetime | None:
+    text = clean_lobby_text(value, limit=64)
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
 REAL_SESSION_SMOKE_REPLY_REDACTION = "[redacted real session smoke reply]"
 LIVE_AGENT_TURN_LOCK = threading.Lock()
 LIVE_AGENT_LOBBY_LOCK = threading.RLock()
@@ -348,6 +634,7 @@ def serve_gui(
     root = output_root or Path(".agentsassemble")
     process_supervisor = LiveAgentProcessSupervisor(root)
     session_run_controller = LiveAgentSessionRunController(root)
+    flow_supervisor = LiveAgentFlowSupervisor(root)
     session_run_monitor = LiveAgentSessionRunMonitor(
         root,
         process_supervisor,
@@ -359,6 +646,7 @@ def serve_gui(
         process_supervisor=process_supervisor,
         session_run_controller=session_run_controller,
         session_run_monitor=session_run_monitor,
+        flow_supervisor=flow_supervisor,
     )
     server = ThreadingHTTPServer((host, port), handler)
     try:
@@ -751,9 +1039,20 @@ def read_lobby(output_root: Path, limit: int | None = 80) -> list[dict[str, obje
     return read_lobby_events(output_root / "lobby.jsonl", limit=limit)
 
 
-def append_lobby_event(output_root: Path, event: dict[str, object], *, live_agent_endpoint: bool = False) -> dict[str, object]:
+def append_lobby_event(
+    output_root: Path,
+    event: dict[str, object],
+    *,
+    live_agent_endpoint: bool = False,
+    allow_flow_metadata: bool = False,
+) -> dict[str, object]:
     with LIVE_AGENT_LOBBY_LOCK:
-        return append_lobby_event_to_file(output_root / "lobby.jsonl", event, live_agent_endpoint=live_agent_endpoint)
+        return append_lobby_event_to_file(
+            output_root / "lobby.jsonl",
+            event,
+            live_agent_endpoint=live_agent_endpoint,
+            allow_flow_metadata=allow_flow_metadata,
+        )
 
 
 def read_side_chat(output_root: Path, limit: int = 120) -> list[dict[str, object]]:
@@ -2122,6 +2421,9 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
                 },
             )
             return {"agent": updated_agent, "event": existing_event, "events": read_lobby(output_root)}
+        flow_metadata = _live_agent_lobby_flow_metadata(payload)
+        if flow_metadata.get("flow_id"):
+            flow_metadata["flow_meeting_id"] = clean_lobby_text(agent.get("meeting_id"), limit=128)
         event = append_lobby_event(
             output_root,
             {
@@ -2132,8 +2434,10 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
                 "actor_id": actor_id,
                 "source_event_id": source_event_id,
                 "auto_chain_depth": payload.get("auto_chain_depth") or 0,
+                **flow_metadata,
             },
             live_agent_endpoint=True,
+            allow_flow_metadata=True,
         )
         reply_metadata: dict[str, object] = {
             "last_error": "",
@@ -2149,6 +2453,20 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
             metadata=reply_metadata,
         )
         return {"agent": updated_agent, "event": event, "events": read_lobby(output_root)}
+
+
+def _live_agent_lobby_flow_metadata(payload: dict[str, object]) -> dict[str, object]:
+    metadata: dict[str, object] = {}
+    for key in (
+        "target_agent_id",
+        "flow_id",
+        "flow_meeting_id",
+        "flow_action",
+        "flow_reason",
+    ):
+        if key in payload:
+            metadata[key] = payload.get(key)
+    return metadata
 
 
 def _existing_live_agent_lobby_reply(output_root: Path, *, actor_id: str, source_event_id: str) -> dict[str, object] | None:
@@ -6563,10 +6881,12 @@ def _make_handler(
     process_supervisor: LiveAgentProcessSupervisor | None = None,
     session_run_controller: LiveAgentSessionRunController | None = None,
     session_run_monitor: LiveAgentSessionRunMonitor | None = None,
+    flow_supervisor: LiveAgentFlowSupervisor | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     static_root = Path(__file__).parent / "static"
     live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
     live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
+    live_agent_flow_supervisor = flow_supervisor or LiveAgentFlowSupervisor(output_root)
 
     class AgentsAssembleHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -6612,6 +6932,9 @@ def _make_handler(
                         safe=_payload_bool(query.get("safe", [""])[0]),
                     )
                 )
+                return
+            if path == "/api/live-agent-flow":
+                self._send_json(live_agent_flow_supervisor.status(meeting_id=str(query.get("meeting_id", [""])[0] or "")))
                 return
             if path == "/api/live-agent-health":
                 self._send_json(
@@ -6784,6 +7107,62 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"event": event, "events": read_lobby(output_root)})
+                return
+            if parsed.path == "/api/live-agent-flow/start":
+                payload = self._operation_json_payload(operation="flow.start", target_id="")
+                if payload is None:
+                    return
+                try:
+                    result = live_agent_flow_supervisor.start(payload)
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation="flow.start",
+                        status="failed",
+                        target_id=clean_lobby_text(payload.get("meeting_id"), limit=128),
+                        error=str(error),
+                        details={
+                            "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
+                            "topic": clean_lobby_text(payload.get("topic"), limit=240),
+                        },
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                flow = result.get("flow") if isinstance(result.get("flow"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="flow.start",
+                    status="success",
+                    target_id=clean_lobby_text(flow.get("meeting_id"), limit=128),
+                    summary="started Play Mode flow",
+                    details={
+                        "meeting_id": clean_lobby_text(flow.get("meeting_id"), limit=128),
+                        "flow_id": clean_lobby_text(flow.get("flow_id"), limit=128),
+                        "agent_count": _payload_nonnegative_int(flow.get("agent_count"), 0),
+                        "duration_seconds": _payload_nonnegative_float(flow.get("duration_seconds"), 0.0),
+                    },
+                )
+                self._send_json(result)
+                return
+            if parsed.path == "/api/live-agent-flow/stop":
+                payload = self._operation_json_payload(operation="flow.stop", target_id="")
+                if payload is None:
+                    return
+                result = live_agent_flow_supervisor.stop(payload)
+                flow = result.get("flow") if isinstance(result.get("flow"), dict) else {}
+                record_live_agent_operation(
+                    output_root,
+                    operation="flow.stop",
+                    status="success",
+                    target_id=clean_lobby_text(flow.get("meeting_id"), limit=128),
+                    summary="stopped Play Mode flow",
+                    details={
+                        "meeting_id": clean_lobby_text(flow.get("meeting_id"), limit=128),
+                        "flow_id": clean_lobby_text(flow.get("flow_id"), limit=128),
+                        "flow_status": clean_lobby_text(flow.get("status"), limit=64),
+                    },
+                )
+                self._send_json(result)
                 return
             session_run_pause_id = _live_agent_session_run_action_path(parsed.path, "pause")
             if session_run_pause_id is not None or parsed.path == "/api/live-agent-session-runs/pause":

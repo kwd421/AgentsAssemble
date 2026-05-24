@@ -7,7 +7,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 ResearchDepthName = Literal["smoke", "standard", "deep"]
 ResearchStance = Literal["open", "user_leaning"]
-EngagementMode = Literal["manual", "mentioned", "moderator_called", "human_only", "always", "watch"]
+EngagementMode = Literal["manual", "mentioned", "moderator_called", "human_only", "always", "watch", "flow"]
 MeetingMode = Literal["debate", "free_chat"]
 TurnSelection = Literal["all_roles", "selected_roles"]
 ProviderKind = Literal[
@@ -312,6 +312,7 @@ ENGAGEMENT_MODE_CHOICES: tuple[EngagementMode, ...] = (
     "human_only",
     "always",
     "watch",
+    "flow",
 )
 ENGAGEMENT_MODES: set[str] = set(ENGAGEMENT_MODE_CHOICES)
 MEETING_MODES: set[str] = {"debate", "free_chat"}

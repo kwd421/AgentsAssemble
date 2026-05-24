@@ -509,6 +509,31 @@ python3 -m agentsassemble.cli live-agent wait-next \
 
 `wait-next` reads one room snapshot per poll, prefers a targeted unanswered official turn request, then a targeted return-packet event, and then falls back to engagement-aware lobby observation. The JSON payload includes `action: "official_turn"` with an `official-reply` `reply_command`, `action: "return_packet"` with `artifact_path`, `artifact_json_path`, an agent-scoped `read_command`, and a heartbeat `ack_command`, `action: "lobby"` with a `say` `reply_command`, or `action: "observe_lobby"` with a heartbeat `ack_command` and no reply command. `observe_lobby` is returned for visible lobby events that should advance the cursor but should not be answered under the agent's current engagement mode or chain-depth guard. The `reply_command` arrays include the `--` option boundary before `<reply>`, so terminal/self-service loops can safely replace `<reply>` even when the reply text starts with `-` or `--`. Timeout payloads include both `last_observed_event_id` and `last_observed_live_event_id`, advanced to the latest visible event ids in that room snapshot, so a terminal loop can keep lobby and official cursors separate and optionally heartbeat cursor-only observation without replying.
 
+For Play Mode free conversation, start a bounded flow instead of scheduling
+fixed official turns:
+
+```bash
+python3 -m agentsassemble.cli live-agent flow \
+  --server http://127.0.0.1:8765 \
+  --meeting-id resident-m1 \
+  --topic "고죠 사토루 vs 스쿠나" \
+  --duration-seconds 180 \
+  --json
+```
+
+`live-agent flow` calls `/api/live-agent-flow/start`, waits for the room server
+to report `finished`, `stopped`, or `failed`, and never starts provider CLIs by
+itself. The server temporarily moves only host-approved resident agents for that
+meeting into `engagement_mode: "flow"`, restores their previous modes on stop or
+finish, and appends scoped lobby control events with `flow_id` and
+`flow_meeting_id`. Public `/api/lobby` posts cannot create flow control events.
+Resident flow runners still prefer targeted official-turn requests first; when
+only Play Mode lobby events are pending, they ask the provider for one JSON
+decision and publish only the visible `message`. The action, reason, target,
+source event, chain depth, and flow id stay as lobby metadata. `wait` advances
+the lobby cursor without posting. Silence nudges are ordinary flow lobby events,
+and cooldown plus per-agent/total turn budgets bound the loop.
+
 When resident finalization writes per-agent return packets, it appends one non-official targeted return-packet event for each bound agent whose `return_packets/<role>.md` and `.json` artifacts exist. The event points only at relative artifact paths, carries `artifact_kind: "return_packet"`, and is delivered through `/api/live-agents/<agent_id>/room` only to the matching agent. If that live event later falls out of the bounded room tail, `/room` reprojects the relative return-packet path from the public artifact files and the meeting's agent binding, still without reading packet bodies into the event, and only while the packet is still pending for that agent. A terminal, self-service, or external/manual agent can read only its own packet body through `GET /api/live-agents/<agent_id>/return-packet?meeting_id=<meeting_id>&source_event_id=<event_id>` or the matching `python3 -m agentsassemble.cli live-agent return-packet` command returned as `read_command`. The read path validates the current live-agent row's meeting, agent binding, and source event, reads only the expected `return_packets/<role>.md` and `.json` files, does not accept arbitrary artifact paths, and does not heartbeat, acknowledge, post replies, append operations, or expose sibling packets. Once the agent has acknowledged the original return-packet event, the projected fallback id, or any later live event in the same meeting log, `/room` stops reprojecting that packet. After reading it, a terminal or self-service loop should run the returned `ack_command` so the roster's `last_observed_live_event_id` moves past that packet without posting a lobby reply. If the returned `read_command` is missing, exits non-zero, times out, or cannot be launched, the checked-in self-service wrapper and credential-free smoke child report `status: "error"` with the packet cursor and do not run the `ack_command`.
 
 For meeting-bound agents, the room snapshot also includes compact shared_memory in `/api/live-agents/<agent_id>/room`. When current official live events exist, the room read treats the official log as the authoritative source and projects compact memory from it without rewriting the artifact files, even if `shared_memory/index.json` is stale, malformed, missing, or has matching metadata with untrusted body text. The projection is cached by the live event file state so hot room polling does not repeatedly full-read the same log. Durable index or embedded meeting memory is used only when no usable current official live events exist. The compact memory includes bounded counts, rolling summary, decisions, open questions, and action items. `wait-room-event`, `wait-official-turn`, and wait-next event payloads include `room.shared_memory` from that same compact room snapshot so terminal, self-service, and external/manual agents see the same official-only background context as parent-managed resident prompts. It does not include lobby chat, side chat, review checkpoints, private turn requests for other agents, provider prompts, config paths, endpoint URLs, auth refs, log tails, or provider output.

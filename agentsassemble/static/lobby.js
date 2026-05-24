@@ -163,6 +163,12 @@ export function renderLobby(options = {}) {
   lobby.querySelector("#live-agent-session-stop")?.addEventListener("click", async () => {
     await stopLiveAgentSession(lobby);
   });
+  lobby.querySelector("#live-agent-flow-start")?.addEventListener("click", async () => {
+    await startLiveAgentFlow(lobby);
+  });
+  lobby.querySelector("#live-agent-flow-stop")?.addEventListener("click", async () => {
+    await stopLiveAgentFlow(lobby);
+  });
   lobby.querySelector("#live-agent-call-round")?.addEventListener("click", async () => {
     await callLiveAgentOfficialRound(lobby);
   });
@@ -244,6 +250,9 @@ export function renderLobby(options = {}) {
   if (!state.liveAgentSessionRunsLoaded && !state.liveAgentSessionRunsLoading) {
     loadLiveAgentSessionRuns({ background: true });
   }
+  if (!state.liveAgentFlowLoaded && !state.liveAgentFlowLoading) {
+    loadLiveAgentFlow({ background: true });
+  }
   if (shouldFollowLatest) scrollLobbyFeedToLatest(lobby);
   else restoreLobbyFeedScroll(lobby, previousScrollTop);
   restoreWindowScroll(previousWindowScroll);
@@ -304,6 +313,8 @@ function readLiveAgentProcessDraft(lobby) {
     roundTimeout: form.querySelector("#live-agent-round-timeout")?.value ?? "",
     roundMaxRounds: form.querySelector("#live-agent-round-max-rounds")?.value ?? "",
     roundStopOnTimeout: Boolean(form.querySelector("#live-agent-round-stop-on-timeout")?.checked),
+    flowTopic: form.querySelector("#live-agent-flow-topic")?.value ?? "",
+    flowDuration: form.querySelector("#live-agent-flow-duration")?.value ?? "",
     reviewCheckpointMessage: form.querySelector("#live-agent-review-checkpoint-message")?.value ?? "",
     reviewCheckpointId: form.querySelector("#live-agent-review-checkpoint-id")?.value ?? "",
     reviewCheckpointTimeout: form.querySelector("#live-agent-review-checkpoint-timeout")?.value ?? "",
@@ -347,6 +358,8 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   const roundTimeout = lobby.querySelector("#live-agent-round-timeout");
   const roundMaxRounds = lobby.querySelector("#live-agent-round-max-rounds");
   const roundStopOnTimeout = lobby.querySelector("#live-agent-round-stop-on-timeout");
+  const flowTopic = lobby.querySelector("#live-agent-flow-topic");
+  const flowDuration = lobby.querySelector("#live-agent-flow-duration");
   const reviewCheckpointMessage = lobby.querySelector("#live-agent-review-checkpoint-message");
   const reviewCheckpointId = lobby.querySelector("#live-agent-review-checkpoint-id");
   const reviewCheckpointTimeout = lobby.querySelector("#live-agent-review-checkpoint-timeout");
@@ -373,6 +386,8 @@ function restoreLiveAgentProcessDraft(lobby, draft) {
   if (roundTimeout) roundTimeout.value = draft.roundTimeout;
   if (roundMaxRounds) roundMaxRounds.value = draft.roundMaxRounds;
   if (roundStopOnTimeout) roundStopOnTimeout.checked = draft.roundStopOnTimeout;
+  if (flowTopic) flowTopic.value = draft.flowTopic;
+  if (flowDuration) flowDuration.value = draft.flowDuration;
   if (reviewCheckpointMessage) reviewCheckpointMessage.value = draft.reviewCheckpointMessage;
   if (reviewCheckpointId) reviewCheckpointId.value = draft.reviewCheckpointId;
   if (reviewCheckpointTimeout) reviewCheckpointTimeout.value = draft.reviewCheckpointTimeout;
@@ -442,9 +457,10 @@ function isLobbyFeedNearBottom(lobby) {
 
 function shouldFollowLobbyLatest(lobby, previousFeed, options = {}) {
   if (!lobbyFeedHasPainted || !previousFeed) return true;
-  if (options.followLatest === true) return true;
-  if (options.followLatest === false) return lobbyFeedPinnedToLatest;
-  return lobbyFeedPinnedToLatest || isLobbyFeedNearBottom(lobby);
+  const requestedFollowLatest = options.followLatest ?? isLobbyFeedNearBottom(lobby);
+  if (requestedFollowLatest === true) return true;
+  if (requestedFollowLatest === false) return lobbyFeedPinnedToLatest;
+  return lobbyFeedPinnedToLatest || requestedFollowLatest;
 }
 
 function bindLobbyFeedScroll(lobby) {
@@ -485,11 +501,12 @@ function applyScrollPosition(write) {
 }
 
 function readWindowScroll() {
+  if (typeof window === "undefined") return null;
   return { x: window.scrollX || 0, y: window.scrollY || 0 };
 }
 
 function restoreWindowScroll(position) {
-  if (!position) return;
+  if (!position || typeof window === "undefined") return;
   window.scrollTo(position.x, position.y);
   requestAnimationFrame(() => {
     window.scrollTo(position.x, position.y);
@@ -680,6 +697,7 @@ function renderLiveAgentProcessControls() {
   const currentMeeting = state.payload?.meeting || {};
   const defaultMeetingId = currentMeeting.meeting_id || "";
   const defaultRoundId = defaultOfficialRoundId(currentMeeting) || "round_1";
+  const defaultFlowTopic = currentMeeting.display_topic || currentMeeting.topic || currentMeeting.question || "";
   return `
     <section class="live-agent-processes" aria-label="상주 실행">
       <div class="roster-head">
@@ -698,6 +716,14 @@ function renderLiveAgentProcessControls() {
         <input id="live-agent-round-id" maxlength="128" value="${escapeHtml(defaultRoundId)}" data-default-value="${escapeHtml(defaultRoundId)}" aria-label="official round id" />
         <input id="live-agent-round-timeout" type="number" min="0" max="600" step="1" value="30" aria-label="official round timeout seconds" />
         <input id="live-agent-round-max-rounds" type="number" min="1" max="8" step="1" value="8" aria-label="maximum remaining official rounds" />
+        <div class="live-agent-flow-panel">
+          <strong>Play Mode 자유토론</strong>
+          <span>${escapeHtml(liveAgentFlowStatusLabel(state.liveAgentFlow))}</span>
+          <input id="live-agent-flow-topic" maxlength="240" value="${escapeHtml(defaultFlowTopic)}" aria-label="play mode flow topic" />
+          <input id="live-agent-flow-duration" type="number" min="1" max="3600" step="1" value="180" aria-label="play mode flow duration seconds" />
+          <button type="button" id="live-agent-flow-start" ${processActionsDisabled ? "disabled" : ""}>자유토론</button>
+          <button type="button" id="live-agent-flow-stop" ${processActionsDisabled ? "disabled" : ""}>토론중지</button>
+        </div>
         <label class="live-agent-process-options">
           <input id="live-agent-round-stop-on-timeout" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
           <span>timeout stop</span>
@@ -778,7 +804,18 @@ function renderLiveAgentProcessControls() {
 }
 
 function liveAgentProcessActionBusy() {
-  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentReviewCheckpointRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || state.liveAgentDiscoveryRunning || state.liveAgentAutoJoinRunning || Boolean(state.liveAgentProcessRowActionRunning) || state.liveAgentProcessBulkStopRunning || Boolean(state.liveAgentSessionRunRetryNowRunning) || Boolean(state.liveAgentSessionRunActionRunning);
+  return state.liveAgentProcessStartRunning || state.liveAgentSessionStartRunning || state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning || state.liveAgentFlowStartRunning || state.liveAgentFlowStopRunning || state.liveAgentReviewCheckpointRunning || state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning || state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning || state.liveAgentDiscoveryRunning || state.liveAgentAutoJoinRunning || Boolean(state.liveAgentProcessRowActionRunning) || state.liveAgentProcessBulkStopRunning || Boolean(state.liveAgentSessionRunRetryNowRunning) || Boolean(state.liveAgentSessionRunActionRunning);
+}
+
+function liveAgentFlowStatusLabel(flow) {
+  if (!flow || typeof flow !== "object" || !flow.status || flow.status === "idle") return "idle";
+  const parts = [String(flow.status)];
+  if (flow.status === "running" && Number.isFinite(Number(flow.remaining_seconds))) {
+    parts.push(`${Math.ceil(Number(flow.remaining_seconds))}s left`);
+  }
+  parts.push(`${Math.max(0, Number(flow.total_turns || 0))} turns`);
+  parts.push(`${Math.max(0, Number(flow.agent_count || 0))} agents`);
+  return parts.join(" · ");
 }
 
 function defaultOfficialRoundId(meeting) {
@@ -1721,6 +1758,7 @@ function renderEngagementModeOptions(currentMode) {
   const current = String(currentMode || "mentioned");
   return [
     ["always", "always (loop-prone)"],
+    ["flow", "flow"],
     ["human_only", "human only"],
     ["mentioned", "mentioned"],
     ["moderator_called", "moderator called"],
@@ -2106,11 +2144,32 @@ export function refreshLiveAgentRuntimeSurfaces() {
   return Promise.all([
     loadLiveAgentHealth({ background: true }),
     loadLiveAgents({ background: true }),
+    loadLiveAgentFlow({ background: true }),
     loadLiveAgentProcesses({ background: true }),
     loadLiveAgentProcessEvents({ background: true }),
     loadLiveAgentOperations({ background: true }),
     loadLiveAgentSessionRuns({ background: true }),
   ]);
+}
+
+async function loadLiveAgentFlow(options = {}) {
+  if (state.liveAgentFlowLoading && !options.force) return;
+  const previousSignature = JSON.stringify(state.liveAgentFlow || null);
+  let shouldRender = !options.background;
+  state.liveAgentFlowLoading = true;
+  try {
+    const meetingId = liveAgentMeetingId();
+    const query = meetingId ? `?meeting_id=${encodeURIComponent(meetingId)}` : "";
+    const payload = await fetchJson(`/api/live-agent-flow${query}`);
+    state.liveAgentFlow = payload.flow || { status: "idle" };
+    state.liveAgentFlowLoaded = true;
+    shouldRender = shouldRender || JSON.stringify(state.liveAgentFlow) !== previousSignature;
+  } catch {
+    state.liveAgentFlowLoaded = true;
+  } finally {
+    state.liveAgentFlowLoading = false;
+    if (shouldRender) renderLobby({ followLatest: false });
+  }
 }
 
 async function loadLiveAgentHealth(options = {}) {
@@ -2876,6 +2935,70 @@ async function stopLiveAgentSession(lobby) {
   } finally {
     state.liveAgentSessionStopRunning = false;
     await loadLiveAgentOperations({ background: true, force: true });
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function startLiveAgentFlow(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
+  const topic = lobby.querySelector("#live-agent-flow-topic")?.value.trim() || state.payload?.meeting?.display_topic || state.payload?.meeting?.topic || "";
+  const durationSeconds = Math.max(1, Number(lobby.querySelector("#live-agent-flow-duration")?.value || 180));
+  if (!meetingId || !topic) {
+    state.liveAgentProcessStatus = { message: "자유토론 시작 실패: meeting id와 topic이 필요합니다", tone: "error" };
+    renderLobby({ followLatest: false });
+    return;
+  }
+  state.liveAgentFlowStartRunning = true;
+  state.liveAgentProcessStatus = { message: "Play Mode 자유토론 시작 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-flow/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        meeting_id: meetingId,
+        topic,
+        duration_seconds: durationSeconds,
+      }),
+    });
+    state.liveAgentFlow = payload.flow || { status: "idle" };
+    state.liveAgentFlowLoaded = true;
+    setLobbyEvents(payload.events || state.lobbyEvents);
+    state.liveAgentProcessStatus = { message: `자유토론 ${state.liveAgentFlow.status || "running"}`, tone: "success" };
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `자유토론 시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    state.liveAgentFlowStartRunning = false;
+    await refreshLiveAgentProcessHistory();
+    await loadLiveAgents({ background: true, force: true });
+    renderLobby({ followLatest: false });
+  }
+}
+
+async function stopLiveAgentFlow(lobby) {
+  if (liveAgentProcessActionBusy()) return;
+  const meetingId = lobby.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
+  if (!meetingId) return;
+  state.liveAgentFlowStopRunning = true;
+  state.liveAgentProcessStatus = { message: "Play Mode 자유토론 중지 중", tone: "info" };
+  renderLobby({ followLatest: false });
+  try {
+    const payload = await fetchJson("/api/live-agent-flow/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meeting_id: meetingId }),
+    });
+    state.liveAgentFlow = payload.flow || { status: "idle" };
+    state.liveAgentFlowLoaded = true;
+    setLobbyEvents(payload.events || state.lobbyEvents);
+    state.liveAgentProcessStatus = { message: `자유토론 ${state.liveAgentFlow.status || "stopped"}`, tone: "success" };
+  } catch (error) {
+    state.liveAgentProcessStatus = { message: `자유토론 중지 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
+  } finally {
+    state.liveAgentFlowStopRunning = false;
+    await refreshLiveAgentProcessHistory();
+    await loadLiveAgents({ background: true, force: true });
     renderLobby({ followLatest: false });
   }
 }

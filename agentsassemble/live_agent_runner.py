@@ -17,6 +17,13 @@ from agentsassemble.live_agent_turns import (
     is_official_turn_reply_event,
     is_review_checkpoint_reply_event,
 )
+from agentsassemble.live_agent_flow import (
+    FlowDecision,
+    active_flow_context,
+    flow_context_options,
+    flow_turn_count,
+    parse_flow_decision,
+)
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
 from agentsassemble.remote_bridge_config import (
     remote_bridge_auth_ref_available,
@@ -164,6 +171,9 @@ class LiveAgentRunner:
             )
             return 1
 
+        if engagement_mode == "flow":
+            return self._tick_flow(room)
+
         events = _lobby_events(room)
         candidate = event_reply_candidate(
             events,
@@ -220,6 +230,123 @@ class LiveAgentRunner:
         )
         return 1
 
+    def _tick_flow(self, room: dict[str, object]) -> int:
+        live_events = _live_events(room)
+        official_candidate = official_turn_request_candidate(
+            live_events,
+            self.config.agent_id,
+            self.last_observed_live_event_id,
+        )
+        if official_candidate is not None:
+            if self._in_cooldown():
+                self._heartbeat_if_due()
+                return 0
+            if self._in_failure_backoff():
+                self._heartbeat_if_due()
+                return 0
+            generated = self._generate_reply(
+                official_candidate,
+                official_turn_prompt(self.config, room, official_candidate),
+                cursor_field="last_observed_live_event_id",
+            )
+            if generated is None:
+                return 0
+            source_event_id, reply = generated
+            try:
+                response = self.request_json(
+                    _server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/official-turn"),
+                    method="POST",
+                    payload={
+                        "meeting_id": _official_turn_meeting_id(self.config, room, official_candidate),
+                        "source_event_id": source_event_id,
+                        "content": reply,
+                        "role_id": str(official_candidate.get("role_id") or self.config.agent_id),
+                        "display_name": str(official_candidate.get("display_name") or self.config.display_name or self.config.agent_id),
+                        "turn_id": str(official_candidate.get("turn_id") or ""),
+                        "turn_index": _optional_int(official_candidate.get("turn_index")),
+                    },
+                )
+            except Exception as error:
+                self._record_reply_post_error(
+                    error,
+                    cursor_field="last_observed_live_event_id",
+                    observed_event_id=source_event_id,
+                )
+                raise
+            self._record_reply_success(
+                response.get("event"),
+                cursor_field="last_observed_live_event_id",
+                observed_event_id=source_event_id,
+            )
+            return 1
+        self._advance_live_cursor(live_events)
+
+        events = _lobby_events(room)
+        meeting_id = _flow_room_meeting_id(self.config, room)
+        candidate = flow_event_candidate(
+            events,
+            self.config.agent_id,
+            self.config.display_name,
+            self.last_observed_event_id,
+            max_chain_depth=self.config.max_chain_depth,
+            meeting_id=meeting_id,
+        )
+        if candidate is None:
+            self._advance_cursor(events)
+            self._heartbeat_if_due()
+            return 0
+        flow_context = active_flow_context(events, meeting_id=meeting_id) or {}
+        flow_options = flow_context_options(flow_context)
+        if self._in_cooldown(flow_options.cooldown):
+            self._heartbeat_if_due()
+            return 0
+        if self._in_failure_backoff():
+            self._heartbeat_if_due()
+            return 0
+
+        generated = self._generate_flow_decision(
+            candidate,
+            flow_decision_prompt(self.config, room, candidate),
+        )
+        if generated is None:
+            return 0
+        source_event_id, decision = generated
+        if decision.action == "wait" or not decision.message:
+            self._record_flow_wait_success(source_event_id)
+            return 0
+
+        source_depth = _chain_depth(candidate)
+        try:
+            response = self.request_json(
+                _server_url(self.config.server, f"/api/live-agents/{_quote(self.config.agent_id)}/lobby"),
+                method="POST",
+                payload={
+                    "message": decision.message,
+                    "kind": "message",
+                    "actor_id": self.config.agent_id,
+                    "source_event_id": source_event_id,
+                    "auto_chain_depth": source_depth + 1,
+                    "flow_id": str(flow_context.get("flow_id") or ""),
+                    "flow_meeting_id": meeting_id,
+                    "flow_action": decision.action,
+                    "flow_reason": decision.reason,
+                    "target_agent_id": decision.target_agent_id,
+                },
+            )
+        except Exception as error:
+            self._record_reply_post_error(
+                error,
+                cursor_field="last_observed_event_id",
+                observed_event_id=source_event_id,
+            )
+            raise
+        self._record_reply_success(
+            response.get("event"),
+            cursor_field="last_observed_event_id",
+            observed_event_id=source_event_id,
+        )
+        return 1
+
     def _generate_reply(
         self,
         candidate: dict[str, object],
@@ -253,6 +380,48 @@ class LiveAgentRunner:
             )
             return None
         return source_event_id, reply
+
+    def _generate_flow_decision(
+        self,
+        candidate: dict[str, object],
+        prompt: str,
+    ) -> tuple[str, FlowDecision] | None:
+        source_event_id = str(candidate.get("id") or "")
+        self._set_cursor("last_observed_event_id", source_event_id)
+        self._heartbeat_due_safely("working", **self._cursor_metadata("last_observed_event_id", source_event_id))
+        try:
+            raw_output = self._run_command_with_working_heartbeats(
+                self.config.command,
+                prompt,
+                source_event_id=source_event_id,
+                cursor_field="last_observed_event_id",
+                timeout_seconds=self.config.timeout_seconds,
+            )
+        except Exception as error:
+            if self.stop_event.is_set():
+                return None
+            self.transient_room_error_active = False
+            self.last_error = _safe_provider_command_error(error)
+            self.last_error_at = self.now_fn()
+            self._heartbeat_due_safely(
+                "error",
+                last_error=self.last_error,
+                **self._cursor_metadata("last_observed_event_id", source_event_id),
+            )
+            return None
+        decision = parse_flow_decision(raw_output)
+        return source_event_id, decision
+
+    def _record_flow_wait_success(self, source_event_id: str) -> None:
+        self._set_cursor("last_observed_event_id", source_event_id)
+        self.last_error_at = None
+        self.last_error = ""
+        self.transient_room_error_active = False
+        self._heartbeat_due_safely(
+            "online",
+            last_error="",
+            **self._cursor_metadata("last_observed_event_id", source_event_id),
+        )
 
     def _record_reply_success(
         self,
@@ -437,10 +606,11 @@ class LiveAgentRunner:
             metadata["last_observed_live_event_id"] = live_cursor
         return metadata
 
-    def _in_cooldown(self) -> bool:
-        if self.last_reply_at is None or self.config.cooldown <= 0:
+    def _in_cooldown(self, cooldown_seconds: float | None = None) -> bool:
+        cooldown = self.config.cooldown if cooldown_seconds is None else float(cooldown_seconds)
+        if self.last_reply_at is None or cooldown <= 0:
             return False
-        return (self.now_fn() - self.last_reply_at).total_seconds() < self.config.cooldown
+        return (self.now_fn() - self.last_reply_at).total_seconds() < cooldown
 
     def _in_failure_backoff(self) -> bool:
         if self.last_error_at is None or self.config.cooldown <= 0:
@@ -569,6 +739,59 @@ def event_reply_candidate(
     return None
 
 
+def flow_event_candidate(
+    events: list[dict[str, object]],
+    agent_id: str,
+    display_name: str,
+    last_observed_event_id: str,
+    *,
+    max_chain_depth: int,
+    meeting_id: str = "",
+) -> dict[str, object] | None:
+    flow_context = active_flow_context(events, meeting_id=meeting_id)
+    if flow_context is None:
+        return None
+    flow_id = str(flow_context.get("flow_id") or "").strip()
+    if not flow_id:
+        return None
+    options = flow_context_options(flow_context)
+    if options.max_agent_turns and flow_turn_count(events, flow_id=flow_id, agent_id=agent_id) >= options.max_agent_turns:
+        return None
+    if options.max_total_turns and flow_turn_count(events, flow_id=flow_id) >= options.max_total_turns:
+        return None
+
+    start_id = str(flow_context.get("id") or "").strip()
+    in_active_flow = not start_id or _cursor_is_at_or_after(events, last_observed_event_id, start_id)
+    for event in _events_after(events, last_observed_event_id):
+        event_id = str(event.get("id") or "").strip()
+        if not in_active_flow:
+            if event_id != start_id:
+                continue
+            in_active_flow = True
+        if str(event.get("flow_event_type") or "") in {"finished", "stopped"}:
+            continue
+        if _is_self_event(event, agent_id, display_name):
+            continue
+        if _chain_depth(event) > max_chain_depth:
+            continue
+        if not str(event.get("message") or "").strip():
+            continue
+        event_flow_id = str(event.get("flow_id") or "").strip()
+        if event_flow_id and event_flow_id != flow_id:
+            continue
+        event_meeting_id = str(event.get("flow_meeting_id") or "").strip()
+        if meeting_id and event_flow_id and event_meeting_id and event_meeting_id != meeting_id:
+            continue
+        if event_flow_id == flow_id and str(event.get("flow_event_type") or "") in {"started", "nudge"}:
+            return event
+        if _is_human_lobby_event(event) or _message_mentions_agent(str(event.get("message") or ""), agent_id, display_name):
+            return event
+        if _chain_depth(event) > 0:
+            return event
+        continue
+    return None
+
+
 def official_turn_request_candidate(
     events: list[dict[str, object]],
     agent_id: str,
@@ -633,6 +856,8 @@ def should_reply_to_event(
         return False
     if mode == "human_only":
         return _is_human_lobby_event(event)
+    if mode == "flow":
+        return _is_human_lobby_event(event) or _message_mentions_agent(str(event.get("message") or ""), agent_id, display_name)
     if mode == "mentioned":
         return _message_mentions_agent(str(event.get("message") or ""), agent_id, display_name)
     return _message_mentions_agent(str(event.get("message") or ""), agent_id, display_name)
@@ -681,6 +906,75 @@ def official_turn_prompt(config: ResidentAgentConfig, room: dict[str, object], s
         f"- {source_event.get('content') or ''}",
     ]
     return "\n".join(lines).strip() + "\n"
+
+
+def flow_decision_prompt(config: ResidentAgentConfig, room: dict[str, object], source_event: dict[str, object]) -> str:
+    events = _lobby_events(room)
+    flow_context = active_flow_context(events, meeting_id=_flow_room_meeting_id(config, room)) or {}
+    flow_id = _prompt_text(flow_context.get("flow_id"), limit=128)
+    topic = (
+        _prompt_text(flow_context.get("flow_topic"), limit=240)
+        or _prompt_text(room.get("display_topic"), limit=240)
+        or _prompt_text(room.get("topic"), limit=240)
+        or _prompt_text(room.get("question"), limit=240)
+        or "(free conversation)"
+    )
+    recent_events = _recent_flow_prompt_events(events, flow_id=flow_id)
+    lines = [
+        "You are a live AgentsAssemble participant in a Play Mode lobby conversation.",
+        "This is not an official meeting record. Do not write transcript or decision text.",
+        f"Agent id: {config.agent_id}",
+        f"Display name: {config.display_name or config.agent_id}",
+        f"Topic: {topic}",
+        "",
+        "Choose your next room action from the recent context.",
+        "Return one JSON object only with these keys:",
+        '{"action":"speak|wait|ask|challenge|clarify|summarize|call_human","target_agent_id":"","reason":"short private reason","message":"one visible lobby message"}',
+        "For wait, set message to an empty string. For every other action, write exactly one visible Korean lobby message.",
+        "Avoid repeating yourself, avoid two-agent ping-pong, and keep the tone natural for the room.",
+        "",
+        *_room_delivery_envelope_lines(config, room, source_event),
+        "",
+        *_shared_memory_prompt_lines(room),
+        "",
+        "Recent lobby context:",
+        *recent_events,
+        "",
+        "Newest event to consider:",
+        f"- {source_event.get('name') or 'participant'}: {source_event.get('message') or ''}",
+    ]
+    return "\n".join(lines).strip() + "\n"
+
+
+def _flow_room_meeting_id(config: ResidentAgentConfig, room: dict[str, object]) -> str:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    return str(room.get("meeting_id") or agent.get("meeting_id") or config.meeting_id or "").strip()
+
+
+def _recent_flow_prompt_events(events: list[dict[str, object]], *, flow_id: str) -> list[str]:
+    scoped: list[dict[str, object]] = []
+    active_seen = not flow_id
+    for event in events:
+        event_flow_id = str(event.get("flow_id") or "").strip()
+        if event_flow_id == flow_id and str(event.get("flow_event_type") or "") == "started":
+            active_seen = True
+        if not active_seen:
+            continue
+        if event_flow_id and event_flow_id != flow_id:
+            continue
+        if str(event.get("flow_event_type") or "") in {"finished", "stopped"}:
+            continue
+        scoped.append(event)
+    recent = scoped[-8:]
+    lines = []
+    for event in recent:
+        event_id = _prompt_text(event.get("id"), limit=64)
+        speaker = _prompt_text(event.get("name"), limit=64) or _prompt_text(event.get("actor_id"), limit=64) or "participant"
+        message = _prompt_text(event.get("message"), limit=360)
+        action = _prompt_text(event.get("flow_action"), limit=64)
+        action_suffix = f" [{action}]" if action else ""
+        lines.append(f"- {event_id} {speaker}{action_suffix}: {message}")
+    return lines or ["- (no recent lobby context)"]
 
 
 def _room_delivery_envelope_lines(
@@ -950,6 +1244,20 @@ def _events_after(events: list[dict[str, object]], last_observed_event_id: str) 
         if event.get("id") == last_observed_event_id:
             return events[index + 1 :]
     return events
+
+
+def _cursor_is_at_or_after(events: list[dict[str, object]], cursor_event_id: str, target_event_id: str) -> bool:
+    if not cursor_event_id or not target_event_id:
+        return False
+    target_index = None
+    cursor_index = None
+    for index, event in enumerate(events):
+        event_id = str(event.get("id") or "")
+        if event_id == target_event_id:
+            target_index = index
+        if event_id == cursor_event_id:
+            cursor_index = index
+    return target_index is not None and cursor_index is not None and cursor_index >= target_index
 
 
 def _is_self_event(event: dict[str, object], agent_id: str, display_name: str) -> bool:

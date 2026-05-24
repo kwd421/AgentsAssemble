@@ -32,6 +32,12 @@ games, and informal chatter must not silently become an official record.
 Play Mode presets may enqueue official-turn requests for an already approved
 meeting, but they must not start provider CLIs, grant admission, or promote play
 context into Work Mode by themselves.
+Timeboxed Play Mode flow is the informal live-room loop: it can temporarily set
+already host-approved meeting residents to `flow`, ask them to choose
+`speak`/`wait`/`ask`/`challenge`/`clarify`/`summarize`/`call_human`, and record
+only visible lobby messages plus safe action metadata. It must not start
+providers, bypass host admission, or write Play Mode chatter into the official
+transcript without a later explicit promote path.
 
 ## Non-Negotiable Rules
 

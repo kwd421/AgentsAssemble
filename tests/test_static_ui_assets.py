@@ -89,7 +89,7 @@ class StaticUiAssetTests(unittest.TestCase):
         send_lobby = script[script.index("async function sendLobbyEvent") : script.index("async function sendLobbyRemote")]
         self.assertIn("const previousValue = messageInput?.value || \"\"", send_lobby)
         self.assertIn("if (messageInput && kind === \"message\") messageInput.value = \"\";", send_lobby)
-        self.assertIn("renderLobby({ followLatest: shouldFollowLatest })", send_lobby)
+        self.assertIn("refreshLobbyFeed({ followLatest: shouldFollowLatest })", send_lobby)
         self.assertIn('activeInput && kind === "message" && activeInput.value === ""', send_lobby)
         self.assertIn("activeInput.value = previousValue", send_lobby)
         self.assertIn('id="lobby-ask-remote"', script)
@@ -184,6 +184,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("state.liveAgentSessionRestartRunning = false;", script)
         self.assertIn("state.liveAgentSessionStopRunning = true;", script)
         self.assertIn("state.liveAgentSessionStopRunning = false;", script)
+        self.assertIn("state.liveAgentFlowStartRunning = true;", script)
+        self.assertIn("state.liveAgentFlowStartRunning = false;", script)
+        self.assertIn("state.liveAgentFlowStopRunning = true;", script)
+        self.assertIn("state.liveAgentFlowStopRunning = false;", script)
         self.assertIn("state.liveAgentReviewCheckpointRunning = true;", script)
         self.assertIn("state.liveAgentReviewCheckpointRunning = false;", script)
         self.assertIn("state.liveAgentSessionRecoverRunning = true;", script)
@@ -207,7 +211,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("state.liveAgentSessionRestartRunning || state.liveAgentSessionRecoverRunning", script)
         self.assertIn("state.liveAgentSessionRecoverRunning || state.liveAgentSessionCheckRunning", script)
         self.assertIn("state.liveAgentSessionCheckRunning || state.liveAgentSessionStopRunning", script)
-        self.assertIn("state.liveAgentSessionStopRunning || state.liveAgentReviewCheckpointRunning || state.liveAgentRoundCallRunning", script)
+        self.assertIn("state.liveAgentSessionStopRunning || state.liveAgentFlowStartRunning || state.liveAgentFlowStopRunning", script)
+        self.assertIn("state.liveAgentFlowStopRunning || state.liveAgentReviewCheckpointRunning || state.liveAgentRoundCallRunning", script)
         self.assertIn("state.liveAgentRoundCallRunning || state.liveAgentPreflightRunning", script)
         self.assertIn("state.liveAgentSmokeRunning || state.liveAgentOfficialRoundSmokeRunning || state.liveAgentSessionSmokeRunning", script)
         self.assertIn("state.liveAgentSessionSmokeRunning || state.liveAgentReadinessRunning", script)
@@ -679,6 +684,20 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("word-break: keep-all;", css)
         self.assertIn(".evidence-claims-table", css)
         self.assertIn(".claim-table-wrap", css)
+
+    def test_lobby_exposes_play_mode_flow_controls(self):
+        script = static_js()
+        css = static_css()
+
+        self.assertIn("Play Mode 자유토론", script)
+        self.assertIn('id="live-agent-flow-topic"', script)
+        self.assertIn('id="live-agent-flow-duration"', script)
+        self.assertIn('id="live-agent-flow-start"', script)
+        self.assertIn('id="live-agent-flow-stop"', script)
+        self.assertIn('/api/live-agent-flow/start', script)
+        self.assertIn('/api/live-agent-flow/stop', script)
+        self.assertIn('["flow", "flow"]', script)
+        self.assertIn(".live-agent-flow-panel", css)
 
     def test_tabs_expose_semantic_state(self):
         html = (STATIC_DIR / "index.html").read_text()

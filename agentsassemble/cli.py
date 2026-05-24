@@ -30,6 +30,7 @@ from agentsassemble.codex_sessions import (
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agents import _looks_sensitive_presence_error
+from agentsassemble.live_agent_flow import FlowOptions, LiveAgentFlowClient
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.live_agent_roster import (
@@ -459,6 +460,21 @@ def build_parser() -> argparse.ArgumentParser:
     live_call_preset.add_argument("--timeout", type=parse_nonnegative_float, default=30.0, help="Default seconds to wait per turn.")
     live_call_preset.add_argument("--stop-on-timeout", action="store_true", help="Skip remaining roles after the first timeout.")
     live_call_preset.add_argument("--json", action="store_true", dest="as_json", help="Print the raw preset result payload.")
+
+    live_flow = live_agent_subparsers.add_parser(
+        "flow",
+        parents=[live_server],
+        help="Run a time-boxed Play Mode event-driven conversation loop for approved resident agents.",
+    )
+    live_flow.add_argument("--meeting-id", required=True)
+    live_flow.add_argument("--topic", required=True)
+    live_flow.add_argument("--duration-seconds", type=parse_nonnegative_float, default=180.0)
+    live_flow.add_argument("--tick-interval", type=parse_nonnegative_float, default=2.0)
+    live_flow.add_argument("--cooldown", type=parse_nonnegative_float, default=8.0)
+    live_flow.add_argument("--max-agent-turns", type=parse_nonnegative_int, default=12)
+    live_flow.add_argument("--max-total-turns", type=parse_nonnegative_int, default=30)
+    live_flow.add_argument("--max-silence-seconds", type=parse_nonnegative_float, default=20.0)
+    live_flow.add_argument("--json", action="store_true", dest="as_json", help="Print the raw flow result payload.")
 
     live_call_remaining_rounds = live_agent_subparsers.add_parser(
         "call-remaining-rounds",
@@ -1407,6 +1423,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_call_round(args)
         if args.live_agent_command == "call-preset":
             return _run_live_agent_call_preset(args)
+        if args.live_agent_command == "flow":
+            return _run_live_agent_flow(args)
         if args.live_agent_command == "call-remaining-rounds":
             return _run_live_agent_call_remaining_rounds(args)
         if args.live_agent_command == "review-checkpoint":
@@ -1983,6 +2001,34 @@ def _run_live_agent_call_preset(args: argparse.Namespace) -> int:
                 continue
             print(f"- {result.get('agent_id') or 'unknown'}: {_sequence_result_summary(result)}")
     return 0 if response.get("status") == "answered" else 1
+
+
+def _run_live_agent_flow(args: argparse.Namespace) -> int:
+    options = FlowOptions(
+        duration_seconds=float(args.duration_seconds),
+        tick_interval=float(args.tick_interval),
+        cooldown=float(args.cooldown),
+        max_agent_turns=int(args.max_agent_turns),
+        max_total_turns=int(args.max_total_turns),
+        max_silence_seconds=float(args.max_silence_seconds),
+    )
+    client = LiveAgentFlowClient(
+        server=args.server,
+        request_json=_request_json,
+        sleep_fn=time.sleep,
+    )
+    response = client.run(meeting_id=args.meeting_id, topic=args.topic, options=options)
+    if args.as_json:
+        print(json.dumps(response, ensure_ascii=False, indent=2))
+    else:
+        flow = response.get("flow") if isinstance(response.get("flow"), dict) else {}
+        print(
+            f"Play flow {flow.get('status') or 'unknown'}: "
+            f"{flow.get('meeting_id') or args.meeting_id} · "
+            f"{flow.get('total_turns', 0)} turns · "
+            f"{flow.get('agent_count', 0)} agents"
+        )
+    return 0 if str((response.get("flow") if isinstance(response.get("flow"), dict) else {}).get("status") or "") in {"finished", "stopped"} else 1
 
 
 def _run_live_agent_call_remaining_rounds(args: argparse.Namespace) -> int:
