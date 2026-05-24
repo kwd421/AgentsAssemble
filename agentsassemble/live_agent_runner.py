@@ -19,6 +19,8 @@ from agentsassemble.live_agent_turns import (
 )
 from agentsassemble.live_agent_flow import (
     FlowDecision,
+    FLOW_SPEAKING_ACTIONS,
+    FLOW_TERMINAL_EVENT_TYPES,
     active_flow_context,
     flow_context_options,
     flow_turn_count,
@@ -311,6 +313,10 @@ class LiveAgentRunner:
         if generated is None:
             return 0
         source_event_id, decision = generated
+        flow_id = str(flow_context.get("flow_id") or "")
+        if flow_id and not self._flow_still_active(flow_id, meeting_id):
+            self._record_flow_wait_success(source_event_id)
+            return 0
         if decision.action == "wait" or not decision.message:
             self._record_flow_wait_success(source_event_id)
             return 0
@@ -412,13 +418,35 @@ class LiveAgentRunner:
         decision = parse_flow_decision(raw_output)
         return source_event_id, decision
 
+    def _flow_still_active(self, flow_id: str, meeting_id: str) -> bool:
+        try:
+            room = self._room()
+        except Exception:
+            return True
+        events = _lobby_events(room)
+        for event in reversed(events):
+            if str(event.get("flow_id") or "") != flow_id:
+                continue
+            event_meeting_id = str(event.get("flow_meeting_id") or "").strip()
+            if meeting_id and event_meeting_id and event_meeting_id != meeting_id:
+                continue
+            if str(event.get("flow_event_type") or "") in FLOW_TERMINAL_EVENT_TYPES:
+                return False
+            break
+        current_flow = active_flow_context(events, meeting_id=meeting_id)
+        if current_flow is None:
+            return True
+        return str((current_flow or {}).get("flow_id") or "") == flow_id
+
     def _record_flow_wait_success(self, source_event_id: str) -> None:
         self._set_cursor("last_observed_event_id", source_event_id)
+        self.last_reply_at = self.now_fn()
         self.last_error_at = None
         self.last_error = ""
         self.transient_room_error_active = False
         self._heartbeat_due_safely(
             "online",
+            last_reply_at=self.last_reply_at.isoformat(),
             last_error="",
             **self._cursor_metadata("last_observed_event_id", source_event_id),
         )
@@ -784,11 +812,57 @@ def flow_event_candidate(
             continue
         if event_flow_id == flow_id and str(event.get("flow_event_type") or "") in {"started", "nudge"}:
             return event
+        if event_flow_id == flow_id and str(event.get("flow_action") or "") in FLOW_SPEAKING_ACTIONS:
+            return event
         if _is_human_lobby_event(event) or _message_mentions_agent(str(event.get("message") or ""), agent_id, display_name):
             return event
         if _chain_depth(event) > 0:
             return event
         continue
+    return _flow_idle_tick_candidate(
+        events,
+        agent_id,
+        display_name,
+        flow_id=flow_id,
+        meeting_id=meeting_id,
+    )
+
+
+def _flow_idle_tick_candidate(
+    events: list[dict[str, object]],
+    agent_id: str,
+    display_name: str,
+    *,
+    flow_id: str,
+    meeting_id: str = "",
+) -> dict[str, object] | None:
+    for event in reversed(events):
+        event_flow_id = str(event.get("flow_id") or "").strip()
+        event_flow_type = str(event.get("flow_event_type") or "").strip()
+        if event_flow_id and event_flow_id != flow_id:
+            continue
+        if event_flow_type in FLOW_TERMINAL_EVENT_TYPES:
+            return None
+        if event_flow_type == "nudge":
+            continue
+        event_meeting_id = str(event.get("flow_meeting_id") or "").strip()
+        if meeting_id and event_flow_id and event_meeting_id and event_meeting_id != meeting_id:
+            continue
+        if _is_self_event(event, agent_id, display_name):
+            continue
+        message = str(event.get("message") or "").strip()
+        is_flow_start = event_flow_id == flow_id and event_flow_type == "started"
+        is_flow_speech = event_flow_id == flow_id and str(event.get("flow_action") or "") in FLOW_SPEAKING_ACTIONS
+        is_room_event = bool(message and (is_flow_start or is_flow_speech or _is_human_lobby_event(event)))
+        if not is_room_event:
+            continue
+        candidate = dict(event)
+        candidate["flow_event_type"] = "tick"
+        candidate["name"] = "Play Mode"
+        candidate["actor_id"] = "flow"
+        candidate["auto_chain_depth"] = 0
+        candidate["message"] = "방 전체 맥락을 보고 지금 말할지 기다릴지 판단하세요."
+        return candidate
     return None
 
 

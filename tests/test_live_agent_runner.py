@@ -15,6 +15,7 @@ from agentsassemble.live_agent_runner import (
     RemoteBridgeResidentCommandRunner,
     ResidentAgentConfig,
     event_reply_candidate,
+    flow_event_candidate,
     flow_decision_prompt,
     load_group_configs,
     official_turn_prompt,
@@ -286,6 +287,7 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(runner.run(), 0)
 
         self.assertFalse([call for call in client.calls if call[0].endswith("/lobby")])
+        self.assertIsNotNone(runner.last_reply_at)
         observed = [
             payload.get("last_observed_event_id")
             for url, method, payload in client.calls
@@ -450,8 +452,9 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(runner.run(), 0)
         self.assertFalse([call for call in client.calls if call[0].endswith("/lobby")])
 
-    def test_flow_runner_waits_on_unmentioned_agent_chatter(self):
+    def test_flow_runner_considers_unmentioned_flow_chatter(self):
         clock = FakeClock()
+        provider_called = False
         room = {
             "agent": {"agent_id": "agent-a", "engagement_mode": "flow"},
             "lobby_events": [
@@ -476,7 +479,10 @@ class LiveAgentRunnerTests(unittest.TestCase):
         client = FakeRoomClient([room])
 
         def command_runner(command, prompt, *, timeout_seconds):
-            raise AssertionError("provider should not be called for unmentioned agent chatter")
+            nonlocal provider_called
+            provider_called = True
+            self.assertIn("내 생각엔 스쿠나가 한 수 위야.", prompt)
+            return '{"action":"wait","reason":"더 볼게","message":""}'
 
         runner = LiveAgentRunner(
             config(engagement_mode="flow"),
@@ -488,6 +494,7 @@ class LiveAgentRunnerTests(unittest.TestCase):
         runner.last_observed_event_id = "flow-start"
 
         self.assertEqual(runner.run(), 0)
+        self.assertTrue(provider_called)
         self.assertFalse([call for call in client.calls if call[0].endswith("/lobby")])
         observed = [
             payload.get("last_observed_event_id")
@@ -495,6 +502,136 @@ class LiveAgentRunnerTests(unittest.TestCase):
             if url.endswith("/heartbeat") and payload and payload.get("last_observed_event_id")
         ]
         self.assertIn("agent-b-msg", observed)
+
+    def test_flow_candidate_offers_invisible_idle_tick_when_room_caught_up(self):
+        events = [
+            {
+                "id": "flow-start",
+                "name": "Play Mode",
+                "message": "자유토론 시작",
+                "flow_id": "flow-1",
+                "flow_meeting_id": "m1",
+                "flow_event_type": "started",
+                "flow_topic": "고죠 vs 스쿠나",
+            },
+            {
+                "id": "agent-b-msg",
+                "actor_id": "agent-b",
+                "name": "Agent B",
+                "message": "스쿠나가 템포를 뺏는다니까.",
+                "flow_id": "flow-1",
+                "flow_meeting_id": "m1",
+                "flow_action": "speak",
+                "auto_chain_depth": 3,
+            },
+        ]
+
+        candidate = flow_event_candidate(
+            events,
+            "agent-a",
+            "Agent A",
+            "agent-b-msg",
+            max_chain_depth=1,
+            meeting_id="m1",
+        )
+
+        self.assertIsNotNone(candidate)
+        assert candidate is not None
+        self.assertEqual(candidate["id"], "agent-b-msg")
+        self.assertEqual(candidate["flow_event_type"], "tick")
+        self.assertEqual(candidate["auto_chain_depth"], 0)
+        self.assertIn("판단", candidate["message"])
+
+    def test_flow_runner_can_speak_on_invisible_idle_tick(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow"},
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "자유토론 시작",
+                    "flow_id": "flow-1",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_topic": "고죠 vs 스쿠나",
+                },
+                {
+                    "id": "agent-b-msg",
+                    "actor_id": "agent-b",
+                    "name": "Agent B",
+                    "message": "스쿠나가 템포 리셋하면 고죠도 흔들리지.",
+                    "flow_id": "flow-1",
+                    "flow_meeting_id": "m1",
+                    "flow_action": "speak",
+                    "auto_chain_depth": 3,
+                },
+            ],
+        }
+        client = FakeRoomClient([room])
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            self.assertIn("방 전체 맥락", prompt)
+            self.assertIn("스쿠나가 템포 리셋하면", prompt)
+            return '{"action":"challenge","message":"그 리셋도 무한을 뚫을 전제가 있어야 먹히지."}'
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="flow", max_chain_depth=1),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        runner.last_observed_event_id = "agent-b-msg"
+
+        self.assertEqual(runner.run(), 1)
+
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "agent-b-msg")
+        self.assertEqual(lobby_payloads[0]["auto_chain_depth"], 1)
+        self.assertEqual(lobby_payloads[0]["flow_action"], "challenge")
+
+    def test_flow_runner_drops_reply_when_flow_finished_during_provider_call(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow"},
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "자유토론 시작",
+                    "flow_id": "flow-1",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_topic": "고죠 vs 스쿠나",
+                }
+            ],
+        }
+        client = FakeRoomClient([room, room])
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            room["lobby_events"].append(
+                {
+                    "id": "flow-finished",
+                    "name": "Play Mode",
+                    "message": "시간제 자유토론 종료",
+                    "flow_id": "flow-1",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "finished",
+                }
+            )
+            return '{"action":"speak","message":"늦게 온 답변"}'
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="flow", meeting_id="m1"),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+        self.assertFalse([call for call in client.calls if call[0].endswith("/lobby")])
 
     def test_flow_decision_prompt_keeps_play_mode_unofficial(self):
         prompt = flow_decision_prompt(

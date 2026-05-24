@@ -189,7 +189,7 @@ class LiveAgentFlowSupervisor:
                 "options": options,
                 "previous_modes": previous_modes,
                 "stop_event": stop_event,
-                "last_nudge_at": now,
+                "last_silence_check_at": now,
             }
             thread = threading.Thread(
                 target=self._run_flow,
@@ -253,7 +253,7 @@ class LiveAgentFlowSupervisor:
                 if self._flow_time_expired(state) or self._flow_turn_budget_exhausted(state):
                     self._finish_locked(run, "finished")
                     return
-                self._maybe_append_silence_nudge_locked(run)
+                self._mark_silence_check_locked(run)
             if stop_event.wait(max(0.01, options.tick_interval)):
                 continue
 
@@ -311,7 +311,7 @@ class LiveAgentFlowSupervisor:
         total = int(state.get("total_turns") or 0)
         return bool(max_total and total >= max_total)
 
-    def _maybe_append_silence_nudge_locked(self, run: dict[str, object]) -> None:
+    def _mark_silence_check_locked(self, run: dict[str, object]) -> None:
         state = run["state"] if isinstance(run.get("state"), dict) else {}
         max_silence = float(state.get("max_silence_seconds") or 0)
         if max_silence <= 0:
@@ -322,24 +322,10 @@ class LiveAgentFlowSupervisor:
         now = datetime.now(UTC)
         if (now - last_activity).total_seconds() < max_silence:
             return
-        last_nudge_at = run.get("last_nudge_at")
-        if isinstance(last_nudge_at, datetime) and (now - last_nudge_at).total_seconds() < max_silence:
+        last_silence_check_at = run.get("last_silence_check_at")
+        if isinstance(last_silence_check_at, datetime) and (now - last_silence_check_at).total_seconds() < max_silence:
             return
-        append_lobby_event(
-            self.output_root,
-            {
-                "name": "Play Mode",
-                "side": "other",
-                "kind": "message",
-                "message": "열린 쟁점을 하나 골라 다음 말을 이어가세요.",
-                "actor_id": "flow",
-                "auto_chain_depth": 1,
-                **self._flow_event_metadata(state, event_type="nudge"),
-            },
-            allow_flow_metadata=True,
-        )
-        run["last_nudge_at"] = now
-        state["last_activity_at"] = now.isoformat()
+        run["last_silence_check_at"] = now
 
     def _finish_locked(self, run: dict[str, object], status: str) -> None:
         state = run["state"] if isinstance(run.get("state"), dict) else {}

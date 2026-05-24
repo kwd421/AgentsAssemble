@@ -40,6 +40,7 @@ from agentsassemble.gui import (
     _session_start_operation_details,
     live_agent_lobby_message_payload,
     LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT,
+    LiveAgentFlowSupervisor,
     live_agents_payload,
     live_agent_health_payload,
     live_agent_discovery_payload,
@@ -17827,6 +17828,53 @@ class GuiServerTests(unittest.TestCase):
             persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
             self.assertEqual(persisted_agent["engagement_mode"], "moderator_called")
             self.assertFalse((root / "live-agent-runs" / "processes.json").exists())
+
+    def test_live_agent_flow_silence_timer_does_not_post_visible_nudges(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "live_state.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "JJK debate",
+                        "display_topic": "고죠 vs 스쿠나",
+                        "live_status": "running",
+                        "provider_configs": {"p1": {"kind": "local_cli"}},
+                        "agent_bindings": [{"agent_id": "agent-a", "provider_id": "p1"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "meeting_id": "m1",
+                    "provider_kind": "local_cli",
+                    "engagement_mode": "moderator_called",
+                    "status": "online",
+                },
+            )
+            supervisor = LiveAgentFlowSupervisor(root)
+
+            supervisor.start(
+                {
+                    "meeting_id": "m1",
+                    "topic": "고죠 vs 스쿠나",
+                    "duration_seconds": 1,
+                    "tick_interval": 0.01,
+                    "max_silence_seconds": 0.01,
+                }
+            )
+            time.sleep(0.05)
+            supervisor.stop({"meeting_id": "m1"})
+
+            flow_events = [event for event in read_lobby(root) if event.get("flow_event_type")]
+            self.assertEqual([event["flow_event_type"] for event in flow_events], ["started", "stopped"])
+            self.assertNotIn("열린 쟁점", json.dumps(flow_events, ensure_ascii=False))
 
     def test_live_agent_flow_start_skips_binding_provider_conflicts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
