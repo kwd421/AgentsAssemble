@@ -572,6 +572,7 @@ function renderLiveAgentJoinBrief(brief) {
     agent: brief.agent || {},
     commands: brief.commands || {},
     templates: brief.templates || {},
+    mcp: brief.mcp || {},
     instructions: brief.instructions || [],
     env: brief.env || {},
     safety: brief.safety || {},

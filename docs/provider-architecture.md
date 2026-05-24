@@ -187,6 +187,23 @@ Resident `terminal_session` is the first local PTY-backed slice for Claude-like 
 
 Resident `self_service` is the first local process-supervision slice that stops AgentsAssemble from injecting each room prompt into the provider process. The supervisor registers the live agent, starts the configured command with `stdin` closed, exports `AGENTSASSEMBLE_*` environment variables plus shell-escaped room command templates such as `AGENTSASSEMBLE_WAIT_NEXT_COMMAND`, `AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE`, `AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE`, `AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE`, and `AGENTSASSEMBLE_LEAVE_COMMAND`, and lets the child call `wait-next`, `say`, `official-reply`, `heartbeat`, and intentional `leave` itself after splitting those templates into argv and replacing placeholders. Use it for Antigravity CLI or custom wrappers that can own their own room loop. `scripts/my_self_service_agent.py` is the runnable local example for that wrapper shape.
 
+Local stdio MCP is an adapter over the same room contract, not a replacement
+control plane. `assemble mcp serve --profile participant` exposes
+agent-owned tools for register, heartbeat, wait_next, say, official_reply,
+read_room, read_return_packet, and leave using the existing GUI HTTP endpoints.
+The participant identity comes from the server startup command (`--agent-id`,
+`--display-name`, `--provider-kind`, `--connection-kind`, and
+`--engagement-mode`), not from later tool-call arguments.
+`--profile archive` exposes only `read_transcript`, `read_decision`,
+`read_shared_memory`, `list_meetings`, and `read_meeting_summary`; those archive
+tools validate meeting ids before calling room endpoints and return sanitized
+archive fields rather than local paths or raw meeting records. MCP attachment
+does not start provider
+CLIs, does not persist real-provider approval, and does not enable host-control
+actions such as meeting creation, session start/stop, pending-turn cancellation,
+or finalization. Host-control tools stay a later design behind
+authentication and admission boundaries.
+
 `codex_live_session` is the first Codex-specific live-session slice. Meeting turns use Codex CLI session ids and `codex exec resume` so repeated turns can continue the same Codex session history. Resident live-agent configs use `provider_kind: "codex_live_session"` with `connection_kind: "live_session"`; both the meeting adapter and resident runner call Codex CLI through `codex exec --sandbox read-only --ignore-rules` / `codex exec --sandbox read-only --ignore-rules resume` rather than through the JSONL fake-session protocol. The explicit `--sandbox read-only` flag is the safety input, `--ignore-rules` keeps repository `.rules` files from participating in the launch, and Codex CLI still owns the actual enforcement. Public artifacts record that path as `sandbox_enforcement: "codex_readonly"`. This is not native Codex/Claude channel injection, OS-level sandboxing, or a substitute for a future constrained launch path for arbitrary CLIs.
 
 The resident launch contract now has a small `SandboxLauncher` abstraction. `NoSandboxLauncher` declares `sandbox_enforcement: "advisory"` and does not constrain the child process. Codex uses the Codex read-only launcher and declares `codex_readonly`. Only a provider launched through a verified OS sandbox, restricted worktree, environment scrubber, or equivalent hard boundary may declare `os_sandboxed`.

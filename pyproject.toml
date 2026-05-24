@@ -3,6 +3,9 @@ name = "agentsassemble"
 version = "0.1.0"
 description = "Local-first multi-agent council orchestrator."
 requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1,<2",
+]
 
 [project.scripts]
 assemble = "agentsassemble.cli:main"

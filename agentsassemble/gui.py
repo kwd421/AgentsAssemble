@@ -803,7 +803,7 @@ def _stream_snapshot_payload(
     if stream == "meeting":
         if not meeting_id:
             raise ValueError("Meeting id is required for meeting event stream.")
-        meeting_dir = output_root / "meetings" / meeting_id
+        meeting_dir = _safe_meeting_dir(output_root, meeting_id)
         if not meeting_dir.exists():
             raise _meeting_not_found_error(meeting_id)
         try:
@@ -6712,7 +6712,11 @@ def _make_handler(
                 return
             meeting_events_id = self._meeting_events_id(path)
             if meeting_events_id:
-                meeting_dir = output_root / "meetings" / meeting_events_id
+                try:
+                    meeting_dir = _safe_meeting_dir(output_root, meeting_events_id)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
+                    return
                 if not meeting_dir.exists():
                     self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
                     return
@@ -6720,7 +6724,11 @@ def _make_handler(
                 return
             if path.startswith("/api/meetings/"):
                 meeting_id = unquote(path.removeprefix("/api/meetings/"))
-                meeting_dir = output_root / "meetings" / meeting_id
+                try:
+                    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
+                    return
                 if not meeting_dir.exists():
                     self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
                     return

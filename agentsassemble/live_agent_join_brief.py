@@ -61,6 +61,19 @@ def build_live_agent_join_brief(
         "official_reply": _join_official_reply_template(server=normalized_server, agent_id=normalized_agent_id),
         "heartbeat": _join_heartbeat_template(server=normalized_server, agent_id=normalized_agent_id),
     }
+    mcp = {
+        "profile": "participant",
+        "command": _join_mcp_participant_command(
+            server=normalized_server,
+            agent_id=normalized_agent_id,
+            display_name=normalized_display_name,
+            provider_kind=normalized_provider_kind,
+            connection_kind=normalized_connection_kind,
+            meeting_id=normalized_meeting_id,
+            engagement_mode=normalized_engagement_mode,
+        ),
+        "contract": "agent-owned room tooling; does not start a provider CLI",
+    }
     execution_contract = _execution_contract(
         provider_kind=normalized_provider_kind,
         connection_kind=normalized_connection_kind,
@@ -71,6 +84,7 @@ def build_live_agent_join_brief(
         "execution_contract": execution_contract,
         "commands": commands,
         "templates": templates,
+        "mcp": mcp,
         "env": {
             "AGENTSASSEMBLE_SERVER": normalized_server,
             "AGENTSASSEMBLE_AGENT_ID": normalized_agent_id,
@@ -91,6 +105,7 @@ def build_live_agent_join_brief(
             "For official_turn actions, replace templates.official_reply placeholders and run it once.",
             "For return_packet actions, run the returned read_command before the ack_command and do not post a reply.",
             "Use templates.heartbeat to report online, working, error, or cursor-only observation.",
+            "If your host supports MCP, connect mcp.command as participant tooling instead of relying on host-side prompt injection.",
             "Run commands.leave before intentionally exiting the room.",
         ],
         "safety": {
@@ -241,6 +256,38 @@ def _join_heartbeat_template(*, server: str, agent_id: str) -> list[str]:
         "--last-observed-live-event-id={last_observed_live_event_id}",
         "--json",
     )
+
+
+def _join_mcp_participant_command(
+    *,
+    server: str,
+    agent_id: str,
+    display_name: str,
+    provider_kind: str,
+    connection_kind: str,
+    meeting_id: str,
+    engagement_mode: str,
+) -> list[str]:
+    command = _module_cli_command(
+        "mcp",
+        "serve",
+        "--profile",
+        "participant",
+        "--server",
+        server,
+        "--agent-id",
+        agent_id,
+        "--display-name",
+        display_name,
+        "--provider-kind",
+        provider_kind,
+        "--connection-kind",
+        connection_kind,
+    )
+    if meeting_id:
+        command.extend(["--meeting-id", meeting_id])
+    command.extend(["--engagement-mode", engagement_mode])
+    return command
 
 
 def _module_cli_command(*args: str) -> list[str]:

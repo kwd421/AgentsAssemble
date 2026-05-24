@@ -18585,6 +18585,31 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(_safe_static_path(static_root, "app.js"), (static_root / "app.js").resolve())
             self.assertIsNone(_safe_static_path(static_root, "../secret.txt"))
 
+    def test_meeting_payload_endpoint_cannot_escape_meetings_root(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "meetings").mkdir()
+            escaped_dir = root / "escaped"
+            escaped_dir.mkdir()
+            (escaped_dir / "meeting.json").write_text(
+                json.dumps({"meeting_id": "escaped", "topic": "outside meetings"}),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(f"http://127.0.0.1:{server.server_port}/api/meetings/..%2Fescaped", timeout=4)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        try:
+            self.assertEqual(raised.exception.code, 404)
+        finally:
+            raised.exception.close()
+
     def test_provider_catalog_payload_lists_planned_integrations(self):
         payload = provider_catalog_payload()
         providers = {provider["kind"]: provider for provider in payload["providers"]}

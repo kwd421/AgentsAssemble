@@ -2,6 +2,12 @@
 
 This roadmap freezes the current product direction so new features do not sprawl faster than the council engine can support them.
 
+The current v0.1 release-hardening bar lives in
+`docs/product/V0_1_RELEASE_CHECKLIST.md`. Use that checklist when deciding
+whether the core GUI/live-agent/archive flow is ready enough to call usable.
+Local stdio MCP now has a checked-in participant/archive adapter boundary; host
+control MCP remains a later auth/admission design.
+
 ## Product North Star
 
 AgentsAssemble is a local-first multi-agent council orchestrator for AI coding agents.
@@ -188,6 +194,12 @@ These are intentional future ideas, not near-term commitments.
 - Game-like social deduction or trial themes.
 - Rich TUI or polished web UI.
 - React/Three.js product UI as a separate future track, rather than making the dependency-light GUI v0 carry cinematic staging.
+- A dedicated roadmap page for the later React/Vite responsive frontend: a
+  Trello/Jira-like board that separates long-term epics from version/milestone
+  cards, clearly marks planned, in-progress, review, and completed work, and
+  links cards back to docs, commits, or meeting records. This is separate from
+  the live meeting progress/round view and should not be bolted onto the current
+  vanilla operator console.
 - Cost and usage dashboards.
 - Provider capability dashboard.
 

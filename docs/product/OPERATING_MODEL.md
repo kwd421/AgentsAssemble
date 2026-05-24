@@ -54,6 +54,11 @@ context into Work Mode by themselves.
 - The current GUI remains a dependency-light vanilla HTML/CSS/JS operator
   console until that contract is stable; React, Vite, and Tailwind are a later
   frontend track, not part of live-room stabilization.
+- The detailed roadmap board is a later product-UI feature, not another panel
+  to bolt onto the current vanilla console. When the React/Vite frontend track
+  starts, add a dedicated roadmap view that can show long-term epics and
+  version/milestone cards in a Trello/Jira-like board with clear planned,
+  in-progress, review, and completed states.
 
 ## Context Model
 
@@ -117,6 +122,26 @@ The vanilla GUI should optimize for trustworthy operations before polish:
 - Input drafts, scroll position, and latest navigation are operator state and
   should survive background refreshes.
 
+## Future Roadmap Board
+
+The roadmap page should be separate from the live meeting progress view.
+Meeting progress answers "where is this room right now"; the roadmap board
+answers "where is the product going across versions."
+
+When the richer responsive frontend is started, design a dedicated roadmap page
+with a Trello/Jira-like shape:
+
+- long-term epics.
+- version or milestone lanes.
+- feature cards with status, scope, acceptance checks, and links to docs,
+  commits, or meeting records.
+- visual treatment for planned, in-progress, review, and completed work.
+- completed work visible but de-emphasized.
+- current and next work easy to find without opening raw markdown.
+
+Until then, do not add this as more vanilla GUI clutter. Keep roadmap source of
+truth in `docs/roadmap.md` and product memory in this file.
+
 ## What To Build Next
 
 Near-term work should favor backend contracts over visual polish:
@@ -134,6 +159,8 @@ Near-term work should favor backend contracts over visual polish:
 ## Source-Of-Truth Routing
 
 - `docs/roadmap.md` tracks status and priority.
+- `docs/product/V0_1_RELEASE_CHECKLIST.md` owns the current release-hardening
+  bar for the core usable flow.
 - `docs/live-session-room-model.md` owns room semantics.
 - `docs/provider-architecture.md` owns provider and adapter boundaries.
 - `docs/live-agent-ops.md` owns operator commands, readiness, and verification.

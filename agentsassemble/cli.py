@@ -264,6 +264,26 @@ def build_parser() -> argparse.ArgumentParser:
     memory_capsule_gate.add_argument("--path", required=True, help="Memory capsule directory path.")
     memory_capsule_gate.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable gate report.")
 
+    mcp = subparsers.add_parser("mcp", help="Expose AgentsAssemble room tools through MCP stdio.")
+    mcp_subparsers = mcp.add_subparsers(dest="mcp_command", required=True)
+    mcp_serve = mcp_subparsers.add_parser(
+        "serve",
+        help="Serve participant or archive MCP tools over stdio.",
+    )
+    mcp_serve.add_argument("--profile", choices=["participant", "archive"], required=True)
+    mcp_serve.add_argument("--server", default="http://127.0.0.1:8765", help="AgentsAssemble GUI server URL.")
+    mcp_serve.add_argument("--agent-id", default="", help="Participant profile agent id.")
+    mcp_serve.add_argument("--meeting-id", default="", help="Default meeting id for participant/archive tools.")
+    mcp_serve.add_argument("--display-name", default="", help="Participant profile display name.")
+    mcp_serve.add_argument("--provider-kind", default="manual", help="Participant profile provider kind.")
+    mcp_serve.add_argument(
+        "--connection-kind",
+        choices=LIVE_AGENT_CONNECTION_KIND_CHOICES,
+        default="manual",
+        help="Participant profile connection kind.",
+    )
+    mcp_serve.add_argument("--engagement-mode", default="mentioned", help="Participant profile engagement mode.")
+
     live_server = argparse.ArgumentParser(add_help=False)
     live_server.add_argument("--server", default="http://127.0.0.1:8765", help="AgentsAssemble GUI server URL.")
 
@@ -1265,6 +1285,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_providers_command(args)
     if args.command == "memory-capsule":
         return run_memory_capsule_command(args)
+    if args.command == "mcp":
+        return run_mcp_command(args)
     if args.command == "sessions":
         return run_sessions_command(args)
 
@@ -1294,6 +1316,28 @@ def run_memory_capsule_command(args: argparse.Namespace) -> int:
                         print(f"- {check.get('status', 'unknown')}: {check.get('message', '')}")
             return 0 if report.get("status") == "ok" else 1
     except OSError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    return 1
+
+
+def run_mcp_command(args: argparse.Namespace) -> int:
+    try:
+        if args.mcp_command == "serve":
+            from agentsassemble.mcp_server import serve_mcp
+
+            serve_mcp(
+                profile=args.profile,
+                server=args.server,
+                agent_id=args.agent_id,
+                meeting_id=args.meeting_id,
+                display_name=args.display_name,
+                provider_kind=args.provider_kind,
+                connection_kind=args.connection_kind,
+                engagement_mode=args.engagement_mode,
+            )
+            return 0
+    except (RuntimeError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return 1
