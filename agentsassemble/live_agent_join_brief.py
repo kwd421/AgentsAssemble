@@ -48,6 +48,7 @@ def build_live_agent_join_brief(
             poll_interval=normalized_poll_interval,
             max_chain_depth=normalized_max_chain_depth,
         ),
+        "read_since": _join_read_since_command(server=normalized_server, agent_id=normalized_agent_id),
         "room": _join_room_command(server=normalized_server, agent_id=normalized_agent_id),
         "roster_gate": _join_roster_gate_command(
             server=normalized_server,
@@ -97,6 +98,7 @@ def build_live_agent_join_brief(
         "instructions": [
             "Run commands.register once before observing the room.",
             "Loop commands.wait_next and inspect the returned action.",
+            "Use commands.read_since when you want the raw room diff instead of the next action.",
             "Read room.shared_memory as official-only background context when present.",
             "Use execution_contract.context_durability as the declared agent-private context boundary.",
             "Use execution_contract.sandbox_enforcement as the declared sandbox boundary.",
@@ -175,6 +177,10 @@ def _join_wait_next_command(
 
 def _join_room_command(*, server: str, agent_id: str) -> list[str]:
     return _module_cli_command("live-agent", "room", "--server", server, "--agent-id", agent_id)
+
+
+def _join_read_since_command(*, server: str, agent_id: str) -> list[str]:
+    return _module_cli_command("live-agent", "read-since", "--server", server, "--agent-id", agent_id, "--json")
 
 
 def _join_roster_gate_command(*, server: str, agent_id: str, meeting_id: str) -> list[str]:

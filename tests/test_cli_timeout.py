@@ -668,6 +668,21 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("9", payload["commands"]["wait_next"])
         self.assertIn("--poll-interval", payload["commands"]["wait_next"])
         self.assertIn("0.5", payload["commands"]["wait_next"])
+        self.assertEqual(
+            payload["commands"]["read_since"],
+            [
+                "python3",
+                "-m",
+                "agentsassemble.cli",
+                "live-agent",
+                "read-since",
+                "--server",
+                "http://room.local",
+                "--agent-id",
+                "claude-terminal",
+                "--json",
+            ],
+        )
         self.assertEqual(payload["commands"]["roster_gate"][-3:], ["--require-match", "--fail-on-attention", "--json"])
         self.assertEqual(
             payload["commands"]["leave"],
@@ -685,6 +700,7 @@ class CliTimeoutTests(unittest.TestCase):
             ],
         )
         self.assertIn("Read room.shared_memory as official-only background context when present.", payload["instructions"])
+        self.assertIn("Use commands.read_since when you want the raw room diff instead of the next action.", payload["instructions"])
         self.assertEqual(
             payload["execution_contract"],
             {
@@ -11178,6 +11194,81 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.timeout, 3.0)
         self.assertEqual(args.poll_interval, 0.5)
         self.assertTrue(args.as_json)
+
+    def test_live_agent_read_since_parses_lobby_and_official_cursor_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "read-since",
+                "--server",
+                "http://room.local",
+                "--agent-id",
+                "claude-terminal",
+                "--after-event-id",
+                "evt-old",
+                "--after-live-event-id",
+                "live-old",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "read-since")
+        self.assertEqual(args.agent_id, "claude-terminal")
+        self.assertEqual(args.after_event_id, "evt-old")
+        self.assertEqual(args.after_live_event_id, "live-old")
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_read_since_returns_room_diff_without_posting(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "meeting_id": "meeting-1",
+                "last_observed_event_id": "evt-old",
+                "last_observed_live_event_id": "live-old",
+            },
+            "shared_memory": {
+                "official_event_count": 1,
+                "rolling_summary": [
+                    {"event_id": "reply-1", "speaker": "Architect", "summary": "Shared room context."}
+                ],
+            },
+            "lobby_events": [
+                {"id": "evt-old", "name": "나", "message": "old lobby"},
+                {"id": "evt-next", "name": "나", "message": "new lobby"},
+            ],
+            "live_events": [
+                {"id": "live-old", "kind": "message", "content": "old official"},
+                {"id": "live-next", "kind": "message", "content": "new official"},
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "read-since",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/live-agents/claude-terminal/room")
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual([event["id"] for event in payload["lobby_events"]], ["evt-next"])
+        self.assertEqual([event["id"] for event in payload["live_events"]], ["live-next"])
+        self.assertEqual(payload["last_observed_event_id"], "evt-old")
+        self.assertEqual(payload["last_observed_live_event_id"], "live-old")
+        self.assertEqual(payload["next_last_observed_event_id"], "evt-next")
+        self.assertEqual(payload["next_last_observed_live_event_id"], "live-next")
+        self.assertEqual(payload["room"]["shared_memory"]["rolling_summary"][0]["summary"], "Shared room context.")
+        self.assertIn("--last-observed-event-id=evt-next", payload["ack_command"])
+        self.assertIn("--last-observed-live-event-id=live-next", payload["ack_command"])
 
     def test_live_agent_wait_next_prefers_official_turn_over_lobby_event(self):
         stdout = StringIO()

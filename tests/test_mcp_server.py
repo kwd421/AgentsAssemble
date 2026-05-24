@@ -136,7 +136,17 @@ class McpParticipantToolsTests(unittest.TestCase):
 
         self.assertEqual(
             set(registry),
-            {"register", "heartbeat", "wait_next", "say", "official_reply", "read_room", "read_return_packet", "leave"},
+            {
+                "register",
+                "heartbeat",
+                "wait_next",
+                "read_since",
+                "say",
+                "official_reply",
+                "read_room",
+                "read_return_packet",
+                "leave",
+            },
         )
         self.assertNotIn("read_transcript", registry)
         self.assertNotIn("finalize_meeting", registry)
@@ -212,6 +222,102 @@ class McpParticipantToolsTests(unittest.TestCase):
         self.assertEqual(room.requests[2]["payload"]["meeting_id"], "m1")
         self.assertEqual(room.requests[2]["payload"]["source_event_id"], "turn-1")
         self.assertEqual(room.requests[4]["payload"]["source_event_id"], "lobby-1")
+
+    def test_read_since_returns_room_diff_without_mutating_presence(self):
+        room = RecordingRoom()
+        room.room["agent"] = {
+            "agent_id": "agent-a",
+            "display_name": "Agent A",
+            "last_observed_event_id": "lobby-1",
+            "last_observed_live_event_id": "live-1",
+        }
+        room.room["lobby_events"] = [
+            {"id": "lobby-1", "name": "Human", "message": "old lobby"},
+            {"id": "lobby-2", "name": "Human", "message": "new lobby"},
+        ]
+        room.room["live_events"] = [
+            {"id": "live-1", "kind": "message", "content": "old official"},
+            {"id": "live-2", "kind": "message", "content": "new official"},
+        ]
+        tools = build_tool_registry(
+            "participant",
+            McpRoomClient("http://room.local", request_json=room.request_json),
+            McpParticipantContext(agent_id="agent-a", display_name="Agent A", meeting_id="m1"),
+        )
+
+        diff = tools["read_since"]()
+        tools["leave"]()
+
+        self.assertEqual([event["id"] for event in diff["lobby_events"]], ["lobby-2"])
+        self.assertEqual([event["id"] for event in diff["live_events"]], ["live-2"])
+        self.assertEqual(diff["last_observed_event_id"], "lobby-1")
+        self.assertEqual(diff["last_observed_live_event_id"], "live-1")
+        self.assertEqual(diff["next_last_observed_event_id"], "lobby-2")
+        self.assertEqual(diff["next_last_observed_live_event_id"], "live-2")
+        self.assertEqual(diff["room"]["lobby_event_count"], 2)
+        self.assertEqual(
+            [(request["method"], request["path"]) for request in room.requests],
+            [
+                ("GET", "/api/live-agents/agent-a/room"),
+                ("POST", "/api/live-agents/agent-a/leave"),
+            ],
+        )
+        self.assertEqual(room.requests[-1]["payload"]["last_observed_event_id"], "")
+        self.assertEqual(room.requests[-1]["payload"]["last_observed_live_event_id"], "")
+
+    def test_read_since_accepts_explicit_cursors(self):
+        room = RecordingRoom()
+        room.room["agent"] = {
+            "agent_id": "agent-a",
+            "display_name": "Agent A",
+            "last_observed_event_id": "lobby-agent",
+            "last_observed_live_event_id": "live-agent",
+        }
+        room.room["lobby_events"] = [
+            {"id": "lobby-old", "name": "Human", "message": "old lobby"},
+            {"id": "lobby-next", "name": "Human", "message": "new lobby"},
+        ]
+        room.room["live_events"] = [
+            {"id": "live-old", "kind": "message", "content": "old official"},
+            {"id": "live-next", "kind": "message", "content": "new official"},
+        ]
+        tools = build_tool_registry(
+            "participant",
+            McpRoomClient("http://room.local", request_json=room.request_json),
+            McpParticipantContext(agent_id="agent-a", display_name="Agent A", meeting_id="m1"),
+        )
+
+        diff = tools["read_since"](after_event_id="lobby-old", after_live_event_id="live-old")
+
+        self.assertEqual([event["id"] for event in diff["lobby_events"]], ["lobby-next"])
+        self.assertEqual([event["id"] for event in diff["live_events"]], ["live-next"])
+        self.assertEqual(diff["last_observed_event_id"], "lobby-old")
+        self.assertEqual(diff["last_observed_live_event_id"], "live-old")
+
+    def test_read_since_defaults_to_room_cursor_after_wait_next_delivery(self):
+        room = RecordingRoom()
+        room.room["agent"] = {
+            "agent_id": "agent-a",
+            "display_name": "Agent A",
+            "engagement_mode": "always",
+            "last_observed_event_id": "lobby-1",
+        }
+        room.room["lobby_events"] = [
+            {"id": "lobby-1", "name": "Human", "message": "old lobby"},
+            {"id": "lobby-2", "name": "Human", "message": "new lobby"},
+        ]
+        tools = build_tool_registry(
+            "participant",
+            McpRoomClient("http://room.local", request_json=room.request_json),
+            McpParticipantContext(agent_id="agent-a", display_name="Agent A", meeting_id="m1"),
+        )
+
+        delivered = tools["wait_next"](timeout_seconds=0, poll_interval=0, max_chain_depth=1)
+        diff = tools["read_since"]()
+
+        self.assertEqual(delivered["source_event_id"], "lobby-2")
+        self.assertEqual(diff["last_observed_event_id"], "lobby-1")
+        self.assertEqual([event["id"] for event in diff["lobby_events"]], ["lobby-2"])
 
 
 class McpArchiveToolsTests(unittest.TestCase):

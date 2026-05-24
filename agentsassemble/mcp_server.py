@@ -206,6 +206,15 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
     def read_room() -> dict[str, object]:
         return client.get(f"/api/live-agents/{_quote(context.agent_id)}/room")
 
+    def read_since(after_event_id: str = "", after_live_event_id: str = "") -> dict[str, object]:
+        room = read_room()
+        return _read_since_payload(
+            context,
+            room,
+            after_event_id=after_event_id,
+            after_live_event_id=after_live_event_id,
+        )
+
     def wait_next(
         timeout_seconds: float = 30.0,
         poll_interval: float = 2.0,
@@ -279,6 +288,7 @@ def _participant_tools(client: McpRoomClient, context: McpParticipantContext) ->
         "register": register,
         "heartbeat": heartbeat,
         "wait_next": wait_next,
+        "read_since": read_since,
         "say": say,
         "official_reply": official_reply,
         "read_room": read_room,
@@ -463,6 +473,43 @@ def _room_context(room: dict[str, object], *, meeting_id: str) -> dict[str, obje
     if isinstance(room.get("shared_memory"), dict):
         context["shared_memory"] = room["shared_memory"]
     return context
+
+
+def _read_since_payload(
+    context: McpParticipantContext,
+    room: dict[str, object],
+    *,
+    after_event_id: str = "",
+    after_live_event_id: str = "",
+) -> dict[str, object]:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    lobby_cursor = (
+        _clean_text(after_event_id, limit=128)
+        or str(agent.get("last_observed_event_id") or "").strip()
+        or context.last_observed_event_id
+    )
+    live_cursor = (
+        _clean_text(after_live_event_id, limit=128)
+        or str(agent.get("last_observed_live_event_id") or "").strip()
+        or context.last_observed_live_event_id
+    )
+    lobby_events = [event for event in room.get("lobby_events", []) if isinstance(event, dict)]
+    live_events = [event for event in room.get("live_events", []) if isinstance(event, dict)]
+    lobby_diff = _events_after(lobby_events, lobby_cursor)
+    live_diff = _events_after(live_events, live_cursor)
+    meeting_id = str(room.get("meeting_id") or context.meeting_id or agent.get("meeting_id") or "").strip()
+    return {
+        "status": "ok",
+        "agent_id": context.agent_id,
+        "meeting_id": meeting_id,
+        "last_observed_event_id": lobby_cursor,
+        "last_observed_live_event_id": live_cursor,
+        "next_last_observed_event_id": _latest_event_id(lobby_diff, lobby_cursor),
+        "next_last_observed_live_event_id": _latest_event_id(live_diff, live_cursor),
+        "lobby_events": lobby_diff,
+        "live_events": live_diff,
+        "room": _room_context(room, meeting_id=meeting_id),
+    }
 
 
 def _meeting_payload(client: McpRoomClient, meeting_id: str) -> dict[str, object]:

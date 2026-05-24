@@ -715,6 +715,16 @@ def build_parser() -> argparse.ArgumentParser:
     live_room = live_agent_subparsers.add_parser("room", parents=[live_server], help="Read the live room snapshot for an agent.")
     live_room.add_argument("--agent-id", required=True)
 
+    live_read_since = live_agent_subparsers.add_parser(
+        "read-since",
+        parents=[live_server],
+        help="Read lobby and official room events after this agent's stored cursors.",
+    )
+    live_read_since.add_argument("--agent-id", required=True)
+    live_read_since.add_argument("--after-event-id", default="")
+    live_read_since.add_argument("--after-live-event-id", default="")
+    live_read_since.add_argument("--json", action="store_true", dest="as_json", help="Print the raw room diff payload.")
+
     live_wait_room_event = live_agent_subparsers.add_parser(
         "wait-room-event",
         parents=[live_server],
@@ -1446,6 +1456,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             response = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
             print(json.dumps(response, ensure_ascii=False, indent=2))
             return 0
+        if args.live_agent_command == "read-since":
+            return _run_live_agent_read_since(args)
         if args.live_agent_command == "wait-room-event":
             return _run_live_agent_wait_room_event(args)
         if args.live_agent_command in {"wait-official-turn", "wait-turn-request"}:
@@ -1584,6 +1596,7 @@ def _print_live_agent_join_brief(payload: dict[str, object]) -> None:
     print(f"Live-agent join brief for {agent_id}")
     _print_join_brief_command("Register", commands.get("register"))
     _print_join_brief_command("Wait loop", commands.get("wait_next"))
+    _print_join_brief_command("Read diff", commands.get("read_since"))
     _print_join_brief_command("Room snapshot", commands.get("room"))
     _print_join_brief_command("Roster gate", commands.get("roster_gate"))
     _print_join_brief_command("Leave", commands.get("leave"))
@@ -5400,6 +5413,74 @@ def _events_after_id(events: list[object], event_id: str) -> list[object]:
         if isinstance(event, dict) and str(event.get("id") or "") == event_id:
             return events[index + 1 :]
     return events
+
+
+def _run_live_agent_read_since(args: argparse.Namespace) -> int:
+    agent_id = urllib.parse.quote(args.agent_id, safe="")
+    room = _request_json(_server_url(args.server, f"/api/live-agents/{agent_id}/room"))
+    payload = _live_agent_read_since_payload(args, room)
+    if args.as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        lobby_cursor = payload.get("last_observed_event_id") or "(start)"
+        live_cursor = payload.get("last_observed_live_event_id") or "(start)"
+        print(
+            "read-since "
+            f"lobby {len(payload.get('lobby_events') if isinstance(payload.get('lobby_events'), list) else [])} "
+            f"after {lobby_cursor}; "
+            f"official {len(payload.get('live_events') if isinstance(payload.get('live_events'), list) else [])} "
+            f"after {live_cursor}"
+        )
+    return 0
+
+
+def _live_agent_read_since_payload(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object]:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    lobby_cursor = str(args.after_event_id or agent.get("last_observed_event_id") or "").strip()
+    live_cursor = str(args.after_live_event_id or agent.get("last_observed_live_event_id") or "").strip()
+    lobby_events = [event for event in _events_after_id(_room_event_list(room, "lobby_events"), lobby_cursor) if isinstance(event, dict)]
+    live_events = [event for event in _events_after_id(_room_event_list(room, "live_events"), live_cursor) if isinstance(event, dict)]
+    next_lobby_cursor = _latest_observed_event_id(lobby_events, lobby_cursor)
+    next_live_cursor = _latest_observed_event_id(live_events, live_cursor)
+    meeting_id = str(room.get("meeting_id") or agent.get("meeting_id") or "").strip()
+    return {
+        "status": "ok",
+        "agent_id": args.agent_id,
+        "meeting_id": meeting_id,
+        "last_observed_event_id": lobby_cursor,
+        "last_observed_live_event_id": live_cursor,
+        "next_last_observed_event_id": next_lobby_cursor,
+        "next_last_observed_live_event_id": next_live_cursor,
+        "lobby_events": lobby_events,
+        "live_events": live_events,
+        "ack_command": _live_agent_read_since_ack_command(args, next_lobby_cursor, next_live_cursor),
+        "room": _wait_room_context(room, meeting_id=meeting_id),
+    }
+
+
+def _room_event_list(room: dict[str, object], key: str) -> list[object]:
+    events = room.get(key)
+    return events if isinstance(events, list) else []
+
+
+def _live_agent_read_since_ack_command(args: argparse.Namespace, lobby_cursor: str, live_cursor: str) -> list[str]:
+    return [
+        "python3",
+        "-m",
+        "agentsassemble.cli",
+        "live-agent",
+        "heartbeat",
+        "--server",
+        str(args.server),
+        "--agent-id",
+        str(args.agent_id),
+        "--status",
+        "online",
+        "--last-error=",
+        f"--last-observed-event-id={lobby_cursor}",
+        f"--last-observed-live-event-id={live_cursor}",
+        "--json",
+    ]
 
 
 def _latest_observed_event_id(events: object, fallback: str) -> str:

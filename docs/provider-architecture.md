@@ -189,8 +189,9 @@ Resident `self_service` is the first local process-supervision slice that stops 
 
 Local stdio MCP is an adapter over the same room contract, not a replacement
 control plane. `assemble mcp serve --profile participant` exposes
-agent-owned tools for register, heartbeat, wait_next, say, official_reply,
-read_room, read_return_packet, and leave using the existing GUI HTTP endpoints.
+agent-owned tools for register, heartbeat, wait_next, read_since, say,
+official_reply, read_room, read_return_packet, and leave using the existing GUI
+HTTP endpoints.
 The participant identity comes from the server startup command (`--agent-id`,
 `--display-name`, `--provider-kind`, `--connection-kind`, and
 `--engagement-mode`), not from later tool-call arguments.

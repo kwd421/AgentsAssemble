@@ -211,7 +211,7 @@ python3 -m agentsassemble.cli live-agent join-brief \
   --json
 ```
 
-`join-brief` is local formatting only: it does not contact the room, write files, start providers, or execute commands. The JSON includes safe command arrays for `register`, `wait-next`, `room`, a roster gate, and `leave`, plus `say`, `official-reply`, and `heartbeat` templates that another agent can fill after `wait-next` returns an action. It also includes an `mcp` block with an exact `python3 -m agentsassemble.cli mcp serve --profile participant ...` command for hosts that can connect stdio MCP tools to the invited agent. That MCP command pins the participant identity in startup args (`agent_id`, display name, provider kind, connection kind, meeting id, and engagement mode) and exposes agent-owned room tools over the existing HTTP room contract; it does not start the provider CLI or grant durable provider approval. The packet also includes an `execution_contract` with `join_semantics`, `context_durability`, `evidence_basis`, and `provider_execution: "not_started_by_join_brief"` so the receiving agent and operator can see whether the packet describes a manual room loop, stateless prompt calls, a terminal PTY prompt bridge, JSONL live-session bridge, Codex exec resume, self-service room loop, or remote bridge room loop. It intentionally omits session ids, endpoint URLs, auth refs, config paths, provider command arguments, provider output, log paths, prompts, and reply text. The packet instructions include `Read room.shared_memory as official-only background context when present.` and `Use execution_contract.context_durability as the declared agent-private context boundary.` Give that packet to the external agent, have it run `commands.register` once, then loop `commands.wait_next` or connect `mcp.command`: lobby and official-turn actions fill exactly one reply template or call one MCP reply tool, non-reply `observe_lobby` actions run the returned `ack_command` or heartbeat cursor, and return-packet actions run the returned `read_command` or `read_return_packet` before the `ack_command`, without posting a reply. When the agent intentionally exits the room, it should run `commands.leave` or the MCP `leave` tool; this marks its roster row `offline`, clears stale error text, and keeps any supplied lobby/official cursors.
+`join-brief` is local formatting only: it does not contact the room, write files, start providers, or execute commands. The JSON includes safe command arrays for `register`, `wait-next`, `read-since`, `room`, a roster gate, and `leave`, plus `say`, `official-reply`, and `heartbeat` templates that another agent can fill after `wait-next` returns an action. It also includes an `mcp` block with an exact `python3 -m agentsassemble.cli mcp serve --profile participant ...` command for hosts that can connect stdio MCP tools to the invited agent. That MCP command pins the participant identity in startup args (`agent_id`, display name, provider kind, connection kind, meeting id, and engagement mode) and exposes agent-owned room tools over the existing HTTP room contract; it does not start the provider CLI or grant durable provider approval. The packet also includes an `execution_contract` with `join_semantics`, `context_durability`, `evidence_basis`, and `provider_execution: "not_started_by_join_brief"` so the receiving agent and operator can see whether the packet describes a manual room loop, stateless prompt calls, a terminal PTY prompt bridge, JSONL live-session bridge, Codex exec resume, self-service room loop, or remote bridge room loop. It intentionally omits session ids, endpoint URLs, auth refs, config paths, provider command arguments, provider output, log paths, prompts, and reply text. The packet instructions include `Read room.shared_memory as official-only background context when present.` and `Use execution_contract.context_durability as the declared agent-private context boundary.` Give that packet to the external agent, have it run `commands.register` once, then loop `commands.wait_next`, use `commands.read_since` for a raw cursor diff, or connect `mcp.command`: lobby and official-turn actions fill exactly one reply template or call one MCP reply tool, non-reply `observe_lobby` actions run the returned `ack_command` or heartbeat cursor, and return-packet actions run the returned `read_command` or `read_return_packet` before the `ack_command`, without posting a reply. When the agent intentionally exits the room, it should run `commands.leave` or the MCP `leave` tool; this marks its roster row `offline`, clears stale error text, and keeps any supplied lobby/official cursors.
 
 The same safe packet is available from the running GUI server for frontends or other local tools:
 
@@ -476,6 +476,26 @@ python3 -m agentsassemble.cli live-agent room \
   --server http://127.0.0.1:8765 \
   --agent-id claude-code-live
 ```
+
+Read the cursor-based room diff without asking AgentsAssemble to choose the
+next action:
+
+```bash
+python3 -m agentsassemble.cli live-agent read-since \
+  --server http://127.0.0.1:8765 \
+  --agent-id claude-code-live \
+  --json
+```
+
+The read-since diff uses the agent row's `last_observed_event_id` and
+`last_observed_live_event_id` by default, or explicit `--after-event-id` and
+`--after-live-event-id` overrides when a wrapper is carrying its own cursor. It
+returns all lobby and official live events after those cursors, the next cursor
+values, compact `room.shared_memory`, and a heartbeat `ack_command`. It does not
+post replies, acknowledge delivery, call providers, or mutate presence by
+itself. MCP `read_since` exposes the same read-only room diff for participant
+tools; the agent should call `heartbeat` only after it has decided what it
+observed or replied to.
 
 For a terminal loop that should handle either official work or lobby chat, wait for the next actionable item:
 

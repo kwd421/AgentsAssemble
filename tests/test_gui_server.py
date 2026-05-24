@@ -7728,6 +7728,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["agent"]["meeting_id"], "resident-m1")
             self.assertEqual(payload["commands"]["register"][5:7], ["--server", server_url])
             self.assertIn("wait-next", payload["commands"]["wait_next"])
+            self.assertIn("read-since", payload["commands"]["read_since"])
             self.assertIn("--max-chain-depth", payload["commands"]["wait_next"])
             self.assertIn("2", payload["commands"]["wait_next"])
             self.assertEqual(payload["commands"]["leave"][5:7], ["--server", server_url])
