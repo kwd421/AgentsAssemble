@@ -110,6 +110,31 @@ class McpJoinBriefTests(unittest.TestCase):
         self.assertFalse(payload["mcp"]["safety"]["provider_executed"])
 
 
+class McpRoomClientTests(unittest.TestCase):
+    def test_wait_next_surfaces_targeted_return_packet(self):
+        from agentsassemble.mcp_server import McpServerConfig, RoomClient
+
+        requester = _ReturnPacketRequester()
+        client = RoomClient(
+            McpServerConfig(
+                profile="participant",
+                server="http://room.test",
+                agent_id="agent-a",
+                meeting_id="m1",
+            ),
+            requester=requester,
+        )
+
+        payload = client.wait_next(timeout=0, poll_interval=0)
+
+        self.assertEqual(payload["action"], "return_packet")
+        self.assertEqual(payload["source_event_id"], "packet-1")
+        self.assertEqual(payload["meeting_id"], "m1")
+        self.assertEqual(payload["artifact_path"], "return-packets/agent-a.md")
+        self.assertEqual(payload["artifact_json_path"], "return-packets/agent-a.json")
+        self.assertEqual(payload["room"]["meeting_id"], "m1")
+
+
 @unittest.skipUnless(MCP_AVAILABLE, "mcp SDK is not installed")
 class McpServerToolTests(unittest.TestCase):
     def test_participant_profile_exposes_only_participant_tools(self):
@@ -202,6 +227,21 @@ class McpServerToolTests(unittest.TestCase):
         self.assertEqual(requester.calls[2].payload["auto_chain_depth"], 1)
         self.assertEqual(requester.calls[3].payload["status"], "online")
         self.assertEqual(requester.calls[4].payload["last_observed_event_id"], "evt-1")
+
+    def test_wait_next_tool_surfaces_targeted_return_packet(self):
+        from agentsassemble.mcp_server import McpServerConfig, build_mcp_server
+
+        server = build_mcp_server(
+            McpServerConfig(profile="participant", server="http://room.test", agent_id="agent-a", meeting_id="m1"),
+            requester=_ReturnPacketRequester(),
+        )
+
+        payload = json.loads(_tool_text(_call_tool(server, "wait_next", {"timeout": 0, "poll_interval": 0})))
+
+        self.assertEqual(payload["action"], "return_packet")
+        self.assertEqual(payload["source_event_id"], "packet-1")
+        self.assertEqual(payload["read_return_packet_args"], {"meeting_id": "m1", "source_event_id": "packet-1"})
+        self.assertEqual(payload["heartbeat_args"], {"status": "online", "last_observed_live_event_id": "packet-1"})
 
     def test_official_reply_posts_to_matching_meeting_and_source_event(self):
         from agentsassemble.mcp_server import McpServerConfig, build_mcp_server
@@ -491,6 +531,45 @@ class _FakeRequester:
                     "shared_memory/index.json": "{\"official_event_count\": 1}",
                 },
                 "live_events": [],
+            }
+        raise AssertionError(f"unexpected request {method} {url}")
+
+
+class _ReturnPacketRequester:
+    def __init__(self):
+        self.calls: list[_Call] = []
+
+    def __call__(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        payload: dict[str, object] | None = None,
+        timeout_seconds: float = 10.0,
+    ) -> dict[str, object]:
+        del payload, timeout_seconds
+        self.calls.append(_Call(method, url, None))
+        path = urlparse(url).path
+        if method == "GET" and path == "/api/live-agents/agent-a/room":
+            return {
+                "agent": {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "last_observed_live_event_id": "live-0",
+                },
+                "meeting_id": "m1",
+                "lobby_events": [],
+                "live_events": [
+                    {
+                        "id": "packet-1",
+                        "kind": "artifact",
+                        "artifact_kind": "return_packet",
+                        "meeting_id": "m1",
+                        "target_agent_id": "agent-a",
+                        "artifact_path": "return-packets/agent-a.md",
+                        "artifact_json_path": "return-packets/agent-a.json",
+                    }
+                ],
             }
         raise AssertionError(f"unexpected request {method} {url}")
 

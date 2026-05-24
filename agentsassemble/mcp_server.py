@@ -132,6 +132,11 @@ class RoomClient:
                 payload = self._official_turn_payload(room, official)
                 payload["action"] = "official_turn"
                 return payload
+            return_packet = self._return_packet_candidate(room, after_live_event_id=after_live_event_id)
+            if return_packet is not None:
+                payload = self._return_packet_payload(room, return_packet)
+                payload["action"] = "return_packet"
+                return payload
             lobby = self._lobby_candidate(room, after_event_id=after_event_id, max_chain_depth=chain_depth)
             if lobby is not None:
                 action, event = lobby
@@ -194,6 +199,45 @@ class RoomClient:
             "meeting_id": meeting_id,
             "source_event_id": event_id,
             "event": event,
+            "room": self._room_context(room, meeting_id=meeting_id),
+        }
+
+    def _return_packet_candidate(self, room: dict[str, object], *, after_live_event_id: str) -> dict[str, object] | None:
+        agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+        events = room.get("live_events") if isinstance(room.get("live_events"), list) else []
+        cursor = after_live_event_id or str(agent.get("last_observed_live_event_id") or "")
+        for event in _events_after_id(events, cursor):
+            if not isinstance(event, dict):
+                continue
+            if str(event.get("kind") or "") != "artifact":
+                continue
+            if str(event.get("artifact_kind") or "") != "return_packet":
+                continue
+            event_id = str(event.get("id") or "").strip()
+            if not event_id:
+                continue
+            target_agent_id = str(event.get("target_agent_id") or "").strip()
+            audience = str(event.get("audience") or "").strip()
+            if target_agent_id != self.config.agent_id and audience != f"agent:{self.config.agent_id}":
+                continue
+            if not str(event.get("artifact_path") or event.get("artifact_json_path") or "").strip():
+                continue
+            return event
+        return None
+
+    def _return_packet_payload(self, room: dict[str, object], event: dict[str, object]) -> dict[str, object]:
+        event_id = str(event.get("id") or "")
+        meeting_id = str(event.get("meeting_id") or room.get("meeting_id") or self.config.meeting_id or "")
+        return {
+            "status": "event",
+            "agent_id": self.config.agent_id,
+            "meeting_id": meeting_id,
+            "source_event_id": event_id,
+            "event": event,
+            "artifact_path": str(event.get("artifact_path") or ""),
+            "artifact_json_path": str(event.get("artifact_json_path") or ""),
+            "read_return_packet_args": {"meeting_id": meeting_id, "source_event_id": event_id},
+            "heartbeat_args": {"status": "online", "last_observed_live_event_id": event_id},
             "room": self._room_context(room, meeting_id=meeting_id),
         }
 
