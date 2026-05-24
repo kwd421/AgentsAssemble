@@ -73,6 +73,7 @@ from agentsassemble.live_agent_sessions import session_ensure_action
 from agentsassemble.live_session_transport import JsonlLiveSession, TerminalLiveSession
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.memory_capsules import memory_capsule_gate_report
+from agentsassemble.mcp_server import MCP_PROFILES, McpServerConfig, run_mcp_server
 from agentsassemble.models import ENGAGEMENT_MODE_CHOICES
 from agentsassemble.multi_host_invites import (
     create_lan_invite_packet,
@@ -254,6 +255,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seconds to wait for an opt-in local, bridge, or API provider probe.",
     )
     provider_health.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable provider health report.")
+
+    mcp = subparsers.add_parser("mcp", help="Run AgentsAssemble MCP servers.")
+    mcp_subparsers = mcp.add_subparsers(dest="mcp_command", required=True)
+    mcp_serve = mcp_subparsers.add_parser("serve", help="Serve AgentsAssemble room tools over MCP stdio.")
+    mcp_serve.add_argument("--profile", choices=MCP_PROFILES, required=True)
+    mcp_serve.add_argument("--server", default="http://127.0.0.1:8765")
+    mcp_serve.add_argument("--agent-id", default="")
+    mcp_serve.add_argument("--display-name", default="")
+    mcp_serve.add_argument("--provider-kind", default="manual")
+    mcp_serve.add_argument("--connection-kind", default="manual")
+    mcp_serve.add_argument("--meeting-id", default="")
+    mcp_serve.add_argument("--engagement-mode", choices=ENGAGEMENT_MODE_CHOICES, default="mentioned")
+    mcp_serve.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
+    mcp_serve.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
+    mcp_serve.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
 
     memory_capsule = subparsers.add_parser("memory-capsule", help="Inspect importable memory/profile capsules.")
     memory_capsule_subparsers = memory_capsule.add_subparsers(dest="memory_capsule_command", required=True)
@@ -1259,6 +1275,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "claude-bridge":
         serve_bridge(host=args.host, port=args.port, token=args.token, command=args.bridge_command)
         return 0
+    if args.command == "mcp":
+        return run_mcp_command(args)
     if args.command == "live-agent":
         return run_live_agent_command(args)
     if args.command == "providers":
@@ -1268,6 +1286,31 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "sessions":
         return run_sessions_command(args)
 
+    return 1
+
+
+def run_mcp_command(args: argparse.Namespace) -> int:
+    try:
+        if args.mcp_command == "serve":
+            run_mcp_server(
+                McpServerConfig(
+                    profile=args.profile,
+                    server=args.server,
+                    agent_id=args.agent_id,
+                    display_name=args.display_name,
+                    provider_kind=args.provider_kind,
+                    connection_kind=args.connection_kind,
+                    meeting_id=args.meeting_id,
+                    engagement_mode=args.engagement_mode,
+                    timeout=args.timeout,
+                    poll_interval=args.poll_interval,
+                    max_chain_depth=args.max_chain_depth,
+                )
+            )
+            return 0
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     return 1
 
 
