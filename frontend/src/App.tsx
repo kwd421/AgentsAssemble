@@ -87,7 +87,7 @@ export default function App() {
               </span>
             </button>
 
-            <nav className="order-3 flex min-w-full flex-1 items-center justify-center gap-1 rounded-xl border border-accent/10 bg-black/18 px-1 py-1 sm:order-none sm:min-w-0 lg:mx-6">
+            <nav className="ops-nav-scroll order-3 flex min-w-full flex-1 items-center justify-start gap-1 overflow-x-auto rounded-xl border border-accent/10 bg-black/18 px-1 py-1 sm:order-none sm:min-w-0 sm:justify-center lg:mx-6">
               {CHANNELS.map(({ id, label, icon: Icon }) => {
                 const active = !adminOpen && channel === id;
                 return (
@@ -99,7 +99,7 @@ export default function App() {
                       setChannel(id);
                       setAdminOpen(false);
                     }}
-                    className="ops-tab flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-[14px] font-bold transition-colors hover:bg-accent/10 hover:text-text-primary"
+                    className="ops-tab flex h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-[14px] font-bold transition-colors hover:bg-accent/10 hover:text-text-primary"
                   >
                     <Icon size={16} className="sm:hidden lg:block" />
                     {label}
@@ -153,7 +153,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-3 py-3 chat-scroll lg:px-4">
+        <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-16 pt-3 chat-scroll lg:px-4 lg:pb-3">
           {adminOpen ? (
             <AdminPanel onClose={() => setAdminOpen(false)} />
           ) : channel === "lobby" ? (

@@ -200,19 +200,19 @@ function ModeCard({
     <button
       type="button"
       onClick={onSelect}
-      className={`ops-inner group min-h-[132px] rounded-lg p-4 text-left transition-all hover:-translate-y-0.5 hover:border-accent/50 ${
+      className={`ops-inner group min-h-[112px] rounded-lg p-3 text-left transition-all hover:-translate-y-0.5 hover:border-accent/50 ${
         selected ? "border-accent/80 shadow-[0_0_24px_rgba(34,211,238,0.2)]" : ""
       }`}
     >
-      <div className={`mb-3 grid h-12 w-12 place-items-center rounded-lg border bg-black/24 ${toneClass}`}>
+      <div className={`mb-2 grid h-10 w-10 place-items-center rounded-lg border bg-black/24 ${toneClass}`}>
         {mode.id === "brainstorm" ? (
-          <Lightbulb size={22} />
+          <Lightbulb size={19} />
         ) : mode.id === "war" ? (
-          <Globe2 size={22} />
+          <Globe2 size={19} />
         ) : mode.id === "archive" ? (
-          <FilePlus2 size={22} />
+          <FilePlus2 size={19} />
         ) : (
-          <Users size={22} />
+          <Users size={19} />
         )}
       </div>
       <p className="text-[15px] font-black text-text-primary">{mode.label}</p>
@@ -375,11 +375,11 @@ export default function LobbyView({
       </aside>
 
       <section className="space-y-4">
-        <div className="ops-panel ops-cut ops-hero soft-scan p-6 md:p-8">
+        <div className="ops-panel ops-cut ops-hero soft-scan p-5 md:p-6">
           <div className="relative z-[1] flex max-w-2xl items-center gap-5">
-            <span className="ops-logo-mark h-16 w-16 shrink-0" aria-hidden />
+            <span className="ops-logo-mark h-14 w-14 shrink-0" aria-hidden />
             <div>
-              <h1 className="text-[34px] font-black leading-tight tracking-tight md:text-[44px]">
+              <h1 className="text-[31px] font-black leading-tight tracking-tight md:text-[40px]">
                 작전 회의실
               </h1>
               <p className="mt-2 text-[15px] text-text-secondary preserve-words">
@@ -393,7 +393,7 @@ export default function LobbyView({
           <div className="border-b border-accent/14 px-4 py-3">
             <h2 className="text-[15px] font-black">룸 이벤트</h2>
           </div>
-          <div className="max-h-[310px] overflow-y-auto chat-scroll">
+          <div className="max-h-[250px] overflow-y-auto chat-scroll">
             {!loaded ? (
               <div className="p-5 text-[13px] text-text-muted">불러오는 중...</div>
             ) : latestEvents.length === 0 ? (

@@ -154,8 +154,17 @@ textarea {
 
 .ops-tab {
   position: relative;
-  min-width: 96px;
+  min-width: 86px;
   color: #9db8ca;
+  white-space: nowrap;
+}
+
+.ops-nav-scroll {
+  scrollbar-width: none;
+}
+
+.ops-nav-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .ops-tab[data-active="true"] {
@@ -166,7 +175,7 @@ textarea {
   position: absolute;
   left: 20%;
   right: 20%;
-  bottom: -15px;
+  bottom: -12px;
   height: 3px;
   content: "";
   background: #22d3ee;
@@ -264,6 +273,12 @@ textarea {
   background: rgba(11, 42, 67, 0.9);
 }
 
+.ops-button:disabled,
+.ops-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
 .ops-input {
   border: 1px solid rgba(34, 211, 238, 0.18);
   background: rgba(2, 10, 20, 0.82);
@@ -289,7 +304,7 @@ textarea {
 .ops-hero {
   position: relative;
   overflow: hidden;
-  min-height: 220px;
+  min-height: 176px;
   background:
     linear-gradient(90deg, rgba(4, 15, 28, 0.95), rgba(4, 24, 43, 0.7)),
     radial-gradient(circle at 78% 62%, rgba(34, 211, 238, 0.35), transparent 12rem),

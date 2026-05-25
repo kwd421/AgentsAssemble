@@ -377,7 +377,7 @@ function ArchiveSide({ agents }: { agents: LiveAgent[] }) {
         </h2>
         <div className="grid grid-cols-2 gap-3">
           {["요약 리포트", "전체 기록", "하이라이트", "결정사항"].map((label) => (
-            <button key={label} type="button" className="ops-button rounded-lg px-3 py-3 text-[12px] font-bold">
+            <button key={label} type="button" disabled className="ops-button rounded-lg px-3 py-3 text-[12px] font-bold">
               <FileDown className="mx-auto mb-2 text-text-secondary" size={17} />
               {label}
             </button>

@@ -224,9 +224,9 @@ export default function BoardView({
               </div>
             </div>
           </div>
-          <button type="button" className="ops-button rounded-lg px-4 py-2 text-[13px] font-bold">
-            보드 보기
-          </button>
+          <span className="rounded-md border border-text-muted/25 px-3 py-2 text-[11px] font-black text-text-muted">
+            보기 전용
+          </span>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -276,7 +276,7 @@ export default function BoardView({
           <BoardCard number="4" title="다음 행동 / Intent" subtitle="권장 행동 옵션" tone="gold">
             <div className="grid gap-3 md:grid-cols-3">
               {actionOptions.map(({ label, icon: Icon, metric, value }) => (
-                <button key={label} type="button" className="ops-button rounded-lg p-4 text-left">
+                <button key={label} type="button" disabled className="ops-button rounded-lg p-4 text-left">
                   <Icon className="mb-3 text-accent" size={22} />
                   <p className="font-black text-text-primary">{label}</p>
                   <p className="mt-3 text-[11px] text-text-muted">{metric}</p>

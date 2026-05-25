@@ -266,17 +266,22 @@ export default function LiveView({
         </section>
 
         <section className="ops-panel ops-cut p-4">
-          <h2 className="mb-4 text-[17px] font-black">호스트 컨트롤</h2>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-[17px] font-black">호스트 컨트롤</h2>
+            <span className="rounded-md border border-text-muted/25 px-2 py-1 text-[10px] font-black text-text-muted">
+              보기 전용
+            </span>
+          </div>
           <div className="grid grid-cols-3 gap-3">
-            <button type="button" className="ops-button rounded-lg px-2 py-4 text-center text-[12px] font-bold">
+            <button type="button" disabled className="ops-button rounded-lg px-2 py-4 text-center text-[12px] font-bold">
               <Play className="mx-auto mb-2 text-online" size={19} />
               다음 단계
             </button>
-            <button type="button" className="ops-button rounded-lg px-2 py-4 text-center text-[12px] font-bold">
+            <button type="button" disabled className="ops-button rounded-lg px-2 py-4 text-center text-[12px] font-bold">
               <Pause className="mx-auto mb-2 text-text-muted" size={19} />
               일시 정지
             </button>
-            <button type="button" className="ops-button rounded-lg px-2 py-4 text-center text-[12px] font-bold">
+            <button type="button" disabled className="ops-button rounded-lg px-2 py-4 text-center text-[12px] font-bold">
               <Square className="mx-auto mb-2 text-danger" size={19} />
               종료
             </button>
@@ -300,7 +305,7 @@ export default function LiveView({
               Play Mode 발언은 비공식 회의 흐름으로 표시됩니다.
             </p>
           </div>
-          <button type="button" className="ops-button grid h-9 w-9 place-items-center rounded-lg">
+          <button type="button" disabled className="ops-button grid h-9 w-9 place-items-center rounded-lg">
             <RefreshCw size={15} />
           </button>
         </div>
@@ -335,7 +340,7 @@ export default function LiveView({
               placeholder="지시, 공지, 또는 메모를 입력하세요..."
               className="min-w-0 flex-1 bg-transparent text-[13px] text-text-primary outline-none placeholder:text-text-muted"
             />
-            <button type="button" className="grid h-10 w-10 place-items-center rounded-md border border-accent/50 bg-accent/10 text-accent">
+            <button type="button" disabled className="grid h-10 w-10 cursor-not-allowed place-items-center rounded-md border border-accent/25 bg-accent/5 text-accent/60">
               <Send size={17} />
             </button>
           </div>
@@ -381,11 +386,11 @@ export default function LiveView({
         <section className="ops-panel ops-cut p-4">
           <h2 className="mb-4 text-[17px] font-black">빠른 작업</h2>
           <div className="grid grid-cols-2 gap-3">
-            <button type="button" className="ops-button rounded-lg px-3 py-4 text-[13px] font-bold">
+            <button type="button" disabled className="ops-button rounded-lg px-3 py-4 text-[13px] font-bold">
               <FileText className="mx-auto mb-2 text-accent" size={20} />
               요약 생성
             </button>
-            <button type="button" className="ops-button rounded-lg px-3 py-4 text-[13px] font-bold">
+            <button type="button" disabled className="ops-button rounded-lg px-3 py-4 text-[13px] font-bold">
               <Clock3 className="mx-auto mb-2 text-text-muted" size={20} />
               로그 보기
             </button>
