@@ -187,6 +187,17 @@ Resident `terminal_session` is the first local PTY-backed slice for Claude-like 
 
 Resident `self_service` is the first local process-supervision slice that stops AgentsAssemble from injecting each room prompt into the provider process. The supervisor registers the live agent, starts the configured command with `stdin` closed, exports `AGENTSASSEMBLE_*` environment variables plus shell-escaped room command templates such as `AGENTSASSEMBLE_WAIT_NEXT_COMMAND`, `AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE`, `AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE`, `AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE`, and `AGENTSASSEMBLE_LEAVE_COMMAND`, and lets the child call `wait-next`, `say`, `official-reply`, `heartbeat`, and intentional `leave` itself after splitting those templates into argv and replacing placeholders. Use it for Antigravity CLI or custom wrappers that can own their own room loop. `scripts/my_self_service_agent.py` is the runnable local example for that wrapper shape.
 
+The director-led team examples exercise that agent-owned path as an
+organization template, not as a real-provider launch recipe. The bundle is
+`configs/director-led-team.example.json`,
+`configs/agents.director-led-team.example.json`, and
+`configs/live-agents.director-led-team.self-service.example.json`. It models a
+director, product lead, engineering lead, design lead, and implementer with
+display/model slots only. v1 verification should use fake or self-service
+agents to prove each participant reads room diffs and posts through room tools;
+real Opus, Codex, Kiro, Cursor, Antigravity, DeepSeek, or similar providers
+remain explicit operator-approved executions.
+
 Play Mode `flow` is a room policy over already-running, host-approved resident
 agents. It temporarily changes their engagement mode and appends scoped lobby
 events, but it is not a provider adapter and does not launch, resume, approve,

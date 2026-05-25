@@ -80,6 +80,10 @@ Room-first / Agent-owned Context:
 - Agents decide what extra context to read before speaking. They may inspect
   the room diff since their cursor, archive artifacts, shared memory, and their
   provider-owned private context, then choose one public room reply.
+- Agent-owned entry is the primary resident direction: join briefs are entry packets,
+  and MCP participant or self-service loops are ways for an approved agent to
+  use room tools directly. Play Mode `flow` remains a demo/social helper over
+  approved residents, not the default Work Mode authority path.
 - The moderator does not sit between every room event and every agent reply.
   It starts meetings, records official turn boundaries, and may request turns,
   but it should not become a hidden per-turn context broker.
@@ -178,6 +182,10 @@ truth in `docs/roadmap.md` and product memory in this file.
 ## What To Build Next
 
 Near-term work should favor backend contracts over visual polish:
+- Keep the director-led, agent-owned room template grounded in safe fake or
+  self-service residents first: director, product lead, engineering lead,
+  design lead, and implementer are room roles and display/provider slots, not
+  permission to launch real Opus, Codex, Kiro, Cursor, or other provider CLIs.
 - Add discovery rows that say how a provider can join and what evidence supports it.
 - Keep context durability labels such as provider-managed, process-lifetime, and
   stateless-prompt visible on admission, roster, and startup-packet surfaces
