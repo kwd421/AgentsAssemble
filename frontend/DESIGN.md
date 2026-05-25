@@ -2,79 +2,103 @@
 
 ## Goal
 
-Build a Discord-inspired meeting client, not a Discord clone. The interface should
-feel like a live room where agents are visibly present, the lobby is a prep room,
-the live tab is the active conversation, records are the archive, and admin tools
-are secondary.
+Build a neon operations console for AgentsAssemble. The app should feel like a
+local-first agent room preparing, running, reviewing, and archiving live
+sessions. It should look special without making backend behavior look more
+powerful than it is.
 
-## Reference Structure
+## Accepted Direction
 
-Discord-like structure to borrow:
+The reference direction is a sci-fi operations room:
 
-- Left navigation stays dark and persistent.
-- The active channel title is clear at the top of the conversation.
-- Messages are dense, grouped, and occupy the center without becoming lonely.
-- The participant list is visible on desktop by default.
-- Bottom composer/control surface is compact and always anchored.
-- Mobile collapses side panels but keeps primary room actions reachable.
+- dark navy/black shell.
+- cyan glass panel borders with angular corners.
+- gold quick-start and next-step actions.
+- compact left/center/right command-console layout.
+- four first-class tabs: `로비`, `실황`, `작전판`, `아카이브`.
+- visible participant readiness and room status.
+- Play Mode remains informal and separate from official records.
 
-Product-specific differences:
+This is not a Discord clone anymore. Borrow only the useful density and
+real-time readability; the visual language is now "neon mission control."
 
-- Use "servers/channels" as metaphor only; do not add fake servers.
-- Keep Play Mode informal and visually separate from official records.
-- Do not make admin/diagnostic actions look like normal room conversation.
-- Do not invent backend behavior or fake agent output.
+## Product Boundaries
+
+- Do not invent provider execution, admission, or official-record behavior.
+- The React frontend reads existing HTTP/SSE state and calls only existing flow
+  start/stop APIs.
+- Lobby/Play Mode chatter must not look like transcript or decision evidence.
+- Operator diagnostics stay secondary.
+- Buttons that are not wired to backend behavior should be framed as visual
+  navigation, read-only summaries, or future affordances rather than fake work.
 
 ## Visual System
 
-Theme: "dark room shell, focused conversation canvas."
+Theme: "local-first holographic operations console."
 
-- Shell background: near-black slate.
-- Channel panel: dark gray with clear active states.
-- Conversation canvas: Discord-like dark surface, not white.
-- Roster panel: slightly darker than chat to frame participants.
-- Accent: blurple-inspired blue for active controls, with green only for live/online.
-- Typography: system UI stack, small dense controls, readable message text.
-- Radius: mostly 6-10px; no oversized pill/card decoration.
-- Motion: subtle only; live dots may pulse, message list should not jump.
+- Shell background: near-black blue with subtle grid/radar glow.
+- Panels: translucent midnight blue, 1px cyan border, clipped corners.
+- Primary accent: electric cyan.
+- Action accent: amber/gold.
+- Status accents: green ready, blue online, amber syncing, red offline, violet
+  analysis.
+- Typography: system UI stack, dense UI chrome, readable Korean body copy.
+- Icons: lucide icons plus simple CSS hex badges; no external image dependency.
+- Motion: small pulse/scan effects only, disabled for reduced motion.
 
 ## Layout
 
 Desktop:
 
-- 64px server rail.
-- 248px channel/prep rail.
-- Flexible chat/live/records area.
-- 240px roster panel visible by default.
+- 72px top command bar with logo, tabs, local-first status, meeting selector,
+  quick-start CTA, and compact avatar.
+- Each main tab owns its own three-column layout.
+- Center column is the primary canvas.
+- Left column carries context and participant state.
+- Right column carries status, summary, or next actions.
+
+Mobile:
+
+- Top command bar wraps without horizontal overflow.
+- Tabs remain reachable.
+- Panels stack in task order.
+- Primary action remains visible near the relevant tab content.
 
 Lobby:
 
-- Header shows room name, online count, and current flow status.
-- Top prep strip shows online agents as compact chips.
-- Main feed shows lobby messages grouped like chat.
-- Bottom control bar starts/stops Play Mode.
+- Acts like a pick room before the session.
+- Shows participant readiness, join-brief/external participation affordances,
+  a room hero, recent room events, mode cards, room information, and a start
+  panel.
 
 Live:
 
-- Header emphasizes current live topic and remaining time.
-- Feed shows flow-scoped events with action metadata as small badges.
-- Empty live state should still feel like a room waiting for speech.
+- Acts like the live client.
+- Shows session summary, participant state, a central timeline, live status,
+  shared memory hints, and small quick actions.
+- Play Mode events are visually informal.
 
-Records:
+Board:
 
-- Meeting list should be scannable, dense, and archived.
-- Detail view keeps artifact tabs compact.
+- Acts like a decision board.
+- Shows operation info, progress, role filters, claim/risk/summary/intent
+  cards, open questions, and readiness.
+- It is a read-only synthesis surface for now.
 
-Admin:
+Archive:
 
-- Drawer/panel tone. Clearly secondary and quieter than room tabs.
+- Acts like a record room.
+- Shows meeting list/search-style navigation, selected meeting details,
+  artifacts, participants, tags, export affordances, and highlights.
 
 ## Acceptance Checks
 
-- At 1280px desktop, all four regions are visible without horizontal overflow.
-- The default view does not look like an empty white chat page.
-- Roster is visible by default on desktop.
-- Lobby and live look meaningfully different.
+- At 1280px desktop, the top command bar and three-panel views fit without
+  horizontal overflow.
+- Lobby, Live, Board, and Archive look meaningfully different.
+- Play Mode does not look like official transcript evidence.
+- Text preserves readable tokens such as `Kiro Opus 4.7`, `0.5`, `80kg`, and
+  ellipses.
 - `npm run build` passes.
 - `git diff --check` passes.
 - Browser screenshots are inspected for desktop and mobile.

@@ -1,5 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Clock3, Play, Square, Users } from "lucide-react";
+import type { CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  BadgeCheck,
+  Bot,
+  Clock3,
+  FilePlus2,
+  Globe2,
+  Lightbulb,
+  ShieldCheck,
+  Square,
+  Users,
+  Zap,
+} from "lucide-react";
 import {
   fetchLobby,
   startFlow,
@@ -10,33 +22,48 @@ import {
   type LobbyEvent,
 } from "../api";
 
-const AVATAR_CLASSES = [
-  "bg-[#5865f2] text-white",
-  "bg-[#23a559] text-white",
-  "bg-[#f0b232] text-[#1e1f22]",
-  "bg-[#eb459e] text-white",
-  "bg-[#00a8fc] text-white",
-  "bg-[#ed4245] text-white",
+const MODE_CARDS = [
+  {
+    id: "council",
+    label: "Council",
+    caption: "의사결정 중심",
+    tone: "cyan",
+  },
+  {
+    id: "mafia",
+    label: "Mafia Night",
+    caption: "역할 추론 게임",
+    tone: "red",
+  },
+  {
+    id: "brainstorm",
+    label: "Brainstorm",
+    caption: "아이디어 발산",
+    tone: "gold",
+  },
+  {
+    id: "war",
+    label: "War Room",
+    caption: "전략 분석 모드",
+    tone: "violet",
+  },
+  {
+    id: "archive",
+    label: "Archive Review",
+    caption: "기록 검토 모드",
+    tone: "slate",
+  },
 ];
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  if (diff < 60_000) return "방금";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}분 전`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}시간 전`;
-  return `${Math.floor(diff / 86_400_000)}일 전`;
-}
-
-function initials(name: string) {
-  return (name || "?").slice(0, 2).toUpperCase();
-}
-
-function avatarClass(name: string) {
-  let hash = 0;
-  for (let index = 0; index < name.length; index += 1) {
-    hash = (hash * 31 + name.charCodeAt(index)) | 0;
+function timeLabel(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "--:--";
   }
-  return AVATAR_CLASSES[Math.abs(hash) % AVATAR_CLASSES.length];
 }
 
 function mergeLobbyEvents(existing: LobbyEvent[], incoming: LobbyEvent[]) {
@@ -58,102 +85,147 @@ function mergeLobbyEvents(existing: LobbyEvent[], incoming: LobbyEvent[]) {
   return order.map((id) => byId.get(id)).filter(Boolean) as LobbyEvent[];
 }
 
-function shouldGroup(events: LobbyEvent[], index: number) {
-  if (index === 0) return false;
-  const previous = events[index - 1];
-  const current = events[index];
-  if (previous.name !== current.name || previous.kind !== current.kind) {
-    return false;
-  }
-  const gap =
-    new Date(current.created_at).getTime() -
-    new Date(previous.created_at).getTime();
-  return gap < 180_000;
+function agentName(agent: LiveAgent) {
+  return agent.display_name || agent.agent_id;
 }
 
-function AgentPrepChip({ agent }: { agent: LiveAgent }) {
-  const name = agent.display_name || agent.agent_id;
-  const active = agent.status === "online" || agent.status === "working";
+function agentTone(agent: LiveAgent) {
+  const text = `${agent.provider_kind} ${agent.agent_id}`.toLowerCase();
+  if (text.includes("claude") || text.includes("kiro")) return "gold";
+  if (text.includes("deepseek") || text.includes("opus")) return "violet";
+  if (text.includes("gemini") || text.includes("antigravity")) return "green";
+  return "cyan";
+}
+
+function statusLabel(status: string) {
+  if (status === "working") return "Working";
+  if (status === "online") return "Ready";
+  if (status === "idle") return "Idle";
+  if (status === "error") return "Error";
+  return "Offline";
+}
+
+function statusColor(status: string) {
+  if (status === "working" || status === "online") return "text-online";
+  if (status === "idle") return "text-idle";
+  if (status === "error") return "text-danger";
+  return "text-text-muted";
+}
+
+function AgentCard({ agent, owner = false }: { agent: LiveAgent; owner?: boolean }) {
+  const name = agentName(agent);
+  const tone = agentTone(agent);
+  const badgeClass =
+    tone === "gold"
+      ? "gold"
+      : tone === "violet"
+        ? "violet"
+        : tone === "green"
+          ? "green"
+          : "";
+
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-lg bg-panel-soft px-2.5 py-2">
-      <span
-        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-          active ? "bg-online" : "bg-offline"
-        } ${agent.status === "working" ? "live-pulse" : ""}`}
-      />
-      <span className="truncate text-[12px] font-semibold text-text-secondary preserve-words">
-        {name}
+    <div className="ops-inner flex items-center gap-3 rounded-lg p-3">
+      <span className={`hex-badge ${badgeClass}`}>
+        {owner ? <ShieldCheck size={17} /> : <Bot size={17} />}
       </span>
-      <span className="shrink-0 text-[10px] text-text-muted">
-        {agent.status || "unknown"}
-      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="truncate text-[14px] font-bold text-text-primary preserve-words">
+            {name}
+          </p>
+          {owner && (
+            <span className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-black text-accent">
+              YOU
+            </span>
+          )}
+        </div>
+        <p className="truncate text-[11px] text-text-muted preserve-words">
+          {agent.provider_kind || agent.engagement_mode || "resident"}
+        </p>
+      </div>
+      <div className={`rounded-md border border-current/25 px-2 py-1 text-[11px] font-bold ${statusColor(agent.status)}`}>
+        {statusLabel(agent.status)}
+      </div>
     </div>
   );
 }
 
-function ChatMessage({
-  event,
-  compact,
-}: {
-  event: LobbyEvent;
-  compact: boolean;
-}) {
+function EventRow({ event }: { event: LobbyEvent }) {
   const systemLike = event.kind === "system" || event.kind === "flow_event";
-  const name = event.name || "Room";
-
-  if (systemLike) {
-    return (
-      <div className="px-4 py-1.5">
-        <div className="flex items-center gap-3 text-[12px] text-text-muted">
-          <div className="h-px flex-1 bg-panel-border" />
-          <span className="max-w-[70%] truncate preserve-words">
-            {event.message}
-          </span>
-          <div className="h-px flex-1 bg-panel-border" />
-        </div>
-      </div>
-    );
-  }
-
-  if (compact) {
-    return (
-      <div className="group flex gap-3 px-4 py-0.5 hover:bg-chat-hover">
-        <div className="w-10 shrink-0 text-right text-[10px] text-text-muted opacity-0 transition-opacity group-hover:opacity-100">
-          {timeAgo(event.created_at)}
-        </div>
-        <p className="min-w-0 text-[14px] leading-[1.45] text-text-secondary preserve-words">
-          {event.message}
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="group flex gap-3 px-4 pb-1 pt-3 hover:bg-chat-hover">
-      <div
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[12px] font-black ${avatarClass(name)}`}
-      >
-        {initials(name)}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span className="text-[14px] font-bold text-text-primary preserve-words">
-            {name}
+    <div className="grid grid-cols-[54px_34px_minmax(0,1fr)] items-center gap-3 border-b border-accent/10 px-3 py-3 last:border-b-0">
+      <span className="font-mono text-[11px] text-text-muted">
+        {timeLabel(event.created_at)}
+      </span>
+      <span className={`hex-badge h-8 w-8 ${systemLike ? "" : "gold"}`}>
+        {systemLike ? <Zap size={14} /> : <Bot size={14} />}
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[13px] font-semibold text-text-primary preserve-words">
+          {event.name || "Room"}{" "}
+          <span className={systemLike ? "text-accent" : "text-idle"}>
+            {event.kind === "message" ? "발언" : event.kind}
           </span>
-          {event.kind !== "message" && (
-            <span className="rounded bg-panel-soft px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">
-              {event.kind}
-            </span>
-          )}
-          <span className="text-[11px] text-text-muted">
-            {timeAgo(event.created_at)}
-          </span>
-        </div>
-        <p className="mt-0.5 text-[14px] leading-[1.45] text-text-secondary preserve-words">
+        </p>
+        <p className="truncate text-[12px] text-text-muted preserve-words">
           {event.message}
         </p>
       </div>
     </div>
+  );
+}
+
+function ModeCard({
+  mode,
+  selected,
+  onSelect,
+}: {
+  mode: (typeof MODE_CARDS)[number];
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const toneClass =
+    mode.tone === "gold"
+      ? "border-idle/50 text-idle"
+      : mode.tone === "violet"
+        ? "border-violet-400/50 text-violet-300"
+        : mode.tone === "red"
+          ? "border-danger/50 text-danger"
+          : mode.tone === "slate"
+            ? "border-text-muted/35 text-text-secondary"
+            : "border-accent/50 text-accent";
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`ops-inner group min-h-[132px] rounded-lg p-4 text-left transition-all hover:-translate-y-0.5 hover:border-accent/50 ${
+        selected ? "border-accent/80 shadow-[0_0_24px_rgba(34,211,238,0.2)]" : ""
+      }`}
+    >
+      <div className={`mb-3 grid h-12 w-12 place-items-center rounded-lg border bg-black/24 ${toneClass}`}>
+        {mode.id === "brainstorm" ? (
+          <Lightbulb size={22} />
+        ) : mode.id === "war" ? (
+          <Globe2 size={22} />
+        ) : mode.id === "archive" ? (
+          <FilePlus2 size={22} />
+        ) : (
+          <Users size={22} />
+        )}
+      </div>
+      <p className="text-[15px] font-black text-text-primary">{mode.label}</p>
+      <p className="mt-1 text-[12px] text-text-muted preserve-words">
+        {mode.caption}
+      </p>
+      {selected && (
+        <div className="mt-3 flex items-center gap-1.5 text-[11px] font-bold text-accent">
+          <BadgeCheck size={13} />
+          선택됨
+        </div>
+      )}
+    </button>
   );
 }
 
@@ -168,18 +240,18 @@ export default function LobbyView({
 }) {
   const [events, setEvents] = useState<LobbyEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const [meetingId, setMeetingId] = useState("");
-  const [topic, setTopic] = useState("");
+  const [meetingId, setMeetingId] = useState(flow.meeting_id || "resident-m1");
+  const [topic, setTopic] = useState(flow.topic || "");
   const [duration, setDuration] = useState("180");
+  const [selectedMode, setSelectedMode] = useState("council");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const isRunning = flow.status === "running";
-  const onlineAgents = agents.filter(
+  const readyAgents = agents.filter(
     (agent) => agent.status === "online" || agent.status === "working"
   );
+  const latestEvents = useMemo(() => events.slice(-6).reverse(), [events]);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,11 +290,6 @@ export default function LobbyView({
 
   useEffect(() => subscribeLobby(handleSSE), [handleSSE]);
 
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [events.length]);
-
   async function handleStart() {
     if (!meetingId.trim()) {
       setError("회의 ID를 입력하세요");
@@ -234,7 +301,7 @@ export default function LobbyView({
       await startFlow({
         meeting_id: meetingId.trim(),
         topic: topic.trim() || undefined,
-        duration_seconds: parseInt(duration) || 180,
+        duration_seconds: parseInt(duration, 10) || 180,
       });
       refreshFlow();
     } catch (errorValue) {
@@ -266,131 +333,247 @@ export default function LobbyView({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-chat-bg">
-      <div className="shrink-0 border-b border-black/20 bg-chat-bg px-4 py-3">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Users size={16} className="text-text-muted" />
-              <h2 className="truncate text-[14px] font-bold text-text-primary">
-                준비 로비
-              </h2>
-              <span className="rounded-full bg-panel-soft px-2 py-0.5 text-[11px] font-semibold text-text-muted">
-                {onlineAgents.length} ready
-              </span>
-            </div>
-            <p className="mt-0.5 truncate text-[12px] text-text-muted preserve-words">
-              참가자가 모이고 주제를 정한 뒤 Play Mode를 시작합니다.
-            </p>
+    <div className="grid min-h-full gap-4 xl:grid-cols-[390px_minmax(0,1fr)_390px]">
+      <aside className="space-y-4">
+        <section className="ops-panel ops-cut p-4">
+          <div className="mb-4 flex items-center justify-between border-b border-accent/14 pb-3">
+            <h2 className="flex items-center gap-2 text-[17px] font-black">
+              <Users size={18} className="text-accent" />
+              참가자
+            </h2>
+            <span className="text-[13px] font-bold text-text-muted">
+              {readyAgents.length} / {agents.length || 0}
+            </span>
           </div>
-          {isRunning && (
-            <div className="flex shrink-0 items-center gap-2 rounded-lg bg-online/10 px-3 py-1.5 text-[12px] font-semibold text-online">
-              <span className="h-2 w-2 rounded-full bg-online live-pulse" />
-              {flow.remaining_seconds != null
-                ? `${Math.ceil(flow.remaining_seconds)}초`
-                : "진행 중"}
-            </div>
-          )}
-        </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {onlineAgents.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-panel-border bg-panel-soft/45 px-3 py-2 text-[12px] text-text-muted">
-              아직 준비된 에이전트가 없습니다.
-            </div>
-          ) : (
-            onlineAgents.slice(0, 6).map((agent) => (
-              <AgentPrepChip key={agent.agent_id} agent={agent} />
-            ))
-          )}
-        </div>
-      </div>
-
-      <div ref={scrollRef} className="flex-1 overflow-y-auto chat-scroll py-2">
-        {!loaded ? (
-          <div className="flex h-full items-center justify-center text-sm text-text-muted">
-            불러오는 중…
-          </div>
-        ) : events.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-5 text-center text-sm text-text-muted">
-            아직 대기실 메시지가 없습니다. 아래에서 회의를 준비하세요.
-          </div>
-        ) : (
-          events.map((event, index) => (
-            <ChatMessage
-              key={event.id}
-              event={event}
-              compact={shouldGroup(events, index)}
-            />
-          ))
-        )}
-      </div>
-
-      <div className="shrink-0 border-t border-black/25 bg-chat-bg px-4 py-3">
-        {error && (
-          <p className="mb-2 text-[12px] font-semibold text-danger preserve-words">
-            {error}
-          </p>
-        )}
-        {isRunning ? (
-          <div className="flex items-center gap-3 rounded-lg bg-panel-soft px-3 py-2">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-online live-pulse" />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] font-bold text-text-primary preserve-words">
-                {flow.topic || flow.meeting_id || "Play Mode"}
+          <div className="space-y-3">
+            {agents.length === 0 ? (
+              <div className="ops-inner rounded-lg p-4 text-[13px] text-text-muted">
+                resident agent가 입장하면 여기에 표시됩니다.
               </div>
-              <div className="text-[11px] text-text-muted">로비에서 실행 중</div>
-            </div>
-            <button
-              onClick={handleStop}
-              disabled={busy}
-              className="flex items-center gap-1.5 rounded-md bg-panel-border px-3 py-1.5 text-[13px] font-semibold text-text-secondary hover:bg-sidebar-active disabled:opacity-50"
-            >
-              <Square size={13} />
-              중지
+            ) : (
+              agents.slice(0, 8).map((agent, index) => (
+                <AgentCard key={agent.agent_id} agent={agent} owner={index === 0} />
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="ops-panel ops-cut p-4">
+          <h2 className="mb-4 text-[17px] font-black">외부 참여</h2>
+          <div className="space-y-3">
+            <button type="button" className="ops-button flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left">
+              <FilePlus2 size={20} className="text-text-secondary" />
+              <span className="font-semibold">Join Brief 생성</span>
+            </button>
+            <button type="button" className="ops-button flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left">
+              <Globe2 size={20} className="text-text-secondary" />
+              <span className="font-semibold">LAN Invite PoC</span>
             </button>
           </div>
-        ) : (
-          <div className="rounded-lg bg-panel-soft p-2">
-            <div className="grid gap-2 md:grid-cols-[1fr_1.4fr_auto_auto]">
+        </section>
+      </aside>
+
+      <section className="space-y-4">
+        <div className="ops-panel ops-cut ops-hero soft-scan p-6 md:p-8">
+          <div className="relative z-[1] flex max-w-2xl items-center gap-5">
+            <span className="ops-logo-mark h-16 w-16 shrink-0" aria-hidden />
+            <div>
+              <h1 className="text-[34px] font-black leading-tight tracking-tight md:text-[44px]">
+                작전 회의실
+              </h1>
+              <p className="mt-2 text-[15px] text-text-secondary preserve-words">
+                논의 시작 전, 룸 상태와 참여자를 준비합니다.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="ops-panel ops-cut overflow-hidden">
+          <div className="border-b border-accent/14 px-4 py-3">
+            <h2 className="text-[15px] font-black">룸 이벤트</h2>
+          </div>
+          <div className="max-h-[310px] overflow-y-auto chat-scroll">
+            {!loaded ? (
+              <div className="p-5 text-[13px] text-text-muted">불러오는 중...</div>
+            ) : latestEvents.length === 0 ? (
+              <div className="p-5 text-[13px] text-text-muted preserve-words">
+                아직 준비 로그가 없습니다.
+              </div>
+            ) : (
+              latestEvents.map((event) => <EventRow key={event.id} event={event} />)
+            )}
+          </div>
+        </div>
+
+        <div className="ops-panel ops-cut p-4">
+          <h2 className="mb-4 text-[15px] font-black">룸 모드 선택</h2>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {MODE_CARDS.map((mode) => (
+              <ModeCard
+                key={mode.id}
+                mode={mode}
+                selected={selectedMode === mode.id}
+                onSelect={() => setSelectedMode(mode.id)}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <aside className="space-y-4">
+        <section className="ops-panel ops-cut p-4">
+          <h2 className="mb-4 text-[17px] font-black">룸 정보</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="ops-inner rounded-lg p-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                룸 이름
+              </p>
+              <p className="mt-2 truncate text-[20px] font-black preserve-words">
+                {flow.meeting_id || meetingId || "resident-m1"}
+              </p>
+            </div>
+            <div className="ops-inner rounded-lg p-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                모드
+              </p>
+              <p className="mt-2 text-[18px] font-black text-online">Local-first</p>
+            </div>
+            <div className="ops-inner rounded-lg p-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                참가자
+              </p>
+              <p className="mt-2 text-[18px] font-black">{readyAgents.length}</p>
+            </div>
+            <div className="ops-inner rounded-lg p-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                네트워크
+              </p>
+              <p className="mt-2 text-[18px] font-black text-accent">LAN</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="ops-panel ops-cut p-4">
+          <h2 className="mb-4 text-[17px] font-black">준비 상태</h2>
+          <div className="flex items-center gap-5">
+            <div
+              className="ops-meter grid h-28 w-28 shrink-0 place-items-center rounded-full"
+              style={
+                {
+                  "--meter": `${agents.length ? Math.round((readyAgents.length / agents.length) * 100) : 0}%`,
+                } as CSSProperties
+              }
+            >
+              <div className="grid h-20 w-20 place-items-center rounded-full bg-[#03101d] text-center">
+                <span className="text-[26px] font-black">
+                  {readyAgents.length}/{agents.length || 0}
+                </span>
+                <span className="-mt-4 text-[11px] font-bold text-online">Ready</span>
+              </div>
+            </div>
+            <div className="min-w-0 flex-1 space-y-2 text-[13px] text-text-secondary">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-online" />
+                  Ready
+                </span>
+                <b>{readyAgents.length}</b>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-idle" />
+                  Syncing
+                </span>
+                <b>{agents.filter((agent) => agent.status === "idle").length}</b>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-offline" />
+                  Offline
+                </span>
+                <b>{agents.filter((agent) => agent.status === "offline").length}</b>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="ops-panel ops-cut p-4">
+          <h2 className="mb-4 text-[17px] font-black">회의 시작</h2>
+          {error && (
+            <p className="mb-3 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger preserve-words">
+              {error}
+            </p>
+          )}
+
+          {isRunning ? (
+            <div className="space-y-3">
+              <div className="ops-inner rounded-lg p-3">
+                <div className="flex items-center gap-2 text-online">
+                  <span className="h-2.5 w-2.5 rounded-full bg-online live-pulse" />
+                  <span className="text-[13px] font-bold">진행 중</span>
+                </div>
+                <p className="mt-2 truncate text-[16px] font-black preserve-words">
+                  {flow.topic || flow.meeting_id || "Play Mode"}
+                </p>
+                {flow.remaining_seconds != null && (
+                  <p className="mt-1 text-[12px] text-text-muted">
+                    {Math.ceil(flow.remaining_seconds)}초 남음
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleStop}
+                disabled={busy}
+                className="ops-button flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 font-black disabled:opacity-50"
+              >
+                <Square size={15} />
+                실행 중지
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
               <input
                 type="text"
-                placeholder="회의 ID"
                 value={meetingId}
                 onChange={(event) => setMeetingId(event.target.value)}
-                className="min-w-0 rounded-md border border-transparent bg-chat-bg px-3 py-2 text-[13px] text-text-primary outline-none placeholder:text-text-muted focus:border-accent"
+                className="ops-input w-full rounded-lg px-3 py-2.5 text-[13px]"
+                placeholder="회의 ID"
               />
               <input
                 type="text"
-                placeholder="주제"
                 value={topic}
                 onChange={(event) => setTopic(event.target.value)}
-                className="min-w-0 rounded-md border border-transparent bg-chat-bg px-3 py-2 text-[13px] text-text-primary outline-none placeholder:text-text-muted focus:border-accent"
+                className="ops-input w-full rounded-lg px-3 py-2.5 text-[13px]"
+                placeholder="주제"
               />
-              <label className="flex items-center gap-1.5 rounded-md bg-chat-bg px-2.5 text-[12px] text-text-muted">
-                <Clock3 size={13} />
+              <label className="ops-input flex items-center gap-2 rounded-lg px-3 py-2.5 text-[13px] text-text-muted">
+                <Clock3 size={15} />
                 <input
                   type="number"
                   value={duration}
                   onChange={(event) => setDuration(event.target.value)}
-                  className="w-12 bg-transparent py-2 text-center text-[13px] text-text-primary outline-none"
+                  className="min-w-0 flex-1 bg-transparent text-text-primary outline-none"
                   min={10}
                   max={3600}
                   title="초"
                 />
+                초
               </label>
               <button
+                type="button"
                 onClick={handleStart}
                 disabled={busy}
-                className="flex items-center justify-center gap-1.5 rounded-md bg-accent px-4 py-2 text-[13px] font-bold text-white hover:bg-accent-hover disabled:opacity-50"
+                className="ops-cta ops-cut flex w-full items-center justify-center gap-2 px-4 py-4 text-[20px] font-black disabled:opacity-50"
               >
-                <Play size={14} />
-                시작
+                <Zap size={22} />
+                회의 시작
               </button>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </section>
+      </aside>
     </div>
   );
 }
