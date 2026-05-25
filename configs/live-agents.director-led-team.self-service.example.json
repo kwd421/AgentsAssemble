@@ -1,0 +1,54 @@
+{
+  "server": "http://127.0.0.1:8765",
+  "poll_interval": 2,
+  "heartbeat_interval": 30,
+  "cooldown": 5,
+  "max_chain_depth": 1,
+  "agents": [
+    {
+      "agent_id": "opus-director",
+      "display_name": "Opus 4.6 Director",
+      "provider_kind": "local_cli",
+      "connection_kind": "self_service",
+      "meeting_id": "",
+      "engagement_mode": "watch",
+      "command": ["python3", "scripts/my_self_service_agent.py", "--message", "Director reviewed the room diff and is waiting for enough evidence to approve direction."]
+    },
+    {
+      "agent_id": "xhigh-engineering-lead",
+      "display_name": "5.5 xHigh Engineering Lead",
+      "provider_kind": "local_cli",
+      "connection_kind": "self_service",
+      "meeting_id": "",
+      "engagement_mode": "watch",
+      "command": ["python3", "scripts/my_self_service_agent.py", "--message", "Engineering lead reviewed the room diff and will focus on implementation risk and verification."]
+    },
+    {
+      "agent_id": "xhigh-product-lead",
+      "display_name": "5.5 xHigh Product Lead",
+      "provider_kind": "local_cli",
+      "connection_kind": "self_service",
+      "meeting_id": "",
+      "engagement_mode": "watch",
+      "command": ["python3", "scripts/my_self_service_agent.py", "--message", "Product lead reviewed the room diff and will keep scope, acceptance, and non-goals explicit."]
+    },
+    {
+      "agent_id": "xhigh-design-lead",
+      "display_name": "5.5 xHigh Design Lead",
+      "provider_kind": "local_cli",
+      "connection_kind": "self_service",
+      "meeting_id": "",
+      "engagement_mode": "watch",
+      "command": ["python3", "scripts/my_self_service_agent.py", "--message", "Design lead reviewed the room diff and will keep the interface calm, legible, and human-friendly."]
+    },
+    {
+      "agent_id": "mini-implementer",
+      "display_name": "5.4 mini Implementer",
+      "provider_kind": "local_cli",
+      "connection_kind": "self_service",
+      "meeting_id": "",
+      "engagement_mode": "watch",
+      "command": ["python3", "scripts/my_self_service_agent.py", "--message", "Implementer reviewed the room diff and will make only the approved smallest safe change."]
+    }
+  ]
+}

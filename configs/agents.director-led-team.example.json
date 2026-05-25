@@ -1,0 +1,112 @@
+{
+  "providers": [
+    {
+      "id": "opus-director-slot",
+      "kind": "local_cli",
+      "display_name": "Opus 4.6 Director Slot",
+      "default_model": "opus-4.6-director",
+      "notes": "Display/provider slot only. The v1 proof uses self_service room tooling and does not launch a real Opus provider.",
+      "command": ["python3", "-c", "print('director slot placeholder')"]
+    },
+    {
+      "id": "xhigh-engineering-lead-slot",
+      "kind": "local_cli",
+      "display_name": "5.5 xHigh Engineering Lead Slot",
+      "default_model": "gpt-5.5-xhigh-engineering-lead",
+      "notes": "Display/provider slot only. The v1 proof uses self_service room tooling and does not launch a real xHigh provider.",
+      "command": ["python3", "-c", "print('engineering lead slot placeholder')"]
+    },
+    {
+      "id": "xhigh-product-lead-slot",
+      "kind": "local_cli",
+      "display_name": "5.5 xHigh Product Lead Slot",
+      "default_model": "gpt-5.5-xhigh-product-lead",
+      "notes": "Display/provider slot only. The v1 proof uses self_service room tooling and does not launch a real xHigh provider.",
+      "command": ["python3", "-c", "print('product lead slot placeholder')"]
+    },
+    {
+      "id": "xhigh-design-lead-slot",
+      "kind": "local_cli",
+      "display_name": "5.5 xHigh Design Lead Slot",
+      "default_model": "gpt-5.5-xhigh-design-lead",
+      "notes": "Display/provider slot only. The v1 proof uses self_service room tooling and does not launch a real xHigh provider.",
+      "command": ["python3", "-c", "print('design lead slot placeholder')"]
+    },
+    {
+      "id": "mini-implementer-slot",
+      "kind": "local_cli",
+      "display_name": "5.4 mini Implementer Slot",
+      "default_model": "gpt-5.4-mini-implementer",
+      "notes": "Display/provider slot only. The v1 proof uses self_service room tooling and does not launch a real mini provider.",
+      "command": ["python3", "-c", "print('implementer slot placeholder')"]
+    }
+  ],
+  "permission_profiles": [
+    {
+      "id": "meeting_readonly",
+      "meeting_read": true,
+      "lobby_chat": true,
+      "official_turn": true,
+      "web_search": false,
+      "tool_use": false,
+      "filesystem_read": false,
+      "filesystem_write": false,
+      "git_write": false,
+      "push": false,
+      "secrets": false,
+      "implementation": false
+    }
+  ],
+  "agent_bindings": [
+    {
+      "agent_id": "opus-director",
+      "role_id": "director",
+      "owner_id": "host",
+      "provider_id": "opus-director-slot",
+      "model_id": "opus-4.6-director",
+      "permission_profile_id": "meeting_readonly",
+      "join_mode": "current_session",
+      "engagement_mode": "watch"
+    },
+    {
+      "agent_id": "xhigh-engineering-lead",
+      "role_id": "engineering_lead",
+      "owner_id": "host",
+      "provider_id": "xhigh-engineering-lead-slot",
+      "model_id": "gpt-5.5-xhigh-engineering-lead",
+      "permission_profile_id": "meeting_readonly",
+      "join_mode": "current_session",
+      "engagement_mode": "watch"
+    },
+    {
+      "agent_id": "xhigh-product-lead",
+      "role_id": "product_lead",
+      "owner_id": "host",
+      "provider_id": "xhigh-product-lead-slot",
+      "model_id": "gpt-5.5-xhigh-product-lead",
+      "permission_profile_id": "meeting_readonly",
+      "join_mode": "current_session",
+      "engagement_mode": "watch"
+    },
+    {
+      "agent_id": "xhigh-design-lead",
+      "role_id": "design_lead",
+      "owner_id": "host",
+      "provider_id": "xhigh-design-lead-slot",
+      "model_id": "gpt-5.5-xhigh-design-lead",
+      "permission_profile_id": "meeting_readonly",
+      "join_mode": "current_session",
+      "engagement_mode": "watch"
+    },
+    {
+      "agent_id": "mini-implementer",
+      "role_id": "implementer",
+      "owner_id": "host",
+      "provider_id": "mini-implementer-slot",
+      "model_id": "gpt-5.4-mini-implementer",
+      "permission_profile_id": "meeting_readonly",
+      "join_mode": "current_session",
+      "engagement_mode": "watch"
+    }
+  ]
+}

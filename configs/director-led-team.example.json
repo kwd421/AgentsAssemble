@@ -1,0 +1,71 @@
+{
+  "topic": "Director-led resident agent work room",
+  "display_topic": "Director-led resident agent work room",
+  "question": "Can the admitted agents coordinate work through agent-owned room tools?",
+  "display_question": "Can the admitted agents coordinate work through agent-owned room tools?",
+  "meeting_mode": "free_chat",
+  "moderator": {
+    "enabled": false
+  },
+  "meeting_template": {
+    "id": "director_led_agent_owned_room_v1",
+    "display_name": "Director-led agent-owned room",
+    "rounds": [
+      {
+        "id": "room_entry",
+        "title": "Room entry",
+        "report_label": "Agent-owned entry",
+        "context_scope": "public_debate",
+        "instruction": "Host-approved agents enter through room tools, read the room diff, and decide whether to speak, wait, review, or ask for direction.",
+        "turn_control": {
+          "selection": "all_roles",
+          "non_speaker_mode": "watch"
+        }
+      },
+      {
+        "id": "director_confirmation",
+        "title": "Director confirmation",
+        "report_label": "Director confirmation",
+        "context_scope": "public_debate",
+        "instruction": "The director reviews visible team evidence and records whether the direction is approved, blocked, or needs another pass.",
+        "turn_control": {
+          "selection": "selected_roles",
+          "speaker_role_ids": ["director"],
+          "non_speaker_mode": "watch"
+        }
+      }
+    ]
+  },
+  "roles": [
+    {
+      "id": "director",
+      "display_name": "Opus 4.6 Director",
+      "lens": "Final direction and approval",
+      "research_focus": "Set the direction, resolve conflicts, and approve or reject the team leads' final recommendation."
+    },
+    {
+      "id": "engineering_lead",
+      "display_name": "5.5 xHigh Engineering Lead",
+      "lens": "Implementation judgment and code review",
+      "research_focus": "Evaluate technical feasibility, implementation risks, verification paths, and code review evidence."
+    },
+    {
+      "id": "product_lead",
+      "display_name": "5.5 xHigh Product Lead",
+      "lens": "Goal, scope, and acceptance criteria",
+      "research_focus": "Keep the requested outcome clear, name non-goals, and decide what evidence proves the slice is useful."
+    },
+    {
+      "id": "design_lead",
+      "display_name": "5.5 xHigh Design Lead",
+      "lens": "UX and interface judgment",
+      "research_focus": "Keep the room understandable, calm, and useful without turning the interface into an operator maze."
+    },
+    {
+      "id": "implementer",
+      "display_name": "5.4 mini Implementer",
+      "lens": "Implementation owner",
+      "research_focus": "Make the smallest safe implementation change requested by the approved plan and report verification evidence."
+    }
+  ]
+}

@@ -5,6 +5,13 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
+from agentsassemble.config import (
+    agent_bindings_from_config,
+    load_agent_runtime_config,
+    load_council_config,
+    permissions_from_config,
+    providers_from_config,
+)
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_sessions import (
@@ -334,6 +341,109 @@ class LiveAgentSessionReadinessSummaryTests(unittest.TestCase):
 
 
 class LiveAgentSessionStartTests(unittest.TestCase):
+    def test_director_led_self_service_bundle_matches_manifest_without_real_provider_execution(self):
+        project_root = Path(__file__).resolve().parents[1]
+        council_config = project_root / "configs" / "director-led-team.example.json"
+        agent_config = project_root / "configs" / "agents.director-led-team.example.json"
+        live_agent_config = project_root / "configs" / "live-agents.director-led-team.self-service.example.json"
+
+        council = load_council_config(council_config)
+        runtime = load_agent_runtime_config(agent_config)
+        self.assertIsNotNone(runtime)
+        runtime_data = runtime or {}
+        providers = providers_from_config(runtime_data)
+        permissions = permissions_from_config(runtime_data)
+        bindings = agent_bindings_from_config(runtime_data)
+        resident_configs = load_group_configs(live_agent_config, server_override="http://127.0.0.1:8765")
+        expected_roles = ["director", "engineering_lead", "product_lead", "design_lead", "implementer"]
+        expected_agents = [
+            "opus-director",
+            "xhigh-engineering-lead",
+            "xhigh-product-lead",
+            "xhigh-design-lead",
+            "mini-implementer",
+        ]
+
+        self.assertEqual([role.id for role in council.roles], expected_roles)
+        self.assertEqual(council.meeting_template_id, "director_led_agent_owned_room_v1")
+        self.assertEqual([round_definition.id for round_definition in council.rounds], ["room_entry", "director_confirmation"])
+        self.assertFalse(council.moderator.enabled)
+        self.assertEqual([binding.role_id for binding in bindings], expected_roles)
+        self.assertEqual([binding.agent_id for binding in bindings], expected_agents)
+        self.assertEqual(set(permissions), {"meeting_readonly"})
+        self.assertTrue(all(provider.kind == "local_cli" for provider in providers.values()))
+        expected_provider_commands = {
+            "opus-director-slot": ["python3", "-c", "print('director slot placeholder')"],
+            "xhigh-engineering-lead-slot": ["python3", "-c", "print('engineering lead slot placeholder')"],
+            "xhigh-product-lead-slot": ["python3", "-c", "print('product lead slot placeholder')"],
+            "xhigh-design-lead-slot": ["python3", "-c", "print('design lead slot placeholder')"],
+            "mini-implementer-slot": ["python3", "-c", "print('implementer slot placeholder')"],
+        }
+        self.assertEqual(
+            {provider_id: provider.command for provider_id, provider in providers.items()},
+            expected_provider_commands,
+        )
+        self.assertTrue(all(binding.permission_profile_id == "meeting_readonly" for binding in bindings))
+        self.assertTrue(all(binding.engagement_mode == "watch" for binding in bindings))
+        self.assertEqual([config.agent_id for config in resident_configs], expected_agents)
+        self.assertTrue(all(config.provider_kind == "local_cli" for config in resident_configs))
+        self.assertTrue(all(config.connection_kind == "self_service" for config in resident_configs))
+        self.assertTrue(all(config.command and config.command[:2] == ["python3", "scripts/my_self_service_agent.py"] for config in resident_configs))
+
+        class DirectorTeamSupervisor:
+            def __init__(self) -> None:
+                self.started = []
+
+            def start_group(self, **kwargs):
+                self.started.append(kwargs)
+                return {
+                    "group_id": kwargs.get("group_id") or "director-led-team",
+                    "status": "running",
+                    "meeting_id": kwargs.get("meeting_id") or "",
+                    "agents": [
+                        {
+                            "agent_id": config.agent_id,
+                            "display_name": config.display_name,
+                            "provider_kind": config.provider_kind,
+                            "connection_kind": config.connection_kind,
+                        }
+                        for config in resident_configs
+                    ],
+                }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            supervisor = DirectorTeamSupervisor()
+            session = start_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="director-led-room",
+                group_id="director-led-team",
+                connect_timeout_seconds=0,
+                preflight_checker=lambda *args, **kwargs: {"status": "ok"},
+            )
+
+            meeting_path = root / "meetings" / "director-led-room" / "live_state.json"
+            meeting = json.loads(meeting_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(session["meeting_id"], "director-led-room")
+        self.assertEqual(session["process"]["ready"], True)
+        self.assertEqual(session["process"]["matched"], 5)
+        self.assertEqual(session["connection"]["expected"], 5)
+        self.assertEqual(session["connection"]["connected"], 0)
+        self.assertEqual(len(supervisor.started), 1)
+        self.assertEqual(supervisor.started[0]["config_path"], live_agent_config)
+        self.assertEqual(supervisor.started[0]["meeting_id"], "director-led-room")
+        self.assertEqual([role["id"] for role in meeting["roles"]], expected_roles)
+        self.assertEqual([binding["agent_id"] for binding in meeting["agent_bindings"]], expected_agents)
+        for provider_id in providers:
+            self.assertEqual(meeting["provider_configs"][provider_id]["command"], ["<redacted>"])
+            self.assertEqual(meeting["provider_configs"][provider_id]["kind"], "local_cli")
+
     def test_start_session_refuses_manifest_mismatch_before_writing_state(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
