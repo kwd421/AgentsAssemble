@@ -14,12 +14,14 @@ import {
 } from "lucide-react";
 import {
   fetchLobby,
+  startMafiaGame,
   startFlow,
   stopFlow,
   subscribeLobby,
   type FlowState,
   type LiveAgent,
   type LobbyEvent,
+  type MafiaGame,
 } from "../api";
 
 const MODE_CARDS = [
@@ -144,6 +146,21 @@ function agentAdmissionLabel(agent: LiveAgent) {
   if (agent.host_approved_binding === false) parts.push("not-approved");
   if (agent.binding_conflicts?.length) parts.push(`conflict ${agent.binding_conflicts.slice(0, 2).join(", ")}`);
   return parts.join(" · ");
+}
+
+function mafiaPlayersFromAgents(agents: LiveAgent[]) {
+  const candidates = agents.length
+    ? agents
+    : [
+        { agent_id: "codex-spark-a", display_name: "Codex Spark A" } as LiveAgent,
+        { agent_id: "codex-spark-b", display_name: "Codex Spark B" } as LiveAgent,
+        { agent_id: "codex-spark-c", display_name: "Codex Spark C" } as LiveAgent,
+        { agent_id: "codex-spark-d", display_name: "Codex Spark D" } as LiveAgent,
+      ];
+  return candidates.slice(0, 8).map((agent) => ({
+    agent_id: agent.agent_id,
+    display_name: agent.display_name || agent.agent_id,
+  }));
 }
 
 function AgentCard({ agent, owner = false }: { agent: LiveAgent; owner?: boolean }) {
@@ -285,10 +302,14 @@ export default function LobbyView({
   flow,
   agents,
   refreshFlow,
+  onMafiaStarted,
+  onFlowStarted,
 }: {
   flow: FlowState;
   agents: LiveAgent[];
   refreshFlow: () => void;
+  onMafiaStarted: (game: MafiaGame) => void;
+  onFlowStarted: () => void;
 }) {
   const [events, setEvents] = useState<LobbyEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -350,12 +371,21 @@ export default function LobbyView({
     setBusy(true);
     setError("");
     try {
-      await startFlow({
-        meeting_id: meetingId.trim(),
-        topic: topic.trim() || undefined,
-        duration_seconds: parseInt(duration, 10) || 180,
-      });
-      refreshFlow();
+      if (selectedMode === "mafia") {
+        const payload = await startMafiaGame({
+          game_id: meetingId.trim(),
+          players: mafiaPlayersFromAgents(readyAgents.length >= 3 ? readyAgents : agents),
+          mafia_count: 1,
+        });
+        if (payload.game) onMafiaStarted(payload.game);
+      } else {
+        await startFlow({
+          meeting_id: meetingId.trim(),
+          topic: topic.trim() || undefined,
+          duration_seconds: parseInt(duration, 10) || 180,
+        });
+        onFlowStarted();
+      }
     } catch (errorValue) {
       setError(errorValue instanceof Error ? errorValue.message : "시작 실패");
     } finally {
@@ -600,19 +630,26 @@ export default function LobbyView({
                 className="ops-input w-full rounded-lg px-3 py-2.5 text-[13px]"
                 placeholder="주제"
               />
-              <label className="ops-input flex items-center gap-2 rounded-lg px-3 py-2.5 text-[13px] text-text-muted">
-                <Clock3 size={15} />
-                <input
-                  type="number"
-                  value={duration}
-                  onChange={(event) => setDuration(event.target.value)}
-                  className="min-w-0 flex-1 bg-transparent text-text-primary outline-none"
-                  min={10}
-                  max={3600}
-                  title="초"
-                />
-                초
-              </label>
+              {selectedMode !== "mafia" ? (
+                <label className="ops-input flex items-center gap-2 rounded-lg px-3 py-2.5 text-[13px] text-text-muted">
+                  <Clock3 size={15} />
+                  <input
+                    type="number"
+                    value={duration}
+                    onChange={(event) => setDuration(event.target.value)}
+                    className="min-w-0 flex-1 bg-transparent text-text-primary outline-none"
+                    min={10}
+                    max={3600}
+                    title="초"
+                  />
+                  초
+                </label>
+              ) : (
+                <div className="ops-inner rounded-lg p-3 text-[12px] leading-relaxed text-text-secondary preserve-words">
+                  Mafia Night는 전체채팅과 마피아 팀채팅이 분리된 게임방으로 시작됩니다.
+                  역할은 시작 시 고정되고, 호스트 화면에서 투표와 낮/밤 전환을 진행합니다.
+                </div>
+              )}
               <button
                 type="button"
                 onClick={handleStart}
@@ -620,7 +657,7 @@ export default function LobbyView({
                 className="ops-cta ops-cut flex w-full items-center justify-center gap-2 px-4 py-4 text-[20px] font-black disabled:opacity-50"
               >
                 <Zap size={22} />
-                회의 시작
+                {selectedMode === "mafia" ? "마피아 시작" : "회의 시작"}
               </button>
             </div>
           )}

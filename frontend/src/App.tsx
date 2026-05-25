@@ -11,7 +11,14 @@ import {
   Users,
   Zap,
 } from "lucide-react";
-import { fetchLiveAgentFlow, type FlowResponse, type LiveAgent } from "./api";
+import {
+  fetchLiveAgentFlow,
+  fetchMafiaGame,
+  type FlowResponse,
+  type LiveAgent,
+  type MafiaGame,
+  type MafiaGameResponse,
+} from "./api";
 import { usePoll } from "./hooks";
 import AdminPanel from "./views/AdminPanel";
 import BoardView from "./views/BoardView";
@@ -48,9 +55,21 @@ function roomName(flow: FlowResponse["flow"]) {
 export default function App() {
   const [channel, setChannel] = useState<Channel>("lobby");
   const [adminOpen, setAdminOpen] = useState(false);
+  const [mafiaGameId, setMafiaGameId] = useState(() => {
+    try {
+      return localStorage.getItem("agentsassemble.mafiaGameId") || "";
+    } catch {
+      return "";
+    }
+  });
 
   const flowFetcher = useCallback(() => fetchLiveAgentFlow(), []);
   const [flowData, , , refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
+  const mafiaFetcher = useCallback((): Promise<MafiaGameResponse> => {
+    if (!mafiaGameId) return Promise.resolve({ game: null });
+    return fetchMafiaGame(mafiaGameId, "host");
+  }, [mafiaGameId]);
+  const [mafiaData, , , refreshMafia] = usePoll<MafiaGameResponse>(mafiaFetcher, 3500);
 
   const flow = flowData?.flow ?? { status: "idle" };
   const agents: LiveAgent[] = Array.isArray(flowData?.agents)
@@ -66,6 +85,30 @@ export default function App() {
     (agent) => agent.status === "online" || agent.status === "working"
   ).length;
   const flowRunning = flow.status === "running";
+  const mafiaGame = mafiaData?.game ?? null;
+
+  function handleMafiaStarted(game: MafiaGame) {
+    try {
+      localStorage.setItem("agentsassemble.mafiaGameId", game.game_id);
+    } catch {
+      // Browser storage can be unavailable in restricted contexts; polling still works for this session.
+    }
+    setMafiaGameId(game.game_id);
+    setChannel("live");
+    setAdminOpen(false);
+  }
+
+  function handleFlowStarted() {
+    try {
+      localStorage.removeItem("agentsassemble.mafiaGameId");
+    } catch {
+      // Browser storage can be unavailable in restricted contexts; clearing is best-effort.
+    }
+    setMafiaGameId("");
+    refreshFlow();
+    setChannel("live");
+    setAdminOpen(false);
+  }
 
   return (
     <div className="ops-shell h-screen max-h-screen overflow-hidden text-text-primary">
@@ -157,9 +200,21 @@ export default function App() {
           {adminOpen ? (
             <AdminPanel onClose={() => setAdminOpen(false)} />
           ) : channel === "lobby" ? (
-            <LobbyView flow={flow} agents={agents} refreshFlow={refreshFlow} />
+            <LobbyView
+              flow={flow}
+              agents={agents}
+              refreshFlow={refreshFlow}
+              onMafiaStarted={handleMafiaStarted}
+              onFlowStarted={handleFlowStarted}
+            />
           ) : channel === "live" ? (
-            <LiveView flow={flow} flowEvents={flowEvents} agents={agents} />
+            <LiveView
+              flow={flow}
+              flowEvents={flowEvents}
+              agents={agents}
+              mafiaGame={mafiaGame}
+              refreshMafia={refreshMafia}
+            />
           ) : channel === "board" ? (
             <BoardView flow={flow} agents={agents} events={flowEvents} />
           ) : (

@@ -90,6 +90,45 @@ export interface HealthStatus {
   };
 }
 
+export interface MafiaPlayer {
+  agent_id: string;
+  display_name: string;
+  alive: boolean;
+  role?: string;
+  team?: string;
+}
+
+export interface MafiaEvent {
+  id: string;
+  created_at: string;
+  kind: string;
+  channel: "all" | "mafia_team";
+  actor_id: string;
+  name: string;
+  message: string;
+  phase: string;
+  day_number: number;
+}
+
+export interface MafiaGame {
+  game_id: string;
+  status: string;
+  phase: string;
+  day_number: number;
+  winner: string;
+  players: MafiaPlayer[];
+  events: MafiaEvent[];
+  viewer?: {
+    agent_id: string;
+    role: string;
+    team: string;
+  };
+}
+
+export interface MafiaGameResponse {
+  game: MafiaGame | null;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -129,6 +168,48 @@ export function fetchMeetingDetail(meetingId: string) {
 
 export function fetchHealth() {
   return fetchJson<HealthStatus>("/api/live-agent-health");
+}
+
+export function fetchMafiaGame(gameId: string, viewerAgentId = "") {
+  const query = new URLSearchParams({
+    game_id: gameId,
+    viewer_agent_id: viewerAgentId,
+  });
+  return fetchJson<MafiaGameResponse>(`/api/play/mafia?${query.toString()}`);
+}
+
+export function startMafiaGame(params: {
+  game_id: string;
+  players: Array<{ agent_id: string; display_name: string }>;
+  mafia_count?: number;
+}) {
+  return postJson<MafiaGameResponse>("/api/play/mafia/start", params);
+}
+
+export function sendMafiaChat(params: {
+  game_id: string;
+  speaker_id: string;
+  channel: "all" | "mafia_team";
+  message: string;
+  viewer_agent_id?: string;
+}) {
+  return postJson<MafiaGameResponse & { event?: MafiaEvent }>("/api/play/mafia/chat", params);
+}
+
+export function castMafiaVote(params: {
+  game_id: string;
+  voter_id: string;
+  target_id: string;
+  viewer_agent_id?: string;
+}) {
+  return postJson<MafiaGameResponse & { event?: MafiaEvent }>("/api/play/mafia/vote", params);
+}
+
+export function resolveMafiaPhase(gameId: string, viewerAgentId = "") {
+  return postJson<MafiaGameResponse>("/api/play/mafia/resolve", {
+    game_id: gameId,
+    viewer_agent_id: viewerAgentId,
+  });
 }
 
 export function startFlow(params: {

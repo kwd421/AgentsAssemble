@@ -32,6 +32,11 @@ games, and informal chatter must not silently become an official record.
 Play Mode presets may enqueue official-turn requests for an already approved
 meeting, but they must not start provider CLIs, grant admission, or promote play
 context into Work Mode by themselves.
+Mafia Night is a Play Mode game surface with separate game state under
+`play/mafia/`. Its all-chat and mafia-team chat are not lobby chat, side chat,
+official live events, transcript evidence, decisions, or shared meeting memory.
+Team chat must be read through a viewer-filtered game payload so town players do
+not receive mafia-only events merely because side chat is globally visible.
 Timeboxed Play Mode flow is the informal live-room loop: it can temporarily set
 already host-approved meeting residents to `flow`, ask them to choose
 `speak`/`wait`/`ask`/`challenge`/`clarify`/`summarize`/`call_human`, and record

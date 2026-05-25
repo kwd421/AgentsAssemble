@@ -45,6 +45,18 @@ flow with running/finished state, remaining time, participant status, and
 flow-scoped events; it should not present Play Mode chatter as transcript or
 decision evidence.
 
+The React frontend track can start a Play Mode Mafia Night room through
+`/api/play/mafia/start`. Mafia state is stored separately under `play/mafia/`
+and exposes viewer-filtered reads through `/api/play/mafia?game_id=...`.
+The operator console reads with `viewer_agent_id=host`; participant-owned clients
+must pass their own agent id so roles, votes, and mafia-team events stay filtered.
+Use `/api/play/mafia/chat` for both `all` and `mafia_team` channels; do not
+reuse `/api/side-chat` for mafia team chat because side chat is globally visible
+room chatter. `/api/play/mafia/vote` records day or night votes, and
+`/api/play/mafia/resolve` advances the phase or records a winner. These events
+remain Play Mode game records and are not official transcript, decision, or
+shared-memory evidence.
+
 ## Room-first / Agent-owned Context
 
 The room is a room, not a hidden moderator. A resident agent should treat
