@@ -55,6 +55,104 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.play-mode-flow-surface {
+  background:
+    linear-gradient(180deg, rgba(242, 184, 75, 0.08), transparent 46%),
+    rgba(10, 13, 20, 0.78);
+  border: 1px solid rgba(242, 184, 75, 0.22);
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.play-mode-flow-head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.play-mode-flow-head span,
+.play-mode-flow-event-head span,
+.play-mode-flow-diagnostics {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.play-mode-flow-head strong {
+  color: var(--text);
+  display: block;
+  font-size: 14px;
+  margin-top: 2px;
+}
+
+.play-mode-flow-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.play-mode-flow-pills em {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 999px;
+  color: #f7d58b;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+.play-mode-flow-diagnostics summary {
+  cursor: pointer;
+  width: max-content;
+}
+
+.play-mode-flow-diagnostics span {
+  display: block;
+  margin-top: 4px;
+}
+
+.play-mode-flow-feed {
+  display: grid;
+  gap: 7px;
+}
+
+.play-mode-flow-event {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.play-mode-flow-event-head {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.play-mode-flow-event-head strong,
+.play-mode-flow-event p {
+  color: var(--text);
+}
+
+.play-mode-flow-event p,
+.play-mode-flow-empty {
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 5px 0 0;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
+.play-mode-flow-empty {
+  color: var(--muted);
+}
+
 .overview-card {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 42%),

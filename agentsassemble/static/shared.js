@@ -35,6 +35,7 @@ export const state = {
   liveAgentSessionRunActionRunning: "",
   liveAgentSessionRunRetryNowRunning: "",
   liveAgentFlow: null,
+  liveAgentFlowEvents: [],
   liveAgentFlowLoaded: false,
   liveAgentFlowLoading: false,
   liveAgentFlowStartRunning: false,

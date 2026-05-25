@@ -47,6 +47,7 @@ export function renderLive(payload, options = {}) {
           </div>
         </div>
       </section>
+      ${renderPlayModeFlowSurface(payload)}
       ${renderLiveOverview(payload, liveOverviewItems)}
       <section class="live-chat-room">
         ${renderSystemEventStack(systemLiveEvents)}
@@ -168,6 +169,133 @@ function renderSideChat() {
       </form>
     </aside>
   `;
+}
+
+function renderPlayModeFlowSurface(payload) {
+  const flow = playModeFlowForMeeting(payload.meeting);
+  if (!flow) return "";
+  const flowEvents = playModeFlowEvents(flow);
+  const status = String(flow.status || "idle");
+  const remaining = status === "running" && Number.isFinite(Number(flow.remaining_seconds))
+    ? `${playModeFlowClockLabel(flow.remaining_seconds)} 남음`
+    : playModeFlowStatusLabel(status);
+  return `
+    <section class="play-mode-flow-surface" aria-label="Play Mode 자유토론">
+      <div class="play-mode-flow-head">
+        <div>
+          <span>비공식 자유토론</span>
+          <strong>${escapeHtml(flow.topic || "Play Mode")}</strong>
+        </div>
+        <div class="play-mode-flow-pills">
+          <em>${escapeHtml(playModeFlowStatusLabel(status))}</em>
+          <em>${escapeHtml(remaining)}</em>
+          <em>${escapeHtml(`참여 ${Math.max(0, Number(flow.agent_count || 0))}명`)}</em>
+        </div>
+      </div>
+      <details class="play-mode-flow-diagnostics">
+        <summary>상태 자세히</summary>
+        <span>${escapeHtml(playModeFlowDiagnosticLabel(flow))}</span>
+      </details>
+      ${renderPlayModeFlowFeed(flowEvents)}
+    </section>
+  `;
+}
+
+function renderPlayModeFlowFeed(events) {
+  const visibleEvents = events.filter((event) => event.flow_action || event.flow_event_type);
+  return `
+    <div class="play-mode-flow-feed" aria-label="Play Mode 비공식 발언">
+      ${
+        visibleEvents.length
+          ? visibleEvents.map(renderPlayModeFlowEvent).join("")
+          : '<p class="play-mode-flow-empty">아직 자유토론 발언이 없습니다.</p>'
+      }
+    </div>
+  `;
+}
+
+function renderPlayModeFlowEvent(event) {
+  const flowAction = String(event.flow_action || "");
+  const eventType = String(event.flow_event_type || "");
+  const label = flowAction ? playModeFlowActionLabel(flowAction) : playModeFlowEventTypeLabel(eventType);
+  return `
+    <article class="play-mode-flow-event" data-flow-event-id="${escapeHtml(event.id || "")}">
+      <div class="play-mode-flow-event-head">
+        <strong>${escapeHtml(event.name || "Play Mode")}</strong>
+        <span>${escapeHtml(label)} · 공식 기록 제외</span>
+      </div>
+      <p>${escapeHtml(event.message || "")}</p>
+    </article>
+  `;
+}
+
+function playModeFlowForMeeting(meeting) {
+  const flow = state.liveAgentFlow;
+  if (!flow || typeof flow !== "object" || !flow.status || flow.status === "idle") return null;
+  const flowMeetingId = String(flow.meeting_id || "");
+  if (flowMeetingId && meeting?.meeting_id && flowMeetingId !== meeting.meeting_id) return null;
+  return flow;
+}
+
+function playModeFlowEvents(flow) {
+  const flowId = String(flow?.flow_id || "");
+  if (!flowId) return [];
+  return (state.liveAgentFlowEvents || []).filter((event) => String(event.flow_id || "") === flowId);
+}
+
+function playModeFlowStatusLabel(status) {
+  if (status === "running") return "진행중";
+  if (status === "finished") return "종료";
+  if (status === "stopped") return "중지";
+  if (status === "error") return "오류";
+  return "대기";
+}
+
+function playModeFlowClockLabel(value) {
+  const totalSeconds = Math.max(0, Math.ceil(Number(value) || 0));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function playModeFlowDiagnosticLabel(flow) {
+  const turns = Math.max(0, Number(flow.total_turns || 0));
+  const lastActivity = playModeFlowElapsedSinceLabel(flow.last_activity_at);
+  const last = lastActivity && turns > 0 ? `마지막 ${lastActivity} 전` : "아직 발언 없음";
+  return `총 ${turns}마디 · ${last}`;
+}
+
+function playModeFlowElapsedSinceLabel(value) {
+  const parsed = Date.parse(String(value || ""));
+  if (!Number.isFinite(parsed)) return "";
+  const elapsedSeconds = Math.max(0, Math.round((Date.now() - parsed) / 1000));
+  if (elapsedSeconds < 60) return `${elapsedSeconds}초`;
+  const minutes = Math.floor(elapsedSeconds / 60);
+  if (minutes < 60) return `${minutes}분`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes ? `${hours}시간 ${remainingMinutes}분` : `${hours}시간`;
+}
+
+function playModeFlowActionLabel(action) {
+  return {
+    speak: "발언",
+    ask: "질문",
+    challenge: "반박",
+    clarify: "정리 요청",
+    summarize: "요약",
+    call_human: "사람 호출",
+    wait: "대기",
+  }[action] || "발언";
+}
+
+function playModeFlowEventTypeLabel(eventType) {
+  return {
+    started: "시작",
+    finished: "종료",
+    stopped: "중지",
+    nudge: "상태",
+  }[eventType] || "상태";
 }
 
 function renderSideChatEvent(event) {

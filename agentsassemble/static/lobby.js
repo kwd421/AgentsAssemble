@@ -2214,14 +2214,20 @@ async function loadLiveAgentFlow(options = {}) {
     const query = meetingId ? `?meeting_id=${encodeURIComponent(meetingId)}` : "";
     const payload = await fetchJson(`/api/live-agent-flow${query}`);
     state.liveAgentFlow = payload.flow || { status: "idle" };
+    state.liveAgentFlowEvents = payload.flow_events || [];
     state.liveAgentFlowLoaded = true;
     shouldRender = shouldRender || JSON.stringify(state.liveAgentFlow) !== previousSignature;
   } catch {
     state.liveAgentFlowLoaded = true;
   } finally {
     state.liveAgentFlowLoading = false;
+    notifyLiveAgentFlowUpdated();
     if (shouldRender) renderLobby({ followLatest: false });
   }
+}
+
+function liveAgentMeetingId() {
+  return state.payload?.meeting?.meeting_id || document.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
 }
 
 async function loadLiveAgentHealth(options = {}) {
@@ -3015,9 +3021,11 @@ async function startLiveAgentFlow(lobby) {
       }),
     });
     state.liveAgentFlow = payload.flow || { status: "idle" };
+    state.liveAgentFlowEvents = payload.flow_events || [];
     state.liveAgentFlowLoaded = true;
     setLobbyEvents(payload.events || state.lobbyEvents);
     state.liveAgentProcessStatus = { message: `자유토론 ${state.liveAgentFlow.status || "running"}`, tone: "success" };
+    notifyLiveAgentFlowUpdated();
   } catch (error) {
     state.liveAgentProcessStatus = { message: `자유토론 시작 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   } finally {
@@ -3042,9 +3050,11 @@ async function stopLiveAgentFlow(lobby) {
       body: JSON.stringify({ meeting_id: meetingId }),
     });
     state.liveAgentFlow = payload.flow || { status: "idle" };
+    state.liveAgentFlowEvents = payload.flow_events || [];
     state.liveAgentFlowLoaded = true;
     setLobbyEvents(payload.events || state.lobbyEvents);
     state.liveAgentProcessStatus = { message: `자유토론 ${state.liveAgentFlow.status || "stopped"}`, tone: "success" };
+    notifyLiveAgentFlowUpdated();
   } catch (error) {
     state.liveAgentProcessStatus = { message: `자유토론 중지 실패: ${error?.message || "알 수 없는 오류"}`, tone: "error" };
   } finally {
@@ -3053,6 +3063,11 @@ async function stopLiveAgentFlow(lobby) {
     await loadLiveAgents({ background: true, force: true });
     renderLobby({ followLatest: false });
   }
+}
+
+function notifyLiveAgentFlowUpdated() {
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function" || typeof CustomEvent === "undefined") return;
+  window.dispatchEvent(new CustomEvent("agentsassemble:live-agent-flow-updated"));
 }
 
 async function stopRunningLiveAgentProcessGroups() {

@@ -696,8 +696,24 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('id="live-agent-flow-stop"', script)
         self.assertIn('/api/live-agent-flow/start', script)
         self.assertIn('/api/live-agent-flow/stop', script)
+        self.assertIn("function liveAgentMeetingId", script)
         self.assertIn('["flow", "flow"]', script)
         self.assertIn(".live-agent-flow-panel", css)
+
+    def test_live_tab_surfaces_play_mode_flow_as_unofficial_room_state(self):
+        script = static_js()
+        css = static_css()
+
+        self.assertIn("liveAgentFlowEvents: []", script)
+        self.assertIn("state.liveAgentFlowEvents = payload.flow_events || []", script)
+        self.assertIn("function renderPlayModeFlowSurface", script)
+        self.assertIn('class="play-mode-flow-surface"', script)
+        self.assertIn("function renderPlayModeFlowFeed", script)
+        self.assertIn('class="play-mode-flow-feed"', script)
+        self.assertIn("비공식 자유토론", script)
+        self.assertIn("공식 기록 제외", script)
+        self.assertIn(".play-mode-flow-surface", css)
+        self.assertIn(".play-mode-flow-feed", css)
 
     def test_tabs_expose_semantic_state(self):
         html = (STATIC_DIR / "index.html").read_text()

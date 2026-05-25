@@ -328,6 +328,11 @@ window.addEventListener("agentsassemble:meeting-refresh-requested", async (event
   }
 });
 
+window.addEventListener("agentsassemble:live-agent-flow-updated", () => {
+  if (!state.payload?.meeting || state.currentTab !== "live") return;
+  renderLive(state.payload, { followLatest: false });
+});
+
 async function selectAndLoadMeeting(meetingId) {
   await loadMeetings();
   meetingSelect.value = meetingId;
