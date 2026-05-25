@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --color-sidebar: #2b2d31;
+  --color-sidebar-hover: #35373c;
+  --color-sidebar-active: #404249;
+  --color-sidebar-text: #b5bac1;
+  --color-sidebar-text-active: #f2f3f5;
+  --color-chat-bg: #f8f9fa;
+  --color-chat-hover: #f0f1f2;
+  --color-accent: #5865f2;
+  --color-accent-hover: #4752c4;
+  --color-online: #23a559;
+  --color-idle: #f0b232;
+  --color-offline: #80848e;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.preserve-words {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* Scrollbar styling for chat areas */
+.chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  border-radius: 3px;
+}
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
