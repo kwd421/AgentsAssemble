@@ -718,11 +718,12 @@ function renderLiveAgentProcessControls() {
         <input id="live-agent-round-max-rounds" type="number" min="1" max="8" step="1" value="8" aria-label="maximum remaining official rounds" />
         <div class="live-agent-flow-panel">
           <strong>Play Mode 자유토론</strong>
-          <span>${escapeHtml(liveAgentFlowStatusLabel(state.liveAgentFlow))}</span>
+          <span class="live-agent-flow-status" aria-live="polite">${escapeHtml(liveAgentFlowStatusLabel(state.liveAgentFlow))}</span>
           <input id="live-agent-flow-topic" maxlength="240" value="${escapeHtml(defaultFlowTopic)}" aria-label="play mode flow topic" />
           <input id="live-agent-flow-duration" type="number" min="1" max="3600" step="1" value="180" aria-label="play mode flow duration seconds" />
           <button type="button" id="live-agent-flow-start" ${processActionsDisabled ? "disabled" : ""}>자유토론</button>
           <button type="button" id="live-agent-flow-stop" ${processActionsDisabled ? "disabled" : ""}>토론중지</button>
+          ${renderLiveAgentFlowDiagnostics(state.liveAgentFlow)}
         </div>
         <label class="live-agent-process-options">
           <input id="live-agent-round-stop-on-timeout" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
@@ -808,14 +809,65 @@ function liveAgentProcessActionBusy() {
 }
 
 function liveAgentFlowStatusLabel(flow) {
-  if (!flow || typeof flow !== "object" || !flow.status || flow.status === "idle") return "idle";
-  const parts = [String(flow.status)];
-  if (flow.status === "running" && Number.isFinite(Number(flow.remaining_seconds))) {
-    parts.push(`${Math.ceil(Number(flow.remaining_seconds))}s left`);
+  if (!flow || typeof flow !== "object" || !flow.status || flow.status === "idle") return "대기";
+  const status = String(flow.status || "idle");
+  const parts = [liveAgentFlowStatusText(status)];
+  if (status === "running" && Number.isFinite(Number(flow.remaining_seconds))) {
+    parts.push(`${liveAgentFlowClockLabel(flow.remaining_seconds)} 남음`);
   }
-  parts.push(`${Math.max(0, Number(flow.total_turns || 0))} turns`);
-  parts.push(`${Math.max(0, Number(flow.agent_count || 0))} agents`);
+  parts.push(`참여 ${Math.max(0, Number(flow.agent_count || 0))}명`);
   return parts.join(" · ");
+}
+
+function renderLiveAgentFlowDiagnostics(flow) {
+  if (!flow || typeof flow !== "object" || !flow.status || flow.status === "idle") return "";
+  const details = liveAgentFlowDiagnosticParts(flow);
+  if (!details.length) return "";
+  return `
+    <details class="live-agent-flow-diagnostics">
+      <summary>상태 자세히</summary>
+      <span>${escapeHtml(details.join(" · "))}</span>
+    </details>
+  `;
+}
+
+function liveAgentFlowDiagnosticParts(flow) {
+  const turns = Math.max(0, Number(flow.total_turns || 0));
+  const details = [`총 ${turns}마디`];
+  const lastActivity = liveAgentFlowElapsedSinceLabel(flow.last_activity_at);
+  details.push(lastActivity && turns > 0 ? `마지막 ${lastActivity} 전` : "아직 발언 없음");
+  return details;
+}
+
+function liveAgentFlowStatusText(status) {
+  if (status === "running") return "진행중";
+  if (status === "finished") return "종료";
+  if (status === "stopped") return "중지";
+  if (status === "error") return "오류";
+  return "대기";
+}
+
+function liveAgentFlowClockLabel(value) {
+  const totalSeconds = Math.max(0, Math.ceil(Number(value) || 0));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function liveAgentFlowElapsedSinceLabel(value) {
+  const parsed = Date.parse(String(value || ""));
+  if (!Number.isFinite(parsed)) return "";
+  const elapsedSeconds = Math.max(0, Math.round((Date.now() - parsed) / 1000));
+  if (elapsedSeconds < 60) return `${elapsedSeconds}초`;
+  const minutes = Math.floor(elapsedSeconds / 60);
+  if (minutes < 60) return `${minutes}분`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes ? `${hours}시간 ${remainingMinutes}분` : `${hours}시간`;
 }
 
 function defaultOfficialRoundId(meeting) {

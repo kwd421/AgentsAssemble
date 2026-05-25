@@ -1245,10 +1245,26 @@
   font-size: 12px;
 }
 
-.live-agent-flow-panel span {
+.live-agent-flow-status {
   color: #bdf2b4;
   font-size: 11px;
   white-space: nowrap;
+}
+
+.live-agent-flow-diagnostics {
+  color: var(--muted);
+  font-size: 11px;
+  grid-column: 1 / -1;
+}
+
+.live-agent-flow-diagnostics summary {
+  cursor: pointer;
+  width: max-content;
+}
+
+.live-agent-flow-diagnostics span {
+  display: block;
+  margin-top: 4px;
 }
 
 .live-agent-flow-panel input,
