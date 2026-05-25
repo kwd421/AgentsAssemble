@@ -374,6 +374,10 @@ class McpJoinBriefTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["mcp"]["profile"], "participant")
+        self.assertEqual(payload["packet_kind"], "agent_owned_entry_packet")
+        self.assertEqual(payload["entry_contract"]["primary_entry_paths"], ["mcp.command", "self_service", "cli.commands"])
+        self.assertEqual(payload["entry_contract"]["provider_context"], "provider_owned")
+        self.assertIn("commands.wait_next", payload["entry_contract"]["tool_order"])
         self.assertEqual(
             payload["mcp"]["command"],
             [

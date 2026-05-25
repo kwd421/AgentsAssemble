@@ -81,7 +81,9 @@ def build_live_agent_join_brief(
     )
     return {
         "status": "generated",
+        "packet_kind": "agent_owned_entry_packet",
         "agent": agent,
+        "entry_contract": _entry_contract(),
         "execution_contract": execution_contract,
         "commands": commands,
         "templates": templates,
@@ -96,6 +98,7 @@ def build_live_agent_join_brief(
             "AGENTSASSEMBLE_ENGAGEMENT_MODE": normalized_engagement_mode,
         },
         "instructions": [
+            "Treat this JSON as an agent-owned entry packet: the agent reads room diffs and chooses its own next room action.",
             "Run commands.register once before observing the room.",
             "Loop commands.wait_next and inspect the returned action.",
             "Use commands.read_since when you want the raw room diff instead of the next action.",
@@ -115,6 +118,35 @@ def build_live_agent_join_brief(
             "provider_executed": False,
             "contains_secrets": False,
         },
+    }
+
+
+def _entry_contract() -> dict[str, object]:
+    return {
+        "mode": "agent_owned",
+        "room_role": "place_record_state_board",
+        "provider_context": "provider_owned",
+        "host_prompt_injection": "not_required",
+        "flow_status": "play_mode_demo_or_auxiliary",
+        "primary_entry_paths": ["mcp.command", "self_service", "cli.commands"],
+        "tool_order": [
+            "commands.register",
+            "commands.wait_next",
+            "commands.read_since",
+            "templates.say",
+            "templates.official_reply",
+            "templates.heartbeat",
+            "commands.leave",
+            "mcp.command",
+        ],
+        "self_service_loop": [
+            "Start from a host-approved self_service resident config.",
+            "Use AGENTSASSEMBLE_WAIT_NEXT_COMMAND to observe the next room action.",
+            "Use AGENTSASSEMBLE_ROOM_COMMAND or AGENTSASSEMBLE_READ_SINCE-style CLI commands when extra room context is needed.",
+            "Use AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE or AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE for exactly one visible reply.",
+            "Use AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE to preserve cursors and status.",
+            "Use AGENTSASSEMBLE_LEAVE_COMMAND before intentional exit.",
+        ],
     }
 
 

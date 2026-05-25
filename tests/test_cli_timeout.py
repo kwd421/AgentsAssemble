@@ -625,6 +625,28 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["status"], "generated")
+        self.assertEqual(payload["packet_kind"], "agent_owned_entry_packet")
+        self.assertEqual(payload["entry_contract"]["mode"], "agent_owned")
+        self.assertEqual(payload["entry_contract"]["room_role"], "place_record_state_board")
+        self.assertEqual(payload["entry_contract"]["provider_context"], "provider_owned")
+        self.assertEqual(payload["entry_contract"]["host_prompt_injection"], "not_required")
+        self.assertEqual(payload["entry_contract"]["flow_status"], "play_mode_demo_or_auxiliary")
+        self.assertEqual(
+            payload["entry_contract"]["tool_order"],
+            [
+                "commands.register",
+                "commands.wait_next",
+                "commands.read_since",
+                "templates.say",
+                "templates.official_reply",
+                "templates.heartbeat",
+                "commands.leave",
+                "mcp.command",
+            ],
+        )
+        self_service_loop = " ".join(payload["entry_contract"]["self_service_loop"])
+        self.assertIn("AGENTSASSEMBLE_WAIT_NEXT_COMMAND", self_service_loop)
+        self.assertIn("AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE", self_service_loop)
         self.assertEqual(
             payload["agent"],
             {
@@ -722,6 +744,10 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("For observe_lobby actions, run the returned ack_command and do not post a reply.", payload["instructions"])
         self.assertIn(
             "For return_packet actions, run the returned read_command before the ack_command and do not post a reply.",
+            payload["instructions"],
+        )
+        self.assertIn(
+            "Treat this JSON as an agent-owned entry packet: the agent reads room diffs and chooses its own next room action.",
             payload["instructions"],
         )
         self.assertIn("Run commands.leave before intentionally exiting the room.", payload["instructions"])
