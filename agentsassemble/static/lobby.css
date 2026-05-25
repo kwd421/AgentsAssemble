@@ -856,12 +856,22 @@
   color: #ffc3c3;
 }
 
+.live-agent-card .live-agent-contract,
+.live-agent-card .live-agent-admission,
 .live-agent-card .live-agent-runtime,
 .live-agent-card .live-agent-error-detail {
   overflow: visible;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   text-overflow: clip;
   white-space: normal;
+}
+
+.live-agent-card .live-agent-contract {
+  color: #bdf4ff;
+}
+
+.live-agent-card .live-agent-admission {
+  color: #ffd89a;
 }
 
 .live-agent-card .live-agent-error-detail {

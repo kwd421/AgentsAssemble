@@ -1660,6 +1660,7 @@ test("join brief button generates an external agent packet without registering",
   const { document, requests } = installHarness({
     liveAgentJoinBriefPayload: {
       status: "generated",
+      packet_kind: "agent_owned_entry_packet",
       agent: {
         agent_id: "external-reviewer",
         display_name: "External Reviewer",
@@ -1668,9 +1669,21 @@ test("join brief button generates an external agent packet without registering",
         meeting_id: "resident-gui",
         engagement_mode: "mentioned",
       },
+      entry_contract: {
+        mode: "agent_owned",
+        primary_entry_paths: ["mcp.command", "self_service", "cli.commands"],
+      },
+      execution_contract: {
+        join_semantics: "self_service_room_loop",
+        context_durability: "provider_managed_room_loop",
+        provider_execution: "not_started_by_join_brief",
+      },
       commands: {
         register: ["python3", "-m", "agentsassemble.cli", "live-agent", "register", "--agent-id", "external-reviewer"],
         wait_next: ["python3", "-m", "agentsassemble.cli", "live-agent", "wait-next", "--agent-id", "external-reviewer"],
+      },
+      mcp: {
+        command: ["python3", "-m", "agentsassemble.cli", "mcp", "serve", "--profile", "participant"],
       },
       safety: { room_contacted: false, provider_executed: false, contains_secrets: false },
       session_id: "must-not-render",
@@ -1685,14 +1698,14 @@ test("join brief button generates an external agent packet without registering",
   lobby.querySelector("#live-agent-id").value = "external-reviewer";
   lobby.querySelector("#live-agent-display-name").value = "External Reviewer";
   lobby.querySelector("#live-agent-provider-kind").value = "manual";
-  lobby.querySelector("#live-agent-connection-kind").value = "manual";
+  lobby.querySelector("#live-agent-connection-kind").value = "self_service";
   await lobby.querySelector("#live-agent-join-brief").click();
 
   assert.deepEqual(liveAgentJoinBriefRequest(requests).jsonBody, {
     agent_id: "external-reviewer",
     display_name: "External Reviewer",
     provider_kind: "manual",
-    connection_kind: "manual",
+    connection_kind: "self_service",
     meeting_id: "resident-gui",
     engagement_mode: "mentioned",
     timeout: 30,
@@ -1708,12 +1721,82 @@ test("join brief button generates an external agent packet without registering",
   assert.equal(lobby.querySelector("#live-agent-id").value, "external-reviewer");
   assert.equal(lobby.querySelector("#live-agent-display-name").value, "External Reviewer");
   assert.equal(lobby.querySelector("#live-agent-provider-kind").value, "manual");
-  assert.equal(lobby.querySelector("#live-agent-connection-kind").value, "manual");
+  assert.equal(lobby.querySelector("#live-agent-connection-kind").value, "self_service");
   assert.match(document.querySelector("#lobby").innerHTML, /external-reviewer/);
   assert.match(document.querySelector("#lobby").innerHTML, /wait-next/);
+  assert.match(document.querySelector("#lobby").innerHTML, /agent_owned/);
+  assert.match(document.querySelector("#lobby").innerHTML, /self_service_room_loop/);
+  assert.match(document.querySelector("#lobby").innerHTML, /mcp/);
   assert.doesNotMatch(document.querySelector("#lobby").innerHTML, /must-not-render|example\.invalid|session_id|auth_ref|config_path|log_path/);
   assert.equal(state.liveAgentStatus.message, "external-reviewer 초대 패킷 생성됨");
   assert.equal(state.liveAgentStatus.tone, "success");
+});
+
+test("live agent cards expose agent-owned room evidence", () => {
+  resetState();
+  state.liveAgents = [
+    {
+      agent_id: "self-service-agent",
+      display_name: "Self Service Agent",
+      status: "online",
+      provider_kind: "local_cli",
+      connection_kind: "self_service",
+      engagement_mode: "watch",
+      meeting_id: "resident-gui",
+      join_semantics: "self_service_room_loop",
+      context_durability: "provider_managed_room_loop",
+      sandbox_enforcement: "advisory",
+      admission_status: "bound_to_meeting",
+      host_approved_binding: true,
+      last_reply_at: "2026-05-25T01:02:03+00:00",
+      last_observed_event_id: "lobby-event-123456",
+      last_observed_live_event_id: "live-event-789",
+      heartbeat_age_seconds: 2,
+      stale_after_seconds: 30,
+    },
+  ];
+  const { document } = installHarness();
+
+  renderLobby({ followLatest: false });
+
+  const html = document.querySelector("#lobby").innerHTML;
+  assert.match(html, /Self Service Agent/);
+  assert.match(html, /Self-service/);
+  assert.match(html, /self_service_room_loop/);
+  assert.match(html, /provider_managed_room_loop/);
+  assert.match(html, /sandbox advisory/);
+  assert.match(html, /bound_to_meeting/);
+  assert.match(html, /host-approved/);
+  assert.match(html, /reply 2026-05-25T01:02:03\+00:00/);
+  assert.match(html, /last read lobby/);
+  assert.match(html, /last read official/);
+});
+
+test("live agent cards expose unapproved admission evidence", () => {
+  resetState();
+  state.liveAgents = [
+    {
+      agent_id: "manual-agent",
+      display_name: "Manual Agent",
+      status: "offline",
+      provider_kind: "manual",
+      connection_kind: "manual",
+      engagement_mode: "watch",
+      meeting_id: "resident-gui",
+      join_semantics: "manual_room_loop",
+      context_durability: "external_owner_managed",
+      sandbox_enforcement: "advisory",
+      admission_status: "meeting_lobby_only",
+      host_approved_binding: false,
+    },
+  ];
+  const { document } = installHarness();
+
+  renderLobby({ followLatest: false });
+
+  const html = document.querySelector("#lobby").innerHTML;
+  assert.match(html, /meeting_lobby_only/);
+  assert.match(html, /not-approved/);
 });
 
 test("auto join stops before preflight when discovery omits the session bundle", async () => {
@@ -3116,8 +3199,8 @@ test("live-agent roster renders lobby and official cursors separately", () => {
   renderLobby({ followLatest: false });
 
   const runtime = document.querySelector(".live-agent-runtime");
-  assert.match(runtime.textContent, /cursor lobby-evt1/);
-  assert.match(runtime.textContent, /official cursor live-evt1/);
+  assert.match(runtime.textContent, /last read lobby lobby-evt1/);
+  assert.match(runtime.textContent, /last read official live-evt1/);
 });
 
 test("runtime health load failure renders unknown snapshot without crashing", async () => {

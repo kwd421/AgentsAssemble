@@ -4,6 +4,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC_DIR = ROOT / "agentsassemble" / "static"
+FRONTEND_DIR = ROOT / "frontend" / "src"
 PYPROJECT = ROOT / "pyproject.toml"
 
 
@@ -13,6 +14,10 @@ def static_js() -> str:
 
 def static_css() -> str:
     return "\n".join(path.read_text() for path in sorted(STATIC_DIR.glob("*.css")))
+
+
+def frontend_source() -> str:
+    return "\n".join(path.read_text() for path in sorted(FRONTEND_DIR.rglob("*")) if path.suffix in {".ts", ".tsx"})
 
 
 class StaticUiAssetTests(unittest.TestCase):
@@ -43,6 +48,20 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn(".app-status", css)
         self.assertIn("async function responseErrorMessage", script)
         self.assertIn("payload?.error || payload?.message || fallback", script)
+
+    def test_react_lobby_preserves_agent_owned_room_evidence(self):
+        source = frontend_source()
+
+        self.assertIn("join_semantics?: string;", source)
+        self.assertIn("context_durability?: string;", source)
+        self.assertIn("last_observed_event_id?: string;", source)
+        self.assertIn("last_observed_live_event_id?: string;", source)
+        self.assertIn("host_approved_binding?: boolean;", source)
+        self.assertIn("binding_conflicts?: string[];", source)
+        self.assertIn('agent.last_reply_at ? `reply ${agent.last_reply_at}` : ""', source)
+        self.assertIn('if (agent.host_approved_binding) parts.push("host-approved");', source)
+        self.assertIn('if (agent.host_approved_binding === false) parts.push("not-approved");', source)
+        self.assertIn("{agent.provider_kind || \"resident\"} · {agent.connection_kind || agent.engagement_mode || \"room\"}", source)
 
     def test_lobby_separates_stage_from_activity_feed(self):
         script = static_js()

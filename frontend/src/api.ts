@@ -23,11 +23,19 @@ export interface LiveAgent {
   display_name: string;
   status: string;
   provider_kind: string;
+  connection_kind?: string;
   engagement_mode: string;
   meeting_id: string;
   last_seen_at: string;
   last_reply_at: string;
+  last_observed_event_id?: string;
+  last_observed_live_event_id?: string;
+  join_semantics?: string;
+  context_durability?: string;
   sandbox_enforcement: string;
+  admission_status?: string;
+  host_approved_binding?: boolean;
+  binding_conflicts?: string[];
   capabilities: string[];
 }
 

@@ -651,6 +651,7 @@ function renderLiveAgentConnections() {
           <option value="local_cli">Local CLI</option>
           <option value="live_session">Live session</option>
           <option value="terminal_session">Terminal session</option>
+          <option value="self_service">Self-service</option>
           <option value="remote_bridge">Remote bridge</option>
           <option value="codex_resume">Codex resume</option>
           <option value="manual">Manual</option>
@@ -670,7 +671,10 @@ function renderLiveAgentJoinBrief(brief) {
   const agent = brief.agent && typeof brief.agent === "object" ? brief.agent : {};
   const agentId = String(agent.agent_id || "external-agent");
   const publicBrief = {
+    packet_kind: brief.packet_kind || "",
     agent: brief.agent || {},
+    entry_contract: brief.entry_contract || {},
+    execution_contract: brief.execution_contract || {},
     commands: brief.commands || {},
     templates: brief.templates || {},
     mcp: brief.mcp || {},
@@ -1797,6 +1801,8 @@ function liveAgentProcessMeetingLabel(group) {
 function renderLiveAgentCard(agent) {
   const status = agent.status || "offline";
   const runtimeDetails = liveAgentRuntimeDetails(agent);
+  const contractDetails = liveAgentContractDetails(agent);
+  const admissionDetails = liveAgentAdmissionDetails(agent);
   const lastError = String(agent.last_error || "").trim();
   const agentId = String(agent.agent_id || "");
   const probeRunning = state.liveAgentProbeRunning === agentId;
@@ -1812,6 +1818,8 @@ function renderLiveAgentCard(agent) {
         ${renderEngagementModeOptions(agent.engagement_mode)}
       </select>
       <button type="button" class="live-agent-probe" data-live-agent-probe="${escapeHtml(agentId)}" ${probeRunning || !agentId ? "disabled" : ""}>probe</button>
+      ${contractDetails ? `<small class="live-agent-contract">${escapeHtml(contractDetails)}</small>` : ""}
+      ${admissionDetails ? `<small class="live-agent-admission">${escapeHtml(admissionDetails)}</small>` : ""}
       ${runtimeDetails ? `<small class="live-agent-runtime">${escapeHtml(runtimeDetails)}</small>` : ""}
       ${lastError ? `<small class="live-agent-error-detail">${escapeHtml(lastError)}</small>` : ""}
     </article>
@@ -1838,8 +1846,27 @@ function liveAgentRuntimeDetails(agent) {
   const heartbeatAge = heartbeatAgeLabel(agent);
   if (heartbeatAge) details.push(heartbeatAge);
   if (agent.last_reply_at) details.push(`reply ${agent.last_reply_at}`);
-  if (agent.last_observed_event_id) details.push(`cursor ${shortSessionId(agent.last_observed_event_id)}`);
-  if (agent.last_observed_live_event_id) details.push(`official cursor ${shortSessionId(agent.last_observed_live_event_id)}`);
+  if (agent.last_observed_event_id) details.push(`last read lobby ${shortSessionId(agent.last_observed_event_id)}`);
+  if (agent.last_observed_live_event_id) details.push(`last read official ${shortSessionId(agent.last_observed_live_event_id)}`);
+  return details.join(" · ");
+}
+
+function liveAgentContractDetails(agent) {
+  const details = [];
+  if (agent.join_semantics) details.push(agent.join_semantics);
+  if (agent.context_durability) details.push(agent.context_durability);
+  if (agent.sandbox_enforcement) details.push(`sandbox ${agent.sandbox_enforcement}`);
+  return details.join(" · ");
+}
+
+function liveAgentAdmissionDetails(agent) {
+  const details = [];
+  if (agent.admission_status) details.push(agent.admission_status);
+  if (agent.host_approved_binding === true) details.push("host-approved");
+  if (agent.host_approved_binding === false) details.push("not-approved");
+  if (Array.isArray(agent.binding_conflicts) && agent.binding_conflicts.length) {
+    details.push(`conflict ${agent.binding_conflicts.slice(0, 3).join(", ")}`);
+  }
   return details.join(" · ");
 }
 
@@ -2014,6 +2041,7 @@ function connectionKindLabel(kind) {
   if (kind === "local_cli") return "Local CLI";
   if (kind === "live_session") return "Live session";
   if (kind === "terminal_session") return "Terminal session";
+  if (kind === "self_service") return "Self-service";
   if (kind === "remote_bridge") return "Remote bridge";
   if (kind === "codex_resume") return "Codex resume";
   return "Manual";
