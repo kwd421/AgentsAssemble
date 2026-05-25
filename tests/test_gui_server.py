@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 import time
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from pathlib import Path
 from http.server import ThreadingHTTPServer
@@ -17828,6 +17829,163 @@ class GuiServerTests(unittest.TestCase):
             persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]
             self.assertEqual(persisted_agent["engagement_mode"], "moderator_called")
             self.assertFalse((root / "live-agent-runs" / "processes.json").exists())
+
+    def test_live_agent_flow_status_returns_scoped_flow_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "live_state.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "JJK debate",
+                        "display_topic": "고죠 vs 스쿠나",
+                        "live_status": "running",
+                        "provider_configs": {"p1": {"kind": "local_cli"}},
+                        "agent_bindings": [{"agent_id": "agent-a", "provider_id": "p1"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "meeting_id": "m1",
+                    "provider_kind": "local_cli",
+                    "engagement_mode": "moderator_called",
+                    "status": "online",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                start_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-flow/start",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "topic": "고죠 vs 스쿠나",
+                            "duration_seconds": 30,
+                            "tick_interval": 0.01,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(start_request, timeout=4) as response:
+                    start_payload = json.loads(response.read().decode("utf-8"))
+                flow_id = start_payload["flow"]["flow_id"]
+                append_lobby_event(
+                    root,
+                    {
+                        "name": "Agent A",
+                        "side": "other",
+                        "kind": "message",
+                        "message": "무량공처 쪽이 먼저 변수라고 봅니다.",
+                        "actor_id": "agent-a",
+                        "flow_id": flow_id,
+                        "flow_meeting_id": "m1",
+                        "flow_action": "speak",
+                        "flow_status": "running",
+                        "flow_topic": "고죠 vs 스쿠나",
+                    },
+                    allow_flow_metadata=True,
+                )
+                append_lobby_event(
+                    root,
+                    {
+                        "name": "Other Flow",
+                        "side": "other",
+                        "kind": "message",
+                        "message": "다른 회의 발언",
+                        "actor_id": "other",
+                        "flow_id": "flow-other",
+                        "flow_meeting_id": "m2",
+                        "flow_action": "speak",
+                    },
+                    allow_flow_metadata=True,
+                )
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/live-agent-flow?meeting_id=m1", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                stop_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-flow/stop",
+                    data=json.dumps({"meeting_id": "m1"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(stop_request, timeout=4):
+                    pass
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertIn("events", payload)
+            self.assertIn("flow_events", payload)
+            self.assertEqual({event["flow_id"] for event in payload["flow_events"]}, {flow_id})
+            self.assertEqual([event.get("flow_event_type") or event.get("flow_action") for event in payload["flow_events"]], ["started", "speak"])
+            self.assertNotIn("flow-other", {event.get("flow_id") for event in payload["flow_events"]})
+
+    def test_live_agent_flow_status_restores_latest_flow_from_lobby_log(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deadline = datetime.now(UTC) + timedelta(seconds=120)
+            append_lobby_event(
+                root,
+                {
+                    "name": "Play Mode",
+                    "side": "other",
+                    "kind": "message",
+                    "message": "시간제 자유토론 시작: 고죠 vs 스쿠나",
+                    "actor_id": "flow",
+                    "flow_id": "flow-restored",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_status": "running",
+                    "flow_topic": "고죠 vs 스쿠나",
+                    "flow_duration_seconds": 180,
+                    "flow_tick_interval": 2,
+                    "flow_cooldown": 8,
+                    "flow_max_agent_turns": 0,
+                    "flow_max_total_turns": 0,
+                    "flow_max_silence_seconds": 0,
+                    "flow_total_turns": 0,
+                    "flow_agent_count": 3,
+                    "flow_started_at": datetime.now(UTC).isoformat(),
+                    "flow_deadline_at": deadline.isoformat(),
+                },
+                allow_flow_metadata=True,
+            )
+            append_lobby_event(
+                root,
+                {
+                    "name": "Spark A",
+                    "side": "other",
+                    "kind": "message",
+                    "message": "첫 발언",
+                    "actor_id": "spark-a",
+                    "flow_id": "flow-restored",
+                    "flow_meeting_id": "m1",
+                    "flow_action": "speak",
+                    "flow_status": "running",
+                    "flow_topic": "고죠 vs 스쿠나",
+                },
+                allow_flow_metadata=True,
+            )
+            supervisor = LiveAgentFlowSupervisor(root)
+
+            payload = supervisor.status(meeting_id="m1")
+
+            self.assertEqual(payload["flow"]["status"], "running")
+            self.assertEqual(payload["flow"]["flow_id"], "flow-restored")
+            self.assertEqual(payload["flow"]["meeting_id"], "m1")
+            self.assertEqual(payload["flow"]["topic"], "고죠 vs 스쿠나")
+            self.assertEqual(payload["flow"]["total_turns"], 1)
+            self.assertGreater(payload["flow"]["remaining_seconds"], 0)
+            self.assertEqual([event.get("flow_event_type") or event.get("flow_action") for event in payload["flow_events"]], ["started", "speak"])
 
     def test_live_agent_flow_silence_timer_does_not_post_visible_nudges(self):
         with tempfile.TemporaryDirectory() as temp_dir:

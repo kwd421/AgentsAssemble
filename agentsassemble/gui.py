@@ -36,7 +36,7 @@ from agentsassemble.live_agent_discovery import (
     validate_distinct_session_bundle_paths,
 )
 from agentsassemble.live_agent_context import live_agent_context_contract
-from agentsassemble.live_agent_flow import FlowOptions, flow_turn_count
+from agentsassemble.live_agent_flow import FLOW_TERMINAL_EVENT_TYPES, FlowOptions, flow_turn_count
 from agentsassemble.live_agent_join_brief import build_live_agent_join_brief
 from agentsassemble.live_agent_launch_policy import APPROVAL_REQUIRED_MESSAGE, assert_resident_launch_approved
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
@@ -203,15 +203,24 @@ class LiveAgentFlowSupervisor:
             return self.status(meeting_id=meeting_id)
 
     def status(self, *, meeting_id: str = "") -> dict[str, object]:
+        events = read_lobby(self.output_root)
         with self._lock:
             run = self._selected_run(meeting_id)
             if run is None:
-                return {"flow": {"status": "idle"}}
+                flow = _restored_flow_state(events, meeting_id=meeting_id)
+                return {
+                    "flow": flow or {"status": "idle"},
+                    "agents": read_live_agents(self.output_root),
+                    "events": events,
+                    "flow_events": _flow_events_for_state(events, flow),
+                }
             self._refresh_counts_locked(run)
+            flow = self._public_state(run)
             return {
-                "flow": self._public_state(run),
+                "flow": flow,
                 "agents": read_live_agents(self.output_root),
-                "events": read_lobby(self.output_root),
+                "events": events,
+                "flow_events": _flow_events_for_state(events, flow),
             }
 
     def stop(self, payload: dict[str, object]) -> dict[str, object]:
@@ -229,10 +238,13 @@ class LiveAgentFlowSupervisor:
         with self._lock:
             if self._public_state(run).get("status") == "running":
                 self._finish_locked(run, "stopped")
+            events = read_lobby(self.output_root)
+            flow = self._public_state(run)
             return {
-                "flow": self._public_state(run),
+                "flow": flow,
                 "agents": read_live_agents(self.output_root),
-                "events": read_lobby(self.output_root),
+                "events": events,
+                "flow_events": _flow_events_for_state(events, flow),
             }
 
     def _run_flow(self, meeting_id: str) -> None:
@@ -382,6 +394,78 @@ def _latest_flow_activity_at(events: list[dict[str, object]], *, flow_id: str) -
         if str(event.get("flow_action") or "") or str(event.get("flow_event_type") or "") in {"started", "nudge"}:
             return clean_lobby_text(event.get("created_at"), limit=64)
     return ""
+
+
+def _restored_flow_state(events: list[dict[str, object]], *, meeting_id: str = "") -> dict[str, object] | None:
+    context = _latest_flow_context(events, meeting_id=meeting_id)
+    if context is None:
+        return None
+    flow_id = clean_lobby_text(context.get("flow_id"), limit=128)
+    if not flow_id:
+        return None
+    event_type = clean_lobby_text(context.get("flow_event_type"), limit=64)
+    status = clean_lobby_text(context.get("flow_status"), limit=64)
+    if event_type == "started":
+        status = "running"
+    elif event_type in FLOW_TERMINAL_EVENT_TYPES:
+        status = event_type
+    status = status or "running"
+    deadline = _parse_iso_datetime(context.get("flow_deadline_at"))
+    if status == "running" and deadline is not None and datetime.now(UTC) >= deadline:
+        status = "finished"
+    state: dict[str, object] = {
+        "flow_id": flow_id,
+        "meeting_id": clean_lobby_text(context.get("flow_meeting_id"), limit=128),
+        "topic": clean_lobby_text(context.get("flow_topic"), limit=240),
+        "status": status,
+        "started_at": clean_lobby_text(context.get("flow_started_at"), limit=64),
+        "deadline_at": clean_lobby_text(context.get("flow_deadline_at"), limit=64),
+        "duration_seconds": _payload_nonnegative_float(context.get("flow_duration_seconds"), 0.0),
+        "tick_interval": _payload_nonnegative_float(context.get("flow_tick_interval"), 0.0),
+        "cooldown": _payload_nonnegative_float(context.get("flow_cooldown"), 0.0),
+        "max_agent_turns": _payload_nonnegative_int(context.get("flow_max_agent_turns"), 0),
+        "max_total_turns": _payload_nonnegative_int(context.get("flow_max_total_turns"), 0),
+        "max_silence_seconds": _payload_nonnegative_float(context.get("flow_max_silence_seconds"), 0.0),
+        "agent_count": _payload_nonnegative_int(context.get("flow_agent_count"), 0),
+        "total_turns": flow_turn_count(events, flow_id=flow_id),
+        "last_activity_at": _latest_flow_activity_at(events, flow_id=flow_id)
+        or clean_lobby_text(context.get("created_at"), limit=64),
+    }
+    if status == "running" and deadline is not None:
+        state["remaining_seconds"] = max(0.0, (deadline - datetime.now(UTC)).total_seconds())
+    if event_type in FLOW_TERMINAL_EVENT_TYPES:
+        state["finished_at"] = clean_lobby_text(context.get("created_at"), limit=64)
+    return state
+
+
+def _latest_flow_context(events: list[dict[str, object]], *, meeting_id: str = "") -> dict[str, object] | None:
+    scoped_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    latest: dict[str, object] | None = None
+    latest_flow_id = ""
+    for event in events:
+        flow_id = clean_lobby_text(event.get("flow_id"), limit=128)
+        if not flow_id:
+            continue
+        event_meeting_id = clean_lobby_text(event.get("flow_meeting_id"), limit=128)
+        if scoped_meeting_id and event_meeting_id != scoped_meeting_id:
+            continue
+        event_type = clean_lobby_text(event.get("flow_event_type"), limit=64)
+        if event_type == "started":
+            latest = event
+            latest_flow_id = flow_id
+            continue
+        if event_type in FLOW_TERMINAL_EVENT_TYPES and latest is not None and flow_id == latest_flow_id:
+            latest = event
+    return latest
+
+
+def _flow_events_for_state(events: list[dict[str, object]], flow: dict[str, object] | None) -> list[dict[str, object]]:
+    if not isinstance(flow, dict):
+        return []
+    flow_id = clean_lobby_text(flow.get("flow_id"), limit=128)
+    if not flow_id:
+        return []
+    return [event for event in events if clean_lobby_text(event.get("flow_id"), limit=128) == flow_id]
 
 
 def _parse_iso_datetime(value: object) -> datetime | None:
