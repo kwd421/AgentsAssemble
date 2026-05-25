@@ -16,7 +16,14 @@ Open:
 http://127.0.0.1:8765
 ```
 
-The lobby is the public room surface. The "상주 실행" panel can start, refresh, stop, restart, and diagnose local live-agent process groups. The default group config path is:
+The lobby is the public room surface and should read first as a staging room,
+similar to a pick room before the live client opens. The default "상주 실행"
+surface keeps the current meeting id, Play Mode free-conversation controls,
+participant readiness, and recent preparation evidence in view. Session
+startup, ensure, resume, restart, recover, stop, diagnostics, smoke checks,
+discovery, and auto-join controls remain available under `고급 운영` for the
+operator instead of dominating the default lobby. The default group config path
+is:
 
 ```text
 configs/live-agents.start-session.example.json
@@ -24,7 +31,7 @@ configs/live-agents.start-session.example.json
 
 The GUI's `세션시작` button pairs that resident config with `configs/demo-council.json` and `configs/agents.start-session.example.json` so the visible meeting bindings and resident runner manifest match. The `시작` button still starts only the supervised process group from the config input, while `세션시작` creates the visible meeting and starts the matching resident group through `/api/live-agent-sessions/start`. `세션보장` calls `/api/live-agent-sessions/ensure` to no-op an already ready session or choose start, resume, restart, or recover for the current target. `세션재개` reconnects an existing meeting to its supervised group, `세션재시작` restarts that meeting-aware group and waits for fresh presence, `세션복구` recovers an `unknown` or `error` historical group for the same meeting without requiring the config path again, `세션점검` records a meeting-scoped readiness snapshot, and `세션중지` stops that meeting-aware group and updates bound roster evidence through `/api/live-agent-sessions/stop`.
 
-The live-agent roster and supervised process panel auto-refresh in the GUI every 5 seconds. This keeps stale presence, process crashes, pending auto-restart state, and recovered groups visible during long sessions without relying only on the manual refresh buttons. Background refreshes ignore volatile heartbeat age and monitor tick timestamps when deciding whether to re-render the lobby, so the room stays live without visually resetting every poll. The GUI server also starts a backend supervisor monitor, so owned process crash detection and due auto-restarts continue without an open browser or `/api/live-agent-processes` polling client. The manual refresh buttons remain useful when you want an immediate read after changing files or process state from another terminal.
+The live-agent roster and supervised process panel auto-refresh in the GUI every 5 seconds. This keeps stale presence, process crashes, pending auto-restart state, and recovered groups visible during long sessions without relying only on the manual refresh buttons. Background refreshes ignore volatile heartbeat age and monitor tick timestamps when deciding whether to re-render the lobby, so the room stays live without visually resetting every poll. Play Mode flow status polling patches the compact status line in place while the visible control shape is unchanged, so a running timer does not reset lobby scroll or input drafts on every poll. The GUI server also starts a backend supervisor monitor, so owned process crash detection and due auto-restarts continue without an open browser or `/api/live-agent-processes` polling client. The manual refresh buttons remain useful when you want an immediate read after changing files or process state from another terminal.
 
 The current frontend is still the dependency-light vanilla HTML/CSS/JS operator
 console. Natural-language room text should keep human-readable tokens intact
@@ -33,7 +40,10 @@ technical surfaces such as URLs, ids, logs, paths, and command output may use
 stronger wrapping to avoid horizontal overflow. Live-event stream updates should
 append or update event rows without replacing the whole live panel when possible,
 so input drafts, scroll position, and the latest-message control remain stable
-during SSE refreshes.
+during SSE refreshes. The Live tab can show Play Mode as an unofficial room
+flow with running/finished state, remaining time, participant status, and
+flow-scoped events; it should not present Play Mode chatter as transcript or
+decision evidence.
 
 ## Room-first / Agent-owned Context
 
@@ -531,8 +541,27 @@ Resident flow runners still prefer targeted official-turn requests first; when
 only Play Mode lobby events are pending, they ask the provider for one JSON
 decision and publish only the visible `message`. The action, reason, target,
 source event, chain depth, and flow id stay as lobby metadata. `wait` advances
-the lobby cursor without posting. Silence nudges are ordinary flow lobby events,
-and cooldown plus per-agent/total turn budgets bound the loop.
+the lobby cursor without posting. Silence checks are internal idle ticks rather
+than visible moderator messages; when the room is caught up, a runner may use
+the latest flow event as the source for one invisible tick candidate, but the
+room does not post "continue talking" nudges on behalf of a moderator. Cooldown
+and optional per-agent or total turn budgets bound automated loops when the
+operator chooses to use those limits.
+
+The flow status endpoint is read-only:
+
+```text
+GET /api/live-agent-flow?meeting_id=resident-m1
+```
+
+It returns `flow` for the selected running, stopped, finished, or restored
+flow, `flow_events` scoped to that flow id for new frontends, and
+`events` as a compatibility room tail for older callers. After a GUI server
+restart, the status path restores the latest flow state from durable lobby log
+metadata so a recently running or finished Play Mode room does not appear as a
+blank idle room just because in-memory supervisor state was lost. The GUI should
+prefer `flow_events` for Play Mode display and treat those events as unofficial
+room flow, not transcript evidence.
 
 When resident finalization writes per-agent return packets, it appends one non-official targeted return-packet event for each bound agent whose `return_packets/<role>.md` and `.json` artifacts exist. The event points only at relative artifact paths, carries `artifact_kind: "return_packet"`, and is delivered through `/api/live-agents/<agent_id>/room` only to the matching agent. If that live event later falls out of the bounded room tail, `/room` reprojects the relative return-packet path from the public artifact files and the meeting's agent binding, still without reading packet bodies into the event, and only while the packet is still pending for that agent. A terminal, self-service, or external/manual agent can read only its own packet body through `GET /api/live-agents/<agent_id>/return-packet?meeting_id=<meeting_id>&source_event_id=<event_id>` or the matching `python3 -m agentsassemble.cli live-agent return-packet` command returned as `read_command`. The read path validates the current live-agent row's meeting, agent binding, and source event, reads only the expected `return_packets/<role>.md` and `.json` files, does not accept arbitrary artifact paths, and does not heartbeat, acknowledge, post replies, append operations, or expose sibling packets. Once the agent has acknowledged the original return-packet event, the projected fallback id, or any later live event in the same meeting log, `/room` stops reprojecting that packet. After reading it, a terminal or self-service loop should run the returned `ack_command` so the roster's `last_observed_live_event_id` moves past that packet without posting a lobby reply. If the returned `read_command` is missing, exits non-zero, times out, or cannot be launched, the checked-in self-service wrapper and credential-free smoke child report `status: "error"` with the packet cursor and do not run the `ack_command`.
 

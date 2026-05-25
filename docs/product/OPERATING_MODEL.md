@@ -37,7 +37,10 @@ already host-approved meeting residents to `flow`, ask them to choose
 `speak`/`wait`/`ask`/`challenge`/`clarify`/`summarize`/`call_human`, and record
 only visible lobby messages plus safe action metadata. It must not start
 providers, bypass host admission, or write Play Mode chatter into the official
-transcript without a later explicit promote path.
+transcript without a later explicit promote path. The room should not become a
+visible moderator that keeps inserting its own prompts into the conversation:
+silence checks are internal flow ticks, and the visible room advances only when
+an approved resident or human actually posts a message.
 
 ## Non-Negotiable Rules
 
@@ -132,12 +135,23 @@ messages that exist.
 
 The vanilla GUI should optimize for trustworthy operations before polish:
 
+- The Lobby should act like a staging or pick room: participant readiness,
+  admission state, the current meeting id, and the basic Play Mode start/stop
+  path are the primary surface.
+- Session lifecycle, recovery, diagnostic, smoke, discovery, and other operator
+  controls should stay available but live under an advanced area instead of
+  dominating the default lobby.
+- The Live tab may show a compact Play Mode surface with running/finished state,
+  remaining time, participant status, and unofficial flow events. It must not
+  make Play Mode chatter look like transcript or decision evidence.
 - Natural-language room text should preserve readable tokens such as model
   versions, decimals, units, ellipses, and speaker names.
 - Forced mid-token wrapping belongs on technical strings such as URLs, logs,
   ids, paths, and command-like output.
 - Live room updates should append or update new event rows without replacing
   the whole panel when the existing DOM can be preserved.
+- Flow status polling should update the small status surface without resetting
+  the whole lobby when the visible control shape has not changed.
 - Input drafts, scroll position, and latest navigation are operator state and
   should survive background refreshes.
 
