@@ -2234,12 +2234,26 @@ async function loadLiveAgentFlow(options = {}) {
   } finally {
     state.liveAgentFlowLoading = false;
     notifyLiveAgentFlowUpdated();
-    if (shouldRender) renderLobby({ followLatest: false });
+    if (shouldRender && !(options.background && patchLiveAgentFlowPanel())) {
+      renderLobby({ followLatest: false });
+    }
   }
 }
 
 function liveAgentMeetingId() {
   return state.payload?.meeting?.meeting_id || document.querySelector("#live-agent-session-meeting-id")?.value.trim() || "";
+}
+
+function patchLiveAgentFlowPanel() {
+  const panel = document.querySelector(".live-agent-flow-panel");
+  const status = panel?.querySelector(".live-agent-flow-status");
+  if (!panel || !status) return false;
+  const diagnostics = panel.querySelector(".live-agent-flow-diagnostics");
+  if (Boolean(diagnostics) !== Boolean(renderLiveAgentFlowDiagnostics(state.liveAgentFlow))) return false;
+  status.textContent = liveAgentFlowStatusLabel(state.liveAgentFlow);
+  const diagnosticsText = panel.querySelector(".live-agent-flow-diagnostics span");
+  if (diagnosticsText) diagnosticsText.textContent = liveAgentFlowDiagnosticParts(state.liveAgentFlow).join(" · ");
+  return true;
 }
 
 async function loadLiveAgentHealth(options = {}) {

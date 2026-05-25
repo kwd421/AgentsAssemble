@@ -258,6 +258,7 @@ function installHarness({
   liveAgentProcessEventsPayload = null,
   liveAgentOperationsPayload = null,
   liveAgentSessionRunsPayload = null,
+  liveAgentFlowPayload = null,
 } = {}) {
   const requests = [];
   const events = [];
@@ -594,6 +595,9 @@ function installHarness({
       );
     }
     if (url === "/api/lobby") return jsonResponse({ events: [] });
+    if (String(url).startsWith("/api/live-agent-flow?") || url === "/api/live-agent-flow") {
+      return jsonResponse(payloadValue(liveAgentFlowPayload) || { flow: { status: "idle" }, flow_events: [] });
+    }
     if (url === "/api/live-agent-join-brief") {
       return jsonResponse(
         liveAgentJoinBriefPayload || {
@@ -2604,6 +2608,98 @@ test("runtime refresh does not re-render for volatile heartbeat age and monitor 
   assert.equal(state.liveAgents[0].heartbeat_age_seconds, 10);
   assert.equal(state.liveAgentHealth.process_monitor.last_tick_at, "2026-05-21T10:00:02+00:00");
   assert.equal(document.lobby.innerHTMLWriteCount, renderCountAfterInitialLoad);
+});
+
+test("runtime refresh patches flow status without replacing the lobby", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui", topic: "고죠 vs 스쿠나" } };
+  state.liveAgentHealth = {
+    status: "ok",
+    agents: { total: 0, live: 0, counts: { online: 0, working: 0, error: 0, stale: 0, offline: 0 }, attention: [] },
+    processes: { total: 0, counts: { running: 0, restarting: 0, error: 0, unknown: 0, stopped: 0 }, attention: [] },
+    connections: { expected: 0, connected: 0, attention: [] },
+  };
+  state.liveAgentProcessEventsMeta = {
+    limit: 20,
+    groupId: "",
+    scanLimit: 200,
+    scannedEventCount: 0,
+    truncated: false,
+  };
+  state.liveAgentFlow = {
+    status: "running",
+    meeting_id: "resident-gui",
+    flow_id: "flow-1",
+    topic: "고죠 vs 스쿠나",
+    remaining_seconds: 180,
+    agent_count: 3,
+    total_turns: 1,
+  };
+  const { document } = installHarness({
+    liveAgentFlowPayload: {
+      flow: {
+        status: "running",
+        meeting_id: "resident-gui",
+        flow_id: "flow-1",
+        topic: "고죠 vs 스쿠나",
+        remaining_seconds: 125,
+        agent_count: 3,
+        total_turns: 2,
+      },
+      flow_events: [],
+    },
+  });
+  renderLobby({ followLatest: false });
+  const renderCountAfterInitialPaint = document.lobby.innerHTMLWriteCount;
+
+  await refreshLiveAgentRuntimeSurfaces();
+
+  assert.equal(state.liveAgentFlow.status, "running");
+  assert.match(document.querySelector(".live-agent-flow-status").textContent, /진행중/);
+  assert.equal(document.lobby.innerHTMLWriteCount, renderCountAfterInitialPaint);
+});
+
+test("runtime refresh re-renders when flow diagnostics shape changes", async () => {
+  resetState();
+  state.payload = { meeting: { meeting_id: "resident-gui", topic: "고죠 vs 스쿠나" } };
+  state.liveAgentHealth = {
+    status: "ok",
+    agents: { total: 0, live: 0, counts: { online: 0, working: 0, error: 0, stale: 0, offline: 0 }, attention: [] },
+    processes: { total: 0, counts: { running: 0, restarting: 0, error: 0, unknown: 0, stopped: 0 }, attention: [] },
+    connections: { expected: 0, connected: 0, attention: [] },
+  };
+  state.liveAgentProcessEventsMeta = {
+    limit: 20,
+    groupId: "",
+    scanLimit: 200,
+    scannedEventCount: 0,
+    truncated: false,
+  };
+  state.liveAgentFlow = {
+    status: "running",
+    meeting_id: "resident-gui",
+    flow_id: "flow-1",
+    topic: "고죠 vs 스쿠나",
+    remaining_seconds: 180,
+    agent_count: 3,
+    total_turns: 1,
+  };
+  const { document } = installHarness({
+    liveAgentFlowPayload: {
+      flow: { status: "idle", meeting_id: "resident-gui" },
+      flow_events: [],
+    },
+  });
+  renderLobby({ followLatest: false });
+  const renderCountAfterInitialPaint = document.lobby.innerHTMLWriteCount;
+  assert.ok(document.querySelector(".live-agent-flow-diagnostics"));
+
+  await refreshLiveAgentRuntimeSurfaces();
+
+  assert.equal(state.liveAgentFlow.status, "idle");
+  assert.match(document.querySelector(".live-agent-flow-status").textContent, /대기/);
+  assert.equal(document.querySelector(".live-agent-flow-diagnostics"), null);
+  assert.ok(document.lobby.innerHTMLWriteCount > renderCountAfterInitialPaint);
 });
 
 test("runtime health renders meeting-owned session readiness details", async () => {
