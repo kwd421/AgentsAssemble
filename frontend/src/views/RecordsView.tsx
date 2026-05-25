@@ -6,13 +6,21 @@ import {
   type MeetingSummary,
 } from "../api";
 import { usePoll } from "../hooks";
-import { ChevronLeft } from "lucide-react";
+import { Archive, ChevronLeft, FileText } from "lucide-react";
 
 function statusLabel(status: string): string {
   if (status === "active") return "진행 중";
   if (status === "complete") return "완료";
   if (status === "finalized") return "확정";
   return status || "알 수 없음";
+}
+
+function statusClass(status: string) {
+  if (status === "active") return "bg-online/15 text-online";
+  if (status === "complete" || status === "finalized") {
+    return "bg-accent/15 text-[#b8c0ff]";
+  }
+  return "bg-panel-soft text-text-muted";
 }
 
 function MeetingList({
@@ -24,31 +32,42 @@ function MeetingList({
 }) {
   if (meetings.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-stone-400 text-sm">
-        기록된 회의가 없습니다
+      <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-panel-soft text-text-muted">
+          <Archive size={24} />
+        </div>
+        <p className="text-[14px] font-semibold text-text-secondary">
+          기록된 회의가 없습니다
+        </p>
+        <p className="mt-1 text-[12px] text-text-muted preserve-words">
+          Play Mode나 공식 회의가 끝나면 여기에 쌓입니다.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="py-1">
-      {meetings.map((m) => (
+    <div className="space-y-2 p-3">
+      {meetings.map((meeting) => (
         <button
-          key={m.meeting_id}
-          onClick={() => onSelect(m.meeting_id)}
-          className="w-full text-left px-4 py-2.5 hover:bg-chat-hover transition-colors"
+          key={meeting.meeting_id}
+          onClick={() => onSelect(meeting.meeting_id)}
+          className="w-full rounded-lg border border-panel-border bg-panel-soft/45 px-3.5 py-3 text-left transition-colors hover:bg-panel-soft"
         >
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-stone-700 truncate preserve-words flex-1">
-              {m.topic || m.meeting_id}
+          <div className="flex items-center gap-2.5">
+            <FileText size={16} className="shrink-0 text-text-muted" />
+            <span className="min-w-0 flex-1 truncate text-[14px] font-bold text-text-primary preserve-words">
+              {meeting.topic || meeting.meeting_id}
             </span>
-            <span className="text-[10px] text-stone-400 shrink-0">
-              {statusLabel(m.live_status)}
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${statusClass(meeting.live_status)}`}
+            >
+              {statusLabel(meeting.live_status)}
             </span>
           </div>
-          {m.question && (
-            <p className="text-xs text-stone-400 mt-0.5 truncate preserve-words">
-              {m.question}
+          {meeting.question && (
+            <p className="ml-[26px] mt-1 truncate text-[12px] text-text-muted preserve-words">
+              {meeting.question}
             </p>
           )}
         </button>
@@ -57,9 +76,7 @@ function MeetingList({
   );
 }
 
-/** Render markdown-ish artifact content as readable prose, not raw pre. */
 function ArtifactContent({ content }: { content: string }) {
-  // Split into paragraphs, preserve line breaks within blocks
   const lines = content.split("\n");
   const elements: React.ReactNode[] = [];
   let key = 0;
@@ -67,25 +84,25 @@ function ArtifactContent({ content }: { content: string }) {
   for (const line of lines) {
     if (line.startsWith("# ")) {
       elements.push(
-        <h2 key={key++} className="text-base font-semibold text-stone-800 mt-4 mb-1 preserve-words">
+        <h2 key={key++} className="mt-5 mb-1 text-[16px] font-bold text-text-primary preserve-words">
           {line.slice(2)}
         </h2>
       );
     } else if (line.startsWith("## ")) {
       elements.push(
-        <h3 key={key++} className="text-sm font-semibold text-stone-700 mt-3 mb-1 preserve-words">
+        <h3 key={key++} className="mt-4 mb-1 text-[14px] font-bold text-text-primary preserve-words">
           {line.slice(3)}
         </h3>
       );
     } else if (line.startsWith("### ")) {
       elements.push(
-        <h4 key={key++} className="text-sm font-medium text-stone-600 mt-2 mb-0.5 preserve-words">
+        <h4 key={key++} className="mt-3 mb-0.5 text-[13px] font-semibold text-text-secondary preserve-words">
           {line.slice(4)}
         </h4>
       );
     } else if (line.startsWith("- ") || line.startsWith("* ")) {
       elements.push(
-        <li key={key++} className="text-sm text-stone-600 ml-4 preserve-words leading-relaxed">
+        <li key={key++} className="ml-4 text-[13px] leading-relaxed text-text-secondary preserve-words">
           {line.slice(2)}
         </li>
       );
@@ -93,7 +110,7 @@ function ArtifactContent({ content }: { content: string }) {
       elements.push(<div key={key++} className="h-2" />);
     } else {
       elements.push(
-        <p key={key++} className="text-sm text-stone-600 preserve-words leading-relaxed">
+        <p key={key++} className="text-[13px] leading-relaxed text-text-secondary preserve-words">
           {line}
         </p>
       );
@@ -113,41 +130,39 @@ function MeetingDetailView({
   const [activeArtifact, setActiveArtifact] = useState<string | null>(null);
   const meeting = detail.meeting ?? {};
   const artifacts = detail.artifacts ?? {};
-  const artifactNames = Object.keys(artifacts).filter((k) => artifacts[k]);
+  const artifactNames = Object.keys(artifacts).filter((key) => artifacts[key]);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-stone-200 bg-white shrink-0">
+    <div className="flex h-full flex-col overflow-hidden bg-chat-bg">
+      <div className="flex shrink-0 items-center gap-2 border-b border-black/20 px-4 py-3">
         <button
           onClick={onBack}
-          className="p-1 rounded hover:bg-stone-100 text-stone-400"
+          className="rounded-md p-1.5 text-text-muted hover:bg-panel-soft hover:text-text-primary"
         >
-          <ChevronLeft size={16} />
+          <ChevronLeft size={17} />
         </button>
-        <span className="text-sm font-semibold text-stone-700 truncate preserve-words">
+        <span className="min-w-0 flex-1 truncate text-[14px] font-bold text-text-primary preserve-words">
           {meeting.topic || meeting.meeting_id || "회의"}
         </span>
         {meeting.live_status && (
-          <span className="text-[10px] text-stone-400 shrink-0">
+          <span
+            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${statusClass(String(meeting.live_status))}`}
+          >
             {statusLabel(String(meeting.live_status))}
           </span>
         )}
       </div>
 
-      {/* Artifact tabs */}
       {artifactNames.length > 0 && (
-        <div className="flex gap-1 px-4 py-2 overflow-x-auto border-b border-stone-100 bg-white shrink-0">
+        <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-black/20 bg-panel-bg/45 px-4 py-2.5">
           {artifactNames.map((name) => (
             <button
               key={name}
-              onClick={() =>
-                setActiveArtifact(activeArtifact === name ? null : name)
-              }
-              className={`text-xs px-2.5 py-1 rounded shrink-0 transition-colors ${
+              onClick={() => setActiveArtifact(activeArtifact === name ? null : name)}
+              className={`shrink-0 rounded-md px-2.5 py-1 text-[12px] font-semibold transition-colors ${
                 activeArtifact === name
                   ? "bg-accent text-white"
-                  : "bg-stone-100 text-stone-500 hover:bg-stone-200"
+                  : "bg-panel-soft text-text-muted hover:text-text-primary"
               }`}
             >
               {name.replace(".md", "").replace(".json", "")}
@@ -156,23 +171,28 @@ function MeetingDetailView({
         </div>
       )}
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto chat-scroll px-4 py-4">
+      <div className="flex-1 overflow-y-auto px-5 py-5 chat-scroll">
         {activeArtifact && artifacts[activeArtifact] ? (
           <ArtifactContent content={artifacts[activeArtifact]!} />
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {meeting.question && (
-              <div>
-                <div className="text-[11px] text-stone-400 mb-0.5">질문</div>
-                <p className="text-sm text-stone-600 preserve-words leading-relaxed">
+              <div className="rounded-lg border border-panel-border bg-panel-soft/40 p-4">
+                <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                  질문
+                </div>
+                <p className="text-[13px] leading-relaxed text-text-secondary preserve-words">
                   {String(meeting.question)}
                 </p>
               </div>
             )}
-            {artifactNames.length === 0 && (
-              <p className="text-sm text-stone-400">
+            {artifactNames.length === 0 ? (
+              <p className="text-[13px] text-text-muted">
                 아직 생성된 문서가 없습니다
+              </p>
+            ) : (
+              <p className="text-[13px] text-text-muted">
+                위 탭에서 문서를 선택하세요.
               </p>
             )}
           </div>
@@ -196,8 +216,8 @@ export default function RecordsView() {
   function handleSelect(id: string) {
     setDetailLoading(true);
     fetchMeetingDetail(id)
-      .then((d) => {
-        setDetail(d);
+      .then((nextDetail) => {
+        setDetail(nextDetail);
         setDetailLoading(false);
       })
       .catch(() => setDetailLoading(false));
@@ -205,7 +225,7 @@ export default function RecordsView() {
 
   if ((loading && !data) || detailLoading) {
     return (
-      <div className="flex items-center justify-center h-full text-stone-400 text-sm">
+      <div className="flex h-full items-center justify-center text-sm text-text-muted">
         불러오는 중…
       </div>
     );
@@ -216,10 +236,11 @@ export default function RecordsView() {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      <div className="shrink-0 flex items-center px-4 py-2.5 border-b border-stone-200 bg-white">
-        <span className="text-sm font-semibold text-stone-700">기록</span>
-        <span className="text-xs text-stone-400 ml-2">
+    <div className="flex h-full flex-col overflow-hidden bg-chat-bg">
+      <div className="flex shrink-0 items-center gap-2 border-b border-black/20 px-4 py-3">
+        <Archive size={16} className="text-text-muted" />
+        <span className="text-[14px] font-bold text-text-primary">기록</span>
+        <span className="rounded-full bg-panel-soft px-2 py-0.5 text-[11px] font-semibold text-text-muted">
           {meetings.length}건
         </span>
       </div>

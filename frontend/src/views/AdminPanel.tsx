@@ -1,57 +1,74 @@
 import { useCallback } from "react";
+import { Activity, Shield, X } from "lucide-react";
 import { fetchHealth, type HealthStatus } from "../api";
 import { usePoll } from "../hooks";
-import { X } from "lucide-react";
 
 export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const healthFetcher = useCallback(() => fetchHealth(), []);
   const [health] = usePoll<HealthStatus>(healthFetcher, 8000);
 
   const agents = health?.agents;
+  const ok = health?.status === "ok";
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-stone-200 bg-white">
-        <span className="text-sm font-semibold text-stone-700">관리</span>
+    <div className="flex h-full flex-col overflow-hidden bg-chat-bg">
+      <div className="flex shrink-0 items-center justify-between border-b border-black/20 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Shield size={16} className="text-text-muted" />
+          <span className="text-[14px] font-bold text-text-primary">관리</span>
+          <span className="rounded-full bg-panel-soft px-2 py-0.5 text-[11px] font-semibold text-text-muted">
+            read only
+          </span>
+        </div>
         <button
           onClick={onClose}
-          className="p-1 rounded hover:bg-stone-100 text-stone-400"
+          className="rounded-md p-1.5 text-text-muted hover:bg-panel-soft hover:text-text-primary"
         >
           <X size={16} />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto chat-scroll px-4 py-4 space-y-5">
-        <section>
-          <h3 className="text-xs font-medium text-stone-500 mb-2">
-            시스템 상태
-          </h3>
+      <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 chat-scroll">
+        <section className="rounded-lg border border-panel-border bg-panel-soft/45 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Activity size={15} className={ok ? "text-online" : "text-idle"} />
+            <h3 className="text-[12px] font-bold uppercase tracking-wider text-text-muted">
+              시스템 상태
+            </h3>
+          </div>
           {health ? (
-            <div className="space-y-1.5">
+            <div className="space-y-3">
               <span
-                className={`inline-block px-2 py-0.5 rounded text-xs ${
-                  health.status === "ok"
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-amber-50 text-amber-700"
+                className={`inline-flex rounded-full px-2.5 py-1 text-[12px] font-bold ${
+                  ok ? "bg-online/15 text-online" : "bg-idle/15 text-idle"
                 }`}
               >
-                {health.status === "ok" ? "정상" : "주의"}
+                {ok ? "정상" : "주의"}
               </span>
               {agents && (
-                <p className="text-xs text-stone-500">
-                  에이전트 {agents.live ?? 0}/{agents.total ?? 0} 활성
+                <div className="grid gap-2 text-[12px] text-text-secondary sm:grid-cols-2">
+                  <div className="rounded-md bg-chat-bg px-3 py-2">
+                    활성 에이전트{" "}
+                    <span className="font-bold text-text-primary">
+                      {agents.live ?? 0}/{agents.total ?? 0}
+                    </span>
+                  </div>
                   {agents.counts &&
                     Object.entries(agents.counts)
-                      .filter(([, v]) => v > 0)
-                      .map(([k, v]) => (
-                        <span key={k} className="ml-2 text-stone-400">
-                          {k} {v}
-                        </span>
+                      .filter(([, value]) => value > 0)
+                      .slice(0, 4)
+                      .map(([key, value]) => (
+                        <div key={key} className="rounded-md bg-chat-bg px-3 py-2">
+                          {key}{" "}
+                          <span className="font-bold text-text-primary">
+                            {value}
+                          </span>
+                        </div>
                       ))}
-                </p>
+                </div>
               )}
               {agents?.attention && agents.attention.length > 0 && (
-                <p className="text-[11px] text-amber-600 preserve-words">
+                <p className="text-[12px] font-semibold text-idle preserve-words">
                   주의: {agents.attention.slice(0, 3).join(", ")}
                   {agents.attention.length > 3 &&
                     ` 외 ${agents.attention.length - 3}건`}
@@ -59,13 +76,15 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
               )}
             </div>
           ) : (
-            <p className="text-xs text-stone-400">연결 확인 중…</p>
+            <p className="text-[13px] text-text-muted">연결 확인 중…</p>
           )}
         </section>
 
-        <section>
-          <h3 className="text-xs font-medium text-stone-500 mb-1.5">참고</h3>
-          <div className="text-xs text-stone-400 space-y-1 leading-relaxed">
+        <section className="rounded-lg border border-panel-border bg-panel-soft/45 p-4">
+          <h3 className="mb-2 text-[12px] font-bold uppercase tracking-wider text-text-muted">
+            참고
+          </h3>
+          <div className="space-y-1.5 text-[13px] leading-relaxed text-text-secondary">
             <p>이 화면은 읽기 전용입니다.</p>
             <p>실행 명령은 CLI를 사용하세요.</p>
             <p>레거시 GUI는 별도 포트에서 계속 사용 가능합니다.</p>

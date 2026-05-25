@@ -1,24 +1,36 @@
 @import "tailwindcss";
 
 @theme {
+  --color-server-rail: #1e1f22;
   --color-sidebar: #2b2d31;
   --color-sidebar-hover: #35373c;
   --color-sidebar-active: #404249;
-  --color-sidebar-text: #b5bac1;
+  --color-sidebar-text: #949ba4;
   --color-sidebar-text-active: #f2f3f5;
-  --color-chat-bg: #f8f9fa;
-  --color-chat-hover: #f0f1f2;
+  --color-chat-bg: #313338;
+  --color-chat-hover: #2e3035;
+  --color-panel-bg: #232428;
+  --color-panel-soft: #2b2d31;
+  --color-panel-border: #3f4147;
+  --color-text-primary: #f2f3f5;
+  --color-text-secondary: #dbdee1;
+  --color-text-muted: #949ba4;
   --color-accent: #5865f2;
   --color-accent-hover: #4752c4;
+  --color-accent-soft: #3b428a;
   --color-online: #23a559;
   --color-idle: #f0b232;
   --color-offline: #80848e;
+  --color-danger: #f23f42;
 }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   line-height: 1.5;
   margin: 0;
+  background: #313338;
+  color: #f2f3f5;
+  -webkit-font-smoothing: antialiased;
 }
 
 .preserve-words {
@@ -26,14 +38,37 @@ body {
   overflow-wrap: break-word;
 }
 
+.technical-wrap {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
 /* Scrollbar styling for chat areas */
 .chat-scroll::-webkit-scrollbar {
   width: 6px;
 }
 .chat-scroll::-webkit-scrollbar-thumb {
-  background: #d4d4d8;
+  background: rgba(128, 132, 142, 0.45);
   border-radius: 3px;
+}
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(181, 186, 193, 0.55);
 }
 .chat-scroll::-webkit-scrollbar-track {
   background: transparent;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.82); }
+}
+
+.live-pulse {
+  animation: live-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-pulse {
+    animation: none;
+  }
 }

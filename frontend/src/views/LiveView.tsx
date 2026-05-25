@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MessageSquare, Radio } from "lucide-react";
 import { subscribeLobby, type FlowState, type LobbyEvent } from "../api";
 
 function formatTime(iso: string): string {
@@ -6,6 +7,7 @@ function formatTime(iso: string): string {
     return new Date(iso).toLocaleTimeString("ko-KR", {
       hour: "2-digit",
       minute: "2-digit",
+      second: "2-digit",
     });
   } catch {
     return "";
@@ -26,24 +28,50 @@ function mergeEvents(existing: LobbyEvent[], incoming: LobbyEvent[]) {
   return sortEvents(Array.from(byId.values()));
 }
 
+function actionTone(event: LobbyEvent) {
+  const action = event.flow_action || event.flow_event_type || "";
+  if (action.includes("start") || action.includes("join")) {
+    return "border-l-online";
+  }
+  if (action.includes("stop") || action.includes("end") || action.includes("leave")) {
+    return "border-l-danger";
+  }
+  if (action.includes("wait")) return "border-l-idle";
+  return "border-l-accent";
+}
+
 function FlowMessage({ event }: { event: LobbyEvent }) {
+  const action = event.flow_action || event.flow_event_type || event.kind;
+  const actor = event.name || event.actor_id || "Room";
+
   return (
-    <div className="flex gap-2.5 px-4 py-1.5 hover:bg-chat-hover transition-colors">
-      <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-medium bg-amber-100 text-amber-700">
-        {(event.name || "?")[0]}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-sm font-medium text-stone-800 preserve-words">
-            {event.name}
-          </span>
-          <span className="text-[10px] text-stone-400">
-            {formatTime(event.created_at)}
-          </span>
+    <div className={`border-l-2 ${actionTone(event)} px-4 py-2.5 hover:bg-chat-hover`}>
+      <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3">
+        <div className="pt-0.5 text-right font-mono text-[10px] text-text-muted">
+          {formatTime(event.created_at)}
         </div>
-        <p className="text-sm text-stone-700 leading-relaxed preserve-words">
-          {event.message}
-        </p>
+        <div className="min-w-0">
+          <div className="mb-0.5 flex flex-wrap items-center gap-2">
+            <span className="text-[13px] font-bold text-text-primary preserve-words">
+              {actor}
+            </span>
+            {action && (
+              <span className="rounded bg-panel-soft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-text-muted">
+                {action}
+              </span>
+            )}
+            {event.flow_meeting_id && (
+              <span className="truncate rounded bg-panel-soft/70 px-1.5 py-0.5 text-[10px] text-text-muted technical-wrap">
+                {event.flow_meeting_id}
+              </span>
+            )}
+          </div>
+          {event.message && (
+            <p className="text-[14px] leading-[1.5] text-text-secondary preserve-words">
+              {event.message}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -65,17 +93,17 @@ export default function LiveView({
   const activeMeetingId = flow.meeting_id;
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    const element = scrollRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
   }, [events.length]);
 
   useEffect(() => {
-    setEvents((prev) => {
+    setEvents((previous) => {
       if (lastFlowIdRef.current !== activeFlowId) {
         lastFlowIdRef.current = activeFlowId;
         return sortEvents(flowEvents);
       }
-      return mergeEvents(prev, flowEvents);
+      return mergeEvents(previous, flowEvents);
     });
   }, [activeFlowId, flowEvents]);
 
@@ -93,56 +121,66 @@ export default function LiveView({
       });
       if (matching.length === 0) return;
 
-      setEvents((prev) => mergeEvents(prev, matching));
+      setEvents((previous) => mergeEvents(previous, matching));
     },
     [activeFlowId, activeMeetingId]
   );
 
-  useEffect(() => {
-    return subscribeLobby(mergeFlowEvents);
-  }, [mergeFlowEvents]);
+  useEffect(() => subscribeLobby(mergeFlowEvents), [mergeFlowEvents]);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Channel header */}
-      <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-stone-200 bg-white">
-        <span className="text-sm font-semibold text-stone-700">실황</span>
-        {isRunning && (
-          <>
-            <span className="w-1.5 h-1.5 rounded-full bg-online animate-pulse" />
-            <span className="text-xs text-stone-500 preserve-words truncate">
-              {flow.topic || flow.meeting_id || "Play Mode"}
-            </span>
-            {flow.remaining_seconds != null && (
-              <span className="text-xs text-stone-400 ml-auto shrink-0">
-                {Math.ceil(flow.remaining_seconds)}초
-              </span>
+    <div className="flex h-full flex-col overflow-hidden bg-chat-bg">
+      <div className="shrink-0 border-b border-black/20 bg-chat-bg px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Radio size={16} className={isRunning ? "text-online" : "text-text-muted"} />
+              <h2 className="truncate text-[14px] font-bold text-text-primary">
+                라이브 룸
+              </h2>
+              {isRunning && (
+                <span className="rounded-full bg-online/15 px-2 py-0.5 text-[11px] font-bold text-online">
+                  ON AIR
+                </span>
+              )}
+              {isFinished && (
+                <span className="rounded-full bg-panel-soft px-2 py-0.5 text-[11px] font-bold text-text-muted">
+                  CLOSED
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 truncate text-[12px] text-text-muted preserve-words">
+              {flow.topic || flow.meeting_id || "Play Mode 대화가 시작되면 여기에 흐릅니다."}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3 text-[12px] text-text-muted">
+            {flow.remaining_seconds != null && isRunning && (
+              <span>{Math.ceil(flow.remaining_seconds)}초 남음</span>
             )}
-          </>
-        )}
-        {isFinished && (
-          <span className="text-xs text-stone-400">종료됨</span>
-        )}
-        {flow.agent_count != null && flow.agent_count > 0 && (
-          <span className="text-xs text-stone-400 ml-auto shrink-0">
-            {flow.agent_count}명
+            {flow.agent_count != null && flow.agent_count > 0 && (
+              <span>{flow.agent_count}명</span>
+            )}
             {flow.total_turns != null && flow.total_turns > 0 && (
-              <> · {flow.total_turns}턴</>
+              <span>{flow.total_turns}턴</span>
             )}
-          </span>
-        )}
+          </div>
+        </div>
       </div>
 
-      {/* Conversation feed */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto chat-scroll py-2">
         {events.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-stone-400 text-sm text-center px-4">
-            {isRunning
-              ? "에이전트 발언을 기다리는 중…"
-              : "Play Mode를 시작하면 대화가 여기에 나타납니다"}
+          <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-panel-soft text-text-muted">
+              <MessageSquare size={24} />
+            </div>
+            <p className="max-w-sm text-[14px] font-semibold text-text-secondary preserve-words">
+              {isRunning
+                ? "방은 열려 있습니다. 에이전트 발언을 기다리는 중입니다."
+                : "대기실에서 Play Mode를 시작하면 실황 이벤트가 여기에 나타납니다."}
+            </p>
           </div>
         ) : (
-          events.map((ev) => <FlowMessage key={ev.id} event={ev} />)
+          events.map((event) => <FlowMessage key={event.id} event={event} />)
         )}
       </div>
     </div>

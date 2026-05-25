@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Play, Square } from "lucide-react";
+import { Clock3, Play, Square, Users } from "lucide-react";
 import {
   fetchLobby,
   startFlow,
@@ -10,12 +10,33 @@ import {
   type LobbyEvent,
 } from "../api";
 
+const AVATAR_CLASSES = [
+  "bg-[#5865f2] text-white",
+  "bg-[#23a559] text-white",
+  "bg-[#f0b232] text-[#1e1f22]",
+  "bg-[#eb459e] text-white",
+  "bg-[#00a8fc] text-white",
+  "bg-[#ed4245] text-white",
+];
+
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   if (diff < 60_000) return "방금";
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}분 전`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}시간 전`;
   return `${Math.floor(diff / 86_400_000)}일 전`;
+}
+
+function initials(name: string) {
+  return (name || "?").slice(0, 2).toUpperCase();
+}
+
+function avatarClass(name: string) {
+  let hash = 0;
+  for (let index = 0; index < name.length; index += 1) {
+    hash = (hash * 31 + name.charCodeAt(index)) | 0;
+  }
+  return AVATAR_CLASSES[Math.abs(hash) % AVATAR_CLASSES.length];
 }
 
 function mergeLobbyEvents(existing: LobbyEvent[], incoming: LobbyEvent[]) {
@@ -37,33 +58,98 @@ function mergeLobbyEvents(existing: LobbyEvent[], incoming: LobbyEvent[]) {
   return order.map((id) => byId.get(id)).filter(Boolean) as LobbyEvent[];
 }
 
-function ChatMessage({ event }: { event: LobbyEvent }) {
-  const isAgent = event.side === "my-agent" || event.side === "other-agent";
+function shouldGroup(events: LobbyEvent[], index: number) {
+  if (index === 0) return false;
+  const previous = events[index - 1];
+  const current = events[index];
+  if (previous.name !== current.name || previous.kind !== current.kind) {
+    return false;
+  }
+  const gap =
+    new Date(current.created_at).getTime() -
+    new Date(previous.created_at).getTime();
+  return gap < 180_000;
+}
+
+function AgentPrepChip({ agent }: { agent: LiveAgent }) {
+  const name = agent.display_name || agent.agent_id;
+  const active = agent.status === "online" || agent.status === "working";
   return (
-    <div className="flex gap-2.5 px-4 py-1.5 hover:bg-chat-hover transition-colors">
-      {/* Avatar placeholder */}
+    <div className="flex min-w-0 items-center gap-2 rounded-lg bg-panel-soft px-2.5 py-2">
+      <span
+        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+          active ? "bg-online" : "bg-offline"
+        } ${agent.status === "working" ? "live-pulse" : ""}`}
+      />
+      <span className="truncate text-[12px] font-semibold text-text-secondary preserve-words">
+        {name}
+      </span>
+      <span className="shrink-0 text-[10px] text-text-muted">
+        {agent.status || "unknown"}
+      </span>
+    </div>
+  );
+}
+
+function ChatMessage({
+  event,
+  compact,
+}: {
+  event: LobbyEvent;
+  compact: boolean;
+}) {
+  const systemLike = event.kind === "system" || event.kind === "flow_event";
+  const name = event.name || "Room";
+
+  if (systemLike) {
+    return (
+      <div className="px-4 py-1.5">
+        <div className="flex items-center gap-3 text-[12px] text-text-muted">
+          <div className="h-px flex-1 bg-panel-border" />
+          <span className="max-w-[70%] truncate preserve-words">
+            {event.message}
+          </span>
+          <div className="h-px flex-1 bg-panel-border" />
+        </div>
+      </div>
+    );
+  }
+
+  if (compact) {
+    return (
+      <div className="group flex gap-3 px-4 py-0.5 hover:bg-chat-hover">
+        <div className="w-10 shrink-0 text-right text-[10px] text-text-muted opacity-0 transition-opacity group-hover:opacity-100">
+          {timeAgo(event.created_at)}
+        </div>
+        <p className="min-w-0 text-[14px] leading-[1.45] text-text-secondary preserve-words">
+          {event.message}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group flex gap-3 px-4 pb-1 pt-3 hover:bg-chat-hover">
       <div
-        className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-xs font-medium ${
-          isAgent
-            ? "bg-indigo-100 text-indigo-600"
-            : "bg-stone-200 text-stone-600"
-        }`}
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[12px] font-black ${avatarClass(name)}`}
       >
-        {(event.name || "?")[0]}
+        {initials(name)}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-sm font-medium text-stone-800 preserve-words">
-            {event.name}
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className="text-[14px] font-bold text-text-primary preserve-words">
+            {name}
           </span>
           {event.kind !== "message" && (
-            <span className="text-[10px] text-stone-400">{event.kind}</span>
+            <span className="rounded bg-panel-soft px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">
+              {event.kind}
+            </span>
           )}
-          <span className="text-[10px] text-stone-400 ml-1">
+          <span className="text-[11px] text-text-muted">
             {timeAgo(event.created_at)}
           </span>
         </div>
-        <p className="text-sm text-stone-700 leading-relaxed preserve-words">
+        <p className="mt-0.5 text-[14px] leading-[1.45] text-text-secondary preserve-words">
           {event.message}
         </p>
       </div>
@@ -84,28 +170,26 @@ export default function LobbyView({
   const [loaded, setLoaded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Play Mode form state
   const [meetingId, setMeetingId] = useState("");
   const [topic, setTopic] = useState("");
-  const [duration, setDuration] = useState("120");
+  const [duration, setDuration] = useState("180");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const isRunning = flow.status === "running";
-  const onlineCount = agents.filter(
-    (a) => a.status === "online" || a.status === "working"
-  ).length;
+  const onlineAgents = agents.filter(
+    (agent) => agent.status === "online" || agent.status === "working"
+  );
 
-  // Initial fetch
   useEffect(() => {
     let cancelled = false;
 
     function refreshLobby() {
       fetchLobby()
-        .then((d) => {
+        .then((data) => {
           if (cancelled) return;
-          const nextEvents = Array.isArray(d.events) ? d.events : [];
-          setEvents((prev) => mergeLobbyEvents(prev, nextEvents));
+          const nextEvents = Array.isArray(data.events) ? data.events : [];
+          setEvents((previous) => mergeLobbyEvents(previous, nextEvents));
           setLoaded(true);
         })
         .catch(() => {
@@ -121,26 +205,22 @@ export default function LobbyView({
     };
   }, []);
 
-  // SSE — handles snapshot arrays and single events
   const handleSSE = useCallback((incoming: LobbyEvent[]) => {
-    setEvents((prev) => {
-      const next = mergeLobbyEvents(prev, incoming);
-      if (next.length === prev.length) {
-        const changed = next.some((event, index) => event !== prev[index]);
-        return changed ? next : prev;
+    setEvents((previous) => {
+      const next = mergeLobbyEvents(previous, incoming);
+      if (next.length === previous.length) {
+        const changed = next.some((event, index) => event !== previous[index]);
+        return changed ? next : previous;
       }
       return next;
     });
   }, []);
 
-  useEffect(() => {
-    return subscribeLobby(handleSSE);
-  }, [handleSSE]);
+  useEffect(() => subscribeLobby(handleSSE), [handleSSE]);
 
-  // Auto-scroll
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    const element = scrollRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
   }, [events.length]);
 
   async function handleStart() {
@@ -154,11 +234,11 @@ export default function LobbyView({
       await startFlow({
         meeting_id: meetingId.trim(),
         topic: topic.trim() || undefined,
-        duration_seconds: parseInt(duration) || 120,
+        duration_seconds: parseInt(duration) || 180,
       });
       refreshFlow();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "시작 실패");
+    } catch (errorValue) {
+      setError(errorValue instanceof Error ? errorValue.message : "시작 실패");
     } finally {
       setBusy(false);
     }
@@ -178,117 +258,138 @@ export default function LobbyView({
     try {
       await stopFlow(id);
       refreshFlow();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "중지 실패");
+    } catch (errorValue) {
+      setError(errorValue instanceof Error ? errorValue.message : "중지 실패");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Channel header */}
-      <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-stone-200 bg-white">
-        <span className="text-sm font-semibold text-stone-700">대기실</span>
-        {onlineCount > 0 && (
-          <span className="text-xs text-stone-400 shrink-0">
-            {onlineCount}명 접속 중
-          </span>
-        )}
-        {isRunning && (
-          <span className="ml-auto flex min-w-0 items-center gap-1.5 text-xs text-emerald-600">
-            <span className="w-1.5 h-1.5 rounded-full bg-online animate-pulse shrink-0" />
-            <span className="min-w-0 truncate preserve-words">
-              {flow.topic || "Play Mode"}
-            </span>
-            {flow.remaining_seconds != null && (
-              <span className="text-stone-400 ml-1 shrink-0">
-                {Math.ceil(flow.remaining_seconds)}초
+    <div className="flex h-full flex-col overflow-hidden bg-chat-bg">
+      <div className="shrink-0 border-b border-black/20 bg-chat-bg px-4 py-3">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Users size={16} className="text-text-muted" />
+              <h2 className="truncate text-[14px] font-bold text-text-primary">
+                준비 로비
+              </h2>
+              <span className="rounded-full bg-panel-soft px-2 py-0.5 text-[11px] font-semibold text-text-muted">
+                {onlineAgents.length} ready
               </span>
-            )}
-          </span>
-        )}
+            </div>
+            <p className="mt-0.5 truncate text-[12px] text-text-muted preserve-words">
+              참가자가 모이고 주제를 정한 뒤 Play Mode를 시작합니다.
+            </p>
+          </div>
+          {isRunning && (
+            <div className="flex shrink-0 items-center gap-2 rounded-lg bg-online/10 px-3 py-1.5 text-[12px] font-semibold text-online">
+              <span className="h-2 w-2 rounded-full bg-online live-pulse" />
+              {flow.remaining_seconds != null
+                ? `${Math.ceil(flow.remaining_seconds)}초`
+                : "진행 중"}
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {onlineAgents.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-panel-border bg-panel-soft/45 px-3 py-2 text-[12px] text-text-muted">
+              아직 준비된 에이전트가 없습니다.
+            </div>
+          ) : (
+            onlineAgents.slice(0, 6).map((agent) => (
+              <AgentPrepChip key={agent.agent_id} agent={agent} />
+            ))
+          )}
+        </div>
       </div>
 
-      {/* Chat feed */}
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto chat-scroll py-2"
-      >
+      <div ref={scrollRef} className="flex-1 overflow-y-auto chat-scroll py-2">
         {!loaded ? (
-          <div className="flex items-center justify-center h-full text-stone-400 text-sm">
+          <div className="flex h-full items-center justify-center text-sm text-text-muted">
             불러오는 중…
           </div>
         ) : events.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-stone-400 text-sm">
-            아직 대기실에 메시지가 없습니다
+          <div className="flex h-full items-center justify-center px-5 text-center text-sm text-text-muted">
+            아직 대기실 메시지가 없습니다. 아래에서 회의를 준비하세요.
           </div>
         ) : (
-          events.map((ev) => <ChatMessage key={ev.id} event={ev} />)
+          events.map((event, index) => (
+            <ChatMessage
+              key={event.id}
+              event={event}
+              compact={shouldGroup(events, index)}
+            />
+          ))
         )}
       </div>
 
-      {/* Bottom: Play Mode controls */}
-      <div className="shrink-0 border-t border-stone-200 bg-white px-4 py-2.5">
+      <div className="shrink-0 border-t border-black/25 bg-chat-bg px-4 py-3">
         {error && (
-          <p className="text-xs text-red-500 mb-1.5 preserve-words">{error}</p>
+          <p className="mb-2 text-[12px] font-semibold text-danger preserve-words">
+            {error}
+          </p>
         )}
-        <div className={isRunning ? "flex items-center gap-2" : "space-y-2"}>
-          {!isRunning && (
-            <>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <input
-                  type="text"
-                  placeholder="회의 ID"
-                  value={meetingId}
-                  onChange={(e) => setMeetingId(e.target.value)}
-                  className="min-w-0 px-2.5 py-1.5 text-sm rounded border border-stone-200 bg-stone-50 focus:outline-none focus:border-stone-400 placeholder:text-stone-300"
-                />
-                <input
-                  type="text"
-                  placeholder="주제"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  className="hidden min-w-0 px-2.5 py-1.5 text-sm rounded border border-stone-200 bg-stone-50 focus:outline-none focus:border-stone-400 placeholder:text-stone-300 sm:block"
-                />
+        {isRunning ? (
+          <div className="flex items-center gap-3 rounded-lg bg-panel-soft px-3 py-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-online live-pulse" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-bold text-text-primary preserve-words">
+                {flow.topic || flow.meeting_id || "Play Mode"}
               </div>
-              <div className="flex items-center justify-end gap-2">
+              <div className="text-[11px] text-text-muted">로비에서 실행 중</div>
+            </div>
+            <button
+              onClick={handleStop}
+              disabled={busy}
+              className="flex items-center gap-1.5 rounded-md bg-panel-border px-3 py-1.5 text-[13px] font-semibold text-text-secondary hover:bg-sidebar-active disabled:opacity-50"
+            >
+              <Square size={13} />
+              중지
+            </button>
+          </div>
+        ) : (
+          <div className="rounded-lg bg-panel-soft p-2">
+            <div className="grid gap-2 md:grid-cols-[1fr_1.4fr_auto_auto]">
+              <input
+                type="text"
+                placeholder="회의 ID"
+                value={meetingId}
+                onChange={(event) => setMeetingId(event.target.value)}
+                className="min-w-0 rounded-md border border-transparent bg-chat-bg px-3 py-2 text-[13px] text-text-primary outline-none placeholder:text-text-muted focus:border-accent"
+              />
+              <input
+                type="text"
+                placeholder="주제"
+                value={topic}
+                onChange={(event) => setTopic(event.target.value)}
+                className="min-w-0 rounded-md border border-transparent bg-chat-bg px-3 py-2 text-[13px] text-text-primary outline-none placeholder:text-text-muted focus:border-accent"
+              />
+              <label className="flex items-center gap-1.5 rounded-md bg-chat-bg px-2.5 text-[12px] text-text-muted">
+                <Clock3 size={13} />
                 <input
                   type="number"
                   value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
-                  className="w-14 px-2 py-1.5 text-sm rounded border border-stone-200 bg-stone-50 focus:outline-none focus:border-stone-400 text-center"
+                  onChange={(event) => setDuration(event.target.value)}
+                  className="w-12 bg-transparent py-2 text-center text-[13px] text-text-primary outline-none"
                   min={10}
                   max={3600}
                   title="초"
                 />
-                <button
-                  onClick={handleStart}
-                  disabled={busy}
-                  className="flex items-center justify-center gap-1 px-3 py-1.5 text-sm rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
-                >
-                  <Play size={14} />
-                  시작
-                </button>
-              </div>
-            </>
-          )}
-          {isRunning && (
-            <>
-              <span className="text-sm text-stone-600 preserve-words flex-1 truncate">
-                {flow.topic || flow.meeting_id || "Play Mode"} 진행 중
-              </span>
+              </label>
               <button
-                onClick={handleStop}
+                onClick={handleStart}
                 disabled={busy}
-                className="flex items-center justify-center gap-1 px-3 py-1.5 text-sm rounded bg-stone-200 text-stone-700 hover:bg-stone-300 disabled:opacity-50 transition-colors"
+                className="flex items-center justify-center gap-1.5 rounded-md bg-accent px-4 py-2 text-[13px] font-bold text-white hover:bg-accent-hover disabled:opacity-50"
               >
-                <Square size={14} />
-                중지
+                <Play size={14} />
+                시작
               </button>
-            </>
-          )}
-        </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
