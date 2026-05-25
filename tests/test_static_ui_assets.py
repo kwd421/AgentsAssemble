@@ -700,6 +700,21 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('["flow", "flow"]', script)
         self.assertIn(".live-agent-flow-panel", css)
 
+    def test_lobby_live_agent_controls_are_split_into_waiting_room_and_advanced_ops(self):
+        script = static_js()
+        css = static_css()
+
+        self.assertIn('class="live-agent-waiting-room"', script)
+        self.assertIn('class="live-agent-basic-controls"', script)
+        self.assertIn('class="live-agent-meeting-field"', script)
+        self.assertIn('class="live-agent-advanced-controls"', script)
+        self.assertIn("<summary>고급 운영</summary>", script)
+        self.assertIn('class="live-agent-advanced-grid"', script)
+        self.assertIn(".live-agent-waiting-room", css)
+        self.assertIn(".live-agent-basic-controls", css)
+        self.assertIn(".live-agent-advanced-controls", css)
+        self.assertIn(".live-agent-advanced-grid", css)
+
     def test_live_tab_surfaces_play_mode_flow_as_unofficial_room_state(self):
         script = static_js()
         css = static_css()

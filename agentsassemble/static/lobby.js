@@ -707,28 +707,38 @@ function renderLiveAgentProcessControls() {
       ${renderLiveAgentRuntimeHealth(state.liveAgentHealth, state.liveAgentHealthLoading)}
       ${renderProcessGroupHealthStrip(counts)}
       <form id="live-agent-process-form" class="live-agent-process-form">
-        <input id="live-agent-process-config" maxlength="240" value="configs/live-agents.start-session.example.json" />
-        <input id="live-agent-process-group" maxlength="64" placeholder="group id" />
-        <input id="live-agent-session-meeting-id" maxlength="128" placeholder="meeting id" value="${escapeHtml(defaultMeetingId)}" data-default-value="${escapeHtml(defaultMeetingId)}" />
-        <input id="live-agent-session-council-config" maxlength="240" value="configs/demo-council.json" />
-        <input id="live-agent-session-agent-config" maxlength="240" value="configs/agents.start-session.example.json" />
-        <input id="live-agent-session-connect-timeout" type="number" min="0" max="120" step="1" value="5" aria-label="session connect timeout seconds" />
-        <input id="live-agent-round-id" maxlength="128" value="${escapeHtml(defaultRoundId)}" data-default-value="${escapeHtml(defaultRoundId)}" aria-label="official round id" />
-        <input id="live-agent-round-timeout" type="number" min="0" max="600" step="1" value="30" aria-label="official round timeout seconds" />
-        <input id="live-agent-round-max-rounds" type="number" min="1" max="8" step="1" value="8" aria-label="maximum remaining official rounds" />
-        <div class="live-agent-flow-panel">
-          <strong>Play Mode 자유토론</strong>
-          <span class="live-agent-flow-status" aria-live="polite">${escapeHtml(liveAgentFlowStatusLabel(state.liveAgentFlow))}</span>
-          <input id="live-agent-flow-topic" maxlength="240" value="${escapeHtml(defaultFlowTopic)}" aria-label="play mode flow topic" />
-          <input id="live-agent-flow-duration" type="number" min="1" max="3600" step="1" value="180" aria-label="play mode flow duration seconds" />
-          <button type="button" id="live-agent-flow-start" ${processActionsDisabled ? "disabled" : ""}>자유토론</button>
-          <button type="button" id="live-agent-flow-stop" ${processActionsDisabled ? "disabled" : ""}>토론중지</button>
-          ${renderLiveAgentFlowDiagnostics(state.liveAgentFlow)}
-        </div>
-        <label class="live-agent-process-options">
-          <input id="live-agent-round-stop-on-timeout" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
-          <span>timeout stop</span>
-        </label>
+        <section class="live-agent-waiting-room" aria-label="대기실 기본 흐름">
+          <div class="live-agent-basic-controls">
+            <label class="live-agent-meeting-field">
+              <span>회의 ID</span>
+              <input id="live-agent-session-meeting-id" maxlength="128" placeholder="meeting id" value="${escapeHtml(defaultMeetingId)}" data-default-value="${escapeHtml(defaultMeetingId)}" />
+            </label>
+            <div class="live-agent-flow-panel">
+              <strong>Play Mode 자유토론</strong>
+              <span class="live-agent-flow-status" aria-live="polite">${escapeHtml(liveAgentFlowStatusLabel(state.liveAgentFlow))}</span>
+              <input id="live-agent-flow-topic" maxlength="240" value="${escapeHtml(defaultFlowTopic)}" aria-label="play mode flow topic" />
+              <input id="live-agent-flow-duration" type="number" min="1" max="3600" step="1" value="180" aria-label="play mode flow duration seconds" />
+              <button type="button" id="live-agent-flow-start" ${processActionsDisabled ? "disabled" : ""}>자유토론</button>
+              <button type="button" id="live-agent-flow-stop" ${processActionsDisabled ? "disabled" : ""}>토론중지</button>
+              ${renderLiveAgentFlowDiagnostics(state.liveAgentFlow)}
+            </div>
+          </div>
+        </section>
+        <details class="live-agent-advanced-controls">
+          <summary>고급 운영</summary>
+          <div class="live-agent-advanced-grid">
+            <input id="live-agent-process-config" maxlength="240" value="configs/live-agents.start-session.example.json" />
+            <input id="live-agent-process-group" maxlength="64" placeholder="group id" />
+            <input id="live-agent-session-council-config" maxlength="240" value="configs/demo-council.json" />
+            <input id="live-agent-session-agent-config" maxlength="240" value="configs/agents.start-session.example.json" />
+            <input id="live-agent-session-connect-timeout" type="number" min="0" max="120" step="1" value="5" aria-label="session connect timeout seconds" />
+            <input id="live-agent-round-id" maxlength="128" value="${escapeHtml(defaultRoundId)}" data-default-value="${escapeHtml(defaultRoundId)}" aria-label="official round id" />
+            <input id="live-agent-round-timeout" type="number" min="0" max="600" step="1" value="30" aria-label="official round timeout seconds" />
+            <input id="live-agent-round-max-rounds" type="number" min="1" max="8" step="1" value="8" aria-label="maximum remaining official rounds" />
+            <label class="live-agent-process-options">
+              <input id="live-agent-round-stop-on-timeout" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
+              <span>timeout stop</span>
+            </label>
         <label class="live-agent-process-options">
           <input id="live-agent-session-run-remaining-rounds" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
           <span>세션 후 남은라운드</span>
@@ -787,6 +797,8 @@ function renderLiveAgentProcessControls() {
         </label>
         <button type="button" id="live-agent-readiness-check" ${processActionsDisabled ? "disabled" : ""}>점검</button>
         <button type="button" id="live-agent-process-refresh">상태</button>
+          </div>
+        </details>
       </form>
       ${renderLiveAgentDiscoveryReport(state.liveAgentDiscoveryReport)}
       <div class="live-agent-process-list">

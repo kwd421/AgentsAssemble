@@ -949,7 +949,7 @@
 .live-agent-process-form {
   display: grid;
   gap: 7px;
-  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .live-agent-process-form input,
@@ -970,6 +970,64 @@
 
 .live-agent-process-form #live-agent-process-config {
   grid-column: 1 / -1;
+}
+
+.live-agent-waiting-room {
+  background:
+    linear-gradient(180deg, rgba(69, 217, 245, 0.05), transparent 52%),
+    rgba(8, 11, 17, 0.48);
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-radius: 10px;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+}
+
+.live-agent-basic-controls {
+  align-items: stretch;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(170px, 0.34fr) minmax(0, 1fr);
+}
+
+.live-agent-basic-controls .live-agent-flow-panel {
+  grid-column: auto;
+}
+
+.live-agent-meeting-field {
+  background: rgba(8, 11, 17, 0.62);
+  border: 1px solid rgba(212, 225, 255, 0.13);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+}
+
+.live-agent-meeting-field span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.live-agent-advanced-controls {
+  border: 1px solid rgba(212, 225, 255, 0.12);
+  border-radius: 10px;
+  color: var(--muted);
+  padding: 8px;
+}
+
+.live-agent-advanced-controls summary {
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.live-agent-advanced-grid {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  margin-top: 8px;
 }
 
 .live-agent-process-options {
