@@ -5,6 +5,7 @@ from pathlib import Path
 
 from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
 from agentsassemble.meeting_events import append_live_event, read_live_events, write_live_state
+from agentsassemble.persona_cards import PersonaCard, PersonaLoreEntry, save_persona_card
 
 
 def _resident_live_meeting() -> dict[str, object]:
@@ -187,6 +188,82 @@ class LiveAgentFinalizationTests(unittest.TestCase):
             self.assertIn("return_packets/critic.md", {event.get("artifact_path") for event in return_packet_events})
             self.assertNotIn("private architect prompt", json.dumps(return_packet_events, ensure_ascii=False))
             self.assertNotIn("private critic prompt", json.dumps(return_packet_events, ensure_ascii=False))
+
+    def test_finalize_live_agent_meeting_records_safe_persona_artifact_contract_report(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_root = Path(temp_dir)
+            meeting_dir = output_root / "meetings" / "resident-m1"
+            persona_dir = output_root / "personas" / "yanagi"
+            meeting_dir.mkdir(parents=True)
+            save_persona_card(
+                persona_dir / "card.json",
+                PersonaCard(
+                    id="yanagi",
+                    display_name="Yanagi",
+                    lorebook=[PersonaLoreEntry(key="secret", content="RAW_LORE_SECRET_MARKER")],
+                    ignored_features={"low_level_access": 1},
+                ),
+            )
+            meeting = _resident_live_meeting()
+            meeting["character_mode"] = {
+                "version": 1,
+                "agents": [
+                    {
+                        "agent_id": "agent-a",
+                        "card_id": "yanagi",
+                        "mode": "work_speech_only",
+                        "source_path": "personas/yanagi/card.json",
+                        "ignored_features": {"low_level_access": 1},
+                    }
+                ],
+            }
+            write_live_state(meeting_dir, meeting)
+            request = append_live_event(
+                meeting_dir,
+                {
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "resident-m1",
+                    "target_agent_id": "agent-a",
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "content": "official prompt",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                },
+            )
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "message",
+                    "meeting_id": "resident-m1",
+                    "actor_id": "agent-a",
+                    "target_agent_id": "agent-a",
+                    "source_event_id": request["id"],
+                    "role_id": "architect",
+                    "display_name": "Architect",
+                    "content": "{{char}} leaks RAW_LORE_SECRET_MARKER and mentions low_level_access.",
+                    "turn_id": "round_1:0:architect",
+                    "turn_index": 0,
+                },
+            )
+
+            result = finalize_live_agent_meeting(meeting_dir)
+
+            self.assertEqual(result["status"], "finalized")
+            meeting_record = json.loads((meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+            report = meeting_record["persona_artifact_contract"]
+            codes = {
+                code
+                for artifact in report["artifacts"]
+                for code in artifact.get("codes", [])
+            }
+            serialized_report = json.dumps(report, ensure_ascii=False)
+            self.assertEqual(report["status"], "violation")
+            self.assertIn("unreplaced_variable", codes)
+            self.assertIn("raw_card_text", codes)
+            self.assertIn("ignored_feature_name", codes)
+            self.assertNotIn("RAW_LORE_SECRET_MARKER", serialized_report)
+            self.assertEqual(meeting_record["event_log"][-1]["kind"], "persona_artifact_contract")
 
     def test_finalize_live_agent_meeting_refuses_pending_turn_requests(self):
         with tempfile.TemporaryDirectory() as temp_dir:

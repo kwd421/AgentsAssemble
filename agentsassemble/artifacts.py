@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.artifact_packets import build_return_packet, render_return_packet_markdown
+from agentsassemble.persona_artifact_contract import apply_persona_artifact_contract_report
 from agentsassemble.artifact_public import render_agenda, render_decision, render_transcript
 from agentsassemble.delegate_packets import build_delegate_packet, render_delegate_packet_markdown
 from agentsassemble.models import Role
@@ -242,4 +243,5 @@ def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any], *, transc
         write_json(return_packet_dir / f"{role_id}.json", packet)
         (return_packet_dir / f"{role_id}.md").write_text(render_return_packet_markdown(packet), encoding="utf-8")
 
+    apply_persona_artifact_contract_report(meeting_dir, meeting)
     write_json(meeting_dir / "meeting.json", meeting)

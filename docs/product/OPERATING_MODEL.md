@@ -56,6 +56,10 @@ metadata and are not run by AgentsAssemble. Persona prompt context must not be
 promoted into official Work Mode records. Stateful residents with active Play
 Mode persona context should not answer official turns from the same flow loop,
 because provider-private context can carry character framing across calls.
+When a character-mode meeting writes Work Mode artifacts, AgentsAssemble records
+a safe persona artifact contract report with violation codes and counts only;
+it must not copy raw card lore, adult card bodies, or matched snippets into the
+report.
 
 ## Non-Negotiable Rules
 

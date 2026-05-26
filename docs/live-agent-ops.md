@@ -124,6 +124,13 @@ character-mode on/off switch in the richer frontend later, wire it to these
 resident persona fields and keep the stored raw card separate from the safe
 roster summary.
 
+When a character-mode meeting writes Work Mode artifacts, the final meeting
+record includes a `persona_artifact_contract` summary. It reports only safe
+artifact paths, surfaces, violation codes, and counts for issues such as
+unreplaced card variables, roleplay narration markers, ignored execution-feature
+names, or raw card text appearing in official artifacts. It does not print raw
+lore, adult card bodies, matched snippets, config paths, or provider output.
+
 ## Room-first / Agent-owned Context
 
 The room is a room, not a hidden moderator. A resident agent should treat
