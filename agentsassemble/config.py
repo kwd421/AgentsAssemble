@@ -5,6 +5,12 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from agentsassemble.character_mode import (
+    clean_first_message_index,
+    clean_persona_card_id,
+    clean_persona_variables,
+    normalize_character_mode,
+)
 from agentsassemble.models import (
     AgentBinding,
     CouncilConfig,
@@ -171,18 +177,23 @@ def agent_bindings_from_config(data: dict[str, Any]) -> list[AgentBinding]:
             if raw_mode is not None
             else "moderator_called"
         )
+        persona_card_id = clean_persona_card_id(binding_data.get("persona_card_id") or binding_data.get("persona_id"))
         bindings.append(
             AgentBinding(
-            agent_id=binding_data["agent_id"],
-            role_id=binding_data["role_id"],
-            owner_id=binding_data.get("owner_id", "local-user"),
-            provider_id=binding_data["provider_id"],
-            model_id=binding_data.get("model_id"),
-            permission_profile_id=binding_data["permission_profile_id"],
-            memory_profile_id=binding_data.get("memory_profile_id"),
-            join_mode=binding_data.get("join_mode", "fresh"),
-            engagement_mode=engagement_mode,
-            session_id=binding_data.get("session_id") if isinstance(binding_data.get("session_id"), str) else None,
-        )
+                agent_id=binding_data["agent_id"],
+                role_id=binding_data["role_id"],
+                owner_id=binding_data.get("owner_id", "local-user"),
+                provider_id=binding_data["provider_id"],
+                model_id=binding_data.get("model_id"),
+                permission_profile_id=binding_data["permission_profile_id"],
+                memory_profile_id=binding_data.get("memory_profile_id"),
+                join_mode=binding_data.get("join_mode", "fresh"),
+                engagement_mode=engagement_mode,
+                session_id=binding_data.get("session_id") if isinstance(binding_data.get("session_id"), str) else None,
+                persona_card_id=persona_card_id,
+                character_mode=normalize_character_mode(binding_data.get("character_mode"), has_card=bool(persona_card_id)),
+                first_message_index=clean_first_message_index(binding_data.get("first_message_index")),
+                persona_variables=clean_persona_variables(binding_data.get("persona_variables")),
+            )
         )
     return bindings

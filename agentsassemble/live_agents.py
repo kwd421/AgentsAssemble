@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from agentsassemble.live_agent_context import live_agent_context_contract
+from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.models import ENGAGEMENT_MODES, normalize_engagement_mode
 from agentsassemble.remote_bridge_config import remote_bridge_endpoint_error
@@ -99,6 +100,7 @@ def connect_live_agent(
         requested_engagement_mode = normalize_engagement_mode(payload.get("engagement_mode"), default="mentioned")
         operator_engagement_mode = _operator_engagement_mode(existing)
         effective_engagement_mode = operator_engagement_mode or requested_engagement_mode
+        persona_card_id = clean_persona_card_id(payload.get("persona_card_id") or existing.get("persona_card_id"))
         agent = {
             "agent_id": agent_id,
             "display_name": clean_lobby_text(payload.get("display_name"), limit=64)
@@ -111,6 +113,11 @@ def connect_live_agent(
             "sandbox_enforcement": context_contract["sandbox_enforcement"],
             "status": _normalize_persisted_status(payload.get("status") or existing.get("status") or "online"),
             "engagement_mode": effective_engagement_mode,
+            "persona_card_id": persona_card_id,
+            "character_mode": normalize_character_mode(
+                payload.get("character_mode") or existing.get("character_mode"),
+                has_card=bool(persona_card_id),
+            ),
             "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128)
             or clean_lobby_text(existing.get("meeting_id"), limit=128),
             "session_id": clean_lobby_text(payload.get("session_id"), limit=128)

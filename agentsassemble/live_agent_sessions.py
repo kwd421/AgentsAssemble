@@ -8,12 +8,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from agentsassemble.config import load_council_config
+from agentsassemble.character_mode import character_mode_snapshot, clean_persona_card_id
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_preflight import preflight_live_agent_config
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
 from agentsassemble.meeting_events import clean_lobby_text
+from agentsassemble.models import AgentBinding
+from agentsassemble.persona_cards import load_persona_card
 from agentsassemble.meeting_setup import prepare_meeting_setup
 
 SUPPORTED_SESSION_CONNECTION_KINDS = frozenset({"local_cli", "live_session", "terminal_session", "remote_bridge", "self_service"})
@@ -137,6 +140,7 @@ def start_live_agent_session(
         meeting_id=meeting_id,
     )
     clean_meeting_id = str(started_meeting.get("meeting_id") or "")
+    _merge_resident_character_mode_snapshot(output_root, clean_meeting_id, resident_configs)
     if diagnostic:
         _mark_expected_agents_diagnostic(output_root, expected_agent_ids)
     try:
@@ -876,6 +880,91 @@ def _read_existing_meeting(meeting_dir: Path) -> dict[str, object]:
         if isinstance(data, dict):
             return data
     raise ValueError(f"Meeting {meeting_dir.name} was not found.")
+
+
+def _merge_resident_character_mode_snapshot(output_root: Path, meeting_id: str, resident_configs: list[object]) -> None:
+    if not meeting_id:
+        return
+    meeting_dir = output_root / "meetings" / meeting_id
+    for path in (meeting_dir / "live_state.json", meeting_dir / "meeting.json"):
+        if not path.exists():
+            continue
+        meeting = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(meeting, dict):
+            continue
+        merged_bindings = _resident_character_bindings(meeting, resident_configs)
+        meeting["agent_bindings"] = [binding.to_dict() for binding in merged_bindings]
+        meeting["character_mode"] = character_mode_snapshot(output_root, merged_bindings)
+        path.write_text(json.dumps(meeting, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _resident_character_bindings(meeting: dict[str, object], resident_configs: list[object]) -> list[AgentBinding]:
+    config_by_agent_id = {str(getattr(config, "agent_id", "") or ""): config for config in resident_configs}
+    bindings = []
+    for binding in meeting.get("agent_bindings") if isinstance(meeting.get("agent_bindings"), list) else []:
+        if not isinstance(binding, dict):
+            continue
+        config = config_by_agent_id.get(str(binding.get("agent_id") or ""))
+        bindings.append(
+            AgentBinding(
+                agent_id=str(binding.get("agent_id") or ""),
+                role_id=str(binding.get("role_id") or ""),
+                owner_id=str(binding.get("owner_id") or "local-user"),
+                provider_id=str(binding.get("provider_id") or ""),
+                model_id=str(binding.get("model_id")) if isinstance(binding.get("model_id"), str) else None,
+                permission_profile_id=str(binding.get("permission_profile_id") or ""),
+                memory_profile_id=str(binding.get("memory_profile_id")) if isinstance(binding.get("memory_profile_id"), str) else None,
+                join_mode=str(binding.get("join_mode") or "fresh"),
+                engagement_mode=str(binding.get("engagement_mode") or "moderator_called"),
+                session_id=str(binding.get("session_id")) if isinstance(binding.get("session_id"), str) else None,
+                persona_card_id=_resident_binding_persona_card_id(binding, config),
+                persona_card_path=str(getattr(config, "persona_path", "") or ""),
+                character_mode=_resident_binding_character_mode(binding, config),
+                first_message_index=int(binding.get("first_message_index") or 0),
+                persona_variables=binding.get("persona_variables") if isinstance(binding.get("persona_variables"), dict) else {},
+            )
+        )
+    return bindings
+
+
+def _resident_binding_persona_card_id(binding: dict[str, object], config: object | None) -> str:
+    if _resident_config_has_persona_card(config):
+        return clean_persona_card_id(getattr(config, "persona_id", "") or _resident_config_persona_card_id(config))
+    if _resident_config_has_character_override(config) and str(getattr(config, "character_mode", "") or "") == "off":
+        return ""
+    return clean_persona_card_id(binding.get("persona_card_id"))
+
+
+def _resident_binding_character_mode(binding: dict[str, object], config: object | None) -> str:
+    if _resident_config_has_character_override(config):
+        return str(getattr(config, "character_mode", "off") or "off")
+    return str(binding.get("character_mode") or "off")
+
+
+def _resident_config_has_character_override(config: object | None) -> bool:
+    if config is None:
+        return False
+    return bool(
+        _resident_config_has_persona_card(config)
+        or getattr(config, "character_mode_configured", False)
+        or str(getattr(config, "character_mode", "") or "") != "off"
+    )
+
+
+def _resident_config_has_persona_card(config: object | None) -> bool:
+    if config is None:
+        return False
+    return bool(getattr(config, "persona_id", "") or getattr(config, "persona_path", ""))
+
+
+def _resident_config_persona_card_id(config: object | None) -> str:
+    if config is None or not getattr(config, "persona_path", ""):
+        return ""
+    try:
+        card = load_persona_card(Path(str(getattr(config, "persona_path"))))
+    except Exception:
+        return ""
+    return clean_persona_card_id(card.id)
 
 
 def _ensure_bound_agent_roster(

@@ -736,6 +736,49 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertIn("Persona One", prompt)
         self.assertIn("Uses short dry replies.", prompt)
 
+    def test_flow_decision_prompt_work_speech_only_excludes_raw_lore_body(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            card_path = Path(temp_dir) / "card.json"
+            card_path.write_text(
+                json.dumps(
+                    {
+                        "id": "persona-1",
+                        "display_name": "Tsukishiro Yanagi",
+                        "description": "RAW_DESCRIPTION_MARKER",
+                        "personality": "Precise, dry, and protective.",
+                        "scenario": "RAW_SCENARIO_MARKER",
+                        "lorebook": [
+                            {
+                                "key": "Yanagi",
+                                "content": "RAW_LORE_MARKER",
+                                "always_active": True,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            prompt = flow_decision_prompt(
+                config(
+                    engagement_mode="flow",
+                    meeting_id="m1",
+                    persona_path=str(card_path),
+                    character_mode="work_speech_only",
+                ),
+                {
+                    "meeting_id": "m1",
+                    "lobby_events": [{"id": "flow-start", "name": "Play Mode", "message": "Yanagi"}],
+                },
+                {"id": "flow-start", "name": "Play Mode", "message": "Yanagi"},
+            )
+
+        self.assertIn("Character speech style", prompt)
+        self.assertIn("Precise, dry, and protective.", prompt)
+        self.assertNotIn("RAW_DESCRIPTION_MARKER", prompt)
+        self.assertNotIn("RAW_SCENARIO_MARKER", prompt)
+        self.assertNotIn("RAW_LORE_MARKER", prompt)
+
     def test_flow_persona_stateful_runner_does_not_answer_official_turn_request(self):
         clock = FakeClock()
         room = {
@@ -773,6 +816,41 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(runner.run(), 0)
         self.assertFalse([call for call in client.calls if call[0].endswith("/official-turn")])
         self.assertEqual(runner.last_observed_live_event_id, "turn-1")
+
+    def test_flow_persona_off_stateful_runner_can_answer_official_turn_request(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow", "meeting_id": "m1"},
+            "live_events": [
+                {
+                    "id": "turn-1",
+                    "kind": "live_agent_turn_request",
+                    "target_agent_id": "agent-a",
+                    "meeting_id": "m1",
+                    "content": "공식 기록으로 답해줘",
+                }
+            ],
+            "lobby_events": [],
+        }
+        client = FakeRoomClient([room])
+
+        runner = LiveAgentRunner(
+            config(
+                engagement_mode="flow",
+                meeting_id="m1",
+                connection_kind="live_session",
+                provider_kind="codex_live_session",
+                persona_path="/tmp/persona/card.json",
+                character_mode="off",
+            ),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "공식 답변입니다.",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+        self.assertTrue([call for call in client.calls if call[0].endswith("/official-turn")])
 
     def test_runner_records_error_status_when_command_fails(self):
         clock = FakeClock()
@@ -2830,6 +2908,57 @@ class LiveAgentRunnerTests(unittest.TestCase):
             loaded = load_group_configs(path)
 
         self.assertEqual(loaded[0].persona_path, str(persona_path))
+
+    def test_group_config_accepts_character_mode_and_persona_card_alias(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-persona",
+                                "command": ["fake"],
+                                "persona_card_id": "yanagi",
+                                "character_mode": "work_speech_only",
+                            },
+                            {
+                                "agent_id": "agent-off",
+                                "command": ["fake"],
+                                "persona_id": "plain",
+                                "character_mode": "off",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        self.assertEqual(loaded[0].persona_id, "yanagi")
+        self.assertEqual(loaded[0].character_mode, "work_speech_only")
+        self.assertEqual(loaded[1].character_mode, "off")
+
+    def test_flow_decision_prompt_respects_character_mode_off(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            card_path = Path(temp_dir) / "card.json"
+            card_path.write_text(
+                json.dumps({"id": "persona-1", "display_name": "Persona One", "personality": "Dry."}),
+                encoding="utf-8",
+            )
+
+            prompt = flow_decision_prompt(
+                config(engagement_mode="flow", meeting_id="m1", persona_path=str(card_path), character_mode="off"),
+                {
+                    "meeting_id": "m1",
+                    "events": [{"id": "flow-start", "name": "Play Mode", "message": "한마디 해줘."}],
+                    "flow": {"flow_id": "flow-1", "topic": "test"},
+                },
+                {"id": "flow-start", "name": "Play Mode", "message": "한마디 해줘."},
+            )
+
+        self.assertNotIn("Play Mode persona card", prompt)
 
     def test_group_config_rejects_non_object_agent_entries(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -142,9 +142,14 @@ class AgentBinding:
     join_mode: Literal["fresh", "current_session", "imported_pack"] = "fresh"
     engagement_mode: EngagementMode = "moderator_called"
     session_id: str | None = None
+    persona_card_id: str = ""
+    persona_card_path: str = ""
+    character_mode: Literal["off", "on", "work_speech_only"] = "off"
+    first_message_index: int = 0
+    persona_variables: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        data: dict[str, object] = {
             "agent_id": self.agent_id,
             "role_id": self.role_id,
             "owner_id": self.owner_id,
@@ -156,6 +161,15 @@ class AgentBinding:
             "engagement_mode": self.engagement_mode,
             "session_id": self.session_id,
         }
+        if self.persona_card_id:
+            data["persona_card_id"] = self.persona_card_id
+        if self.persona_card_id or self.character_mode != "off":
+            data["character_mode"] = self.character_mode
+        if self.first_message_index:
+            data["first_message_index"] = self.first_message_index
+        if self.persona_variables:
+            data["persona_variables"] = dict(self.persona_variables)
+        return data
 
 
 @dataclass(frozen=True)

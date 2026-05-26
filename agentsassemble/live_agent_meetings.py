@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from agentsassemble.artifacts import write_agenda
+from agentsassemble.character_mode import character_mode_snapshot
 from agentsassemble.config import load_council_config
 from agentsassemble.live_agents import connect_live_agent, read_live_agents, update_live_agent_engagement
 from agentsassemble.meeting import _moderator_control_snapshot
@@ -70,6 +71,7 @@ def start_live_agent_meeting(
         "moderator_synthesis": {},
         "decision_gate": {},
         "agent_bindings": [binding.to_dict() for binding in bound_agent_bindings],
+        "character_mode": character_mode_snapshot(root, bound_agent_bindings),
         "provider_configs": {
             provider_id: provider.public_dict()
             for provider_id, provider in setup.providers.items()
@@ -130,6 +132,8 @@ def _register_bound_live_agents(
                 "session_id": binding.session_id or "",
                 "endpoint": (provider.endpoint or "") if connection_kind == "remote_bridge" else "",
                 "engagement_mode": "moderator_called",
+                "persona_card_id": binding.persona_card_id,
+                "character_mode": binding.character_mode,
                 "status": "offline",
                 "capabilities": ["room_chat", "official_turn"],
             },

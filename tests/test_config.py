@@ -278,6 +278,40 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(normalize_engagement_mode("watch"), "watch")
         self.assertEqual(normalize_engagement_mode("unknown"), "manual")
 
+    def test_agent_binding_character_mode_fields_are_normalized(self):
+        bindings = agent_bindings_from_config(
+            {
+                "agent_bindings": [
+                    {
+                        "agent_id": "yanagi",
+                        "role_id": "lore_lawyer",
+                        "provider_id": "guest-cursor",
+                        "permission_profile_id": "meeting_readonly_tools",
+                        "persona_card_id": "tsukishiro-yanagi",
+                        "character_mode": "work_speech_only",
+                        "first_message_index": -1,
+                        "persona_variables": {"mood": "dry", "nested": {"ignored": True}},
+                    },
+                    {
+                        "agent_id": "plain",
+                        "role_id": "fanboard_skeptic",
+                        "provider_id": "guest-cursor",
+                        "permission_profile_id": "meeting_readonly_tools",
+                        "persona_card_id": "../escape",
+                        "character_mode": "unknown",
+                    },
+                ]
+            }
+        )
+
+        self.assertEqual(bindings[0].persona_card_id, "tsukishiro-yanagi")
+        self.assertEqual(bindings[0].character_mode, "work_speech_only")
+        self.assertEqual(bindings[0].first_message_index, -1)
+        self.assertEqual(bindings[0].persona_variables, {"mood": "dry"})
+        self.assertEqual(bindings[0].to_dict()["persona_card_id"], "tsukishiro-yanagi")
+        self.assertEqual(bindings[1].persona_card_id, "escape")
+        self.assertEqual(bindings[1].character_mode, "on")
+
     def test_example_agent_configs_are_parseable(self):
         for path in (
             Path("configs/agents.example.json"),

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from agentsassemble.artifacts import write_agenda, write_public_artifacts, write_room_artifacts
 from agentsassemble.config import load_council_config
+from agentsassemble.character_mode import character_mode_snapshot
 from agentsassemble.decision_gate import derive_decision_gate
 from agentsassemble.decision_status import derive_decision_status
 from agentsassemble.meeting_phases import (
@@ -99,6 +100,7 @@ def run_demo_meeting(
             "moderator_synthesis": {},
             "decision_gate": {},
             "agent_bindings": [binding.to_dict() for binding in setup.agent_bindings],
+            "character_mode": character_mode_snapshot(root, setup.agent_bindings),
             "provider_configs": {
                 provider_id: provider_config.public_dict()
                 for provider_id, provider_config in setup.providers.items()

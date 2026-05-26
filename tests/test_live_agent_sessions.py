@@ -65,6 +65,297 @@ class LiveAgentSessionEnsureActionTests(unittest.TestCase):
 
 
 class LiveAgentSessionReadinessSummaryTests(unittest.TestCase):
+    def test_start_session_merges_live_agent_persona_config_into_character_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            persona_dir = root / "personas" / "tsukishiro-yanagi"
+            persona_dir.mkdir(parents=True)
+            (persona_dir / "card.json").write_text(
+                json.dumps({"id": "tsukishiro-yanagi", "display_name": "Tsukishiro Yanagi"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(
+                root,
+                ["agent-a"],
+                persona_card_id="tsukishiro-yanagi",
+                character_mode="on",
+            )
+            supervisor = FakeSessionSupervisor(root)
+
+            result = start_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            meeting = json.loads((root / "meetings" / result["meeting_id"] / "live_state.json").read_text(encoding="utf-8"))
+            character_agents = meeting["character_mode"]["agents"]
+            self.assertEqual(character_agents[0]["agent_id"], "agent-a")
+            self.assertEqual(character_agents[0]["card_id"], "tsukishiro-yanagi")
+            self.assertTrue(character_agents[0]["card_hash"].startswith("sha256:"))
+            self.assertEqual(meeting["agent_bindings"][0]["persona_card_id"], "tsukishiro-yanagi")
+
+    def test_start_session_snapshots_live_agent_persona_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            persona_dir = root / "external-personas"
+            persona_dir.mkdir()
+            persona_path = persona_dir / "card.json"
+            persona_path.write_text(
+                json.dumps({"id": "external-yanagi", "display_name": "External Yanagi"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(
+                root,
+                ["agent-a"],
+                persona_path=str(persona_path),
+                character_mode="on",
+            )
+            supervisor = FakeSessionSupervisor(root)
+
+            result = start_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            meeting = json.loads((root / "meetings" / result["meeting_id"] / "live_state.json").read_text(encoding="utf-8"))
+            character_agent = meeting["character_mode"]["agents"][0]
+            self.assertEqual(character_agent["card_id"], "external-yanagi")
+            self.assertTrue(character_agent["card_hash"].startswith("sha256:"))
+            self.assertEqual(character_agent["source_path"], "external-personas/card.json")
+            self.assertEqual(meeting["agent_bindings"][0]["persona_card_id"], "external-yanagi")
+            self.assertNotIn("persona_card_path", meeting["agent_bindings"][0])
+
+    def test_start_session_live_agent_persona_overrides_agent_config_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            agent_card_dir = root / "personas" / "tsukishiro-yanagi"
+            live_card_dir = root / "personas" / "resident-override"
+            agent_card_dir.mkdir(parents=True)
+            live_card_dir.mkdir(parents=True)
+            (agent_card_dir / "card.json").write_text(
+                json.dumps({"id": "tsukishiro-yanagi", "display_name": "Tsukishiro Yanagi"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (live_card_dir / "card.json").write_text(
+                json.dumps({"id": "resident-override", "display_name": "Resident Override"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config_with_character_mode(root)
+            live_agent_config = _write_live_agent_config(
+                root,
+                ["agent-a"],
+                persona_card_id="resident-override",
+                character_mode="on",
+            )
+            supervisor = FakeSessionSupervisor(root)
+
+            result = start_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            meeting = json.loads((root / "meetings" / result["meeting_id"] / "live_state.json").read_text(encoding="utf-8"))
+            character_agent = meeting["character_mode"]["agents"][0]
+            self.assertEqual(character_agent["card_id"], "resident-override")
+            self.assertEqual(character_agent["mode"], "on")
+            self.assertEqual(meeting["agent_bindings"][0]["persona_card_id"], "resident-override")
+
+    def test_start_session_live_agent_character_mode_off_clears_agent_config_persona(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            agent_card_dir = root / "personas" / "tsukishiro-yanagi"
+            agent_card_dir.mkdir(parents=True)
+            (agent_card_dir / "card.json").write_text(
+                json.dumps({"id": "tsukishiro-yanagi", "display_name": "Tsukishiro Yanagi"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config_with_character_mode(root)
+            live_agent_config = _write_live_agent_config(root, ["agent-a"], character_mode="off")
+            supervisor = FakeSessionSupervisor(root)
+
+            result = start_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            meeting = json.loads((root / "meetings" / result["meeting_id"] / "live_state.json").read_text(encoding="utf-8"))
+            character_agent = meeting["character_mode"]["agents"][0]
+            self.assertEqual(character_agent["card_id"], "")
+            self.assertEqual(character_agent["mode"], "off")
+            self.assertNotIn("persona_card_id", meeting["agent_bindings"][0])
+            self.assertNotIn("character_mode", meeting["agent_bindings"][0])
+
+    def test_start_session_live_agent_mode_only_override_preserves_agent_config_persona(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            agent_card_dir = root / "personas" / "tsukishiro-yanagi"
+            agent_card_dir.mkdir(parents=True)
+            (agent_card_dir / "card.json").write_text(
+                json.dumps({"id": "tsukishiro-yanagi", "display_name": "Tsukishiro Yanagi"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config_with_character_mode(root)
+            live_agent_config = _write_live_agent_config(root, ["agent-a"], character_mode="work_speech_only")
+            supervisor = FakeSessionSupervisor(root)
+
+            result = start_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            meeting = json.loads((root / "meetings" / result["meeting_id"] / "live_state.json").read_text(encoding="utf-8"))
+            character_agent = meeting["character_mode"]["agents"][0]
+            self.assertEqual(character_agent["card_id"], "tsukishiro-yanagi")
+            self.assertEqual(character_agent["mode"], "work_speech_only")
+            self.assertTrue(character_agent["card_hash"].startswith("sha256:"))
+            self.assertEqual(meeting["agent_bindings"][0]["persona_card_id"], "tsukishiro-yanagi")
+
+    def test_start_session_sanitizes_live_agent_persona_card_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(
+                root,
+                ["agent-a"],
+                persona_card_id="../secret/card.json",
+                character_mode="on",
+            )
+            supervisor = FakeSessionSupervisor(root)
+
+            result = start_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            meeting = json.loads((root / "meetings" / result["meeting_id"] / "live_state.json").read_text(encoding="utf-8"))
+            character_agent = meeting["character_mode"]["agents"][0]
+            self.assertEqual(character_agent["card_id"], "secret-card.json")
+            self.assertEqual(meeting["agent_bindings"][0]["persona_card_id"], "secret-card.json")
+            self.assertNotIn("..", json.dumps(meeting["agent_bindings"], ensure_ascii=False))
+
+    def test_start_session_hides_persona_path_outside_output_root(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            root = temp_root / "room"
+            outside = temp_root / "outside"
+            root.mkdir()
+            outside.mkdir()
+            persona_path = outside / "card.json"
+            persona_path.write_text(
+                json.dumps({"id": "outside-card", "display_name": "Outside Card"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config(root, ["agent-a"])
+            live_agent_config = _write_live_agent_config(
+                root,
+                ["agent-a"],
+                persona_path=str(root / "../outside/card.json"),
+                character_mode="on",
+            )
+            supervisor = FakeSessionSupervisor(root)
+
+            result = start_live_agent_session(
+                root,
+                supervisor,
+                server="http://127.0.0.1:8765",
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                live_agent_config_path=live_agent_config,
+                meeting_id="resident-m1",
+                group_id="resident-main",
+            )
+
+            meeting = json.loads((root / "meetings" / result["meeting_id"] / "live_state.json").read_text(encoding="utf-8"))
+            character_agent = meeting["character_mode"]["agents"][0]
+            self.assertEqual(character_agent["card_id"], "outside-card")
+            self.assertTrue(character_agent["card_hash"].startswith("sha256:"))
+            self.assertEqual(character_agent["source_path"], "")
+
+    def test_live_agent_meeting_snapshots_character_mode_and_roster_badge(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            persona_dir = root / "personas" / "tsukishiro-yanagi"
+            persona_dir.mkdir(parents=True)
+            (persona_dir / "card.json").write_text(
+                json.dumps(
+                    {
+                        "id": "tsukishiro-yanagi",
+                        "display_name": "Tsukishiro Yanagi",
+                        "ignored_features": {"trigger": 1},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            council_config = _write_council_config(root, ["architect"])
+            agent_config = _write_agent_config_with_character_mode(root)
+
+            result = start_live_agent_meeting(
+                root,
+                council_config_path=council_config,
+                agent_config_path=agent_config,
+                meeting_id="resident-m1",
+            )
+
+        meeting = result["meeting"]
+        character_agents = meeting["character_mode"]["agents"]
+        self.assertEqual(character_agents[0]["agent_id"], "agent-a")
+        self.assertEqual(character_agents[0]["card_id"], "tsukishiro-yanagi")
+        self.assertEqual(character_agents[0]["mode"], "work_speech_only")
+        self.assertTrue(character_agents[0]["card_hash"].startswith("sha256:"))
+        self.assertEqual(character_agents[0]["ignored_features"], {"trigger": 1})
+        self.assertEqual(character_agents[0]["source_path"], "personas/tsukishiro-yanagi/card.json")
+        self.assertEqual(character_agents[0]["persona_variables"], {"mood": "dry"})
+        self.assertEqual(meeting["agent_bindings"][0]["character_mode"], "work_speech_only")
+        roster_agent = next(agent for agent in result["agents"] if agent["agent_id"] == "agent-a")
+        self.assertEqual(roster_agent["character_mode"], "work_speech_only")
+        self.assertEqual(roster_agent["persona_card_id"], "tsukishiro-yanagi")
+
     def test_session_summary_degrades_duplicate_active_meeting_groups(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -3763,6 +4054,47 @@ def _write_agent_config(root: Path, agent_ids: list[str], *, provider_kind: str 
     return path
 
 
+def _write_agent_config_with_character_mode(root: Path) -> Path:
+    path = root / "agents-character.json"
+    path.write_text(
+        json.dumps(
+            {
+                "providers": [
+                    {
+                        "id": "local-cli",
+                        "kind": "local_cli",
+                        "display_name": "Local CLI",
+                        "command": [sys.executable, "-c", "print('ok')"],
+                    }
+                ],
+                "permission_profiles": [
+                    {
+                        "id": "meeting_readonly",
+                        "meeting_read": True,
+                        "lobby_chat": True,
+                        "official_turn": True,
+                    }
+                ],
+                "agent_bindings": [
+                    {
+                        "agent_id": "agent-a",
+                        "role_id": "architect",
+                        "provider_id": "local-cli",
+                        "permission_profile_id": "meeting_readonly",
+                        "persona_card_id": "tsukishiro-yanagi",
+                        "character_mode": "work_speech_only",
+                        "first_message_index": 1,
+                        "persona_variables": {"mood": "dry", "nested": {"ignored": True}},
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def _write_live_agent_config(
     root: Path,
     agent_ids: list[str],
@@ -3772,6 +4104,9 @@ def _write_live_agent_config(
     connection_kind: str = "local_cli",
     endpoint: str = "",
     auth_ref: str = "",
+    persona_card_id: str = "",
+    persona_path: str = "",
+    character_mode: str = "",
 ) -> Path:
     path = root / "live-agents.json"
     path.write_text(
@@ -3788,6 +4123,9 @@ def _write_live_agent_config(
                         "auth_ref": auth_ref,
                         "meeting_id": meeting_id,
                         "engagement_mode": "moderator_called",
+                        "persona_card_id": persona_card_id,
+                        "persona_path": persona_path,
+                        "character_mode": character_mode,
                         "command": [sys.executable, "-c", "print('ok')"],
                     }
                     for agent_id in agent_ids

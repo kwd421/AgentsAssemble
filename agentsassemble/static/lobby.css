@@ -857,6 +857,7 @@
 }
 
 .live-agent-card .live-agent-contract,
+.live-agent-card .live-agent-character,
 .live-agent-card .live-agent-admission,
 .live-agent-card .live-agent-runtime,
 .live-agent-card .live-agent-error-detail {
@@ -868,6 +869,10 @@
 
 .live-agent-card .live-agent-contract {
   color: #bdf4ff;
+}
+
+.live-agent-card .live-agent-character {
+  color: #d9c4ff;
 }
 
 .live-agent-card .live-agent-admission {

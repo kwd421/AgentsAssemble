@@ -8,6 +8,7 @@ from agentsassemble.live_agent_context import (
     safe_live_agent_join_semantics,
     safe_live_agent_sandbox_enforcement,
 )
+from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 from agentsassemble.live_agents import PRESENCE_ERROR_REDACTED, _looks_sensitive_presence_error
 from agentsassemble.meeting_events import clean_lobby_text
 
@@ -24,6 +25,8 @@ SAFE_LIVE_AGENT_ROSTER_FIELDS = (
     "meeting_id",
     "engagement_mode",
     "engagement_mode_updated_at",
+    "persona_card_id",
+    "character_mode",
     "last_seen_at",
     "last_error",
     "last_reply_at",
@@ -120,6 +123,10 @@ def safe_live_agent_roster_agent(agent: dict[str, object]) -> dict[str, object]:
             safe_agent[field] = safe_live_agent_binding_conflicts(value)
         elif field == "admission_evidence_source":
             safe_agent[field] = admission_evidence_source
+        elif field == "persona_card_id":
+            safe_agent[field] = clean_persona_card_id(value)
+        elif field == "character_mode":
+            safe_agent[field] = normalize_character_mode(value, has_card=bool(agent.get("persona_card_id")))
         elif field == "join_semantics":
             safe_agent[field] = safe_live_agent_join_semantics(context_contract["join_semantics"])
         elif field == "context_durability":

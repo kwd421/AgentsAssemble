@@ -27,6 +27,7 @@ from agentsassemble.codex_sessions import (
     read_agent_config,
     write_agent_config,
 )
+from agentsassemble.character_mode import clean_persona_card_id
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agents import _looks_sensitive_presence_error
@@ -311,6 +312,8 @@ def build_parser() -> argparse.ArgumentParser:
     live_register.add_argument("--endpoint", default="")
     live_register.add_argument("--meeting-id", default="")
     live_register.add_argument("--engagement-mode", default="mentioned")
+    live_register.add_argument("--persona-card-id", default="")
+    live_register.add_argument("--character-mode", choices=["off", "on", "work_speech_only"], default="")
     live_register.add_argument("--json", action="store_true", dest="as_json", help="Print the raw registration response.")
 
     live_join_brief = live_agent_subparsers.add_parser(
@@ -1063,7 +1066,9 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
     live_run.add_argument("--max-ticks", type=parse_nonnegative_int, default=0)
     live_run.add_argument("--persona-id", default="", help="Optional imported persona card id for Play Mode prompts.")
+    live_run.add_argument("--persona-card-id", default="", help="Alias for --persona-id.")
     live_run.add_argument("--persona-path", default="", help="Optional persona card JSON path for Play Mode prompts.")
+    live_run.add_argument("--character-mode", choices=["off", "on", "work_speech_only"], default="")
     live_run.add_argument("--terminal-idle-timeout", type=parse_nonnegative_float, default=0.35)
     live_run.add_argument("--command", dest="resident_command", nargs=argparse.REMAINDER, default=[])
 
@@ -1569,6 +1574,11 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
                 "engagement_mode": args.engagement_mode,
                 "capabilities": ["room_chat", "mentions"],
             }
+            persona_card_id = clean_persona_card_id(args.persona_card_id)
+            if persona_card_id:
+                payload["persona_card_id"] = persona_card_id
+            if args.character_mode:
+                payload["character_mode"] = args.character_mode
             response = _request_json(_server_url(args.server, "/api/live-agents"), method="POST", payload=payload)
             agent = response.get("agent", {}) if isinstance(response.get("agent"), dict) else {}
             if args.as_json:

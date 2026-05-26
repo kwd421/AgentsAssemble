@@ -26,6 +26,7 @@ from agentsassemble.live_agent_flow import (
     flow_turn_count,
     parse_flow_decision,
 )
+from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
 from agentsassemble.persona_cards import load_persona_card, persona_prompt_lines
 from agentsassemble.remote_bridge_config import (
@@ -65,6 +66,8 @@ class ResidentAgentConfig:
     max_ticks: int = 0
     persona_id: str = ""
     persona_path: str = ""
+    character_mode: str = "on"
+    character_mode_configured: bool = False
     terminal_idle_timeout: float = 0.35
 
 
@@ -500,6 +503,7 @@ class LiveAgentRunner:
         )
 
     def _register(self) -> None:
+        persona_card_id = _resident_persona_card_id(self.config)
         response = self.request_json(
             _server_url(self.config.server, "/api/live-agents"),
             method="POST",
@@ -512,6 +516,11 @@ class LiveAgentRunner:
                 "endpoint": self.config.endpoint,
                 "meeting_id": self.config.meeting_id,
                 "engagement_mode": self.config.engagement_mode,
+                "persona_card_id": persona_card_id,
+                "character_mode": normalize_character_mode(
+                    self.config.character_mode,
+                    has_card=bool(persona_card_id or self.config.persona_path),
+                ),
                 "capabilities": ["room_chat", "mentions"],
             },
         )
@@ -1048,6 +1057,17 @@ def _flow_persona_prompt_lines(
             f"- Load error: {message}",
             "Continue without inventing a persona.",
         ]
+    if config.character_mode == "work_speech_only":
+        lines = [
+            "Character speech style (work_speech_only; do not include raw lore/world/body context):",
+            f"- Persona id: {_prompt_text(card.id, limit=120)}",
+            f"- Character name: {_prompt_text(card.display_name, limit=160)}",
+        ]
+        personality = _prompt_text(card.personality, limit=900)
+        if personality:
+            lines.append(f"- Personality: {personality}")
+        lines.append("Keep this persona's speech style for visible room messages, but do not treat private lore as room evidence.")
+        return lines
     context_parts = [
         *recent_events,
         str(source_event.get("name") or ""),
@@ -1057,6 +1077,8 @@ def _flow_persona_prompt_lines(
 
 
 def _flow_persona_card_path(config: ResidentAgentConfig) -> Path | None:
+    if config.character_mode == "off":
+        return None
     if config.persona_path:
         return Path(config.persona_path)
     if not config.persona_id:
@@ -1067,7 +1089,22 @@ def _flow_persona_card_path(config: ResidentAgentConfig) -> Path | None:
     return Path.cwd() / ".agentsassemble" / "personas" / persona_id / "card.json"
 
 
+def _resident_persona_card_id(config: ResidentAgentConfig) -> str:
+    persona_id = clean_persona_card_id(config.persona_id)
+    if persona_id:
+        return persona_id
+    if not config.persona_path:
+        return ""
+    try:
+        card = load_persona_card(Path(config.persona_path))
+    except Exception:
+        return ""
+    return clean_persona_card_id(card.id)
+
+
 def _flow_persona_could_bleed_into_official_context(config: ResidentAgentConfig) -> bool:
+    if config.character_mode == "off":
+        return False
     if not config.persona_path and not config.persona_id:
         return False
     return config.connection_kind in {"live_session", "terminal_session", "remote_bridge"}
@@ -1234,8 +1271,19 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         cooldown=float(getattr(args, "cooldown")),
         max_chain_depth=int(getattr(args, "max_chain_depth")),
         max_ticks=int(getattr(args, "max_ticks")),
-        persona_id=str(getattr(args, "persona_id", "")),
+        persona_id=clean_persona_card_id(getattr(args, "persona_id", "") or getattr(args, "persona_card_id", "")),
         persona_path=str(getattr(args, "persona_path", "")),
+        character_mode=normalize_character_mode(
+            getattr(args, "character_mode", ""),
+            has_card=bool(
+                str(
+                    getattr(args, "persona_id", "")
+                    or getattr(args, "persona_card_id", "")
+                    or getattr(args, "persona_path", "")
+                )
+            ),
+        ),
+        character_mode_configured=bool(str(getattr(args, "character_mode", "") or "")),
         terminal_idle_timeout=float(getattr(args, "terminal_idle_timeout", 0.35)),
     )
 
@@ -1288,8 +1336,13 @@ def _config_from_mapping(
             "max_chain_depth",
         ),
         max_ticks=live_agent_nonnegative_int(data.get("max_ticks"), defaults["max_ticks"], "max_ticks"),
-        persona_id=str(data.get("persona_id") or ""),
+        persona_id=clean_persona_card_id(data.get("persona_id") or data.get("persona_card_id") or ""),
         persona_path=_resident_persona_path(data.get("persona_path"), base_dir=config_dir),
+        character_mode=normalize_character_mode(
+            data.get("character_mode"),
+            has_card=bool(data.get("persona_id") or data.get("persona_card_id") or data.get("persona_path")),
+        ),
+        character_mode_configured=bool(str(data.get("character_mode") or "")),
         terminal_idle_timeout=live_agent_nonnegative_float(
             data.get("terminal_idle_timeout"),
             0.35,

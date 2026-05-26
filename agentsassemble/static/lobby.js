@@ -1802,6 +1802,7 @@ function renderLiveAgentCard(agent) {
   const status = agent.status || "offline";
   const runtimeDetails = liveAgentRuntimeDetails(agent);
   const contractDetails = liveAgentContractDetails(agent);
+  const characterDetails = liveAgentCharacterDetails(agent);
   const admissionDetails = liveAgentAdmissionDetails(agent);
   const lastError = String(agent.last_error || "").trim();
   const agentId = String(agent.agent_id || "");
@@ -1819,11 +1820,20 @@ function renderLiveAgentCard(agent) {
       </select>
       <button type="button" class="live-agent-probe" data-live-agent-probe="${escapeHtml(agentId)}" ${probeRunning || !agentId ? "disabled" : ""}>probe</button>
       ${contractDetails ? `<small class="live-agent-contract">${escapeHtml(contractDetails)}</small>` : ""}
+      ${characterDetails ? `<small class="live-agent-character">${escapeHtml(characterDetails)}</small>` : ""}
       ${admissionDetails ? `<small class="live-agent-admission">${escapeHtml(admissionDetails)}</small>` : ""}
       ${runtimeDetails ? `<small class="live-agent-runtime">${escapeHtml(runtimeDetails)}</small>` : ""}
       ${lastError ? `<small class="live-agent-error-detail">${escapeHtml(lastError)}</small>` : ""}
     </article>
   `;
+}
+
+function liveAgentCharacterDetails(agent) {
+  const mode = String(agent.character_mode || "off");
+  const cardId = String(agent.persona_card_id || "").trim();
+  if (mode === "off" && !cardId) return "";
+  const label = mode === "work_speech_only" ? "Work speech" : mode === "on" ? "ON" : "OFF";
+  return `Character ${label}${cardId ? ` · ${cardId}` : ""}`;
 }
 
 function renderEngagementModeOptions(currentMode) {
