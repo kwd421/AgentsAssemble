@@ -27,6 +27,7 @@ from agentsassemble.live_agent_flow import (
     parse_flow_decision,
 )
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
+from agentsassemble.persona_cards import load_persona_card, persona_prompt_lines
 from agentsassemble.remote_bridge_config import (
     remote_bridge_auth_ref_available,
     remote_bridge_auth_ref_value,
@@ -62,6 +63,8 @@ class ResidentAgentConfig:
     cooldown: float
     max_chain_depth: int
     max_ticks: int = 0
+    persona_id: str = ""
+    persona_path: str = ""
     terminal_idle_timeout: float = 0.35
 
 
@@ -240,6 +243,10 @@ class LiveAgentRunner:
             self.last_observed_live_event_id,
         )
         if official_candidate is not None:
+            if _flow_persona_could_bleed_into_official_context(self.config):
+                self._advance_live_cursor(live_events)
+                self._heartbeat_if_due()
+                return 0
             if self._in_cooldown():
                 self._heartbeat_if_due()
                 return 0
@@ -994,12 +1001,15 @@ def flow_decision_prompt(config: ResidentAgentConfig, room: dict[str, object], s
         or "(free conversation)"
     )
     recent_events = _recent_flow_prompt_events(events, flow_id=flow_id)
+    persona_lines = _flow_persona_prompt_lines(config, recent_events, source_event)
     lines = [
         "You are a live AgentsAssemble participant in a Play Mode lobby conversation.",
         "This is not an official meeting record. Do not write transcript or decision text.",
         f"Agent id: {config.agent_id}",
         f"Display name: {config.display_name or config.agent_id}",
         f"Topic: {topic}",
+        "",
+        *persona_lines,
         "",
         "Choose your next room action from the recent context.",
         "Return one JSON object only with these keys:",
@@ -1018,6 +1028,56 @@ def flow_decision_prompt(config: ResidentAgentConfig, room: dict[str, object], s
         f"- {source_event.get('name') or 'participant'}: {source_event.get('message') or ''}",
     ]
     return "\n".join(lines).strip() + "\n"
+
+
+def _flow_persona_prompt_lines(
+    config: ResidentAgentConfig,
+    recent_events: list[str],
+    source_event: dict[str, object],
+) -> list[str]:
+    persona_path = _flow_persona_card_path(config)
+    if persona_path is None:
+        return []
+    try:
+        card = load_persona_card(persona_path)
+    except Exception as error:
+        message = _prompt_text(error, limit=180)
+        return [
+            "Play Mode persona card could not be loaded.",
+            f"- Persona path: {_prompt_text(persona_path, limit=240)}",
+            f"- Load error: {message}",
+            "Continue without inventing a persona.",
+        ]
+    context_parts = [
+        *recent_events,
+        str(source_event.get("name") or ""),
+        str(source_event.get("message") or ""),
+    ]
+    return persona_prompt_lines(card, "\n".join(context_parts))
+
+
+def _flow_persona_card_path(config: ResidentAgentConfig) -> Path | None:
+    if config.persona_path:
+        return Path(config.persona_path)
+    if not config.persona_id:
+        return None
+    persona_id = _safe_persona_lookup_id(config.persona_id)
+    if not persona_id:
+        return None
+    return Path.cwd() / ".agentsassemble" / "personas" / persona_id / "card.json"
+
+
+def _flow_persona_could_bleed_into_official_context(config: ResidentAgentConfig) -> bool:
+    if not config.persona_path and not config.persona_id:
+        return False
+    return config.connection_kind in {"live_session", "terminal_session", "remote_bridge"}
+
+
+def _safe_persona_lookup_id(value: str) -> str:
+    if not value or any(separator in value for separator in {"/", "\\"}):
+        return ""
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip()).strip(".-")
+    return cleaned[:80]
 
 
 def _flow_room_meeting_id(config: ResidentAgentConfig, room: dict[str, object]) -> str:
@@ -1147,7 +1207,7 @@ def load_group_configs(
     if not all(isinstance(agent, dict) for agent in agents):
         raise ValueError("Each live agent entry must be a JSON object.")
     return [
-        _config_from_mapping(agent, server=server, defaults=defaults, server_override=server_override)
+        _config_from_mapping(agent, server=server, defaults=defaults, server_override=server_override, config_dir=path.parent)
         for agent in agents
     ]
 
@@ -1174,6 +1234,8 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         cooldown=float(getattr(args, "cooldown")),
         max_chain_depth=int(getattr(args, "max_chain_depth")),
         max_ticks=int(getattr(args, "max_ticks")),
+        persona_id=str(getattr(args, "persona_id", "")),
+        persona_path=str(getattr(args, "persona_path", "")),
         terminal_idle_timeout=float(getattr(args, "terminal_idle_timeout", 0.35)),
     )
 
@@ -1184,6 +1246,7 @@ def _config_from_mapping(
     server: str,
     defaults: dict[str, int | float],
     server_override: str | None = None,
+    config_dir: Path = Path("."),
 ) -> ResidentAgentConfig:
     connection_kind = str(data.get("connection_kind") or "local_cli")
     if connection_kind not in SUPPORTED_RESIDENT_CONNECTION_KINDS:
@@ -1225,12 +1288,23 @@ def _config_from_mapping(
             "max_chain_depth",
         ),
         max_ticks=live_agent_nonnegative_int(data.get("max_ticks"), defaults["max_ticks"], "max_ticks"),
+        persona_id=str(data.get("persona_id") or ""),
+        persona_path=_resident_persona_path(data.get("persona_path"), base_dir=config_dir),
         terminal_idle_timeout=live_agent_nonnegative_float(
             data.get("terminal_idle_timeout"),
             0.35,
             "terminal_idle_timeout",
         ),
     )
+
+
+def _resident_persona_path(value: object, *, base_dir: Path) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = base_dir / path
+    return str(path)
 
 
 def live_agent_command_parts(value: object) -> list[str]:

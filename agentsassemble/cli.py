@@ -80,6 +80,12 @@ from agentsassemble.multi_host_invites import (
     resolve_lan_invite_secret_ref,
     verify_lan_invite_token,
 )
+from agentsassemble.persona_cards import (
+    PersonaImportReport,
+    import_risum_persona,
+    persona_card_from_risu_module,
+    read_risum_module,
+)
 from agentsassemble.provider_health import provider_health_report
 
 
@@ -1051,6 +1057,8 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--cooldown", type=parse_nonnegative_float, default=5.0)
     live_run.add_argument("--max-chain-depth", type=parse_nonnegative_int, default=1)
     live_run.add_argument("--max-ticks", type=parse_nonnegative_int, default=0)
+    live_run.add_argument("--persona-id", default="", help="Optional imported persona card id for Play Mode prompts.")
+    live_run.add_argument("--persona-path", default="", help="Optional persona card JSON path for Play Mode prompts.")
     live_run.add_argument("--terminal-idle-timeout", type=parse_nonnegative_float, default=0.35)
     live_run.add_argument("--command", dest="resident_command", nargs=argparse.REMAINDER, default=[])
 
@@ -1058,6 +1066,26 @@ def build_parser() -> argparse.ArgumentParser:
     live_group.add_argument("--config", required=True)
     live_group.add_argument("--server", default=None)
     live_group.add_argument("--max-ticks", type=parse_nonnegative_int, default=None)
+
+    persona = subparsers.add_parser("persona", help="Inspect and import Play Mode persona cards.")
+    persona_subparsers = persona.add_subparsers(dest="persona_command", required=True)
+
+    persona_inspect_risum = persona_subparsers.add_parser(
+        "inspect-risum",
+        help="Inspect a RisuAI .risum module without executing module runtime features.",
+    )
+    persona_inspect_risum.add_argument("--file", required=True)
+    persona_inspect_risum.add_argument("--rpack-map", default="")
+    persona_inspect_risum.add_argument("--json", action="store_true", dest="as_json")
+
+    persona_import_risum = persona_subparsers.add_parser(
+        "import-risum",
+        help="Import a RisuAI .risum module as a Play Mode persona card.",
+    )
+    persona_import_risum.add_argument("--file", required=True)
+    persona_import_risum.add_argument("--output-root", default=".agentsassemble")
+    persona_import_risum.add_argument("--rpack-map", default="")
+    persona_import_risum.add_argument("--json", action="store_true", dest="as_json")
 
     live_processes = live_agent_subparsers.add_parser("processes", help="Manage supervised live-agent process groups.")
     live_process_subparsers = live_processes.add_subparsers(dest="live_agent_process_command", required=True)
@@ -1311,11 +1339,46 @@ def main(argv: list[str] | None = None) -> int:
         return run_providers_command(args)
     if args.command == "memory-capsule":
         return run_memory_capsule_command(args)
+    if args.command == "persona":
+        return run_persona_command(args)
     if args.command == "mcp":
         return run_mcp_command(args)
     if args.command == "sessions":
         return run_sessions_command(args)
 
+    return 1
+
+
+def run_persona_command(args: argparse.Namespace) -> int:
+    rpack_map_path = Path(args.rpack_map) if getattr(args, "rpack_map", "") else None
+    if args.persona_command == "inspect-risum":
+        payload = read_risum_module(Path(args.file), rpack_map_path=rpack_map_path)
+        card = persona_card_from_risu_module(payload.module, source_name=Path(args.file).name)
+        report = PersonaImportReport(
+            card=card,
+            card_path=Path(""),
+            asset_count=len(payload.asset_payloads),
+            source_path=str(args.file),
+        )
+        if args.as_json:
+            print(json.dumps(report.to_safe_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(
+                f"{card.display_name}: {len(card.lorebook)} lore entries, "
+                f"{len(payload.asset_payloads)} assets, ignored {card.ignored_features}"
+            )
+        return 0
+    if args.persona_command == "import-risum":
+        report = import_risum_persona(
+            Path(args.file),
+            output_root=Path(args.output_root),
+            rpack_map_path=rpack_map_path,
+        )
+        if args.as_json:
+            print(json.dumps(report.to_safe_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(f"Imported {report.card.display_name} persona card: {report.card_path}")
+        return 0
     return 1
 
 

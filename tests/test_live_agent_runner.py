@@ -657,6 +657,123 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertIn('"action"', prompt)
         self.assertIn('"message"', prompt)
 
+    def test_flow_decision_prompt_includes_configured_persona_card_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            card_path = Path(temp_dir) / "card.json"
+            card_path.write_text(
+                json.dumps(
+                    {
+                        "id": "persona-1",
+                        "display_name": "Tsukishiro Yanagi",
+                        "description": "Keeps the room calm.",
+                        "personality": "Precise, dry, and protective.",
+                        "scenario": "A late-night Play Mode debate room.",
+                        "system_prompt": "Stay in character.",
+                        "lorebook": [
+                            {
+                                "key": "Yanagi",
+                                "content": "Yanagi calls out vague claims with quiet pressure.",
+                                "always_active": True,
+                                "insert_order": 1,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            prompt = flow_decision_prompt(
+                config(engagement_mode="flow", meeting_id="m1", persona_path=str(card_path)),
+                {
+                    "meeting_id": "m1",
+                    "lobby_events": [
+                        {
+                            "id": "flow-start",
+                            "name": "Play Mode",
+                            "message": "자유토론 시작",
+                            "flow_id": "flow-1",
+                            "flow_event_type": "started",
+                            "flow_topic": "누가 더 수상한가",
+                        }
+                    ],
+                },
+                {"id": "flow-start", "name": "Play Mode", "message": "Yanagi, 의견 줘."},
+            )
+
+        self.assertIn("Play Mode persona card", prompt)
+        self.assertIn("Tsukishiro Yanagi", prompt)
+        self.assertIn("Precise, dry, and protective.", prompt)
+        self.assertIn("Yanagi calls out vague claims", prompt)
+
+    def test_flow_decision_prompt_loads_persona_id_from_default_persona_store(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            card_path = root / ".agentsassemble" / "personas" / "persona-1" / "card.json"
+            card_path.parent.mkdir(parents=True)
+            card_path.write_text(
+                json.dumps({"id": "persona-1", "display_name": "Persona One", "personality": "Uses short dry replies."}),
+                encoding="utf-8",
+            )
+
+            with patch("agentsassemble.live_agent_runner.Path.cwd", return_value=root):
+                prompt = flow_decision_prompt(
+                    config(engagement_mode="flow", meeting_id="m1", persona_id="persona-1"),
+                    {
+                        "meeting_id": "m1",
+                        "lobby_events": [
+                            {
+                                "id": "flow-start",
+                                "name": "Play Mode",
+                                "message": "자유토론 시작",
+                                "flow_id": "flow-1",
+                                "flow_event_type": "started",
+                            }
+                        ],
+                    },
+                    {"id": "flow-start", "name": "Play Mode", "message": "한마디 해줘."},
+                )
+
+        self.assertIn("Persona One", prompt)
+        self.assertIn("Uses short dry replies.", prompt)
+
+    def test_flow_persona_stateful_runner_does_not_answer_official_turn_request(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow", "meeting_id": "m1"},
+            "live_events": [
+                {
+                    "id": "turn-1",
+                    "kind": "live_agent_turn_request",
+                    "target_agent_id": "agent-a",
+                    "meeting_id": "m1",
+                    "content": "공식 기록으로 답해줘",
+                }
+            ],
+            "lobby_events": [],
+        }
+        client = FakeRoomClient([room])
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            raise AssertionError("stateful persona runner must not answer official turns in flow mode")
+
+        runner = LiveAgentRunner(
+            config(
+                engagement_mode="flow",
+                meeting_id="m1",
+                connection_kind="live_session",
+                provider_kind="codex_live_session",
+                persona_path="/tmp/persona/card.json",
+            ),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+        self.assertFalse([call for call in client.calls if call[0].endswith("/official-turn")])
+        self.assertEqual(runner.last_observed_live_event_id, "turn-1")
+
     def test_runner_records_error_status_when_command_fails(self):
         clock = FakeClock()
         room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "실패해봐"}]}
@@ -2687,6 +2804,32 @@ class LiveAgentRunnerTests(unittest.TestCase):
         modes = {config.agent_id: config.engagement_mode for config in loaded}
         self.assertEqual(modes["agent-default"], "mentioned")
         self.assertEqual(modes["agent-always"], "always")
+
+    def test_group_config_resolves_relative_persona_path_next_to_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            persona_path = root / "personas" / "yanagi" / "card.json"
+            persona_path.parent.mkdir(parents=True)
+            persona_path.write_text("{}", encoding="utf-8")
+            path = root / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-persona",
+                                "command": ["fake"],
+                                "persona_path": "personas/yanagi/card.json",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        self.assertEqual(loaded[0].persona_path, str(persona_path))
 
     def test_group_config_rejects_non_object_agent_entries(self):
         with tempfile.TemporaryDirectory() as temp_dir:

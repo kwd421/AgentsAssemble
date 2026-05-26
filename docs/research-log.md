@@ -416,6 +416,50 @@ This file records external papers, frameworks, and product references used while
 
 ## External Provider And Agent Integration Research
 
+## RisuAI Persona And Module Import Research
+
+- Date: 2026-05-26
+- Reason:
+  - AgentsAssemble Play Mode should let resident agents speak as imported
+    character/persona cards while preserving the room boundary: the provider
+    owns private context, AgentsAssemble owns the visible room, cursors, and
+    official record separation.
+- Sources checked:
+  - RisuAI `src/ts/process/modules.ts` for `.risum` export/import shape.
+  - RisuAI `src/ts/rpack/rpack_js.js` and `rpack_map.bin` usage for module
+    payload decoding.
+  - RisuAI `src/ts/process/group.ts` for group speaker ordering and talkness.
+  - RisuAI `src/ts/process/index.svelte.ts` for prompt assembly order:
+    system/main prompt, description, personality, scenario, lorebook,
+    example messages, chat history, and group-only "write as this character"
+    instruction.
+  - RisuAI `src/ts/process/lorebook.svelte.ts` for lore activation concepts:
+    always-active entries, keyword and secondary-key matching, positions,
+    scan depth, regex support, ordering, priority, and token budget.
+- Translation for AgentsAssemble:
+  - `.risum` is a binary container with magic byte `111`, version `0`, a
+    little-endian main JSON payload length, rpack-decoded JSON
+    `{type:"risuModule", module: ...}`, then zero or more asset records.
+  - Play Mode persona cards should preserve imported lore text and local asset
+    payloads, including sensitive or adult character material, because the
+    operator may intentionally use API/local models that can handle that card.
+  - Risu runtime features that can execute or rewrite behavior, including
+    regex scripts, output triggers, CJS, MCP declarations, and low-level access,
+    should be preserved as ignored metadata but not executed by AgentsAssemble.
+  - v1 lore activation should use a conservative subset: always-active entries
+    and literal keyword/secondary-key matching only. Entries that require regex
+    matching are preserved but do not activate unless they are also always
+    active.
+  - Persona context belongs only in Play Mode flow prompts. It must not be
+    inserted into official turn prompts, transcript generation, decision
+    artifacts, or shared memory. Stateful residents with an active persona
+    should not answer official turns from the same flow loop because their
+    provider-private session can carry character framing across calls.
+- Verified local module smoke:
+  - The user-provided Tsukishiro Yanagi `.risum` module decoded with 2 lorebook
+    entries, 37 asset payloads, 2 regex entries, and 2 trigger entries.
+  - CLI safe reports printed only counts/metadata, not raw lore bodies.
+
 ### Initial Provider Sweep
 
 - Date: 2026-05-09

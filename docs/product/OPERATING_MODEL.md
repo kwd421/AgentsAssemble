@@ -26,6 +26,8 @@ Play Mode:
 - Can be entertaining without producing implementation decisions.
 - Must still respect provider approval, loop limits, cost limits, and clear record
   boundaries.
+- Can attach imported persona cards to approved residents so Play Mode agents
+  keep character, world, speech-style, and lore context while speaking.
 
 Play Mode can feed Work Mode only through an explicit promote action. Lobby banter,
 games, and informal chatter must not silently become an official record.
@@ -46,6 +48,14 @@ transcript without a later explicit promote path. The room should not become a
 visible moderator that keeps inserting its own prompts into the conversation:
 silence checks are internal flow ticks, and the visible room advances only when
 an approved resident or human actually posts a message.
+RisuAI-style persona imports belong to this Play Mode boundary. The importer
+may preserve raw module lore, including adult or otherwise sensitive character
+material, but execution-shaped Risu module features such as regex scripts,
+triggers, CJS, MCP declarations, and low-level access stay preserved as ignored
+metadata and are not run by AgentsAssemble. Persona prompt context must not be
+promoted into official Work Mode records. Stateful residents with active Play
+Mode persona context should not answer official turns from the same flow loop,
+because provider-private context can carry character framing across calls.
 
 ## Non-Negotiable Rules
 

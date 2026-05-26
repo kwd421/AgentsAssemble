@@ -57,6 +57,73 @@ room chatter. `/api/play/mafia/vote` records day or night votes, and
 remain Play Mode game records and are not official transcript, decision, or
 shared-memory evidence.
 
+## Play Mode Persona Cards
+
+RisuAI-style persona cards are a Play Mode character layer, not a Work Mode role
+or provider permission layer. Use them when an approved resident should speak as
+a character with imported lore, world context, and speech style.
+
+Inspect a `.risum` module without printing lore bodies:
+
+```bash
+python3 -m agentsassemble.cli persona inspect-risum \
+  --file /path/to/persona.risum \
+  --rpack-map /path/to/RisuAI/src/ts/rpack/rpack_map.bin \
+  --json
+```
+
+Import the module into the local persona store:
+
+```bash
+python3 -m agentsassemble.cli persona import-risum \
+  --file /path/to/persona.risum \
+  --rpack-map /path/to/RisuAI/src/ts/rpack/rpack_map.bin \
+  --output-root .agentsassemble \
+  --json
+```
+
+The importer writes `.agentsassemble/personas/<persona-id>/card.json`, copied
+source evidence, and decoded local asset payloads. It preserves raw lore text in
+the stored card, including NSFW or otherwise sensitive text; the safe CLI report
+prints counts and metadata instead of lore bodies or descriptions. Risu runtime
+features that could execute or rewrite text, such as regex scripts, triggers,
+CJS, MCP declarations, and low-level access, are preserved as ignored metadata
+and are not executed.
+
+Attach a persona to a resident with either the explicit card path:
+
+```json
+{
+  "agent_id": "yanagi",
+  "display_name": "Tsukishiro Yanagi",
+  "engagement_mode": "flow",
+  "persona_path": ".agentsassemble/personas/yanagi/card.json",
+  "command": ["python3", "scripts/fake_agent.py"]
+}
+```
+
+or the default local persona id lookup:
+
+```json
+{
+  "agent_id": "yanagi",
+  "display_name": "Tsukishiro Yanagi",
+  "engagement_mode": "flow",
+  "persona_id": "yanagi",
+  "command": ["python3", "scripts/fake_agent.py"]
+}
+```
+
+Persona context is inserted only into Play Mode `flow` decision prompts. It is
+not inserted into official turn prompts, transcript generation, decisions, or
+shared memory. For stateful prompt transports such as `live_session`,
+`terminal_session`, and `remote_bridge`, a flow resident with a persona attached
+observes but does not answer official turn requests from the same flow loop, so
+character framing cannot silently bleed into Work Mode evidence. If you want a
+character-mode on/off switch in the richer frontend later, wire it to these
+resident persona fields and keep the stored raw card separate from the safe
+roster summary.
+
 ## Room-first / Agent-owned Context
 
 The room is a room, not a hidden moderator. A resident agent should treat
