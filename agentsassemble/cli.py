@@ -979,6 +979,17 @@ def build_parser() -> argparse.ArgumentParser:
     live_official_round_smoke.add_argument("--timeout", type=parse_nonnegative_float, default=12.0, help="Seconds to wait per fake official turn.")
     live_official_round_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable smoke result.")
 
+    live_persona_smoke = live_agent_subparsers.add_parser(
+        "persona-smoke",
+        help="Run a local fake-provider Character Mode smoke without starting real provider CLIs.",
+    )
+    live_persona_smoke.add_argument("--card", required=True, help="Persona card JSON path to smoke.")
+    live_persona_smoke.add_argument("--output-root", default=".agentsassemble", help="Output root for the smoke meeting.")
+    live_persona_smoke.add_argument("--meeting-id", default="", help="Optional smoke meeting id.")
+    live_persona_smoke.add_argument("--character-mode", choices=["on", "work_speech_only"], default="on")
+    live_persona_smoke.add_argument("--context", default="", help="Room context text used for persona lore activation.")
+    live_persona_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable smoke result.")
+
     live_doctor = live_agent_subparsers.add_parser(
         "doctor",
         parents=[live_server],
@@ -1694,6 +1705,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_real_session_smoke(args)
         if args.live_agent_command == "official-round-smoke":
             return _run_live_agent_official_round_smoke(args)
+        if args.live_agent_command == "persona-smoke":
+            return _run_live_agent_persona_smoke(args)
         if args.live_agent_command == "doctor":
             return _run_live_agent_doctor(args)
         if args.live_agent_command == "probe":
@@ -3555,6 +3568,28 @@ def _run_live_agent_official_round_smoke(args: argparse.Namespace) -> int:
             f"({result.get('answered_count', 0)} answered, "
             f"{result.get('timeout_count', 0)} timed out, "
             f"{result.get('skipped_count', 0)} skipped)"
+        )
+    return 0 if result.get("status") == "ok" else 1
+
+
+def _run_live_agent_persona_smoke(args: argparse.Namespace) -> int:
+    from agentsassemble.live_agent_persona_smoke import run_live_agent_persona_smoke
+
+    result = run_live_agent_persona_smoke(
+        output_root=Path(args.output_root),
+        card_path=Path(args.card),
+        meeting_id=str(args.meeting_id or ""),
+        character_mode=str(args.character_mode or "on"),
+        context=str(args.context or ""),
+    )
+    if args.as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        contract = result.get("persona_artifact_contract") if isinstance(result.get("persona_artifact_contract"), dict) else {}
+        print(
+            f"persona smoke {result.get('status') or 'unknown'}: "
+            f"{result.get('meeting_id') or 'persona-smoke'} "
+            f"contract {contract.get('status') or 'unknown'}"
         )
     return 0 if result.get("status") == "ok" else 1
 

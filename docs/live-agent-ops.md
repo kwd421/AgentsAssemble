@@ -131,6 +131,20 @@ unreplaced card variables, roleplay narration markers, ignored execution-feature
 names, or raw card text appearing in official artifacts. It does not print raw
 lore, adult card bodies, matched snippets, config paths, or provider output.
 
+Before involving a real provider, run the local fake-provider smoke:
+
+```bash
+python3 -m agentsassemble.cli live-agent persona-smoke \
+  --card .agentsassemble/personas/yanagi/card.json \
+  --output-root .agentsassemble \
+  --meeting-id persona-smoke-yanagi \
+  --json
+```
+
+The smoke copies the card into the local persona store, creates a fake resident
+meeting, finalizes one official fake reply, and verifies the persona artifact
+contract without starting Claude, Codex, Grok, Kiro, or any other real CLI.
+
 ## Room-first / Agent-owned Context
 
 The room is a room, not a hidden moderator. A resident agent should treat
