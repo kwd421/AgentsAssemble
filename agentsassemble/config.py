@@ -178,6 +178,9 @@ def agent_bindings_from_config(data: dict[str, Any]) -> list[AgentBinding]:
             else "moderator_called"
         )
         persona_card_id = clean_persona_card_id(binding_data.get("persona_card_id") or binding_data.get("persona_id"))
+        persona_card_path = binding_data.get("persona_card_path") or binding_data.get("persona_path") or ""
+        if not isinstance(persona_card_path, str):
+            persona_card_path = ""
         bindings.append(
             AgentBinding(
                 agent_id=binding_data["agent_id"],
@@ -191,7 +194,11 @@ def agent_bindings_from_config(data: dict[str, Any]) -> list[AgentBinding]:
                 engagement_mode=engagement_mode,
                 session_id=binding_data.get("session_id") if isinstance(binding_data.get("session_id"), str) else None,
                 persona_card_id=persona_card_id,
-                character_mode=normalize_character_mode(binding_data.get("character_mode"), has_card=bool(persona_card_id)),
+                persona_card_path=persona_card_path,
+                character_mode=normalize_character_mode(
+                    binding_data.get("character_mode"),
+                    has_card=bool(persona_card_id or persona_card_path),
+                ),
                 first_message_index=clean_first_message_index(binding_data.get("first_message_index")),
                 persona_variables=clean_persona_variables(binding_data.get("persona_variables")),
             )

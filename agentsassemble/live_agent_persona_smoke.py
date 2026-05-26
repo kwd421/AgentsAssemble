@@ -4,6 +4,7 @@ import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from agentsassemble.character_mode import character_mode_snapshot, clean_persona_card_id
 from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
@@ -23,10 +24,14 @@ def run_live_agent_persona_smoke(
     loaded_card = load_persona_card(card_path)
     card = replace(loaded_card, id=_safe_card_id(loaded_card.id))
     clean_meeting_id = _smoke_meeting_id(meeting_id)
-    persona_card_path = output_root / "personas" / card.id / "card.json"
-    save_persona_card(persona_card_path, card)
     meeting_dir = output_root / "meetings" / clean_meeting_id
-    meeting_dir.mkdir(parents=True, exist_ok=True)
+    if meeting_dir.exists():
+        raise FileExistsError(f"persona smoke meeting already exists: {clean_meeting_id}")
+    persona_card_path = output_root / "persona-smoke" / clean_meeting_id / "personas" / card.id / "card.json"
+    if persona_card_path.exists():
+        raise FileExistsError(f"persona smoke card already exists: {clean_meeting_id}/{card.id}")
+    save_persona_card(persona_card_path, card)
+    meeting_dir.mkdir(parents=True, exist_ok=False)
 
     binding = AgentBinding(
         agent_id="persona-smoke-agent",
@@ -36,6 +41,7 @@ def run_live_agent_persona_smoke(
         model_id=None,
         permission_profile_id="meeting_readonly",
         persona_card_id=card.id,
+        persona_card_path=str(persona_card_path),
         character_mode=character_mode,
     )
     render = render_persona_prompt(
@@ -171,7 +177,7 @@ def _smoke_meeting_id(value: str) -> str:
     cleaned = "".join(char if char.isalnum() or char in "_.-" else "-" for char in str(value or "").strip()).strip(".-")
     if cleaned:
         return cleaned[:128]
-    return "persona-smoke-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return "persona-smoke-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ") + "-" + uuid4().hex[:8]
 
 
 def _safe_card_id(value: str) -> str:

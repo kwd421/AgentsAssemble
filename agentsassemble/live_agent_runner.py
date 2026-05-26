@@ -26,7 +26,7 @@ from agentsassemble.live_agent_flow import (
     flow_turn_count,
     parse_flow_decision,
 )
-from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
+from agentsassemble.character_mode import clean_first_message_index, clean_persona_card_id, normalize_character_mode
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
 from agentsassemble.persona_cards import load_persona_card, persona_prompt_lines
 from agentsassemble.remote_bridge_config import (
@@ -68,6 +68,7 @@ class ResidentAgentConfig:
     persona_path: str = ""
     character_mode: str = "on"
     character_mode_configured: bool = False
+    first_message_index: int = 0
     terminal_idle_timeout: float = 0.35
 
 
@@ -1062,18 +1063,20 @@ def _flow_persona_prompt_lines(
             "Character speech style (work_speech_only; do not include raw lore/world/body context):",
             f"- Persona id: {_prompt_text(card.id, limit=120)}",
             f"- Character name: {_prompt_text(card.display_name, limit=160)}",
+            "- Keep the character's visible collaboration style when speaking in the room.",
+            "- Do not treat private persona lore as meeting evidence or copy card body text into Work Mode artifacts.",
         ]
-        personality = _prompt_text(card.personality, limit=900)
-        if personality:
-            lines.append(f"- Personality: {personality}")
-        lines.append("Keep this persona's speech style for visible room messages, but do not treat private lore as room evidence.")
         return lines
     context_parts = [
         *recent_events,
         str(source_event.get("name") or ""),
         str(source_event.get("message") or ""),
     ]
-    return persona_prompt_lines(card, "\n".join(context_parts))
+    return persona_prompt_lines(
+        card,
+        "\n".join(context_parts),
+        first_message_index=config.first_message_index,
+    )
 
 
 def _flow_persona_card_path(config: ResidentAgentConfig) -> Path | None:
@@ -1284,6 +1287,7 @@ def config_from_args(args: object) -> ResidentAgentConfig:
             ),
         ),
         character_mode_configured=bool(str(getattr(args, "character_mode", "") or "")),
+        first_message_index=clean_first_message_index(getattr(args, "first_message_index", 0)),
         terminal_idle_timeout=float(getattr(args, "terminal_idle_timeout", 0.35)),
     )
 
@@ -1343,6 +1347,7 @@ def _config_from_mapping(
             has_card=bool(data.get("persona_id") or data.get("persona_card_id") or data.get("persona_path")),
         ),
         character_mode_configured=bool(str(data.get("character_mode") or "")),
+        first_message_index=clean_first_message_index(data.get("first_message_index")),
         terminal_idle_timeout=live_agent_nonnegative_float(
             data.get("terminal_idle_timeout"),
             0.35,

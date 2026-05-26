@@ -141,8 +141,9 @@ python3 -m agentsassemble.cli live-agent persona-smoke \
   --json
 ```
 
-The smoke copies the card into the local persona store, creates a fake resident
-meeting, finalizes one official fake reply, and verifies the persona artifact
+The smoke copies the card into an isolated `persona-smoke/<meeting-id>/`
+diagnostic area, creates a fake resident meeting only when the meeting id is
+unused, finalizes one official fake reply, and verifies the persona artifact
 contract without starting Claude, Codex, Grok, Kiro, or any other real CLI.
 
 ## Room-first / Agent-owned Context

@@ -745,7 +745,7 @@ class LiveAgentRunnerTests(unittest.TestCase):
                         "id": "persona-1",
                         "display_name": "Tsukishiro Yanagi",
                         "description": "RAW_DESCRIPTION_MARKER",
-                        "personality": "Precise, dry, and protective.",
+                        "personality": "RAW_PERSONALITY_MARKER",
                         "scenario": "RAW_SCENARIO_MARKER",
                         "lorebook": [
                             {
@@ -774,10 +774,43 @@ class LiveAgentRunnerTests(unittest.TestCase):
             )
 
         self.assertIn("Character speech style", prompt)
-        self.assertIn("Precise, dry, and protective.", prompt)
+        self.assertIn("Tsukishiro Yanagi", prompt)
+        self.assertNotIn("RAW_PERSONALITY_MARKER", prompt)
         self.assertNotIn("RAW_DESCRIPTION_MARKER", prompt)
         self.assertNotIn("RAW_SCENARIO_MARKER", prompt)
         self.assertNotIn("RAW_LORE_MARKER", prompt)
+
+    def test_flow_decision_prompt_uses_configured_first_message_index(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            card_path = Path(temp_dir) / "card.json"
+            card_path.write_text(
+                json.dumps(
+                    {
+                        "id": "persona-1",
+                        "display_name": "Tsukishiro Yanagi",
+                        "first_message": "Default greeting.",
+                        "alternate_greetings": ["Alt zero.", "Alt one."],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            prompt = flow_decision_prompt(
+                config(
+                    engagement_mode="flow",
+                    meeting_id="m1",
+                    persona_path=str(card_path),
+                    first_message_index=2,
+                ),
+                {
+                    "meeting_id": "m1",
+                    "lobby_events": [{"id": "flow-start", "name": "Play Mode", "message": "Yanagi"}],
+                },
+                {"id": "flow-start", "name": "Play Mode", "message": "Yanagi"},
+            )
+
+        self.assertIn("Alt one.", prompt)
+        self.assertNotIn("Default greeting.", prompt)
 
     def test_flow_persona_stateful_runner_does_not_answer_official_turn_request(self):
         clock = FakeClock()
@@ -2921,6 +2954,7 @@ class LiveAgentRunnerTests(unittest.TestCase):
                                 "command": ["fake"],
                                 "persona_card_id": "yanagi",
                                 "character_mode": "work_speech_only",
+                                "first_message_index": 2,
                             },
                             {
                                 "agent_id": "agent-off",
@@ -2938,6 +2972,7 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
         self.assertEqual(loaded[0].persona_id, "yanagi")
         self.assertEqual(loaded[0].character_mode, "work_speech_only")
+        self.assertEqual(loaded[0].first_message_index, 2)
         self.assertEqual(loaded[1].character_mode, "off")
 
     def test_flow_decision_prompt_respects_character_mode_off(self):

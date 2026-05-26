@@ -11343,6 +11343,95 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["event"]["id"], "live-next")
         self.assertEqual(payload["reply_command"][4], "official-reply")
 
+    def test_live_agent_wait_next_skips_official_turn_for_active_persona_agent(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "meeting_id": "meeting-1",
+                "last_observed_live_event_id": "live-old",
+                "persona_card_id": "yanagi",
+                "character_mode": "on",
+                "connection_kind": "self_service",
+            },
+            "lobby_events": [],
+            "live_events": [
+                {"id": "live-old", "kind": "message", "content": "old"},
+                {
+                    "id": "live-next",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "meeting-1",
+                    "target_agent_id": "claude-terminal",
+                    "content": "official question",
+                },
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-next",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "timeout")
+        self.assertEqual(payload["last_observed_live_event_id"], "live-next")
+
+    def test_live_agent_wait_official_turn_skips_active_persona_agent(self):
+        stdout = StringIO()
+        room_payload = {
+            "agent": {
+                "agent_id": "claude-terminal",
+                "meeting_id": "meeting-1",
+                "last_observed_live_event_id": "live-old",
+                "persona_card_id": "yanagi",
+                "character_mode": "on",
+                "connection_kind": "self_service",
+            },
+            "live_events": [
+                {"id": "live-old", "kind": "message", "content": "old"},
+                {
+                    "id": "live-next",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "meeting-1",
+                    "target_agent_id": "claude-terminal",
+                    "content": "official question",
+                },
+            ],
+        }
+
+        with patch("agentsassemble.cli._request_json", return_value=room_payload):
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "wait-official-turn",
+                        "--server",
+                        "http://room.local",
+                        "--agent-id",
+                        "claude-terminal",
+                        "--timeout",
+                        "0",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "timeout")
+        self.assertEqual(payload["last_observed_live_event_id"], "live-next")
+
     def test_live_agent_wait_next_returns_lobby_event_when_no_official_turn_is_pending(self):
         stdout = StringIO()
         room_payload = {
@@ -12868,6 +12957,10 @@ class CliTimeoutTests(unittest.TestCase):
                             "self_service",
                             "--meeting-id",
                             "resident-m1",
+                            "--persona-card-id",
+                            "yanagi",
+                            "--character-mode",
+                            "on",
                             "--max-ticks",
                             "1",
                             "--command",
@@ -12879,6 +12972,9 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(len(popen_calls), 1)
+        register_payload = calls[0]["payload"]
+        self.assertEqual(register_payload["persona_card_id"], "yanagi")
+        self.assertEqual(register_payload["character_mode"], "on")
         self.assertEqual(popen_calls[0]["kwargs"]["stdin"], subprocess.DEVNULL)
         self.assertEqual(popen_calls[0]["kwargs"]["env"]["AGENTSASSEMBLE_SERVER"], "http://room.local")
         self.assertEqual(popen_calls[0]["kwargs"]["env"]["AGENTSASSEMBLE_AGENT_ID"], "selfer")

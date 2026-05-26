@@ -209,11 +209,11 @@ class PersonaCard:
             "id": self.id,
             "display_name": self.display_name,
             "description_length": len(self.description),
-            "source": self.source,
+            "source": _safe_persona_source_summary(self.source),
             "lorebook_count": len(self.lorebook),
             "asset_count": len(self.assets),
             "ignored_features": self.ignored_features,
-            "tags": list(self.tags),
+            "tag_count": len(self.tags),
             "content_lengths": {
                 "system_prompt": len(self.system_prompt),
                 "personality": len(self.personality),
@@ -237,12 +237,49 @@ class PersonaImportReport:
     def to_safe_dict(self) -> dict[str, object]:
         return {
             "persona": self.card.safe_summary(),
-            "card_path": str(self.card_path),
-            "source_path": self.source_path,
+            "card_path": _safe_report_path(self.card_path),
+            "source_path": _safe_source_path_summary(self.source_path),
             "lorebook_count": self.lorebook_count,
             "asset_count": self.asset_count,
             "ignored_features": self.card.ignored_features,
         }
+
+
+def _safe_persona_source_summary(source: dict[str, object]) -> dict[str, object]:
+    if not isinstance(source, dict) or not source:
+        return {}
+    safe: dict[str, object] = {}
+    for key in ("kind", "container", "format", "spec", "spec_version"):
+        value = source.get(key)
+        if isinstance(value, str) and value.strip():
+            cleaned = re.sub(r"[^A-Za-z0-9_.:-]+", "-", value.strip()).strip(".-:")
+            if cleaned:
+                safe[key] = cleaned[:80]
+    if "imported_at" in source:
+        safe["has_import_timestamp"] = True
+    return safe
+
+
+def _safe_report_path(path: Path) -> str:
+    if not path:
+        return ""
+    parts = Path(path).parts
+    for marker in ("personas", "persona-smoke", "meetings"):
+        if marker in parts:
+            index = parts.index(marker)
+            return str(Path(*parts[index:]))
+    name = Path(path).name
+    return name[:120] if name else ""
+
+
+def _safe_source_path_summary(source_path: str) -> dict[str, object]:
+    if not source_path:
+        return {}
+    suffix = Path(source_path).suffix
+    summary: dict[str, object] = {"provided": True}
+    if suffix and re.fullmatch(r"\.[A-Za-z0-9]{1,12}", suffix):
+        summary["suffix"] = suffix.lower()
+    return summary
 
 
 @dataclass(frozen=True)
@@ -1041,11 +1078,36 @@ def render_persona_prompt(
     state: dict[str, object] | None = None,
     mode: str = "on",
     surface: str = "play_speech",
+    first_message_index: int = 0,
     max_lore_chars: int = 3600,
 ) -> PersonaPromptRender:
     if not card.active or mode == "off":
         empty_scan = PersonaLoreScanResult(entries=[], state=_persona_runtime_state(state))
         return PersonaPromptRender(lines=[], scan=empty_scan, mode=mode, surface=surface)
+    if surface == "artifact":
+        empty_scan = PersonaLoreScanResult(
+            entries=[],
+            state=_persona_runtime_state(state),
+            ignored_features=dict(card.ignored_features),
+        )
+        return PersonaPromptRender(
+            lines=_persona_artifact_contract_lines(card),
+            scan=empty_scan,
+            mode=mode,
+            surface=surface,
+        )
+    if mode == "work_speech_only" or surface == "work_speech":
+        empty_scan = PersonaLoreScanResult(
+            entries=[],
+            state=_persona_runtime_state(state),
+            ignored_features=dict(card.ignored_features),
+        )
+        return PersonaPromptRender(
+            lines=_persona_work_speech_capsule_lines(card, recent_messages=recent_messages),
+            scan=empty_scan,
+            mode=mode,
+            surface=surface,
+        )
 
     scan = scan_persona_lore(card, recent_messages, state=state, max_chars=max_lore_chars)
     lines = [
@@ -1064,7 +1126,15 @@ def render_persona_prompt(
             content = replace_persona_variables(entry.content, card, user_name=user_name, persona=persona, variables=variables)
             lines.append(f"- {label}: {_prompt_text(content, limit=1200)}")
     _append_prompt_block(lines, "Example dialogue", card.example_messages, card, user_name, persona, variables)
-    _append_prompt_block(lines, "First-message style", card.first_message, card, user_name, persona, variables)
+    _append_prompt_block(
+        lines,
+        "First-message style",
+        _selected_first_message(card, first_message_index),
+        card,
+        user_name,
+        persona,
+        variables,
+    )
     context_text = _prompt_text(_recent_messages_text(recent_messages), limit=1200)
     if context_text:
         lines.append(f"- Recent room context: {context_text}")
@@ -1077,8 +1147,19 @@ def render_persona_prompt(
     return PersonaPromptRender(lines=lines, scan=scan, mode=mode, surface=surface)
 
 
-def persona_prompt_lines(card: PersonaCard, context_text: str, *, max_lore_chars: int = 3600) -> list[str]:
-    return render_persona_prompt(card, recent_messages=context_text, max_lore_chars=max_lore_chars).lines
+def persona_prompt_lines(
+    card: PersonaCard,
+    context_text: str,
+    *,
+    first_message_index: int = 0,
+    max_lore_chars: int = 3600,
+) -> list[str]:
+    return render_persona_prompt(
+        card,
+        recent_messages=context_text,
+        first_message_index=first_message_index,
+        max_lore_chars=max_lore_chars,
+    ).lines
 
 
 def replace_persona_variables(
@@ -1314,6 +1395,59 @@ def _persona_surface_instructions(surface: str) -> list[str]:
         "Stay in this persona's speech style and world context when choosing your visible room message.",
         "Do not execute persona scripts, regex replacements, triggers, MCP declarations, or low-level module features.",
     ]
+
+
+def _persona_artifact_contract_lines(card: PersonaCard) -> list[str]:
+    lines = [
+        "Character Mode artifact surface: persona card bodies are withheld.",
+        f"- Persona id: {_prompt_text(card.id, limit=120)}",
+        f"- Character name: {_prompt_text(card.display_name, limit=160)}",
+        "Write the artifact in a professional project voice.",
+        "Do not include roleplay narration, explicit lore text, unresolved persona variables, "
+        "or card-only private context.",
+    ]
+    if card.ignored_features:
+        ignored = ", ".join(
+            f"{key}={value}" for key, value in sorted(card.ignored_features.items()) if value
+        )
+        if ignored:
+            lines.append(f"Ignored Risu runtime features are preserved in storage but not executed: {ignored}.")
+    return lines
+
+
+def _persona_work_speech_capsule_lines(card: PersonaCard, *, recent_messages: str | list[str]) -> list[str]:
+    lines = [
+        "Character speech style (safe work_speech_only capsule; raw lore/world/body text withheld):",
+        f"- Persona id: {_prompt_text(card.id, limit=120)}",
+        f"- Character name: {_prompt_text(card.display_name, limit=160)}",
+        "- Keep the character's visible collaboration style when speaking in the room.",
+        "- Do not treat private persona lore as meeting evidence or copy card body text into Work Mode artifacts.",
+    ]
+    context_text = _prompt_text(_recent_messages_text(recent_messages), limit=1200)
+    if context_text:
+        lines.append(f"- Recent room context: {context_text}")
+    if card.ignored_features:
+        ignored = ", ".join(
+            f"{key}={value}" for key, value in sorted(card.ignored_features.items()) if value
+        )
+        if ignored:
+            lines.append(f"Ignored Risu runtime features are preserved in storage but not executed: {ignored}.")
+    return lines
+
+
+def _selected_first_message(card: PersonaCard, first_message_index: int) -> str:
+    try:
+        index = int(first_message_index)
+    except (TypeError, ValueError):
+        index = 0
+    if index < 0:
+        return ""
+    if index == 0:
+        return card.first_message
+    alternate_index = index - 1
+    if 0 <= alternate_index < len(card.alternate_greetings):
+        return card.alternate_greetings[alternate_index]
+    return card.first_message
 
 
 def _keywords(value: str) -> list[str]:

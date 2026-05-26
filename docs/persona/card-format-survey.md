@@ -243,7 +243,7 @@ Safe summaries may include:
 - display name.
 - source kind/spec.
 - counts of lore/assets/ignored features.
-- tags.
+- tag counts, not raw tag labels.
 - content lengths.
 - hashes.
 - current character-mode state.
@@ -253,6 +253,8 @@ Safe summaries must not include:
 - raw lore body.
 - raw description/body/system prompt.
 - raw NSFW/adult content.
+- raw source paths, URLs, or card filenames.
+- raw tags that could reveal adult/private card metadata.
 - script bodies.
 - trigger/CJS code.
 - local secret paths beyond allowlisted source evidence.

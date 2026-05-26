@@ -27,7 +27,7 @@ from agentsassemble.codex_sessions import (
     read_agent_config,
     write_agent_config,
 )
-from agentsassemble.character_mode import clean_persona_card_id
+from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agents import _looks_sensitive_presence_error
@@ -1080,6 +1080,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--persona-card-id", default="", help="Alias for --persona-id.")
     live_run.add_argument("--persona-path", default="", help="Optional persona card JSON path for Play Mode prompts.")
     live_run.add_argument("--character-mode", choices=["off", "on", "work_speech_only"], default="")
+    live_run.add_argument("--first-message-index", type=int, default=0)
     live_run.add_argument("--terminal-idle-timeout", type=parse_nonnegative_float, default=0.35)
     live_run.add_argument("--command", dest="resident_command", nargs=argparse.REMAINDER, default=[])
 
@@ -1143,6 +1144,7 @@ def build_parser() -> argparse.ArgumentParser:
     persona_render.add_argument("--user", default="user")
     persona_render.add_argument("--persona", default="")
     persona_render.add_argument("--slot", action="append", default=[])
+    persona_render.add_argument("--first-message-index", type=int, default=0)
     persona_render.add_argument("--json", action="store_true", dest="as_json")
 
     live_processes = live_agent_subparsers.add_parser("processes", help="Manage supervised live-agent process groups.")
@@ -1491,6 +1493,7 @@ def run_persona_command(args: argparse.Namespace) -> int:
             variables=_parse_persona_slot_values(args.slot),
             mode=args.mode,
             surface=args.surface,
+            first_message_index=int(args.first_message_index),
         )
         payload = {
             "persona": card.safe_summary(),
@@ -5880,6 +5883,8 @@ def _run_live_agent_wait_turn_request(args: argparse.Namespace) -> int:
 
 
 def _wait_turn_request_candidate(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object] | None:
+    if _wait_agent_persona_blocks_official_turn(room):
+        return None
     agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
     events = room.get("live_events") if isinstance(room.get("live_events"), list) else []
     typed_events = [event for event in events if isinstance(event, dict)]
@@ -5888,6 +5893,19 @@ def _wait_turn_request_candidate(args: argparse.Namespace, room: dict[str, objec
         requested_cursor = getattr(args, "after_event_id", "")
     cursor = str(requested_cursor or agent.get("last_observed_live_event_id") or "").strip()
     return official_turn_request_candidate(typed_events, args.agent_id, cursor)
+
+
+def _wait_agent_persona_blocks_official_turn(room: dict[str, object]) -> bool:
+    agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
+    if not agent:
+        return False
+    mode = str(agent.get("character_mode") or "").strip()
+    if mode == "off":
+        return False
+    has_persona = bool(str(agent.get("persona_card_id") or agent.get("persona_id") or "").strip())
+    if not has_persona:
+        return False
+    return str(agent.get("connection_kind") or "").strip() in {"self_service", "live_session", "terminal_session", "remote_bridge"}
 
 
 def _wait_turn_request_payload(
@@ -6326,6 +6344,16 @@ class _SelfServiceResidentSupervisor:
         return 0
 
     def _register(self) -> None:
+        persona_card_id = clean_persona_card_id(self.config.persona_id)
+        if not persona_card_id and self.config.persona_path:
+            try:
+                persona_card_id = clean_persona_card_id(load_persona_card(Path(self.config.persona_path)).id)
+            except (OSError, ValueError, json.JSONDecodeError):
+                persona_card_id = ""
+        character_mode = normalize_character_mode(
+            self.config.character_mode,
+            has_card=bool(persona_card_id or self.config.persona_path),
+        )
         self.request_json(
             _server_url(self.config.server, "/api/live-agents"),
             method="POST",
@@ -6338,6 +6366,8 @@ class _SelfServiceResidentSupervisor:
                 "endpoint": self.config.endpoint,
                 "meeting_id": self.config.meeting_id,
                 "engagement_mode": self.config.engagement_mode,
+                "persona_card_id": persona_card_id,
+                "character_mode": character_mode,
                 "capabilities": ["room_chat", "mentions", "self_service"],
             },
         )

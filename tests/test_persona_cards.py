@@ -19,6 +19,7 @@ from agentsassemble.persona_cards import (
     persona_card_from_ccv3,
     persona_card_from_risu_module,
     persona_prompt_lines,
+    PersonaImportReport,
     render_persona_prompt,
     read_risum_module,
     replace_persona_variables,
@@ -648,6 +649,91 @@ class RisuModulePersonaTests(unittest.TestCase):
         self.assertLess(text.index("First hello."), text.index("Post history."))
         self.assertNotIn("dangerous trigger body", text)
 
+    def test_render_persona_prompt_omits_card_bodies_on_artifact_surface(self):
+        card = PersonaCardForTests.with_lore(
+            [
+                {
+                    "key": "Yanagi",
+                    "content": "RAW_LORE_MARKER",
+                    "always_active": True,
+                    "insert_order": 1,
+                }
+            ],
+            system_prompt="RAW_SYSTEM_MARKER",
+            description="RAW_DESCRIPTION_MARKER",
+            personality="RAW_PERSONALITY_MARKER",
+            scenario="RAW_SCENARIO_MARKER",
+            example_messages="RAW_EXAMPLE_MARKER",
+            first_message="RAW_GREETING_MARKER",
+            post_history_instructions="RAW_POST_HISTORY_MARKER",
+        )
+
+        rendered = render_persona_prompt(
+            card,
+            recent_messages="Yanagi",
+            mode="on",
+            surface="artifact",
+        )
+        text = "\n".join(rendered.lines)
+
+        self.assertIn("artifact surface", text)
+        self.assertEqual(rendered.scan.entries, [])
+        for marker in (
+            "RAW_SYSTEM_MARKER",
+            "RAW_DESCRIPTION_MARKER",
+            "RAW_PERSONALITY_MARKER",
+            "RAW_SCENARIO_MARKER",
+            "RAW_LORE_MARKER",
+            "RAW_EXAMPLE_MARKER",
+            "RAW_GREETING_MARKER",
+            "RAW_POST_HISTORY_MARKER",
+        ):
+            self.assertNotIn(marker, text)
+
+    def test_render_persona_prompt_work_speech_only_uses_safe_capsule(self):
+        card = PersonaCardForTests.with_lore(
+            [
+                {
+                    "key": "Yanagi",
+                    "content": "RAW_LORE_MARKER",
+                    "always_active": True,
+                }
+            ],
+            personality="RAW_PERSONALITY_MARKER",
+            scenario="RAW_SCENARIO_MARKER",
+        )
+
+        rendered = render_persona_prompt(
+            card,
+            recent_messages="Yanagi",
+            mode="work_speech_only",
+            surface="work_speech",
+        )
+        text = "\n".join(rendered.lines)
+
+        self.assertIn("Character speech style", text)
+        self.assertIn("Tsukishiro Yanagi", text)
+        self.assertEqual(rendered.scan.entries, [])
+        self.assertNotIn("RAW_PERSONALITY_MARKER", text)
+        self.assertNotIn("RAW_SCENARIO_MARKER", text)
+        self.assertNotIn("RAW_LORE_MARKER", text)
+
+    def test_render_persona_prompt_uses_selected_first_message_index(self):
+        card = PersonaCardForTests.basic(
+            first_message="Default greeting.",
+            alternate_greetings=["Alt zero.", "Alt one."],
+        )
+
+        rendered = render_persona_prompt(
+            card,
+            first_message_index=2,
+            surface="play_speech",
+        )
+        text = "\n".join(rendered.lines)
+
+        self.assertIn("Alt one.", text)
+        self.assertNotIn("Default greeting.", text)
+
     def test_risu_module_import_preserves_lore_runtime_settings(self):
         module = _sample_risu_module()
         module["scanDepth"] = 4
@@ -950,7 +1036,7 @@ class PersonaCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["persona"]["id"], "escaped")
-            self.assertTrue((temp / "out" / "personas" / "escaped" / "card.json").exists())
+            self.assertTrue((temp / "out" / "persona-smoke" / "persona-smoke" / "personas" / "escaped" / "card.json").exists())
             self.assertFalse((temp / "card.json").exists())
             meeting = json.loads((temp / "out" / "meetings" / "persona-smoke" / "meeting.json").read_text(encoding="utf-8"))
             self.assertEqual(meeting["character_mode"]["agents"][0]["card_id"], "escaped")
@@ -984,6 +1070,57 @@ class PersonaCliTests(unittest.TestCase):
             self.assertEqual(payload["status"], "ok")
             meeting = json.loads((temp / "out" / "meetings" / "persona-smoke" / "meeting.json").read_text(encoding="utf-8"))
             self.assertEqual(meeting["character_mode"]["agents"][0]["card_id"], "persona-smoke-card")
+
+    def test_live_agent_persona_smoke_refuses_to_overwrite_existing_meeting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            out = temp / "out"
+            existing = out / "meetings" / "persona-smoke"
+            existing.mkdir(parents=True)
+            (existing / "meeting.json").write_text('{"meeting_id":"keep-me"}', encoding="utf-8")
+            card_path = temp / "yanagi.json"
+            card = PersonaCardForTests.basic(id="yanagi")
+            card_path.write_text(json.dumps(card.to_dict(), ensure_ascii=False), encoding="utf-8")
+            stderr = StringIO()
+
+            with patch("sys.stderr", stderr):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "persona-smoke",
+                        "--card",
+                        str(card_path),
+                        "--output-root",
+                        str(out),
+                        "--meeting-id",
+                        "persona-smoke",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertIn("already exists", stderr.getvalue())
+            self.assertEqual(json.loads((existing / "meeting.json").read_text(encoding="utf-8"))["meeting_id"], "keep-me")
+
+    def test_persona_safe_report_omits_raw_source_paths_urls_and_tags(self):
+        card = PersonaCardForTests.basic(
+            tags=["nsfw", "private-tag"],
+            source={"kind": "ccv3", "source_name": "/Users/me/private-yana.json", "url": "https://realm.example/private"},
+        )
+        report = PersonaImportReport(
+            card=card,
+            card_path=Path("/Users/me/.agentsassemble/personas/yana/card.json"),
+            source_path="/Users/me/Downloads/private-yana.json",
+        )
+
+        payload_text = json.dumps(report.to_safe_dict(), ensure_ascii=False)
+
+        self.assertIn('"kind": "ccv3"', payload_text)
+        self.assertIn('"tag_count": 2', payload_text)
+        self.assertNotIn("/Users/me", payload_text)
+        self.assertNotIn("realm.example/private", payload_text)
+        self.assertNotIn("nsfw", payload_text.lower())
+        self.assertNotIn("private-tag", payload_text)
 
     def test_persona_import_command_outputs_safe_report_and_writes_card(self):
         with tempfile.TemporaryDirectory() as temp_dir:

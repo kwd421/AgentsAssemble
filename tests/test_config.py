@@ -288,6 +288,7 @@ class ConfigTests(unittest.TestCase):
                         "provider_id": "guest-cursor",
                         "permission_profile_id": "meeting_readonly_tools",
                         "persona_card_id": "tsukishiro-yanagi",
+                        "persona_path": "personas/tsukishiro-yanagi/card.json",
                         "character_mode": "work_speech_only",
                         "first_message_index": -1,
                         "persona_variables": {"mood": "dry", "nested": {"ignored": True}},
@@ -305,6 +306,7 @@ class ConfigTests(unittest.TestCase):
         )
 
         self.assertEqual(bindings[0].persona_card_id, "tsukishiro-yanagi")
+        self.assertEqual(bindings[0].persona_card_path, "personas/tsukishiro-yanagi/card.json")
         self.assertEqual(bindings[0].character_mode, "work_speech_only")
         self.assertEqual(bindings[0].first_message_index, -1)
         self.assertEqual(bindings[0].persona_variables, {"mood": "dry"})
