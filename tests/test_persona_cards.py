@@ -19,8 +19,37 @@ from agentsassemble.persona_cards import (
     persona_card_from_ccv3,
     persona_card_from_risu_module,
     persona_prompt_lines,
+    render_persona_prompt,
     read_risum_module,
+    replace_persona_variables,
+    scan_persona_lore,
 )
+
+
+class PersonaCardForTests:
+    @staticmethod
+    def basic(**overrides):
+        from agentsassemble.persona_cards import PersonaCard
+
+        return PersonaCard(
+            id=overrides.pop("id", "persona-test"),
+            display_name=overrides.pop("display_name", "Tsukishiro Yanagi"),
+            **overrides,
+        )
+
+    @staticmethod
+    def with_lore(entries, **overrides):
+        from agentsassemble.persona_cards import PersonaLoreEntry
+
+        lore_settings = overrides.pop("lore_settings", {})
+        ignored_payloads = overrides.pop("ignored_payloads", {})
+        card = PersonaCardForTests.basic(
+            lorebook=[PersonaLoreEntry.from_dict(entry) for entry in entries],
+            lore_settings=lore_settings,
+            ignored_payloads=ignored_payloads,
+            **overrides,
+        )
+        return card
 
 
 def _identity_rpack_map(path: Path) -> Path:
@@ -374,6 +403,270 @@ class RisuModulePersonaTests(unittest.TestCase):
         regex_only_lore = active_lore_entries(card, "Yana.* appears literally in this room.", max_chars=1000)
         self.assertEqual([entry.content for entry in regex_only_lore], ["NSFW_MARKER must remain exactly as imported."])
 
+    def test_scan_persona_lore_supports_second_key_priority_budget_and_sticky_state(self):
+        card = PersonaCardForTests.with_lore(
+            [
+                {
+                    "key": "always",
+                    "content": "Always active lore.",
+                    "always_active": True,
+                    "insert_order": 5,
+                    "priority": 1,
+                },
+                {
+                    "key": "Yanagi",
+                    "secondkey": "meeting",
+                    "content": "Selective lore wins.",
+                    "selective": True,
+                    "insert_order": 10,
+                    "priority": 90,
+                },
+                {
+                    "key": "quiet",
+                    "content": "@@keep_activate_after_match\nSticky lore.",
+                    "insert_order": 20,
+                    "priority": 80,
+                },
+                {
+                    "key": "huge",
+                    "content": "x" * 400,
+                    "always_active": True,
+                    "insert_order": 30,
+                    "priority": 0,
+                },
+            ],
+            lore_settings={"token_budget": 80, "scan_depth": 2},
+        )
+
+        first = scan_persona_lore(card, ["Yanagi enters the meeting.", "The room is quiet."], state={})
+        second = scan_persona_lore(card, ["No keyword here."], state=first.state)
+
+        self.assertEqual([entry.content for entry in first.entries], [
+            "Always active lore.",
+            "Selective lore wins.",
+            "Sticky lore.",
+        ])
+        self.assertNotIn("x" * 100, "\n".join(entry.content for entry in first.entries))
+        self.assertIn("Sticky lore.", [entry.content for entry in second.entries])
+        self.assertEqual(first.state["sticky_lore"]["2"], True)
+
+    def test_scan_persona_lore_honors_case_sensitive_and_ignores_regex_entries(self):
+        card = PersonaCardForTests.with_lore(
+            [
+                {
+                    "key": "Yanagi",
+                    "content": "Case-sensitive lore.",
+                    "case_sensitive": True,
+                    "insert_order": 10,
+                },
+                {
+                    "key": "/Yana.*/",
+                    "content": "Regex lore should stay out.",
+                    "use_regex": True,
+                    "insert_order": 20,
+                },
+            ]
+        )
+
+        lower = scan_persona_lore(card, ["yanagi lowercase"], state={})
+        exact = scan_persona_lore(card, ["Yanagi exact"], state={})
+
+        self.assertEqual(lower.entries, [])
+        self.assertEqual([entry.content for entry in exact.entries], ["Case-sensitive lore."])
+
+    def test_scan_persona_lore_budget_prefers_higher_priority_without_reordering_output(self):
+        card = PersonaCardForTests.with_lore(
+            [
+                {
+                    "key": "low",
+                    "content": "@@dont_activate_after_match\n" + ("low " * 80),
+                    "always_active": True,
+                    "insert_order": 1,
+                    "priority": 0,
+                },
+                {
+                    "key": "high",
+                    "content": "High priority lore.",
+                    "always_active": True,
+                    "insert_order": 2,
+                    "priority": 100,
+                },
+            ],
+            lore_settings={"token_budget": 40},
+        )
+
+        scan = scan_persona_lore(card, "anything", state={})
+
+        self.assertEqual([entry.content for entry in scan.entries], ["High priority lore."])
+        self.assertEqual(scan.state["cooldown_lore"], {})
+
+    def test_scan_persona_lore_zero_budget_disables_lore_and_invalid_probability_is_ignored(self):
+        zero_budget_card = PersonaCardForTests.with_lore(
+            [
+                {
+                    "key": "always",
+                    "content": "Should not fit.",
+                    "always_active": True,
+                }
+            ],
+            lore_settings={"token_budget": 0},
+        )
+        invalid_probability_card = PersonaCardForTests.with_lore(
+            [
+                {
+                    "key": "Yanagi",
+                    "content": "@@probability maybe\nStill active.",
+                    "insert_order": 1,
+                }
+            ]
+        )
+
+        self.assertEqual(scan_persona_lore(zero_budget_card, "Yanagi", state={}).entries, [])
+        self.assertEqual(
+            [entry.content for entry in scan_persona_lore(invalid_probability_card, "Yanagi", state={}).entries],
+            ["Still active."],
+        )
+
+    def test_scan_persona_lore_honors_recursive_scanning_flag_and_depth_cap(self):
+        entries = []
+        for index in range(12):
+            entries.append(
+                {
+                    "key": f"trigger-{index}",
+                    "content": f"trigger-{index + 1}",
+                    "insert_order": index,
+                }
+            )
+        non_recursive = PersonaCardForTests.with_lore(entries, lore_settings={"scan_depth": 12, "recursive_scanning": False})
+        recursive = PersonaCardForTests.with_lore(entries, lore_settings={"scan_depth": 12, "recursive_scanning": True})
+
+        self.assertEqual(
+            [entry.content for entry in scan_persona_lore(non_recursive, "trigger-0", state={}).entries],
+            ["trigger-1"],
+        )
+        self.assertEqual(len(scan_persona_lore(recursive, "trigger-0", state={}).entries), 8)
+
+    def test_scan_persona_lore_honors_full_word_matching_and_partial_override(self):
+        full_word = PersonaCardForTests.with_lore(
+            [
+                {
+                    "key": "cat",
+                    "content": "Full word only.",
+                },
+                {
+                    "key": "dog",
+                    "content": "@@match_partial_word\nPartial override.",
+                },
+            ],
+            lore_settings={"full_word_matching": True},
+        )
+
+        concat = scan_persona_lore(full_word, "concatenate dogma", state={})
+        exact = scan_persona_lore(full_word, "cat dogma", state={})
+
+        self.assertEqual([entry.content for entry in concat.entries], ["Partial override."])
+        self.assertEqual([entry.content for entry in exact.entries], ["Full word only.", "Partial override."])
+
+    def test_scan_persona_lore_supports_activation_decorators_and_cooldown_state(self):
+        card = PersonaCardForTests.with_lore(
+            [
+                {
+                    "key": "late",
+                    "content": "@@activate_only_after 2\nLate lore.",
+                    "insert_order": 1,
+                },
+                {
+                    "key": "even",
+                    "content": "@@activate_only_every 2\nEven lore.",
+                    "insert_order": 2,
+                },
+                {
+                    "key": "once",
+                    "content": "@@dont_activate_after_match\nOne-shot lore.",
+                    "insert_order": 3,
+                },
+            ],
+            lore_settings={"scan_depth": 2},
+        )
+
+        first = scan_persona_lore(card, ["late even once"], state={})
+        second = scan_persona_lore(card, ["late even once", "again"], state=first.state)
+
+        self.assertEqual([entry.content for entry in first.entries], ["One-shot lore."])
+        self.assertEqual([entry.content for entry in second.entries], ["Late lore.", "Even lore."])
+        self.assertEqual(first.state["cooldown_lore"]["2"], True)
+
+    def test_replace_persona_variables_only_replaces_safe_identity_subset(self):
+        card = PersonaCardForTests.basic(display_name="Tsukishiro Yanagi")
+
+        rendered = replace_persona_variables(
+            "Hello {{char}} <bot> {{user}} {{persona}} {{slot::mood}} {{setvar::x::1}}",
+            card,
+            user_name="Seinel",
+            persona="operator persona",
+            variables={"mood": "dry"},
+        )
+
+        self.assertIn("Tsukishiro Yanagi", rendered)
+        self.assertIn("Seinel", rendered)
+        self.assertIn("operator persona", rendered)
+        self.assertIn("dry", rendered)
+        self.assertIn("{{setvar::x::1}}", rendered)
+
+    def test_render_persona_prompt_orders_blocks_without_raw_ignored_payloads(self):
+        card = PersonaCardForTests.with_lore(
+            [
+                {
+                    "key": "Yanagi",
+                    "content": "Active lore.",
+                    "always_active": True,
+                    "insert_order": 1,
+                }
+            ],
+            system_prompt="System as {{char}}.",
+            description="Description body.",
+            personality="Personality body.",
+            scenario="Scenario body.",
+            example_messages="{{char}}: example",
+            first_message="First hello.",
+            post_history_instructions="Post history.",
+            ignored_payloads={"trigger": [{"script": "dangerous trigger body"}]},
+        )
+
+        rendered = render_persona_prompt(
+            card,
+            recent_messages=["Yanagi arrives."],
+            user_name="Seinel",
+            mode="on",
+            surface="play_speech",
+        )
+        text = "\n".join(rendered.lines)
+
+        self.assertLess(text.index("System as Tsukishiro Yanagi."), text.index("Description body."))
+        self.assertLess(text.index("Scenario body."), text.index("Active lore."))
+        self.assertLess(text.index("Active lore."), text.index("Tsukishiro Yanagi: example"))
+        self.assertLess(text.index("First hello."), text.index("Post history."))
+        self.assertNotIn("dangerous trigger body", text)
+
+    def test_risu_module_import_preserves_lore_runtime_settings(self):
+        module = _sample_risu_module()
+        module["scanDepth"] = 4
+        module["tokenBudget"] = 123
+        module["recursiveScanning"] = True
+        module["fullWordMatching"] = True
+
+        card = persona_card_from_risu_module(module, source_name="persona.risum")
+
+        self.assertEqual(
+            card.lore_settings,
+            {
+                "scan_depth": 4,
+                "token_budget": 123,
+                "recursive_scanning": True,
+                "full_word_matching": True,
+            },
+        )
+
     def test_lore_content_preserves_leading_and_trailing_whitespace_in_card_json(self):
         module = _sample_risu_module()
         module["lorebook"][0]["content"] = "  keep exact lore spacing\n"
@@ -467,6 +760,98 @@ class PersonaCliTests(unittest.TestCase):
         self.assertEqual(args.output_root, "out")
         self.assertEqual(args.rpack_map, "rpack_map.bin")
         self.assertTrue(args.as_json)
+
+    def test_persona_scan_and_render_parser_accept_runtime_options(self):
+        scan_args = build_parser().parse_args(
+            [
+                "persona",
+                "scan",
+                "--card",
+                "persona.json",
+                "--context",
+                "Yanagi meeting",
+                "--json",
+            ]
+        )
+        render_args = build_parser().parse_args(
+            [
+                "persona",
+                "render",
+                "--card",
+                "persona.json",
+                "--context",
+                "Yanagi meeting",
+                "--mode",
+                "work_speech_only",
+                "--surface",
+                "artifact",
+                "--user",
+                "Seinel",
+                "--persona",
+                "operator",
+                "--slot",
+                "mood=dry",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(scan_args.persona_command, "scan")
+        self.assertEqual(render_args.persona_command, "render")
+        self.assertEqual(render_args.mode, "work_speech_only")
+        self.assertEqual(render_args.surface, "artifact")
+        self.assertEqual(render_args.slot, ["mood=dry"])
+
+    def test_persona_scan_and_render_commands_show_runtime_output(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            card_path = temp / "yanagi.json"
+            card = PersonaCardForTests.with_lore(
+                [
+                    {
+                        "key": "Yanagi",
+                        "content": "Yanagi remembers room protocol.",
+                        "insert_order": 1,
+                    }
+                ],
+                system_prompt="Stay as {{char}} for {{user}}.",
+            )
+            card_path.write_text(json.dumps(card.to_dict(), ensure_ascii=False), encoding="utf-8")
+            scan_stdout = StringIO()
+            render_stdout = StringIO()
+
+            with patch("sys.stdout", scan_stdout):
+                scan_exit = main(
+                    [
+                        "persona",
+                        "scan",
+                        "--card",
+                        str(card_path),
+                        "--context",
+                        "Yanagi enters.",
+                        "--json",
+                    ]
+                )
+            with patch("sys.stdout", render_stdout):
+                render_exit = main(
+                    [
+                        "persona",
+                        "render",
+                        "--card",
+                        str(card_path),
+                        "--context",
+                        "Yanagi enters.",
+                        "--user",
+                        "Seinel",
+                        "--json",
+                    ]
+                )
+
+        self.assertEqual(scan_exit, 0)
+        self.assertEqual(render_exit, 0)
+        scan_payload = json.loads(scan_stdout.getvalue())
+        render_payload = json.loads(render_stdout.getvalue())
+        self.assertEqual(scan_payload["active_lore"][0]["content"], "Yanagi remembers room protocol.")
+        self.assertIn("Stay as Tsukishiro Yanagi for Seinel.", "\n".join(render_payload["lines"]))
 
     def test_persona_import_command_outputs_safe_report_and_writes_card(self):
         with tempfile.TemporaryDirectory() as temp_dir:

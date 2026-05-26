@@ -85,8 +85,11 @@ from agentsassemble.persona_cards import (
     import_ccv3_persona,
     import_charx_persona,
     import_risum_persona,
+    load_persona_card,
     persona_card_from_risu_module,
     read_risum_module,
+    render_persona_prompt,
+    scan_persona_lore,
 )
 from agentsassemble.provider_health import provider_health_report
 
@@ -1105,6 +1108,27 @@ def build_parser() -> argparse.ArgumentParser:
     persona_import_charx.add_argument("--output-root", default=".agentsassemble")
     persona_import_charx.add_argument("--json", action="store_true", dest="as_json")
 
+    persona_scan = persona_subparsers.add_parser(
+        "scan",
+        help="Show which stored persona lore entries activate for a room context.",
+    )
+    persona_scan.add_argument("--card", required=True)
+    persona_scan.add_argument("--context", default="")
+    persona_scan.add_argument("--json", action="store_true", dest="as_json")
+
+    persona_render = persona_subparsers.add_parser(
+        "render",
+        help="Render the persona prompt blocks used by Character Mode.",
+    )
+    persona_render.add_argument("--card", required=True)
+    persona_render.add_argument("--context", default="")
+    persona_render.add_argument("--mode", choices=["off", "on", "work_speech_only"], default="on")
+    persona_render.add_argument("--surface", choices=["play_speech", "work_speech", "artifact"], default="play_speech")
+    persona_render.add_argument("--user", default="user")
+    persona_render.add_argument("--persona", default="")
+    persona_render.add_argument("--slot", action="append", default=[])
+    persona_render.add_argument("--json", action="store_true", dest="as_json")
+
     live_processes = live_agent_subparsers.add_parser("processes", help="Manage supervised live-agent process groups.")
     live_process_subparsers = live_processes.add_subparsers(dest="live_agent_process_command", required=True)
 
@@ -1417,7 +1441,68 @@ def run_persona_command(args: argparse.Namespace) -> int:
         else:
             print(f"Imported {report.card.display_name} persona card: {report.card_path}")
         return 0
+    if args.persona_command == "scan":
+        card = load_persona_card(Path(args.card))
+        scan = scan_persona_lore(card, args.context)
+        payload = {
+            "persona": card.safe_summary(),
+            "active_lore": [
+                {
+                    "key": entry.key,
+                    "comment": entry.comment,
+                    "content": entry.content,
+                    "insert_order": entry.insert_order,
+                }
+                for entry in scan.entries
+            ],
+            "state": scan.state,
+            "ignored_features": scan.ignored_features,
+        }
+        if args.as_json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"{card.display_name}: {len(scan.entries)} active lore entries")
+            for entry in scan.entries:
+                print(f"- {entry.comment or entry.key or 'lore'}")
+        return 0
+    if args.persona_command == "render":
+        card = load_persona_card(Path(args.card))
+        render = render_persona_prompt(
+            card,
+            recent_messages=args.context,
+            user_name=args.user,
+            persona=args.persona,
+            variables=_parse_persona_slot_values(args.slot),
+            mode=args.mode,
+            surface=args.surface,
+        )
+        payload = {
+            "persona": card.safe_summary(),
+            "mode": render.mode,
+            "surface": render.surface,
+            "lines": render.lines,
+            "active_lore_count": len(render.scan.entries),
+            "state": render.scan.state,
+        }
+        if args.as_json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print("\n".join(render.lines))
+        return 0
     return 1
+
+
+def _parse_persona_slot_values(values: list[str]) -> dict[str, str]:
+    slots: dict[str, str] = {}
+    for value in values:
+        if "=" not in value:
+            raise ValueError(f"persona slot must be KEY=VALUE: {value}")
+        key, slot_value = value.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise ValueError("persona slot key must not be empty")
+        slots[key] = slot_value
+    return slots
 
 
 def run_providers_command(args: argparse.Namespace) -> int:
