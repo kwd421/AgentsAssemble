@@ -57,6 +57,12 @@ export default function App() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [mafiaGameId, setMafiaGameId] = useState(() => {
     try {
+      const query = new URLSearchParams(window.location.search);
+      const queryGameId = query.get("mafia") || query.get("mafiaGameId") || "";
+      if (queryGameId) {
+        localStorage.setItem("agentsassemble.mafiaGameId", queryGameId);
+        return queryGameId;
+      }
       return localStorage.getItem("agentsassemble.mafiaGameId") || "";
     } catch {
       return "";
