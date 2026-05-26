@@ -82,6 +82,8 @@ from agentsassemble.multi_host_invites import (
 )
 from agentsassemble.persona_cards import (
     PersonaImportReport,
+    import_ccv3_persona,
+    import_charx_persona,
     import_risum_persona,
     persona_card_from_risu_module,
     read_risum_module,
@@ -1087,6 +1089,22 @@ def build_parser() -> argparse.ArgumentParser:
     persona_import_risum.add_argument("--rpack-map", default="")
     persona_import_risum.add_argument("--json", action="store_true", dest="as_json")
 
+    persona_import_ccv3 = persona_subparsers.add_parser(
+        "import-ccv3",
+        help="Import a Character Card V3 JSON or PNG as a persona card.",
+    )
+    persona_import_ccv3.add_argument("--file", required=True)
+    persona_import_ccv3.add_argument("--output-root", default=".agentsassemble")
+    persona_import_ccv3.add_argument("--json", action="store_true", dest="as_json")
+
+    persona_import_charx = persona_subparsers.add_parser(
+        "import-charx",
+        help="Import a Character Card V3 CHARX bundle as a persona card.",
+    )
+    persona_import_charx.add_argument("--file", required=True)
+    persona_import_charx.add_argument("--output-root", default=".agentsassemble")
+    persona_import_charx.add_argument("--json", action="store_true", dest="as_json")
+
     live_processes = live_agent_subparsers.add_parser("processes", help="Manage supervised live-agent process groups.")
     live_process_subparsers = live_processes.add_subparsers(dest="live_agent_process_command", required=True)
 
@@ -1373,6 +1391,26 @@ def run_persona_command(args: argparse.Namespace) -> int:
             Path(args.file),
             output_root=Path(args.output_root),
             rpack_map_path=rpack_map_path,
+        )
+        if args.as_json:
+            print(json.dumps(report.to_safe_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(f"Imported {report.card.display_name} persona card: {report.card_path}")
+        return 0
+    if args.persona_command == "import-ccv3":
+        report = import_ccv3_persona(
+            Path(args.file),
+            output_root=Path(args.output_root),
+        )
+        if args.as_json:
+            print(json.dumps(report.to_safe_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(f"Imported {report.card.display_name} persona card: {report.card_path}")
+        return 0
+    if args.persona_command == "import-charx":
+        report = import_charx_persona(
+            Path(args.file),
+            output_root=Path(args.output_root),
         )
         if args.as_json:
             print(json.dumps(report.to_safe_dict(), ensure_ascii=False, indent=2))
