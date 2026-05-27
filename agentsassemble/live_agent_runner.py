@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from agentsassemble.codex_resident import default_codex_resident_command
-from agentsassemble.grok_resident import default_grok_resident_command
+from agentsassemble.grok_resident import default_grok_resident_command, grok_error_category
 from agentsassemble.kiro_resident import default_kiro_resident_command
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.live_agent_turns import (
@@ -1589,6 +1589,9 @@ def _looks_sensitive_error(text: str) -> bool:
 
 
 def _safe_provider_command_error(error: Exception) -> str:
+    category = grok_error_category(error)
+    if category:
+        return category
     if isinstance(error, subprocess.CalledProcessError):
         return f"Resident command exited with return code {error.returncode}."
     if isinstance(error, subprocess.TimeoutExpired):

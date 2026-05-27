@@ -5,10 +5,16 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.grok_resident import (
+    GROK_EMPTY_TEXT,
+    GROK_JSON_PARSE_FAILURE,
+    GROK_MISSING_SESSION_ID,
+    GROK_SUBPROCESS_NONZERO,
+    GROK_SUBPROCESS_TIMEOUT,
     GrokResidentCommandRunner,
     clean_grok_session_id,
     default_grok_resident_command,
     grok_command_check,
+    grok_error_category,
     grok_provider_connection_check,
 )
 from agentsassemble.live_agent_runner import ResidentAgentConfig
@@ -93,10 +99,11 @@ class GrokResidentTests(unittest.TestCase):
 
         runner = GrokResidentCommandRunner(config(), command_runner=command_runner, cwd=Path.cwd())
         try:
-            with self.assertRaisesRegex(ValueError, "invalid JSON stdout"):
+            with self.assertRaisesRegex(ValueError, "invalid JSON stdout") as caught:
                 runner([], "SECRET-CODE", timeout_seconds=45)
         finally:
             runner.close()
+        self.assertEqual(grok_error_category(caught.exception), GROK_JSON_PARSE_FAILURE)
 
     def test_runner_requires_safe_session_id_for_fresh_session(self):
         def command_runner(command, **kwargs):
@@ -104,10 +111,11 @@ class GrokResidentTests(unittest.TestCase):
 
         runner = GrokResidentCommandRunner(config(), command_runner=command_runner, cwd=Path.cwd())
         try:
-            with self.assertRaisesRegex(ValueError, "safe session id"):
+            with self.assertRaisesRegex(ValueError, "safe session id") as caught:
                 runner([], "prompt", timeout_seconds=45)
         finally:
             runner.close()
+        self.assertEqual(grok_error_category(caught.exception), GROK_MISSING_SESSION_ID)
 
     def test_runner_treats_nonzero_and_timeout_as_safe_errors(self):
         def failed_runner(command, **kwargs):
@@ -115,20 +123,22 @@ class GrokResidentTests(unittest.TestCase):
 
         failed = GrokResidentCommandRunner(config(), command_runner=failed_runner, cwd=Path.cwd())
         try:
-            with self.assertRaisesRegex(RuntimeError, "return code 2"):
+            with self.assertRaisesRegex(RuntimeError, "return code 2") as failed_error:
                 failed([], "prompt", timeout_seconds=45)
         finally:
             failed.close()
+        self.assertEqual(grok_error_category(failed_error.exception), GROK_SUBPROCESS_NONZERO)
 
         def timeout_runner(command, **kwargs):
             raise subprocess.TimeoutExpired(command, kwargs["timeout"])
 
         timed_out = GrokResidentCommandRunner(config(), command_runner=timeout_runner, cwd=Path.cwd())
         try:
-            with self.assertRaisesRegex(RuntimeError, "timed out after 45 seconds"):
+            with self.assertRaisesRegex(RuntimeError, "timed out after 45 seconds") as timeout_error:
                 timed_out([], "prompt", timeout_seconds=45)
         finally:
             timed_out.close()
+        self.assertEqual(grok_error_category(timeout_error.exception), GROK_SUBPROCESS_TIMEOUT)
 
     def test_runner_rejects_missing_text(self):
         def command_runner(command, **kwargs):
@@ -136,10 +146,11 @@ class GrokResidentTests(unittest.TestCase):
 
         runner = GrokResidentCommandRunner(config(), command_runner=command_runner, cwd=Path.cwd())
         try:
-            with self.assertRaisesRegex(ValueError, "empty JSON text reply"):
+            with self.assertRaisesRegex(ValueError, "empty JSON text reply") as caught:
                 runner([], "prompt", timeout_seconds=45)
         finally:
             runner.close()
+        self.assertEqual(grok_error_category(caught.exception), GROK_EMPTY_TEXT)
 
     def test_provider_checks_and_defaults_are_narrow(self):
         self.assertEqual(default_grok_resident_command("grok_live_session", "live_session", []), ["grok"])

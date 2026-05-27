@@ -14,6 +14,33 @@ if TYPE_CHECKING:
 
 _SAFE_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,160}")
 
+GROK_SUBPROCESS_TIMEOUT = "grok_subprocess_timeout"
+GROK_SUBPROCESS_NONZERO = "grok_subprocess_nonzero"
+GROK_JSON_PARSE_FAILURE = "grok_json_parse_failure"
+GROK_EMPTY_TEXT = "grok_empty_text"
+GROK_MISSING_SESSION_ID = "grok_missing_session_id"
+
+
+class GrokResidentRuntimeError(RuntimeError):
+    """Safe categorized failure from the Grok live-session adapter."""
+
+    def __init__(self, message: str, *, category: str) -> None:
+        super().__init__(message)
+        self.grok_error_category = category
+
+
+class GrokResidentValueError(ValueError):
+    """Safe categorized validation failure from the Grok live-session adapter."""
+
+    def __init__(self, message: str, *, category: str) -> None:
+        super().__init__(message)
+        self.grok_error_category = category
+
+
+def grok_error_category(error: Exception) -> str:
+    value = getattr(error, "grok_error_category", "")
+    return value if isinstance(value, str) else ""
+
 
 class GrokResidentCommandRunner:
     """Run a resident Grok CLI participant through grok --resume JSON output."""
@@ -49,19 +76,31 @@ class GrokResidentCommandRunner:
                 cwd=str(self.cwd),
             )
         except TimeoutExpired as error:
-            raise RuntimeError(f"Grok live session command timed out after {timeout_seconds} seconds.") from error
+            raise GrokResidentRuntimeError(
+                f"Grok live session command timed out after {timeout_seconds} seconds.",
+                category=GROK_SUBPROCESS_TIMEOUT,
+            ) from error
         returncode = int(getattr(completed, "returncode", 0) or 0)
         if returncode != 0:
-            raise RuntimeError(f"Grok live session command failed with return code {returncode}.")
+            raise GrokResidentRuntimeError(
+                f"Grok live session command failed with return code {returncode}.",
+                category=GROK_SUBPROCESS_NONZERO,
+            )
         payload = _parse_grok_stdout_json(getattr(completed, "stdout", ""))
         reply = _json_text(payload)
         if not reply:
-            raise ValueError("Grok live session returned an empty JSON text reply.")
+            raise GrokResidentValueError(
+                "Grok live session returned an empty JSON text reply.",
+                category=GROK_EMPTY_TEXT,
+            )
         session_id = clean_grok_session_id(payload.get("sessionId") or payload.get("session_id"))
         if session_id:
             self.session_id = session_id
         elif not self.session_id:
-            raise ValueError("Grok live session did not expose a safe session id.")
+            raise GrokResidentValueError(
+                "Grok live session did not expose a safe session id.",
+                category=GROK_MISSING_SESSION_ID,
+            )
         return reply
 
     def close(self) -> None:
@@ -136,13 +175,22 @@ def clean_grok_session_id(value: object) -> str:
 def _parse_grok_stdout_json(stdout: object) -> dict[str, object]:
     text = _text(stdout).strip()
     if not text:
-        raise ValueError("Grok live session returned empty JSON stdout.")
+        raise GrokResidentValueError(
+            "Grok live session returned empty JSON stdout.",
+            category=GROK_JSON_PARSE_FAILURE,
+        )
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as error:
-        raise ValueError("Grok live session returned invalid JSON stdout.") from error
+        raise GrokResidentValueError(
+            "Grok live session returned invalid JSON stdout.",
+            category=GROK_JSON_PARSE_FAILURE,
+        ) from error
     if not isinstance(payload, dict):
-        raise ValueError("Grok live session JSON stdout must be an object.")
+        raise GrokResidentValueError(
+            "Grok live session JSON stdout must be an object.",
+            category=GROK_JSON_PARSE_FAILURE,
+        )
     return payload
 
 

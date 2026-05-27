@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agentsassemble.codex_resident import CodexResidentCommandRunner
+from agentsassemble.grok_resident import GROK_JSON_PARSE_FAILURE, GrokResidentValueError
 from agentsassemble.live_agent_runner import (
     LiveAgentRunner,
     RemoteBridgeResidentCommandRunner,
@@ -908,6 +909,56 @@ class LiveAgentRunnerTests(unittest.TestCase):
         error_payloads = [payload for url, method, payload in client.calls if url.endswith("/heartbeat") and payload["status"] == "error"]
         self.assertEqual(error_payloads[0]["last_error"], "boom")
         self.assertEqual(error_payloads[0]["last_observed_event_id"], "evt1")
+
+    def test_grok_official_turn_failure_records_safe_category_without_reply(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [],
+            "live_events": [
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "공식 답변해줘",
+                }
+            ],
+        }
+        client = FakeRoomClient([room])
+
+        def fail_grok(command, prompt, *, timeout_seconds):
+            del command, prompt, timeout_seconds
+            raise GrokResidentValueError(
+                "Grok live session returned invalid JSON stdout.",
+                category=GROK_JSON_PARSE_FAILURE,
+            )
+
+        runner = LiveAgentRunner(
+            config(
+                engagement_mode="moderator_called",
+                meeting_id="m1",
+                provider_kind="grok_live_session",
+                connection_kind="live_session",
+                command=["grok"],
+            ),
+            request_json=client,
+            command_runner=fail_grok,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+
+        self.assertEqual([call for call in client.calls if call[0].endswith("/official-turn")], [])
+        error_payloads = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload["status"] == "error"
+        ]
+        self.assertEqual(error_payloads[-1]["last_error"], GROK_JSON_PARSE_FAILURE)
+        self.assertEqual(error_payloads[-1]["last_observed_live_event_id"], "turn-request-1")
+        self.assertEqual(runner.last_error, GROK_JSON_PARSE_FAILURE)
 
     def test_runner_does_not_mask_command_failure_when_error_heartbeat_fails(self):
         clock = FakeClock()
