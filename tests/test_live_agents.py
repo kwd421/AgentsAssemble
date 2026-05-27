@@ -15,6 +15,7 @@ class LiveAgentPresenceTests(unittest.TestCase):
             ("codex_live_session", "codex_resume", "codex_exec_resume", "provider_managed_resume", "codex_readonly"),
             ("codex_live_session", "live_session", "codex_exec_resume", "provider_managed_resume", "codex_readonly"),
             ("codex", "codex_resume", "codex_exec_resume", "provider_managed_resume", "codex_readonly"),
+            ("grok_live_session", "live_session", "grok_session_resume", "provider_managed_resume", "advisory"),
             ("", "", "manual_room_loop", "external_owner_managed", "advisory"),
             ("claude_code", "live_session", "jsonl_live_session", "process_lifetime", "advisory"),
             ("local_cli", "live_session", "jsonl_live_session", "process_lifetime", "advisory"),

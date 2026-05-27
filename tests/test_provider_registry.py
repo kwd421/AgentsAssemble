@@ -206,6 +206,7 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertEqual(catalog["local_cli"]["status"], "available")
         self.assertEqual(catalog["cursor"]["status"], "planned")
         self.assertEqual(catalog["claude_code"]["status"], "planned")
+        self.assertEqual(catalog["grok_live_session"]["status"], "planned")
         self.assertEqual(catalog["anthropic"]["status"], "available")
         self.assertEqual(catalog["local_openai_compatible"]["status"], "available")
         self.assertTrue(catalog["gemini"]["capabilities"]["supports_web_search"])

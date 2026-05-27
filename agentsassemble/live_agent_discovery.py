@@ -27,6 +27,12 @@ KIRO_LIVE_SESSION_CONTRACT = {
     "sandbox_enforcement": "advisory",
     "evidence_basis": "path_and_kiro_resume_preflight",
 }
+GROK_LIVE_SESSION_CONTRACT = {
+    "join_semantics": "grok_session_resume",
+    "context_durability": "provider_managed_resume",
+    "sandbox_enforcement": "advisory",
+    "evidence_basis": "path_and_grok_resume_preflight",
+}
 SELF_SERVICE_CONTRACT = {
     "join_semantics": "self_service_room_loop",
     "context_durability": "provider_managed_room_loop",
@@ -216,13 +222,13 @@ def _candidate_specs() -> list[dict[str, Any]]:
         },
         {
             "command": "grok",
-            "agent_id": "grok-build-live",
-            "display_name": "Grok Build",
-            "provider_kind": "grok_build_cli",
-            "connection_kind": "terminal_session",
-            "terminal_idle_timeout": 0.75,
-            "timeout_seconds": 120,
-            **TERMINAL_PROMPT_BRIDGE_CONTRACT,
+            "agent_id": "grok-live",
+            "display_name": "Grok",
+            "provider_kind": "grok_live_session",
+            "connection_kind": "live_session",
+            "timeout_seconds": 240,
+            "omit_command": True,
+            **GROK_LIVE_SESSION_CONTRACT,
         },
         {
             "command": "hermes",
@@ -312,6 +318,8 @@ def _entry_mode(spec: dict[str, Any]) -> str:
         return "codex_live_session"
     if spec["provider_kind"] == "kiro_live_session":
         return "kiro_live_session"
+    if spec["provider_kind"] == "grok_live_session":
+        return "grok_live_session"
     return str(spec["connection_kind"])
 
 
@@ -342,6 +350,8 @@ def _safety_note(spec: dict[str, Any], entry_status: str) -> str:
         return "Codex defaults and safety checks stay centralized in preflight."
     if spec["provider_kind"] == "kiro_live_session":
         return "Kiro uses kiro chat --resume-id; run preflight before auto join starts the resident."
+    if spec["provider_kind"] == "grok_live_session":
+        return "Grok uses JSON stdout plus --resume; run preflight before auto join starts the resident."
     if spec["connection_kind"] == "self_service":
         return "Self-service process is supervised; it owns its own room loop after preflight."
     if spec["connection_kind"] == "terminal_session":

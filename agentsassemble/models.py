@@ -18,6 +18,7 @@ ProviderKind = Literal[
     "anthropic",
     "gemini",
     "grok",
+    "grok_live_session",
     "grok_build_cli",
     "remote_http_bridge",
     "local_cli",

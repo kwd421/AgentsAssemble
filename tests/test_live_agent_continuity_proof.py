@@ -76,6 +76,7 @@ class LiveAgentContinuityProofTests(unittest.TestCase):
         self.assertEqual(result["provider_kind"], "kiro_live_session")
         self.assertTrue(result["session_id_captured"])
         self.assertEqual(result["session_id_suffix"], "583a6b")
+        self.assertTrue(result["first_reply_is_ready"])
         self.assertFalse(result["second_prompt_replayed_code"])
         self.assertTrue(result["expected_suffix_matched"])
         self.assertFalse(result["first_reply_revealed_code"])
@@ -108,11 +109,47 @@ class LiveAgentContinuityProofTests(unittest.TestCase):
         self.assertEqual(result["provider_kind"], "codex_live_session")
         self.assertTrue(result["session_id_captured"])
         self.assertEqual(result["session_id_suffix"], "f3b408")
+        self.assertTrue(result["first_reply_is_ready"])
         self.assertFalse(result["second_prompt_replayed_code"])
         self.assertTrue(result["expected_suffix_matched"])
         self.assertNotIn("KCODE-ABCDE12345", str(result))
         self.assertIn("KCODE-ABCDE12345", calls[0]["kwargs"]["input"])
         self.assertNotIn("KCODE-ABCDE12345", calls[1]["kwargs"]["input"])
+
+    def test_grok_continuity_proof_uses_json_text_resume_without_replaying_code(self):
+        calls = []
+        session_id = "grok-session-abc123"
+
+        def command_runner(command, **kwargs):
+            calls.append({"command": command, "kwargs": kwargs})
+            prompt_path = Path(command[command.index("--prompt-file") + 1])
+            prompt = prompt_path.read_text(encoding="utf-8")
+            if "--resume" in command:
+                self.assertNotIn("KCODE-ABCDE12345", prompt)
+                return subprocess.CompletedProcess(command, 0, stdout='{"sessionId":"grok-session-abc123","text":"2345"}', stderr="KCODE-ABCDE12345")
+            self.assertIn("KCODE-ABCDE12345", prompt)
+            return subprocess.CompletedProcess(command, 0, stdout='{"sessionId":"grok-session-abc123","text":"READY"}', stderr="KCODE-ABCDE12345")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_live_agent_continuity_proof(
+                config(provider_kind="grok_live_session", command=["grok"]),
+                approve_real_providers=True,
+                command_runner=command_runner,
+                code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+                cwd=Path(temp_dir),
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["provider_kind"], "grok_live_session")
+        self.assertTrue(result["session_id_captured"])
+        self.assertEqual(result["session_id_suffix"], "abc123")
+        self.assertTrue(result["first_reply_is_ready"])
+        self.assertFalse(result["second_prompt_replayed_code"])
+        self.assertTrue(result["expected_suffix_matched"])
+        self.assertFalse(result["first_reply_revealed_code"])
+        self.assertNotIn("KCODE-ABCDE12345", str(result))
+        self.assertIn("--resume", calls[1]["command"])
+        self.assertNotIn("KCODE-ABCDE12345", " ".join(calls[1]["command"]))
 
     def test_unsupported_provider_reports_without_calling_provider(self):
         calls = []
@@ -165,12 +202,60 @@ class LiveAgentContinuityProofTests(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertEqual(result["results"][0]["reason"], "provider_resume_not_supported")
 
+    def test_grok_build_cli_terminal_session_stays_unsupported(self):
+        result = run_live_agent_continuity_proof(
+            config(provider_kind="grok_build_cli", connection_kind="terminal_session", command=["grok"]),
+            approve_real_providers=True,
+            command_runner=lambda *args, **kwargs: self.fail("grok_build_cli terminal_session should not run"),
+        )
+
+        self.assertEqual(result["status"], "unsupported")
+        self.assertEqual(result["reason"], "provider_resume_not_supported")
+
+    def test_single_proof_rejects_grok_live_session_with_wrong_executable_before_calling_provider(self):
+        calls = []
+
+        result = run_live_agent_continuity_proof(
+            config(provider_kind="grok_live_session", command=["not-grok"]),
+            approve_real_providers=True,
+            command_runner=lambda *args, **kwargs: calls.append(args),
+            code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["reason"], "resident_setup_failed")
+        self.assertTrue(result["approved"])
+        self.assertEqual(calls, [])
+        self.assertNotIn("KCODE-ABCDE12345", str(result))
+
+    def test_proof_rejects_first_reply_that_reveals_suffix(self):
+        session_id = "grok-session-abc123"
+
+        def command_runner(command, **kwargs):
+            if "--resume" in command:
+                return subprocess.CompletedProcess(command, 0, stdout='{"sessionId":"grok-session-abc123","text":"2345"}', stderr="")
+            return subprocess.CompletedProcess(command, 0, stdout='{"sessionId":"grok-session-abc123","text":"READY suffix 2345"}', stderr="")
+
+        result = run_live_agent_continuity_proof(
+            config(provider_kind="grok_live_session", command=["grok"]),
+            approve_real_providers=True,
+            command_runner=command_runner,
+            code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["reason"], "first_reply_revealed_suffix")
+        self.assertTrue(result["first_reply_revealed_suffix"])
+        self.assertEqual(result["session_id_suffix"], session_id[-6:])
+        self.assertNotIn("KCODE-ABCDE12345", str(result))
+
     def test_batch_requires_approval_for_supported_providers_before_calling_provider(self):
         calls = []
 
         result = run_live_agent_continuity_proof_batch(
             [
                 config(agent_id="kiro-a", provider_kind="kiro_live_session", command=["kiro"]),
+                config(agent_id="grok-a", provider_kind="grok_live_session", command=["grok"]),
                 config(agent_id="cursor-a", provider_kind="cursor", connection_kind="terminal_session", command=["cursor-agent"]),
             ],
             approve_real_providers=False,
@@ -178,11 +263,12 @@ class LiveAgentContinuityProofTests(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], "approval_required")
-        self.assertEqual(result["approval_required_count"], 1)
+        self.assertEqual(result["approval_required_count"], 2)
         self.assertEqual(result["unsupported_count"], 1)
         self.assertEqual(calls, [])
         self.assertEqual(result["results"][0]["status"], "approval_required")
-        self.assertEqual(result["results"][1]["status"], "unsupported")
+        self.assertEqual(result["results"][1]["status"], "approval_required")
+        self.assertEqual(result["results"][2]["status"], "unsupported")
 
     def test_batch_runs_supported_items_and_keeps_unsupported_items_safe(self):
         calls = []
@@ -249,6 +335,21 @@ class LiveAgentContinuityProofTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["results"][0]["reason"], "resident_setup_failed")
         self.assertEqual(calls, [])
+
+    def test_batch_rejects_grok_live_session_with_extra_command_args_before_calling_provider(self):
+        calls = []
+
+        result = run_live_agent_continuity_proof_batch(
+            [config(provider_kind="grok_live_session", command=["grok", "--always-approve"])],
+            approve_real_providers=True,
+            command_runner_factory=lambda item: calls.append(item),
+            code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["results"][0]["reason"], "resident_setup_failed")
+        self.assertEqual(calls, [])
+        self.assertNotIn("KCODE-ABCDE12345", str(result))
 
 
 if __name__ == "__main__":

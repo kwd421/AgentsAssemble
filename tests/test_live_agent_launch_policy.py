@@ -76,6 +76,12 @@ class LiveAgentLaunchPolicyTests(unittest.TestCase):
                                 "connection_kind": "self_service",
                                 "command": ["antigravity"],
                             },
+                            {
+                                "agent_id": "grok-live",
+                                "provider_kind": "grok_live_session",
+                                "connection_kind": "live_session",
+                                "command": ["grok"],
+                            },
                         ]
                     },
                     ensure_ascii=False,
@@ -89,8 +95,11 @@ class LiveAgentLaunchPolicyTests(unittest.TestCase):
         self.assertEqual(report["status"], "approval_required")
         self.assertTrue(report["approval_required"])
         self.assertFalse(report["approved"])
-        self.assertEqual(report["approval_required_count"], 5)
-        self.assertEqual({agent["agent_id"] for agent in report["agents"]}, {"claude-live", "codex-live", "bridge-live", "cursor-live", "antigravity-live"})
+        self.assertEqual(report["approval_required_count"], 6)
+        self.assertEqual(
+            {agent["agent_id"] for agent in report["agents"]},
+            {"claude-live", "codex-live", "bridge-live", "cursor-live", "antigravity-live", "grok-live"},
+        )
         self.assertTrue(all(agent["approval_required"] for agent in report["agents"]))
         self.assertNotIn("/Users/me/private", serialized)
         self.assertNotIn("secret-token", serialized)

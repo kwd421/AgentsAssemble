@@ -13498,6 +13498,32 @@ class CliTimeoutTests(unittest.TestCase):
         finally:
             cli_module._close_command_runner(runner)
 
+    def test_live_agent_run_uses_grok_resident_runner_for_grok_live_session_provider(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run",
+                "--agent-id",
+                "grok-live",
+                "--provider-kind",
+                "grok_live_session",
+                "--connection-kind",
+                "live_session",
+                "--session-id",
+                "grok-session-abc123",
+                "--max-ticks",
+                "1",
+            ]
+        )
+
+        config = cli_module.config_from_args(args)
+        runner = cli_module._command_runner_for_config(config)
+        try:
+            self.assertEqual(config.command, ["grok"])
+            self.assertEqual(runner.__class__.__name__, "GrokResidentCommandRunner")
+        finally:
+            cli_module._close_command_runner(runner)
+
     def test_live_agent_run_rejects_non_resident_connection_kind(self):
         stderr = StringIO()
         with patch("sys.stderr", stderr):

@@ -18,6 +18,7 @@ from pathlib import Path
 
 from agentsassemble.bridges.claude_code_bridge import serve_bridge
 from agentsassemble.codex_resident import CodexResidentCommandRunner
+from agentsassemble.grok_resident import GrokResidentCommandRunner
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.codex_sessions import (
     DEFAULT_INVITE_CONFIG_PATH,
@@ -6840,6 +6841,8 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
         raise ValueError("codex_live_session resident requires live_session connection_kind.")
     if config.provider_kind == "kiro_live_session" and config.connection_kind != "live_session":
         raise ValueError("kiro_live_session resident requires live_session connection_kind.")
+    if config.provider_kind == "grok_live_session" and config.connection_kind != "live_session":
+        raise ValueError("grok_live_session resident requires live_session connection_kind.")
     if config.connection_kind == "remote_bridge":
         if not config.endpoint:
             raise ValueError("Remote bridge resident requires --endpoint.")
@@ -6857,6 +6860,8 @@ def _command_runner_for_config(config: ResidentAgentConfig):
         return CodexResidentCommandRunner(config)
     if config.provider_kind == "kiro_live_session" and config.connection_kind == "live_session":
         return KiroResidentCommandRunner(config)
+    if config.provider_kind == "grok_live_session" and config.connection_kind == "live_session":
+        return GrokResidentCommandRunner(config)
     if config.connection_kind == "live_session":
         return _JsonlLiveSessionCommandRunner()
     if config.connection_kind == "terminal_session":

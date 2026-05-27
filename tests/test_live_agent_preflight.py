@@ -754,6 +754,90 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 agent["checks"],
             )
 
+    def test_preflight_accepts_grok_live_session_with_default_grok_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "grok-live",
+                                "provider_kind": "grok_live_session",
+                                "connection_kind": "live_session",
+                                "session_id": "grok-session-abc123",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/grok" if command == "grok" else None,
+            )
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 0, "checks_failed": 0})
+            agent = report["agents"][0]
+            self.assertEqual(agent["provider_kind"], "grok_live_session")
+            self.assertEqual(agent["connection_kind"], "live_session")
+            self.assertEqual(agent["sandbox_enforcement"], "advisory")
+            self.assertEqual(agent["command"], ["grok"])
+            self.assertEqual(agent["command_path"], "/usr/local/bin/grok")
+            self.assertIn(
+                {
+                    "id": "provider_connection_kind",
+                    "status": "ok",
+                    "message": "grok_live_session uses live_session.",
+                },
+                agent["checks"],
+            )
+            self.assertIn(
+                {
+                    "id": "grok_command",
+                    "status": "ok",
+                    "message": "grok_live_session command executable is grok.",
+                },
+                agent["checks"],
+            )
+
+    def test_preflight_rejects_grok_live_session_with_extra_arguments(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "grok-live",
+                                "provider_kind": "grok_live_session",
+                                "connection_kind": "live_session",
+                                "command": ["grok", "--always-approve"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/grok" if command == "grok" else None,
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            self.assertIn(
+                {
+                    "id": "grok_command",
+                    "status": "failed",
+                    "message": "grok_live_session command must contain only the grok executable.",
+                },
+                report["agents"][0]["checks"],
+            )
+
     def test_preflight_rejects_codex_live_session_when_safety_flag_probe_fails(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"

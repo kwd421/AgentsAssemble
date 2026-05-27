@@ -314,6 +314,18 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
             ),
             "Grok Build CLI resident integration is planned through terminal prompt bridge discovery.",
         ),
+        "grok_live_session": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=True,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=True,
+                cost_class="subscription",
+            ),
+            "Grok live-session resident integration is experimental and limited to JSON stdout resume proofs.",
+        ),
         "hermes_cli": (
             ProviderCapabilities(
                 supports_research=True,
@@ -391,6 +403,7 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
                 "antigravity_cli",
                 "gemini_cli_legacy",
                 "grok_build_cli",
+                "grok_live_session",
                 "hermes_cli",
                 "openclaw_cli",
             }

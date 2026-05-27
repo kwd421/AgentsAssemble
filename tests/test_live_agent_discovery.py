@@ -113,18 +113,27 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         agents = report["config"]["agents"]
         self.assertEqual(
             [agent["agent_id"] for agent in agents],
-            ["cursor-agent-live", "grok-build-live", "hermes-cli-live", "openclaw-cli-live"],
+            ["cursor-agent-live", "grok-live", "hermes-cli-live", "openclaw-cli-live"],
         )
-        for agent in agents:
+        terminal_agents = [agents[0], agents[2], agents[3]]
+        for agent in terminal_agents:
             self.assertEqual(agent["connection_kind"], "terminal_session")
             self.assertEqual(agent["join_semantics"], "terminal_pty_prompt_bridge")
             self.assertEqual(agent["context_durability"], "process_lifetime")
             self.assertEqual(agent["sandbox_enforcement"], "advisory")
             self.assertEqual(agent["evidence_basis"], "path_and_pty_preflight")
-        self.assertEqual([agent["command"] for agent in agents], [["cursor-agent"], ["grok"], ["hermes"], ["openclaw"]])
+        grok_agent = agents[1]
+        self.assertEqual(grok_agent["provider_kind"], "grok_live_session")
+        self.assertEqual(grok_agent["connection_kind"], "live_session")
+        self.assertEqual(grok_agent["join_semantics"], "grok_session_resume")
+        self.assertEqual(grok_agent["context_durability"], "provider_managed_resume")
+        self.assertEqual(grok_agent["sandbox_enforcement"], "advisory")
+        self.assertEqual(grok_agent["evidence_basis"], "path_and_grok_resume_preflight")
+        self.assertNotIn("command", grok_agent)
+        self.assertEqual([agent.get("command") for agent in agents], [["cursor-agent"], None, ["hermes"], ["openclaw"]])
 
         discoveries = {item["command"]: item for item in report["discoveries"]}
-        for command in external_commands:
+        for command in {"cursor-agent", "hermes", "openclaw"}:
             self.assertTrue(discoveries[command]["available"])
             self.assertTrue(discoveries[command]["included"])
             self.assertTrue(discoveries[command]["requires_approval"])
@@ -132,6 +141,13 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(discoveries[command]["context_durability"], "process_lifetime")
             self.assertEqual(discoveries[command]["sandbox_enforcement"], "advisory")
             self.assertEqual(discoveries[command]["evidence_basis"], "path_and_pty_preflight")
+        self.assertTrue(discoveries["grok"]["available"])
+        self.assertTrue(discoveries["grok"]["included"])
+        self.assertTrue(discoveries["grok"]["requires_approval"])
+        self.assertEqual(discoveries["grok"]["entry_mode"], "grok_live_session")
+        self.assertEqual(discoveries["grok"]["join_semantics"], "grok_session_resume")
+        self.assertEqual(discoveries["grok"]["context_durability"], "provider_managed_resume")
+        self.assertEqual(discoveries["grok"]["evidence_basis"], "path_and_grok_resume_preflight")
 
     def test_build_discovered_config_can_include_legacy_gemini_when_requested(self):
         def resolver(command):

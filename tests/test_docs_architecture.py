@@ -249,7 +249,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("requires_approval", doc)
         self.assertIn("safety_note", doc)
         self.assertIn("cursor-agent", doc)
-        self.assertIn("Grok Build", doc)
+        self.assertIn("Grok", doc)
         self.assertIn("Hermes CLI", doc)
         self.assertIn("openclaw", doc)
         self.assertIn("unsupported_terminal", doc)
@@ -764,7 +764,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("python3 -m agentsassemble.cli live-agent stop-session", doc)
         self.assertIn("Experimental Codex live session quickstart", doc)
         self.assertIn("no-model fake Codex lifecycle regression", doc)
-        self.assertIn("native Claude Code/Cursor/Antigravity/Grok/Hermes/OpenClaw integrations are not complete", doc)
+        self.assertIn("Grok has a narrower experimental JSON stdout", doc)
+        self.assertIn("native Claude Code/Cursor/Antigravity/", doc)
         self.assertIn("non-Codex local CLI read-only is not a hard OS sandbox", doc)
         self.assertIn("SandboxLauncher", doc)
         self.assertIn("sandbox_enforcement", doc)
@@ -776,6 +777,7 @@ class DocsArchitectureTests(unittest.TestCase):
         for provider in (
             "codex_live_session",
             "kiro_live_session",
+            "grok_live_session",
             "claude_code",
             "cursor",
             "antigravity_cli",
@@ -799,7 +801,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("fake `codex` executable", doc)
         self.assertIn("real Codex smoke", doc)
         self.assertIn("configs/live-agents.provider-staging.example.json", doc)
-        self.assertIn("Codex and Kiro are the only provider-specific resume residents", doc)
+        self.assertIn("Codex, Kiro, and Grok are the provider-specific resume residents", doc)
         self.assertIn("local_cli is a stateless delegate", doc)
         normalized_evidence = " ".join(evidence.split())
         self.assertIn("Grok is the only non-Codex/Kiro provider with a passing two-turn continuity probe", normalized_evidence)
@@ -842,7 +844,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("first assistant `text` length was 5", survey)
         self.assertIn("turn 2 assistant `text` length was 4", survey)
         self.assertIn("full process output did contain prompt material in stderr", survey)
-        self.assertIn("Future provider-specific `grok_live_session`/runner is justified by evidence", normalized)
+        self.assertIn("grok_live_session", normalized)
+        self.assertIn("implemented the narrow Grok runner/proof path", normalized)
         self.assertIn("grok_session_resume", normalized)
         self.assertIn("This still does not prove room admission", normalized)
         self.assertIn("do not add a `cursor_agent` resume runner from current evidence", normalized)

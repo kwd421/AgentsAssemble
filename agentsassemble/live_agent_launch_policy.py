@@ -15,6 +15,7 @@ _REAL_PROVIDER_KINDS = {
     "cursor",
     "gemini_cli_legacy",
     "grok_build_cli",
+    "grok_live_session",
     "hermes_cli",
     "kiro_live_session",
     "openclaw_cli",

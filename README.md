@@ -91,8 +91,11 @@ moderator-controlled official turns, session start/resume/restart/recover/stop
 commands, credential-free smoke checks, shared meeting memory artifacts, and an
 experimental Codex CLI resident path based on `codex exec resume`.
 
-This is not yet the final native multi-provider room. Codex is the most advanced
-resident path. The native Claude Code/Cursor/Antigravity/Grok/Hermes/OpenClaw integrations are not complete, and non-Codex local CLI read-only is not a hard OS sandbox.
+This is not yet the final native multi-provider room. Codex remains the most
+advanced resident path, Kiro has an experimental `kiro chat --resume-id`
+resident path, and Grok has a narrower experimental JSON stdout
+`grok --resume` continuity path. The native Claude Code/Cursor/Antigravity/
+Hermes/OpenClaw integrations are not complete, and non-Codex local CLI read-only is not a hard OS sandbox.
 Ordinary `local_cli` is a stateless delegate path, not a provider-owned resident
 session. `terminal_session`, `self_service`, and remote bridge participants
 still rely on policy, approval, and audit metadata unless a real sandboxed

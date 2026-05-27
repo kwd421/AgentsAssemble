@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from agentsassemble.codex_resident import CodexResidentCommandRunner
+from agentsassemble.grok_resident import GrokResidentCommandRunner
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.meeting_events import clean_lobby_text
 
 
-SUPPORTED_CONTINUITY_PROVIDER_KINDS = frozenset({"codex_live_session", "kiro_live_session"})
+SUPPORTED_CONTINUITY_PROVIDER_KINDS = frozenset({"codex_live_session", "kiro_live_session", "grok_live_session"})
 CONTINUITY_PROOF_LIMITATIONS = [
     "two_turn_provider_resume_recall_only",
     "does_not_prove_room_admission",
@@ -31,6 +32,12 @@ def run_live_agent_continuity_proof(
     provider_kind = clean_lobby_text(config.provider_kind, limit=64)
     connection_kind = clean_lobby_text(config.connection_kind, limit=64)
     agent_id = clean_lobby_text(config.agent_id, limit=128) or "continuity-proof"
+    normalized_config = replace(
+        config,
+        agent_id=agent_id,
+        provider_kind=provider_kind,
+        connection_kind=connection_kind,
+    )
     if provider_kind not in SUPPORTED_CONTINUITY_PROVIDER_KINDS or connection_kind != "live_session":
         return {
             "status": "unsupported",
@@ -55,17 +62,16 @@ def run_live_agent_continuity_proof(
             "diagnostic": True,
             "limitations": CONTINUITY_PROOF_LIMITATIONS,
         }
+    setup_error = _continuity_structural_setup_error(normalized_config)
+    if setup_error:
+        result = _safe_setup_failed_result(normalized_config)
+        result["approved"] = True
+        return result
     code = (code_factory or _continuity_code)()
     suffix = code[-4:]
     first_prompt = _first_prompt(code)
     second_prompt = _second_prompt()
     runner = None
-    normalized_config = replace(
-        config,
-        agent_id=agent_id,
-        provider_kind=provider_kind,
-        connection_kind=connection_kind,
-    )
     try:
         runner = _runner_for_config(normalized_config, command_runner=command_runner, cwd=cwd)
         first_reply = runner([], first_prompt, timeout_seconds=max(1, int(normalized_config.timeout_seconds or 120)))
@@ -90,16 +96,27 @@ def run_live_agent_continuity_proof(
         if runner is not None:
             _close_runner(runner)
 
+    first_reply_is_ready = first_reply.strip() == "READY"
     first_revealed_code = code in first_reply
+    first_revealed_suffix = suffix in first_reply
     second_replayed_code = code in second_prompt
     expected_suffix_matched = second_reply.strip() == suffix
     session_id = str(getattr(runner, "session_id", "") or "")
-    ok = bool(session_id) and not first_revealed_code and not second_replayed_code and expected_suffix_matched
+    ok = (
+        bool(session_id)
+        and first_reply_is_ready
+        and not first_revealed_code
+        and not first_revealed_suffix
+        and not second_replayed_code
+        and expected_suffix_matched
+    )
     return {
         "status": "ok" if ok else "failed",
         "reason": "ok" if ok else _failure_reason(
             session_id_captured=bool(session_id),
+            first_reply_is_ready=first_reply_is_ready,
             first_revealed_code=first_revealed_code,
+            first_revealed_suffix=first_revealed_suffix,
             second_replayed_code=second_replayed_code,
             expected_suffix_matched=expected_suffix_matched,
         ),
@@ -114,7 +131,9 @@ def run_live_agent_continuity_proof(
         "session_id_suffix": _safe_session_suffix(session_id),
         "first_reply_length": len(first_reply),
         "second_reply_length": len(second_reply),
+        "first_reply_is_ready": first_reply_is_ready,
         "first_reply_revealed_code": first_revealed_code,
+        "first_reply_revealed_suffix": first_revealed_suffix,
         "second_prompt_replayed_code": second_replayed_code,
         "expected_suffix_matched": expected_suffix_matched,
         "limitations": CONTINUITY_PROOF_LIMITATIONS,
@@ -182,6 +201,8 @@ def _runner_for_config(config: ResidentAgentConfig, *, command_runner: Any | Non
         return CodexResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
     if config.provider_kind == "kiro_live_session":
         return KiroResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
+    if config.provider_kind == "grok_live_session":
+        return GrokResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
     raise ValueError(f"Provider does not support continuity proof: {config.provider_kind}")
 
 
@@ -200,6 +221,9 @@ def _continuity_structural_setup_error(config: ResidentAgentConfig) -> str:
             return "resident_setup_failed"
     if provider_kind == "kiro_live_session":
         if executable_name not in {"kiro", "kiro-cli", "kiro-cli-chat"}:
+            return "resident_setup_failed"
+    if provider_kind == "grok_live_session":
+        if len(command) != 1 or executable_name not in {"grok", "grok.exe"}:
             return "resident_setup_failed"
     return ""
 
@@ -239,7 +263,9 @@ def _safe_session_suffix(session_id: object) -> str:
 def _failure_reason(
     *,
     session_id_captured: bool,
+    first_reply_is_ready: bool,
     first_revealed_code: bool,
+    first_revealed_suffix: bool,
     second_replayed_code: bool,
     expected_suffix_matched: bool,
 ) -> str:
@@ -247,6 +273,10 @@ def _failure_reason(
         return "session_id_not_captured"
     if first_revealed_code:
         return "first_reply_revealed_code"
+    if first_revealed_suffix:
+        return "first_reply_revealed_suffix"
+    if not first_reply_is_ready:
+        return "first_reply_not_ready"
     if second_replayed_code:
         return "second_prompt_replayed_code"
     if not expected_suffix_matched:

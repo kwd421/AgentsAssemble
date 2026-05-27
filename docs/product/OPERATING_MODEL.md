@@ -216,7 +216,7 @@ Near-term work should favor backend contracts over visual polish:
 - Keep context durability labels such as provider-managed, process-lifetime, and
   stateless-prompt visible on admission, roster, and startup-packet surfaces
   where they are accurate.
-- Treat provider-managed resume adapters such as Codex and Kiro as actual
+- Treat provider-managed resume adapters such as Codex, Kiro, and Grok as actual
   provider sessions only after a real continuity proof shows later turns can
   recall earlier private session context without AgentsAssemble replaying it.
 - Keep `shared_memory/` resident meeting artifacts deterministic, official-only,

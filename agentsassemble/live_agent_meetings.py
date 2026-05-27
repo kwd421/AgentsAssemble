@@ -150,6 +150,8 @@ def _connection_kind_for_provider(provider_kind: str) -> str:
         return "codex_resume"
     if provider_kind == "kiro_live_session":
         return "live_session"
+    if provider_kind == "grok_live_session":
+        return "live_session"
     return "manual"
 
 

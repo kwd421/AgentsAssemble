@@ -54,6 +54,7 @@ The default registry exposes provider kinds with explicit capability snapshots:
 - `anthropic`
 - `gemini`
 - `grok`
+- `grok_live_session`
 - `grok_build_cli`
 - `local_openai_compatible`
 - `remote_http_bridge`
@@ -68,7 +69,7 @@ The default registry exposes provider kinds with explicit capability snapshots:
 - `openclaw_memory`
 - `memory_pack`
 
-`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `kiro_live_session` is a resident live-agent adapter, not a meeting adapter: it joins through the resident runner and Kiro's own chat resume store. `cursor`, `claude_code`, `antigravity_cli`, `gemini_cli_legacy`, `grok_build_cli`, `hermes_cli`, and `openclaw_cli` remain implementation-phase planned providers unless they are launched through the resident live-agent runner's explicit connection-kind contract; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
+`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `kiro_live_session` and `grok_live_session` are resident live-agent adapters, not meeting adapters: Kiro joins through the resident runner and Kiro's own chat resume store, while Grok joins through the resident runner and Grok's JSON stdout session resume. `cursor`, `claude_code`, `antigravity_cli`, `gemini_cli_legacy`, `grok_build_cli`, `hermes_cli`, and `openclaw_cli` remain implementation-phase planned providers unless they are launched through the resident live-agent runner's explicit connection-kind contract; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
 Imported memory/profile packs now have a safe inspection surface before they can
 affect meeting context. `assemble memory-capsule gate --path <capsule-dir>`
@@ -243,7 +244,19 @@ global Kiro session list; separate host processes should still avoid starting
 multiple fresh Kiro resident groups at exactly the same time until a provider
 scoped session-creation API exists.
 
-For both Codex and Kiro, `live-agent continuity-proof` is the direct
+`grok_live_session` is the first Grok-specific resident continuity slice. It
+uses the local `grok` executable with a runner-owned prompt file, JSON stdout,
+and explicit `--resume <sessionId>` after the first call captures a safe session
+id. The runner reads only JSON stdout `text` as the public reply, ignores stderr
+as reply/proof material because Grok process logs can echo prompt text, and
+persists only safe session id state inside the runner. Public continuity-proof
+artifacts may record provider kind, connection kind, safe join semantics
+(`grok_session_resume`), booleans, lengths, and a short session-id suffix, but
+must not store raw prompts, provider output, stderr, command tails, account
+data, or local prompt-file paths. Grok launch safety is currently `advisory`;
+there is no AgentsAssemble-owned hard sandbox for this adapter.
+
+For Codex, Kiro, and Grok, `live-agent continuity-proof` is the direct
 provider-owned context diagnostic. It is intentionally narrower than
 `real-session-smoke`: it performs two approved provider turns through the same
 resident runner, verifies that turn 2 can recall a suffix from turn 1 without
