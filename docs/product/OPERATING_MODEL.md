@@ -148,6 +148,13 @@ official turn         -> transcript and decision evidence
 explicit promote      -> selected informal context becomes official input
 ```
 
+Lobby chat attachments follow the same boundary as lobby text. They are stored
+as local room files under the GUI output root and lobby events keep only safe
+metadata plus room download/preview URLs. Raw file bytes, base64 payloads, and
+local absolute paths must not be written into lobby events, shared memory,
+transcripts, or decisions. An attachment becomes official evidence only through
+a future explicit promote path or a separate official artifact action.
+
 Pending official turn requests are control state, not evidence. A meeting with
 unanswered official requests must not be finalized by inventing agent replies.
 The operator may explicitly close pending requests, which records non-official

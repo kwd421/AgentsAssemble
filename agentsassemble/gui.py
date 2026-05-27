@@ -16,6 +16,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
+from agentsassemble.attachments import (
+    AttachmentError,
+    attachment_content_disposition,
+    normalize_attachment_references,
+    read_attachment_file,
+    store_uploaded_attachment,
+)
 from agentsassemble.codex_sessions import (
     CODEX_LIVE_PROVIDER_ID,
     DEFAULT_LIVE_AGENT_CONFIG_PATH,
@@ -1130,6 +1137,14 @@ def append_lobby_event(
             live_agent_endpoint=live_agent_endpoint,
             allow_flow_metadata=allow_flow_metadata,
         )
+
+
+def lobby_payload_with_attachments(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
+    if "attachments" not in payload:
+        return payload
+    event = dict(payload)
+    event["attachments"] = normalize_attachment_references(output_root, event.get("attachments"))
+    return event
 
 
 def read_side_chat(output_root: Path, limit: int = 120) -> list[dict[str, object]]:
@@ -6981,6 +6996,16 @@ def _make_handler(
                     return
                 self._send_file(static_path)
                 return
+            if path.startswith("/api/attachments/"):
+                attachment_id = unquote(path.removeprefix("/api/attachments/"))
+                try:
+                    metadata, file_path = read_attachment_file(output_root, attachment_id)
+                except AttachmentError as error:
+                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
+                    return
+                inline = metadata.get("is_image") is True and "view" in query and "download" not in query
+                self._send_attachment_file(file_path, metadata, inline=inline)
+                return
             if path == "/api/meetings":
                 self._send_json({"meetings": list_meetings(output_root)})
                 return
@@ -7154,6 +7179,23 @@ def _make_handler(
                 result = run_demo_meeting(adapter_name="mock", output_root=output_root)
                 self._send_json({"meeting_id": result.meeting_id, "path": str(result.meeting_dir)})
                 return
+            if parsed.path == "/api/attachments":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    attachment = store_uploaded_attachment(output_root, payload)
+                except AttachmentError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json({"attachment": attachment})
+                return
             if parsed.path == "/api/lobby":
                 length = int(self.headers.get("Content-Length", "0") or "0")
                 try:
@@ -7161,7 +7203,15 @@ def _make_handler(
                 except json.JSONDecodeError:
                     self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
                     return
-                event = append_lobby_event(output_root, payload if isinstance(payload, dict) else {})
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    payload = lobby_payload_with_attachments(output_root, payload)
+                except AttachmentError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                event = append_lobby_event(output_root, payload)
                 self._send_json({"event": event, "events": read_lobby(output_root)})
                 return
             if parsed.path == "/api/side-chat":
@@ -9059,6 +9109,22 @@ def _make_handler(
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", guessed)
             self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _send_attachment_file(self, path: Path, metadata: dict[str, object], *, inline: bool) -> None:
+            if not path.exists() or not path.is_file():
+                self._send_error(HTTPStatus.NOT_FOUND, "Attachment not found")
+                return
+            filename = str(metadata.get("filename") or path.name)
+            content_type = str(metadata.get("content_type") or mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+            data = path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", attachment_content_disposition(filename, inline=inline))
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)

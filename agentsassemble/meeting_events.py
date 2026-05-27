@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -71,6 +72,7 @@ class LobbyEvent:
     flow_agent_count: int = 0
     flow_started_at: str = ""
     flow_deadline_at: str = ""
+    attachments: list[dict[str, object]] = field(default_factory=list)
 
     @classmethod
     def from_payload(cls, payload: dict[str, object], channel: Literal["lobby", "side_chat"] = "lobby") -> LobbyEvent:
@@ -109,6 +111,7 @@ class LobbyEvent:
             flow_agent_count=normalize_flow_int(payload.get("flow_agent_count")),
             flow_started_at=clean_lobby_text(payload.get("flow_started_at", ""), limit=64),
             flow_deadline_at=clean_lobby_text(payload.get("flow_deadline_at", ""), limit=64),
+            attachments=clean_lobby_attachments(payload.get("attachments")),
         )
 
     @classmethod
@@ -151,6 +154,7 @@ class LobbyEvent:
             flow_agent_count=normalize_flow_int(payload.get("flow_agent_count")),
             flow_started_at=clean_lobby_text(payload.get("flow_started_at", ""), limit=64),
             flow_deadline_at=clean_lobby_text(payload.get("flow_deadline_at", ""), limit=64),
+            attachments=clean_lobby_attachments(payload.get("attachments")),
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -197,6 +201,8 @@ class LobbyEvent:
             value = getattr(self, key)
             if value:
                 payload[key] = value
+        if self.attachments:
+            payload["attachments"] = self.attachments
         return payload
 
 
@@ -435,6 +441,36 @@ def write_live_state(meeting_dir: Path, payload: dict[str, object]) -> None:
 
 def clean_lobby_text(value: object, limit: int) -> str:
     return str(value or "").replace("\n", " ").replace("\r", " ").strip()[:limit]
+
+
+def clean_lobby_attachments(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    cleaned: list[dict[str, object]] = []
+    for item in value[:8]:
+        if not isinstance(item, dict):
+            continue
+        attachment_id = clean_lobby_text(item.get("id"), limit=64)
+        if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", attachment_id):
+            continue
+        filename = clean_lobby_text(item.get("filename"), limit=120) or "attachment.bin"
+        content_type = clean_lobby_text(item.get("content_type"), limit=120) or "application/octet-stream"
+        try:
+            size = int(item.get("size") or 0)
+        except (TypeError, ValueError):
+            size = 0
+        cleaned.append(
+            {
+                "id": attachment_id,
+                "filename": filename,
+                "content_type": content_type,
+                "size": max(0, size),
+                "is_image": item.get("is_image") is True,
+                "url": clean_lobby_text(item.get("url"), limit=200),
+                "download_url": clean_lobby_text(item.get("download_url"), limit=200),
+            }
+        )
+    return cleaned
 
 
 def normalize_lobby_side(value: object) -> LobbySide:

@@ -15,6 +15,8 @@ import {
 const lobbySides = new Set(["mine", "my-agent", "other", "other-agent"]);
 let lobbyFeedHasPainted = false;
 let lobbyFeedPinnedToLatest = true;
+let pendingLobbyAttachments = [];
+let lobbyAttachmentStatus = "";
 
 export function renderLobby(options = {}) {
   const lobby = document.querySelector("#lobby");
@@ -59,8 +61,13 @@ export function renderLobby(options = {}) {
           </div>
           <form id="lobby-form" class="lobby-form">
             <input id="lobby-message" maxlength="240" placeholder="메시지를 입력하세요" />
+            <label class="lobby-file-button" title="파일 첨부">
+              <input id="lobby-attachments" type="file" multiple />
+              첨부
+            </label>
             ${hasRemoteLobbyBridge() ? '<button type="button" id="lobby-ask-remote">원격 호출</button>' : ""}
             <button type="submit">보내기</button>
+            ${renderPendingLobbyAttachments()}
           </form>
         </div>
         ${renderLobbyRoster(roster)}
@@ -89,6 +96,14 @@ export function renderLobby(options = {}) {
   askRemoteButton?.addEventListener("click", async () => {
     await sendLobbyEvent("message", { askRemote: true });
   });
+  lobby.querySelector("#lobby-attachments")?.addEventListener("change", async (event) => {
+    await uploadLobbyAttachments(event.currentTarget.files);
+    event.currentTarget.value = "";
+  });
+  lobby.querySelectorAll("[data-remove-lobby-attachment]").forEach((button) => {
+    button.addEventListener("click", () => removePendingLobbyAttachment(button.dataset.removeLobbyAttachment));
+  });
+  bindLobbyAttachmentPreview(lobby);
   bindLobbyFeedScroll(lobby);
   const myNameInput = lobby.querySelector("#lobby-my-name");
   myNameInput?.addEventListener("input", () => {
@@ -256,6 +271,7 @@ export function renderLobby(options = {}) {
   if (shouldFollowLatest) scrollLobbyFeedToLatest(lobby);
   else restoreLobbyFeedScroll(lobby, previousScrollTop);
   restoreWindowScroll(previousWindowScroll);
+  bindLobbyAttachmentPreview(lobby);
   lobbyFeedHasPainted = true;
 }
 
@@ -295,6 +311,7 @@ export function refreshLobbyFeed(options = {}) {
   if (count) count.textContent = `${events.length} events`;
   if (shouldFollowLatest) scrollLobbyFeedToLatest(lobby);
   else restoreLobbyFeedScroll(lobby, previousScrollTop);
+  bindLobbyAttachmentPreview(lobby);
 }
 
 function readLiveAgentProcessDraft(lobby) {
@@ -549,6 +566,22 @@ function renderSummaryMetric(label, value) {
   return `<div class="summary-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
 }
 
+function renderPendingLobbyAttachments() {
+  if (!pendingLobbyAttachments.length && !lobbyAttachmentStatus) return "";
+  const items = pendingLobbyAttachments
+    .map(
+      (attachment) => `
+        <span class="lobby-attachment-chip">
+          ${escapeHtml(attachment.filename || "attachment")}
+          <button type="button" data-remove-lobby-attachment="${escapeHtml(attachment.id || "")}" aria-label="첨부 제거">×</button>
+        </span>
+      `
+    )
+    .join("");
+  const status = lobbyAttachmentStatus ? `<small>${escapeHtml(lobbyAttachmentStatus)}</small>` : "";
+  return `<div class="lobby-attachment-draft">${items}${status}</div>`;
+}
+
 function renderLobbyEvent(event) {
   const currentName = localStorage.getItem("agentsassemble.name") || "";
   const storedSide = lobbySides.has(event.side) ? event.side : "";
@@ -567,9 +600,78 @@ function renderLobbyEvent(event) {
           <span>${escapeHtml(lobbyKindLabel(event.kind))}</span>
         </div>
         <p>${escapeHtml(content)}</p>
+        ${renderLobbyAttachments(event.attachments)}
       </div>
     </article>
   `;
+}
+
+function renderLobbyAttachments(attachments) {
+  if (!Array.isArray(attachments) || !attachments.length) return "";
+  return `
+    <div class="lobby-attachments">
+      ${attachments.map(renderLobbyAttachment).join("")}
+    </div>
+  `;
+}
+
+function renderLobbyAttachment(attachment) {
+  const filename = attachment?.filename || "attachment";
+  const url = attachment?.url || attachment?.download_url || "";
+  const downloadUrl = attachment?.download_url || url;
+  if (attachment?.is_image && url) {
+    return `
+      <button type="button" class="lobby-attachment-thumb" data-attachment-preview="${escapeHtml(url)}" data-attachment-filename="${escapeHtml(filename)}">
+        <img src="${escapeHtml(url)}" alt="${escapeHtml(filename)}" loading="lazy" />
+        <span>${escapeHtml(filename)}</span>
+      </button>
+    `;
+  }
+  return `
+    <a class="lobby-attachment-file" href="${escapeHtml(downloadUrl)}" download="${escapeHtml(filename)}">
+      <span>${escapeHtml(filename)}</span>
+      <small>${escapeHtml(formatAttachmentSize(attachment?.size))}</small>
+    </a>
+  `;
+}
+
+function formatAttachmentSize(size) {
+  const bytes = Number(size || 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "file";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 102.4) / 10} KB`;
+  return `${Math.round(bytes / (1024 * 102.4)) / 10} MB`;
+}
+
+function bindLobbyAttachmentPreview(root) {
+  root?.querySelectorAll("[data-attachment-preview]").forEach((button) => {
+    if (button.dataset.previewBound === "true") return;
+    button.dataset.previewBound = "true";
+    button.addEventListener("click", () => {
+      openAttachmentPreview(button.dataset.attachmentPreview, button.dataset.attachmentFilename || "image");
+    });
+  });
+}
+
+function openAttachmentPreview(url, filename) {
+  if (!url || !document.body || typeof document.createElement !== "function") return;
+  const previous = document.querySelector(".lobby-attachment-preview");
+  previous?.remove();
+  const overlay = document.createElement("div");
+  overlay.className = "lobby-attachment-preview";
+  overlay.innerHTML = `
+    <button type="button" class="lobby-attachment-preview-close" aria-label="미리보기 닫기">×</button>
+    <figure>
+      <img src="${escapeHtml(url)}" alt="${escapeHtml(filename)}" />
+      <figcaption>${escapeHtml(filename)}</figcaption>
+    </figure>
+  `;
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay || event.target?.classList?.contains("lobby-attachment-preview-close")) {
+      overlay.remove();
+    }
+  });
+  document.body.appendChild(overlay);
 }
 
 function buildLobbyRoster(events) {
@@ -2114,6 +2216,52 @@ function defaultLobbyMessage(kind, side) {
   return "";
 }
 
+async function uploadLobbyAttachments(files) {
+  const selected = Array.from(files || []);
+  if (!selected.length) return;
+  lobbyAttachmentStatus = "첨부 업로드 중";
+  renderLobby({ followLatest: false });
+  try {
+    const uploaded = [];
+    for (const file of selected) {
+      const dataBase64 = await fileToBase64(file);
+      const payload = await fetchJson("/api/attachments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name || "attachment.bin",
+          content_type: file.type || "application/octet-stream",
+          data_base64: dataBase64,
+        }),
+      });
+      if (payload.attachment) uploaded.push(payload.attachment);
+    }
+    pendingLobbyAttachments = [...pendingLobbyAttachments, ...uploaded];
+    lobbyAttachmentStatus = uploaded.length ? `${uploaded.length}개 첨부됨` : "";
+  } catch (error) {
+    lobbyAttachmentStatus = `첨부 실패: ${error?.message || "알 수 없는 오류"}`;
+  }
+  renderLobby({ followLatest: false });
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      const result = String(reader.result || "");
+      resolve(result.includes(",") ? result.split(",", 2)[1] : result);
+    });
+    reader.addEventListener("error", () => reject(reader.error || new Error("file read failed")));
+    reader.readAsDataURL(file);
+  });
+}
+
+function removePendingLobbyAttachment(attachmentId) {
+  pendingLobbyAttachments = pendingLobbyAttachments.filter((attachment) => attachment.id !== attachmentId);
+  lobbyAttachmentStatus = pendingLobbyAttachments.length ? lobbyAttachmentStatus : "";
+  renderLobby({ followLatest: false });
+}
+
 async function sendLobbyEvent(kind, options = {}) {
   const lobby = document.querySelector("#lobby");
   const messageInput = document.querySelector("#lobby-message");
@@ -2121,7 +2269,8 @@ async function sendLobbyEvent(kind, options = {}) {
   const name = localStorage.getItem("agentsassemble.name") || defaultLobbyName(side);
   const previousValue = messageInput?.value || "";
   const message = previousValue.trim();
-  if (kind === "message" && !message) return;
+  const attachments = pendingLobbyAttachments;
+  if (kind === "message" && !message && !attachments.length) return;
   const shouldFollowLatest = isLobbyFeedNearBottom(lobby);
   if (messageInput && kind === "message") messageInput.value = "";
   let payload;
@@ -2129,7 +2278,7 @@ async function sendLobbyEvent(kind, options = {}) {
     payload = await fetchJson("/api/lobby", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, side, kind, message }),
+      body: JSON.stringify({ name, side, kind, message, attachments }),
     });
   } catch (error) {
     const activeInput = document.querySelector("#lobby-message");
@@ -2139,6 +2288,8 @@ async function sendLobbyEvent(kind, options = {}) {
     }
     throw error;
   }
+  pendingLobbyAttachments = [];
+  lobbyAttachmentStatus = "";
   setLobbyEvents(payload.events || []);
   refreshLobbyFeed({ followLatest: shouldFollowLatest });
   document.querySelector("#lobby-message")?.focus();

@@ -45,6 +45,18 @@ flow with running/finished state, remaining time, participant status, and
 flow-scoped events; it should not present Play Mode chatter as transcript or
 decision evidence.
 
+Lobby chat can attach local files through the `첨부` control. The browser reads
+the selected file and sends a JSON/base64 upload to `/api/attachments`; the GUI
+server stores the bytes under `<output-root>/attachments/<attachment-id>/` and
+returns safe metadata. Posting a lobby message with attachments stores only that
+metadata in `lobby.jsonl`: attachment id, filename, content type, size, image
+flag, preview URL, and download URL. Raw bytes, base64 bodies, absolute paths,
+and user-supplied forged filenames are not copied into the lobby event. Images
+render as small thumbnails in the chat and can be clicked for a local preview;
+all attachments keep a download URL. These attachments are still lobby/play
+history, not official transcript or decision evidence unless a future explicit
+promote path is added.
+
 The React frontend track can start a Play Mode Mafia Night room through
 `/api/play/mafia/start`. Mafia state is stored separately under `play/mafia/`
 and exposes viewer-filtered reads through `/api/play/mafia?game_id=...`.

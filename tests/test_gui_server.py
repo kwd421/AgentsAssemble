@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import base64
 import json
 import os
 import sys
@@ -79,6 +80,139 @@ def _read_sse_frame(response, timeout: float = 3.0) -> str:
 
 
 class GuiServerTests(unittest.TestCase):
+    def test_attachment_upload_sanitizes_and_downloads_image(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                upload = Request(
+                    f"{server_url}/api/attachments",
+                    data=json.dumps(
+                        {
+                            "filename": "../yanagi.png",
+                            "content_type": "image/png",
+                            "data_base64": base64.b64encode(b"fake-png-bytes").decode("ascii"),
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(upload, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+
+                attachment = payload["attachment"]
+                self.assertEqual(attachment["filename"], "yanagi.png")
+                self.assertEqual(attachment["content_type"], "image/png")
+                self.assertEqual(attachment["size"], len(b"fake-png-bytes"))
+                self.assertTrue(attachment["is_image"])
+                self.assertNotIn("data_base64", attachment)
+                self.assertTrue((root / "attachments" / attachment["id"] / "yanagi.png").exists())
+                self.assertFalse((root / "yanagi.png").exists())
+
+                with urlopen(f"{server_url}{attachment['url']}", timeout=4) as response:
+                    self.assertEqual(response.read(), b"fake-png-bytes")
+                    self.assertEqual(response.headers.get_content_type(), "image/png")
+                    self.assertIn("inline", response.headers.get("Content-Disposition", ""))
+                with urlopen(f"{server_url}{attachment['download_url']}", timeout=4) as response:
+                    self.assertEqual(response.read(), b"fake-png-bytes")
+                    self.assertIn("attachment", response.headers.get("Content-Disposition", ""))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_lobby_post_preserves_attachment_metadata_without_raw_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                upload = Request(
+                    f"{server_url}/api/attachments",
+                    data=json.dumps(
+                        {
+                            "filename": "notes.txt",
+                            "content_type": "text/plain",
+                            "data_base64": base64.b64encode(b"room note").decode("ascii"),
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(upload, timeout=4) as response:
+                    attachment = json.loads(response.read().decode("utf-8"))["attachment"]
+
+                post = Request(
+                    f"{server_url}/api/lobby",
+                    data=json.dumps(
+                        {
+                            "name": "나",
+                            "side": "mine",
+                            "kind": "message",
+                            "message": "파일 확인",
+                            "attachments": [
+                                {
+                                    "id": attachment["id"],
+                                    "filename": "../../forged.txt",
+                                    "data_base64": "should-not-survive",
+                                }
+                            ],
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(post, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            event = payload["event"]
+            self.assertEqual(event["attachments"][0]["filename"], "notes.txt")
+            self.assertEqual(event["attachments"][0]["download_url"], attachment["download_url"])
+            serialized = json.dumps(event, ensure_ascii=False)
+            self.assertNotIn("should-not-survive", serialized)
+            self.assertNotIn("../../forged", serialized)
+            persisted = read_lobby(root, limit=None)
+            self.assertEqual(persisted[0]["attachments"][0]["id"], attachment["id"])
+
+    def test_lobby_rejects_unknown_attachment_ids(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                request = Request(
+                    f"{server_url}/api/lobby",
+                    data=json.dumps(
+                        {
+                            "name": "나",
+                            "side": "mine",
+                            "kind": "message",
+                            "message": "없는 파일",
+                            "attachments": [{"id": "missing-attachment"}],
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as context:
+                    urlopen(request, timeout=4)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(context.exception.code, 400)
+            context.exception.close()
+            self.assertEqual(read_lobby(root, limit=None), [])
+
     def test_live_agent_discovery_payload_filters_exact_approved_agents_before_writing_bundle(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
