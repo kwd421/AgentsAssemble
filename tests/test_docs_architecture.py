@@ -801,7 +801,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("configs/live-agents.provider-staging.example.json", doc)
         self.assertIn("Codex and Kiro are the only provider-specific resume residents", doc)
         self.assertIn("local_cli is a stateless delegate", doc)
-        self.assertIn("No real non-Codex/Kiro CLI continuity evidence has been recorded yet", evidence)
+        normalized_evidence = " ".join(evidence.split())
+        self.assertIn("Grok is the only non-Codex/Kiro provider with a passing two-turn continuity probe", normalized_evidence)
         for provider in ("claude_code", "cursor", "antigravity_cli", "grok_build_cli", "hermes_cli", "openclaw_cli"):
             self.assertIn(provider, evidence)
         for provider in ("claude_code", "openclaw_cli"):
@@ -823,10 +824,30 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("`grok agent --help` exposes `stdio`, `headless`, `serve`, and `leader` modes", survey)
         self.assertIn("`hermes chat --help` exposes `--query`, `--resume`, `--continue`", survey)
         self.assertIn("bounded `hermes version` invocation did not return before timeout", survey)
-        self.assertIn("status/account inspection is not safe public evidence", normalized_combined)
-        self.assertIn("No provider-owned continuity proof is recorded", normalized_combined)
-        self.assertIn("No provider-owned continuity proof or mode-safety proof is recorded", normalized_combined)
-        self.assertIn("With explicit approval, run a two-turn", normalized_combined)
+        self.assertIn("status/account inspection is not safe public evidence", normalized_combined.lower())
+        self.assertIn("Approved explicit-chat-id and workspace-continue probes both failed", normalized_combined)
+        self.assertIn("continuity-proven-limited", normalized_combined)
+        self.assertIn("only an approved two-turn continuity probe can prove", normalized_combined)
+
+    def test_cli_evidence_survey_records_real_probe_outcomes(self):
+        survey = (ROOT / "docs" / "cli-evidence-survey.md").read_text(encoding="utf-8")
+        matrix = (ROOT / "docs" / "provider-live-session-matrix.md").read_text(encoding="utf-8")
+        combined = "\n".join([survey, matrix])
+        normalized = " ".join(combined.split())
+
+        self.assertIn("Real Continuity Probe Summary", survey)
+        self.assertIn("failed this probe", survey)
+        self.assertIn("passed limited continuity probe", survey)
+        self.assertIn("JSON stdout `text`", survey)
+        self.assertIn("first assistant `text` length was 5", survey)
+        self.assertIn("turn 2 assistant `text` length was 4", survey)
+        self.assertIn("full process output did contain prompt material in stderr", survey)
+        self.assertIn("Future provider-specific `grok_live_session`/runner is justified by evidence", normalized)
+        self.assertIn("grok_session_resume", normalized)
+        self.assertIn("This still does not prove room admission", normalized)
+        self.assertIn("do not add a `cursor_agent` resume runner from current evidence", normalized)
+        self.assertIn("Do not add an Antigravity runner yet", survey)
+        self.assertIn("Do not add a Hermes runner yet", survey)
 
     def test_no_tailscale_multi_host_docs_separate_native_client_from_bridge(self):
         design = (ROOT / "docs" / "no-tailscale-multi-host.md").read_text(encoding="utf-8")
