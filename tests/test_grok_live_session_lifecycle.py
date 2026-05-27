@@ -21,7 +21,7 @@ from agentsassemble.grok_resident import (
 )
 from agentsassemble.gui import _make_handler
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
-from agentsassemble.live_agent_runner import ResidentAgentConfig
+from agentsassemble.live_agent_runner import LiveAgentRunner, ResidentAgentConfig
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.meeting_events import read_live_events
 
@@ -187,6 +187,82 @@ class GrokLiveSessionLifecycleTests(unittest.TestCase):
                         runner.close()
                 self.assertEqual(grok_error_category(caught.exception), category)
 
+    def test_fake_grok_official_turn_uses_dedicated_timeout_budget(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            fake_grok = temp_path / "grok"
+            fake_grok_log = temp_path / "fake-grok.jsonl"
+            _write_fake_grok_executable(fake_grok)
+            resident_config = config(
+                command=[str(fake_grok)],
+                timeout_seconds=1,
+                official_turn_timeout_seconds=3,
+                meeting_id="m1",
+            )
+            command_runner = GrokResidentCommandRunner(resident_config, cwd=temp_path)
+            client = _OfficialTurnRoomClient()
+            env = {
+                "AGENTSASSEMBLE_FAKE_GROK_LOG": str(fake_grok_log),
+                "AGENTSASSEMBLE_FAKE_GROK_SLEEP_SECONDS": "2",
+            }
+            try:
+                with patch.dict(os.environ, env, clear=False):
+                    runner = LiveAgentRunner(
+                        resident_config,
+                        request_json=client,
+                        command_runner=command_runner,
+                        sleep_fn=lambda seconds: None,
+                    )
+                    self.assertEqual(runner.run(), 1)
+            finally:
+                command_runner.close()
+
+            official_posts = [payload for url, method, payload in client.calls if url.endswith("/official-turn")]
+            self.assertEqual(len(official_posts), 1)
+            self.assertEqual(official_posts[0]["source_event_id"], "turn-request-1")
+            invocations = [
+                json.loads(line)
+                for line in fake_grok_log.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            self.assertEqual(len(invocations), 1)
+            self.assertEqual(invocations[0]["mode"], "fresh")
+            self.assertNotIn("prompt", invocations[0])
+
+    def test_fake_grok_official_turn_timeout_keeps_safe_category(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            fake_grok = temp_path / "grok"
+            _write_fake_grok_executable(fake_grok)
+            resident_config = config(
+                command=[str(fake_grok)],
+                timeout_seconds=1,
+                official_turn_timeout_seconds=1,
+                meeting_id="m1",
+            )
+            command_runner = GrokResidentCommandRunner(resident_config, cwd=temp_path)
+            client = _OfficialTurnRoomClient()
+            env = {"AGENTSASSEMBLE_FAKE_GROK_SLEEP_SECONDS": "2"}
+            try:
+                with patch.dict(os.environ, env, clear=False):
+                    runner = LiveAgentRunner(
+                        resident_config,
+                        request_json=client,
+                        command_runner=command_runner,
+                        sleep_fn=lambda seconds: None,
+                    )
+                    self.assertEqual(runner.run(), 0)
+            finally:
+                command_runner.close()
+
+            self.assertEqual([payload for url, method, payload in client.calls if url.endswith("/official-turn")], [])
+            error_payloads = [
+                payload
+                for url, method, payload in client.calls
+                if url.endswith("/heartbeat") and payload.get("status") == "error"
+            ]
+            self.assertEqual(error_payloads[-1]["last_error"], GROK_SUBPROCESS_TIMEOUT)
+
 
 def _post_json(port: int, path: str, payload: dict[str, object], *, timeout: float) -> dict[str, object]:
     request = Request(
@@ -197,6 +273,34 @@ def _post_json(port: int, path: str, payload: dict[str, object], *, timeout: flo
     )
     with urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+class _OfficialTurnRoomClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict[str, object]]] = []
+
+    def __call__(self, url: str, *, method: str = "GET", payload: dict[str, object] | None = None) -> dict[str, object]:
+        payload = payload or {}
+        self.calls.append((url, method, payload))
+        if url.endswith("/live-agents") and method == "POST":
+            return {"agent": {"agent_id": "grok-live", "status": "online"}}
+        if url.endswith("/room"):
+            return {
+                "agent": {"agent_id": "grok-live", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+                "lobby_events": [],
+                "live_events": [
+                    {
+                        "id": "turn-request-1",
+                        "kind": "live_agent_turn_request",
+                        "meeting_id": "m1",
+                        "target_agent_id": "grok-live",
+                        "content": "Answer the official turn.",
+                    }
+                ],
+            }
+        if url.endswith("/official-turn"):
+            return {"event": {"id": "official-reply-1"}}
+        return {"agent": {"agent_id": "grok-live", "status": payload.get("status", "online")}}
 
 
 def _write_single_grok_session_configs(council_config: Path, agent_config: Path, live_agent_config: Path) -> None:
@@ -336,6 +440,9 @@ if mode == "timeout":
 if mode == "malformed":
     print("not json private prompt echo")
     raise SystemExit(0)
+sleep_seconds = float(os.environ.get("AGENTSASSEMBLE_FAKE_GROK_SLEEP_SECONDS") or "0")
+if sleep_seconds > 0:
+    time.sleep(sleep_seconds)
 
 try:
     prompt_path = Path(args[args.index("--prompt-file") + 1])

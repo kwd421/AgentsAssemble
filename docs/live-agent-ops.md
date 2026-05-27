@@ -2498,6 +2498,15 @@ post-restart reply-probe `1/1`) while the official round timed out
 Grok official-turn-quality failure, not as a production-ready official-turn
 claim.
 
+Resident configs may set `official_turn_timeout_seconds` for a provider command
+budget that applies only while answering targeted official turns. The default is
+`0`, which preserves the ordinary `timeout_seconds` behavior. Use it only for
+controlled follow-up experiments with slow real CLIs such as Grok: lobby probes,
+flow decisions, cursor acknowledgements, heartbeats, restart/recover checks,
+and stop paths continue to use the ordinary timeout. The checked-in fake Grok
+lifecycle regression proves this routing boundary, not real Grok official-turn
+quality.
+
 The supplied council and agent configs must bind the same `agent_id` values as
 the resident config. `configs/live-agents.example.json` is useful as the command
 shape reference for Claude and Antigravity, but it is not paired with the demo

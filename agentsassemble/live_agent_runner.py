@@ -72,6 +72,7 @@ class ResidentAgentConfig:
     character_mode_configured: bool = False
     first_message_index: int = 0
     terminal_idle_timeout: float = 0.35
+    official_turn_timeout_seconds: int = 0
 
 
 class LiveAgentRunner:
@@ -381,7 +382,7 @@ class LiveAgentRunner:
                 prompt,
                 source_event_id=source_event_id,
                 cursor_field=cursor_field,
-                timeout_seconds=self.config.timeout_seconds,
+                timeout_seconds=self._reply_timeout_seconds(cursor_field),
             ).strip()
             if not reply:
                 raise ValueError("Delegate command returned an empty reply.")
@@ -429,6 +430,11 @@ class LiveAgentRunner:
             return None
         decision = parse_flow_decision(raw_output)
         return source_event_id, decision
+
+    def _reply_timeout_seconds(self, cursor_field: str) -> int:
+        if cursor_field == "last_observed_live_event_id" and self.config.official_turn_timeout_seconds > 0:
+            return self.config.official_turn_timeout_seconds
+        return self.config.timeout_seconds
 
     def _flow_still_active(self, flow_id: str, meeting_id: str) -> bool:
         try:
@@ -1302,6 +1308,7 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         character_mode_configured=bool(str(getattr(args, "character_mode", "") or "")),
         first_message_index=clean_first_message_index(getattr(args, "first_message_index", 0)),
         terminal_idle_timeout=float(getattr(args, "terminal_idle_timeout", 0.35)),
+        official_turn_timeout_seconds=int(getattr(args, "official_turn_timeout", 0)),
     )
 
 
@@ -1327,6 +1334,9 @@ def _config_from_mapping(
     agent_id = str(data.get("agent_id") or "")
     if not agent_id:
         raise ValueError("Each live agent requires agent_id.")
+    official_turn_timeout_value = (
+        data["official_turn_timeout_seconds"] if "official_turn_timeout_seconds" in data else data.get("official_turn_timeout")
+    )
     return ResidentAgentConfig(
         server=str(server_override or data.get("server") or server),
         agent_id=agent_id,
@@ -1340,6 +1350,11 @@ def _config_from_mapping(
         engagement_mode=str(data.get("engagement_mode") or "mentioned"),
         command=command_parts,
         timeout_seconds=int(data.get("timeout_seconds") or data.get("timeout") or 120),
+        official_turn_timeout_seconds=live_agent_nonnegative_int(
+            official_turn_timeout_value,
+            0,
+            "official_turn_timeout_seconds",
+        ),
         poll_interval=live_agent_nonnegative_float(data.get("poll_interval"), defaults["poll_interval"], "poll_interval"),
         heartbeat_interval=live_agent_nonnegative_float(
             data.get("heartbeat_interval"),

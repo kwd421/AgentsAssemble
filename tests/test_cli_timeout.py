@@ -13029,7 +13029,24 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(args.cooldown, 5.0)
         self.assertEqual(args.max_chain_depth, 1)
         self.assertEqual(args.max_ticks, 0)
+        self.assertEqual(args.official_turn_timeout, 0)
         self.assertEqual(args.resident_command, ["claude", "-p"])
+
+    def test_live_agent_run_parser_accepts_official_turn_timeout(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run",
+                "--agent-id",
+                "grok-live",
+                "--official-turn-timeout",
+                "240",
+                "--command",
+                "grok",
+            ]
+        )
+
+        self.assertEqual(args.official_turn_timeout, 240)
 
     def test_live_agent_run_parser_rejects_invalid_resident_bounds(self):
         stderr = StringIO()

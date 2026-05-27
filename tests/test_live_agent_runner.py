@@ -894,6 +894,137 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(runner.run(), 1)
         self.assertTrue([call for call in client.calls if call[0].endswith("/official-turn")])
 
+    def test_official_turn_can_use_dedicated_command_timeout(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [],
+            "live_events": [
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "공식 답변해줘",
+                }
+            ],
+        }
+        client = FakeRoomClient([room])
+        command_timeouts = []
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            del command, prompt
+            command_timeouts.append(timeout_seconds)
+            return "공식 답변입니다."
+
+        runner = LiveAgentRunner(
+            config(
+                engagement_mode="moderator_called",
+                meeting_id="m1",
+                timeout_seconds=5,
+                official_turn_timeout_seconds=17,
+            ),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+        self.assertEqual(command_timeouts, [17])
+
+    def test_official_turn_timeout_defaults_to_general_command_timeout(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "engagement_mode": "moderator_called", "meeting_id": "m1"},
+            "lobby_events": [],
+            "live_events": [
+                {
+                    "id": "turn-request-1",
+                    "kind": "live_agent_turn_request",
+                    "meeting_id": "m1",
+                    "target_agent_id": "agent-a",
+                    "content": "공식 답변해줘",
+                }
+            ],
+        }
+        client = FakeRoomClient([room])
+        command_timeouts = []
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            del command, prompt
+            command_timeouts.append(timeout_seconds)
+            return "공식 답변입니다."
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="moderator_called", meeting_id="m1", timeout_seconds=5),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+        self.assertEqual(command_timeouts, [5])
+
+    def test_lobby_reply_keeps_general_command_timeout_when_official_timeout_is_set(self):
+        clock = FakeClock()
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "로비는 빠르게 답해줘"}]}
+        client = FakeRoomClient([room])
+        command_timeouts = []
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            del command, prompt
+            command_timeouts.append(timeout_seconds)
+            return "로비 답변입니다."
+
+        runner = LiveAgentRunner(
+            config(timeout_seconds=5, official_turn_timeout_seconds=17),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+        self.assertEqual(command_timeouts, [5])
+
+    def test_flow_lobby_decision_keeps_general_command_timeout_when_official_timeout_is_set(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "kind": "system",
+                    "message": "flow started",
+                    "flow_id": "flow-1",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                },
+                {"id": "evt1", "name": "나", "message": "자연스럽게 이어가줘", "flow_meeting_id": "m1"},
+            ],
+            "live_events": [],
+        }
+        client = FakeRoomClient([room])
+        command_timeouts = []
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            del command, prompt
+            command_timeouts.append(timeout_seconds)
+            return '{"action":"speak","message":"좋아, 여기서 이어갈게."}'
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="flow", meeting_id="m1", timeout_seconds=5, official_turn_timeout_seconds=17),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+        self.assertEqual(command_timeouts, [5])
+
     def test_runner_records_error_status_when_command_fails(self):
         clock = FakeClock()
         room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "실패해봐"}]}
@@ -2933,6 +3064,30 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(loaded[0].poll_interval, 0)
         self.assertEqual(loaded[0].heartbeat_interval, 0)
         self.assertEqual(loaded[0].max_chain_depth, 0)
+
+    def test_group_config_accepts_official_turn_timeout_without_changing_general_timeout(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "agent-official-slow",
+                                "command": ["fake"],
+                                "timeout_seconds": 5,
+                                "official_turn_timeout_seconds": 17,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        self.assertEqual(loaded[0].timeout_seconds, 5)
+        self.assertEqual(loaded[0].official_turn_timeout_seconds, 17)
 
     def test_group_config_server_override_applies_to_all_agents(self):
         with tempfile.TemporaryDirectory() as temp_dir:

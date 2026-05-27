@@ -1123,6 +1123,12 @@ def build_parser() -> argparse.ArgumentParser:
     live_run.add_argument("--meeting-id", default="")
     live_run.add_argument("--engagement-mode", default="always")
     live_run.add_argument("--timeout", type=int, default=120)
+    live_run.add_argument(
+        "--official-turn-timeout",
+        type=parse_nonnegative_int,
+        default=0,
+        help="Optional provider command timeout for official turns only; 0 reuses --timeout.",
+    )
     live_run.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
     live_run.add_argument("--heartbeat-interval", type=parse_nonnegative_float, default=30.0)
     live_run.add_argument("--cooldown", type=parse_nonnegative_float, default=5.0)
