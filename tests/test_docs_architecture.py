@@ -771,6 +771,7 @@ class DocsArchitectureTests(unittest.TestCase):
 
     def test_provider_live_session_matrix_records_current_provider_readiness(self):
         doc = (ROOT / "docs" / "provider-live-session-matrix.md").read_text(encoding="utf-8")
+        evidence = (ROOT / "docs" / "cli-evidence-survey.md").read_text(encoding="utf-8")
 
         for provider in (
             "codex_live_session",
@@ -799,6 +800,11 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("real Codex smoke", doc)
         self.assertIn("configs/live-agents.provider-staging.example.json", doc)
         self.assertIn("Codex and Kiro are the only provider-specific resume residents", doc)
+        self.assertIn("local_cli is a stateless delegate", doc)
+        self.assertIn("No real CLI continuity evidence has been recorded yet", evidence)
+        for provider in ("claude_code", "cursor", "antigravity_cli", "grok_build_cli", "hermes_cli", "openclaw_cli"):
+            self.assertIn(provider, evidence)
+            self.assertIn("unverified", evidence)
 
     def test_no_tailscale_multi_host_docs_separate_native_client_from_bridge(self):
         design = (ROOT / "docs" / "no-tailscale-multi-host.md").read_text(encoding="utf-8")

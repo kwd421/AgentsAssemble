@@ -29,6 +29,8 @@ DEFAULT_STALE_AFTER_SECONDS = 180
 OUTPUT_ONLY_FRESHNESS_FIELDS = {"heartbeat_age_seconds", "stale_after_seconds"}
 LIVE_AGENT_STATE_LOCK = threading.Lock()
 PRESENCE_ERROR_REDACTED = "Live-agent presence error details redacted."
+PRESENCE_ATTENTION_REDACTED = "presence_attention_redacted"
+SAFE_PRESENCE_ATTENTION_CODES = frozenset({"persona_context_blocked_official_turn"})
 SENSITIVE_PRESENCE_ERROR_MARKERS = (
     re.compile(r"\bbearer\s+[A-Za-z0-9._-]+", re.IGNORECASE),
     re.compile(r"\b(?:auth|token|secret|password|endpoint|prompt|config|url)\b\s*[:=]\s*\S+", re.IGNORECASE),
@@ -126,6 +128,8 @@ def connect_live_agent(
             "capabilities": _clean_capabilities(payload.get("capabilities") or existing.get("capabilities")),
             "last_error": _clean_presence_last_error(payload.get("last_error"))
             or _clean_presence_last_error(existing.get("last_error")),
+            "last_attention": _clean_presence_attention(payload.get("last_attention"))
+            or _clean_presence_attention(existing.get("last_attention")),
             "last_reply_at": clean_lobby_text(payload.get("last_reply_at"), limit=64)
             or clean_lobby_text(existing.get("last_reply_at"), limit=64),
             "last_observed_event_id": clean_lobby_text(payload.get("last_observed_event_id"), limit=128)
@@ -228,6 +232,7 @@ def heartbeat_live_agent(
                 "endpoint": "",
                 "capabilities": [],
                 "last_error": "",
+                "last_attention": "",
                 "last_reply_at": "",
                 "last_observed_event_id": "",
                 "last_observed_live_event_id": "",
@@ -239,6 +244,7 @@ def heartbeat_live_agent(
         for key, limit in (
             ("session_id", 128),
             ("last_error", 500),
+            ("last_attention", 128),
             ("last_reply_at", 64),
             ("last_observed_event_id", 128),
             ("last_observed_live_event_id", 128),
@@ -246,6 +252,8 @@ def heartbeat_live_agent(
             if key in metadata:
                 if key == "last_error":
                     agent[key] = _clean_presence_last_error(metadata.get(key))
+                elif key == "last_attention":
+                    agent[key] = _clean_presence_attention(metadata.get(key))
                 else:
                     agent[key] = clean_lobby_text(metadata.get(key), limit=limit)
         if "diagnostic" in metadata:
@@ -349,6 +357,8 @@ def _without_output_only_freshness(agent: dict[str, object]) -> dict[str, object
     clean_agent = {key: value for key, value in agent.items() if key not in OUTPUT_ONLY_FRESHNESS_FIELDS}
     if "last_error" in clean_agent:
         clean_agent["last_error"] = _clean_presence_last_error(clean_agent.get("last_error"))
+    if "last_attention" in clean_agent:
+        clean_agent["last_attention"] = _clean_presence_attention(clean_agent.get("last_attention"))
     return clean_agent
 
 
@@ -403,6 +413,15 @@ def _clean_presence_last_error(value: object) -> str:
     if _looks_sensitive_presence_error(text):
         return PRESENCE_ERROR_REDACTED
     return text
+
+
+def _clean_presence_attention(value: object) -> str:
+    text = clean_lobby_text(value, limit=128)
+    if not text:
+        return ""
+    if text in SAFE_PRESENCE_ATTENTION_CODES:
+        return text
+    return PRESENCE_ATTENTION_REDACTED
 
 
 def _looks_sensitive_presence_error(text: str) -> bool:

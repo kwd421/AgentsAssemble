@@ -249,8 +249,7 @@ class LiveAgentRunner:
         )
         if official_candidate is not None:
             if _flow_persona_could_bleed_into_official_context(self.config):
-                self._advance_live_cursor(live_events)
-                self._heartbeat_if_due()
+                self._record_persona_blocked_official_turn(str(official_candidate.get("id") or ""))
                 return 0
             if self._in_cooldown():
                 self._heartbeat_if_due()
@@ -461,6 +460,18 @@ class LiveAgentRunner:
             last_reply_at=self.last_reply_at.isoformat(),
             last_error="",
             **self._cursor_metadata("last_observed_event_id", source_event_id),
+        )
+
+    def _record_persona_blocked_official_turn(self, source_event_id: str) -> None:
+        self._set_cursor("last_observed_live_event_id", source_event_id)
+        self.last_error_at = None
+        self.last_error = ""
+        self.transient_room_error_active = False
+        self._heartbeat_due_safely(
+            "online",
+            last_error="",
+            last_attention="persona_context_blocked_official_turn",
+            **self._cursor_metadata("last_observed_live_event_id", source_event_id),
         )
 
     def _record_reply_success(

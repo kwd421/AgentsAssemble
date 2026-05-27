@@ -1218,6 +1218,8 @@ class CliTimeoutTests(unittest.TestCase):
                         "error",
                         "--last-error",
                         "delegate failed",
+                        "--last-attention",
+                        "persona_context_blocked_official_turn",
                         "--last-observed-event-id",
                         "evt1",
                         "--last-observed-live-event-id",
@@ -1234,6 +1236,7 @@ class CliTimeoutTests(unittest.TestCase):
             payload={
                 "status": "error",
                 "last_error": "delegate failed",
+                "last_attention": "persona_context_blocked_official_turn",
                 "last_reply_at": "2026-05-17T12:00:00+00:00",
                 "last_observed_event_id": "evt1",
                 "last_observed_live_event_id": "live-evt1",
@@ -5729,6 +5732,28 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(cli_module._live_agent_continuity_proof_group_exit_code({"status": "partial"}), 0)
         self.assertEqual(cli_module._live_agent_continuity_proof_group_exit_code({"status": "failed"}), 1)
         self.assertEqual(cli_module._live_agent_continuity_proof_group_exit_code({"status": "approval_required"}), 1)
+
+    def test_live_agent_continuity_proof_group_provider_staging_is_audit_only_without_approval(self):
+        stdout = StringIO()
+
+        with patch("sys.stdout", stdout):
+            exit_code = main(
+                [
+                    "live-agent",
+                    "continuity-proof-group",
+                    "--config",
+                    "configs/live-agents.provider-staging.example.json",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "unsupported")
+        self.assertEqual(payload["total_count"], 6)
+        self.assertEqual(payload["unsupported_count"], 6)
+        self.assertEqual(payload["approval_required_count"], 0)
+        self.assertEqual({item["status"] for item in payload["results"]}, {"unsupported"})
 
     def test_live_agent_real_session_smoke_requires_matching_config_paths(self):
         with self.assertRaises(SystemExit):
@@ -11433,7 +11458,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["event"]["id"], "live-next")
         self.assertEqual(payload["reply_command"][4], "official-reply")
 
-    def test_live_agent_wait_next_skips_official_turn_for_active_persona_agent(self):
+    def test_live_agent_wait_next_reports_persona_blocked_official_turn_for_active_persona_agent(self):
         stdout = StringIO()
         room_payload = {
             "agent": {
@@ -11473,12 +11498,19 @@ class CliTimeoutTests(unittest.TestCase):
                     ]
                 )
 
-        self.assertEqual(exit_code, 1)
+        self.assertEqual(exit_code, 0)
         payload = json.loads(stdout.getvalue())
-        self.assertEqual(payload["status"], "timeout")
-        self.assertEqual(payload["last_observed_live_event_id"], "live-next")
+        self.assertEqual(payload["status"], "event")
+        self.assertEqual(payload["action"], "persona_blocks_official_turn")
+        self.assertEqual(payload["source_event_id"], "live-next")
+        self.assertEqual(payload["event"]["id"], "live-next")
+        self.assertEqual(payload["reason"], "persona_context_blocked_official_turn")
+        self.assertEqual(payload["attention"], ["persona_context_blocked_official_turn"])
+        self.assertNotIn("reply_command", payload)
+        self.assertIn("--last-observed-live-event-id=live-next", payload["ack_command"])
+        self.assertIn("--last-attention=persona_context_blocked_official_turn", payload["ack_command"])
 
-    def test_live_agent_wait_official_turn_skips_active_persona_agent(self):
+    def test_live_agent_wait_official_turn_reports_persona_blocked_official_turn_for_active_persona_agent(self):
         stdout = StringIO()
         room_payload = {
             "agent": {
@@ -11517,10 +11549,17 @@ class CliTimeoutTests(unittest.TestCase):
                     ]
                 )
 
-        self.assertEqual(exit_code, 1)
+        self.assertEqual(exit_code, 0)
         payload = json.loads(stdout.getvalue())
-        self.assertEqual(payload["status"], "timeout")
-        self.assertEqual(payload["last_observed_live_event_id"], "live-next")
+        self.assertEqual(payload["status"], "event")
+        self.assertEqual(payload["action"], "persona_blocks_official_turn")
+        self.assertEqual(payload["source_event_id"], "live-next")
+        self.assertEqual(payload["event"]["id"], "live-next")
+        self.assertEqual(payload["reason"], "persona_context_blocked_official_turn")
+        self.assertEqual(payload["attention"], ["persona_context_blocked_official_turn"])
+        self.assertNotIn("reply_command", payload)
+        self.assertIn("--last-observed-live-event-id=live-next", payload["ack_command"])
+        self.assertIn("--last-attention=persona_context_blocked_official_turn", payload["ack_command"])
 
     def test_live_agent_wait_next_returns_lobby_event_when_no_official_turn_is_pending(self):
         stdout = StringIO()
@@ -13094,6 +13133,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("heartbeat", heartbeat_template)
         self.assertIn("{status}", heartbeat_template)
         self.assertIn("--last-error={last_error}", heartbeat_template)
+        self.assertIn("--last-attention={last_attention}", heartbeat_template)
         self.assertIn("--last-reply-at={last_reply_at}", heartbeat_template)
         self.assertIn("--last-observed-event-id={last_observed_event_id}", heartbeat_template)
         self.assertIn("--last-observed-live-event-id={last_observed_live_event_id}", heartbeat_template)
@@ -13361,6 +13401,7 @@ class CliTimeoutTests(unittest.TestCase):
         ]
         heartbeat_argv = [
             item.replace("{last_error}", "--provider-failed")
+            .replace("{last_attention}", "persona_context_blocked_official_turn")
             .replace("{status}", "error")
             .replace("{last_reply_at}", "2026-05-20T00:00:00+00:00")
             .replace("{last_observed_event_id}", "evt-1")
@@ -13375,6 +13416,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(official_args.message, ["-h"])
         self.assertEqual(heartbeat_args.status, "error")
         self.assertEqual(heartbeat_args.last_error, "--provider-failed")
+        self.assertEqual(heartbeat_args.last_attention, "persona_context_blocked_official_turn")
         self.assertEqual(heartbeat_args.last_reply_at, "2026-05-20T00:00:00+00:00")
         self.assertEqual(heartbeat_args.last_observed_event_id, "evt-1")
         self.assertEqual(heartbeat_args.last_observed_live_event_id, "live-1")
@@ -13394,6 +13436,8 @@ class CliTimeoutTests(unittest.TestCase):
                 "online",
                 "--last-error",
                 "{last_error}",
+                "--last-attention",
+                "{last_attention}",
                 "--last-reply-at",
                 "{last_reply_at}",
                 "--last-observed-event-id",
@@ -13406,6 +13450,27 @@ class CliTimeoutTests(unittest.TestCase):
         payload = cli_module._heartbeat_payload(args)
 
         self.assertEqual(payload, {"status": "online"})
+
+    def test_heartbeat_payload_redacts_unknown_attention_text(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "heartbeat",
+                "--server",
+                "http://room.local",
+                "--agent-id",
+                "selfer",
+                "--status",
+                "online",
+                "--last-attention",
+                "raw card lore that should not appear in roster",
+            ]
+        )
+
+        payload = cli_module._heartbeat_payload(args)
+
+        self.assertEqual(payload["last_attention"], "presence_attention_redacted")
+        self.assertNotIn("raw card lore", json.dumps(payload))
 
     def test_live_agent_run_uses_codex_resident_runner_for_codex_live_session_provider(self):
         args = build_parser().parse_args(

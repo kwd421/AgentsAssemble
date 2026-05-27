@@ -23,6 +23,8 @@ class LocalCliError(RuntimeError):
 
 
 class LocalCliAdapter(ProviderAdapter):
+    """One-shot stdin/stdout delegate adapter; it does not preserve provider session context."""
+
     name = "local_cli"
 
     def __init__(
@@ -43,6 +45,8 @@ class LocalCliAdapter(ProviderAdapter):
             "provider_kind": self.provider.kind,
             "model_id": self.provider.default_model,
             "meeting_id": meeting_context.get("meeting_id"),
+            "join_semantics": "stateless_prompt_call",
+            "context_durability": "stateless_prompt",
             "permissions": _meeting_read_only_permissions(),
         }
 

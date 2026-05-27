@@ -1958,6 +1958,7 @@ function liveAgentRuntimeDetails(agent) {
   const heartbeatAge = heartbeatAgeLabel(agent);
   if (heartbeatAge) details.push(heartbeatAge);
   if (agent.last_reply_at) details.push(`reply ${agent.last_reply_at}`);
+  if (agent.last_attention) details.push(`attention ${agent.last_attention}`);
   if (agent.last_observed_event_id) details.push(`last read lobby ${shortSessionId(agent.last_observed_event_id)}`);
   if (agent.last_observed_live_event_id) details.push(`last read official ${shortSessionId(agent.last_observed_live_event_id)}`);
   return details.join(" · ");

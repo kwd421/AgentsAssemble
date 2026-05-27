@@ -849,6 +849,14 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(runner.run(), 0)
         self.assertFalse([call for call in client.calls if call[0].endswith("/official-turn")])
         self.assertEqual(runner.last_observed_live_event_id, "turn-1")
+        online_heartbeats = [
+            payload
+            for url, method, payload in client.calls
+            if url.endswith("/heartbeat") and payload.get("status") == "online"
+        ]
+        self.assertTrue(online_heartbeats)
+        self.assertEqual(online_heartbeats[-1]["last_attention"], "persona_context_blocked_official_turn")
+        self.assertEqual(online_heartbeats[-1]["last_observed_live_event_id"], "turn-1")
 
     def test_flow_persona_off_stateful_runner_can_answer_official_turn_request(self):
         clock = FakeClock()

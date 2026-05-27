@@ -93,9 +93,10 @@ experimental Codex CLI resident path based on `codex exec resume`.
 
 This is not yet the final native multi-provider room. Codex is the most advanced
 resident path. The native Claude Code/Cursor/Antigravity/Grok/Hermes/OpenClaw integrations are not complete, and non-Codex local CLI read-only is not a hard OS sandbox.
-Ordinary `local_cli`, `terminal_session`, `self_service`, and remote bridge
-participants still rely on policy, approval, and audit metadata unless a real
-sandboxed launcher is added and verified.
+Ordinary `local_cli` is a stateless delegate path, not a provider-owned resident
+session. `terminal_session`, `self_service`, and remote bridge participants
+still rely on policy, approval, and audit metadata unless a real sandboxed
+launcher is added and verified.
 No-Tailscale multi-host is still a separate product axis: the current Phase 5
 slice adds only a LAN invite token PoC for a future
 `native_remote_room_client`, documented in `docs/no-tailscale-multi-host.md`.

@@ -31,7 +31,11 @@ from agentsassemble.codex_sessions import (
 from agentsassemble.character_mode import clean_persona_card_id, normalize_character_mode
 from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
-from agentsassemble.live_agents import _looks_sensitive_presence_error
+from agentsassemble.live_agents import (
+    PRESENCE_ATTENTION_REDACTED,
+    SAFE_PRESENCE_ATTENTION_CODES,
+    _looks_sensitive_presence_error,
+)
 from agentsassemble.live_agent_flow import FlowOptions, LiveAgentFlowClient
 from agentsassemble.live_agent_continuity_proof import (
     run_live_agent_continuity_proof,
@@ -401,6 +405,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_heartbeat.add_argument("--agent-id", required=True)
     live_heartbeat.add_argument("--status", choices=["online", "working", "offline", "error"], default="online")
     live_heartbeat.add_argument("--last-error", default=None)
+    live_heartbeat.add_argument("--last-attention", default=None)
     live_heartbeat.add_argument("--last-reply-at", default=None)
     live_heartbeat.add_argument("--last-observed-event-id", default=None)
     live_heartbeat.add_argument("--last-observed-live-event-id", default=None)
@@ -1776,14 +1781,30 @@ def _heartbeat_payload(args: argparse.Namespace) -> dict[str, object]:
     payload = {"status": args.status}
     optional_fields = {
         "last_error": getattr(args, "last_error", None),
+        "last_attention": getattr(args, "last_attention", None),
         "last_reply_at": getattr(args, "last_reply_at", None),
         "last_observed_event_id": getattr(args, "last_observed_event_id", None),
         "last_observed_live_event_id": getattr(args, "last_observed_live_event_id", None),
     }
     for key, value in optional_fields.items():
-        if value is not None and not _is_unreplaced_template_placeholder(value):
-            payload[key] = value
+        if value is None or _is_unreplaced_template_placeholder(value):
+            continue
+        if key == "last_attention":
+            attention = _clean_heartbeat_attention(value)
+            if attention:
+                payload[key] = attention
+            continue
+        payload[key] = value
     return payload
+
+
+def _clean_heartbeat_attention(value: object) -> str:
+    text = clean_lobby_text(value, limit=128)
+    if not text:
+        return ""
+    if text in SAFE_PRESENCE_ATTENTION_CODES:
+        return text
+    return PRESENCE_ATTENTION_REDACTED
 
 
 def _is_unreplaced_template_placeholder(value: object) -> bool:
@@ -5980,11 +6001,15 @@ def _run_live_agent_wait_turn_request(args: argparse.Namespace) -> int:
         last_room = room
         candidate = _wait_turn_request_candidate(args, room)
         if candidate is not None:
-            payload = _wait_turn_request_payload(args, room, candidate)
+            payload = (
+                _wait_persona_blocked_official_turn_payload(args, room, candidate)
+                if _wait_agent_persona_blocks_official_turn(room)
+                else _wait_turn_request_payload(args, room, candidate)
+            )
             if args.as_json:
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
             else:
-                print(_format_wait_turn_request(payload))
+                print(_format_wait_persona_block(payload) if payload.get("action") == "persona_blocks_official_turn" else _format_wait_turn_request(payload))
             return 0
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -6000,8 +6025,6 @@ def _run_live_agent_wait_turn_request(args: argparse.Namespace) -> int:
 
 
 def _wait_turn_request_candidate(args: argparse.Namespace, room: dict[str, object]) -> dict[str, object] | None:
-    if _wait_agent_persona_blocks_official_turn(room):
-        return None
     agent = room.get("agent") if isinstance(room.get("agent"), dict) else {}
     events = room.get("live_events") if isinstance(room.get("live_events"), list) else []
     typed_events = [event for event in events if isinstance(event, dict)]
@@ -6010,6 +6033,9 @@ def _wait_turn_request_candidate(args: argparse.Namespace, room: dict[str, objec
         requested_cursor = getattr(args, "after_event_id", "")
     cursor = str(requested_cursor or agent.get("last_observed_live_event_id") or "").strip()
     return official_turn_request_candidate(typed_events, args.agent_id, cursor)
+
+
+PERSONA_OFFICIAL_TURN_BLOCK_REASON = "persona_context_blocked_official_turn"
 
 
 def _wait_agent_persona_blocks_official_turn(room: dict[str, object]) -> bool:
@@ -6057,6 +6083,48 @@ def _wait_turn_request_payload(
         ],
         "room": _wait_room_context(room, meeting_id=str(room.get("meeting_id") or meeting_id)),
     }
+
+
+def _wait_persona_blocked_official_turn_payload(
+    args: argparse.Namespace,
+    room: dict[str, object],
+    event: dict[str, object],
+) -> dict[str, object]:
+    event_id = str(event.get("id") or "")
+    meeting_id = _wait_turn_request_meeting_id(room, event)
+    return {
+        "status": "event",
+        "action": "persona_blocks_official_turn",
+        "agent_id": args.agent_id,
+        "meeting_id": meeting_id,
+        "source_event_id": event_id,
+        "reason": PERSONA_OFFICIAL_TURN_BLOCK_REASON,
+        "attention": [PERSONA_OFFICIAL_TURN_BLOCK_REASON],
+        "event": event,
+        "ack_command": [
+            "python3",
+            "-m",
+            "agentsassemble.cli",
+            "live-agent",
+            "heartbeat",
+            "--server",
+            str(args.server),
+            "--agent-id",
+            str(args.agent_id),
+            "--status",
+            "online",
+            "--last-error=",
+            f"--last-attention={PERSONA_OFFICIAL_TURN_BLOCK_REASON}",
+            f"--last-observed-live-event-id={event_id}",
+            "--json",
+        ],
+        "room": _wait_room_context(room, meeting_id=str(room.get("meeting_id") or meeting_id)),
+    }
+
+
+def _format_wait_persona_block(payload: dict[str, object]) -> str:
+    event_id = str(payload.get("source_event_id") or "official turn request")
+    return f"persona_blocks_official_turn {event_id}: {PERSONA_OFFICIAL_TURN_BLOCK_REASON}"
 
 
 def _wait_room_context(room: dict[str, object], *, meeting_id: str) -> dict[str, object]:
@@ -6114,12 +6182,19 @@ def _run_live_agent_wait_next(args: argparse.Namespace) -> int:
         last_room = room
         official_candidate = _wait_turn_request_candidate(args, room)
         if official_candidate is not None:
-            payload = _wait_turn_request_payload(args, room, official_candidate)
-            payload["action"] = "official_turn"
+            if _wait_agent_persona_blocks_official_turn(room):
+                payload = _wait_persona_blocked_official_turn_payload(args, room, official_candidate)
+            else:
+                payload = _wait_turn_request_payload(args, room, official_candidate)
+                payload["action"] = "official_turn"
             if args.as_json:
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
             else:
-                print(f"official_turn {_format_wait_turn_request(payload)}")
+                prefix = payload.get("action")
+                if prefix == "persona_blocks_official_turn":
+                    print(_format_wait_persona_block(payload))
+                else:
+                    print(f"official_turn {_format_wait_turn_request(payload)}")
             return 0
         return_packet_candidate = _wait_return_packet_candidate(args, room)
         if return_packet_candidate is not None:
@@ -6670,6 +6745,7 @@ def _self_service_room_command_env(config: ResidentAgentConfig) -> dict[str, str
                 "--status",
                 "{status}",
                 "--last-error={last_error}",
+                "--last-attention={last_attention}",
                 "--last-reply-at={last_reply_at}",
                 "--last-observed-event-id={last_observed_event_id}",
                 "--last-observed-live-event-id={last_observed_live_event_id}",

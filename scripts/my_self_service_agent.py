@@ -169,6 +169,29 @@ def _handle_event(payload: dict[str, object], *, message: str, default_meeting_i
         )
         return True
 
+    if action == "persona_blocks_official_turn":
+        ack_command = _command_list(payload.get("ack_command"))
+        if ack_command:
+            ack = _run_optional(ack_command, command_timeout)
+            if ack is not None and ack.returncode == 0:
+                return True
+            _heartbeat(
+                "error",
+                last_error="persona official turn block ack failed",
+                last_observed_live_event_id=source_event_id,
+                last_attention="persona_context_blocked_official_turn",
+                command_timeout=command_timeout,
+            )
+            return False
+        _heartbeat(
+            "online",
+            last_error="",
+            last_observed_live_event_id=source_event_id,
+            last_attention="persona_context_blocked_official_turn",
+            command_timeout=command_timeout,
+        )
+        return True
+
     return False
 
 
@@ -242,6 +265,7 @@ def _heartbeat(
     *,
     command_timeout: float,
     last_error: str = "",
+    last_attention: str = "",
     last_reply_at: str = "",
     last_observed_event_id: str = "",
     last_observed_live_event_id: str = "",
@@ -252,6 +276,7 @@ def _heartbeat(
             {
                 "{status}": status,
                 "{last_error}": last_error,
+                "{last_attention}": last_attention,
                 "{last_reply_at}": last_reply_at,
                 "{last_observed_event_id}": last_observed_event_id,
                 "{last_observed_live_event_id}": last_observed_live_event_id,

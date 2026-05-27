@@ -7,6 +7,18 @@ from agentsassemble.models import ProviderConfig, ResearchSteering, Role, get_re
 
 
 class LocalCliAdapterTests(unittest.TestCase):
+    def test_local_cli_start_session_declares_stateless_prompt_contract(self):
+        adapter = LocalCliAdapter(
+            ProviderConfig(id="gemini-cli", kind="local_cli", display_name="Gemini CLI", command=["gemini"]),
+        )
+        role = Role("scout", "정찰병", "Research scout", "자료 조사")
+
+        session = adapter.start_session(role, {"meeting_id": "m1"})
+
+        self.assertEqual(session["join_semantics"], "stateless_prompt_call")
+        self.assertEqual(session["context_durability"], "stateless_prompt")
+        self.assertEqual(session["session_id"], None)
+
     def test_local_cli_research_invokes_configured_command_with_read_only_prompt(self):
         calls = []
 

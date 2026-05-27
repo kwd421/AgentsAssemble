@@ -17726,6 +17726,7 @@ class GuiServerTests(unittest.TestCase):
                         {
                             "status": "error",
                             "last_error": "command failed",
+                            "last_attention": "persona_context_blocked_official_turn",
                             "last_observed_event_id": "evt1",
                             "last_reply_at": "2026-05-17T12:00:00+00:00",
                         }
@@ -17742,8 +17743,38 @@ class GuiServerTests(unittest.TestCase):
             agent = payload["agent"]
             self.assertEqual(agent["status"], "error")
             self.assertEqual(agent["last_error"], "command failed")
+            self.assertEqual(agent["last_attention"], "persona_context_blocked_official_turn")
             self.assertEqual(agent["last_observed_event_id"], "evt1")
             self.assertEqual(agent["last_reply_at"], "2026-05-17T12:00:00+00:00")
+
+    def test_live_agent_heartbeat_redacts_unknown_attention_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(root, {"agent_id": "claude-code-live", "display_name": "Claude Code Live"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agents/claude-code-live/heartbeat",
+                    data=json.dumps(
+                        {
+                            "status": "online",
+                            "last_attention": "raw card lore that should not appear in roster",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            agent = payload["agent"]
+            self.assertEqual(agent["last_attention"], "presence_attention_redacted")
+            self.assertNotIn("raw card lore", json.dumps(agent))
 
     def test_live_agent_leave_endpoint_marks_offline_and_records_safe_operation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
