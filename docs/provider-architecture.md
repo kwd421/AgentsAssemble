@@ -243,6 +243,15 @@ global Kiro session list; separate host processes should still avoid starting
 multiple fresh Kiro resident groups at exactly the same time until a provider
 scoped session-creation API exists.
 
+For both Codex and Kiro, `live-agent continuity-proof` is the direct
+provider-owned context diagnostic. It is intentionally narrower than
+`real-session-smoke`: it performs two approved provider turns through the same
+resident runner, verifies that turn 2 can recall a suffix from turn 1 without
+AgentsAssemble replaying the private continuity code, and reports only safe
+booleans, lengths, provider kind, and a short session-id suffix. It does not
+join the room, promote evidence, prove stop/restart behavior, or persist
+provider approval.
+
 The resident launch contract now has a small `SandboxLauncher` abstraction. `NoSandboxLauncher` declares `sandbox_enforcement: "advisory"` and does not constrain the child process. Codex uses the Codex read-only launcher and declares `codex_readonly`. Only a provider launched through a verified OS sandbox, restricted worktree, environment scrubber, or equivalent hard boundary may declare `os_sandboxed`.
 
 The `meeting_read_only` permissions sent to `local_cli` and `remote_http_bridge` are currently advisory unless the caller also provides a real sandbox or constrained execution environment. Public artifacts should record this honestly as `enforcement: advisory` or `sandbox_enforcement: "advisory"` depending on the payload shape. Do not claim filesystem, credential, git, or implementation isolation is enforced for arbitrary CLI or bridge processes until a sandboxed launch path exists and is verified.

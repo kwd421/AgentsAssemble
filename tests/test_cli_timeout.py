@@ -5640,6 +5640,54 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertTrue(args.approve_real_providers)
         self.assertTrue(args.as_json)
 
+    def test_live_agent_continuity_proof_parses_explicit_approval_options(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "continuity-proof",
+                "--provider-kind",
+                "kiro_live_session",
+                "--connection-kind",
+                "live_session",
+                "--agent-id",
+                "kiro-proof",
+                "--timeout",
+                "180",
+                "--approve-real-providers",
+                "--json",
+                "--command",
+                "kiro",
+                "chat",
+                "--no-interactive",
+                "--wrap",
+                "never",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "continuity-proof")
+        self.assertEqual(args.provider_kind, "kiro_live_session")
+        self.assertEqual(args.connection_kind, "live_session")
+        self.assertEqual(args.agent_id, "kiro-proof")
+        self.assertEqual(args.timeout, 180)
+        self.assertTrue(args.approve_real_providers)
+        self.assertEqual(args.resident_command, ["kiro", "chat", "--no-interactive", "--wrap", "never"])
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_continuity_proof_formatter_includes_limits(self):
+        formatted = cli_module._format_live_agent_continuity_proof(
+            {
+                "status": "ok",
+                "provider_kind": "kiro_live_session",
+                "method": "provider_resume_suffix_recall",
+                "session_id_captured": True,
+                "expected_suffix_matched": True,
+                "reason": "ok",
+            }
+        )
+
+        self.assertIn("two-turn provider-owned resume recall only", formatted)
+        self.assertIn("does not prove room admission or tool safety", formatted)
+
     def test_live_agent_real_session_smoke_requires_matching_config_paths(self):
         with self.assertRaises(SystemExit):
             build_parser().parse_args(

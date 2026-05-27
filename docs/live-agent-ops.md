@@ -1658,6 +1658,51 @@ session ids. If you start separate Kiro resident processes by hand, avoid
 launching multiple fresh Kiro groups at the exact same time; provide
 `session_id` values or start them one at a time when isolation matters.
 
+## Provider Continuity Proof
+
+Use `live-agent continuity-proof` when you need direct evidence that a
+resume-capable provider resident owns its own multi-turn context. The command
+does not join a room or start a supervised group; it calls the provider runner
+for two turns. Turn 1 stores a generated continuity code in the provider
+session, and turn 2 asks only for the last four characters without replaying the
+code. The JSON result reports safe booleans and lengths only: it does not print
+the continuity code, provider output, full session id, command stderr, or prompt
+bodies.
+
+The command is a real-provider call, so it fails closed unless the current
+operator passes `--approve-real-providers` for that one invocation:
+
+```bash
+python3 -m agentsassemble.cli live-agent continuity-proof \
+  --provider-kind kiro_live_session \
+  --connection-kind live_session \
+  --agent-id kiro-proof \
+  --timeout 180 \
+  --approve-real-providers \
+  --json \
+  --command kiro chat --no-interactive --wrap never --model claude-opus-4.6
+```
+
+For Codex:
+
+```bash
+python3 -m agentsassemble.cli live-agent continuity-proof \
+  --provider-kind codex_live_session \
+  --connection-kind live_session \
+  --agent-id codex-proof \
+  --timeout 240 \
+  --approve-real-providers \
+  --json \
+  --command codex
+```
+
+Treat a passing continuity proof as one piece of evidence: it proves that the
+second provider call can use provider-managed resume context without
+AgentsAssemble replaying the first private code. It does not prove room
+admission, session start/stop cleanup, official turn quality, tool safety, or
+restart behavior. Pair it with `real-session-smoke` when you need room-level
+start/probe/stop evidence for a host-approved resident config.
+
 In short, the Codex resume path is still `codex exec resume`; the resident runner inserts the read-only sandbox flags at the `codex exec` level before the `resume` subcommand.
 
 When a Codex resident extracts a new session id, later heartbeats store it on the live-agent roster. If that resident process is restarted or recovered from a config that does not include a `session_id`, the fresh runner reads the existing roster entry during registration and seeds the Codex command runner before the next provider call, so it can resume the same Codex CLI session instead of starting over.

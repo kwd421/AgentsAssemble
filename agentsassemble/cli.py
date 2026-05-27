@@ -33,6 +33,7 @@ from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agents import _looks_sensitive_presence_error
 from agentsassemble.live_agent_flow import FlowOptions, LiveAgentFlowClient
+from agentsassemble.live_agent_continuity_proof import run_live_agent_continuity_proof
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.live_agent_roster import (
@@ -971,6 +972,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_real_session_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable real session smoke result.")
 
+    live_continuity_proof = live_agent_subparsers.add_parser(
+        "continuity-proof",
+        help="Run an explicitly approved two-turn provider-owned resume continuity proof.",
+    )
+    live_continuity_proof.add_argument("--agent-id", default="continuity-proof")
+    live_continuity_proof.add_argument("--display-name", default="")
+    live_continuity_proof.add_argument("--provider-kind", required=True)
+    live_continuity_proof.add_argument("--connection-kind", choices=LIVE_AGENT_RESIDENT_CONNECTION_KIND_CHOICES, default="live_session")
+    live_continuity_proof.add_argument("--session-id", default="")
+    live_continuity_proof.add_argument("--timeout", type=int, default=180)
+    live_continuity_proof.add_argument(
+        "--approve-real-providers",
+        action="store_true",
+        help="Allow this one proof command to call a real provider CLI.",
+    )
+    live_continuity_proof.add_argument("--json", action="store_true", dest="as_json")
+    live_continuity_proof.add_argument("--command", dest="resident_command", nargs=argparse.REMAINDER, default=[])
+
     live_official_round_smoke = live_agent_subparsers.add_parser(
         "official-round-smoke",
         parents=[live_server],
@@ -1707,6 +1726,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_session_smoke(args)
         if args.live_agent_command == "real-session-smoke":
             return _run_live_agent_real_session_smoke(args)
+        if args.live_agent_command == "continuity-proof":
+            return _run_live_agent_continuity_proof(args)
         if args.live_agent_command == "official-round-smoke":
             return _run_live_agent_official_round_smoke(args)
         if args.live_agent_command == "persona-smoke":
@@ -3539,6 +3560,38 @@ def _run_live_agent_real_session_smoke(args: argparse.Namespace) -> int:
     return 0 if result.get("status") == "ok" else 1
 
 
+def _run_live_agent_continuity_proof(args: argparse.Namespace) -> int:
+    config = ResidentAgentConfig(
+        server="",
+        agent_id=str(args.agent_id or "continuity-proof"),
+        display_name=str(args.display_name or args.agent_id or "Continuity Proof"),
+        provider_kind=str(args.provider_kind or ""),
+        connection_kind=str(args.connection_kind or "live_session"),
+        session_id=str(args.session_id or ""),
+        endpoint="",
+        auth_ref="",
+        meeting_id="",
+        engagement_mode="always",
+        command=list(args.resident_command or []),
+        timeout_seconds=int(args.timeout or 180),
+        poll_interval=1.0,
+        heartbeat_interval=30.0,
+        cooldown=0.0,
+        max_chain_depth=1,
+        max_ticks=1,
+    )
+    result = run_live_agent_continuity_proof(
+        config,
+        approve_real_providers=bool(args.approve_real_providers),
+        cwd=Path.cwd(),
+    )
+    if args.as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_continuity_proof(result))
+    return 0 if result.get("status") == "ok" else 1
+
+
 def _unapproved_real_session_smoke_result(args: argparse.Namespace) -> dict[str, object]:
     return {
         "status": "approval_required",
@@ -3554,6 +3607,19 @@ def _unapproved_real_session_smoke_result(args: argparse.Namespace) -> dict[str,
 def _safe_cli_smoke_id(value: object) -> str:
     text = clean_lobby_text(value, limit=128)
     return "".join(char if char.isalnum() or char in "_.-" else "-" for char in text).strip(".-")
+
+
+def _format_live_agent_continuity_proof(result: dict[str, object]) -> str:
+    return (
+        f"continuity proof {result.get('status') or 'unknown'}: "
+        f"{result.get('provider_kind') or 'provider'} "
+        f"{result.get('method') or 'provider_resume_suffix_recall'}; "
+        f"session {'yes' if result.get('session_id_captured') else 'no'}; "
+        f"suffix {'yes' if result.get('expected_suffix_matched') else 'no'}; "
+        f"reason {result.get('reason') or 'unknown'}; "
+        "limits two-turn provider-owned resume recall only; "
+        "does not prove room admission or tool safety"
+    )
 
 
 def _run_live_agent_official_round_smoke(args: argparse.Namespace) -> int:

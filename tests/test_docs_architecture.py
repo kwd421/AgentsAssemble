@@ -774,6 +774,7 @@ class DocsArchitectureTests(unittest.TestCase):
 
         for provider in (
             "codex_live_session",
+            "kiro_live_session",
             "claude_code",
             "cursor",
             "antigravity_cli",
@@ -786,6 +787,8 @@ class DocsArchitectureTests(unittest.TestCase):
         ):
             self.assertIn(provider, doc)
         self.assertIn("codex_exec_resume", doc)
+        self.assertIn("kiro_chat_resume", doc)
+        self.assertIn("continuity-proof", doc)
         self.assertIn("provider-managed", doc)
         self.assertIn("process-lifetime", doc)
         self.assertIn("stateless-prompt", doc)
@@ -794,7 +797,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("fake `codex` executable", doc)
         self.assertIn("real Codex smoke", doc)
         self.assertIn("configs/live-agents.provider-staging.example.json", doc)
-        self.assertIn("No non-Codex provider is marked native-ready", doc)
+        self.assertIn("Codex and Kiro are the only provider-specific resume residents", doc)
 
     def test_no_tailscale_multi_host_docs_separate_native_client_from_bridge(self):
         design = (ROOT / "docs" / "no-tailscale-multi-host.md").read_text(encoding="utf-8")
