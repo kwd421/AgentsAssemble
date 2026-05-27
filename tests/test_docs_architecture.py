@@ -801,10 +801,32 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("configs/live-agents.provider-staging.example.json", doc)
         self.assertIn("Codex and Kiro are the only provider-specific resume residents", doc)
         self.assertIn("local_cli is a stateless delegate", doc)
-        self.assertIn("No real CLI continuity evidence has been recorded yet", evidence)
+        self.assertIn("No real non-Codex/Kiro CLI continuity evidence has been recorded yet", evidence)
         for provider in ("claude_code", "cursor", "antigravity_cli", "grok_build_cli", "hermes_cli", "openclaw_cli"):
             self.assertIn(provider, evidence)
+        for provider in ("claude_code", "openclaw_cli"):
             self.assertIn("unverified", evidence)
+
+    def test_cli_evidence_survey_records_contract_known_but_unproven_providers(self):
+        survey = (ROOT / "docs" / "cli-evidence-survey.md").read_text(encoding="utf-8")
+        matrix = (ROOT / "docs" / "provider-live-session-matrix.md").read_text(encoding="utf-8")
+        combined = "\n".join([survey, matrix])
+        normalized_survey = " ".join(survey.split())
+        normalized_combined = " ".join(combined.split())
+
+        self.assertIn("help and version output can identify a candidate session surface", normalized_survey)
+        self.assertIn("only an approved two-turn continuity probe can prove", normalized_survey)
+        self.assertIn("model-inference commands require explicit real-provider approval", normalized_survey)
+        self.assertIn("`cursor-agent --version` returned `2026.05.24-dda726e`", survey)
+        self.assertIn("`agy --version` returned `1.0.1`", survey)
+        self.assertIn("`grok --version` returned `grok 0.2.2 (c9b7cdec23a)`", survey)
+        self.assertIn("`grok agent --help` exposes `stdio`, `headless`, `serve`, and `leader` modes", survey)
+        self.assertIn("`hermes chat --help` exposes `--query`, `--resume`, `--continue`", survey)
+        self.assertIn("bounded `hermes version` invocation did not return before timeout", survey)
+        self.assertIn("status/account inspection is not safe public evidence", normalized_combined)
+        self.assertIn("No provider-owned continuity proof is recorded", normalized_combined)
+        self.assertIn("No provider-owned continuity proof or mode-safety proof is recorded", normalized_combined)
+        self.assertIn("With explicit approval, run a two-turn", normalized_combined)
 
     def test_no_tailscale_multi_host_docs_separate_native_client_from_bridge(self):
         design = (ROOT / "docs" / "no-tailscale-multi-host.md").read_text(encoding="utf-8")
