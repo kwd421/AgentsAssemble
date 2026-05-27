@@ -69,7 +69,7 @@ The default registry exposes provider kinds with explicit capability snapshots:
 - `openclaw_memory`
 - `memory_pack`
 
-`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `kiro_live_session` and `grok_live_session` are resident live-agent adapters, not meeting adapters: Kiro joins through the resident runner and Kiro's own chat resume store, while Grok joins through the resident runner and Grok's JSON stdout session resume. `cursor`, `claude_code`, `antigravity_cli`, `gemini_cli_legacy`, `grok_build_cli`, `hermes_cli`, and `openclaw_cli` remain implementation-phase planned providers unless they are launched through the resident live-agent runner's explicit connection-kind contract; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
+`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `kiro_live_session`, `cursor_live_session`, and `grok_live_session` are resident live-agent adapters, not meeting adapters: Kiro joins through the resident runner and Kiro's own chat resume store, Cursor joins through `cursor-agent create-chat` plus `--resume` with a runner-owned stable workspace, while Grok joins through the resident runner and Grok's JSON stdout session resume. `cursor`, `claude_code`, `antigravity_cli`, `gemini_cli_legacy`, `grok_build_cli`, `hermes_cli`, and `openclaw_cli` remain implementation-phase planned providers unless they are launched through the resident live-agent runner's explicit connection-kind contract; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
 Imported memory/profile packs now have a safe inspection surface before they can
 affect meeting context. `assemble memory-capsule gate --path <capsule-dir>`
@@ -256,7 +256,7 @@ must not store raw prompts, provider output, stderr, command tails, account
 data, or local prompt-file paths. Grok launch safety is currently `advisory`;
 there is no AgentsAssemble-owned hard sandbox for this adapter.
 
-For Codex, Kiro, and Grok, `live-agent continuity-proof` is the direct
+For Codex, Kiro, Cursor, and Grok, `live-agent continuity-proof` is the direct
 provider-owned context diagnostic. It is intentionally narrower than
 `real-session-smoke`: it performs two approved provider turns through the same
 resident runner, verifies that turn 2 can recall a suffix from turn 1 without
@@ -266,6 +266,12 @@ join the room, promote evidence, prove stop/restart behavior, or persist
 provider approval. `live-agent continuity-proof-group` applies that same proof
 to a resident group config, but still refuses to execute provider kinds that do
 not have a provider-specific resume adapter.
+
+For Cursor, the runner creates a fresh Cursor chat id when needed and then calls
+`cursor-agent --resume` with one runner-owned workspace directory for its
+lifetime. Both the chat id and workspace are part of the proven continuity key.
+This is not yet a Cursor room smoke, official-turn proof, restart proof, or
+sandbox proof.
 
 The resident launch contract now has a small `SandboxLauncher` abstraction. `NoSandboxLauncher` declares `sandbox_enforcement: "advisory"` and does not constrain the child process. Codex uses the Codex read-only launcher and declares `codex_readonly`. Only a provider launched through a verified OS sandbox, restricted worktree, environment scrubber, or equivalent hard boundary may declare `os_sandboxed`.
 

@@ -113,16 +113,24 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         agents = report["config"]["agents"]
         self.assertEqual(
             [agent["agent_id"] for agent in agents],
-            ["cursor-agent-live", "grok-live", "hermes-cli-live", "openclaw-cli-live"],
+            ["cursor-agent-live", "cursor-agent-live-session", "grok-live", "hermes-cli-live", "openclaw-cli-live"],
         )
-        terminal_agents = [agents[0], agents[2], agents[3]]
+        terminal_agents = [agents[0], agents[3], agents[4]]
         for agent in terminal_agents:
             self.assertEqual(agent["connection_kind"], "terminal_session")
             self.assertEqual(agent["join_semantics"], "terminal_pty_prompt_bridge")
             self.assertEqual(agent["context_durability"], "process_lifetime")
             self.assertEqual(agent["sandbox_enforcement"], "advisory")
             self.assertEqual(agent["evidence_basis"], "path_and_pty_preflight")
-        grok_agent = agents[1]
+        cursor_live_agent = agents[1]
+        self.assertEqual(cursor_live_agent["provider_kind"], "cursor_live_session")
+        self.assertEqual(cursor_live_agent["connection_kind"], "live_session")
+        self.assertEqual(cursor_live_agent["join_semantics"], "cursor_chat_resume")
+        self.assertEqual(cursor_live_agent["context_durability"], "provider_managed_resume")
+        self.assertEqual(cursor_live_agent["sandbox_enforcement"], "advisory")
+        self.assertEqual(cursor_live_agent["evidence_basis"], "path_and_cursor_resume_preflight")
+        self.assertNotIn("command", cursor_live_agent)
+        grok_agent = agents[2]
         self.assertEqual(grok_agent["provider_kind"], "grok_live_session")
         self.assertEqual(grok_agent["connection_kind"], "live_session")
         self.assertEqual(grok_agent["join_semantics"], "grok_session_resume")
@@ -130,24 +138,32 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         self.assertEqual(grok_agent["sandbox_enforcement"], "advisory")
         self.assertEqual(grok_agent["evidence_basis"], "path_and_grok_resume_preflight")
         self.assertNotIn("command", grok_agent)
-        self.assertEqual([agent.get("command") for agent in agents], [["cursor-agent"], None, ["hermes"], ["openclaw"]])
+        self.assertEqual([agent.get("command") for agent in agents], [["cursor-agent"], None, None, ["hermes"], ["openclaw"]])
 
-        discoveries = {item["command"]: item for item in report["discoveries"]}
+        discoveries = {item["agent_id"]: item for item in report["discoveries"]}
         for command in {"cursor-agent", "hermes", "openclaw"}:
-            self.assertTrue(discoveries[command]["available"])
-            self.assertTrue(discoveries[command]["included"])
-            self.assertTrue(discoveries[command]["requires_approval"])
-            self.assertEqual(discoveries[command]["join_semantics"], "terminal_pty_prompt_bridge")
-            self.assertEqual(discoveries[command]["context_durability"], "process_lifetime")
-            self.assertEqual(discoveries[command]["sandbox_enforcement"], "advisory")
-            self.assertEqual(discoveries[command]["evidence_basis"], "path_and_pty_preflight")
-        self.assertTrue(discoveries["grok"]["available"])
-        self.assertTrue(discoveries["grok"]["included"])
-        self.assertTrue(discoveries["grok"]["requires_approval"])
-        self.assertEqual(discoveries["grok"]["entry_mode"], "grok_live_session")
-        self.assertEqual(discoveries["grok"]["join_semantics"], "grok_session_resume")
-        self.assertEqual(discoveries["grok"]["context_durability"], "provider_managed_resume")
-        self.assertEqual(discoveries["grok"]["evidence_basis"], "path_and_grok_resume_preflight")
+            agent_id = {"cursor-agent": "cursor-agent-live", "hermes": "hermes-cli-live", "openclaw": "openclaw-cli-live"}[command]
+            self.assertTrue(discoveries[agent_id]["available"])
+            self.assertTrue(discoveries[agent_id]["included"])
+            self.assertTrue(discoveries[agent_id]["requires_approval"])
+            self.assertEqual(discoveries[agent_id]["join_semantics"], "terminal_pty_prompt_bridge")
+            self.assertEqual(discoveries[agent_id]["context_durability"], "process_lifetime")
+            self.assertEqual(discoveries[agent_id]["sandbox_enforcement"], "advisory")
+            self.assertEqual(discoveries[agent_id]["evidence_basis"], "path_and_pty_preflight")
+        self.assertTrue(discoveries["cursor-agent-live-session"]["available"])
+        self.assertTrue(discoveries["cursor-agent-live-session"]["included"])
+        self.assertTrue(discoveries["cursor-agent-live-session"]["requires_approval"])
+        self.assertEqual(discoveries["cursor-agent-live-session"]["entry_mode"], "cursor_live_session")
+        self.assertEqual(discoveries["cursor-agent-live-session"]["join_semantics"], "cursor_chat_resume")
+        self.assertEqual(discoveries["cursor-agent-live-session"]["context_durability"], "provider_managed_resume")
+        self.assertEqual(discoveries["cursor-agent-live-session"]["evidence_basis"], "path_and_cursor_resume_preflight")
+        self.assertTrue(discoveries["grok-live"]["available"])
+        self.assertTrue(discoveries["grok-live"]["included"])
+        self.assertTrue(discoveries["grok-live"]["requires_approval"])
+        self.assertEqual(discoveries["grok-live"]["entry_mode"], "grok_live_session")
+        self.assertEqual(discoveries["grok-live"]["join_semantics"], "grok_session_resume")
+        self.assertEqual(discoveries["grok-live"]["context_durability"], "provider_managed_resume")
+        self.assertEqual(discoveries["grok-live"]["evidence_basis"], "path_and_grok_resume_preflight")
 
     def test_discovered_session_bundle_labels_stateless_prompt_call_honestly(self):
         bundle = build_discovered_session_bundle(
@@ -604,6 +620,51 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual([agent["agent_id"] for agent in written["agents"]], ["codex-live"])
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["discovery"]["approval_filter"]["approved_commands"], ["codex"])
+
+    def test_live_agent_auto_join_rejects_ambiguous_command_approval(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "live-agents.discovered.json"
+            stdout = StringIO()
+
+            def resolver(command):
+                return f"/opt/bin/{command}" if command == "cursor-agent" else None
+
+            with (
+                patch("agentsassemble.live_agent_discovery.shutil.which", side_effect=resolver),
+                patch("agentsassemble.live_agent_discovery.terminal_sessions_supported", return_value=True),
+                patch("agentsassemble.cli._request_json", side_effect=AssertionError("ambiguous approval must stop before ensure")),
+                patch("sys.stdout", stdout),
+            ):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "auto-join",
+                        "--server",
+                        "http://room.local",
+                        "--meeting-id",
+                        "resident-m1",
+                        "--output",
+                        str(output_path),
+                        "--approve-command",
+                        "cursor-agent",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(exit_code, 1)
+            self.assertFalse(output_path.exists())
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["status"], "approval_required")
+            approval_filter = payload["discovery"]["approval_filter"]
+            self.assertEqual(approval_filter["approved_count"], 0)
+            self.assertEqual(approval_filter["approved_commands"], [])
+            self.assertEqual(approval_filter["ambiguous_commands"], ["cursor-agent"])
+            self.assertEqual(approval_filter["unmatched_approval_count"], 1)
+            discoveries = {item["agent_id"]: item for item in payload["discovery"]["discoveries"]}
+            self.assertEqual(discoveries["cursor-agent-live"]["approval_status"], "not_approved")
+            self.assertEqual(discoveries["cursor-agent-live-session"]["approval_status"], "not_approved")
+            self.assertFalse(discoveries["cursor-agent-live"]["included"])
+            self.assertFalse(discoveries["cursor-agent-live-session"]["included"])
 
     def test_live_agent_auto_join_exact_approval_with_no_match_does_not_write_or_ensure(self):
         with tempfile.TemporaryDirectory() as temp_dir:

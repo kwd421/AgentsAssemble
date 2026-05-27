@@ -13,6 +13,7 @@ _REAL_PROVIDER_KINDS = {
     "claude_code",
     "codex_live_session",
     "cursor",
+    "cursor_live_session",
     "gemini_cli_legacy",
     "grok_build_cli",
     "grok_live_session",

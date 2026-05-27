@@ -16,6 +16,11 @@ from agentsassemble.codex_resident import (
     codex_provider_connection_check,
     default_codex_resident_command,
 )
+from agentsassemble.cursor_resident import (
+    cursor_command_check,
+    cursor_provider_connection_check,
+    default_cursor_resident_command,
+)
 from agentsassemble.grok_resident import (
     default_grok_resident_command,
     grok_command_check,
@@ -120,6 +125,9 @@ def _preflight_agent(
     provider_connection_check = kiro_provider_connection_check(config.provider_kind, config.connection_kind)
     if provider_connection_check is not None:
         checks.append(provider_connection_check)
+    provider_connection_check = cursor_provider_connection_check(config.provider_kind, config.connection_kind)
+    if provider_connection_check is not None:
+        checks.append(provider_connection_check)
     provider_connection_check = grok_provider_connection_check(config.provider_kind, config.connection_kind)
     if provider_connection_check is not None:
         checks.append(provider_connection_check)
@@ -154,6 +162,12 @@ def _preflight_agent(
             and command_check["status"] == "ok"
         ):
             checks.append(kiro_command_check(config.command))
+        if (
+            config.provider_kind == "cursor_live_session"
+            and config.connection_kind == "live_session"
+            and command_check["status"] == "ok"
+        ):
+            checks.append(cursor_command_check(config.command))
         if (
             config.provider_kind == "grok_live_session"
             and config.connection_kind == "live_session"
@@ -209,6 +223,10 @@ def resident_config_setup_error(
         kiro_check = kiro_command_check(config.command)
         if kiro_check["status"] != "ok":
             return str(kiro_check.get("message") or "Kiro command is not valid.")
+    if config.provider_kind == "cursor_live_session" and config.connection_kind == "live_session":
+        cursor_check = cursor_command_check(config.command)
+        if cursor_check["status"] != "ok":
+            return str(cursor_check.get("message") or "Cursor command is not valid.")
     if config.provider_kind == "grok_live_session" and config.connection_kind == "live_session":
         grok_check = grok_command_check(config.command)
         if grok_check["status"] != "ok":
@@ -255,6 +273,7 @@ def _preflight_config_from_mapping(
     connection_kind = str(data.get("connection_kind") or "local_cli")
     command_parts = live_agent_command_parts(command)
     command_parts = default_codex_resident_command(provider_kind, connection_kind, command_parts)
+    command_parts = default_cursor_resident_command(provider_kind, connection_kind, command_parts)
     command_parts = default_kiro_resident_command(provider_kind, connection_kind, command_parts)
     command_parts = default_grok_resident_command(provider_kind, connection_kind, command_parts)
     return ResidentAgentConfig(

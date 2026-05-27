@@ -798,6 +798,8 @@ def _allowed_resident_connection_kinds(provider_kind: str) -> frozenset[str]:
         return frozenset({"live_session"})
     if provider_kind == "kiro_live_session":
         return frozenset({"live_session"})
+    if provider_kind == "cursor_live_session":
+        return frozenset({"live_session"})
     if provider_kind == "grok_live_session":
         return frozenset({"live_session"})
     if provider_kind == "local_cli":
@@ -1090,6 +1092,8 @@ def _resident_connection_kind_for_provider(provider_kind: str) -> str:
     if provider_kind == "codex_live_session":
         return "live_session"
     if provider_kind == "kiro_live_session":
+        return "live_session"
+    if provider_kind == "cursor_live_session":
         return "live_session"
     if provider_kind == "grok_live_session":
         return "live_session"

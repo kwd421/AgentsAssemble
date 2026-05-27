@@ -33,6 +33,12 @@ GROK_LIVE_SESSION_CONTRACT = {
     "sandbox_enforcement": "advisory",
     "evidence_basis": "path_and_grok_resume_preflight",
 }
+CURSOR_LIVE_SESSION_CONTRACT = {
+    "join_semantics": "cursor_chat_resume",
+    "context_durability": "provider_managed_resume",
+    "sandbox_enforcement": "advisory",
+    "evidence_basis": "path_and_cursor_resume_preflight",
+}
 SELF_SERVICE_CONTRACT = {
     "join_semantics": "self_service_room_loop",
     "context_durability": "provider_managed_room_loop",
@@ -109,9 +115,21 @@ def apply_discovery_approval_filter(
     approved_agent_ids = {str(value or "").strip() for value in approved_agents if str(value or "").strip()}
     approved_command_names = {str(value or "").strip() for value in approved_commands if str(value or "").strip()}
     discoveries = report.get("discoveries") if isinstance(report.get("discoveries"), list) else []
+    approval_command_counts: dict[str, int] = {}
+    for item in discoveries:
+        if not isinstance(item, dict) or not item.get("included") or not item.get("requires_approval"):
+            continue
+        command = str(item.get("command") or "").strip()
+        if command:
+            approval_command_counts[command] = approval_command_counts.get(command, 0) + 1
     excluded_agent_ids: set[str] = set()
     matched_agent_ids: set[str] = set()
     matched_command_names: set[str] = set()
+    ambiguous_command_names: set[str] = {
+        command
+        for command in approved_command_names
+        if approval_command_counts.get(command, 0) > 1
+    }
     approved_count = 0
     excluded_agents: list[str] = []
     excluded_commands: list[str] = []
@@ -120,13 +138,19 @@ def apply_discovery_approval_filter(
             continue
         agent_id = str(item.get("agent_id") or "").strip()
         command = str(item.get("command") or "").strip()
-        approved = bool(agent_id and agent_id in approved_agent_ids) or bool(command and command in approved_command_names)
+        agent_approved = bool(agent_id and agent_id in approved_agent_ids)
+        command_approved = bool(
+            command
+            and command in approved_command_names
+            and approval_command_counts.get(command, 0) == 1
+        )
+        approved = agent_approved or command_approved
         if approved:
             item["approval_status"] = "approved"
             item["operator_action"] = "approved_auto_join"
             if agent_id and agent_id in approved_agent_ids:
                 matched_agent_ids.add(agent_id)
-            if command and command in approved_command_names:
+            if command_approved:
                 matched_command_names.add(command)
             approved_count += 1
             continue
@@ -154,6 +178,7 @@ def apply_discovery_approval_filter(
     report["approval_filter"] = {
         "approved_agents": sorted(matched_agent_ids),
         "approved_commands": sorted(matched_command_names),
+        "ambiguous_commands": sorted(ambiguous_command_names),
         "approved_count": approved_count,
         "excluded_agents": sorted(excluded_agents),
         "excluded_commands": sorted(excluded_commands),
@@ -219,6 +244,16 @@ def _candidate_specs() -> list[dict[str, Any]]:
             "terminal_idle_timeout": 0.75,
             "timeout_seconds": 120,
             **TERMINAL_PROMPT_BRIDGE_CONTRACT,
+        },
+        {
+            "command": "cursor-agent",
+            "agent_id": "cursor-agent-live-session",
+            "display_name": "Cursor Agent Live Session",
+            "provider_kind": "cursor_live_session",
+            "connection_kind": "live_session",
+            "timeout_seconds": 180,
+            "omit_command": True,
+            **CURSOR_LIVE_SESSION_CONTRACT,
         },
         {
             "command": "grok",
@@ -318,6 +353,8 @@ def _entry_mode(spec: dict[str, Any]) -> str:
         return "codex_live_session"
     if spec["provider_kind"] == "kiro_live_session":
         return "kiro_live_session"
+    if spec["provider_kind"] == "cursor_live_session":
+        return "cursor_live_session"
     if spec["provider_kind"] == "grok_live_session":
         return "grok_live_session"
     return str(spec["connection_kind"])
@@ -350,6 +387,8 @@ def _safety_note(spec: dict[str, Any], entry_status: str) -> str:
         return "Codex defaults and safety checks stay centralized in preflight."
     if spec["provider_kind"] == "kiro_live_session":
         return "Kiro uses kiro chat --resume-id; run preflight before auto join starts the resident."
+    if spec["provider_kind"] == "cursor_live_session":
+        return "Cursor uses cursor-agent create-chat plus --resume and a runner-owned stable workspace; run preflight before auto join starts the resident."
     if spec["provider_kind"] == "grok_live_session":
         return "Grok uses JSON stdout plus --resume; run preflight before auto join starts the resident."
     if spec["connection_kind"] == "self_service":

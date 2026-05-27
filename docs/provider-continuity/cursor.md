@@ -3,9 +3,10 @@
 Date: 2026-05-28
 
 This note records the bounded Cursor Agent continuity negative-control probe
-used for the provider live-session matrix. It is evidence only: no resident
-runner, config promotion, room smoke, or sandbox claim was added from this
-probe.
+used for the provider live-session matrix. At the time of the probe it was
+evidence only. A later `cursor_live_session` runner used this evidence to
+preserve both chat id and workspace, but this probe still does not prove room
+smoke, official-turn quality, restart/stop behavior, or sandboxing.
 
 ## Safe Contract Surface
 
@@ -62,7 +63,7 @@ throwaway workspace global-store symlink was observed.
 
 ## Verdict
 
-Cursor Agent remains `continuity-proven-limited-no-runner`.
+Cursor Agent is now `runner-implemented-limited-no-room-smoke`.
 
 The local install now has stronger evidence than the earlier positive pair:
 the same chat id and same workspace can recall the previous turn's suffix, while
@@ -75,10 +76,10 @@ resident runner must therefore preserve both the chat id and the workspace
 directory across resident turns unless a later provider-specific proof shows a
 workspace-independent resume path.
 
-Do not add or advertise a Cursor resident runner from this evidence alone. This
-probe does not prove room admission, official-turn quality, stop/restart
-behavior, tool safety, future billing/model availability, or OS-level
-sandboxing.
+The checked-in `cursor_live_session` runner is justified only as a narrow
+continuity runner from this evidence. This probe does not prove room admission,
+official-turn quality, stop/restart behavior, tool safety, future
+billing/model availability, or OS-level sandboxing.
 
 Public docs must keep raw prompts, raw replies, full chat ids, continuity codes,
 code suffix values, absolute workspace paths, account data, billing data, and

@@ -71,6 +71,12 @@ class LiveAgentLaunchPolicyTests(unittest.TestCase):
                                 "command": ["cursor-agent"],
                             },
                             {
+                                "agent_id": "cursor-session-live",
+                                "provider_kind": "cursor_live_session",
+                                "connection_kind": "live_session",
+                                "command": ["cursor-agent"],
+                            },
+                            {
                                 "agent_id": "antigravity-live",
                                 "provider_kind": "antigravity_cli",
                                 "connection_kind": "self_service",
@@ -95,10 +101,18 @@ class LiveAgentLaunchPolicyTests(unittest.TestCase):
         self.assertEqual(report["status"], "approval_required")
         self.assertTrue(report["approval_required"])
         self.assertFalse(report["approved"])
-        self.assertEqual(report["approval_required_count"], 6)
+        self.assertEqual(report["approval_required_count"], 7)
         self.assertEqual(
             {agent["agent_id"] for agent in report["agents"]},
-            {"claude-live", "codex-live", "bridge-live", "cursor-live", "antigravity-live", "grok-live"},
+            {
+                "claude-live",
+                "codex-live",
+                "bridge-live",
+                "cursor-live",
+                "cursor-session-live",
+                "antigravity-live",
+                "grok-live",
+            },
         )
         self.assertTrue(all(agent["approval_required"] for agent in report["agents"]))
         self.assertNotIn("/Users/me/private", serialized)

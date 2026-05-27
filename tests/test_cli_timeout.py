@@ -770,6 +770,7 @@ class CliTimeoutTests(unittest.TestCase):
             ("claude_code", "terminal_session", "terminal_pty_prompt_bridge", "process_lifetime", "advisory"),
             ("codex_live_session", "codex_resume", "codex_exec_resume", "provider_managed_resume", "codex_readonly"),
             ("codex_live_session", "live_session", "codex_exec_resume", "provider_managed_resume", "codex_readonly"),
+            ("cursor_live_session", "live_session", "cursor_chat_resume", "provider_managed_resume", "advisory"),
             ("claude_code", "live_session", "jsonl_live_session", "process_lifetime", "advisory"),
             ("antigravity_cli", "self_service", "self_service_room_loop", "provider_managed_room_loop", "advisory"),
             ("remote_http_bridge", "remote_bridge", "remote_bridge_room_loop", "remote_owner_managed", "advisory"),
@@ -13589,6 +13590,32 @@ class CliTimeoutTests(unittest.TestCase):
         try:
             self.assertEqual(config.command, ["grok"])
             self.assertEqual(runner.__class__.__name__, "GrokResidentCommandRunner")
+        finally:
+            cli_module._close_command_runner(runner)
+
+    def test_live_agent_run_uses_cursor_resident_runner_for_cursor_live_session_provider(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run",
+                "--agent-id",
+                "cursor-live",
+                "--provider-kind",
+                "cursor_live_session",
+                "--connection-kind",
+                "live_session",
+                "--session-id",
+                "cursor-chat-abc123",
+                "--max-ticks",
+                "1",
+            ]
+        )
+
+        config = cli_module.config_from_args(args)
+        runner = cli_module._command_runner_for_config(config)
+        try:
+            self.assertEqual(config.command, ["cursor-agent"])
+            self.assertEqual(runner.__class__.__name__, "CursorResidentCommandRunner")
         finally:
             cli_module._close_command_runner(runner)
 

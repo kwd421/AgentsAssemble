@@ -228,11 +228,12 @@ resident participant, and do not persist raw Antigravity output, conversation
 ids, global-store paths, or config symlinks as proof artifacts.
 The current Cursor Agent evidence is similarly narrow: `cursor-agent
 create-chat` plus `cursor-agent --resume <chat_id> --print` can preserve one
-chat's context on this local install, but the checked-in staging row is still a
-terminal/self-service candidate rather than a native-ready resident. A future
-Cursor runner must prove room registration, cursor reads, lobby or official
-reply, heartbeat, and clean stop with safe counts before discovery or docs can
-present it as resident participation.
+chat's context on this local install only when the same workspace is reused.
+The checked-in `cursor_live_session` runner preserves that chat id plus
+workspace pair, but it is still a continuity runner rather than a full room
+smoke. Cursor must still prove room registration, cursor reads, lobby or
+official reply, heartbeat, and clean stop with safe counts before docs can
+present it as full resident participation.
 The current Hermes evidence is weaker: a seed/resume probe recalled a prior
 codeword, but a fresh no-resume control also recalled it, so Hermes remains an
 ambiguous provider-owned context surface rather than a session-id-specific
@@ -1378,7 +1379,7 @@ python3 -m agentsassemble.cli live-agent auto-join \
 
 `auto-join` always writes the session bundle, derives the normalized `group_id` from the discovered resident config filename, and then posts to `/api/live-agent-session-runs/ensure`, which wraps the same server-side ensure policy used by the GUI `상주보장` path. Unlike `discover`, this is an explicit start/resume/restart/recover operation: after the local PATH-only discovery step succeeds, the ensure step may start the supervised resident group and therefore may execute the configured provider CLIs through the normal preflight-gated session path. If any included discovery row has `requires_approval: true`, the CLI exits `1` with status `approval_required` before contacting the room unless `--approve-real-providers` is present. That flag is the scriptable equivalent of the GUI approval checkbox and should only be used after the operator accepts any cost, network, account, or external side effect. Once that approval is present for real-provider discoveries, `auto-join` forces `probe_bound_agents: true` on the durable ensure request; a failed or timed-out reply probe leaves the returned session/run degraded and makes the CLI exit `1`, even if the resident processes launched. When `--meeting-id` is omitted, the durable ensure request still includes the discovered `group_id` so the server can adopt an existing process-owned meeting id before deciding whether to no-op, resume, restart, recover, or start. The resulting `session_run` stays visible in `session-runs.json` and the GUI `상주 세션런` list. It returns `1` without writing configs or contacting the room when no supported CLI is found.
 
-For narrower scriptable approval, use repeated `--approve-agent <agent_id>` or `--approve-command <cli>` instead of broad approval. Exact approval filters the discovery before writing files, and exact allowlists still narrow the run if `--approve-real-providers` is also present: approved candidates get `approval_status: "approved"`, unapproved real-provider candidates get `approval_status: "not_approved"` and are excluded from the generated resident config and session bundle, so only the explicitly approved agents can be started by that `auto-join` call. The durable ensure request still carries one-shot real-provider approval and `probe_bound_agents: true` for the narrowed config, but the approval list is not persisted as durable permission.
+For narrower scriptable approval, use repeated `--approve-agent <agent_id>` or `--approve-command <cli>` instead of broad approval. Exact approval filters the discovery before writing files, and exact allowlists still narrow the run if `--approve-real-providers` is also present: approved candidates get `approval_status: "approved"`, unapproved real-provider candidates get `approval_status: "not_approved"` and are excluded from the generated resident config and session bundle, so only the explicitly approved agents can be started by that `auto-join` call. Command approvals are accepted only when that command name maps to exactly one approval-required included discovery row; if two candidates share the same executable, such as Cursor terminal and Cursor live-session rows both using `cursor-agent`, use `--approve-agent` for the exact row instead. The durable ensure request still carries one-shot real-provider approval and `probe_bound_agents: true` for the narrowed config, but the approval list is not persisted as durable permission.
 
 Add `--run-remaining-rounds --finalize-after-rounds` to `auto-join` for the full automatic completion path: discovery writes the resident bundle, durable session-run ensure starts/resumes/restarts/recovers the group, successful readiness can call the remaining official template rounds, and finalization writes artifacts only after the same no-rounds-remaining guard used by `ensure-session`. Skipped or failed finalization remains visible in the returned `session.finalization` payload and makes the CLI exit `1`.
 

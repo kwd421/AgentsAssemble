@@ -3457,6 +3457,31 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(loaded[0].connection_kind, "live_session")
         self.assertEqual(loaded[0].command, ["codex"])
 
+    def test_group_config_defaults_cursor_live_session_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "cursor-live",
+                                "provider_kind": "cursor_live_session",
+                                "connection_kind": "live_session",
+                                "session_id": "cursor-chat-abc123",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        self.assertEqual(loaded[0].provider_kind, "cursor_live_session")
+        self.assertEqual(loaded[0].connection_kind, "live_session")
+        self.assertEqual(loaded[0].command, ["cursor-agent"])
+
     def test_group_config_rejects_non_resident_connection_kind_even_with_command(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "live-agents.json"

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from agentsassemble.codex_resident import default_codex_resident_command
+from agentsassemble.cursor_resident import default_cursor_resident_command
 from agentsassemble.grok_resident import default_grok_resident_command, grok_error_category
 from agentsassemble.kiro_resident import default_kiro_resident_command
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
@@ -1405,6 +1406,7 @@ def live_agent_command_parts(value: object) -> list[str]:
 
 def _default_resident_command(provider_kind: str, connection_kind: str, command: list[str]) -> list[str]:
     command = default_codex_resident_command(provider_kind, connection_kind, command)
+    command = default_cursor_resident_command(provider_kind, connection_kind, command)
     command = default_kiro_resident_command(provider_kind, connection_kind, command)
     command = default_grok_resident_command(provider_kind, connection_kind, command)
     return command

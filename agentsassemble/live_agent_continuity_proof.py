@@ -7,13 +7,16 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from agentsassemble.codex_resident import CodexResidentCommandRunner
+from agentsassemble.cursor_resident import CursorResidentCommandRunner
 from agentsassemble.grok_resident import GrokResidentCommandRunner
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.meeting_events import clean_lobby_text
 
 
-SUPPORTED_CONTINUITY_PROVIDER_KINDS = frozenset({"codex_live_session", "kiro_live_session", "grok_live_session"})
+SUPPORTED_CONTINUITY_PROVIDER_KINDS = frozenset(
+    {"codex_live_session", "kiro_live_session", "cursor_live_session", "grok_live_session"}
+)
 CONTINUITY_PROOF_LIMITATIONS = [
     "two_turn_provider_resume_recall_only",
     "does_not_prove_room_admission",
@@ -206,6 +209,8 @@ def _runner_for_config(config: ResidentAgentConfig, *, command_runner: Any | Non
         return CodexResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
     if config.provider_kind == "kiro_live_session":
         return KiroResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
+    if config.provider_kind == "cursor_live_session":
+        return CursorResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
     if config.provider_kind == "grok_live_session":
         return GrokResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
     raise ValueError(f"Provider does not support continuity proof: {config.provider_kind}")
@@ -226,6 +231,9 @@ def _continuity_structural_setup_error(config: ResidentAgentConfig) -> str:
             return "resident_setup_failed"
     if provider_kind == "kiro_live_session":
         if executable_name not in {"kiro", "kiro-cli", "kiro-cli-chat"}:
+            return "resident_setup_failed"
+    if provider_kind == "cursor_live_session":
+        if len(command) != 1 or executable_name not in {"cursor-agent", "cursor-agent.exe"}:
             return "resident_setup_failed"
     if provider_kind == "grok_live_session":
         if len(command) != 1 or executable_name not in {"grok", "grok.exe"}:

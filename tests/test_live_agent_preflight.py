@@ -803,6 +803,90 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 agent["checks"],
             )
 
+    def test_preflight_accepts_cursor_live_session_with_default_cursor_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "cursor-live",
+                                "provider_kind": "cursor_live_session",
+                                "connection_kind": "live_session",
+                                "session_id": "cursor-chat-abc123",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/cursor-agent" if command == "cursor-agent" else None,
+            )
+
+            self.assertEqual(report["status"], "ok")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 0, "checks_failed": 0})
+            agent = report["agents"][0]
+            self.assertEqual(agent["provider_kind"], "cursor_live_session")
+            self.assertEqual(agent["connection_kind"], "live_session")
+            self.assertEqual(agent["sandbox_enforcement"], "advisory")
+            self.assertEqual(agent["command"], ["cursor-agent"])
+            self.assertEqual(agent["command_path"], "/usr/local/bin/cursor-agent")
+            self.assertIn(
+                {
+                    "id": "provider_connection_kind",
+                    "status": "ok",
+                    "message": "cursor_live_session uses live_session.",
+                },
+                agent["checks"],
+            )
+            self.assertIn(
+                {
+                    "id": "cursor_command",
+                    "status": "ok",
+                    "message": "cursor_live_session command executable is cursor-agent.",
+                },
+                agent["checks"],
+            )
+
+    def test_preflight_rejects_cursor_live_session_with_extra_arguments(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "cursor-live",
+                                "provider_kind": "cursor_live_session",
+                                "connection_kind": "live_session",
+                                "command": ["cursor-agent", "--print"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/cursor-agent" if command == "cursor-agent" else None,
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            self.assertIn(
+                {
+                    "id": "cursor_command",
+                    "status": "failed",
+                    "message": "cursor_live_session command must contain only the cursor-agent executable.",
+                },
+                report["agents"][0]["checks"],
+            )
+
     def test_preflight_rejects_grok_live_session_with_extra_arguments(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"

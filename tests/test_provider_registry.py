@@ -205,13 +205,16 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertEqual(catalog["remote_http_bridge"]["status"], "available")
         self.assertEqual(catalog["local_cli"]["status"], "available")
         self.assertEqual(catalog["cursor"]["status"], "planned")
+        self.assertEqual(catalog["cursor_live_session"]["status"], "planned")
         self.assertEqual(catalog["claude_code"]["status"], "planned")
         self.assertEqual(catalog["grok_live_session"]["status"], "planned")
         self.assertEqual(catalog["anthropic"]["status"], "available")
         self.assertEqual(catalog["local_openai_compatible"]["status"], "available")
         self.assertTrue(catalog["gemini"]["capabilities"]["supports_web_search"])
         self.assertTrue(catalog["cursor"]["capabilities"]["supports_filesystem"])
+        self.assertTrue(catalog["cursor_live_session"]["capabilities"]["supports_session_resume"])
         self.assertEqual(catalog["codex_live_session"]["capabilities"]["sandbox_enforcement"], "codex_readonly")
+        self.assertEqual(catalog["cursor_live_session"]["capabilities"]["sandbox_enforcement"], "advisory")
         self.assertEqual(catalog["local_cli"]["capabilities"]["sandbox_enforcement"], "advisory")
 
     def test_default_registry_creates_http_provider_adapters(self):

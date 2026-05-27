@@ -802,11 +802,12 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("fake `codex` executable", doc)
         self.assertIn("real Codex smoke", doc)
         self.assertIn("configs/live-agents.provider-staging.example.json", doc)
-        self.assertIn("Codex, Kiro, and Grok are the provider-specific resume residents", doc)
+        self.assertIn("Codex, Kiro, Cursor, and Grok are the provider-specific resume residents", doc)
         self.assertIn("local_cli is a stateless delegate", doc)
         normalized_evidence = " ".join(evidence.split())
         self.assertIn("Grok is still the only non-Codex/Kiro provider with both a passing two-turn continuity probe", normalized_evidence)
-        self.assertIn("Cursor and Antigravity now have narrower positive continuity probes", normalized_evidence)
+        self.assertIn("Cursor now has a narrow checked-in runner", normalized_evidence)
+        self.assertIn("Antigravity has narrower positive continuity evidence", normalized_evidence)
         for provider in ("claude_code", "cursor", "antigravity_cli", "grok_build_cli", "hermes_cli", "openclaw_cli"):
             self.assertIn(provider, evidence)
         for provider in ("claude_code", "openclaw_cli"):

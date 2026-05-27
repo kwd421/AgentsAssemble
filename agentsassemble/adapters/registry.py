@@ -254,6 +254,18 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
             ),
             "Cursor meeting-mode integration is planned; implementation permissions stay gated until after a decision artifact exists.",
         ),
+        "cursor_live_session": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=False,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=False,
+                cost_class="subscription",
+            ),
+            "Cursor live-session resident integration is experimental and limited to cursor-agent create-chat plus --resume with a stable runner-owned workspace.",
+        ),
         "claude_code": (
             ProviderCapabilities(
                 supports_research=True,
