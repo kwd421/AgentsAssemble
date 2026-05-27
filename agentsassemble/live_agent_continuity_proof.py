@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import string
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -235,7 +236,8 @@ def _close_runner(runner: Any) -> None:
 
 
 def _continuity_code() -> str:
-    return f"AAPROOF-{secrets.token_hex(8).upper()}"
+    suffix = "".join(secrets.choice(string.ascii_uppercase) for _ in range(4))
+    return f"AAPROOF-{secrets.token_hex(8).upper()}-{suffix}"
 
 
 def _first_prompt(code: str) -> str:

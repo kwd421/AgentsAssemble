@@ -860,7 +860,7 @@ Resident official replies also refresh deterministic shared meeting memory artif
 
 Resident `delegate_prompt` and `official_turn_prompt` use that compact room payload as a `Shared meeting memory` block before the current event or official request. The block is background context only: the runner still replies to exactly one selected lobby event or targeted official turn, and chain/cursor/self-loop guards still decide whether anything should answer.
 
-Add `--probe-bound-agents` or `probe_bound_agents: true` when a session entrypoint must prove every bound resident can actually answer a fresh lobby event before optional auto-rounds begin. The server probes all bound ready-session agents one by one. The probe is bounded by `--probe-timeout` / `probe_timeout_seconds`, capped at 60 seconds per agent, and applies to `start-session`, `resume-session`, `restart-session`, `recover-session`, and `ensure-session`. Moderator-called, manual, and watch agents are temporarily opened to `human_only` for the probe event and restored afterward, so the check works with the default session engagement policy without leaving the room in always-on mode or leaving an operator override timestamp behind. Probe replies are summarized under `reply_probe`; operation history stores only sanitized counts, agent ids, and statuses. It omits reply text, prompts, config paths, command arguments, endpoint URLs, auth refs, tokens, provider output, and log tails. If any bound probe is skipped, timed out, or failed, optional remaining rounds are skipped with `auto_rounds.reason: "probe_not_ready"` and the session operation is recorded as degraded.
+Add `--probe-bound-agents` or `probe_bound_agents: true` when a session entrypoint must prove every bound resident can actually answer a fresh lobby event before optional auto-rounds begin. The server probes all bound ready-session agents one by one. The probe is bounded by `--probe-timeout` / `probe_timeout_seconds`, capped at 240 seconds per agent, and applies to `start-session`, `resume-session`, `restart-session`, `recover-session`, and `ensure-session`. Moderator-called, manual, and watch agents are temporarily opened to `human_only` for the probe event and restored afterward, so the check works with the default session engagement policy without leaving the room in always-on mode or leaving an operator override timestamp behind. Probe replies are summarized under `reply_probe`; operation history stores only sanitized counts, agent ids, and statuses. It omits reply text, prompts, config paths, command arguments, endpoint URLs, auth refs, tokens, provider output, and log tails. If any bound probe is skipped, timed out, or failed, optional remaining rounds are skipped with `auto_rounds.reason: "probe_not_ready"` and the session operation is recorded as degraded.
 
 The operation ledger records one sanitized `session.start` entry with result status, meeting id, group id, expected/connected counts, process status, safe agent ids, connection/process attention, bounded `auto_rounds` counts when the opt-in path is requested, and `finalization_status`, `finalization_reason`, and official event count when artifact finalization is requested. It does not record config paths, command arguments, endpoints, auth refs, prompts, log tails, provider output, replies, or official turn content.
 
@@ -1606,7 +1606,7 @@ Exit code contract:
 
 Agents in `watch`, `manual`, `moderator_called`, cooldown, provider failure, or remote bridge failure can time out even if their process is alive. Treat timeout as a targeted reply failure, not as proof that the process is dead. The GUI roster exposes the same check as the per-agent `probe` button.
 
-Probe wait time is capped at 60 seconds. The CLI keeps its HTTP request timeout longer than the probe wait window, so an ordinary probe timeout returns the JSON `timeout` result instead of a transport failure.
+Probe wait time is capped at 240 seconds. The CLI keeps its HTTP request timeout longer than the probe wait window, so an ordinary probe timeout returns the JSON `timeout` result instead of a transport failure.
 
 ## Fake CLI Smoke
 
@@ -2421,7 +2421,7 @@ python3 -m agentsassemble.cli live-agent real-session-smoke \
   --agent-config /path/to/matching-agents.json \
   --group-id real-provider-smoke \
   --meeting-id real-provider-smoke \
-  --timeout 12 \
+  --timeout 240 \
   --approve-real-providers
 ```
 
@@ -2439,6 +2439,13 @@ post-stop process status. They do not expose config paths, commands, endpoint
 URLs, auth refs, prompt text, reply text, provider output, log tails, or a
 durable approval grant. A stop or post-stop failure reports `degraded` so an
 operator knows cleanup still needs attention.
+
+For slow real CLIs such as Grok, use the longer timeout. A local Grok-only
+generated bundle has passed this smoke with `start_status: "ready"`,
+connected/expected `1/1`, reply-probe `1/1`, `stop_status: "stopped"`, and
+`post_stop_process_status: "stopped"`. That proves one approved local
+start/probe/stop path, not official-turn quality, restart/recover behavior,
+future billing state, tool safety, or sandboxing.
 
 The supplied council and agent configs must bind the same `agent_id` values as
 the resident config. `configs/live-agents.example.json` is useful as the command

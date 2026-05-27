@@ -853,7 +853,7 @@ function renderLiveAgentProcessControls() {
           <input id="live-agent-session-probe-bound-agents" type="checkbox" ${processActionsDisabled ? "disabled" : ""} />
           <span>응답검증</span>
         </label>
-        <input id="live-agent-session-probe-timeout" type="number" min="0" max="60" step="0.5" value="12" aria-label="session reply probe timeout seconds" />
+        <input id="live-agent-session-probe-timeout" type="number" min="0" max="240" step="0.5" value="12" aria-label="session reply probe timeout seconds" />
         <label class="live-agent-process-options">
           <input id="live-agent-process-auto-restart" type="checkbox" />
           <span>auto restart</span>
@@ -3553,7 +3553,7 @@ function liveAgentSessionConnectTimeoutSeconds(lobby) {
 function liveAgentSessionProbeTimeoutSeconds(lobby) {
   const value = Number(lobby.querySelector("#live-agent-session-probe-timeout")?.value || 12);
   if (!Number.isFinite(value)) return 12;
-  return Math.min(60, Math.max(0, value));
+  return Math.min(240, Math.max(0, value));
 }
 
 function liveAgentSessionStatusMessage(payload) {

@@ -7,7 +7,7 @@ from pathlib import Path
 from agentsassemble.live_agents import read_live_agents
 from agentsassemble.meeting_events import append_lobby_event_to_file, read_lobby_events
 
-MAX_PROBE_TIMEOUT_SECONDS = 60.0
+MAX_PROBE_TIMEOUT_SECONDS = 240.0
 DEFAULT_PROBE_TIMEOUT_SECONDS = 12.0
 DEFAULT_PROBE_POLL_INTERVAL = 0.05
 PROBE_REPLY_EVENT_TAIL_LIMIT = 1000

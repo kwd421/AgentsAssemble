@@ -6,9 +6,10 @@ version output can identify a candidate session surface, but only an approved
 two-turn continuity probe can prove provider-owned context continuity.
 
 Grok is the only non-Codex/Kiro provider with a passing two-turn continuity
-probe in this survey. Discovery, executable presence, config generation, help
-text, and one-shot `local_cli` output are not evidence of resident
-participation or provider-owned context continuity.
+probe and a passing bounded room start/probe/stop smoke in this survey.
+Discovery, executable presence, config generation, help text, and one-shot
+`local_cli` output are not evidence of resident participation or provider-owned
+context continuity.
 
 ## Method
 
@@ -38,7 +39,7 @@ raw prompts, raw provider output, local config paths, or provider log tails.
 | `claude_code` | absent in PATH | `claude` was not found by PATH discovery in this slice. | Planned only. Do not present one-shot `local_cli` as a resident Claude Code session. | Inspect real CLI/channel behavior, then prove provider-owned room loop or native resume. |
 | `cursor` | continuity-probe-failed | `cursor-agent --version` returned `2026.05.24-dda726e`; `cursor-agent --help` exposes `--print`, `--output-format text|json|stream-json`, `--resume`, `--continue`, `--mode ask|plan`, `--sandbox enabled|disabled`, and `create-chat`. The app `cursor` CLI is editor/open-file oriented, not the agent surface. | Cursor Agent has a plausible session surface, but approved explicit-chat-id and workspace-continue probes both returned successfully without recalling the suffix. This is a failed probe, not proof that Cursor can never preserve context. | Do not add a Cursor runner yet. A later slice needs a better provider-documented resume path or an agent-owned self-service loop before room participation. |
 | `antigravity_cli` | continuity-probe-failed | `agy --version` returned `1.0.1`; `agy --help` exposes `--print`, `--prompt-interactive`, `--continue`, `--conversation`, `--sandbox`, and `--dangerously-skip-permissions`. | The approved `agy --print` plus `--continue` probe returned successfully but did not recall the suffix; sandbox/permission text appeared in the process output, so the failure is kept conservative. | Do not add an Antigravity runner yet. Revisit only with a documented conversation id flow or a self-service loop that owns its own room polling. |
-| `grok_live_session` | continuity-proven-limited | `grok --version` returned `grok 0.2.2 (c9b7cdec23a)`; `grok --help` exposes `--single`, `--prompt-file`, `--prompt-json`, `--resume`, `--continue`, output formats, `--sandbox`, `--no-memory`, `--no-subagents`, and session listing. Running bare `grok` starts a TUI and timed out under bounded non-interactive discovery. | An approved isolated-git-cwd probe using `--single`, `--resume <sessionId>`, and JSON output recalled the suffix exactly from the JSON `text` field. The checked-in runner now uses the safer `--prompt-file` JSON-output shape and later `--resume <sessionId>`. Full process output can echo prompt material in stderr, so raw stderr/stdout logs must not be persisted as proof artifacts. | Keep this limited to continuity-proof and controlled resident experiments until a real room smoke proves register, observe, reply, heartbeat, and stop. |
+| `grok_live_session` | room-smoke-proven-limited | `grok --version` returned `grok 0.2.3 (14d81fd875e)`; `grok --help` exposes `--single`, `--prompt-file`, `--prompt-json`, `--resume`, `--continue`, output formats, `--sandbox`, `--no-memory`, `--no-subagents`, and session listing. Running bare `grok` starts a TUI and timed out under bounded non-interactive discovery. | Approved isolated-git-cwd probes using JSON stdout and explicit `--resume <sessionId>` recalled the suffix exactly from the JSON `text` field. The checked-in runner uses the safer `--prompt-file` JSON-output shape and later `--resume <sessionId>`. An approved Grok-only generated room bundle then passed `real-session-smoke` with safe counts: start ready, connected 1/1, reply probe 1/1, stop stopped, post-stop stopped. Full process output can echo prompt material in stderr, so raw stderr/stdout logs must not be persisted as proof artifacts. | Grok may be used for controlled local resident experiments with explicit approval. Still prove official-turn quality, restart/recover behavior, tool safety, and sandboxing before treating it as production-ready. |
 | `grok_build_cli` | contract-known-but-not-runner | `grok agent --help` exposes `stdio`, `headless`, `serve`, and `leader` modes. | These surfaces may become useful later, but they are not the checked-in continuity runner. | Do not route resident continuity through `grok_build_cli` yet; use `grok_live_session` for the narrow JSON stdout resume path. |
 | `hermes_cli` | continuity-probe-failed | `hermes --help` exposes `chat`, `sessions`, `mcp`, and related commands. `hermes chat --help` exposes `--query`, `--resume`, `--continue`, `--quiet`, `--source`, `--ignore-user-config`, and `--ignore-rules`. `hermes sessions --help` exposes list/export/delete/rename tooling. A bounded `hermes version` invocation did not return before timeout in this environment. | The approved `hermes chat --query` plus continue probe returned successfully but the second turn reported no usable prior-session memory for the token. Status/account inspection is not safe public evidence and is not used here. | Do not add a Hermes runner yet. Revisit only with a documented session id resume flow that avoids hidden session dumps and account/status leakage. |
 | `openclaw_cli` | absent in PATH | `openclaw` was not found by PATH discovery in this slice. | Memory/profile inspiration only until a live CLI contract is proven. | Gate memory artifacts separately, then inspect any CLI session behavior if an executable appears. |
@@ -81,3 +82,15 @@ continuity code or suffix in the first reply, did not replay the code in the
 second prompt, and matched the expected suffix. This is still only two-turn
 provider-owned resume evidence; it is not room admission, tool-safety,
 stop/restart, or official-turn-quality evidence.
+
+After that continuity prerequisite passed, a Grok-only session bundle was
+generated through the GUI discovery API with exact approval for `grok-live`.
+The generated resident config contained only `grok-live` and passed preflight.
+An approved `live-agent real-session-smoke` then returned `status: "ok"` with
+`start_status: "ready"`, `expected_agent_count: 1`, `connected_agent_count: 1`,
+`reply_probe_status: "ok"`, `reply_probe_count: 1`,
+`reply_probe_ok_count: 1`, `stop_status: "stopped"`, and
+`post_stop_process_status: "stopped"`. Public evidence keeps only these safe
+status/count fields and a short session-id suffix from the separate continuity
+proof; it does not store raw prompts, raw Grok replies, full session ids,
+stdout/stderr, account data, local prompt-file paths, or generated config paths.

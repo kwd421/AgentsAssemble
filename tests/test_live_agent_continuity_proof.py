@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.live_agent_continuity_proof import (
+    _continuity_code,
     fixed_continuity_code_factory,
     run_live_agent_continuity_proof,
     run_live_agent_continuity_proof_batch,
@@ -36,6 +37,12 @@ def config(**overrides):
 
 
 class LiveAgentContinuityProofTests(unittest.TestCase):
+    def test_default_continuity_code_uses_unambiguous_letter_suffix(self):
+        for _ in range(20):
+            suffix = _continuity_code()[-4:]
+            self.assertTrue(suffix.isalpha())
+            self.assertTrue(suffix.isupper())
+
     def test_unapproved_real_provider_proof_does_not_call_command_runner(self):
         calls = []
 

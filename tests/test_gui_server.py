@@ -7084,8 +7084,8 @@ class GuiServerTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
 
-        self.assertEqual(probe.call_args.kwargs["timeout_seconds"], 60.0)
-        self.assertEqual(operations["operations"][0]["details"]["timeout_seconds"], 60.0)
+        self.assertEqual(probe.call_args.kwargs["timeout_seconds"], 240.0)
+        self.assertEqual(operations["operations"][0]["details"]["timeout_seconds"], 240.0)
 
     def test_live_agent_probe_endpoint_records_timeout_and_unknown_agent(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -7130,7 +7130,7 @@ class GuiServerTests(unittest.TestCase):
             [(operation["operation"], operation["status"], operation["target_id"]) for operation in operations["operations"]],
             [("probe.run", "failed", "agent-a"), ("probe.run", "failed", "missing")],
         )
-        self.assertEqual(operations["operations"][1]["details"]["timeout_seconds"], 60.0)
+        self.assertEqual(operations["operations"][1]["details"]["timeout_seconds"], 240.0)
 
     def test_live_agent_health_keeps_reused_legacy_smoke_group_visible(self):
         with tempfile.TemporaryDirectory() as temp_dir:
