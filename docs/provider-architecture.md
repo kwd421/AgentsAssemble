@@ -50,6 +50,7 @@ The default registry exposes provider kinds with explicit capability snapshots:
 - `mock`
 - `codex`
 - `codex_live_session`
+- `kiro_live_session`
 - `anthropic`
 - `gemini`
 - `grok`
@@ -67,7 +68,7 @@ The default registry exposes provider kinds with explicit capability snapshots:
 - `openclaw_memory`
 - `memory_pack`
 
-`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `cursor`, `claude_code`, `antigravity_cli`, `gemini_cli_legacy`, `grok_build_cli`, `hermes_cli`, and `openclaw_cli` remain implementation-phase planned providers unless they are launched through the resident live-agent runner's explicit connection-kind contract; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
+`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `kiro_live_session` is a resident live-agent adapter, not a meeting adapter: it joins through the resident runner and Kiro's own chat resume store. `cursor`, `claude_code`, `antigravity_cli`, `gemini_cli_legacy`, `grok_build_cli`, `hermes_cli`, and `openclaw_cli` remain implementation-phase planned providers unless they are launched through the resident live-agent runner's explicit connection-kind contract; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
 Imported memory/profile packs now have a safe inspection surface before they can
 affect meeting context. `assemble memory-capsule gate --path <capsule-dir>`
@@ -224,6 +225,23 @@ or finalization. Host-control tools stay a later design behind
 authentication and admission boundaries.
 
 `codex_live_session` is the first Codex-specific live-session slice. Meeting turns use Codex CLI session ids and `codex exec resume` so repeated turns can continue the same Codex session history. Resident live-agent configs use `provider_kind: "codex_live_session"` with `connection_kind: "live_session"`; both the meeting adapter and resident runner call Codex CLI through `codex exec --sandbox read-only --ignore-rules` / `codex exec --sandbox read-only --ignore-rules resume` rather than through the JSONL fake-session protocol. The explicit `--sandbox read-only` flag is the safety input, `--ignore-rules` keeps repository `.rules` files from participating in the launch, and Codex CLI still owns the actual enforcement. Public artifacts record that path as `sandbox_enforcement: "codex_readonly"`. This is not native Codex/Claude channel injection, OS-level sandboxing, or a substitute for a future constrained launch path for arbitrary CLIs.
+
+`kiro_live_session` is the first Kiro-specific resident slice. It uses
+`kiro chat --resume-id <session-id>` so later room turns continue the same Kiro
+chat history without AgentsAssemble replaying earlier prompts as hidden
+context. When a Kiro resident has no configured `session_id`, the runner lists
+Kiro sessions before and after the first `kiro chat` call, captures the new
+session id, persists it through the live-agent presence payload, and uses it on
+later calls. Public artifacts may record the provider kind, connection kind,
+safe join semantics (`kiro_chat_resume`), and context durability
+(`provider_managed_resume`), but they must not store prompts, provider output,
+command tails, or raw session-list output. Kiro launch safety is currently
+`advisory`; unlike Codex, there is no AgentsAssemble-owned read-only sandbox
+flag in this adapter. Fresh Kiro session capture is serialized inside one
+resident runner process so concurrent `run-group` workers do not race over the
+global Kiro session list; separate host processes should still avoid starting
+multiple fresh Kiro resident groups at exactly the same time until a provider
+scoped session-creation API exists.
 
 The resident launch contract now has a small `SandboxLauncher` abstraction. `NoSandboxLauncher` declares `sandbox_enforcement: "advisory"` and does not constrain the child process. Codex uses the Codex read-only launcher and declares `codex_readonly`. Only a provider launched through a verified OS sandbox, restricted worktree, environment scrubber, or equivalent hard boundary may declare `os_sandboxed`.
 

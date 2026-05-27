@@ -1999,6 +1999,7 @@ function renderLiveAgentProviderOptions() {
     ["local_openai_compatible", "OpenAI-compatible"],
     ["remote_http_bridge", "Remote HTTP"],
     ["codex_live_session", "Codex Live"],
+    ["kiro_live_session", "Kiro Live"],
     ["manual", "Manual"],
   ]
     .map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`)
@@ -2089,6 +2090,7 @@ function codexSessionOptionLabel(session) {
 
 function providerDisplayName(provider, binding) {
   if (provider?.kind === "codex_live_session") return "Codex Live";
+  if (provider?.kind === "kiro_live_session") return "Kiro Live";
   return provider?.display_name || binding?.provider_id || "provider 없음";
 }
 
@@ -2146,6 +2148,7 @@ function providerKindLabel(kind) {
   if (kind === "local_openai_compatible") return "OpenAI-compatible";
   if (kind === "remote_http_bridge") return "Remote HTTP";
   if (kind === "codex_live_session") return "Codex Live";
+  if (kind === "kiro_live_session") return "Kiro Live";
   return kind || "Manual";
 }
 

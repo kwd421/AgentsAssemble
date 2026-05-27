@@ -148,6 +148,8 @@ def _connection_kind_for_provider(provider_kind: str) -> str:
         return "local_cli"
     if provider_kind == "codex_live_session":
         return "codex_resume"
+    if provider_kind == "kiro_live_session":
+        return "live_session"
     return "manual"
 
 

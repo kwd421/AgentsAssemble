@@ -18,6 +18,7 @@ from pathlib import Path
 
 from agentsassemble.bridges.claude_code_bridge import serve_bridge
 from agentsassemble.codex_resident import CodexResidentCommandRunner
+from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.codex_sessions import (
     DEFAULT_INVITE_CONFIG_PATH,
     DEFAULT_LIVE_AGENT_CONFIG_PATH,
@@ -6645,6 +6646,8 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
         raise ValueError(resident_connection_kind_error())
     if config.provider_kind == "codex_live_session" and config.connection_kind != "live_session":
         raise ValueError("codex_live_session resident requires live_session connection_kind.")
+    if config.provider_kind == "kiro_live_session" and config.connection_kind != "live_session":
+        raise ValueError("kiro_live_session resident requires live_session connection_kind.")
     if config.connection_kind == "remote_bridge":
         if not config.endpoint:
             raise ValueError("Remote bridge resident requires --endpoint.")
@@ -6660,6 +6663,8 @@ def _command_runner_for_config(config: ResidentAgentConfig):
         raise ValueError("self_service residents are supervised directly and do not use prompt-injection command runners.")
     if config.provider_kind == "codex_live_session" and config.connection_kind == "live_session":
         return CodexResidentCommandRunner(config)
+    if config.provider_kind == "kiro_live_session" and config.connection_kind == "live_session":
+        return KiroResidentCommandRunner(config)
     if config.connection_kind == "live_session":
         return _JsonlLiveSessionCommandRunner()
     if config.connection_kind == "terminal_session":

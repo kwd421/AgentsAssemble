@@ -11,6 +11,7 @@ LIVE_AGENT_JOIN_SEMANTICS = {
     "remote_bridge_room_loop",
     "self_service_room_loop",
     "codex_exec_resume",
+    "kiro_chat_resume",
     "jsonl_live_session",
     "unknown",
 }
@@ -69,6 +70,12 @@ def live_agent_context_contract(provider_kind: object, connection_kind: object) 
         if provider == "codex_live_session":
             return {
                 "join_semantics": "codex_exec_resume",
+                "context_durability": "provider_managed_resume",
+                "sandbox_enforcement": sandbox_enforcement,
+            }
+        if provider == "kiro_live_session":
+            return {
+                "join_semantics": "kiro_chat_resume",
                 "context_durability": "provider_managed_resume",
                 "sandbox_enforcement": sandbox_enforcement,
             }

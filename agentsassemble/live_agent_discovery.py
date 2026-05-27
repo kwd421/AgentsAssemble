@@ -21,6 +21,12 @@ CODEX_LIVE_SESSION_CONTRACT = {
     "sandbox_enforcement": "codex_readonly",
     "evidence_basis": "path_and_codex_safety_preflight",
 }
+KIRO_LIVE_SESSION_CONTRACT = {
+    "join_semantics": "kiro_chat_resume",
+    "context_durability": "provider_managed_resume",
+    "sandbox_enforcement": "advisory",
+    "evidence_basis": "path_and_kiro_resume_preflight",
+}
 SELF_SERVICE_CONTRACT = {
     "join_semantics": "self_service_room_loop",
     "context_durability": "provider_managed_room_loop",
@@ -180,6 +186,16 @@ def _candidate_specs() -> list[dict[str, Any]]:
             **CODEX_LIVE_SESSION_CONTRACT,
         },
         {
+            "command": "kiro",
+            "agent_id": "kiro-live",
+            "display_name": "Kiro",
+            "provider_kind": "kiro_live_session",
+            "connection_kind": "live_session",
+            "timeout_seconds": 180,
+            "omit_command": True,
+            **KIRO_LIVE_SESSION_CONTRACT,
+        },
+        {
             "command": "antigravity",
             "agent_id": "antigravity-cli-live",
             "display_name": "Antigravity CLI",
@@ -294,6 +310,8 @@ def _candidate_supported(spec: dict[str, Any], *, terminal_supported: bool) -> b
 def _entry_mode(spec: dict[str, Any]) -> str:
     if spec["provider_kind"] == "codex_live_session":
         return "codex_live_session"
+    if spec["provider_kind"] == "kiro_live_session":
+        return "kiro_live_session"
     return str(spec["connection_kind"])
 
 
@@ -322,6 +340,8 @@ def _safety_note(spec: dict[str, Any], entry_status: str) -> str:
         return "legacy Gemini is skipped unless explicitly included."
     if spec["provider_kind"] == "codex_live_session":
         return "Codex defaults and safety checks stay centralized in preflight."
+    if spec["provider_kind"] == "kiro_live_session":
+        return "Kiro uses kiro chat --resume-id; run preflight before auto join starts the resident."
     if spec["connection_kind"] == "self_service":
         return "Self-service process is supervised; it owns its own room loop after preflight."
     if spec["connection_kind"] == "terminal_session":

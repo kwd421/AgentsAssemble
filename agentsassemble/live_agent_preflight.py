@@ -16,6 +16,11 @@ from agentsassemble.codex_resident import (
     codex_provider_connection_check,
     default_codex_resident_command,
 )
+from agentsassemble.kiro_resident import (
+    default_kiro_resident_command,
+    kiro_command_check,
+    kiro_provider_connection_check,
+)
 from agentsassemble.live_session_transport import terminal_sessions_supported
 from agentsassemble.live_agent_runner import (
     ResidentAgentConfig,
@@ -107,6 +112,9 @@ def _preflight_agent(
     provider_connection_check = codex_provider_connection_check(config.provider_kind, config.connection_kind)
     if provider_connection_check is not None:
         checks.append(provider_connection_check)
+    provider_connection_check = kiro_provider_connection_check(config.provider_kind, config.connection_kind)
+    if provider_connection_check is not None:
+        checks.append(provider_connection_check)
     if config.connection_kind == "remote_bridge":
         checks.extend(
             [
@@ -132,6 +140,12 @@ def _preflight_agent(
             checks.append(codex_command_check)
             if codex_command_check["status"] == "ok":
                 checks.append(codex_capability_checker(_resolved_command(config.command, command_check.get("path", ""))))
+        if (
+            config.provider_kind == "kiro_live_session"
+            and config.connection_kind == "live_session"
+            and command_check["status"] == "ok"
+        ):
+            checks.append(kiro_command_check(config.command))
     status = "failed" if _failed_check_count(checks) else "ok"
     command_path = ""
     for check in checks:
@@ -177,6 +191,10 @@ def resident_config_setup_error(
         capability_check = codex_checker(_resolved_command(config.command, command_check.get("path", "")))
         if capability_check["status"] != "ok":
             return str(capability_check.get("message") or "Codex command is not ready.")
+    if config.provider_kind == "kiro_live_session" and config.connection_kind == "live_session":
+        kiro_check = kiro_command_check(config.command)
+        if kiro_check["status"] != "ok":
+            return str(kiro_check.get("message") or "Kiro command is not valid.")
     if config.connection_kind == "terminal_session" and not terminal_sessions_supported():
         return "PTY terminal sessions are not available on this host."
     return ""
@@ -219,6 +237,7 @@ def _preflight_config_from_mapping(
     connection_kind = str(data.get("connection_kind") or "local_cli")
     command_parts = live_agent_command_parts(command)
     command_parts = default_codex_resident_command(provider_kind, connection_kind, command_parts)
+    command_parts = default_kiro_resident_command(provider_kind, connection_kind, command_parts)
     return ResidentAgentConfig(
         server=str(server_override or data.get("server") or server),
         agent_id=str(data.get("agent_id") or ""),

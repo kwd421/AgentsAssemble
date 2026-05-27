@@ -75,8 +75,8 @@ report.
 - A stopped session should stay stopped unless the operator explicitly starts,
   ensures, resumes, or recovers it.
 - Provider execution style must be named honestly: native/session-managed,
-  Codex exec/resume, PTY terminal bridge, self-service room loop, remote bridge,
-  or stateless prompt call.
+  Codex exec/resume, Kiro chat resume, PTY terminal bridge, self-service room
+  loop, remote bridge, or stateless prompt call.
 - frontend polish is deferred until the backend state and data contracts are
   stable enough for another AI or human designer to refine.
 - The current GUI remains a dependency-light vanilla HTML/CSS/JS operator
@@ -216,6 +216,9 @@ Near-term work should favor backend contracts over visual polish:
 - Keep context durability labels such as provider-managed, process-lifetime, and
   stateless-prompt visible on admission, roster, and startup-packet surfaces
   where they are accurate.
+- Treat provider-managed resume adapters such as Codex and Kiro as actual
+  provider sessions only after a real continuity proof shows later turns can
+  recall earlier private session context without AgentsAssemble replaying it.
 - Keep `shared_memory/` resident meeting artifacts deterministic, official-only,
   and refreshed during long-running sessions.
 - Keep the compact shared-memory room payload and resident prompt block aligned

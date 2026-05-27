@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from agentsassemble.codex_resident import default_codex_resident_command
+from agentsassemble.kiro_resident import default_kiro_resident_command
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.live_agent_turns import (
     is_official_turn_cancellation_event,
@@ -1255,7 +1256,7 @@ def load_group_configs(
 def config_from_args(args: object) -> ResidentAgentConfig:
     provider_kind = str(getattr(args, "provider_kind"))
     connection_kind = str(getattr(args, "connection_kind"))
-    command = list(getattr(args, "resident_command", []) or [])
+    command = _default_resident_command(provider_kind, connection_kind, list(getattr(args, "resident_command", []) or []))
     return ResidentAgentConfig(
         server=str(getattr(args, "server")),
         agent_id=str(getattr(args, "agent_id")),
@@ -1267,7 +1268,7 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         auth_ref=str(getattr(args, "auth_ref", "")),
         meeting_id=str(getattr(args, "meeting_id")),
         engagement_mode=str(getattr(args, "engagement_mode")),
-        command=default_codex_resident_command(provider_kind, connection_kind, command),
+        command=command,
         timeout_seconds=int(getattr(args, "timeout")),
         poll_interval=float(getattr(args, "poll_interval")),
         heartbeat_interval=float(getattr(args, "heartbeat_interval")),
@@ -1308,7 +1309,7 @@ def _config_from_mapping(
     endpoint = data.get("endpoint")
     auth_ref = data.get("auth_ref")
     command_parts = live_agent_command_parts(command)
-    command_parts = default_codex_resident_command(provider_kind, connection_kind, command_parts)
+    command_parts = _default_resident_command(provider_kind, connection_kind, command_parts)
     if connection_kind != "remote_bridge" and not command_parts:
         raise ValueError("Each live agent requires a command list.")
     agent_id = str(data.get("agent_id") or "")
@@ -1373,6 +1374,12 @@ def live_agent_command_parts(value: object) -> list[str]:
     if not all(isinstance(part, str) for part in value):
         raise ValueError("Live agent command entries must be strings.")
     return list(value)
+
+
+def _default_resident_command(provider_kind: str, connection_kind: str, command: list[str]) -> list[str]:
+    command = default_codex_resident_command(provider_kind, connection_kind, command)
+    command = default_kiro_resident_command(provider_kind, connection_kind, command)
+    return command
 
 
 def live_agent_nonnegative_float(value: object, default: int | float, field_name: str) -> float:

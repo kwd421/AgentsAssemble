@@ -16,6 +16,7 @@ _REAL_PROVIDER_KINDS = {
     "gemini_cli_legacy",
     "grok_build_cli",
     "hermes_cli",
+    "kiro_live_session",
     "openclaw_cli",
     "remote_http_bridge",
 }
@@ -28,6 +29,7 @@ _REAL_PROVIDER_MARKERS = (
     "gemini",
     "grok",
     "hermes",
+    "kiro",
     "openclaw",
     "remote",
 )

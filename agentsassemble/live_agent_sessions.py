@@ -796,6 +796,8 @@ def _allowed_resident_connection_kinds(provider_kind: str) -> frozenset[str]:
         return frozenset({"remote_bridge"})
     if provider_kind == "codex_live_session":
         return frozenset({"live_session"})
+    if provider_kind == "kiro_live_session":
+        return frozenset({"live_session"})
     if provider_kind == "local_cli":
         return frozenset({"local_cli", "live_session", "terminal_session", "self_service"})
     return SUPPORTED_SESSION_CONNECTION_KINDS
@@ -1084,6 +1086,8 @@ def _resident_connection_kind_for_provider(provider_kind: str) -> str:
     if provider_kind == "remote_http_bridge":
         return "remote_bridge"
     if provider_kind == "codex_live_session":
+        return "live_session"
+    if provider_kind == "kiro_live_session":
         return "live_session"
     if provider_kind == "local_cli":
         return "local_cli"

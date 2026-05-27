@@ -14,6 +14,7 @@ ProviderKind = Literal[
     "mock",
     "codex",
     "codex_live_session",
+    "kiro_live_session",
     "anthropic",
     "gemini",
     "grok",

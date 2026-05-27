@@ -266,6 +266,18 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
             ),
             "Claude Code meeting-mode integration is planned; implementation permissions stay gated until after a decision artifact exists.",
         ),
+        "kiro_live_session": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=False,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=False,
+                cost_class="subscription",
+            ),
+            "Kiro live-session residents are supported through kiro chat --resume-id; implementation permissions stay gated until after explicit approval.",
+        ),
         "antigravity_cli": (
             ProviderCapabilities(
                 supports_research=True,
@@ -375,6 +387,7 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
             in {
                 "cursor",
                 "claude_code",
+                "kiro_live_session",
                 "antigravity_cli",
                 "gemini_cli_legacy",
                 "grok_build_cli",
