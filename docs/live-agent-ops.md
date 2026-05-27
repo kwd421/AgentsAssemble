@@ -1694,6 +1694,13 @@ not be used as reply text or public proof evidence. AgentsAssemble reports this
 path as `join_semantics: "grok_session_resume"` and
 `context_durability: "provider_managed_resume"`. Safety is currently advisory:
 there is no hard Grok sandbox enforced by AgentsAssemble in this adapter.
+The Grok control plane also has a no-model fake lifecycle regression: a
+temporary fake `grok` executable can start a supervised resident, answer one
+official round, restart the group, resume from the captured fake session id,
+answer the next official round, finalize, and stop without launching the real
+Grok CLI. That offline regression proves the AgentsAssemble runner/session
+plumbing for Grok; real Grok official-turn quality still requires a separate
+explicitly approved real-provider smoke.
 
 ## Provider Continuity Proof
 
