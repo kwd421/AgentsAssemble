@@ -38,6 +38,13 @@ raw prompts, raw provider output, local config paths, or provider log tails.
 Status/account inspection is not safe public evidence and is not used for these
 continuity verdicts.
 
+`live-agent continuity-proof` treats the first-turn ready marker as a narrow
+protocol token: after trimming whitespace, `READY` may be followed by at most
+one terminal punctuation mark. The strict `first_reply_is_ready` field still
+records exact `READY`, while `first_reply_ready_normalized` records the narrow
+protocol match. Session capture, first-reply code or suffix leak checks,
+second-prompt replay rejection, and suffix recall remain strict.
+
 ## Current Rows
 
 | Provider kind | Evidence status | Contract evidence | Current conclusion | Next evidence needed |

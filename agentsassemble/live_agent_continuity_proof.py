@@ -20,6 +20,8 @@ CONTINUITY_PROOF_LIMITATIONS = [
     "does_not_prove_tool_safety",
     "does_not_prove_stop_restart_or_official_turn_quality",
 ]
+_READY_MARKER_MAX_LENGTH = 8
+_READY_MARKER_TERMINAL_PUNCTUATION = frozenset(".!?。！？")
 
 
 def run_live_agent_continuity_proof(
@@ -98,6 +100,7 @@ def run_live_agent_continuity_proof(
             _close_runner(runner)
 
     first_reply_is_ready = first_reply.strip() == "READY"
+    first_reply_ready_normalized = _first_reply_ready_normalized(first_reply)
     first_revealed_code = code in first_reply
     first_revealed_suffix = suffix in first_reply
     second_replayed_code = code in second_prompt
@@ -105,7 +108,7 @@ def run_live_agent_continuity_proof(
     session_id = str(getattr(runner, "session_id", "") or "")
     ok = (
         bool(session_id)
-        and first_reply_is_ready
+        and first_reply_ready_normalized
         and not first_revealed_code
         and not first_revealed_suffix
         and not second_replayed_code
@@ -115,7 +118,7 @@ def run_live_agent_continuity_proof(
         "status": "ok" if ok else "failed",
         "reason": "ok" if ok else _failure_reason(
             session_id_captured=bool(session_id),
-            first_reply_is_ready=first_reply_is_ready,
+            first_reply_ready_normalized=first_reply_ready_normalized,
             first_revealed_code=first_revealed_code,
             first_revealed_suffix=first_revealed_suffix,
             second_replayed_code=second_replayed_code,
@@ -133,6 +136,7 @@ def run_live_agent_continuity_proof(
         "first_reply_length": len(first_reply),
         "second_reply_length": len(second_reply),
         "first_reply_is_ready": first_reply_is_ready,
+        "first_reply_ready_normalized": first_reply_ready_normalized,
         "first_reply_revealed_code": first_revealed_code,
         "first_reply_revealed_suffix": first_revealed_suffix,
         "second_prompt_replayed_code": second_replayed_code,
@@ -262,10 +266,19 @@ def _safe_session_suffix(session_id: object) -> str:
     return text[-6:] if text else ""
 
 
+def _first_reply_ready_normalized(reply: str) -> bool:
+    text = reply.strip()
+    if not text or len(text) > _READY_MARKER_MAX_LENGTH:
+        return False
+    if text == "READY":
+        return True
+    return len(text) == len("READY.") and text.startswith("READY") and text[-1] in _READY_MARKER_TERMINAL_PUNCTUATION
+
+
 def _failure_reason(
     *,
     session_id_captured: bool,
-    first_reply_is_ready: bool,
+    first_reply_ready_normalized: bool,
     first_revealed_code: bool,
     first_revealed_suffix: bool,
     second_replayed_code: bool,
@@ -277,7 +290,7 @@ def _failure_reason(
         return "first_reply_revealed_code"
     if first_revealed_suffix:
         return "first_reply_revealed_suffix"
-    if not first_reply_is_ready:
+    if not first_reply_ready_normalized:
         return "first_reply_not_ready"
     if second_replayed_code:
         return "second_prompt_replayed_code"

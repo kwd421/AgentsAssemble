@@ -1,3 +1,4 @@
+import json
 import subprocess
 import tempfile
 import unittest
@@ -5,6 +6,7 @@ from pathlib import Path
 
 from agentsassemble.live_agent_continuity_proof import (
     _continuity_code,
+    _first_reply_ready_normalized,
     fixed_continuity_code_factory,
     run_live_agent_continuity_proof,
     run_live_agent_continuity_proof_batch,
@@ -37,6 +39,21 @@ def config(**overrides):
 
 
 class LiveAgentContinuityProofTests(unittest.TestCase):
+    def _run_grok_proof_with_first_reply(self, first_reply):
+        session_id = "grok-session-abc123"
+
+        def command_runner(command, **kwargs):
+            if "--resume" in command:
+                return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"sessionId": session_id, "text": "2345"}), stderr="")
+            return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"sessionId": session_id, "text": first_reply}), stderr="")
+
+        return run_live_agent_continuity_proof(
+            config(provider_kind="grok_live_session", command=["grok"]),
+            approve_real_providers=True,
+            command_runner=command_runner,
+            code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+        )
+
     def test_default_continuity_code_uses_unambiguous_letter_suffix(self):
         for _ in range(20):
             suffix = _continuity_code()[-4:]
@@ -157,6 +174,68 @@ class LiveAgentContinuityProofTests(unittest.TestCase):
         self.assertNotIn("KCODE-ABCDE12345", str(result))
         self.assertIn("--resume", calls[1]["command"])
         self.assertNotIn("KCODE-ABCDE12345", " ".join(calls[1]["command"]))
+
+    def test_continuity_proof_accepts_narrow_ready_marker_variants(self):
+        accepted_replies = ["READY", "READY.", "READY!", "READY?", "READY\n", "  READY  ", "READY。", "READY！", "READY？"]
+        for reply in accepted_replies:
+            with self.subTest(reply=reply):
+                result = self._run_grok_proof_with_first_reply(reply)
+
+                self.assertEqual(result["status"], "ok")
+                self.assertEqual(result["reason"], "ok")
+                self.assertEqual(result["first_reply_is_ready"], reply.strip() == "READY")
+                self.assertTrue(result["first_reply_ready_normalized"])
+                self.assertFalse(result["first_reply_revealed_code"])
+                self.assertFalse(result["first_reply_revealed_suffix"])
+                self.assertTrue(result["expected_suffix_matched"])
+                self.assertNotIn("KCODE-ABCDE12345", str(result))
+
+    def test_ready_marker_normalizer_rejects_empty_and_oversized_markers(self):
+        rejected_replies = ["", "   ", "\n", "READY....", "READY-" + "x" * 32]
+        for reply in rejected_replies:
+            with self.subTest(reply=reply):
+                self.assertFalse(_first_reply_ready_normalized(reply))
+
+    def test_continuity_proof_rejects_extra_ready_marker_text(self):
+        rejected_replies = [
+            "OKAY",
+            "ready",
+            "Ready",
+            "READYish",
+            "READY because",
+            "READY READY",
+            "READY..",
+            "READY!?",
+            "READY....",
+            "READY-" + "x" * 32,
+        ]
+        for reply in rejected_replies:
+            with self.subTest(reply=reply):
+                result = self._run_grok_proof_with_first_reply(reply)
+
+                self.assertEqual(result["status"], "failed")
+                self.assertEqual(result["reason"], "first_reply_not_ready")
+                self.assertFalse(result["first_reply_is_ready"])
+                self.assertFalse(result["first_reply_ready_normalized"])
+                self.assertFalse(result["first_reply_revealed_code"])
+                self.assertFalse(result["first_reply_revealed_suffix"])
+                self.assertTrue(result["expected_suffix_matched"])
+                self.assertNotIn("KCODE-ABCDE12345", str(result))
+
+    def test_continuity_proof_rejects_ready_marker_that_reveals_code_or_suffix(self):
+        suffix_result = self._run_grok_proof_with_first_reply("READY 2345")
+        self.assertEqual(suffix_result["status"], "failed")
+        self.assertEqual(suffix_result["reason"], "first_reply_revealed_suffix")
+        self.assertFalse(suffix_result["first_reply_ready_normalized"])
+        self.assertTrue(suffix_result["first_reply_revealed_suffix"])
+        self.assertNotIn("KCODE-ABCDE12345", str(suffix_result))
+
+        code_result = self._run_grok_proof_with_first_reply("READY KCODE-ABCDE12345")
+        self.assertEqual(code_result["status"], "failed")
+        self.assertEqual(code_result["reason"], "first_reply_revealed_code")
+        self.assertFalse(code_result["first_reply_ready_normalized"])
+        self.assertTrue(code_result["first_reply_revealed_code"])
+        self.assertNotIn("KCODE-ABCDE12345", str(code_result))
 
     def test_unsupported_provider_reports_without_calling_provider(self):
         calls = []
