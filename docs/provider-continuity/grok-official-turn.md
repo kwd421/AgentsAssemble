@@ -2,8 +2,9 @@
 
 Date: 2026-05-28
 
-This note records the bounded Grok follow-up that was intended to rerun official
-turn quality after `official_turn_timeout_seconds` was added. It is evidence
+This note records the bounded Grok follow-up that reran official turn quality
+after `official_turn_timeout_seconds` was added and the continuity proof ready
+marker was narrowed to accept harmless terminal punctuation. It is evidence
 only: no resident runner, config promotion, or sandbox claim was added from this
 probe.
 
@@ -31,7 +32,7 @@ The approved command used `live-agent continuity-proof` with
 `provider_kind: "grok_live_session"`, `connection_kind: "live_session"`,
 `--approve-real-providers`, and the local `grok` command.
 
-The strict proof returned `status: "failed"` with
+The first strict proof returned `status: "failed"` with
 `reason: "first_reply_not_ready"`. Safe fields still showed:
 
 - `session_id_captured: true`
@@ -43,24 +44,60 @@ The strict proof returned `status: "failed"` with
 - `second_prompt_replayed_code: false`
 - `expected_suffix_matched: true`
 
-Because the strict continuity-proof status failed, the official-turn room smoke
-with the dedicated official-turn timeout was not run in this slice.
+After the ready-marker contract was narrowed to accept exact `READY` plus at
+most one terminal punctuation mark, the same approved continuity proof was rerun
+from an isolated temporary git working directory. The rerun returned:
+
+- `status: "ok"`
+- `reason: "ok"`
+- `session_id_captured: true`
+- a short safe session-id suffix was captured
+- `first_reply_length: 5`
+- `second_reply_length: 4`
+- `first_reply_is_ready: true`
+- `first_reply_ready_normalized: true`
+- `first_reply_revealed_code: false`
+- `first_reply_revealed_suffix: false`
+- `second_prompt_replayed_code: false`
+- `expected_suffix_matched: true`
+
+Because the continuity baseline passed, the official-turn room smoke was rerun
+with the Grok-only bundle, `--official-round-smoke`, `--restart-smoke`, and the
+dedicated official-turn timeout. Safe counts returned:
+
+- `status: "ok"`
+- `start_status: "ready"`
+- `expected_agent_count: 1`
+- `connected_agent_count: 1`
+- `reply_probe_status: "ok"`
+- `reply_probe_count: 1`
+- `reply_probe_ok_count: 1`
+- `official_rounds_status: "answered"`
+- `official_round_count: 1`
+- `official_answered_round_count: 1`
+- `official_timeout_round_count: 0`
+- `restart_status: "ready"`
+- `post_restart_connected_agent_count: 1`
+- `post_restart_reply_probe_status: "ok"`
+- `post_restart_reply_probe_count: 1`
+- `post_restart_reply_probe_ok_count: 1`
+- `stop_status: "stopped"`
+- `post_stop_process_status: "stopped"`
 
 ## Verdict
 
-Grok remains `room-smoke-proven-limited` for this local install.
+Grok remains `room-smoke-proven-limited` for this local install, but the
+official-turn quality evidence is now positive for the bounded local smoke above.
 
-The prior checked-in evidence still proves a narrow Grok JSON stdout resume
-runner, prior two-turn suffix recall, bounded start/probe/stop, and
-restart/probe behavior. The 2026-05-28 rerun did not prove official-turn
-quality: the same-day strict continuity baseline failed before the official
-room smoke could be a clean measurement.
+The checked-in evidence now proves a narrow Grok JSON stdout resume runner,
+two-turn suffix recall, bounded start/probe/stop, one official answered round
+with the dedicated official-turn timeout, and restart/probe behavior for this
+local install.
 
-Do not claim Grok official-turn quality, recover behavior, tool safety, future
-billing stability, or OS-level sandboxing from this result. A later slice should
-first restore a passing strict continuity baseline or explicitly redesign the
-Grok continuity contract, then rerun the official-turn smoke with safe counts
-only.
+Do not claim recover behavior, tool safety, future billing stability,
+production readiness, or OS-level sandboxing from this result. Grok launch
+safety remains `advisory`, and future provider billing/model availability can
+still change.
 
 Public docs must keep raw prompts, raw replies, full session ids, stdout,
 stderr, account data, absolute local paths, prompt-file paths, generated config
