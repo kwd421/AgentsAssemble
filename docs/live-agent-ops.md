@@ -226,6 +226,13 @@ that does not make the checked-in Antigravity self-service examples native-ready
 Use a real wrapper that owns room polling before treating Antigravity as a
 resident participant, and do not persist raw Antigravity output, conversation
 ids, global-store paths, or config symlinks as proof artifacts.
+The current Cursor Agent evidence is similarly narrow: `cursor-agent
+create-chat` plus `cursor-agent --resume <chat_id> --print` can preserve one
+chat's context on this local install, but the checked-in staging row is still a
+terminal/self-service candidate rather than a native-ready resident. A future
+Cursor runner must prove room registration, cursor reads, lobby or official
+reply, heartbeat, and clean stop with safe counts before discovery or docs can
+present it as resident participation.
 
 ## GUI Startup Autostart
 

@@ -805,7 +805,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("local_cli is a stateless delegate", doc)
         normalized_evidence = " ".join(evidence.split())
         self.assertIn("Grok is still the only non-Codex/Kiro provider with both a passing two-turn continuity probe", normalized_evidence)
-        self.assertIn("Antigravity now has a narrower positive `--continue` recall probe", normalized_evidence)
+        self.assertIn("Cursor and Antigravity now have narrower positive continuity probes", normalized_evidence)
         for provider in ("claude_code", "cursor", "antigravity_cli", "grok_build_cli", "hermes_cli", "openclaw_cli"):
             self.assertIn(provider, evidence)
         for provider in ("claude_code", "openclaw_cli"):
@@ -828,7 +828,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("`hermes chat --help` exposes `--query`, `--resume`, `--continue`", survey)
         self.assertIn("bounded `hermes version` invocation did not return before timeout", survey)
         self.assertIn("status/account inspection is not safe public evidence", normalized_combined.lower())
-        self.assertIn("Approved explicit-chat-id and workspace-continue probes both failed", normalized_combined)
+        self.assertIn("Earlier approved explicit-chat-id and workspace-continue probes failed", normalized_combined)
+        self.assertIn("fresh `create-chat` id plus `--resume <chat_id> --print", normalized_combined)
         self.assertIn("room-smoke-proven-limited", normalized_combined)
         self.assertIn("only an approved two-turn continuity probe can prove", normalized_combined)
 
@@ -841,6 +842,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Real Continuity Probe Summary", survey)
         self.assertIn("failed this probe", survey)
         self.assertIn("passed limited continuity probe", survey)
+        self.assertIn("passed limited chat-id resume recall", survey)
         self.assertIn("passed limited `--continue` recall", survey)
         self.assertIn("failed explicit conversation recall", survey)
         self.assertIn("JSON stdout `text`", survey)
@@ -852,7 +854,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("grok_session_resume", normalized)
         self.assertIn("bounded room start/probe/stop smoke", normalized)
         self.assertIn("does not prove official-turn quality", normalized)
-        self.assertIn("do not add a `cursor_agent` resume runner from current evidence", normalized)
+        self.assertIn("do not present one-shot `--print` as resident participation", normalized)
+        self.assertIn("not a resident-room runner", normalized)
         self.assertIn("Do not add an Antigravity runner yet", survey)
         self.assertIn("not promoted to a resident runner", survey)
         self.assertIn("Do not add a Hermes runner yet", survey)
