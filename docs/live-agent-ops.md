@@ -220,6 +220,12 @@ contract example, not a native-ready bundle: it shows the current conservative
 Claude Code, Cursor, Antigravity, Grok Build, Hermes, and OpenClaw resident
 shapes with `moderator_called`, but each row still needs local install,
 explicit approval, preflight, and a provider-specific smoke before use.
+The current Antigravity CLI evidence is specifically for the `agy` executable:
+`agy --print --continue` can recall one prior turn on this local install, but
+that does not make the checked-in Antigravity self-service examples native-ready.
+Use a real wrapper that owns room polling before treating Antigravity as a
+resident participant, and do not persist raw Antigravity output, conversation
+ids, global-store paths, or config symlinks as proof artifacts.
 
 ## GUI Startup Autostart
 

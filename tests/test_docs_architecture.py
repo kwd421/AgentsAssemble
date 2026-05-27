@@ -804,7 +804,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Codex, Kiro, and Grok are the provider-specific resume residents", doc)
         self.assertIn("local_cli is a stateless delegate", doc)
         normalized_evidence = " ".join(evidence.split())
-        self.assertIn("Grok is the only non-Codex/Kiro provider with a passing two-turn continuity probe", normalized_evidence)
+        self.assertIn("Grok is still the only non-Codex/Kiro provider with both a passing two-turn continuity probe", normalized_evidence)
+        self.assertIn("Antigravity now has a narrower positive `--continue` recall probe", normalized_evidence)
         for provider in ("claude_code", "cursor", "antigravity_cli", "grok_build_cli", "hermes_cli", "openclaw_cli"):
             self.assertIn(provider, evidence)
         for provider in ("claude_code", "openclaw_cli"):
@@ -821,7 +822,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("only an approved two-turn continuity probe can prove", normalized_survey)
         self.assertIn("model-inference commands require explicit real-provider approval", normalized_survey)
         self.assertIn("`cursor-agent --version` returned `2026.05.24-dda726e`", survey)
-        self.assertIn("`agy --version` returned `1.0.1`", survey)
+        self.assertIn("`agy --version` returned `1.0.2`", survey)
         self.assertIn("`grok --version` returned `grok 0.2.3 (14d81fd875e)`", survey)
         self.assertIn("`grok agent --help` exposes `stdio`, `headless`, `serve`, and `leader` modes", survey)
         self.assertIn("`hermes chat --help` exposes `--query`, `--resume`, `--continue`", survey)
@@ -840,6 +841,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Real Continuity Probe Summary", survey)
         self.assertIn("failed this probe", survey)
         self.assertIn("passed limited continuity probe", survey)
+        self.assertIn("passed limited `--continue` recall", survey)
+        self.assertIn("failed explicit conversation recall", survey)
         self.assertIn("JSON stdout `text`", survey)
         self.assertIn("first assistant `text` length was 5", survey)
         self.assertIn("turn 2 assistant `text` length was 4", survey)
@@ -851,6 +854,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("does not prove official-turn quality", normalized)
         self.assertIn("do not add a `cursor_agent` resume runner from current evidence", normalized)
         self.assertIn("Do not add an Antigravity runner yet", survey)
+        self.assertIn("not promoted to a resident runner", survey)
         self.assertIn("Do not add a Hermes runner yet", survey)
 
     def test_no_tailscale_multi_host_docs_separate_native_client_from_bridge(self):

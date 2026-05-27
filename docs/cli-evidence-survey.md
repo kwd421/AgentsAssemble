@@ -5,11 +5,13 @@ participation beyond Codex and Kiro. It is intentionally conservative: help and
 version output can identify a candidate session surface, but only an approved
 two-turn continuity probe can prove provider-owned context continuity.
 
-Grok is the only non-Codex/Kiro provider with a passing two-turn continuity
-probe and a passing bounded room start/probe/stop smoke in this survey.
-Discovery, executable presence, config generation, help text, and one-shot
-`local_cli` output are not evidence of resident participation or provider-owned
-context continuity.
+Grok is still the only non-Codex/Kiro provider with both a passing two-turn
+continuity probe and a passing bounded room start/probe/stop smoke in this
+survey. Antigravity now has a narrower positive `--continue` recall probe, but
+it does not have a checked-in runner, reliable explicit conversation-id resume,
+or room start/probe/stop evidence. Discovery, executable presence, config
+generation, help text, and one-shot `local_cli` output are not evidence of
+resident participation or provider-owned context continuity.
 
 ## Method
 
@@ -38,7 +40,7 @@ raw prompts, raw provider output, local config paths, or provider log tails.
 | --- | --- | --- | --- | --- |
 | `claude_code` | absent in PATH | `claude` was not found by PATH discovery in this slice. | Planned only. Do not present one-shot `local_cli` as a resident Claude Code session. | Inspect real CLI/channel behavior, then prove provider-owned room loop or native resume. |
 | `cursor` | continuity-probe-failed | `cursor-agent --version` returned `2026.05.24-dda726e`; `cursor-agent --help` exposes `--print`, `--output-format text|json|stream-json`, `--resume`, `--continue`, `--mode ask|plan`, `--sandbox enabled|disabled`, and `create-chat`. The app `cursor` CLI is editor/open-file oriented, not the agent surface. | Cursor Agent has a plausible session surface, but approved explicit-chat-id and workspace-continue probes both returned successfully without recalling the suffix. This is a failed probe, not proof that Cursor can never preserve context. | Do not add a Cursor runner yet. A later slice needs a better provider-documented resume path or an agent-owned self-service loop before room participation. |
-| `antigravity_cli` | continuity-probe-failed | `agy --version` returned `1.0.1`; `agy --help` exposes `--print`, `--prompt-interactive`, `--continue`, `--conversation`, `--sandbox`, and `--dangerously-skip-permissions`. | The approved `agy --print` plus `--continue` probe returned successfully but did not recall the suffix; sandbox/permission text appeared in the process output, so the failure is kept conservative. | Do not add an Antigravity runner yet. Revisit only with a documented conversation id flow or a self-service loop that owns its own room polling. |
+| `antigravity_cli` | continuity-proven-limited-no-runner | `agy --version` returned `1.0.2`; `agy --help` exposes `--print`, `--prompt-interactive`, `--continue`, `--conversation`, `--sandbox`, and `--dangerously-skip-permissions`. | A later approved `agy --print` plus `--continue` probe recalled the previous-turn codename from the provider-owned Antigravity store. This is real continuity evidence for the local `--continue` surface, but the output also showed Antigravity inspecting its global local store, the throwaway cwd gained a `.antigravitycli` symlink to user config, and an explicit `--conversation <id>` follow-up did not recall the codename. | Do not add an Antigravity runner yet. Revisit with a documented conversation-id flow, a bounded output contract, and a self-service room loop that owns its own room polling without exposing global store paths or raw provider output. |
 | `grok_live_session` | room-smoke-proven-limited | `grok --version` returned `grok 0.2.3 (14d81fd875e)`; `grok --help` exposes `--single`, `--prompt-file`, `--prompt-json`, `--resume`, `--continue`, output formats, `--sandbox`, `--no-memory`, `--no-subagents`, and session listing. Running bare `grok` starts a TUI and timed out under bounded non-interactive discovery. | Approved isolated-git-cwd probes using JSON stdout and explicit `--resume <sessionId>` recalled the suffix exactly from the JSON `text` field. The checked-in runner uses the safer `--prompt-file` JSON-output shape and later `--resume <sessionId>`. An approved Grok-only generated room bundle passed the bounded start/probe/stop smoke with safe counts: start ready, connected 1/1, reply probe 1/1, stop stopped, post-stop stopped. A deeper approved smoke with one official round plus restart returned safe counts: start ready, connected 1/1, initial reply probe 1/1, official round timeout 0/1 answered, restart ready, post-restart reply probe 1/1, stop stopped, post-stop stopped. Full process output can echo prompt material in stderr, so raw stderr/stdout logs must not be persisted as proof artifacts. | Grok may be used for controlled local resident lobby/restart experiments with explicit approval. Do not claim official-turn quality yet: the first deeper smoke disproved it for this local path by timing out. Still prove official-turn quality, recover behavior, tool safety, and sandboxing before treating it as production-ready. |
 | `grok_build_cli` | contract-known-but-not-runner | `grok agent --help` exposes `stdio`, `headless`, `serve`, and `leader` modes. | These surfaces may become useful later, but they are not the checked-in continuity runner. | Do not route resident continuity through `grok_build_cli` yet; use `grok_live_session` for the narrow JSON stdout resume path. |
 | `hermes_cli` | continuity-probe-failed | `hermes --help` exposes `chat`, `sessions`, `mcp`, and related commands. `hermes chat --help` exposes `--query`, `--resume`, `--continue`, `--quiet`, `--source`, `--ignore-user-config`, and `--ignore-rules`. `hermes sessions --help` exposes list/export/delete/rename tooling. A bounded `hermes version` invocation did not return before timeout in this environment. | The approved `hermes chat --query` plus continue probe returned successfully but the second turn reported no usable prior-session memory for the token. Status/account inspection is not safe public evidence and is not used here. | Do not add a Hermes runner yet. Revisit only with a documented session id resume flow that avoids hidden session dumps and account/status leakage. |
@@ -68,7 +70,7 @@ paths, provider logs, nonce values, or nonce suffixes.
 | Provider kind | Probe result | Resume mechanism | Safe evidence | Runner implication |
 | --- | --- | --- | --- | --- |
 | `cursor` | failed this probe | explicit chat id and workspace-scoped `--continue` | both calls returned successfully; turn 2 prompt contained neither nonce nor suffix; turn 2 output did not contain the expected suffix | no runner yet |
-| `antigravity_cli` | failed this probe | isolated-cwd `agy --print --continue` | both calls returned successfully; turn 2 prompt contained neither nonce nor suffix; turn 2 output did not contain the expected suffix | no runner yet |
+| `antigravity_cli` | passed limited `--continue` recall, failed explicit conversation recall | isolated-cwd `agy --print --continue`; follow-up `agy --print --conversation <id>` | first call returned exactly the expected ready marker; second call recalled the prior codename without the second prompt repeating it; process output showed global Antigravity store inspection and the throwaway cwd gained a `.antigravitycli` symlink to user config; explicit conversation-id resume did not recall the codename | no runner yet |
 | `hermes_cli` | failed this probe | isolated-cwd `hermes chat --query --continue` | both calls returned successfully; turn 2 prompt contained neither nonce nor suffix; turn 2 output did not contain the expected suffix | no runner yet |
 | `grok_live_session` | passed limited continuity probe | isolated git cwd, `grok --single`, explicit `--resume <sessionId>`, JSON stdout | session id captured; first assistant `text` length was 5 and did not reveal the nonce; turn 2 assistant `text` length was 4 and exactly matched the expected suffix; turn 2 prompt contained neither nonce nor suffix; full process output did contain prompt material in stderr | implemented the narrow Grok runner/proof path, parsing JSON stdout `text` only |
 
@@ -82,6 +84,17 @@ continuity code or suffix in the first reply, did not replay the code in the
 second prompt, and matched the expected suffix. This is still only two-turn
 provider-owned resume evidence; it is not room admission, tool-safety,
 stop/restart, or official-turn-quality evidence.
+
+An approved Antigravity refresh on 2026-05-27 used local `agy` 1.0.2 from an
+isolated temporary directory. `agy --print --continue` recalled the prior
+codename, so the current most-recent conversation surface can preserve
+provider-owned context across two calls. That positive result is deliberately
+not promoted to a resident runner: the process output described inspecting
+global Antigravity/Gemini local stores, the throwaway directory gained only a
+`.antigravitycli` symlink to user config, and an explicit `--conversation <id>`
+call did not recall the codename. Public evidence keeps only these booleans and
+outcome descriptions; it does not store raw prompts, raw provider replies, full
+conversation ids, absolute config paths, account data, or provider logs.
 
 After that continuity prerequisite passed, a Grok-only session bundle was
 generated through the GUI discovery API with exact approval for `grok-live`.
