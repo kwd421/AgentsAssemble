@@ -826,10 +826,11 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("`grok --version` returned `grok 0.2.3 (14d81fd875e)`", survey)
         self.assertIn("`grok agent --help` exposes `stdio`, `headless`, `serve`, and `leader` modes", survey)
         self.assertIn("`hermes chat --help` exposes `--query`, `--resume`, `--continue`", survey)
-        self.assertIn("bounded `hermes version` invocation did not return before timeout", survey)
+        self.assertIn("`Hermes Agent v0.11.0 (2026.4.23)`", survey)
         self.assertIn("status/account inspection is not safe public evidence", normalized_combined.lower())
         self.assertIn("Earlier approved explicit-chat-id and workspace-continue probes failed", normalized_combined)
         self.assertIn("fresh `create-chat` id plus `--resume <chat_id> --print", normalized_combined)
+        self.assertIn("continuity-ambiguous-no-runner", normalized_combined)
         self.assertIn("room-smoke-proven-limited", normalized_combined)
         self.assertIn("only an approved two-turn continuity probe can prove", normalized_combined)
 
@@ -840,11 +841,12 @@ class DocsArchitectureTests(unittest.TestCase):
         normalized = " ".join(combined.split())
 
         self.assertIn("Real Continuity Probe Summary", survey)
-        self.assertIn("failed this probe", survey)
         self.assertIn("passed limited continuity probe", survey)
         self.assertIn("passed limited chat-id resume recall", survey)
         self.assertIn("passed limited `--continue` recall", survey)
         self.assertIn("failed explicit conversation recall", survey)
+        self.assertIn("ambiguous session-id resume recall", survey)
+        self.assertIn("fresh no-resume control also recalled", normalized)
         self.assertIn("JSON stdout `text`", survey)
         self.assertIn("first assistant `text` length was 5", survey)
         self.assertIn("turn 2 assistant `text` length was 4", survey)
@@ -859,6 +861,17 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Do not add an Antigravity runner yet", survey)
         self.assertIn("not promoted to a resident runner", survey)
         self.assertIn("Do not add a Hermes runner yet", survey)
+
+    def test_hermes_continuity_note_records_ambiguous_control_without_raw_evidence(self):
+        note = (ROOT / "docs" / "provider-continuity" / "hermes.md").read_text(encoding="utf-8")
+        normalized_note = " ".join(note.split())
+        self.assertIn("Hermes CLI Continuity Evidence", note)
+        self.assertIn("continuity-ambiguous-no-runner", note)
+        self.assertIn("fresh no-resume control can also recall it", normalized_note)
+        self.assertIn("Do not add a Hermes runner", note)
+        self.assertNotRegex(note, r"\b[a-z]+-\d{4}\b")
+        self.assertNotRegex(note, r"\b20\d{6}_\d{6}_[0-9a-f]+\b")
+        self.assertNotIn("/Users/", note)
 
     def test_no_tailscale_multi_host_docs_separate_native_client_from_bridge(self):
         design = (ROOT / "docs" / "no-tailscale-multi-host.md").read_text(encoding="utf-8")

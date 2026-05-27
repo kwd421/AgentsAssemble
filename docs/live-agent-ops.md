@@ -233,6 +233,11 @@ terminal/self-service candidate rather than a native-ready resident. A future
 Cursor runner must prove room registration, cursor reads, lobby or official
 reply, heartbeat, and clean stop with safe counts before discovery or docs can
 present it as resident participation.
+The current Hermes evidence is weaker: a seed/resume probe recalled a prior
+codeword, but a fresh no-resume control also recalled it, so Hermes remains an
+ambiguous provider-owned context surface rather than a session-id-specific
+resident path. Keep Hermes in the same explicit-approval staging lane until a
+clean session-id proof or self-service room loop is verified.
 
 ## GUI Startup Autostart
 
