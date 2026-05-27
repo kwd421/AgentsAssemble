@@ -789,6 +789,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("codex_exec_resume", doc)
         self.assertIn("kiro_chat_resume", doc)
         self.assertIn("continuity-proof", doc)
+        self.assertIn("continuity-proof-group", doc)
         self.assertIn("provider-managed", doc)
         self.assertIn("process-lifetime", doc)
         self.assertIn("stateless-prompt", doc)

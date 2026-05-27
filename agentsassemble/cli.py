@@ -33,7 +33,10 @@ from agentsassemble.config import load_council_config
 from agentsassemble.gui import serve_gui
 from agentsassemble.live_agents import _looks_sensitive_presence_error
 from agentsassemble.live_agent_flow import FlowOptions, LiveAgentFlowClient
-from agentsassemble.live_agent_continuity_proof import run_live_agent_continuity_proof
+from agentsassemble.live_agent_continuity_proof import (
+    run_live_agent_continuity_proof,
+    run_live_agent_continuity_proof_batch,
+)
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
 from agentsassemble.live_agent_roster import (
@@ -990,6 +993,19 @@ def build_parser() -> argparse.ArgumentParser:
     live_continuity_proof.add_argument("--json", action="store_true", dest="as_json")
     live_continuity_proof.add_argument("--command", dest="resident_command", nargs=argparse.REMAINDER, default=[])
 
+    live_continuity_proof_group = live_agent_subparsers.add_parser(
+        "continuity-proof-group",
+        help="Run explicit continuity proofs for supported agents in a resident group config.",
+    )
+    live_continuity_proof_group.add_argument("--config", required=True, help="Path to a live-agent group config.")
+    live_continuity_proof_group.add_argument("--server", default="", help="Optional server override for config loading.")
+    live_continuity_proof_group.add_argument(
+        "--approve-real-providers",
+        action="store_true",
+        help="Allow this one group proof to call real provider CLIs for supported agents.",
+    )
+    live_continuity_proof_group.add_argument("--json", action="store_true", dest="as_json")
+
     live_official_round_smoke = live_agent_subparsers.add_parser(
         "official-round-smoke",
         parents=[live_server],
@@ -1728,6 +1744,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_real_session_smoke(args)
         if args.live_agent_command == "continuity-proof":
             return _run_live_agent_continuity_proof(args)
+        if args.live_agent_command == "continuity-proof-group":
+            return _run_live_agent_continuity_proof_group(args)
         if args.live_agent_command == "official-round-smoke":
             return _run_live_agent_official_round_smoke(args)
         if args.live_agent_command == "persona-smoke":
@@ -3592,6 +3610,22 @@ def _run_live_agent_continuity_proof(args: argparse.Namespace) -> int:
     return 0 if result.get("status") == "ok" else 1
 
 
+def _run_live_agent_continuity_proof_group(args: argparse.Namespace) -> int:
+    server_override = str(args.server or "") or None
+    configs = load_group_configs(Path(args.config), server_override=server_override)
+    result = run_live_agent_continuity_proof_batch(
+        configs,
+        approve_real_providers=bool(args.approve_real_providers),
+        setup_error_checker=_resident_config_setup_error,
+        cwd=Path.cwd(),
+    )
+    if args.as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_continuity_proof_group(result))
+    return _live_agent_continuity_proof_group_exit_code(result)
+
+
 def _unapproved_real_session_smoke_result(args: argparse.Namespace) -> dict[str, object]:
     return {
         "status": "approval_required",
@@ -3620,6 +3654,22 @@ def _format_live_agent_continuity_proof(result: dict[str, object]) -> str:
         "limits two-turn provider-owned resume recall only; "
         "does not prove room admission or tool safety"
     )
+
+
+def _format_live_agent_continuity_proof_group(result: dict[str, object]) -> str:
+    status = result.get("status") or "unknown"
+    return (
+        f"continuity proof group {status}: "
+        f"{result.get('ok_count') or 0} ok, "
+        f"{result.get('failed_count') or 0} failed, "
+        f"{result.get('unsupported_count') or 0} unsupported, "
+        f"{result.get('approval_required_count') or 0} approval required; "
+        "limits two-turn provider-owned resume recall only"
+    )
+
+
+def _live_agent_continuity_proof_group_exit_code(result: dict[str, object]) -> int:
+    return 1 if result.get("status") in {"failed", "approval_required"} else 0
 
 
 def _run_live_agent_official_round_smoke(args: argparse.Namespace) -> int:

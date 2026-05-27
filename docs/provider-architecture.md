@@ -250,7 +250,9 @@ resident runner, verifies that turn 2 can recall a suffix from turn 1 without
 AgentsAssemble replaying the private continuity code, and reports only safe
 booleans, lengths, provider kind, and a short session-id suffix. It does not
 join the room, promote evidence, prove stop/restart behavior, or persist
-provider approval.
+provider approval. `live-agent continuity-proof-group` applies that same proof
+to a resident group config, but still refuses to execute provider kinds that do
+not have a provider-specific resume adapter.
 
 The resident launch contract now has a small `SandboxLauncher` abstraction. `NoSandboxLauncher` declares `sandbox_enforcement: "advisory"` and does not constrain the child process. Codex uses the Codex read-only launcher and declares `codex_readonly`. Only a provider launched through a verified OS sandbox, restricted worktree, environment scrubber, or equivalent hard boundary may declare `os_sandboxed`.
 

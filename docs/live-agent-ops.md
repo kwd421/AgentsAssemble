@@ -1696,6 +1696,23 @@ python3 -m agentsassemble.cli live-agent continuity-proof \
   --command codex
 ```
 
+To audit a resident group config, use `continuity-proof-group`. It walks the
+configured agents, runs the same proof only for supported provider-owned resume
+residents, and reports unsupported provider kinds before any provider process is
+started. This is the safer way to answer "which of these local CLIs are actually
+session-style right now?" without pretending terminal or self-service candidates
+have provider-owned resume evidence. An audit where every row is unsupported is
+a successful inspection with `status: "unsupported"`; a row that claims Codex or
+Kiro resume support still must pass the normal resident setup checks before any
+provider command is called:
+
+```bash
+python3 -m agentsassemble.cli live-agent continuity-proof-group \
+  --config configs/live-agents.provider-staging.example.json \
+  --approve-real-providers \
+  --json
+```
+
 Treat a passing continuity proof as one piece of evidence: it proves that the
 second provider call can use provider-managed resume context without
 AgentsAssemble replaying the first private code. It does not prove room

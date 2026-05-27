@@ -6,6 +6,7 @@ from pathlib import Path
 from agentsassemble.live_agent_continuity_proof import (
     fixed_continuity_code_factory,
     run_live_agent_continuity_proof,
+    run_live_agent_continuity_proof_batch,
 )
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 
@@ -148,6 +149,106 @@ class LiveAgentContinuityProofTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["provider_kind"], "codex_live_session")
         self.assertNotIn("KCODE-ABCDE12345", str(result))
+
+    def test_batch_reports_unsupported_without_calling_provider(self):
+        calls = []
+
+        result = run_live_agent_continuity_proof_batch(
+            [config(provider_kind="grok_build_cli", connection_kind="terminal_session", command=["grok"])],
+            approve_real_providers=True,
+            command_runner_factory=lambda item: calls.append(item),
+        )
+
+        self.assertEqual(result["status"], "unsupported")
+        self.assertEqual(result["total_count"], 1)
+        self.assertEqual(result["unsupported_count"], 1)
+        self.assertEqual(calls, [])
+        self.assertEqual(result["results"][0]["reason"], "provider_resume_not_supported")
+
+    def test_batch_requires_approval_for_supported_providers_before_calling_provider(self):
+        calls = []
+
+        result = run_live_agent_continuity_proof_batch(
+            [
+                config(agent_id="kiro-a", provider_kind="kiro_live_session", command=["kiro"]),
+                config(agent_id="cursor-a", provider_kind="cursor", connection_kind="terminal_session", command=["cursor-agent"]),
+            ],
+            approve_real_providers=False,
+            command_runner_factory=lambda item: calls.append(item),
+        )
+
+        self.assertEqual(result["status"], "approval_required")
+        self.assertEqual(result["approval_required_count"], 1)
+        self.assertEqual(result["unsupported_count"], 1)
+        self.assertEqual(calls, [])
+        self.assertEqual(result["results"][0]["status"], "approval_required")
+        self.assertEqual(result["results"][1]["status"], "unsupported")
+
+    def test_batch_runs_supported_items_and_keeps_unsupported_items_safe(self):
+        calls = []
+        session_id = "019e3038-39cc-76a2-a746-5ba8c0f3b408"
+
+        def command_runner_factory(item):
+            self.assertEqual(item.provider_kind, "codex_live_session")
+
+            def command_runner(command, **kwargs):
+                calls.append({"command": command, "kwargs": kwargs})
+                output_path = Path(command[command.index("--output-last-message") + 1])
+                output_path.write_text("2345" if "resume" in command else "READY", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, stdout=f"session id: {session_id}\n", stderr="")
+
+            return command_runner
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_live_agent_continuity_proof_batch(
+                [
+                    config(agent_id="codex-a", provider_kind="codex_live_session", command=["codex"]),
+                    config(agent_id="hermes-a", provider_kind="hermes_cli", connection_kind="terminal_session", command=["hermes"]),
+                ],
+                approve_real_providers=True,
+                command_runner_factory=command_runner_factory,
+                code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+                cwd=Path(temp_dir),
+            )
+
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["ok_count"], 1)
+        self.assertEqual(result["unsupported_count"], 1)
+        self.assertEqual(result["results"][0]["status"], "ok")
+        self.assertEqual(result["results"][1]["status"], "unsupported")
+        self.assertNotIn("KCODE-ABCDE12345", str(result))
+        self.assertEqual(len(calls), 2)
+
+    def test_batch_rejects_supported_provider_with_wrong_executable_before_calling_provider(self):
+        calls = []
+
+        result = run_live_agent_continuity_proof_batch(
+            [config(provider_kind="codex_live_session", command=["claude"])],
+            approve_real_providers=True,
+            command_runner_factory=lambda item: calls.append(item),
+            code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["failed_count"], 1)
+        self.assertEqual(result["results"][0]["reason"], "resident_setup_failed")
+        self.assertEqual(calls, [])
+        self.assertNotIn("KCODE-ABCDE12345", str(result))
+
+    def test_batch_uses_setup_error_checker_before_calling_provider(self):
+        calls = []
+
+        result = run_live_agent_continuity_proof_batch(
+            [config(provider_kind="kiro_live_session", command=["kiro"])],
+            approve_real_providers=True,
+            setup_error_checker=lambda item: "resident_setup_failed",
+            command_runner_factory=lambda item: calls.append(item),
+            code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["results"][0]["reason"], "resident_setup_failed")
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":

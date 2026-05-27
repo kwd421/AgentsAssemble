@@ -45,6 +45,11 @@ smoke before starting any real provider process from it.
   without hidden prompt replay. It does not prove room admission, official-turn
   quality, tool safety, stop/restart behavior, billing state for future calls,
   or OS sandboxing.
+- Use `continuity-proof-group` when auditing a resident config with multiple
+  local CLI candidates. The group proof runs real approved checks only for
+  provider-specific resume residents such as Codex and Kiro, while unsupported
+  terminal, self-service, bridge, or stateless entries are reported without
+  execution.
 - Keep `terminal_session` experimental until each provider has a prompt boundary
   and completion detector.
 - Keep Play Mode and Work Mode separate; lobby chatter becomes official input

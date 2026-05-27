@@ -5688,6 +5688,48 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("two-turn provider-owned resume recall only", formatted)
         self.assertIn("does not prove room admission or tool safety", formatted)
 
+    def test_live_agent_continuity_proof_group_parses_config_and_approval(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "continuity-proof-group",
+                "--config",
+                "configs/live-agents.provider-staging.example.json",
+                "--server",
+                "http://127.0.0.1:8765",
+                "--approve-real-providers",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(args.live_agent_command, "continuity-proof-group")
+        self.assertEqual(args.config, "configs/live-agents.provider-staging.example.json")
+        self.assertEqual(args.server, "http://127.0.0.1:8765")
+        self.assertTrue(args.approve_real_providers)
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_continuity_proof_group_formatter_includes_counts(self):
+        formatted = cli_module._format_live_agent_continuity_proof_group(
+            {
+                "status": "partial",
+                "ok_count": 2,
+                "failed_count": 0,
+                "unsupported_count": 4,
+                "approval_required_count": 0,
+            }
+        )
+
+        self.assertIn("continuity proof group partial", formatted)
+        self.assertIn("2 ok", formatted)
+        self.assertIn("4 unsupported", formatted)
+        self.assertIn("two-turn provider-owned resume recall only", formatted)
+
+    def test_live_agent_continuity_proof_group_exit_code_allows_audit_only_unsupported(self):
+        self.assertEqual(cli_module._live_agent_continuity_proof_group_exit_code({"status": "unsupported"}), 0)
+        self.assertEqual(cli_module._live_agent_continuity_proof_group_exit_code({"status": "partial"}), 0)
+        self.assertEqual(cli_module._live_agent_continuity_proof_group_exit_code({"status": "failed"}), 1)
+        self.assertEqual(cli_module._live_agent_continuity_proof_group_exit_code({"status": "approval_required"}), 1)
+
     def test_live_agent_real_session_smoke_requires_matching_config_paths(self):
         with self.assertRaises(SystemExit):
             build_parser().parse_args(

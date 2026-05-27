@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
@@ -121,6 +121,58 @@ def run_live_agent_continuity_proof(
     }
 
 
+def run_live_agent_continuity_proof_batch(
+    configs: Iterable[ResidentAgentConfig],
+    *,
+    approve_real_providers: bool,
+    command_runner_factory: Callable[[ResidentAgentConfig], Any] | None = None,
+    setup_error_checker: Callable[[ResidentAgentConfig], str] | None = None,
+    code_factory: Callable[[], str] | None = None,
+    cwd: Path | None = None,
+) -> dict[str, object]:
+    results: list[dict[str, object]] = []
+    for index, config in enumerate(configs):
+        try:
+            command_runner = None
+            if approve_real_providers and _config_supports_continuity_proof(config):
+                setup_error = _continuity_structural_setup_error(config)
+                if not setup_error and setup_error_checker is not None:
+                    setup_error = setup_error_checker(config)
+                if setup_error:
+                    item = _safe_setup_failed_result(config)
+                    item["index"] = index
+                    results.append(item)
+                    continue
+                command_runner = command_runner_factory(config) if command_runner_factory is not None else None
+            item = run_live_agent_continuity_proof(
+                config,
+                approve_real_providers=approve_real_providers,
+                command_runner=command_runner,
+                code_factory=code_factory,
+                cwd=cwd,
+            )
+        except Exception as error:
+            item = _safe_batch_error(config, error)
+        item["index"] = index
+        results.append(item)
+    counts = _batch_status_counts(results)
+    return {
+        "status": _batch_status(results, counts),
+        "approval_required": bool(approve_real_providers is False and counts.get("approval_required", 0)),
+        "approved": bool(approve_real_providers),
+        "diagnostic": True,
+        "method": "provider_resume_suffix_recall_batch",
+        "total_count": len(results),
+        "ok_count": counts.get("ok", 0),
+        "failed_count": counts.get("failed", 0),
+        "unsupported_count": counts.get("unsupported", 0),
+        "approval_required_count": counts.get("approval_required", 0),
+        "supported_provider_kinds": sorted(SUPPORTED_CONTINUITY_PROVIDER_KINDS),
+        "limitations": CONTINUITY_PROOF_LIMITATIONS,
+        "results": results,
+    }
+
+
 def fixed_continuity_code_factory(code: str) -> Callable[[], str]:
     return lambda: code
 
@@ -131,6 +183,25 @@ def _runner_for_config(config: ResidentAgentConfig, *, command_runner: Any | Non
     if config.provider_kind == "kiro_live_session":
         return KiroResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
     raise ValueError(f"Provider does not support continuity proof: {config.provider_kind}")
+
+
+def _config_supports_continuity_proof(config: ResidentAgentConfig) -> bool:
+    provider_kind = clean_lobby_text(config.provider_kind, limit=64)
+    connection_kind = clean_lobby_text(config.connection_kind, limit=64)
+    return provider_kind in SUPPORTED_CONTINUITY_PROVIDER_KINDS and connection_kind == "live_session"
+
+
+def _continuity_structural_setup_error(config: ResidentAgentConfig) -> str:
+    provider_kind = clean_lobby_text(config.provider_kind, limit=64)
+    command = list(config.command or [])
+    executable_name = Path(command[0]).name if command else ""
+    if provider_kind == "codex_live_session":
+        if len(command) != 1 or executable_name not in {"codex", "codex.exe"}:
+            return "resident_setup_failed"
+    if provider_kind == "kiro_live_session":
+        if executable_name not in {"kiro", "kiro-cli", "kiro-cli-chat"}:
+            return "resident_setup_failed"
+    return ""
 
 
 def _close_runner(runner: Any) -> None:
@@ -180,4 +251,59 @@ def _failure_reason(
         return "second_prompt_replayed_code"
     if not expected_suffix_matched:
         return "suffix_not_recalled"
+    return "unknown"
+
+
+def _safe_batch_error(config: ResidentAgentConfig, error: Exception) -> dict[str, object]:
+    return {
+        "status": "failed",
+        "reason": "batch_item_failed",
+        "error_type": error.__class__.__name__,
+        "agent_id": clean_lobby_text(config.agent_id, limit=128) or "continuity-proof",
+        "provider_kind": clean_lobby_text(config.provider_kind, limit=64),
+        "connection_kind": clean_lobby_text(config.connection_kind, limit=64),
+        "approval_required": True,
+        "approved": True,
+        "diagnostic": True,
+        "method": "provider_resume_suffix_recall",
+        "limitations": CONTINUITY_PROOF_LIMITATIONS,
+    }
+
+
+def _safe_setup_failed_result(config: ResidentAgentConfig) -> dict[str, object]:
+    return {
+        "status": "failed",
+        "reason": "resident_setup_failed",
+        "agent_id": clean_lobby_text(config.agent_id, limit=128) or "continuity-proof",
+        "provider_kind": clean_lobby_text(config.provider_kind, limit=64),
+        "connection_kind": clean_lobby_text(config.connection_kind, limit=64),
+        "approval_required": True,
+        "approved": True,
+        "diagnostic": True,
+        "method": "provider_resume_suffix_recall",
+        "limitations": CONTINUITY_PROOF_LIMITATIONS,
+    }
+
+
+def _batch_status_counts(results: list[dict[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for result in results:
+        status = clean_lobby_text(result.get("status"), limit=64) or "unknown"
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def _batch_status(results: list[dict[str, object]], counts: dict[str, int]) -> str:
+    if not results:
+        return "empty"
+    if counts.get("failed", 0):
+        return "failed"
+    if counts.get("approval_required", 0):
+        return "approval_required"
+    if counts.get("ok", 0) and counts.get("unsupported", 0):
+        return "partial"
+    if counts.get("ok", 0):
+        return "ok"
+    if counts.get("unsupported", 0) == len(results):
+        return "unsupported"
     return "unknown"
