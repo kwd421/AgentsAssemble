@@ -2425,6 +2425,23 @@ python3 -m agentsassemble.cli live-agent real-session-smoke \
   --approve-real-providers
 ```
 
+When you need deeper but still bounded room evidence for a provider-specific
+resident, opt into the extra checks explicitly:
+
+```bash
+python3 -m agentsassemble.cli live-agent real-session-smoke \
+  --server http://127.0.0.1:8765 \
+  --live-agent-config /path/to/approved-live-agents.real.json \
+  --council-config /path/to/matching-council.json \
+  --agent-config /path/to/matching-agents.json \
+  --group-id real-provider-smoke \
+  --meeting-id real-provider-smoke \
+  --timeout 240 \
+  --approve-real-providers \
+  --official-round-smoke \
+  --restart-smoke
+```
+
 That command calls `POST /api/live-agent-real-session-smoke`. It requires
 current explicit approval plus explicit live-agent, council, and agent config
 paths before contacting the room, starts the supplied resident config in
@@ -2434,7 +2451,8 @@ probe fails. The diagnostic probe source events and matching live-agent replies
 are redacted from the durable lobby log, including late replies that arrive
 after the initial probe wait. The response and
 `session.real_smoke` operation expose only safe ids and counts/statuses:
-start status, connected/expected counts, reply-probe counts, stop status, and
+start status, connected/expected counts, reply-probe counts, optional official
+round counts, optional post-restart connection/probe counts, stop status, and
 post-stop process status. They do not expose config paths, commands, endpoint
 URLs, auth refs, prompt text, reply text, provider output, log tails, or a
 durable approval grant. A stop or post-stop failure reports `degraded` so an
@@ -2446,6 +2464,14 @@ connected/expected `1/1`, reply-probe `1/1`, `stop_status: "stopped"`, and
 `post_stop_process_status: "stopped"`. That proves one approved local
 start/probe/stop path, not official-turn quality, restart/recover behavior,
 future billing state, tool safety, or sandboxing.
+
+A later Grok-only run with `--official-round-smoke --restart-smoke` returned
+safe evidence that restart/reconnect and the post-restart reply probe worked
+(`restart_status: "ready"`, post-restart connected/expected `1/1`, and
+post-restart reply-probe `1/1`) while the official round timed out
+(`official_rounds_status: "timeout"`, answered `0/1`). Treat that as a current
+Grok official-turn-quality failure, not as a production-ready official-turn
+claim.
 
 The supplied council and agent configs must bind the same `agent_id` values as
 the resident config. `configs/live-agents.example.json` is useful as the command

@@ -9782,6 +9782,57 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("probes ok: 2/2 ok", stdout.getvalue())
         self.assertIn("post-stop stopped", stdout.getvalue())
 
+    def test_live_agent_real_session_smoke_posts_only_requested_deep_checks(self):
+        payload = {
+            "status": "failed",
+            "meeting_id": "real-smoke-meeting",
+            "group_id": "real-smoke",
+            "start_status": "ready",
+            "reply_probe_status": "ok",
+            "reply_probe_ok_count": 1,
+            "reply_probe_count": 1,
+            "official_round_smoke": True,
+            "official_rounds_status": "timeout",
+            "official_answered_round_count": 0,
+            "official_round_count": 1,
+            "restart_smoke": True,
+            "restart_status": "ready",
+            "post_restart_reply_probe_status": "ok",
+            "post_restart_reply_probe_ok_count": 1,
+            "post_restart_reply_probe_count": 1,
+            "stop_status": "stopped",
+            "post_stop_process_status": "stopped",
+        }
+        stdout = StringIO()
+        with patch("agentsassemble.cli._request_json", return_value=payload) as request_json:
+            with patch("sys.stdout", stdout):
+                exit_code = main(
+                    [
+                        "live-agent",
+                        "real-session-smoke",
+                        "--server",
+                        "http://room.local",
+                        "--live-agent-config",
+                        "configs/live-agents.example.json",
+                        "--council-config",
+                        "configs/demo-council.json",
+                        "--agent-config",
+                        "configs/agents.example.json",
+                        "--approve-real-providers",
+                        "--official-round-smoke",
+                        "--restart-smoke",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 1)
+        request_json.assert_called_once()
+        request_payload = request_json.call_args.kwargs["payload"]
+        self.assertTrue(request_payload["official_round_smoke"])
+        self.assertTrue(request_payload["restart_smoke"])
+        self.assertIn("official timeout: 0/1 answered", stdout.getvalue())
+        self.assertIn("restart ready", stdout.getvalue())
+        self.assertIn("post-restart probes ok: 1/1 ok", stdout.getvalue())
+
     def test_live_agent_doctor_json_exits_one_when_not_ready(self):
         payload = {
             "status": "degraded",

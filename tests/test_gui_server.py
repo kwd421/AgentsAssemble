@@ -3802,6 +3802,8 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(kwargs["meeting_id"], "real-smoke-meeting")
         self.assertEqual(kwargs["timeout_seconds"], 9.0)
         self.assertTrue(kwargs["approve_real_providers"])
+        self.assertFalse(kwargs["official_round_smoke"])
+        self.assertFalse(kwargs["restart_smoke"])
         self.assertEqual(kwargs["output_root"], root)
         self.assertEqual(
             payload,
@@ -3818,6 +3820,19 @@ class GuiServerTests(unittest.TestCase):
                 "reply_probe_status": "ok",
                 "reply_probe_count": 2,
                 "reply_probe_ok_count": 2,
+                "official_round_smoke": False,
+                "official_rounds_status": "unknown",
+                "official_round_count": 0,
+                "official_answered_round_count": 0,
+                "official_timeout_round_count": 0,
+                "official_skipped_round_count": 0,
+                "restart_smoke": False,
+                "restart_status": "unknown",
+                "post_restart_expected_agent_count": 0,
+                "post_restart_connected_agent_count": 0,
+                "post_restart_reply_probe_status": "unknown",
+                "post_restart_reply_probe_count": 0,
+                "post_restart_reply_probe_ok_count": 0,
                 "stop_status": "stopped",
                 "post_stop_process_status": "stopped",
             },

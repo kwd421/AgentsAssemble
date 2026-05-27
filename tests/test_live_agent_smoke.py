@@ -2029,6 +2029,182 @@ class LiveAgentSmokeTests(unittest.TestCase):
         self.assertTrue(live_state["diagnostic"])
         self.assertEqual(live_state["diagnostic_kind"], "real_session_smoke")
 
+    def test_real_session_smoke_can_include_official_round_and_restart_probe_with_safe_result(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            calls.append((url, method, payload, timeout_seconds))
+            if url.endswith("/api/live-agent-sessions/start"):
+                self.assertTrue(payload["run_remaining_rounds"])
+                self.assertEqual(payload["max_rounds"], 1)
+                self.assertEqual(payload["round_timeout_seconds"], 9.0)
+                self.assertFalse(payload["round_stop_on_timeout"])
+                return {
+                    "status": "ready",
+                    "meeting_id": "real-meeting",
+                    "group_id": "real-group",
+                    "connection": {"expected": 1, "connected": 1, "agent_ids": ["grok-live"]},
+                    "reply_probe": {
+                        "status": "ok",
+                        "probe_count": 1,
+                        "ok_count": 1,
+                        "replies": [{"message": "secret provider output"}],
+                    },
+                    "auto_rounds": {
+                        "status": "answered",
+                        "round_count": 1,
+                        "answered_round_count": 1,
+                        "timeout_round_count": 0,
+                        "skipped_round_count": 0,
+                        "results": [
+                            {
+                                "request_event": {"id": "request-secret", "content": "secret official prompt"},
+                                "reply_event": {"id": "reply-secret", "content": "secret official reply"},
+                            }
+                        ],
+                    },
+                }
+            if url.endswith("/api/live-agent-sessions/restart"):
+                self.assertEqual(payload["meeting_id"], "real-meeting")
+                self.assertEqual(payload["group_id"], "real-group")
+                self.assertTrue(payload["probe_bound_agents"])
+                self.assertTrue(payload["redact_probe_events"])
+                self.assertEqual(payload["probe_timeout_seconds"], 9.0)
+                return {
+                    "status": "ready",
+                    "meeting_id": "real-meeting",
+                    "group_id": "real-group",
+                    "connection": {"expected": 1, "connected": 1, "agent_ids": ["grok-live"]},
+                    "reply_probe": {
+                        "status": "ok",
+                        "probe_count": 1,
+                        "ok_count": 1,
+                        "replies": [{"message": "secret post restart output"}],
+                    },
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                return {"status": "stopped", "meeting_id": "real-meeting", "group_id": "real-group"}
+            if url.endswith("/api/live-agent-processes"):
+                return {"groups": [{"group_id": "real-group", "status": "stopped"}]}
+            return {}
+
+        result = run_live_agent_real_session_smoke(
+            server="http://room.local",
+            live_agent_config_path="/Users/me/private/live-agents.real.json",
+            council_config_path="/Users/me/private/council.json",
+            agent_config_path="/Users/me/private/agents.json",
+            group_id="real-group",
+            meeting_id="real-meeting",
+            timeout_seconds=9,
+            approve_real_providers=True,
+            official_round_smoke=True,
+            restart_smoke=True,
+            request_json=request_json,
+            sleep_fn=lambda seconds: None,
+        )
+
+        urls = [url for url, method, payload, timeout_seconds in calls]
+        self.assertEqual(urls[0], "http://room.local/api/live-agent-sessions/start")
+        self.assertIn("http://room.local/api/live-agent-sessions/restart", urls)
+        self.assertIn("http://room.local/api/live-agent-sessions/stop", urls)
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(result["official_round_smoke"])
+        self.assertEqual(result["official_rounds_status"], "answered")
+        self.assertEqual(result["official_answered_round_count"], 1)
+        self.assertTrue(result["restart_smoke"])
+        self.assertEqual(result["restart_status"], "ready")
+        self.assertEqual(result["post_restart_connected_agent_count"], 1)
+        self.assertEqual(result["post_restart_reply_probe_status"], "ok")
+        self.assertEqual(result["post_restart_reply_probe_ok_count"], 1)
+        serialized = json.dumps(result, ensure_ascii=False)
+        for secret in (
+            "/Users/me",
+            "secret provider output",
+            "secret official prompt",
+            "secret official reply",
+            "secret post restart output",
+            "request-secret",
+            "reply-secret",
+        ):
+            self.assertNotIn(secret, serialized)
+
+    def test_real_session_smoke_fails_official_timeout_but_preserves_restart_evidence(self):
+        calls = []
+
+        def request_json(url, *, method="GET", payload=None, timeout_seconds=None):
+            calls.append((url, method, payload, timeout_seconds))
+            if url.endswith("/api/live-agent-sessions/start"):
+                return {
+                    "status": "ready",
+                    "meeting_id": "real-meeting",
+                    "group_id": "real-group",
+                    "connection": {"expected": 1, "connected": 1, "agent_ids": ["grok-live"]},
+                    "reply_probe": {"status": "ok", "probe_count": 1, "ok_count": 1},
+                    "auto_rounds": {
+                        "status": "timeout",
+                        "round_count": 1,
+                        "answered_round_count": 0,
+                        "timeout_round_count": 1,
+                        "skipped_round_count": 0,
+                        "results": [
+                            {
+                                "request_event": {"id": "request-secret", "content": "secret official prompt"},
+                                "reply_event": None,
+                            }
+                        ],
+                    },
+                }
+            if url.endswith("/api/live-agent-sessions/restart"):
+                return {
+                    "status": "ready",
+                    "meeting_id": "real-meeting",
+                    "group_id": "real-group",
+                    "connection": {"expected": 1, "connected": 1, "agent_ids": ["grok-live"]},
+                    "reply_probe": {
+                        "status": "ok",
+                        "probe_count": 1,
+                        "ok_count": 1,
+                        "replies": [{"message": "secret post restart output"}],
+                    },
+                }
+            if url.endswith("/api/live-agent-sessions/stop"):
+                return {"status": "stopped", "meeting_id": "real-meeting", "group_id": "real-group"}
+            if url.endswith("/api/live-agent-processes"):
+                return {"groups": [{"group_id": "real-group", "status": "stopped"}]}
+            return {}
+
+        result = run_live_agent_real_session_smoke(
+            server="http://room.local",
+            live_agent_config_path="/Users/me/private/live-agents.real.json",
+            council_config_path="/Users/me/private/council.json",
+            agent_config_path="/Users/me/private/agents.json",
+            group_id="real-group",
+            meeting_id="real-meeting",
+            timeout_seconds=9,
+            approve_real_providers=True,
+            official_round_smoke=True,
+            restart_smoke=True,
+            request_json=request_json,
+            sleep_fn=lambda seconds: None,
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["official_rounds_status"], "timeout")
+        self.assertEqual(result["official_answered_round_count"], 0)
+        self.assertEqual(result["official_timeout_round_count"], 1)
+        self.assertEqual(result["restart_status"], "ready")
+        self.assertEqual(result["post_restart_connected_agent_count"], 1)
+        self.assertEqual(result["post_restart_reply_probe_status"], "ok")
+        self.assertEqual(result["post_restart_reply_probe_ok_count"], 1)
+        self.assertEqual(result["stop_status"], "stopped")
+        self.assertEqual(result["post_stop_process_status"], "stopped")
+        urls = [url for url, method, payload, timeout_seconds in calls]
+        self.assertIn("http://room.local/api/live-agent-sessions/restart", urls)
+        self.assertIn("http://room.local/api/live-agent-sessions/stop", urls)
+        serialized = json.dumps(result, ensure_ascii=False)
+        for secret in ("/Users/me", "secret official prompt", "secret post restart output", "request-secret"):
+            self.assertNotIn(secret, serialized)
+
     def test_real_session_smoke_stops_group_when_probe_fails(self):
         calls = []
 

@@ -979,6 +979,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Allow this one smoke command to start real provider resident CLIs.",
     )
+    live_real_session_smoke.add_argument(
+        "--official-round-smoke",
+        action="store_true",
+        help="Also request one moderator-called official round after the initial redacted probe.",
+    )
+    live_real_session_smoke.add_argument(
+        "--restart-smoke",
+        action="store_true",
+        help="Also restart the resident session and run a second redacted probe before stopping.",
+    )
     live_real_session_smoke.add_argument("--json", action="store_true", dest="as_json", help="Print a machine-readable real session smoke result.")
 
     live_continuity_proof = live_agent_subparsers.add_parser(
@@ -3579,18 +3589,23 @@ def _run_live_agent_real_session_smoke(args: argparse.Namespace) -> int:
     if not bool(args.approve_real_providers):
         result = _unapproved_real_session_smoke_result(args)
     else:
+        payload = {
+            "group_id": str(args.group_id or ""),
+            "meeting_id": str(args.meeting_id or ""),
+            "timeout": float(args.timeout),
+            "live_agent_config_path": str(args.live_agent_config or ""),
+            "council_config_path": str(args.council_config or ""),
+            "agent_config_path": str(args.agent_config or ""),
+            "approve_real_providers": True,
+        }
+        if bool(args.official_round_smoke):
+            payload["official_round_smoke"] = True
+        if bool(args.restart_smoke):
+            payload["restart_smoke"] = True
         result = _request_json(
             _server_url(args.server, "/api/live-agent-real-session-smoke"),
             method="POST",
-            payload={
-                "group_id": str(args.group_id or ""),
-                "meeting_id": str(args.meeting_id or ""),
-                "timeout": float(args.timeout),
-                "live_agent_config_path": str(args.live_agent_config or ""),
-                "council_config_path": str(args.council_config or ""),
-                "agent_config_path": str(args.agent_config or ""),
-                "approve_real_providers": True,
-            },
+            payload=payload,
             timeout_seconds=_real_session_smoke_http_timeout(float(args.timeout)),
         )
     if args.as_json:
@@ -3737,6 +3752,19 @@ def _run_live_agent_persona_smoke(args: argparse.Namespace) -> int:
 
 
 def _format_live_agent_real_session_smoke(result: dict[str, object]) -> str:
+    official_part = ""
+    if result.get("official_round_smoke") is True:
+        official_part = (
+            f"official {result.get('official_rounds_status') or 'unknown'}: "
+            f"{result.get('official_answered_round_count', 0)}/{result.get('official_round_count', 0)} answered; "
+        )
+    restart_part = ""
+    if result.get("restart_smoke") is True:
+        restart_part = (
+            f"restart {result.get('restart_status') or 'unknown'}; "
+            f"post-restart probes {result.get('post_restart_reply_probe_status') or 'unknown'}: "
+            f"{result.get('post_restart_reply_probe_ok_count', 0)}/{result.get('post_restart_reply_probe_count', 0)} ok; "
+        )
     return (
         f"real resident session smoke {result.get('status') or 'unknown'}: "
         f"{result.get('meeting_id') or 'real-session-smoke'} "
@@ -3744,6 +3772,8 @@ def _format_live_agent_real_session_smoke(result: dict[str, object]) -> str:
         f"start {result.get('start_status') or 'unknown'}; "
         f"probes {result.get('reply_probe_status') or 'unknown'}: "
         f"{result.get('reply_probe_ok_count', 0)}/{result.get('reply_probe_count', 0)} ok; "
+        f"{official_part}"
+        f"{restart_part}"
         f"stop {result.get('stop_status') or 'unknown'}; "
         f"post-stop {result.get('post_stop_process_status') or 'unknown'}"
     )

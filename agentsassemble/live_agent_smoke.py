@@ -733,6 +733,8 @@ def run_live_agent_real_session_smoke(
     meeting_id: str = "",
     timeout_seconds: float = 12.0,
     approve_real_providers: bool = False,
+    official_round_smoke: bool = False,
+    restart_smoke: bool = False,
     request_json: RequestJson,
     sleep_fn: Callable[[float], None] = time.sleep,
     output_root: Path | None = None,
@@ -775,9 +777,11 @@ def run_live_agent_real_session_smoke(
         }
 
     start_result: dict[str, object] = {}
+    restart_result: dict[str, object] = {}
     stop_result: dict[str, object] = {}
     post_stop_process_status = ""
     start_failed = False
+    restart_failed = False
     cleanup_failed = False
     start_attempted = False
     timeout = max(0.0, float(timeout_seconds))
@@ -794,6 +798,15 @@ def run_live_agent_real_session_smoke(
             "redact_probe_events": True,
             "probe_timeout_seconds": timeout,
         }
+        if official_round_smoke:
+            payload.update(
+                {
+                    "run_remaining_rounds": True,
+                    "max_rounds": 1,
+                    "round_timeout_seconds": timeout,
+                    "round_stop_on_timeout": False,
+                }
+            )
         if council_config_path:
             payload["council_config_path"] = str(council_config_path)
         if agent_config_path:
@@ -805,6 +818,23 @@ def run_live_agent_real_session_smoke(
             timeout_seconds=_smoke_operation_http_timeout(timeout, windows=25),
         )
         _mark_session_smoke_meeting_diagnostic(output_root, clean_meeting_id, diagnostic_kind="real_session_smoke")
+        if restart_smoke and str(start_result.get("status") or "") == "ready":
+            try:
+                restart_result = request_json(
+                    _server_url(server, "/api/live-agent-sessions/restart"),
+                    method="POST",
+                    payload={
+                        "meeting_id": clean_meeting_id,
+                        "group_id": clean_group_id,
+                        "connect_timeout_seconds": timeout,
+                        "probe_bound_agents": True,
+                        "redact_probe_events": True,
+                        "probe_timeout_seconds": timeout,
+                    },
+                    timeout_seconds=_smoke_operation_http_timeout(timeout, windows=25),
+                )
+            except Exception:
+                restart_failed = True
     except Exception:
         start_failed = True
     finally:
@@ -834,7 +864,11 @@ def run_live_agent_real_session_smoke(
         group_id=clean_group_id,
         post_stop_process_status=post_stop_process_status,
         start_failed=start_failed,
+        restart_result=restart_result,
+        restart_failed=restart_failed,
         cleanup_failed=cleanup_failed,
+        official_round_smoke=official_round_smoke,
+        restart_smoke=restart_smoke,
     )
 
 
@@ -846,19 +880,40 @@ def _safe_real_session_smoke_result(
     group_id: str,
     post_stop_process_status: str,
     start_failed: bool,
+    restart_result: dict[str, object] | None = None,
+    restart_failed: bool = False,
     cleanup_failed: bool,
+    official_round_smoke: bool = False,
+    restart_smoke: bool = False,
 ) -> dict[str, object]:
     connection = start_result.get("connection") if isinstance(start_result.get("connection"), dict) else {}
     reply_probe = start_result.get("reply_probe") if isinstance(start_result.get("reply_probe"), dict) else {}
+    auto_rounds = start_result.get("auto_rounds") if isinstance(start_result.get("auto_rounds"), dict) else {}
+    restart_payload = restart_result if isinstance(restart_result, dict) else {}
+    restart_connection = restart_payload.get("connection") if isinstance(restart_payload.get("connection"), dict) else {}
+    post_restart_reply_probe = (
+        restart_payload.get("reply_probe") if isinstance(restart_payload.get("reply_probe"), dict) else {}
+    )
     start_status = str(start_result.get("status") or ("failed" if start_failed else "unknown"))
     stop_status = str(stop_result.get("status") or "unknown")
     reply_probe_status = str(reply_probe.get("status") or "")
+    official_rounds_status = str(auto_rounds.get("status") or ("skipped" if not official_round_smoke else ""))
+    restart_status = str(restart_payload.get("status") or ("failed" if restart_failed else "skipped" if not restart_smoke else ""))
+    post_restart_reply_probe_status = str(
+        post_restart_reply_probe.get("status") or ("skipped" if not restart_smoke else "")
+    )
     status = _real_session_smoke_status(
         start_status=start_status,
         reply_probe_status=reply_probe_status,
+        official_rounds_status=official_rounds_status,
+        official_round_smoke=official_round_smoke,
+        restart_status=restart_status,
+        post_restart_reply_probe_status=post_restart_reply_probe_status,
+        restart_smoke=restart_smoke,
         stop_status=stop_status,
         post_stop_process_status=post_stop_process_status,
         start_failed=start_failed,
+        restart_failed=restart_failed,
         cleanup_failed=cleanup_failed,
     )
     return {
@@ -874,6 +929,19 @@ def _safe_real_session_smoke_result(
         "reply_probe_status": reply_probe_status,
         "reply_probe_count": _nonnegative_int(reply_probe.get("probe_count")),
         "reply_probe_ok_count": _nonnegative_int(reply_probe.get("ok_count")),
+        "official_round_smoke": official_round_smoke,
+        "official_rounds_status": official_rounds_status,
+        "official_round_count": _nonnegative_int(auto_rounds.get("round_count")),
+        "official_answered_round_count": _nonnegative_int(auto_rounds.get("answered_round_count")),
+        "official_timeout_round_count": _nonnegative_int(auto_rounds.get("timeout_round_count")),
+        "official_skipped_round_count": _nonnegative_int(auto_rounds.get("skipped_round_count")),
+        "restart_smoke": restart_smoke,
+        "restart_status": restart_status,
+        "post_restart_expected_agent_count": _nonnegative_int(restart_connection.get("expected")),
+        "post_restart_connected_agent_count": _nonnegative_int(restart_connection.get("connected")),
+        "post_restart_reply_probe_status": post_restart_reply_probe_status,
+        "post_restart_reply_probe_count": _nonnegative_int(post_restart_reply_probe.get("probe_count")),
+        "post_restart_reply_probe_ok_count": _nonnegative_int(post_restart_reply_probe.get("ok_count")),
         "stop_status": stop_status,
         "post_stop_process_status": post_stop_process_status,
     }
@@ -883,9 +951,15 @@ def _real_session_smoke_status(
     *,
     start_status: str,
     reply_probe_status: str,
+    official_rounds_status: str,
+    official_round_smoke: bool,
+    restart_status: str,
+    post_restart_reply_probe_status: str,
+    restart_smoke: bool,
     stop_status: str,
     post_stop_process_status: str,
     start_failed: bool,
+    restart_failed: bool,
     cleanup_failed: bool,
 ) -> str:
     if cleanup_failed or stop_status != "stopped" or post_stop_process_status not in {"stopped", "missing"}:
@@ -893,6 +967,10 @@ def _real_session_smoke_status(
     if start_failed or start_status != "ready":
         return "failed"
     if reply_probe_status != "ok":
+        return "failed"
+    if official_round_smoke and official_rounds_status != "answered":
+        return "failed"
+    if restart_smoke and (restart_failed or restart_status != "ready" or post_restart_reply_probe_status != "ok"):
         return "failed"
     return "ok"
 
