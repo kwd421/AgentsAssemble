@@ -12,7 +12,7 @@ import urllib.request
 from agentsassemble.cli import main
 from agentsassemble.config import load_agent_runtime_config, load_council_config
 from agentsassemble.gui import _make_handler
-from agentsassemble.live_agent_discovery import build_discovered_live_agent_config
+from agentsassemble.live_agent_discovery import build_discovered_live_agent_config, build_discovered_session_bundle
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_sessions import start_live_agent_session
@@ -148,6 +148,56 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         self.assertEqual(discoveries["grok"]["join_semantics"], "grok_session_resume")
         self.assertEqual(discoveries["grok"]["context_durability"], "provider_managed_resume")
         self.assertEqual(discoveries["grok"]["evidence_basis"], "path_and_grok_resume_preflight")
+
+    def test_discovered_session_bundle_labels_stateless_prompt_call_honestly(self):
+        bundle = build_discovered_session_bundle(
+            {
+                "agents": [
+                    {
+                        "agent_id": "stateless-local",
+                        "display_name": "Stateless Local",
+                        "provider_kind": "local_cli",
+                        "join_semantics": "stateless_prompt_call",
+                        "context_durability": "stateless_prompt",
+                        "sandbox_enforcement": "advisory",
+                        "evidence_basis": "path_and_local_cli_delegate",
+                    },
+                    {
+                        "agent_id": "durable-codex",
+                        "display_name": "Durable Codex",
+                        "provider_kind": "codex_live_session",
+                        "join_semantics": "codex_exec_resume",
+                        "context_durability": "provider_managed_resume",
+                        "sandbox_enforcement": "codex_readonly",
+                        "evidence_basis": "path_and_codex_safety_preflight",
+                    },
+                ]
+            }
+        )
+
+        roles = {role["id"]: role for role in bundle["council_config"]["roles"]}
+        stateless_role = roles["stateless_local"]
+        durable_role = roles["durable_codex"]
+        question = bundle["council_config"]["question"]
+        instruction = bundle["council_config"]["meeting_template"]["rounds"][0]["instruction"]
+        bindings = {binding["agent_id"]: binding for binding in bundle["agent_config"]["agent_bindings"]}
+
+        self.assertNotIn("resident session", stateless_role["lens"])
+        self.assertIn("stateless", stateless_role["lens"])
+        self.assertNotIn("resident session", stateless_role["research_focus"])
+        self.assertNotIn("Join the resident session", stateless_role["research_focus"])
+        self.assertIn("stateless_prompt_call", stateless_role["research_focus"])
+        self.assertEqual(bindings["stateless-local"]["join_semantics"], "stateless_prompt_call")
+        self.assertEqual(bindings["stateless-local"]["context_durability"], "stateless_prompt")
+
+        self.assertIn("resident session", durable_role["research_focus"])
+        self.assertEqual(bindings["durable-codex"]["join_semantics"], "codex_exec_resume")
+        self.assertEqual(bindings["durable-codex"]["context_durability"], "provider_managed_resume")
+
+        self.assertNotIn("from your resident session", question)
+        self.assertIn("declared join semantics", question)
+        self.assertNotIn("from your resident session", instruction)
+        self.assertIn("declared join semantics", instruction)
 
     def test_build_discovered_config_can_include_legacy_gemini_when_requested(self):
         def resolver(command):

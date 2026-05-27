@@ -66,8 +66,12 @@ SESSION_SMOKE_MODEL_IDS = {
 }
 SESSION_SMOKE_ROLE_TEXT = {
     "local_cli": {
-        "lens": "Credential-free resident session smoke through a local CLI process.",
-        "research_focus": "Verify resident session start, official turn, and lobby auto-reply through local_cli.",
+        "lens": "Credential-free stateless prompt-call smoke through a local CLI process; this leg does not keep provider context between calls.",
+        "research_focus": (
+            "Verify the local_cli leg makes one stateless prompt call per official turn and lobby auto-reply "
+            "(join_semantics=stateless_prompt_call, context_durability=stateless_prompt); "
+            "resume/restart/recover honesty is exercised by the resident transports, not this leg."
+        ),
     },
     "live_session": {
         "lens": "Credential-free resident session smoke through a persistent JSONL live session.",

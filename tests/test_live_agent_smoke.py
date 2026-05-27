@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from agentsassemble.live_agent_smoke import (
     LiveAgentSmokeFailed,
+    SESSION_SMOKE_ROLE_TEXT,
     _kill_session_smoke_process_group,
     _make_session_smoke_group_recoverable,
     _session_smoke_kill_signal,
@@ -151,6 +152,16 @@ class LiveAgentSmokeTests(unittest.TestCase):
         )
         terminal_support.start()
         self.addCleanup(terminal_support.stop)
+
+    def test_session_smoke_local_cli_role_text_is_stateless(self):
+        local_cli_text = SESSION_SMOKE_ROLE_TEXT["local_cli"]
+
+        self.assertNotIn("resident session", local_cli_text["lens"])
+        self.assertIn("stateless", local_cli_text["lens"])
+        self.assertNotIn("resident session", local_cli_text["research_focus"])
+        self.assertIn("stateless_prompt_call", local_cli_text["research_focus"])
+        for key in {"live_session", "terminal_session", "remote_bridge", "self_service"}:
+            self.assertIn("resident", SESSION_SMOKE_ROLE_TEXT[key]["lens"])
 
     def _session_smoke_self_service_reply_launch_failure(self, action: str) -> list[str]:
         with tempfile.TemporaryDirectory() as temp_dir:

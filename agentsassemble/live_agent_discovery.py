@@ -401,16 +401,19 @@ def build_discovered_session_bundle(config: dict[str, Any]) -> dict[str, Any]:
         evidence_basis = str(agent.get("evidence_basis") or "unknown")
         role_id = _session_role_id(agent_id)
         provider_id = f"{agent_id}-provider"
+        role_text = _session_bundle_role_text(
+            display_name=display_name,
+            join_semantics=join_semantics,
+            context_durability=context_durability,
+            sandbox_enforcement=sandbox_enforcement,
+            evidence_basis=evidence_basis,
+        )
         roles.append(
             {
                 "id": role_id,
                 "display_name": display_name,
-                "lens": f"Live resident perspective from {display_name}.",
-                "research_focus": (
-                    f"Join the resident session through {join_semantics}. "
-                    f"Context durability is {context_durability}; "
-                    f"sandbox enforcement is {sandbox_enforcement}; discovery evidence is {evidence_basis}."
-                ),
+                "lens": role_text["lens"],
+                "research_focus": role_text["research_focus"],
                 "join_semantics": join_semantics,
                 "context_durability": context_durability,
                 "sandbox_enforcement": sandbox_enforcement,
@@ -448,7 +451,10 @@ def build_discovered_session_bundle(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "council_config": {
             "topic": "Discovered Live Agent Session",
-            "question": "What should the discovered resident agents contribute from their own local CLI sessions?",
+            "question": (
+                "What should each discovered agent contribute under its declared join semantics, "
+                "distinguishing stateless prompt calls from resident sessions?"
+            ),
             "roles": roles,
             "meeting_template": {
                 "id": "discovered_live_agents",
@@ -457,7 +463,7 @@ def build_discovered_session_bundle(config: dict[str, Any]) -> dict[str, Any]:
                     {
                         "id": "discovered_intro",
                         "title": "Discovered Agent Check-in",
-                        "instruction": "Reply with one concise status update from your resident session.",
+                        "instruction": "Reply with one concise status update under your declared join semantics.",
                         "turn_control": {"selection": "all_roles"},
                     }
                 ],
@@ -483,6 +489,34 @@ def build_discovered_session_bundle(config: dict[str, Any]) -> dict[str, Any]:
             ],
             "agent_bindings": bindings,
         },
+    }
+
+
+def _session_bundle_role_text(
+    *,
+    display_name: str,
+    join_semantics: str,
+    context_durability: str,
+    sandbox_enforcement: str,
+    evidence_basis: str,
+) -> dict[str, str]:
+    if join_semantics == "stateless_prompt_call":
+        return {
+            "lens": f"stateless prompt-call perspective from {display_name}.",
+            "research_focus": (
+                "Answer through stateless_prompt_call. "
+                "It does not preserve provider-private context between calls; "
+                f"context durability is {context_durability}; "
+                f"sandbox enforcement is {sandbox_enforcement}; discovery evidence is {evidence_basis}."
+            ),
+        }
+    return {
+        "lens": f"Live resident perspective from {display_name}.",
+        "research_focus": (
+            f"Join the resident session through {join_semantics}. "
+            f"Context durability is {context_durability}; "
+            f"sandbox enforcement is {sandbox_enforcement}; discovery evidence is {evidence_basis}."
+        ),
     }
 
 
