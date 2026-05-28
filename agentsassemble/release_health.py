@@ -26,9 +26,10 @@ class ReleaseHealthCheck:
     kind: str
     category: str
     requires: tuple[str, ...]
+    safety_class: str
     optional: bool = False
 
-    def catalog_dict(self) -> dict[str, object]:
+    def catalog_dict(self, *, order: int | None) -> dict[str, object]:
         return {
             "id": self.id,
             "label": self.label,
@@ -36,7 +37,20 @@ class ReleaseHealthCheck:
             "category": self.category,
             "requires": list(self.requires),
             "optional": self.optional,
+            "order": order,
+            "default_run": not self.optional,
+            "safety_class": self.safety_class,
         }
+
+
+RELEASE_HEALTH_SAFETY_CLASSES = {
+    "frontend_static_syntax",
+    "python_unit",
+    "python_integration",
+    "python_compile",
+    "git_format",
+    "local_room_benchmark",
+}
 
 
 RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
@@ -46,6 +60,7 @@ RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
         kind="syntax",
         category="frontend_static",
         requires=("node",),
+        safety_class="frontend_static_syntax",
     ),
     ReleaseHealthCheck(
         id="unittest_static_ui_assets",
@@ -53,6 +68,7 @@ RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
         kind="unit",
         category="frontend_static",
         requires=("python3",),
+        safety_class="python_unit",
     ),
     ReleaseHealthCheck(
         id="unittest_docs_architecture",
@@ -60,6 +76,7 @@ RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
         kind="unit",
         category="docs",
         requires=("python3",),
+        safety_class="python_unit",
     ),
     ReleaseHealthCheck(
         id="unittest_mcp_server",
@@ -67,6 +84,7 @@ RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
         kind="unit",
         category="mcp",
         requires=("python3",),
+        safety_class="python_unit",
     ),
     ReleaseHealthCheck(
         id="unittest_gui_and_live_agent_smoke",
@@ -74,6 +92,7 @@ RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
         kind="integration",
         category="gui_live_agent",
         requires=("python3",),
+        safety_class="python_integration",
     ),
     ReleaseHealthCheck(
         id="compileall_package",
@@ -81,6 +100,7 @@ RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
         kind="syntax",
         category="python",
         requires=("python3",),
+        safety_class="python_compile",
     ),
     ReleaseHealthCheck(
         id="git_diff_check",
@@ -88,6 +108,7 @@ RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
         kind="format",
         category="git",
         requires=("git",),
+        safety_class="git_format",
     ),
     ReleaseHealthCheck(
         id="room_event_benchmark",
@@ -95,6 +116,7 @@ RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
         kind="benchmark",
         category="live_room",
         requires=("python3",),
+        safety_class="local_room_benchmark",
         optional=True,
     ),
 )
@@ -107,11 +129,19 @@ def release_health_catalog_payload(
     now: datetime | None = None,
 ) -> dict[str, object]:
     generated_at = now or datetime.now(UTC)
+    default_order = 0
+    checks: list[dict[str, object]] = []
+    for check in RELEASE_HEALTH_CHECKS:
+        order = None
+        if not check.optional:
+            default_order += 1
+            order = default_order
+        checks.append(check.catalog_dict(order=order))
     return {
         "status": "ok",
         "schema_version": 1,
         "generated_at": generated_at.isoformat(),
-        "checks": [check.catalog_dict() for check in RELEASE_HEALTH_CHECKS],
+        "checks": checks,
     }
 
 

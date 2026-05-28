@@ -47,6 +47,54 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertNotIn("command", json.dumps(payload, ensure_ascii=False))
         self.assertNotIn(str(ROOT), json.dumps(payload, ensure_ascii=False))
 
+    def test_catalog_exposes_order_default_run_and_safety_class_without_command_details(self):
+        from agentsassemble.release_health import RELEASE_HEALTH_SAFETY_CLASSES, release_health_catalog_payload
+
+        payload = release_health_catalog_payload(now=datetime(2026, 5, 29, 0, 0, tzinfo=UTC))
+        checks = payload["checks"]
+        default_checks = [check for check in checks if check["default_run"]]
+        opt_in_checks = [check for check in checks if not check["default_run"]]
+
+        self.assertEqual([check["order"] for check in default_checks], list(range(1, 8)))
+        self.assertEqual([check["id"] for check in opt_in_checks], ["room_event_benchmark"])
+        self.assertIsNone(opt_in_checks[0]["order"])
+        self.assertEqual(opt_in_checks[0]["safety_class"], "local_room_benchmark")
+        for check in checks:
+            self.assertEqual(check["default_run"], not check["optional"])
+            self.assertIn(check["safety_class"], RELEASE_HEALTH_SAFETY_CLASSES)
+
+        serialized = json.dumps(payload, ensure_ascii=False)
+        for forbidden in (
+            "argv",
+            "command",
+            "commands",
+            "cwd",
+            "env",
+            "path",
+            "--warmup-events",
+            "--read-window",
+            "agentsassemble.cli",
+            str(ROOT),
+        ):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_safety_class_values_are_closed_vocabulary(self):
+        from agentsassemble.release_health import RELEASE_HEALTH_CHECKS, RELEASE_HEALTH_SAFETY_CLASSES
+
+        self.assertEqual(
+            RELEASE_HEALTH_SAFETY_CLASSES,
+            {
+                "frontend_static_syntax",
+                "python_unit",
+                "python_integration",
+                "python_compile",
+                "git_format",
+                "local_room_benchmark",
+            },
+        )
+        for check in RELEASE_HEALTH_CHECKS:
+            self.assertIn(check.safety_class, RELEASE_HEALTH_SAFETY_CLASSES)
+
     def test_default_release_health_selection_excludes_optional_room_event_benchmark(self):
         from agentsassemble.release_health import validate_release_health_check_selection
 

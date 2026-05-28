@@ -90,7 +90,9 @@ assemble release-health run
 `/api/release-health` returns the read-only catalog for the React operator UI.
 Running the checks remains CLI-only; the GUI does not start build or test
 processes, and the catalog intentionally omits command arguments, cwd, env, and
-raw local paths.
+raw local paths. The catalog may include safe queue metadata such as default
+run order, whether a check is opt-in, and a closed safety-class label so the
+React UI can group the proof queue without reconstructing internal commands.
 `assemble release-health run --check room_event_benchmark` produces numeric
 room-event append/read and scheduler-fairness latency evidence. It is excluded
 from the default run so ordinary v0.1 hardening time stays bounded, and it

@@ -175,6 +175,9 @@ export interface ReleaseHealthCheck {
   category: string;
   requires: string[];
   optional?: boolean;
+  order?: number | null;
+  default_run?: boolean;
+  safety_class?: string;
 }
 
 export interface ReleaseHealthCatalog {

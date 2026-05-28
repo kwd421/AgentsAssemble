@@ -236,6 +236,9 @@ class StaticUiAssetTests(unittest.TestCase):
 
         self.assertIn("export interface ReleaseHealthCheck", source)
         self.assertIn("optional?: boolean;", source)
+        self.assertIn("order?: number | null;", source)
+        self.assertIn("default_run?: boolean;", source)
+        self.assertIn("safety_class?: string;", source)
         self.assertIn("export function fetchReleaseHealth", source)
         self.assertIn('"/api/release-health"', source)
         self.assertIn("릴리스 헬스", source)
@@ -244,6 +247,26 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("CLI-only", source)
         self.assertNotIn("startReleaseHealthRun", source)
         self.assertNotIn("startRoomBenchmark", source)
+
+    def test_react_admin_release_health_groups_default_queue_and_opt_in_with_safe_selectors(self):
+        admin_source = frontend_file("views/AdminPanel.tsx")
+
+        self.assertIn("기본 프루프 큐", admin_source)
+        self.assertIn("선택 검사", admin_source)
+        self.assertIn("check.order", admin_source)
+        self.assertIn('`assemble release-health run --check ${check.id}`', admin_source)
+        self.assertIn("RELEASE_HEALTH_SAFETY_LABELS", admin_source)
+        self.assertIn("safety_class", admin_source)
+        self.assertIn("CLI-only", admin_source)
+        self.assertIn("assemble release-health run", admin_source)
+        self.assertNotIn("startReleaseHealthRun", admin_source)
+        self.assertNotIn("startRoomBenchmark", admin_source)
+        self.assertNotIn('method: "POST"', admin_source)
+        self.assertNotIn("EventSource", admin_source)
+        self.assertNotIn("python3", admin_source)
+        self.assertNotIn("--warmup-events", admin_source)
+        self.assertNotIn("file://", admin_source)
+        self.assertNotIn("/Users/", admin_source)
 
     def test_react_live_tab_surfaces_meeting_lifecycle_projection(self):
         source = frontend_source()

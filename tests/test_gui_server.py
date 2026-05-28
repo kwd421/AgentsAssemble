@@ -19530,10 +19530,20 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["status"], "ok")
             self.assertEqual(payload["schema_version"], 1)
             self.assertIn("node_check_static", [check["id"] for check in payload["checks"]])
+            first_check = payload["checks"][0]
+            self.assertEqual(first_check["order"], 1)
+            self.assertTrue(first_check["default_run"])
+            self.assertEqual(first_check["safety_class"], "frontend_static_syntax")
+            benchmark = next(check for check in payload["checks"] if check["id"] == "room_event_benchmark")
+            self.assertIsNone(benchmark["order"])
+            self.assertFalse(benchmark["default_run"])
+            self.assertEqual(benchmark["safety_class"], "local_room_benchmark")
             self.assertNotIn("argv", serialized)
             self.assertNotIn("cwd", serialized)
             self.assertNotIn("env", serialized)
+            self.assertNotIn("--check", serialized)
             self.assertNotIn(str(root), serialized)
+            self.assertNotIn("/Users/", serialized)
 
 
 def _write_health_resident_meeting(root: Path, *, agent_ids: list[str]) -> Path:

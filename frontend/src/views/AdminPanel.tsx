@@ -5,10 +5,28 @@ import {
   fetchLocalResources,
   fetchReleaseHealth,
   type HealthStatus,
+  type ReleaseHealthCheck,
   type LocalResourceStatus,
   type ReleaseHealthCatalog,
 } from "../api";
 import { usePoll } from "../hooks";
+
+const RELEASE_HEALTH_SAFETY_LABELS: Record<string, string> = {
+  frontend_static_syntax: "정적 JS 문법",
+  python_unit: "Python 단위검증",
+  python_integration: "통합 검증",
+  python_compile: "패키지 컴파일",
+  git_format: "Git 형식",
+  local_room_benchmark: "로컬 룸 벤치",
+};
+
+function releaseHealthSafetyLabel(safetyClass?: string) {
+  return RELEASE_HEALTH_SAFETY_LABELS[safetyClass || ""] || "검증";
+}
+
+function releaseHealthSelector(check: ReleaseHealthCheck) {
+  return `assemble release-health run --check ${check.id}`;
+}
 
 export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const healthFetcher = useCallback(() => fetchHealth(), []);
@@ -21,6 +39,13 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const agents = health?.agents;
   const ok = health?.status === "ok";
   const resourceOk = resources?.status === "ok";
+  const releaseHealthDefaultChecks =
+    releaseHealth?.checks
+      .filter((check) => check.default_run ?? !check.optional)
+      .slice()
+      .sort((left, right) => (left.order ?? 999) - (right.order ?? 999)) || [];
+  const releaseHealthOptInChecks =
+    releaseHealth?.checks.filter((check) => !(check.default_run ?? !check.optional)) || [];
 
   return (
     <div className="ops-panel ops-cut mx-auto flex min-h-full max-w-5xl flex-col overflow-hidden">
@@ -186,25 +211,68 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
             </span>
           </div>
           {releaseHealth ? (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {releaseHealth.checks.slice(0, 8).map((check) => (
-                <div key={check.id} className="ops-inner rounded-lg px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="min-w-0 truncate text-[13px] font-black text-text-primary preserve-words">
-                      {check.label}
-                    </p>
-                    <span className="shrink-0 rounded border border-line/60 px-2 py-0.5 text-[10px] font-bold text-text-muted">
-                      {check.kind}
-                    </span>
-                    <span className="shrink-0 rounded border border-accent/25 bg-accent/8 px-2 py-0.5 text-[10px] font-bold text-accent">
-                      {check.optional ? "opt-in" : "default"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-[11px] text-text-muted preserve-words">
-                    {check.category} · {check.requires.join(", ")}
-                  </p>
+            <div className="space-y-4">
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3 className="text-[13px] font-black text-text-primary">기본 프루프 큐</h3>
+                  <span className="text-[11px] font-bold text-text-muted">
+                    {releaseHealthDefaultChecks.length} checks
+                  </span>
                 </div>
-              ))}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {releaseHealthDefaultChecks.map((check) => (
+                    <div key={check.id} className="ops-inner rounded-lg px-4 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="min-w-0 truncate text-[13px] font-black text-text-primary preserve-words">
+                          <span className="mr-2 text-accent">{check.order ?? "-"}</span>
+                          {check.label}
+                        </p>
+                        <span className="shrink-0 rounded border border-line/60 px-2 py-0.5 text-[10px] font-bold text-text-muted">
+                          {check.kind}
+                        </span>
+                        <span className="shrink-0 rounded border border-accent/25 bg-accent/8 px-2 py-0.5 text-[10px] font-bold text-accent">
+                          {check.optional ? "opt-in" : "default"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-text-muted preserve-words">
+                        {check.category} · {releaseHealthSafetyLabel(check.safety_class)} · {check.requires.join(", ")}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {releaseHealthOptInChecks.length > 0 && (
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h3 className="text-[13px] font-black text-text-primary">선택 검사</h3>
+                    <span className="text-[11px] font-bold text-text-muted">수동 선택</span>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {releaseHealthOptInChecks.map((check) => (
+                      <div key={check.id} className="ops-inner rounded-lg px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="min-w-0 truncate text-[13px] font-black text-text-primary preserve-words">
+                            {check.label}
+                          </p>
+                          <span className="shrink-0 rounded border border-line/60 px-2 py-0.5 text-[10px] font-bold text-text-muted">
+                            {check.kind}
+                          </span>
+                          <span className="shrink-0 rounded border border-idle/30 bg-idle/10 px-2 py-0.5 text-[10px] font-bold text-idle">
+                            opt-in
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-text-muted preserve-words">
+                          {check.category} · {releaseHealthSafetyLabel(check.safety_class)} · {check.requires.join(", ")}
+                        </p>
+                        <p className="mt-2 rounded-md border border-line/60 bg-black/18 px-3 py-2 font-mono text-[11px] text-text-secondary preserve-words">
+                          {releaseHealthSelector(check)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-[13px] text-text-muted">릴리스 헬스 카탈로그 확인 중...</p>
