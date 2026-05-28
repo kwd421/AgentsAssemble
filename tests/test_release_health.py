@@ -31,15 +31,82 @@ class ReleaseHealthTests(unittest.TestCase):
                 "unittest_gui_and_live_agent_smoke",
                 "compileall_package",
                 "git_diff_check",
+                "room_event_benchmark",
             ],
         )
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["schema_version"], 1)
         self.assertEqual(payload["generated_at"], "2026-05-29T00:00:00+00:00")
         self.assertEqual([check["id"] for check in payload["checks"]], RELEASE_HEALTH_CHECK_IDS)
+        benchmark = payload["checks"][-1]
+        self.assertEqual(benchmark["id"], "room_event_benchmark")
+        self.assertEqual(benchmark["category"], "live_room")
+        self.assertEqual(benchmark["kind"], "benchmark")
+        self.assertTrue(benchmark["optional"])
         self.assertNotIn("argv", json.dumps(payload, ensure_ascii=False))
         self.assertNotIn("command", json.dumps(payload, ensure_ascii=False))
         self.assertNotIn(str(ROOT), json.dumps(payload, ensure_ascii=False))
+
+    def test_default_release_health_selection_excludes_optional_room_event_benchmark(self):
+        from agentsassemble.release_health import validate_release_health_check_selection
+
+        selected = validate_release_health_check_selection()
+
+        self.assertEqual(
+            [check.id for check in selected],
+            [
+                "node_check_static",
+                "unittest_static_ui_assets",
+                "unittest_docs_architecture",
+                "unittest_mcp_server",
+                "unittest_gui_and_live_agent_smoke",
+                "compileall_package",
+                "git_diff_check",
+            ],
+        )
+        self.assertFalse(any(check.id == "room_event_benchmark" for check in selected))
+
+    def test_explicit_check_room_event_benchmark_selects_only_benchmark(self):
+        from agentsassemble.release_health import validate_release_health_check_selection
+
+        selected = validate_release_health_check_selection(check_ids=["room_event_benchmark"])
+
+        self.assertEqual([check.id for check in selected], ["room_event_benchmark"])
+        self.assertTrue(selected[0].optional)
+
+    def test_room_event_benchmark_check_uses_cli_invocation_and_does_not_start_providers(self):
+        from agentsassemble.release_health import run_release_health_checks
+
+        calls = []
+
+        def fake_runner(argv, **kwargs):
+            calls.append(list(argv))
+            return Completed(stdout='{"benchmark":"room_event_log_v1"}')
+
+        payload = run_release_health_checks(
+            check_ids=["room_event_benchmark"],
+            runner=fake_runner,
+            now_fn=lambda: datetime(2026, 5, 29, 0, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(len(calls), 1)
+        command = calls[0]
+        self.assertEqual(
+            command[:5],
+            ["python3", "-m", "agentsassemble.cli", "live-agent", "room-benchmark"],
+        )
+        for forbidden in (
+            "start-session",
+            "--agent-config",
+            "--live-agent-config",
+            "codex",
+            "claude",
+            "cursor",
+            "grok",
+            "gui",
+        ):
+            self.assertNotIn(forbidden, command)
+        self.assertEqual(payload["summary"], {"total": 1, "passed": 1, "failed": 0, "skipped": 0, "ok": True})
 
     def test_cli_parser_accepts_list_and_bounded_run_options(self):
         from agentsassemble.cli import build_parser

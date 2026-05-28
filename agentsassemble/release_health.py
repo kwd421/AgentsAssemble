@@ -26,6 +26,7 @@ class ReleaseHealthCheck:
     kind: str
     category: str
     requires: tuple[str, ...]
+    optional: bool = False
 
     def catalog_dict(self) -> dict[str, object]:
         return {
@@ -34,6 +35,7 @@ class ReleaseHealthCheck:
             "kind": self.kind,
             "category": self.category,
             "requires": list(self.requires),
+            "optional": self.optional,
         }
 
 
@@ -87,6 +89,14 @@ RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
         category="git",
         requires=("git",),
     ),
+    ReleaseHealthCheck(
+        id="room_event_benchmark",
+        label="Room event log benchmark (numeric latency evidence, opt-in)",
+        kind="benchmark",
+        category="live_room",
+        requires=("python3",),
+        optional=True,
+    ),
 )
 RELEASE_HEALTH_CHECK_IDS = [check.id for check in RELEASE_HEALTH_CHECKS]
 _CHECKS_BY_ID = {check.id: check for check in RELEASE_HEALTH_CHECKS}
@@ -116,7 +126,7 @@ def validate_release_health_check_selection(
     if unknown:
         raise ReleaseHealthSelectionError(f"Unknown release-health check id: {', '.join(unknown)}")
 
-    selected_ids = requested if requested else RELEASE_HEALTH_CHECK_IDS
+    selected_ids = requested if requested else [check.id for check in RELEASE_HEALTH_CHECKS if not check.optional]
     skip_set = set(skipped)
     return [_CHECKS_BY_ID[check_id] for check_id in selected_ids if check_id not in skip_set]
 
@@ -273,6 +283,25 @@ def _commands_for_check(check: ReleaseHealthCheck, *, repo_root: Path) -> list[l
         return [["python3", "-m", "compileall", "-q", "agentsassemble"]]
     if check.id == "git_diff_check":
         return [["git", "diff", "--check"]]
+    if check.id == "room_event_benchmark":
+        return [
+            [
+                "python3",
+                "-m",
+                "agentsassemble.cli",
+                "live-agent",
+                "room-benchmark",
+                "--events",
+                "120",
+                "--read-window",
+                "20",
+                "--warmup-events",
+                "10",
+                "--agent-count",
+                "3",
+                "--json",
+            ]
+        ]
     return []
 
 

@@ -91,6 +91,11 @@ assemble release-health run
 Running the checks remains CLI-only; the GUI does not start build or test
 processes, and the catalog intentionally omits command arguments, cwd, env, and
 raw local paths.
+`assemble release-health run --check room_event_benchmark` produces numeric
+room-event append/read and scheduler-fairness latency evidence. It is excluded
+from the default run so ordinary v0.1 hardening time stays bounded, and it
+remains CLI-only: React may display the catalog row but must not start the
+benchmark.
 
 `assemble mcp serve` uses the official MCP Python SDK (`mcp>=1,<2`) through a
 lazy import. The unit tests cover the room-tool boundary without requiring the
@@ -150,3 +155,4 @@ The next implementation slice should be chosen from this queue:
 - Trello/Jira roadmap board UI.
 - Provider billing, login, or subscription management.
 - Automatic startup of real provider CLIs without current explicit approval.
+- GUI or React controls that start release-health checks or room benchmarks.

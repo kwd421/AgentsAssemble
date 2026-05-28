@@ -158,6 +158,7 @@ export interface ReleaseHealthCheck {
   kind: string;
   category: string;
   requires: string[];
+  optional?: boolean;
 }
 
 export interface ReleaseHealthCatalog {

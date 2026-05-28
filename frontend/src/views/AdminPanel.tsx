@@ -196,6 +196,9 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                     <span className="shrink-0 rounded border border-line/60 px-2 py-0.5 text-[10px] font-bold text-text-muted">
                       {check.kind}
                     </span>
+                    <span className="shrink-0 rounded border border-accent/25 bg-accent/8 px-2 py-0.5 text-[10px] font-bold text-accent">
+                      {check.optional ? "opt-in" : "default"}
+                    </span>
                   </div>
                   <p className="mt-1 text-[11px] text-text-muted preserve-words">
                     {check.category} · {check.requires.join(", ")}

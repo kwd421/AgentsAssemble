@@ -72,6 +72,8 @@ React defaulting must preserve these room-event contracts:
   promote action is implemented.
 - Provider startup approval remains explicit; UI parity does not grant provider
   execution permission.
+- Release-health and room-benchmark catalog visibility is read-only; React may
+  show opt-in benchmark evidence but must not start checks or benchmarks.
 
 ## Legacy Fallback Status
 

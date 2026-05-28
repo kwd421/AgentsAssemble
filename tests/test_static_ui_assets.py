@@ -69,12 +69,15 @@ class StaticUiAssetTests(unittest.TestCase):
         source = frontend_source()
 
         self.assertIn("export interface ReleaseHealthCheck", source)
+        self.assertIn("optional?: boolean;", source)
         self.assertIn("export function fetchReleaseHealth", source)
         self.assertIn('"/api/release-health"', source)
         self.assertIn("릴리스 헬스", source)
+        self.assertIn('check.optional ? "opt-in" : "default"', source)
         self.assertIn("assemble release-health run", source)
         self.assertIn("CLI-only", source)
         self.assertNotIn("startReleaseHealthRun", source)
+        self.assertNotIn("startRoomBenchmark", source)
 
     def test_react_live_tab_surfaces_meeting_lifecycle_projection(self):
         source = frontend_source()
