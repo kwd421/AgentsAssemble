@@ -14,6 +14,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import type { FlowState, LiveAgent, LobbyEvent } from "../api";
+import { providerExecutionLabel, sandboxBadge } from "../lib/agentLabels";
+import ProviderTruthChips from "./components/ProviderTruthChips";
 
 function agentName(agent: LiveAgent) {
   return agent.display_name || agent.agent_id;
@@ -45,6 +47,7 @@ function AgentMiniCard({
   index: number;
 }) {
   const accent = index % 3 === 0 ? "gold" : index % 3 === 1 ? "violet" : "";
+  const sandbox = sandboxBadge(agent);
   return (
     <div className="ops-inner rounded-lg p-4">
       <div className="mb-3 flex items-center gap-3">
@@ -56,8 +59,9 @@ function AgentMiniCard({
             {agentName(agent)}
           </p>
           <p className="text-[11px] text-text-muted preserve-words">
-            {agent.provider_kind || agent.engagement_mode || "resident"}
+            {providerExecutionLabel(agent)}
           </p>
+          <ProviderTruthChips badges={sandbox ? [sandbox] : []} compact />
         </div>
       </div>
       <p className="text-[12px] leading-relaxed text-text-secondary preserve-words">

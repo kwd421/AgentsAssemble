@@ -1,0 +1,193 @@
+import type { LiveAgent } from "../api";
+
+type Tone = "accent" | "online" | "idle" | "danger" | "muted";
+
+export type AgentTruthBadge = {
+  label: string;
+  tone: Tone;
+  title?: string;
+};
+
+const PROVIDER_EXECUTION_LABELS: Record<string, string> = {
+  "codex_live_session/live_session": "Codex exec/resume",
+  "kiro_live_session/live_session": "Kiro chat resume",
+  "cursor_live_session/live_session": "Cursor chat resume",
+  "grok_live_session/live_session": "Grok session resume",
+  "antigravity_live_session/live_session": "Antigravity conversation resume",
+  "hermes_live_session/live_session": "Hermes chat resume",
+  "remote_http_bridge/remote_bridge": "Remote bridge",
+  "local_cli/local_cli": "Stateless prompt call",
+  "local_cli/terminal_session": "PTY terminal bridge",
+  "local_cli/self_service": "Self-service room loop",
+  "manual/manual": "Manual room loop",
+};
+
+const JOIN_SEMANTICS_LABELS: Record<string, string> = {
+  codex_exec_resume: "Codex exec/resume",
+  kiro_chat_resume: "Kiro chat resume",
+  cursor_chat_resume: "Cursor chat resume",
+  grok_session_resume: "Grok session resume",
+  antigravity_conversation_resume: "Antigravity conversation resume",
+  hermes_chat_resume: "Hermes chat resume",
+  terminal_pty_prompt_bridge: "PTY terminal bridge",
+  self_service_room_loop: "Self-service room loop",
+  remote_bridge_room_loop: "Remote bridge",
+  manual_room_loop: "Manual room loop",
+  stateless_prompt_call: "Stateless prompt call",
+};
+
+const CONTEXT_DURABILITY_LABELS: Record<string, string> = {
+  provider_managed_resume: "Provider-owned context",
+  provider_managed_room_loop: "Agent-owned room loop",
+  process_lifetime: "Process-lifetime context",
+  remote_owner_managed: "Remote-owner context",
+  external_owner_managed: "External-owner context",
+  stateless_prompt: "Stateless prompt",
+};
+
+const SANDBOX_LABELS: Record<string, string> = {
+  codex_readonly: "Codex read-only",
+  advisory: "Advisory sandbox",
+  os_sandboxed: "OS sandboxed",
+  unknown: "Unknown sandbox",
+};
+
+export function humanizeToken(value?: string): string {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const words = text
+    .split(/[_\s/.-]+/)
+    .filter(Boolean)
+    .map((part) => part.toLowerCase());
+  const label = words.join(" ");
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+export function joinSemanticsLabel(value?: string): string {
+  const key = String(value || "").trim();
+  return JOIN_SEMANTICS_LABELS[key] || humanizeToken(key);
+}
+
+export function contextDurabilityLabel(value?: string): string {
+  const key = String(value || "").trim();
+  return CONTEXT_DURABILITY_LABELS[key] || humanizeToken(key);
+}
+
+export function sandboxEnforcementLabel(value?: string): string {
+  const key = String(value || "").trim();
+  return SANDBOX_LABELS[key] || humanizeToken(key);
+}
+
+export function providerExecutionLabel(
+  agent: Pick<LiveAgent, "provider_kind" | "connection_kind" | "engagement_mode" | "join_semantics">
+): string {
+  const joinLabel = joinSemanticsLabel(agent.join_semantics);
+  if (joinLabel) return joinLabel;
+  const provider = String(agent.provider_kind || "").trim();
+  const connection = String(agent.connection_kind || "").trim();
+  const pair = `${provider}/${connection}`;
+  if (PROVIDER_EXECUTION_LABELS[pair]) return PROVIDER_EXECUTION_LABELS[pair];
+  if (agent.engagement_mode === "self_service" && provider) return "Self-service room loop";
+  return humanizeToken(provider || connection || agent.engagement_mode || "resident");
+}
+
+export function admissionBadge(
+  agent: Pick<LiveAgent, "admission_status" | "host_approved_binding" | "binding_conflicts">
+): AgentTruthBadge | null {
+  const conflictCount = Array.isArray(agent.binding_conflicts) ? agent.binding_conflicts.length : 0;
+  if (conflictCount > 0) {
+    const prefix =
+      agent.host_approved_binding === true
+        ? "Host-approved"
+        : agent.host_approved_binding === false
+          ? "Not host-approved"
+          : "Admission unknown";
+    const label = `${prefix} · ${Math.min(conflictCount, 2)} ${conflictCount === 1 ? "conflict" : "conflicts"}`;
+    return {
+      label,
+      tone: "idle",
+      title: agent.binding_conflicts?.slice(0, 2).map(humanizeToken).join(", "),
+    };
+  }
+  if (agent.host_approved_binding === true) {
+    return { label: "Host-approved", tone: "online" };
+  }
+  if (agent.host_approved_binding === false) {
+    return { label: "Not host-approved", tone: "idle" };
+  }
+  const status = String(agent.admission_status || "").trim();
+  if (!status) return null;
+  return {
+    label: humanizeToken(status),
+    tone: status === "approved" ? "online" : "muted",
+  };
+}
+
+export function executionBadge(agent: LiveAgent): AgentTruthBadge {
+  return {
+    label: providerExecutionLabel(agent),
+    tone: "accent",
+    title: `${agent.provider_kind || "resident"} / ${agent.connection_kind || agent.engagement_mode || "room"}`,
+  };
+}
+
+export function contextBadge(agent: LiveAgent): AgentTruthBadge | null {
+  const label = contextDurabilityLabel(agent.context_durability);
+  if (!label) return null;
+  return { label, tone: agent.context_durability === "stateless_prompt" ? "idle" : "online" };
+}
+
+export function joinBadge(agent: LiveAgent): AgentTruthBadge | null {
+  const label = joinSemanticsLabel(agent.join_semantics);
+  if (!label) return null;
+  return { label, tone: "muted" };
+}
+
+export function sandboxBadge(agent: LiveAgent): AgentTruthBadge | null {
+  const label = sandboxEnforcementLabel(agent.sandbox_enforcement);
+  if (!label) return null;
+  const tone =
+    agent.sandbox_enforcement === "codex_readonly" || agent.sandbox_enforcement === "os_sandboxed"
+      ? "online"
+      : agent.sandbox_enforcement === "advisory"
+        ? "idle"
+        : "muted";
+  return { label, tone };
+}
+
+export function agentTruthBadges(agent: LiveAgent): AgentTruthBadge[] {
+  return [executionBadge(agent), contextBadge(agent), joinBadge(agent), sandboxBadge(agent), admissionBadge(agent)].filter(
+    Boolean
+  ) as AgentTruthBadge[];
+}
+
+function shortId(value?: string): string {
+  if (!value) return "";
+  return value.length > 11 ? `${value.slice(0, 8)}...` : value;
+}
+
+function shortDateTime(value?: string): string {
+  if (!value) return "";
+  try {
+    return new Date(value).toLocaleString("ko-KR", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+export function lastObservedSummary(
+  agent: Pick<LiveAgent, "last_observed_event_id" | "last_observed_live_event_id" | "last_reply_at">
+): string {
+  return [
+    agent.last_observed_event_id ? `lobby ${shortId(agent.last_observed_event_id)}` : "",
+    agent.last_observed_live_event_id ? `official ${shortId(agent.last_observed_live_event_id)}` : "",
+    agent.last_reply_at ? `reply ${shortDateTime(agent.last_reply_at)}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}

@@ -29,6 +29,13 @@ import {
   type MafiaGame,
   type MafiaPlayer,
 } from "../api";
+import {
+  contextBadge,
+  type AgentTruthBadge,
+  providerExecutionLabel,
+  sandboxBadge,
+} from "../lib/agentLabels";
+import ProviderTruthChips from "./components/ProviderTruthChips";
 
 function formatTime(iso: string): string {
   try {
@@ -121,6 +128,7 @@ function FlowMessage({ event }: { event: LobbyEvent }) {
 
 function AgentLiveRow({ agent }: { agent: LiveAgent }) {
   const active = agent.status === "working" || agent.status === "online";
+  const badges = [contextBadge(agent), sandboxBadge(agent)].filter(Boolean) as AgentTruthBadge[];
   return (
     <div className="ops-inner flex items-center gap-3 rounded-lg px-3 py-2.5">
       <span className="hex-badge h-9 w-9">
@@ -131,8 +139,9 @@ function AgentLiveRow({ agent }: { agent: LiveAgent }) {
           {agentName(agent)}
         </p>
         <p className="truncate text-[11px] text-text-muted preserve-words">
-          {agent.provider_kind || agent.engagement_mode || "resident"}
+          {providerExecutionLabel(agent)}
         </p>
+        <ProviderTruthChips badges={badges} compact limit={2} />
       </div>
       <span className={`h-2.5 w-2.5 rounded-full ${active ? "bg-online live-pulse" : "bg-offline"}`} />
       <span className={active ? "text-[11px] font-bold text-online" : "text-[11px] text-text-muted"}>

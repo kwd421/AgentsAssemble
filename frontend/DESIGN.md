@@ -17,6 +17,8 @@ The reference direction is a sci-fi operations room:
 - compact left/center/right command-console layout.
 - four first-class tabs: `로비`, `실황`, `작전판`, `아카이브`.
 - visible participant readiness and room status.
+- visible provider execution, context durability, sandbox, and admission truth
+  without raw underscore-heavy contract strings.
 - Play Mode remains informal and separate from official records.
 
 This is not a Discord clone anymore. Borrow only the useful density and
@@ -31,6 +33,9 @@ surface is fully aligned with this design.
 - Do not invent provider execution, admission, or official-record behavior.
 - The React frontend reads existing HTTP/SSE state and calls only existing flow
   start/stop APIs.
+- Provider/context chips must be derived from existing safe roster fields. If a
+  provider contract is unknown, show a humanized fallback rather than guessing a
+  stronger capability.
 - Lobby/Play Mode chatter must not look like transcript or decision evidence.
 - Operator diagnostics stay secondary.
 - Buttons that are not wired to backend behavior should be framed as visual
@@ -101,6 +106,9 @@ Archive:
   horizontal overflow.
 - Lobby, Live, Board, and Archive look meaningfully different.
 - Play Mode does not look like official transcript evidence.
+- Participant cards name provider execution and context honestly, including
+  stateless prompt calls, provider-owned resume sessions, advisory sandboxing,
+  and host-admission state.
 - Text preserves readable tokens such as `Kiro Opus 4.7`, `0.5`, `80kg`, and
   ellipses.
 - `npm run build` passes.

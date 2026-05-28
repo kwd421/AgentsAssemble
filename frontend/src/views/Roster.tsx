@@ -1,5 +1,6 @@
 import { Bot, Wifi, WifiOff } from "lucide-react";
 import type { LiveAgent } from "../api";
+import { providerExecutionLabel, sandboxEnforcementLabel } from "../lib/agentLabels";
 
 const AVATAR_CLASSES = [
   "bg-[#5865f2] text-white",
@@ -34,6 +35,7 @@ function avatarClass(name: string) {
 
 function AgentRow({ agent, faded = false }: { agent: LiveAgent; faded?: boolean }) {
   const name = agent.display_name || agent.agent_id;
+  const sandbox = sandboxEnforcementLabel(agent.sandbox_enforcement);
   return (
     <div
       className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors ${
@@ -55,8 +57,8 @@ function AgentRow({ agent, faded = false }: { agent: LiveAgent; faded?: boolean 
           {name}
         </div>
         <div className="truncate text-[11px] text-text-muted">
-          {statusLabel(agent.status)}
-          {agent.provider_kind && ` · ${agent.provider_kind}`}
+          {statusLabel(agent.status)} · {providerExecutionLabel(agent)}
+          {sandbox && ` · ${sandbox}`}
         </div>
       </div>
     </div>

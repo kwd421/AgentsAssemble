@@ -23,6 +23,11 @@ import {
   type LobbyEvent,
   type MafiaGame,
 } from "../api";
+import {
+  agentTruthBadges,
+  lastObservedSummary,
+} from "../lib/agentLabels";
+import ProviderTruthChips from "./components/ProviderTruthChips";
 
 const MODE_CARDS = [
   {
@@ -114,40 +119,6 @@ function statusColor(status: string) {
   return "text-text-muted";
 }
 
-function shortId(value?: string) {
-  if (!value) return "";
-  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
-}
-
-function agentContractLabel(agent: LiveAgent) {
-  return [
-    agent.join_semantics,
-    agent.context_durability,
-    agent.sandbox_enforcement ? `sandbox ${agent.sandbox_enforcement}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
-
-function agentObservationLabel(agent: LiveAgent) {
-  return [
-    agent.last_observed_event_id ? `lobby ${shortId(agent.last_observed_event_id)}` : "",
-    agent.last_observed_live_event_id ? `official ${shortId(agent.last_observed_live_event_id)}` : "",
-    agent.last_reply_at ? `reply ${agent.last_reply_at}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
-
-function agentAdmissionLabel(agent: LiveAgent) {
-  const parts = [];
-  if (agent.admission_status) parts.push(agent.admission_status);
-  if (agent.host_approved_binding) parts.push("host-approved");
-  if (agent.host_approved_binding === false) parts.push("not-approved");
-  if (agent.binding_conflicts?.length) parts.push(`conflict ${agent.binding_conflicts.slice(0, 2).join(", ")}`);
-  return parts.join(" · ");
-}
-
 function mafiaPlayersFromAgents(agents: LiveAgent[]) {
   const candidates = agents.length
     ? agents
@@ -166,9 +137,7 @@ function mafiaPlayersFromAgents(agents: LiveAgent[]) {
 function AgentCard({ agent, owner = false }: { agent: LiveAgent; owner?: boolean }) {
   const name = agentName(agent);
   const tone = agentTone(agent);
-  const contract = agentContractLabel(agent);
-  const observation = agentObservationLabel(agent);
-  const admission = agentAdmissionLabel(agent);
+  const observation = lastObservedSummary(agent);
   const badgeClass =
     tone === "gold"
       ? "gold"
@@ -197,16 +166,7 @@ function AgentCard({ agent, owner = false }: { agent: LiveAgent; owner?: boolean
         <p className="truncate text-[11px] text-text-muted preserve-words">
           {agent.provider_kind || "resident"} · {agent.connection_kind || agent.engagement_mode || "room"}
         </p>
-        {contract && (
-          <p className="mt-1 text-[10px] font-semibold text-accent preserve-words">
-            {contract}
-          </p>
-        )}
-        {admission && (
-          <p className="mt-1 text-[10px] font-semibold text-idle preserve-words">
-            {admission}
-          </p>
-        )}
+        <ProviderTruthChips badges={agentTruthBadges(agent)} compact limit={5} />
         {observation && (
           <p className="mt-1 text-[10px] text-text-muted preserve-words">
             {observation}

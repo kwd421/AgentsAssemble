@@ -58,9 +58,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("last_observed_live_event_id?: string;", source)
         self.assertIn("host_approved_binding?: boolean;", source)
         self.assertIn("binding_conflicts?: string[];", source)
-        self.assertIn('agent.last_reply_at ? `reply ${agent.last_reply_at}` : ""', source)
-        self.assertIn('if (agent.host_approved_binding) parts.push("host-approved");', source)
-        self.assertIn('if (agent.host_approved_binding === false) parts.push("not-approved");', source)
+        self.assertIn("export function lastObservedSummary", source)
+        self.assertIn('agent.last_reply_at ? `reply ${shortDateTime(agent.last_reply_at)}` : ""', source)
+        self.assertIn('return { label: "Host-approved", tone: "online" };', source)
+        self.assertIn('return { label: "Not host-approved", tone: "idle" };', source)
         self.assertIn("{agent.provider_kind || \"resident\"} · {agent.connection_kind || agent.engagement_mode || \"room\"}", source)
 
     def test_lobby_separates_stage_from_activity_feed(self):
