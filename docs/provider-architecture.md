@@ -71,6 +71,12 @@ The default registry exposes provider kinds with explicit capability snapshots:
 
 `anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `kiro_live_session`, `cursor_live_session`, and `grok_live_session` are resident live-agent adapters, not meeting adapters: Kiro joins through the resident runner and Kiro's own chat resume store, Cursor joins through `cursor-agent create-chat` plus `--resume` with a runner-owned stable workspace, while Grok joins through the resident runner and Grok's JSON stdout session resume. `cursor`, `claude_code`, `antigravity_cli`, `gemini_cli_legacy`, `grok_build_cli`, `hermes_cli`, and `openclaw_cli` remain implementation-phase planned providers unless they are launched through the resident live-agent runner's explicit connection-kind contract; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
+Antigravity remains in that planned-provider lane. A non-isolated `agy
+--continue` probe showed some provider-owned recall, but the isolated follow-up
+did not prove a deterministic `--conversation <id>` handle and still created
+symlinks resolving outside the proof root, so no Antigravity resume runner is
+justified yet.
+
 Imported memory/profile packs now have a safe inspection surface before they can
 affect meeting context. `assemble memory-capsule gate --path <capsule-dir>`
 produces a memory/profile capsule gate report with redacted local path evidence,

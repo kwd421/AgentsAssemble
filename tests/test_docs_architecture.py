@@ -808,7 +808,7 @@ class DocsArchitectureTests(unittest.TestCase):
         normalized_evidence = " ".join(evidence.split())
         self.assertIn("Grok and Cursor are now the non-Codex/Kiro providers with both a passing two-turn continuity probe", normalized_evidence)
         self.assertIn("Cursor's room evidence is only the initial one-resident start/probe/stop shape", normalized_evidence)
-        self.assertIn("Antigravity has narrower positive continuity evidence", normalized_evidence)
+        self.assertIn("Antigravity has a non-isolated `--continue` recall", normalized_evidence)
         for provider in ("claude_code", "cursor", "antigravity_cli", "grok_build_cli", "hermes_cli", "openclaw_cli"):
             self.assertIn(provider, evidence)
         for provider in ("claude_code", "openclaw_cli"):
@@ -834,6 +834,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Earlier approved explicit-chat-id and workspace-continue probes failed", normalized_combined)
         self.assertIn("fresh `create-chat` id plus `--resume <chat_id> --print", normalized_combined)
         self.assertIn("continuity-ambiguous-no-runner", normalized_combined)
+        self.assertIn("global-store-contaminated-no-runner", normalized_combined)
         self.assertIn("room-smoke-proven-limited", normalized_combined)
         self.assertIn("only an approved two-turn continuity probe can prove", normalized_combined)
 
@@ -849,8 +850,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Real Continuity Probe Summary", survey)
         self.assertIn("passed limited continuity probe", survey)
         self.assertIn("passed limited chat-id resume recall", survey)
-        self.assertIn("passed limited `--continue` recall", survey)
-        self.assertIn("failed explicit conversation recall", survey)
+        self.assertIn("passed limited non-isolated `--continue` recall", survey)
+        self.assertIn("failed isolated disambiguation", survey)
         self.assertIn("ambiguous session-id resume recall", survey)
         self.assertIn("fresh no-resume control also recalled", normalized)
         self.assertIn("JSON stdout `text`", survey)
@@ -870,9 +871,27 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("official-turn quality, restart, recover, tool safety", normalized)
         self.assertNotIn("current Grok official-turn-quality failure", combined)
         self.assertNotIn("This is not yet a Cursor room smoke", combined)
-        self.assertIn("Do not add an Antigravity runner yet", survey)
+        self.assertIn("Do not add an Antigravity runner", survey)
         self.assertIn("not promoted to a resident runner", survey)
+        self.assertIn("isolated `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, and `XDG_CACHE_HOME`", normalized)
+        self.assertIn("no Antigravity resume runner is justified yet", normalized)
         self.assertIn("Do not add a Hermes runner yet", survey)
+
+    def test_antigravity_continuity_note_records_global_store_boundary(self):
+        survey = (ROOT / "docs" / "cli-evidence-survey.md").read_text(encoding="utf-8")
+        note = (ROOT / "docs" / "provider-continuity" / "antigravity.md").read_text(encoding="utf-8")
+        normalized_note = " ".join(note.split())
+        self.assertIn("Antigravity CLI Continuity Evidence", note)
+        self.assertIn("global-store-contaminated-no-runner", note)
+        self.assertIn("did not reproduce suffix recall through either `--continue` or `--conversation <candidate>`", normalized_note)
+        self.assertIn("symlinks still resolved outside the temporary proof root", normalized_note)
+        self.assertIn("Do not route Antigravity resident participation through one-shot `local_cli`", note)
+        self.assertIn("did not isolate the provider home/config store", survey)
+        self.assertNotIn("/Users/", note)
+        self.assertNotIn("/var/folders/", note)
+        self.assertNotIn("file://", note)
+        self.assertNotRegex(note, r"/(?:private/)?(?:tmp|var|Users|Volumes|home)/")
+        self.assertNotRegex(note, r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 
     def test_hermes_continuity_note_records_ambiguous_control_without_raw_evidence(self):
         note = (ROOT / "docs" / "provider-continuity" / "hermes.md").read_text(encoding="utf-8")
