@@ -86,6 +86,10 @@ report.
   surface while those contracts settle, but it must not become the default
   entry point until API/SSE parity, room-event contracts, and legacy fallback
   behavior are verified.
+- Legacy console namespace isolation is step 1 of that migration path: the
+  vanilla console is reachable at both `/` and `/legacy/`, the default entry
+  point is unchanged, and React defaulting still requires the documented parity
+  evidence instead of a route flip alone.
 - The detailed roadmap board is a later product-UI feature, not another panel
   to bolt onto the current vanilla console. When the React/Vite frontend track
   starts, add a dedicated roadmap view that can show long-term epics and

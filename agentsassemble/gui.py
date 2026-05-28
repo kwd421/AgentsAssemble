@@ -7018,6 +7018,17 @@ def _make_handler(
             if path == "/":
                 self._send_file(static_root / "index.html", "text/html; charset=utf-8")
                 return
+            if path in {"/legacy", "/legacy/"}:
+                self._send_file(static_root / "index.html", "text/html; charset=utf-8")
+                return
+            if path.startswith("/legacy/static/"):
+                rel = path.removeprefix("/legacy/static/")
+                static_path = _safe_static_path(static_root, rel)
+                if static_path is None:
+                    self._send_error(HTTPStatus.NOT_FOUND, "File not found")
+                    return
+                self._send_file(static_path)
+                return
             if path.startswith("/static/"):
                 rel = path.removeprefix("/static/")
                 static_path = _safe_static_path(static_root, rel)

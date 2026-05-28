@@ -19236,6 +19236,31 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(_safe_static_path(static_root, "app.js"), (static_root / "app.js").resolve())
             self.assertIsNone(_safe_static_path(static_root, "../secret.txt"))
 
+    def test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                root_html = urlopen(f"{base}/", timeout=4).read()
+                legacy_html = urlopen(f"{base}/legacy/", timeout=4).read()
+                root_css = urlopen(f"{base}/static/base.css", timeout=4).read()
+                legacy_css = urlopen(f"{base}/legacy/static/base.css", timeout=4).read()
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(f"{base}/legacy/static/../secret.txt", timeout=4)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(legacy_html, root_html)
+        self.assertEqual(legacy_css, root_css)
+        try:
+            self.assertEqual(raised.exception.code, 404)
+        finally:
+            raised.exception.close()
+
     def test_meeting_payload_endpoint_cannot_escape_meetings_root(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -1553,6 +1553,8 @@ def frontend_info_payload(*, backend: str = "http://127.0.0.1:8765", port: int =
     backend_url = str(backend or "http://127.0.0.1:8765").rstrip("/") or "http://127.0.0.1:8765"
     frontend_port = int(port)
     frontend_url = f"http://127.0.0.1:{frontend_port}"
+    legacy_console_path = "/legacy/"
+    legacy_console_url = backend_url + legacy_console_path
     backend_parts = urllib.parse.urlparse(backend_url)
     backend_host = backend_parts.hostname or "127.0.0.1"
     backend_port = backend_parts.port or 8765
@@ -1563,6 +1565,8 @@ def frontend_info_payload(*, backend: str = "http://127.0.0.1:8765", port: int =
         "frontend_dev_proxy_target": backend_url,
         "backend_url": backend_url,
         "legacy_console_url": backend_url,
+        "legacy_console_path": legacy_console_path,
+        "legacy_console_namespace_url": legacy_console_url,
         "is_default_entry_point": False,
         "launch_commands": [
             f"python3 -m agentsassemble.cli gui --host {backend_host} --port {backend_port} --output-root .agentsassemble",
@@ -1583,6 +1587,7 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
         return 0
     print("AgentsAssemble frontend launch info")
     print(f"- Default console/backend: {payload['legacy_console_url']}")
+    print(f"- Legacy console namespace: {payload['legacy_console_namespace_url']}")
     print(f"- React/Vite opt-in UI: {payload['frontend_url']}")
     print(f"- Vite API proxy target: {payload['frontend_dev_proxy_target']}")
     print("- Commands:")

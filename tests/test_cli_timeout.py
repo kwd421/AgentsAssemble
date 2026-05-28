@@ -124,6 +124,9 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["frontend_dev_port"], 5199)
         self.assertEqual(payload["frontend_dev_proxy_target"], "http://127.0.0.1:9999")
         self.assertEqual(payload["backend_url"], "http://127.0.0.1:9999")
+        self.assertEqual(payload["legacy_console_path"], "/legacy/")
+        self.assertEqual(payload["legacy_console_url"], "http://127.0.0.1:9999")
+        self.assertEqual(payload["legacy_console_namespace_url"], "http://127.0.0.1:9999/legacy/")
         self.assertFalse(payload["is_default_entry_point"])
         self.assertIn("--port 9999", payload["launch_commands"][0])
         self.assertIn("npm run dev", " ".join(payload["launch_commands"]))
@@ -137,6 +140,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         output = stdout.getvalue()
         self.assertIn("Default console/backend: http://127.0.0.1:8765", output)
+        self.assertIn("Legacy console namespace: http://127.0.0.1:8765/legacy/", output)
         self.assertIn("React/Vite opt-in UI: http://127.0.0.1:5173", output)
         self.assertIn("not the default entry point", output)
 

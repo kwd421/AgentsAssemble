@@ -42,6 +42,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('type="module"', html)
         self.assertIn('/static/base.css', html)
         self.assertIn('/static/responsive.css', html)
+        self.assertNotIn('/legacy/static/', html)
         self.assertIn("function showAppStatus", script)
         self.assertIn('showAppStatus("Mock Demo 실행 중"', script)
         self.assertIn('showAppStatus("Mock Demo 생성 완료"', script)

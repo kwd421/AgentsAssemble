@@ -10,6 +10,8 @@ python3 -m agentsassemble.cli gui --port 8765
 ```
 
 This React/Vite surface is opt-in until API/SSE parity and fallback behavior are verified.
+The vanilla legacy console namespace is now explicit: the same dependency-light
+operator console is available at `/` and `/legacy/`; the default entry point is unchanged.
 
 ## Prerequisites
 
