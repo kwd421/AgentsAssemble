@@ -124,6 +124,11 @@ verified, and separate from broad frontend redesign.
    - use `docs/roadmap.md` and this checklist as source-of-truth documents.
    - build a Trello/Jira-like roadmap page only when the React/Vite frontend
      track starts.
+6. Keep the React default-route gate explicit:
+   - use `docs/product/legacy-react-parity-matrix.md` to track API/SSE parity,
+     room-event contracts, and legacy fallback evidence.
+   - keep React defaulting separate from v0.1 hardening until that matrix and
+     a later product decision say otherwise.
 
 ## Next Slice Queue
 

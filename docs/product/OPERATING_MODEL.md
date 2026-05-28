@@ -286,6 +286,8 @@ Near-term work should favor backend contracts over visual polish:
 - `docs/roadmap.md` tracks status and priority.
 - `docs/product/V0_1_RELEASE_CHECKLIST.md` owns the current release-hardening
   bar for the core usable flow.
+- `docs/product/legacy-react-parity-matrix.md` owns the React default-route
+  parity evidence and fallback gate.
 - `docs/live-session-room-model.md` owns room semantics.
 - `docs/provider-architecture.md` owns provider and adapter boundaries.
 - `docs/live-agent-ops.md` owns operator commands, readiness, and verification.

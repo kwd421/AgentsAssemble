@@ -127,10 +127,12 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["legacy_console_path"], "/legacy/")
         self.assertEqual(payload["legacy_console_url"], "http://127.0.0.1:9999")
         self.assertEqual(payload["legacy_console_namespace_url"], "http://127.0.0.1:9999/legacy/")
+        self.assertEqual(payload["parity_matrix_doc"], "docs/product/legacy-react-parity-matrix.md")
         self.assertFalse(payload["is_default_entry_point"])
         self.assertIn("--port 9999", payload["launch_commands"][0])
         self.assertIn("npm run dev", " ".join(payload["launch_commands"]))
         self.assertIn("does not start provider CLIs", " ".join(payload["notes"]))
+        self.assertIn("future default flip", " ".join(payload["notes"]))
 
     def test_frontend_info_text_mode_keeps_react_opt_in(self):
         stdout = StringIO()
@@ -142,6 +144,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("Default console/backend: http://127.0.0.1:8765", output)
         self.assertIn("Legacy console namespace: http://127.0.0.1:8765/legacy/", output)
         self.assertIn("React/Vite opt-in UI: http://127.0.0.1:5173", output)
+        self.assertIn("Parity matrix: docs/product/legacy-react-parity-matrix.md", output)
         self.assertIn("not the default entry point", output)
 
     def test_live_agent_local_resources_parser(self):

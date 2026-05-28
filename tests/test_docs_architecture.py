@@ -54,6 +54,41 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("does not start a dev server, GUI backend, or provider CLI", normalized_ops)
         self.assertIn("aspirational React/Vite direction", frontend_design)
 
+    def test_legacy_react_parity_matrix_records_default_flip_gate(self):
+        matrix_path = "docs/product/legacy-react-parity-matrix.md"
+        matrix_file = ROOT / matrix_path
+        matrix = matrix_file.read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        live_agent_ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
+        frontend_readme = (ROOT / "frontend" / "README.md").read_text(encoding="utf-8")
+        operating_model = (ROOT / "docs" / "product" / "OPERATING_MODEL.md").read_text(encoding="utf-8")
+        release_checklist = (ROOT / "docs" / "product" / "V0_1_RELEASE_CHECKLIST.md").read_text(encoding="utf-8")
+
+        self.assertTrue(matrix_file.exists())
+        for heading in (
+            "## Purpose And Non-Goals",
+            "## Default-Flip Preconditions",
+            "## Surface Inventory",
+            "## Room-Event Contract Signals",
+            "## Legacy Fallback Status",
+            "## Verification Index",
+            "## Explicit Non-Goals",
+        ):
+            self.assertIn(heading, matrix)
+        for required in (
+            "/legacy/",
+            "is_default_entry_point",
+            "API/SSE parity",
+            "room-event contracts",
+            "legacy fallback",
+            "filled rows are not sufficient for defaulting React",
+            "tests/test_gui_server.py::test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes",
+        ):
+            self.assertIn(required, matrix)
+        for doc in (readme, live_agent_ops, frontend_readme, operating_model, release_checklist):
+            self.assertIn(matrix_path, doc)
+        self.assertIn("- React/Vite/Tailwind migration.", release_checklist)
+
     def test_operating_model_records_room_first_agent_owned_context(self):
         operating_model = (ROOT / "docs" / "product" / "OPERATING_MODEL.md").read_text(encoding="utf-8")
         live_agent_ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")

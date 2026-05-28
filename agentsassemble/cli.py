@@ -1555,6 +1555,7 @@ def frontend_info_payload(*, backend: str = "http://127.0.0.1:8765", port: int =
     frontend_url = f"http://127.0.0.1:{frontend_port}"
     legacy_console_path = "/legacy/"
     legacy_console_url = backend_url + legacy_console_path
+    parity_matrix_doc = "docs/product/legacy-react-parity-matrix.md"
     backend_parts = urllib.parse.urlparse(backend_url)
     backend_host = backend_parts.hostname or "127.0.0.1"
     backend_port = backend_parts.port or 8765
@@ -1567,6 +1568,7 @@ def frontend_info_payload(*, backend: str = "http://127.0.0.1:8765", port: int =
         "legacy_console_url": backend_url,
         "legacy_console_path": legacy_console_path,
         "legacy_console_namespace_url": legacy_console_url,
+        "parity_matrix_doc": parity_matrix_doc,
         "is_default_entry_point": False,
         "launch_commands": [
             f"python3 -m agentsassemble.cli gui --host {backend_host} --port {backend_port} --output-root .agentsassemble",
@@ -1576,6 +1578,7 @@ def frontend_info_payload(*, backend: str = "http://127.0.0.1:8765", port: int =
             "assemble gui remains the default dependency-light vanilla backend/operator console.",
             "The React/Vite frontend is an opt-in development surface and does not start provider CLIs.",
             "The Vite proxy should target the same backend URL shown here unless AGENTSASSEMBLE_API_TARGET overrides it.",
+            f"Review {parity_matrix_doc} before any future default flip to React.",
         ],
     }
 
@@ -1590,6 +1593,7 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
     print(f"- Legacy console namespace: {payload['legacy_console_namespace_url']}")
     print(f"- React/Vite opt-in UI: {payload['frontend_url']}")
     print(f"- Vite API proxy target: {payload['frontend_dev_proxy_target']}")
+    print(f"- Parity matrix: {payload['parity_matrix_doc']}")
     print("- Commands:")
     for command in payload["launch_commands"]:
         print(f"  {command}")

@@ -84,6 +84,10 @@ default entry point yet. To see the current launch commands and proxy target:
 python3 -m agentsassemble.cli frontend-info
 ```
 
+The default-route decision is tracked in
+`docs/product/legacy-react-parity-matrix.md`; filling that matrix is required
+before React can replace the vanilla `/` entry point.
+
 The GUI has four tabs:
 
 - `lobby` / 로비: informal staging room, readiness, and deploy intent
