@@ -58,6 +58,7 @@ from agentsassemble.live_agent_processes import (
     clean_live_agent_group_id,
     read_live_agent_process_event_history,
 )
+from agentsassemble.local_resources import cached_local_resource_snapshot
 from agentsassemble.live_agent_probe import PROBE_REPLY_EVENT_TAIL_LIMIT, run_live_agent_probe, safe_probe_timeout
 from agentsassemble.live_agent_play_presets import build_play_preset_turns
 from agentsassemble.live_agent_review_checkpoints import write_review_checkpoint_artifacts
@@ -3504,6 +3505,34 @@ def live_agent_health_payload(
     if session_run_monitor_summary:
         payload["session_run_monitor"] = session_run_monitor_summary
     return payload
+
+
+def local_resource_snapshot_payload(process_supervisor: LiveAgentProcessSupervisor) -> dict[str, object]:
+    return cached_local_resource_snapshot(supervised_pids=_live_agent_supervised_pids(process_supervisor))
+
+
+def _live_agent_supervised_pids(process_supervisor: LiveAgentProcessSupervisor) -> set[int]:
+    pids: set[int] = set()
+    try:
+        groups = process_supervisor.snapshot_groups()
+    except Exception:
+        return pids
+    for group in _as_dict_list(groups):
+        status = str(group.get("status") or "")
+        if status not in {"running", "restarting"}:
+            continue
+        pid = _safe_positive_int(group.get("pid"))
+        if pid is not None:
+            pids.add(pid)
+    return pids
+
+
+def _safe_positive_int(value: object) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _live_agent_admission_health_summary(output_root: Path, agents: list[dict[str, object]]) -> dict[str, object]:
@@ -7086,6 +7115,9 @@ def _make_handler(
                         session_run_monitor=session_run_monitor,
                     )
                 )
+                return
+            if path == "/api/local-resources":
+                self._send_json(local_resource_snapshot_payload(live_agent_process_supervisor))
                 return
             if path == "/api/live-agent-sessions/readiness":
                 try:

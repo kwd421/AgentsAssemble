@@ -19416,6 +19416,28 @@ class GuiServerTests(unittest.TestCase):
                 probe_timeout_seconds=0.75,
             )
 
+    def test_local_resources_endpoint_returns_sanitized_read_only_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            payload = {
+                "status": "ok",
+                "summary": {"process_count": 1, "total_cpu_pct": 2.5, "total_rss_kb": 4096, "attention": []},
+                "processes": [{"pid": 123, "comm": "python3", "role": "agentsassemble", "cpu_pct": 2.5, "rss_kb": 4096}],
+            }
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch("agentsassemble.gui.local_resource_snapshot_payload", return_value=payload, create=True) as snapshot_payload:
+                    with urlopen(f"http://127.0.0.1:{server.server_port}/api/local-resources", timeout=4) as response:
+                        response_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(response_payload, payload)
+            snapshot_payload.assert_called_once()
+
 
 def _write_health_resident_meeting(root: Path, *, agent_ids: list[str]) -> Path:
     meeting_dir = root / "meetings" / "resident-m1"

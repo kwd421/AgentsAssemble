@@ -193,6 +193,19 @@ Session-owned supervised groups persist the safe `meeting_id` in `live-agent-run
 
 `/api/live-agent-health` also includes an `observations` overlay for ready resident sessions. It compares the latest bounded lobby event and each bound agent's latest official turn request against that agent's preserved lobby/live cursors and reply timestamp, then reports compact counts such as ready agents, lobby-behind, live-behind, active error count, and observation attention labels. This is read-only: health refreshes do not call providers, run probes, append operation rows, start or stop processes, post lobby messages, or expose lobby text, official request content, presence error text, provider output, config paths, endpoints, or auth refs.
 
+`/api/local-resources` is a separate read-only local resource snapshot for the
+operator console. It runs a bounded `ps` read, uses a short cache, and reports
+only load average, CPU count, aggregate tracked-process CPU/RSS, and sanitized
+process rows with `pid`, `ppid`, `comm`, `role`, `cpu_pct`, and `rss_kb`.
+`comm` is a basename only; argv, env, cwd, config paths, auth refs, endpoint
+URLs, prompts, provider output, log tails, account state, and full session ids
+must not appear in the payload. The endpoint never starts, stops, restarts,
+recovers, probes, or heartbeats providers. Use
+`python3 -m agentsassemble.cli live-agent local-resources --server
+http://127.0.0.1:8765` for the same snapshot from the CLI, or add
+`--fail-on-degraded` when automation should treat high local load as a warning
+exit.
+
 The same health snapshot includes shared meeting memory health evidence in `shared_memory` for ready resident sessions. It reports only official event, open-question, and action-item counts without official reply text, including safe meeting/group ids, memory-bearing ready-session counts, and the last official event id. This lets operators see whether long-running resident sessions have current shared memory context without turning the health endpoint into a transcript, prompt, or provider-output surface.
 
 The same health snapshot includes host-admission health evidence in `admission`.

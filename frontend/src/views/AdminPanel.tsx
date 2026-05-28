@@ -1,14 +1,17 @@
 import { useCallback } from "react";
-import { Activity, Shield, X } from "lucide-react";
-import { fetchHealth, type HealthStatus } from "../api";
+import { Activity, Cpu, Shield, X } from "lucide-react";
+import { fetchHealth, fetchLocalResources, type HealthStatus, type LocalResourceStatus } from "../api";
 import { usePoll } from "../hooks";
 
 export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const healthFetcher = useCallback(() => fetchHealth(), []);
+  const resourcesFetcher = useCallback(() => fetchLocalResources(), []);
   const [health] = usePoll<HealthStatus>(healthFetcher, 8000);
+  const [resources, resourcesLoading, resourcesError] = usePoll<LocalResourceStatus>(resourcesFetcher, 8000);
 
   const agents = health?.agents;
   const ok = health?.status === "ok";
+  const resourceOk = resources?.status === "ok";
 
   return (
     <div className="ops-panel ops-cut mx-auto flex min-h-full max-w-5xl flex-col overflow-hidden">
@@ -79,6 +82,81 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
             </div>
           ) : (
             <p className="text-[13px] text-text-muted">연결 확인 중...</p>
+          )}
+        </section>
+
+        <section className="ops-inner rounded-xl p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Cpu size={17} className={resourceOk ? "text-online" : "text-idle"} />
+            <h2 className="text-[15px] font-black">로컬 리소스</h2>
+          </div>
+          {resources ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 text-[13px] text-text-secondary sm:grid-cols-2 lg:grid-cols-4">
+                <div className="ops-inner rounded-lg px-4 py-3">
+                  상태{" "}
+                  <span className={`font-black ${resourceOk ? "text-online" : "text-idle"}`}>
+                    {resourceOk ? "정상" : resources.status}
+                  </span>
+                </div>
+                <div className="ops-inner rounded-lg px-4 py-3">
+                  Load{" "}
+                  <span className="font-black text-text-primary">
+                    {resources.load_average.one}/{resources.load_average.five}
+                  </span>
+                </div>
+                <div className="ops-inner rounded-lg px-4 py-3">
+                  CPU{" "}
+                  <span className="font-black text-text-primary">{resources.cpu_count}</span>
+                </div>
+                <div className="ops-inner rounded-lg px-4 py-3">
+                  추적 프로세스{" "}
+                  <span className="font-black text-text-primary">
+                    {resources.summary.process_count}
+                  </span>
+                </div>
+              </div>
+              {resources.summary.attention.length > 0 && (
+                <p className="rounded-lg border border-idle/25 bg-idle/10 px-4 py-3 text-[13px] font-semibold text-idle preserve-words">
+                  주의: {resources.summary.attention.slice(0, 3).join(", ")}
+                  {resources.summary.attention.length > 3 &&
+                    ` 외 ${resources.summary.attention.length - 3}건`}
+                </p>
+              )}
+              <div className="overflow-hidden rounded-lg border border-line/60">
+                <div className="grid grid-cols-[80px_1fr_96px_96px] gap-2 border-b border-line/60 bg-panel/45 px-3 py-2 text-[11px] font-black uppercase text-text-muted">
+                  <span>PID</span>
+                  <span>프로세스</span>
+                  <span>CPU</span>
+                  <span>RSS</span>
+                </div>
+                {resources.processes.slice(0, 8).map((process) => (
+                  <div
+                    key={`${process.pid}-${process.comm}`}
+                    className="grid grid-cols-[80px_1fr_96px_96px] gap-2 border-b border-line/35 px-3 py-2 text-[12px] text-text-secondary last:border-b-0"
+                  >
+                    <span className="font-mono text-text-muted">{process.pid}</span>
+                    <span className="min-w-0">
+                      <span className="font-bold text-text-primary preserve-words">{process.comm}</span>
+                      <span className="ml-2 text-text-muted">{process.role}</span>
+                    </span>
+                    <span>{process.cpu_pct.toFixed(1)}%</span>
+                    <span>{(process.rss_kb / 1024).toFixed(1)} MB</span>
+                  </div>
+                ))}
+                {resources.processes.length === 0 && (
+                  <p className="px-3 py-3 text-[13px] text-text-muted">표시할 로컬 프로세스가 없습니다.</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-[13px] text-text-muted">
+              {resourcesError
+                ? "로컬 리소스 정보를 읽지 못했습니다."
+                : resourcesLoading
+                  ? "리소스 확인 중..."
+                  : "리소스 정보가 없습니다."}
+            </p>
           )}
         </section>
 

@@ -852,6 +852,18 @@ def build_parser() -> argparse.ArgumentParser:
     live_health.add_argument("--timeout", type=parse_nonnegative_float, default=30.0)
     live_health.add_argument("--poll-interval", type=parse_nonnegative_float, default=2.0)
 
+    live_local_resources = live_agent_subparsers.add_parser(
+        "local-resources",
+        parents=[live_server],
+        help="Read a sanitized local resource snapshot without controlling processes.",
+    )
+    live_local_resources.add_argument("--json", action="store_true", dest="as_json", help="Print the raw JSON resource payload.")
+    live_local_resources.add_argument(
+        "--fail-on-degraded",
+        action="store_true",
+        help="Exit 1 when local resource status is not ok.",
+    )
+
     live_preflight = live_agent_subparsers.add_parser(
         "preflight",
         help="Check a resident live-agent config without executing provider commands.",
@@ -1826,6 +1838,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_wait_next(args)
         if args.live_agent_command == "health":
             return _run_live_agent_health(args)
+        if args.live_agent_command == "local-resources":
+            return _run_live_agent_local_resources(args)
         if args.live_agent_command == "preflight":
             return _run_live_agent_preflight(args)
         if args.live_agent_command == "discover":
@@ -3400,6 +3414,58 @@ def _live_agent_health_wait_satisfied(payload: dict[str, object], args: argparse
             return False
         return not args.fail_on_degraded or payload.get("status") == "ok"
     return payload.get("status") == "ok"
+
+
+def _run_live_agent_local_resources(args: argparse.Namespace) -> int:
+    payload = _request_json(_server_url(args.server, "/api/local-resources"))
+    _print_live_agent_local_resources_payload(payload, as_json=args.as_json)
+    return 1 if args.fail_on_degraded and payload.get("status") != "ok" else 0
+
+
+def _print_live_agent_local_resources_payload(payload: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(_format_live_agent_local_resources(payload))
+
+
+def _format_live_agent_local_resources(payload: dict[str, object]) -> str:
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    load_average = payload.get("load_average") if isinstance(payload.get("load_average"), dict) else {}
+    processes = payload.get("processes") if isinstance(payload.get("processes"), list) else []
+    lines = [
+        f"local resources: {payload.get('status') or 'unknown'}",
+        (
+            f"load: {load_average.get('one', 0)} / {load_average.get('five', 0)} / "
+            f"{load_average.get('fifteen', 0)} on {payload.get('cpu_count') or 0} CPUs"
+        ),
+        (
+            f"tracked processes: {summary.get('process_count', 0)}, "
+            f"cpu {summary.get('total_cpu_pct', 0)}%, rss {_format_kb_as_mb(summary.get('total_rss_kb'))}"
+        ),
+    ]
+    attention = summary.get("attention") if isinstance(summary.get("attention"), list) else []
+    if attention:
+        lines.append(f"attention: {_attention_summary(attention)}")
+    for process in processes[:8]:
+        if not isinstance(process, dict):
+            continue
+        lines.append(
+            (
+                f"- {process.get('pid')}: {process.get('comm') or 'unknown'} "
+                f"{process.get('role') or 'other'} "
+                f"cpu {process.get('cpu_pct', 0)}% rss {_format_kb_as_mb(process.get('rss_kb'))}"
+            )
+        )
+    return "\n".join(lines)
+
+
+def _format_kb_as_mb(value: object) -> str:
+    try:
+        kb = float(value or 0)
+    except (TypeError, ValueError):
+        kb = 0.0
+    return f"{kb / 1024:.1f} MB"
 
 
 def _find_live_agent_health_session(

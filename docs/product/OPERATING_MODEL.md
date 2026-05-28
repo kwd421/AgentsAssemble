@@ -211,6 +211,21 @@ does not fsync, and reports local append/read/tail latency plus a synthetic flow
 speaking-distribution imbalance ratio. It intentionally does not claim SSE
 delivery, queue wait, or backpressure coverage yet.
 
+## Local Resource Visibility
+
+The room may show a small local resource monitor for operator awareness, but it
+is read-only observability, not a scheduler or process manager. The resource
+surface can report sanitized process basenames, pid/ppid, CPU percent, RSS,
+load average, CPU count, and whether a process is an AgentsAssemble child or a
+supervised resident. It must not expose argv, env, cwd, absolute paths, config
+paths, endpoint URLs, auth refs, prompts, provider output, log tails, account
+state, or provider session ids.
+
+Resource polling should stay low pressure: cache OS process snapshots briefly,
+cap the displayed process list, and avoid adding dependencies for the local v1
+room. The monitor must not start, stop, restart, probe, recover, or otherwise
+mutate provider processes; those actions remain explicit operator controls.
+
 ## Future Roadmap Board
 
 The roadmap page should be separate from the live meeting progress view.

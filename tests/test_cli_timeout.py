@@ -140,6 +140,44 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("React/Vite opt-in UI: http://127.0.0.1:5173", output)
         self.assertIn("not the default entry point", output)
 
+    def test_live_agent_local_resources_parser(self):
+        args = build_parser().parse_args(
+            ["live-agent", "local-resources", "--server", "http://room.local", "--json"]
+        )
+
+        self.assertEqual(args.live_agent_command, "local-resources")
+        self.assertEqual(args.server, "http://room.local")
+        self.assertTrue(args.as_json)
+
+    def test_live_agent_local_resources_prints_json_without_mutating_room(self):
+        payload = {
+            "status": "ok",
+            "summary": {"process_count": 1, "total_cpu_pct": 2.5, "total_rss_kb": 4096, "attention": []},
+            "processes": [{"pid": 123, "comm": "python3", "role": "agentsassemble", "cpu_pct": 2.5, "rss_kb": 4096}],
+        }
+        stdout = StringIO()
+        with patch.object(cli_module, "_request_json", return_value=payload) as request_json:
+            with redirect_stdout(stdout):
+                exit_code = main(["live-agent", "local-resources", "--server", "http://room.local", "--json"])
+
+        self.assertEqual(exit_code, 0)
+        request_json.assert_called_once_with("http://room.local/api/local-resources")
+        self.assertEqual(json.loads(stdout.getvalue()), payload)
+
+    def test_live_agent_local_resources_fail_on_degraded(self):
+        payload = {
+            "status": "degraded",
+            "summary": {"process_count": 0, "total_cpu_pct": 0.0, "total_rss_kb": 0, "attention": ["load_average_high"]},
+            "processes": [],
+        }
+        stdout = StringIO()
+        with patch.object(cli_module, "_request_json", return_value=payload):
+            with redirect_stdout(stdout):
+                exit_code = main(["live-agent", "local-resources", "--fail-on-degraded"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("local resources: degraded", stdout.getvalue())
+
     def test_demo_accepts_meeting_mode_and_moderator_options(self):
         args = build_parser().parse_args(["demo", "--meeting-mode", "free-chat", "--moderator", "off"])
 
