@@ -17,6 +17,10 @@ CURSOR_SUBPROCESS_TIMEOUT = "cursor_subprocess_timeout"
 CURSOR_SUBPROCESS_NONZERO = "cursor_subprocess_nonzero"
 CURSOR_EMPTY_TEXT = "cursor_empty_text"
 CURSOR_INVALID_CHAT_ID = "cursor_invalid_chat_id"
+CURSOR_TERMINAL_SESSION_SUPERSEDED_MESSAGE = (
+    "cursor-agent terminal_session residents are superseded by cursor-agent-live-session; "
+    "use provider_kind cursor_live_session with live_session connection_kind."
+)
 
 
 class CursorResidentRuntimeError(RuntimeError):
@@ -162,7 +166,7 @@ def cursor_command_check(command: list[str]) -> dict[str, str]:
             "status": "failed",
             "message": "cursor_live_session command must contain only the cursor-agent executable.",
         }
-    if Path(executable).name in {"cursor-agent", "cursor-agent.exe"}:
+    if _is_cursor_agent_executable(executable):
         return {
             "id": "cursor_command",
             "status": "ok",
@@ -173,6 +177,40 @@ def cursor_command_check(command: list[str]) -> dict[str, str]:
         "status": "failed",
         "message": "cursor_live_session command executable must be named cursor-agent.",
     }
+
+
+def cursor_terminal_session_superseded_check(
+    provider_kind: str,
+    connection_kind: str,
+    command: list[str],
+) -> dict[str, str] | None:
+    if (
+        provider_kind == "cursor"
+        and connection_kind == "terminal_session"
+        and command
+        and _is_cursor_agent_executable(str(command[0]))
+    ):
+        return {
+            "id": "cursor_terminal_session",
+            "status": "failed",
+            "message": CURSOR_TERMINAL_SESSION_SUPERSEDED_MESSAGE,
+        }
+    return None
+
+
+def cursor_terminal_session_superseded_error(
+    provider_kind: str,
+    connection_kind: str,
+    command: list[str],
+) -> str:
+    check = cursor_terminal_session_superseded_check(provider_kind, connection_kind, command)
+    if check is None:
+        return ""
+    return check["message"]
+
+
+def _is_cursor_agent_executable(executable: str) -> bool:
+    return Path(executable).name in {"cursor-agent", "cursor-agent.exe"}
 
 
 def clean_cursor_chat_id(value: object) -> str:
@@ -196,4 +234,3 @@ def _text(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return str(value)
-

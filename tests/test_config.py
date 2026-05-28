@@ -361,7 +361,7 @@ class ConfigTests(unittest.TestCase):
             [config.agent_id for config in resident_configs],
             [
                 "claude-code-live",
-                "cursor-agent-live",
+                "cursor-agent-live-session",
                 "grok-build-live",
                 "openclaw-cli-live",
             ],
@@ -370,7 +370,7 @@ class ConfigTests(unittest.TestCase):
             {config.agent_id: config.provider_kind for config in resident_configs},
             {
                 "claude-code-live": "claude_code",
-                "cursor-agent-live": "cursor",
+                "cursor-agent-live-session": "cursor_live_session",
                 "grok-build-live": "grok_build_cli",
                 "openclaw-cli-live": "openclaw_cli",
             },
@@ -379,7 +379,7 @@ class ConfigTests(unittest.TestCase):
             {config.agent_id: config.connection_kind for config in resident_configs},
             {
                 "claude-code-live": "terminal_session",
-                "cursor-agent-live": "terminal_session",
+                "cursor-agent-live-session": "live_session",
                 "grok-build-live": "terminal_session",
                 "openclaw-cli-live": "terminal_session",
             },

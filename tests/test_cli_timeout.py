@@ -5734,7 +5734,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(cli_module._live_agent_continuity_proof_group_exit_code({"status": "failed"}), 1)
         self.assertEqual(cli_module._live_agent_continuity_proof_group_exit_code({"status": "approval_required"}), 1)
 
-    def test_live_agent_continuity_proof_group_provider_staging_is_audit_only_without_approval(self):
+    def test_live_agent_continuity_proof_group_provider_staging_requires_cursor_approval(self):
         stdout = StringIO()
 
         with patch("sys.stdout", stdout):
@@ -5748,13 +5748,21 @@ class CliTimeoutTests(unittest.TestCase):
                 ]
             )
 
-        self.assertEqual(exit_code, 0)
+        self.assertEqual(exit_code, 1)
         payload = json.loads(stdout.getvalue())
-        self.assertEqual(payload["status"], "unsupported")
+        self.assertEqual(payload["status"], "approval_required")
         self.assertEqual(payload["total_count"], 4)
-        self.assertEqual(payload["unsupported_count"], 4)
-        self.assertEqual(payload["approval_required_count"], 0)
-        self.assertEqual({item["status"] for item in payload["results"]}, {"unsupported"})
+        self.assertEqual(payload["unsupported_count"], 3)
+        self.assertEqual(payload["approval_required_count"], 1)
+        self.assertEqual(
+            {item["agent_id"]: item["status"] for item in payload["results"]},
+            {
+                "claude-code-live": "unsupported",
+                "cursor-agent-live-session": "approval_required",
+                "grok-build-live": "unsupported",
+                "openclaw-cli-live": "unsupported",
+            },
+        )
 
     def test_live_agent_real_session_smoke_requires_matching_config_paths(self):
         with self.assertRaises(SystemExit):
@@ -13618,6 +13626,29 @@ class CliTimeoutTests(unittest.TestCase):
             self.assertEqual(runner.__class__.__name__, "CursorResidentCommandRunner")
         finally:
             cli_module._close_command_runner(runner)
+
+    def test_live_agent_run_rejects_superseded_cursor_terminal_session(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run",
+                "--agent-id",
+                "cursor-agent-live",
+                "--provider-kind",
+                "cursor",
+                "--connection-kind",
+                "terminal_session",
+                "--command",
+                "cursor-agent",
+                "--max-ticks",
+                "1",
+            ]
+        )
+
+        config = cli_module.config_from_args(args)
+
+        with self.assertRaisesRegex(ValueError, "cursor-agent-live-session"):
+            cli_module._validate_resident_config(config)
 
     def test_live_agent_run_rejects_non_resident_connection_kind(self):
         stderr = StringIO()

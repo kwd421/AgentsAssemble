@@ -852,6 +852,60 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 agent["checks"],
             )
 
+    def test_preflight_rejects_superseded_cursor_terminal_session(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "cursor-agent-live",
+                                "provider_kind": "cursor",
+                                "connection_kind": "terminal_session",
+                                "command": ["cursor-agent"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch("agentsassemble.live_agent_preflight.terminal_sessions_supported", return_value=True):
+                report = preflight_live_agent_config(
+                    config_path,
+                    command_resolver=lambda command: "/usr/local/bin/cursor-agent" if command == "cursor-agent" else None,
+                )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            self.assertIn(
+                {
+                    "id": "cursor_terminal_session",
+                    "status": "failed",
+                    "message": (
+                        "cursor-agent terminal_session residents are superseded by cursor-agent-live-session; "
+                        "use provider_kind cursor_live_session with live_session connection_kind."
+                    ),
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_setup_error_rejects_superseded_cursor_terminal_session(self):
+        config = self.resident_config(
+            agent_id="cursor-agent-live",
+            provider_kind="cursor",
+            connection_kind="terminal_session",
+            command=["cursor-agent"],
+        )
+
+        error = resident_config_setup_error(
+            config,
+            command_resolver=lambda command: "/usr/local/bin/cursor-agent" if command == "cursor-agent" else None,
+        )
+
+        self.assertIn("cursor-agent-live-session", error)
+
     def test_preflight_rejects_cursor_live_session_with_extra_arguments(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "live-agents.json"

@@ -18,7 +18,10 @@ from pathlib import Path
 
 from agentsassemble.bridges.claude_code_bridge import serve_bridge
 from agentsassemble.codex_resident import CodexResidentCommandRunner
-from agentsassemble.cursor_resident import CursorResidentCommandRunner
+from agentsassemble.cursor_resident import (
+    CursorResidentCommandRunner,
+    cursor_terminal_session_superseded_error,
+)
 from agentsassemble.grok_resident import GrokResidentCommandRunner
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.codex_sessions import (
@@ -6882,6 +6885,13 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
         raise ValueError("cursor_live_session resident requires live_session connection_kind.")
     if config.provider_kind == "grok_live_session" and config.connection_kind != "live_session":
         raise ValueError("grok_live_session resident requires live_session connection_kind.")
+    cursor_superseded_error = cursor_terminal_session_superseded_error(
+        config.provider_kind,
+        config.connection_kind,
+        config.command,
+    )
+    if cursor_superseded_error:
+        raise ValueError(cursor_superseded_error)
     if config.connection_kind == "remote_bridge":
         if not config.endpoint:
             raise ValueError("Remote bridge resident requires --endpoint.")

@@ -293,6 +293,11 @@ for the local install with safe counts only. This is still not a Cursor
 official-turn proof, restart proof, recover proof, tool-safety proof, future
 billing proof, production-readiness proof, or sandbox proof.
 
+Discovery keeps the older generic `cursor-agent` terminal-session row visible as
+`superseded` evidence/back-compat only. It is not written into generated resident
+configs, is not an approval target, and fails closed during preflight or run
+validation with a message pointing operators to `cursor-agent-live-session`.
+
 The resident launch contract now has a small `SandboxLauncher` abstraction. `NoSandboxLauncher` declares `sandbox_enforcement: "advisory"` and does not constrain the child process. Codex uses the Codex read-only launcher and declares `codex_readonly`. Only a provider launched through a verified OS sandbox, restricted worktree, environment scrubber, or equivalent hard boundary may declare `os_sandboxed`.
 
 The `meeting_read_only` permissions sent to `local_cli` and `remote_http_bridge` are currently advisory unless the caller also provides a real sandbox or constrained execution environment. Public artifacts should record this honestly as `enforcement: advisory` or `sandbox_enforcement: "advisory"` depending on the payload shape. Do not claim filesystem, credential, git, or implementation isolation is enforced for arbitrary CLI or bridge processes until a sandboxed launch path exists and is verified.

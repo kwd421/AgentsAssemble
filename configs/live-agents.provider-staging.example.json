@@ -17,15 +17,14 @@
       "timeout_seconds": 120
     },
     {
-      "agent_id": "cursor-agent-live",
-      "display_name": "Cursor Agent",
-      "provider_kind": "cursor",
-      "connection_kind": "terminal_session",
+      "agent_id": "cursor-agent-live-session",
+      "display_name": "Cursor Agent Live Session",
+      "provider_kind": "cursor_live_session",
+      "connection_kind": "live_session",
       "meeting_id": "",
       "engagement_mode": "moderator_called",
       "command": ["cursor-agent"],
-      "terminal_idle_timeout": 0.75,
-      "timeout_seconds": 120
+      "timeout_seconds": 180
     },
     {
       "agent_id": "grok-build-live",

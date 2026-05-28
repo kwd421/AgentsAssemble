@@ -71,7 +71,15 @@ def build_discovered_live_agent_config(
         supported = _candidate_supported(spec, terminal_supported=terminal_supported)
         legacy = bool(spec.get("legacy"))
         unsupported_evidence = bool(spec.get("unsupported_evidence"))
-        included = available and supported and (not legacy or include_legacy_gemini) and not unsupported_evidence
+        superseded = available and bool(spec.get("superseded_by"))
+        superseded_reason = str(spec.get("superseded_reason") or "superseded")
+        included = (
+            available
+            and supported
+            and (not legacy or include_legacy_gemini)
+            and not unsupported_evidence
+            and not superseded
+        )
         reason = (
             "included"
             if included
@@ -80,6 +88,8 @@ def build_discovered_live_agent_config(
                 supported=supported,
                 legacy=legacy,
                 unsupported_evidence=unsupported_evidence,
+                superseded=superseded,
+                superseded_reason=superseded_reason,
             )
         )
         entry_status = _entry_status(
@@ -88,27 +98,29 @@ def build_discovered_live_agent_config(
             included=included,
             legacy=legacy,
             unsupported_evidence=unsupported_evidence,
+            superseded=superseded,
         )
-        discoveries.append(
-            {
-                "command": command,
-                "agent_id": spec["agent_id"],
-                "provider_kind": spec["provider_kind"],
-                "connection_kind": spec["connection_kind"],
-                "entry_mode": _entry_mode(spec),
-                "entry_status": entry_status,
-                "join_semantics": spec["join_semantics"],
-                "context_durability": spec["context_durability"],
-                "sandbox_enforcement": spec["sandbox_enforcement"],
-                "evidence_basis": spec["evidence_basis"],
-                "operator_action": _operator_action(entry_status),
-                "requires_approval": _requires_approval(entry_status),
-                "safety_note": _safety_note(spec, entry_status),
-                "available": available,
-                "included": included,
-                "reason": reason,
-            }
-        )
+        discovery = {
+            "command": command,
+            "agent_id": spec["agent_id"],
+            "provider_kind": spec["provider_kind"],
+            "connection_kind": spec["connection_kind"],
+            "entry_mode": _entry_mode(spec),
+            "entry_status": entry_status,
+            "join_semantics": spec["join_semantics"],
+            "context_durability": spec["context_durability"],
+            "sandbox_enforcement": spec["sandbox_enforcement"],
+            "evidence_basis": spec["evidence_basis"],
+            "operator_action": _operator_action(entry_status),
+            "requires_approval": _requires_approval(entry_status),
+            "safety_note": _safety_note(spec, entry_status),
+            "available": available,
+            "included": included,
+            "reason": reason,
+        }
+        if superseded:
+            discovery["superseded_by"] = str(spec.get("superseded_by") or "")
+        discoveries.append(discovery)
         if included:
             agents.append(_agent_entry(spec, meeting_id=meeting_id, engagement_mode=engagement_mode))
     config = {
@@ -270,6 +282,8 @@ def _candidate_specs() -> list[dict[str, Any]]:
             "connection_kind": "terminal_session",
             "terminal_idle_timeout": 0.75,
             "timeout_seconds": 120,
+            "superseded_by": "cursor-agent-live-session",
+            "superseded_reason": "superseded_by_cursor_live_session",
             **TERMINAL_PROMPT_BRIDGE_CONTRACT,
         },
         {
@@ -360,11 +374,21 @@ def _agent_entry(spec: dict[str, Any], *, meeting_id: str, engagement_mode: str)
     return entry
 
 
-def _discovery_skip_reason(*, available: bool, supported: bool, legacy: bool, unsupported_evidence: bool) -> str:
+def _discovery_skip_reason(
+    *,
+    available: bool,
+    supported: bool,
+    legacy: bool,
+    unsupported_evidence: bool,
+    superseded: bool,
+    superseded_reason: str,
+) -> str:
     if not available:
         return "not_found"
     if unsupported_evidence:
         return "unsupported_evidence"
+    if superseded:
+        return superseded_reason
     if not supported:
         return "terminal_unsupported"
     if legacy:
@@ -372,11 +396,21 @@ def _discovery_skip_reason(*, available: bool, supported: bool, legacy: bool, un
     return "not_included"
 
 
-def _entry_status(*, available: bool, supported: bool, included: bool, legacy: bool, unsupported_evidence: bool) -> str:
+def _entry_status(
+    *,
+    available: bool,
+    supported: bool,
+    included: bool,
+    legacy: bool,
+    unsupported_evidence: bool,
+    superseded: bool,
+) -> str:
     if included:
         return "ready"
     if available and unsupported_evidence:
         return "unsupported_evidence"
+    if available and superseded:
+        return "superseded"
     if available and not supported:
         return "unsupported"
     if available and legacy:
@@ -411,6 +445,8 @@ def _operator_action(entry_status: str) -> str:
         return "auto_join"
     if entry_status == "unsupported_evidence":
         return "review_evidence"
+    if entry_status == "superseded":
+        return "use_cursor_live_session"
     if entry_status == "legacy":
         return "include_legacy_gemini"
     if entry_status == "missing":
@@ -429,6 +465,9 @@ def _safety_note(spec: dict[str, Any], entry_status: str) -> str:
         return "CLI executable was not found on PATH."
     if entry_status == "unsupported_evidence":
         return str(spec.get("unsupported_note") or "Candidate is discovery evidence only and is not startable.")
+    if entry_status == "superseded":
+        superseded_by = str(spec.get("superseded_by") or "the provider-specific live-session row")
+        return f"This discovery row is not startable; use {superseded_by} for provider-owned Cursor context."
     if entry_status == "unsupported":
         return "PTY terminal sessions are not available on this host."
     if entry_status == "legacy":

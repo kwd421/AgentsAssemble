@@ -19,6 +19,8 @@ from agentsassemble.codex_resident import (
 from agentsassemble.cursor_resident import (
     cursor_command_check,
     cursor_provider_connection_check,
+    cursor_terminal_session_superseded_check,
+    cursor_terminal_session_superseded_error,
     default_cursor_resident_command,
 )
 from agentsassemble.grok_resident import (
@@ -128,6 +130,13 @@ def _preflight_agent(
     provider_connection_check = cursor_provider_connection_check(config.provider_kind, config.connection_kind)
     if provider_connection_check is not None:
         checks.append(provider_connection_check)
+    cursor_superseded_check = cursor_terminal_session_superseded_check(
+        config.provider_kind,
+        config.connection_kind,
+        config.command,
+    )
+    if cursor_superseded_check is not None:
+        checks.append(cursor_superseded_check)
     provider_connection_check = grok_provider_connection_check(config.provider_kind, config.connection_kind)
     if provider_connection_check is not None:
         checks.append(provider_connection_check)
@@ -205,6 +214,13 @@ def resident_config_setup_error(
     )
     if config.connection_kind == "remote_bridge":
         return ""
+    cursor_superseded_error = cursor_terminal_session_superseded_error(
+        config.provider_kind,
+        config.connection_kind,
+        config.command,
+    )
+    if cursor_superseded_error:
+        return cursor_superseded_error
     command_check = _command_check(config.command, resolver)
     if command_check["status"] != "ok":
         return str(command_check.get("message") or "Command is not executable.")
