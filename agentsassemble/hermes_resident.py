@@ -68,7 +68,7 @@ class HermesResidentCommandRunner:
                 "Hermes live session did not expose a safe session id.",
                 category=HERMES_MISSING_SESSION_ID,
             )
-        reply = _text(getattr(completed, "stdout", "")).strip()
+        reply = _visible_hermes_reply(getattr(completed, "stdout", ""))
         if not reply:
             raise HermesResidentValueError(
                 "Hermes live session returned an empty reply.",
@@ -186,6 +186,21 @@ def _safe_source(meeting_id: str, agent_id: str) -> str:
     raw = f"agentsassemble-{meeting_id or 'room'}-{agent_id or 'hermes'}"
     source = re.sub(r"[^A-Za-z0-9_.:-]+", "-", raw.strip())
     return source[:100] or "agentsassemble-hermes"
+
+
+def _visible_hermes_reply(stdout: object) -> str:
+    text = _text(stdout).strip()
+    if not text:
+        return ""
+    summary_marker = "Requesting summary..."
+    marker_index = text.find(summary_marker)
+    if marker_index >= 0 and marker_index < 500:
+        prefix = text[:marker_index]
+        if "Reached maximum iterations" in prefix or "Resumed session" in prefix:
+            text = text[marker_index + len(summary_marker) :].strip()
+    text = re.sub(r"^\s*\S?\s*Resumed session [^\n]*?\)\s*", "", text).strip()
+    text = re.sub(r"^\([^)]* timed out after [^)]*\)\s*", "", text).strip()
+    return text
 
 
 def _text(value: Any) -> str:

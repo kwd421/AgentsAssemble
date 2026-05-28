@@ -68,6 +68,27 @@ class HermesResidentTests(unittest.TestCase):
         self.assertNotIn("--resume", calls[0]["command"])
         self.assertIn("--resume", calls[1]["command"])
 
+    def test_runner_strips_hermes_status_prefix_from_visible_reply(self):
+        session_id = "hermes-session-abc123"
+
+        def status_prefixed(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    "\u21bb Resumed session 20260528_191203_85b745 (11 user messages, 22 total messages) "
+                    "(clarify timed out after 120s - agent will decide) "
+                    "Reached maximum iterations (1). Requesting summary... "
+                    "visible reply"
+                ),
+                stderr=f"session_id: {session_id}\n",
+            )
+
+        runner = HermesResidentCommandRunner(config(session_id=session_id), command_runner=status_prefixed, cwd=Path.cwd())
+        reply = runner([], "prompt", timeout_seconds=45)
+
+        self.assertEqual(reply, "visible reply")
+
     def test_runner_reports_safe_failures(self):
         def no_session(command, **kwargs):
             return subprocess.CompletedProcess(command, 0, stdout="READY", stderr="")
