@@ -20,6 +20,7 @@ from agentsassemble.bridges.claude_code_bridge import serve_bridge
 from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.cursor_resident import (
     CursorResidentCommandRunner,
+    cursor_generic_resident_guard_error,
     cursor_terminal_session_superseded_error,
 )
 from agentsassemble.grok_resident import GrokResidentCommandRunner
@@ -6892,6 +6893,9 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
     )
     if cursor_superseded_error:
         raise ValueError(cursor_superseded_error)
+    cursor_generic_error = cursor_generic_resident_guard_error(config.provider_kind, config.connection_kind)
+    if cursor_generic_error:
+        raise ValueError(cursor_generic_error)
     if config.connection_kind == "remote_bridge":
         if not config.endpoint:
             raise ValueError("Remote bridge resident requires --endpoint.")

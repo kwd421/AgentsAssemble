@@ -875,10 +875,22 @@ class LiveAgentPreflightTests(unittest.TestCase):
                 report = preflight_live_agent_config(
                     config_path,
                     command_resolver=lambda command: "/usr/local/bin/cursor-agent" if command == "cursor-agent" else None,
-                )
+            )
 
             self.assertEqual(report["status"], "failed")
-            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 2})
+            self.assertIn(
+                {
+                    "id": "provider_connection_kind",
+                    "status": "failed",
+                    "message": (
+                        "provider_kind cursor is a planned generic provider and is not a runnable resident for "
+                        "terminal_session or live_session; use cursor-agent-live-session with provider_kind "
+                        "cursor_live_session and live_session connection_kind."
+                    ),
+                },
+                report["agents"][0]["checks"],
+            )
             self.assertIn(
                 {
                     "id": "cursor_terminal_session",
@@ -905,6 +917,123 @@ class LiveAgentPreflightTests(unittest.TestCase):
         )
 
         self.assertIn("cursor-agent-live-session", error)
+
+    def test_preflight_rejects_generic_cursor_live_session_before_jsonl_runner(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "cursor-generic-live",
+                                "provider_kind": "cursor",
+                                "connection_kind": "live_session",
+                                "command": ["cursor-agent"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = preflight_live_agent_config(
+                config_path,
+                command_resolver=lambda command: "/usr/local/bin/cursor-agent" if command == "cursor-agent" else None,
+            )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            self.assertIn(
+                {
+                    "id": "provider_connection_kind",
+                    "status": "failed",
+                    "message": (
+                        "provider_kind cursor is a planned generic provider and is not a runnable resident for "
+                        "terminal_session or live_session; use cursor-agent-live-session with provider_kind "
+                        "cursor_live_session and live_session connection_kind."
+                    ),
+                },
+                report["agents"][0]["checks"],
+            )
+
+    def test_preflight_rejects_generic_cursor_terminal_session_with_renamed_wrapper(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "live-agents.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "agents": [
+                            {
+                                "agent_id": "cursor-wrapper-live",
+                                "provider_kind": "cursor",
+                                "connection_kind": "terminal_session",
+                                "command": ["custom-cursor-wrapper"],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch("agentsassemble.live_agent_preflight.terminal_sessions_supported", return_value=True):
+                report = preflight_live_agent_config(
+                    config_path,
+                    command_resolver=(
+                        lambda command: "/usr/local/bin/custom-cursor-wrapper"
+                        if command == "custom-cursor-wrapper"
+                        else None
+                    ),
+                )
+
+            self.assertEqual(report["status"], "failed")
+            self.assertEqual(report["summary"], {"agents": 1, "failed_agents": 1, "checks_failed": 1})
+            checks = report["agents"][0]["checks"]
+            self.assertIn(
+                {
+                    "id": "provider_connection_kind",
+                    "status": "failed",
+                    "message": (
+                        "provider_kind cursor is a planned generic provider and is not a runnable resident for "
+                        "terminal_session or live_session; use cursor-agent-live-session with provider_kind "
+                        "cursor_live_session and live_session connection_kind."
+                    ),
+                },
+                checks,
+            )
+            self.assertNotIn("cursor_terminal_session", {check["id"] for check in checks})
+
+    def test_setup_error_rejects_generic_cursor_live_session(self):
+        config = self.resident_config(
+            agent_id="cursor-generic-live",
+            provider_kind="cursor",
+            connection_kind="live_session",
+            command=["cursor-agent"],
+        )
+
+        error = resident_config_setup_error(
+            config,
+            command_resolver=lambda command: "/usr/local/bin/cursor-agent" if command == "cursor-agent" else None,
+        )
+
+        self.assertIn("cursor_live_session", error)
+
+    def test_setup_error_rejects_generic_cursor_terminal_session_with_renamed_wrapper(self):
+        config = self.resident_config(
+            agent_id="cursor-wrapper-live",
+            provider_kind="cursor",
+            connection_kind="terminal_session",
+            command=["custom-cursor-wrapper"],
+        )
+
+        error = resident_config_setup_error(
+            config,
+            command_resolver=(
+                lambda command: "/usr/local/bin/custom-cursor-wrapper" if command == "custom-cursor-wrapper" else None
+            ),
+        )
+
+        self.assertIn("cursor_live_session", error)
 
     def test_preflight_rejects_cursor_live_session_with_extra_arguments(self):
         with tempfile.TemporaryDirectory() as temp_dir:

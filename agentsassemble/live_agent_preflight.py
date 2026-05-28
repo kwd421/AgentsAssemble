@@ -18,6 +18,7 @@ from agentsassemble.codex_resident import (
 )
 from agentsassemble.cursor_resident import (
     cursor_command_check,
+    cursor_generic_resident_guard_error,
     cursor_provider_connection_check,
     cursor_terminal_session_superseded_check,
     cursor_terminal_session_superseded_error,
@@ -221,6 +222,9 @@ def resident_config_setup_error(
     )
     if cursor_superseded_error:
         return cursor_superseded_error
+    cursor_generic_error = cursor_generic_resident_guard_error(config.provider_kind, config.connection_kind)
+    if cursor_generic_error:
+        return cursor_generic_error
     command_check = _command_check(config.command, resolver)
     if command_check["status"] != "ok":
         return str(command_check.get("message") or "Command is not executable.")

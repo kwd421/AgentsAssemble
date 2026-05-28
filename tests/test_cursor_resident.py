@@ -179,6 +179,10 @@ class CursorResidentTests(unittest.TestCase):
             },
         )
         self.assertEqual(cursor_provider_connection_check("local_cli", "live_session"), None)
+        self.assertEqual(cursor_provider_connection_check("cursor", "self_service"), None)
+        self.assertEqual(cursor_provider_connection_check("cursor", "remote_bridge"), None)
+        self.assertEqual(cursor_provider_connection_check("cursor", "terminal_session")["status"], "failed")
+        self.assertIn("cursor_live_session", cursor_provider_connection_check("cursor", "live_session")["message"])
         self.assertEqual(cursor_command_check(["cursor-agent"])["status"], "ok")
         self.assertEqual(cursor_command_check(["cursor-agent", "--print"])["status"], "failed")
         self.assertEqual(cursor_command_check(["cursor"])["status"], "failed")

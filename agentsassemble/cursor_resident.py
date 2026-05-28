@@ -21,6 +21,11 @@ CURSOR_TERMINAL_SESSION_SUPERSEDED_MESSAGE = (
     "cursor-agent terminal_session residents are superseded by cursor-agent-live-session; "
     "use provider_kind cursor_live_session with live_session connection_kind."
 )
+CURSOR_GENERIC_RESIDENT_UNSUPPORTED_MESSAGE = (
+    "provider_kind cursor is a planned generic provider and is not a runnable resident for "
+    "terminal_session or live_session; use cursor-agent-live-session with provider_kind "
+    "cursor_live_session and live_session connection_kind."
+)
 
 
 class CursorResidentRuntimeError(RuntimeError):
@@ -143,6 +148,9 @@ def default_cursor_resident_command(provider_kind: str, connection_kind: str, co
 
 
 def cursor_provider_connection_check(provider_kind: str, connection_kind: str) -> dict[str, str] | None:
+    generic_guard = cursor_generic_resident_guard_check(provider_kind, connection_kind)
+    if generic_guard is not None:
+        return generic_guard
     if provider_kind != "cursor_live_session":
         return None
     if connection_kind == "live_session":
@@ -156,6 +164,23 @@ def cursor_provider_connection_check(provider_kind: str, connection_kind: str) -
         "status": "failed",
         "message": "cursor_live_session residents require live_session connection_kind.",
     }
+
+
+def cursor_generic_resident_guard_check(provider_kind: str, connection_kind: str) -> dict[str, str] | None:
+    if provider_kind == "cursor" and connection_kind in {"terminal_session", "live_session"}:
+        return {
+            "id": "provider_connection_kind",
+            "status": "failed",
+            "message": CURSOR_GENERIC_RESIDENT_UNSUPPORTED_MESSAGE,
+        }
+    return None
+
+
+def cursor_generic_resident_guard_error(provider_kind: str, connection_kind: str) -> str:
+    check = cursor_generic_resident_guard_check(provider_kind, connection_kind)
+    if check is None:
+        return ""
+    return check["message"]
 
 
 def cursor_command_check(command: list[str]) -> dict[str, str]:

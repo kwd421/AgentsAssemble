@@ -13650,6 +13650,52 @@ class CliTimeoutTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cursor-agent-live-session"):
             cli_module._validate_resident_config(config)
 
+    def test_live_agent_run_rejects_generic_cursor_live_session(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run",
+                "--agent-id",
+                "cursor-generic-live",
+                "--provider-kind",
+                "cursor",
+                "--connection-kind",
+                "live_session",
+                "--command",
+                "cursor-agent",
+                "--max-ticks",
+                "1",
+            ]
+        )
+
+        config = cli_module.config_from_args(args)
+
+        with self.assertRaisesRegex(ValueError, "cursor_live_session"):
+            cli_module._validate_resident_config(config)
+
+    def test_live_agent_run_rejects_generic_cursor_terminal_session_wrapper(self):
+        args = build_parser().parse_args(
+            [
+                "live-agent",
+                "run",
+                "--agent-id",
+                "cursor-wrapper-live",
+                "--provider-kind",
+                "cursor",
+                "--connection-kind",
+                "terminal_session",
+                "--command",
+                "custom-cursor-wrapper",
+                "--max-ticks",
+                "1",
+            ]
+        )
+
+        config = cli_module.config_from_args(args)
+
+        with self.assertRaisesRegex(ValueError, "cursor_live_session"):
+            cli_module._validate_resident_config(config)
+
     def test_live_agent_run_rejects_non_resident_connection_kind(self):
         stderr = StringIO()
         with patch("sys.stderr", stderr):

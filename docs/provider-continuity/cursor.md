@@ -84,6 +84,15 @@ room start/probe/stop evidence for one resident, but this probe still does not
 prove official-turn quality, restart/recover behavior, tool safety, future
 billing/model availability, or OS-level sandboxing.
 
+`provider_kind: "cursor"` remains a generic/planned provider label, not a
+runnable resident contract. Hand-authored resident configs that combine
+`provider_kind: "cursor"` with `terminal_session` or generic JSONL
+`live_session` fail closed and point operators to `cursor-agent-live-session`
+with `provider_kind: "cursor_live_session"` and `connection_kind:
+"live_session"`. Future `self_service` or `remote_bridge` Cursor designs must
+be explicit wrappers that own their room loop; they are not implied by the
+generic Cursor label.
+
 Public docs must keep raw prompts, raw replies, full chat ids, continuity codes,
 code suffix values, absolute workspace paths, account data, billing data, and
 Cursor logs out of committed evidence.
