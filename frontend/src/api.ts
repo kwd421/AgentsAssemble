@@ -29,6 +29,11 @@ export interface LobbyEvent {
   attachments?: LobbyAttachmentRef[];
 }
 
+export interface LobbyPostResponse {
+  event?: LobbyEvent;
+  events: LobbyEvent[];
+}
+
 export interface LiveAgent {
   agent_id: string;
   display_name: string;
@@ -220,7 +225,7 @@ export interface MafiaGameResponse {
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
   return res.json();
 }
 
@@ -231,14 +236,72 @@ async function postJson<T>(url: string, body: object): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `${res.status} ${res.statusText}`);
+    throw new Error(await responseErrorMessage(res));
   }
   return res.json();
 }
 
+async function responseErrorMessage(res: Response): Promise<string> {
+  const fallback = `${res.status} ${res.statusText}`;
+  const text = await res.text().catch(() => "");
+  if (!text) return fallback;
+  try {
+    const payload = JSON.parse(text) as { error?: unknown; message?: unknown };
+    const message = payload.error || payload.message;
+    return typeof message === "string" && message.trim() ? message : fallback;
+  } catch {
+    return text;
+  }
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      const result = String(reader.result || "");
+      resolve(result.includes(",") ? result.split(",", 2)[1] : result);
+    });
+    reader.addEventListener("error", () => reject(reader.error || new Error("file read failed")));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function fetchLobby() {
   return fetchJson<{ events: LobbyEvent[] }>("/api/lobby");
+}
+
+export function uploadLobbyAttachment(file: File): Promise<LobbyAttachmentRef> {
+  return fileToBase64(file).then((dataBase64) => {
+    return postJson<{ attachment: LobbyAttachmentRef }>("/api/attachments", {
+      filename: file.name || "attachment.bin",
+      content_type: file.type || "application/octet-stream",
+      data_base64: dataBase64,
+    });
+  }).then((payload) => {
+    return payload.attachment;
+  });
+}
+
+export function postLobbyMessage({
+  name,
+  side = "mine",
+  kind = "message",
+  message,
+  attachments = [],
+}: {
+  name: string;
+  side?: string;
+  kind?: "message" | "ready" | "deploy";
+  message: string;
+  attachments?: LobbyAttachmentRef[];
+}) {
+  return postJson<LobbyPostResponse>("/api/lobby", {
+    name,
+    side,
+    kind,
+    message,
+    attachments,
+  });
 }
 
 export function fetchLiveAgentFlow() {

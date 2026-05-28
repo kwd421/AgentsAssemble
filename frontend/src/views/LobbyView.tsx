@@ -28,6 +28,7 @@ import {
   lastObservedSummary,
 } from "../lib/agentLabels";
 import LobbyAttachments from "./components/LobbyAttachments";
+import LobbyComposer from "./components/LobbyComposer";
 import ProviderTruthChips from "./components/ProviderTruthChips";
 
 const MODE_CARDS = [
@@ -325,6 +326,10 @@ export default function LobbyView({
 
   useEffect(() => subscribeLobby(handleSSE), [handleSSE]);
 
+  const handleLobbyPosted = useCallback((postedEvents: LobbyEvent[]) => {
+    setEvents((previous) => mergeLobbyEvents(previous, postedEvents));
+  }, []);
+
   async function handleStart() {
     if (!meetingId.trim()) {
       setError("회의 ID를 입력하세요");
@@ -449,6 +454,8 @@ export default function LobbyView({
             )}
           </div>
         </div>
+
+        <LobbyComposer onPosted={handleLobbyPosted} />
 
         <div className="ops-panel ops-cut p-4">
           <h2 className="mb-4 text-[15px] font-black">룸 모드 선택</h2>

@@ -119,7 +119,6 @@ class StaticUiAssetTests(unittest.TestCase):
     def test_react_attachment_renderer_uses_public_metadata_only(self):
         sources = "\n".join(
             [
-                frontend_file("api.ts"),
                 frontend_file("views/LobbyView.tsx"),
                 frontend_file("views/LiveView.tsx"),
                 frontend_file("views/components/LobbyAttachments.tsx"),
@@ -132,6 +131,79 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("/Users/", sources)
         self.assertNotIn("/var/", sources)
         self.assertNotIn("/tmp/", sources)
+
+    def test_react_lobby_composer_uploads_attachments_then_posts_lobby(self):
+        api_source = frontend_file("api.ts")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        composer_source = frontend_file("views/components/LobbyComposer.tsx")
+
+        self.assertIn("export function uploadLobbyAttachment", api_source)
+        self.assertIn('"/api/attachments"', api_source)
+        self.assertIn("FileReader", api_source)
+        self.assertIn("readAsDataURL", api_source)
+        self.assertIn('split(",", 2)', api_source)
+        self.assertIn("data_base64", api_source)
+        self.assertIn("export function postLobbyMessage", api_source)
+        self.assertIn('"/api/lobby"', api_source)
+        self.assertIn("name,", api_source)
+        self.assertIn("side,", api_source)
+        self.assertIn("kind,", api_source)
+        self.assertIn("message,", api_source)
+        self.assertIn("attachments,", api_source)
+
+        self.assertIn("import LobbyComposer", lobby_source)
+        self.assertIn("<LobbyComposer", lobby_source)
+        self.assertIn("handleLobbyPosted", lobby_source)
+        self.assertIn("mergeLobbyEvents(previous, postedEvents)", lobby_source)
+
+        self.assertIn("uploadLobbyAttachment(file)", composer_source)
+        self.assertIn("postLobbyMessage", composer_source)
+        self.assertIn('type="file"', composer_source)
+        self.assertIn("multiple", composer_source)
+        self.assertIn("pendingAttachments", composer_source)
+        self.assertIn("removePendingAttachment", composer_source)
+
+    def test_react_lobby_composer_restores_draft_on_submit_failure(self):
+        composer_source = frontend_file("views/components/LobbyComposer.tsx")
+        model_source = frontend_file("lib/lobbyComposerModel.ts")
+
+        self.assertIn("const draftMessage = message;", composer_source)
+        self.assertIn("const draftAttachments = pendingAttachments;", composer_source)
+        self.assertIn("lobbySubmitSuccessDraft", composer_source)
+        self.assertIn("lobbySubmitFailureDraft", composer_source)
+        self.assertIn("setMessage(cleared.message);", composer_source)
+        self.assertIn("setPendingAttachments(cleared.pendingAttachments);", composer_source)
+        self.assertIn("setMessage(restored.message);", composer_source)
+        self.assertIn("setPendingAttachments(restored.pendingAttachments);", composer_source)
+        self.assertIn("setError(restored.error);", composer_source)
+        self.assertIn("message: draftMessage", model_source)
+        self.assertIn("pendingAttachments: draftAttachments", model_source)
+        self.assertLess(composer_source.index("await postLobbyMessage"), composer_source.rindex("lobbySubmitSuccessDraft"))
+        self.assertLess(composer_source.index("catch (errorValue)"), composer_source.rindex("lobbySubmitFailureDraft"))
+
+    def test_react_lobby_composer_caps_pending_attachments_at_eight(self):
+        composer_source = frontend_file("views/components/LobbyComposer.tsx")
+        model_source = frontend_file("lib/lobbyComposerModel.ts")
+
+        self.assertIn("MAX_ATTACHMENTS_PER_EVENT", composer_source)
+        self.assertIn("export const MAX_ATTACHMENTS_PER_EVENT = 8;", model_source)
+        self.assertIn("remainingSlots", model_source)
+        self.assertIn("selectedItems.slice(0, remainingSlots)", model_source)
+        self.assertIn("첨부는 한 메시지에 8개까지", model_source)
+
+    def test_react_lobby_composer_does_not_leak_raw_bytes_into_event_ui(self):
+        api_source = frontend_file("api.ts")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        composer_source = frontend_file("views/components/LobbyComposer.tsx")
+        event_ui_source = lobby_source + "\n" + frontend_file("views/components/LobbyAttachments.tsx")
+
+        self.assertIn("data_base64", api_source)
+        self.assertNotIn("data_base64", event_ui_source)
+        self.assertNotIn("data_base64", composer_source)
+        for forbidden in ["data:application/", "data:image/", "file://", "/Users/", "/var/", "/tmp/"]:
+            self.assertNotIn(forbidden, api_source)
+            self.assertNotIn(forbidden, lobby_source)
+            self.assertNotIn(forbidden, composer_source)
 
     def test_react_live_timeline_keeps_reader_scroll_until_latest_jump(self):
         live_source = frontend_file("views/LiveView.tsx")
