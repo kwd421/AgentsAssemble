@@ -64,6 +64,17 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('return { label: "Not host-approved", tone: "idle" };', source)
         self.assertIn("{agent.provider_kind || \"resident\"} · {agent.connection_kind || agent.engagement_mode || \"room\"}", source)
 
+    def test_react_admin_surfaces_release_health_catalog_as_cli_only(self):
+        source = frontend_source()
+
+        self.assertIn("export interface ReleaseHealthCheck", source)
+        self.assertIn("export function fetchReleaseHealth", source)
+        self.assertIn('"/api/release-health"', source)
+        self.assertIn("릴리스 헬스", source)
+        self.assertIn("assemble release-health run", source)
+        self.assertIn("CLI-only", source)
+        self.assertNotIn("startReleaseHealthRun", source)
+
     def test_lobby_separates_stage_from_activity_feed(self):
         script = static_js()
         css = static_css()

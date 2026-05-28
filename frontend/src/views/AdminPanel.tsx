@@ -1,13 +1,22 @@
 import { useCallback } from "react";
-import { Activity, Cpu, Shield, X } from "lucide-react";
-import { fetchHealth, fetchLocalResources, type HealthStatus, type LocalResourceStatus } from "../api";
+import { Activity, ClipboardCheck, Cpu, Shield, Terminal, X } from "lucide-react";
+import {
+  fetchHealth,
+  fetchLocalResources,
+  fetchReleaseHealth,
+  type HealthStatus,
+  type LocalResourceStatus,
+  type ReleaseHealthCatalog,
+} from "../api";
 import { usePoll } from "../hooks";
 
 export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const healthFetcher = useCallback(() => fetchHealth(), []);
   const resourcesFetcher = useCallback(() => fetchLocalResources(), []);
+  const releaseHealthFetcher = useCallback(() => fetchReleaseHealth(), []);
   const [health] = usePoll<HealthStatus>(healthFetcher, 8000);
   const [resources, resourcesLoading, resourcesError] = usePoll<LocalResourceStatus>(resourcesFetcher, 8000);
+  const [releaseHealth] = usePoll<ReleaseHealthCatalog>(releaseHealthFetcher, 30000);
 
   const agents = health?.agents;
   const ok = health?.status === "ok";
@@ -157,6 +166,45 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                   ? "리소스 확인 중..."
                   : "리소스 정보가 없습니다."}
             </p>
+          )}
+        </section>
+
+        <section className="ops-inner rounded-xl p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ClipboardCheck size={17} className="text-accent" />
+              <h2 className="text-[15px] font-black">릴리스 헬스</h2>
+            </div>
+            <span className="rounded-md border border-accent/25 bg-accent/10 px-2.5 py-1 text-[11px] font-black text-accent">
+              CLI-only
+            </span>
+          </div>
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-line/60 bg-panel/35 px-4 py-3 text-[12px] text-text-secondary">
+            <Terminal size={15} className="mt-0.5 shrink-0 text-text-muted" />
+            <span className="min-w-0 preserve-words">
+              실행은 터미널에서 <code className="font-mono text-text-primary">assemble release-health run</code>
+            </span>
+          </div>
+          {releaseHealth ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {releaseHealth.checks.slice(0, 8).map((check) => (
+                <div key={check.id} className="ops-inner rounded-lg px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="min-w-0 truncate text-[13px] font-black text-text-primary preserve-words">
+                      {check.label}
+                    </p>
+                    <span className="shrink-0 rounded border border-line/60 px-2 py-0.5 text-[10px] font-bold text-text-muted">
+                      {check.kind}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-text-muted preserve-words">
+                    {check.category} · {check.requires.join(", ")}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[13px] text-text-muted">릴리스 헬스 카탈로그 확인 중...</p>
           )}
         </section>
 

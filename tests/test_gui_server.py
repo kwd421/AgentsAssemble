@@ -19438,6 +19438,28 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(response_payload, payload)
             snapshot_payload.assert_called_once()
 
+    def test_release_health_endpoint_returns_catalog_only(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/release-health", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            serialized = json.dumps(payload, ensure_ascii=False)
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["schema_version"], 1)
+            self.assertIn("node_check_static", [check["id"] for check in payload["checks"]])
+            self.assertNotIn("argv", serialized)
+            self.assertNotIn("cwd", serialized)
+            self.assertNotIn("env", serialized)
+            self.assertNotIn(str(root), serialized)
+
 
 def _write_health_resident_meeting(root: Path, *, agent_ids: list[str]) -> Path:
     meeting_dir = root / "meetings" / "resident-m1"

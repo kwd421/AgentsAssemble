@@ -118,6 +118,21 @@ export interface LocalResourceStatus {
   processes: LocalResourceProcess[];
 }
 
+export interface ReleaseHealthCheck {
+  id: string;
+  label: string;
+  kind: string;
+  category: string;
+  requires: string[];
+}
+
+export interface ReleaseHealthCatalog {
+  status: string;
+  schema_version: number;
+  generated_at?: string;
+  checks: ReleaseHealthCheck[];
+}
+
 export interface MafiaPlayer {
   agent_id: string;
   display_name: string;
@@ -200,6 +215,10 @@ export function fetchHealth() {
 
 export function fetchLocalResources() {
   return fetchJson<LocalResourceStatus>("/api/local-resources");
+}
+
+export function fetchReleaseHealth() {
+  return fetchJson<ReleaseHealthCatalog>("/api/release-health");
 }
 
 export function fetchMafiaGame(gameId: string, viewerAgentId = "") {

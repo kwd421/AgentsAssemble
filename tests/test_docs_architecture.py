@@ -153,6 +153,9 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Verification Commands", doc)
         self.assertIn("python3 -m unittest tests.test_mcp_server -v", doc)
         self.assertIn("python3 -m unittest tests.test_gui_server tests.test_live_agent_smoke -v", doc)
+        self.assertIn("assemble release-health", doc)
+        self.assertIn("/api/release-health", doc)
+        self.assertIn("CLI-only", doc)
         self.assertIn("Next Slice Queue", doc)
         self.assertIn("docs/product/V0_1_RELEASE_CHECKLIST.md", operating_model)
 

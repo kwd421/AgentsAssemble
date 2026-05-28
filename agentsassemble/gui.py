@@ -107,6 +107,7 @@ from agentsassemble.mafia_game import (
 )
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.provider_health import provider_health_report
+from agentsassemble.release_health import release_health_catalog_payload
 from agentsassemble.meeting_events import (
     append_live_event,
     append_lobby_event_to_file,
@@ -7118,6 +7119,9 @@ def _make_handler(
                 return
             if path == "/api/local-resources":
                 self._send_json(local_resource_snapshot_payload(live_agent_process_supervisor))
+                return
+            if path == "/api/release-health":
+                self._send_json(release_health_catalog_payload())
                 return
             if path == "/api/live-agent-sessions/readiness":
                 try:

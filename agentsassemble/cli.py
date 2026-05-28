@@ -110,6 +110,12 @@ from agentsassemble.persona_cards import (
     scan_persona_lore,
 )
 from agentsassemble.provider_health import provider_health_report
+from agentsassemble.release_health import (
+    DEFAULT_RELEASE_HEALTH_TIMEOUT_SECONDS,
+    ReleaseHealthSelectionError,
+    release_health_catalog_payload,
+    run_release_health_checks,
+)
 
 
 LIVE_AGENT_CONNECTION_KIND_CHOICES = [
@@ -261,6 +267,39 @@ def build_parser() -> argparse.ArgumentParser:
     frontend_info.add_argument("--backend", default="http://127.0.0.1:8765", help="Backend GUI URL used by the Vite proxy.")
     frontend_info.add_argument("--port", type=parse_positive_int, default=5173, help="React/Vite dev server port.")
     frontend_info.add_argument("--json", action="store_true", dest="as_json", help="Print machine-readable launch guidance.")
+
+    release_health = subparsers.add_parser(
+        "release-health",
+        help="List or run the local v0.1 release-health verification queue.",
+    )
+    release_health.add_argument("--json", "--as-json", action="store_true", dest="as_json", help="Print JSON output.")
+    release_health_subparsers = release_health.add_subparsers(dest="release_health_command")
+    release_health_list = release_health_subparsers.add_parser("list", help="List release-health checks.")
+    release_health_list.add_argument(
+        "--json",
+        "--as-json",
+        action="store_true",
+        dest="as_json",
+        default=argparse.SUPPRESS,
+        help="Print JSON output.",
+    )
+    release_health_run = release_health_subparsers.add_parser("run", help="Run selected release-health checks locally.")
+    release_health_run.add_argument("--check", action="append", default=[], help="Run only this check id; repeat for multiple checks.")
+    release_health_run.add_argument("--skip", action="append", default=[], help="Skip this check id; repeat for multiple checks.")
+    release_health_run.add_argument(
+        "--timeout",
+        type=parse_nonnegative_float,
+        default=DEFAULT_RELEASE_HEALTH_TIMEOUT_SECONDS,
+        help="Per-check timeout in seconds.",
+    )
+    release_health_run.add_argument(
+        "--json",
+        "--as-json",
+        action="store_true",
+        dest="as_json",
+        default=argparse.SUPPRESS,
+        help="Print JSON output.",
+    )
 
     bridge = subparsers.add_parser("claude-bridge", help="Run a friend-owned Claude Code bridge.")
     bridge.add_argument("--host", default="127.0.0.1")
@@ -1489,6 +1528,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "frontend-info":
         return run_frontend_info_command(args)
+    if args.command == "release-health":
+        return run_release_health_command(args)
     if args.command == "claude-bridge":
         serve_bridge(host=args.host, port=args.port, token=args.token, command=args.bridge_command)
         return 0
@@ -1549,6 +1590,70 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
         print(f"  {command}")
     print("- Note: React/Vite is not the default entry point yet.")
     return 0
+
+
+def run_release_health_command(args: argparse.Namespace) -> int:
+    if getattr(args, "release_health_command", None) in {None, "list"}:
+        payload = release_health_catalog_payload()
+        if getattr(args, "as_json", False):
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(_format_release_health_catalog(payload))
+        return 0
+    if args.release_health_command == "run":
+        try:
+            payload = run_release_health_checks(
+                check_ids=getattr(args, "check", []),
+                skip_ids=getattr(args, "skip", []),
+                timeout_seconds=getattr(args, "timeout", DEFAULT_RELEASE_HEALTH_TIMEOUT_SECONDS),
+            )
+        except ReleaseHealthSelectionError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        if getattr(args, "as_json", False):
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(_format_release_health_run(payload))
+        return 0 if payload.get("summary", {}).get("ok") is True else 1
+    return 1
+
+
+def _format_release_health_catalog(payload: dict[str, object]) -> str:
+    checks = payload.get("checks") if isinstance(payload.get("checks"), list) else []
+    lines = ["AgentsAssemble release-health checks"]
+    for item in checks:
+        if not isinstance(item, dict):
+            continue
+        check_id = str(item.get("id") or "")
+        label = str(item.get("label") or check_id)
+        category = str(item.get("category") or "check")
+        kind = str(item.get("kind") or "")
+        lines.append(f"- {check_id}: {label} [{category}/{kind}]")
+    lines.append("Run: python3 -m agentsassemble.cli release-health run --json")
+    return "\n".join(lines)
+
+
+def _format_release_health_run(payload: dict[str, object]) -> str:
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    results = payload.get("results") if isinstance(payload.get("results"), list) else []
+    lines = [
+        "AgentsAssemble release-health run",
+        (
+            f"- summary: passed {summary.get('passed', 0)}, failed {summary.get('failed', 0)}, "
+            f"skipped {summary.get('skipped', 0)}, total {summary.get('total', 0)}"
+        ),
+    ]
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "unknown")
+        check_id = str(item.get("id") or "check")
+        duration = item.get("duration_seconds")
+        suffix = f" ({duration}s)" if duration is not None else ""
+        if status == "skipped" and item.get("skipped_reason"):
+            suffix = f"{suffix} {item['skipped_reason']}"
+        lines.append(f"- {status}: {check_id}{suffix}")
+    return "\n".join(lines)
 
 
 def run_persona_command(args: argparse.Namespace) -> int:

@@ -80,6 +80,18 @@ python3 -m compileall -q agentsassemble
 git diff --check
 ```
 
+The same check catalog is exposed as a small local release-health queue:
+
+```bash
+assemble release-health
+assemble release-health run
+```
+
+`/api/release-health` returns the read-only catalog for the React operator UI.
+Running the checks remains CLI-only; the GUI does not start build or test
+processes, and the catalog intentionally omits command arguments, cwd, env, and
+raw local paths.
+
 `assemble mcp serve` uses the official MCP Python SDK (`mcp>=1,<2`) through a
 lazy import. The unit tests cover the room-tool boundary without requiring the
 SDK in the system interpreter; an actual stdio MCP client smoke still requires an
@@ -119,8 +131,8 @@ The next implementation slice should be chosen from this queue:
 - Add or improve tests that verify the GUI does not replace live-event rows
   unnecessarily during refresh.
 - Add a compact current-step/status projection for meeting lifecycle state.
-- Turn this checklist into a small release-health command after the underlying
-  checks stabilize.
+- Expand `assemble release-health run` only when a later slice needs additional
+  v0.1 release evidence.
 
 ## Out Of Scope For v0.1 Hardening
 
