@@ -10,6 +10,7 @@ APPROVAL_REQUIRED_MESSAGE = "Live-agent session run requires current operator ap
 
 _REAL_PROVIDER_KINDS = {
     "antigravity_cli",
+    "antigravity_live_session",
     "claude_code",
     "codex_live_session",
     "cursor",
@@ -18,6 +19,7 @@ _REAL_PROVIDER_KINDS = {
     "grok_build_cli",
     "grok_live_session",
     "hermes_cli",
+    "hermes_live_session",
     "kiro_live_session",
     "openclaw_cli",
     "remote_http_bridge",

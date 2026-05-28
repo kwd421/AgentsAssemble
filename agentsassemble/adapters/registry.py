@@ -290,6 +290,18 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
             ),
             "Kiro live-session residents are supported through kiro chat --resume-id; implementation permissions stay gated until after explicit approval.",
         ),
+        "antigravity_live_session": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=True,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=False,
+                cost_class="subscription",
+            ),
+            "Antigravity live-session residents are supported through agy --conversation after clean A/B/fresh continuity evidence.",
+        ),
         "antigravity_cli": (
             ProviderCapabilities(
                 supports_research=True,
@@ -349,6 +361,18 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
                 cost_class="subscription",
             ),
             "Hermes CLI resident integration is planned through terminal prompt bridge discovery.",
+        ),
+        "hermes_live_session": (
+            ProviderCapabilities(
+                supports_research=True,
+                supports_web_search=False,
+                supports_tools=True,
+                supports_filesystem=True,
+                supports_session_resume=True,
+                supports_structured_output=False,
+                cost_class="subscription",
+            ),
+            "Hermes live-session residents are supported through hermes chat --resume after clean A/B/fresh continuity evidence.",
         ),
         "openclaw_cli": (
             ProviderCapabilities(
@@ -412,11 +436,13 @@ def register_planned_provider_kinds(registry: ProviderRegistry) -> None:
                 "cursor",
                 "claude_code",
                 "kiro_live_session",
+                "antigravity_live_session",
                 "antigravity_cli",
                 "gemini_cli_legacy",
                 "grok_build_cli",
                 "grok_live_session",
                 "hermes_cli",
+                "hermes_live_session",
                 "openclaw_cli",
             }
             else "memory",

@@ -152,6 +152,10 @@ def _connection_kind_for_provider(provider_kind: str) -> str:
         return "live_session"
     if provider_kind == "grok_live_session":
         return "live_session"
+    if provider_kind == "antigravity_live_session":
+        return "live_session"
+    if provider_kind == "hermes_live_session":
+        return "live_session"
     return "manual"
 
 

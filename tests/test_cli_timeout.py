@@ -5685,12 +5685,31 @@ class CliTimeoutTests(unittest.TestCase):
                 "method": "provider_resume_suffix_recall",
                 "session_id_captured": True,
                 "expected_suffix_matched": True,
+                "expected_suffix_recalled": True,
+                "recall_match_mode": "exact",
                 "reason": "ok",
             }
         )
 
         self.assertIn("two-turn provider-owned resume recall only", formatted)
         self.assertIn("does not prove room admission or tool safety", formatted)
+        self.assertIn("suffix yes (exact)", formatted)
+
+    def test_live_agent_continuity_proof_formatter_shows_tolerant_recall(self):
+        formatted = cli_module._format_live_agent_continuity_proof(
+            {
+                "status": "ok",
+                "provider_kind": "antigravity_live_session",
+                "method": "provider_resume_suffix_recall",
+                "session_id_captured": True,
+                "expected_suffix_matched": False,
+                "expected_suffix_recalled": True,
+                "recall_match_mode": "mentioned",
+                "reason": "ok",
+            }
+        )
+
+        self.assertIn("suffix yes (mentioned)", formatted)
 
     def test_live_agent_continuity_proof_group_parses_config_and_approval(self):
         args = build_parser().parse_args(

@@ -11,6 +11,11 @@ from pathlib import Path
 from subprocess import TimeoutExpired
 from typing import Any
 
+from agentsassemble.antigravity_resident import (
+    antigravity_command_check,
+    antigravity_provider_connection_check,
+    default_antigravity_resident_command,
+)
 from agentsassemble.codex_resident import (
     codex_exec_prefix,
     codex_provider_connection_check,
@@ -28,6 +33,11 @@ from agentsassemble.grok_resident import (
     default_grok_resident_command,
     grok_command_check,
     grok_provider_connection_check,
+)
+from agentsassemble.hermes_resident import (
+    default_hermes_resident_command,
+    hermes_command_check,
+    hermes_provider_connection_check,
 )
 from agentsassemble.kiro_resident import (
     default_kiro_resident_command,
@@ -141,6 +151,12 @@ def _preflight_agent(
     provider_connection_check = grok_provider_connection_check(config.provider_kind, config.connection_kind)
     if provider_connection_check is not None:
         checks.append(provider_connection_check)
+    provider_connection_check = antigravity_provider_connection_check(config.provider_kind, config.connection_kind)
+    if provider_connection_check is not None:
+        checks.append(provider_connection_check)
+    provider_connection_check = hermes_provider_connection_check(config.provider_kind, config.connection_kind)
+    if provider_connection_check is not None:
+        checks.append(provider_connection_check)
     if config.connection_kind == "remote_bridge":
         checks.extend(
             [
@@ -184,6 +200,18 @@ def _preflight_agent(
             and command_check["status"] == "ok"
         ):
             checks.append(grok_command_check(config.command))
+        if (
+            config.provider_kind == "antigravity_live_session"
+            and config.connection_kind == "live_session"
+            and command_check["status"] == "ok"
+        ):
+            checks.append(antigravity_command_check(config.command))
+        if (
+            config.provider_kind == "hermes_live_session"
+            and config.connection_kind == "live_session"
+            and command_check["status"] == "ok"
+        ):
+            checks.append(hermes_command_check(config.command))
     status = "failed" if _failed_check_count(checks) else "ok"
     command_path = ""
     for check in checks:
@@ -251,6 +279,14 @@ def resident_config_setup_error(
         grok_check = grok_command_check(config.command)
         if grok_check["status"] != "ok":
             return str(grok_check.get("message") or "Grok command is not valid.")
+    if config.provider_kind == "antigravity_live_session" and config.connection_kind == "live_session":
+        antigravity_check = antigravity_command_check(config.command)
+        if antigravity_check["status"] != "ok":
+            return str(antigravity_check.get("message") or "Antigravity command is not valid.")
+    if config.provider_kind == "hermes_live_session" and config.connection_kind == "live_session":
+        hermes_check = hermes_command_check(config.command)
+        if hermes_check["status"] != "ok":
+            return str(hermes_check.get("message") or "Hermes command is not valid.")
     if config.connection_kind == "terminal_session" and not terminal_sessions_supported():
         return "PTY terminal sessions are not available on this host."
     return ""
@@ -296,6 +332,8 @@ def _preflight_config_from_mapping(
     command_parts = default_cursor_resident_command(provider_kind, connection_kind, command_parts)
     command_parts = default_kiro_resident_command(provider_kind, connection_kind, command_parts)
     command_parts = default_grok_resident_command(provider_kind, connection_kind, command_parts)
+    command_parts = default_antigravity_resident_command(provider_kind, connection_kind, command_parts)
+    command_parts = default_hermes_resident_command(provider_kind, connection_kind, command_parts)
     return ResidentAgentConfig(
         server=str(server_override or data.get("server") or server),
         agent_id=str(data.get("agent_id") or ""),

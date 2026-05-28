@@ -61,6 +61,11 @@ PUBLIC_ENUM_DETAIL_VALUES = {
     "evidence_basis": {
         "path_and_pty_preflight",
         "path_and_codex_safety_preflight",
+        "path_and_kiro_resume_preflight",
+        "path_and_antigravity_conversation_preflight",
+        "path_and_cursor_resume_preflight",
+        "path_and_grok_resume_preflight",
+        "path_and_hermes_resume_preflight",
         "path_and_self_service_preflight",
         "path_and_negative_continuity_evidence",
     },

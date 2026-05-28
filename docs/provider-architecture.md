@@ -51,6 +51,7 @@ The default registry exposes provider kinds with explicit capability snapshots:
 - `codex`
 - `codex_live_session`
 - `kiro_live_session`
+- `antigravity_live_session`
 - `anthropic`
 - `gemini`
 - `grok`
@@ -64,30 +65,35 @@ The default registry exposes provider kinds with explicit capability snapshots:
 - `antigravity_cli`
 - `gemini_cli_legacy`
 - `hermes_cli`
+- `hermes_live_session`
 - `openclaw_cli`
 - `hermes_memory`
 - `openclaw_memory`
 - `memory_pack`
 
-`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `kiro_live_session`, `cursor_live_session`, and `grok_live_session` are resident live-agent adapters, not meeting adapters: Kiro joins through the resident runner and Kiro's own chat resume store, Cursor joins through `cursor-agent create-chat` plus `--resume` with a runner-owned stable workspace, while Grok joins through the resident runner and Grok's JSON stdout session resume. `cursor`, `claude_code`, `antigravity_cli`, `gemini_cli_legacy`, `grok_build_cli`, `hermes_cli`, and `openclaw_cli` remain implementation-phase planned providers unless they are launched through the resident live-agent runner's explicit connection-kind contract; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
+`anthropic`, `gemini`, `grok`, `local_openai_compatible`, `remote_http_bridge`, `local_cli`, and `codex_live_session` have meeting adapters. `kiro_live_session`, `cursor_live_session`, `grok_live_session`, `antigravity_live_session`, and `hermes_live_session` are resident live-agent adapters, not meeting adapters: Kiro joins through the resident runner and Kiro's own chat resume store, Cursor joins through `cursor-agent create-chat` plus `--resume` with a runner-owned stable workspace, Grok joins through JSON stdout `--resume`, Antigravity joins through `agy --conversation <conversation_id>`, and Hermes joins through `hermes chat --resume <session_id>`. `cursor`, `claude_code`, `antigravity_cli`, `gemini_cli_legacy`, `grok_build_cli`, `hermes_cli`, and `openclaw_cli` remain implementation-phase planned or generic providers unless they are launched through the resident live-agent runner's explicit connection-kind contract; meeting-time validation still rejects implementation-side permissions such as filesystem write, git write, push, or implementation mode.
 
-Antigravity remains in that planned-provider lane. A non-isolated `agy
---continue` probe showed some provider-owned recall, but the isolated follow-up
-did not prove a deterministic `--conversation <id>` handle and still created
-symlinks resolving outside the proof root, so no Antigravity resume runner is
-justified yet.
+Antigravity was promoted only for the narrow `antigravity_live_session`
+contract. Fresh local evidence on 2026-05-28 showed separate
+`agy --conversation <id>` A/B sessions, fresh no-resume controls that did not
+recall either private tag, and `.antigravitycli` sidecar state staying inside
+the proof root. The proof still records that Antigravity often wraps the
+requested suffix in extra text, so continuity proof separates exact formatting
+from provider-owned recall.
 
-Hermes also remains in the planned-provider lane. Its `--resume <session_id>`
-surface can recall session-specific suffixes, but a fresh no-resume control can
-also recall a prior session secret. That global-recall contamination blocks a
-Hermes resume runner until a future proof shows clean session-id-only recall or
-a self-service wrapper owns the room loop.
+Hermes was promoted only for the narrow `hermes_live_session` contract. Fresh
+local evidence on 2026-05-28 with `hermes chat --ignore-user-config
+--ignore-rules --source ... --pass-session-id` showed distinct A/B session ids,
+`--resume <a>` recalling only A, `--resume <b>` recalling only B, and fresh
+no-resume controls returning no private tag. Hermes may also wrap the recalled
+suffix in explanatory text, so continuity proof labels the match mode instead
+of pretending exact one-token output was proven.
 
-Discovery keeps these verdicts visible without turning them into runnable
-residents. `agy`/legacy `antigravity` and `hermes` discovery rows are
-`unsupported_evidence`: inventory records with negative continuity evidence,
-not `self_service`, `terminal_session`, or provider-specific live-session
-config entries.
+Discovery now surfaces `agy`/legacy `antigravity` and `hermes` as
+approval-required provider-specific live-session residents when those CLIs are
+installed. The older `antigravity_cli` and `hermes_cli` kinds remain generic
+planned-provider lanes; they are not used to label one-shot local CLI calls as
+live sessions.
 
 Imported memory/profile packs now have a safe inspection surface before they can
 affect meeting context. `assemble memory-capsule gate --path <capsule-dir>`
@@ -274,8 +280,9 @@ must not store raw prompts, provider output, stderr, command tails, account
 data, or local prompt-file paths. Grok launch safety is currently `advisory`;
 there is no AgentsAssemble-owned hard sandbox for this adapter.
 
-For Codex, Kiro, Cursor, and Grok, `live-agent continuity-proof` is the direct
-provider-owned context diagnostic. It is intentionally narrower than
+For Codex, Kiro, Cursor, Grok, Antigravity, and Hermes, `live-agent
+continuity-proof` is the direct provider-owned context diagnostic. It is
+intentionally narrower than
 `real-session-smoke`: it performs two approved provider turns through the same
 resident runner, verifies that turn 2 can recall a suffix from turn 1 without
 AgentsAssemble replaying the private continuity code, and reports only safe

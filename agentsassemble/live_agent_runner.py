@@ -10,9 +10,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable
 
+from agentsassemble.antigravity_resident import default_antigravity_resident_command
 from agentsassemble.codex_resident import default_codex_resident_command
 from agentsassemble.cursor_resident import default_cursor_resident_command
 from agentsassemble.grok_resident import default_grok_resident_command, grok_error_category
+from agentsassemble.hermes_resident import default_hermes_resident_command
 from agentsassemble.kiro_resident import default_kiro_resident_command
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.live_agent_turns import (
@@ -1409,6 +1411,8 @@ def _default_resident_command(provider_kind: str, connection_kind: str, command:
     command = default_cursor_resident_command(provider_kind, connection_kind, command)
     command = default_kiro_resident_command(provider_kind, connection_kind, command)
     command = default_grok_resident_command(provider_kind, connection_kind, command)
+    command = default_antigravity_resident_command(provider_kind, connection_kind, command)
+    command = default_hermes_resident_command(provider_kind, connection_kind, command)
     return command
 
 

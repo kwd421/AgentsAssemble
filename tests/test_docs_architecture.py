@@ -631,7 +631,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Durable session-run records are restart intent, not stored provider approval", doc)
         self.assertIn("durable ensure API", doc)
         self.assertIn("persisted process-group config", doc)
-        self.assertIn("treated as approval only when it is JSON/CLI true", doc)
+        self.assertIn("treated as approval only when it is JSON/CLI true", " ".join(doc.split()))
         self.assertIn("--approve-real-providers", doc)
         self.assertIn("transient real-provider approval flags", doc)
         self.assertIn("agent_connection", doc)
@@ -803,13 +803,25 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("fake `codex` executable", doc)
         self.assertIn("real Codex smoke", doc)
         self.assertIn("configs/live-agents.provider-staging.example.json", doc)
-        self.assertIn("Codex, Kiro, Cursor, and Grok are the provider-specific resume residents", doc)
+        normalized_doc = " ".join(doc.split())
+        self.assertIn(
+            "Codex, Kiro, Cursor, Grok, Antigravity, and Hermes are the provider-specific resume residents",
+            normalized_doc,
+        )
         self.assertIn("local_cli is a stateless delegate", doc)
         normalized_evidence = " ".join(evidence.split())
-        self.assertIn("Grok and Cursor are now the non-Codex/Kiro providers with both a passing two-turn continuity probe", normalized_evidence)
-        self.assertIn("Cursor's room evidence is only the initial one-resident start/probe/stop shape", normalized_evidence)
-        self.assertIn("Antigravity has a non-isolated `--continue` recall", normalized_evidence)
-        for provider in ("claude_code", "cursor", "antigravity_cli", "grok_build_cli", "hermes_cli", "openclaw_cli"):
+        self.assertIn("Antigravity and Hermes now also have passing two-turn continuity proofs", normalized_evidence)
+        self.assertIn("they do not yet have bounded room start/probe/stop smoke evidence", normalized_evidence)
+        for provider in (
+            "claude_code",
+            "cursor",
+            "antigravity_cli",
+            "antigravity_live_session",
+            "grok_build_cli",
+            "hermes_cli",
+            "hermes_live_session",
+            "openclaw_cli",
+        ):
             self.assertIn(provider, evidence)
         for provider in ("claude_code", "openclaw_cli"):
             self.assertIn("unverified", evidence)
@@ -825,7 +837,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("only an approved two-turn continuity probe can prove", normalized_survey)
         self.assertIn("model-inference commands require explicit real-provider approval", normalized_survey)
         self.assertIn("`cursor-agent --version` returned `2026.05.24-dda726e`", survey)
-        self.assertIn("`agy --version` returned `1.0.2`", survey)
+        self.assertIn("`agy --version` returned `1.0.3`", survey)
         self.assertIn("`grok --version` returned `grok 0.2.3 (14d81fd875e)`", survey)
         self.assertIn("`grok agent --help` exposes `stdio`, `headless`, `serve`, and `leader` modes", survey)
         self.assertIn("`hermes chat --help` exposes `--query`, `--resume`, `--continue`", survey)
@@ -833,8 +845,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("status/account inspection is not safe public evidence", normalized_combined.lower())
         self.assertIn("Earlier approved explicit-chat-id and workspace-continue probes failed", normalized_combined)
         self.assertIn("fresh `create-chat` id plus `--resume <chat_id> --print", normalized_combined)
-        self.assertIn("global-recall-contaminated-no-runner", normalized_combined)
-        self.assertIn("global-store-contaminated-no-runner", normalized_combined)
+        self.assertIn("continuity-proven-no-room-smoke-yet", normalized_combined)
+        self.assertIn("Older generic `antigravity_cli` and `hermes_cli` rows remain non-live lanes", normalized_survey)
         self.assertIn("room-smoke-proven-limited", normalized_combined)
         self.assertIn("only an approved two-turn continuity probe can prove", normalized_combined)
 
@@ -850,10 +862,9 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Real Continuity Probe Summary", survey)
         self.assertIn("passed limited continuity probe", survey)
         self.assertIn("passed limited chat-id resume recall", survey)
-        self.assertIn("passed limited non-isolated `--continue` recall", survey)
-        self.assertIn("failed isolated disambiguation", survey)
-        self.assertIn("session resume works but fresh no-resume recall contaminates proof", survey)
-        self.assertIn("fresh no-resume control also recalled", normalized)
+        self.assertIn("passed clean conversation-id resume recall", survey)
+        self.assertIn("passed clean session-id resume recall", survey)
+        self.assertIn("fresh no-resume controls recalled neither tag", normalized)
         self.assertIn("JSON stdout `text`", survey)
         self.assertIn("first assistant `text` length was 5", survey)
         self.assertIn("turn 2 assistant `text` length was 4", survey)
@@ -871,36 +882,36 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("official-turn quality, restart, recover, tool safety", normalized)
         self.assertNotIn("current Grok official-turn-quality failure", combined)
         self.assertNotIn("This is not yet a Cursor room smoke", combined)
-        self.assertIn("Do not add an Antigravity runner", survey)
-        self.assertIn("not promoted to a resident runner", survey)
-        self.assertIn("isolated `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, and `XDG_CACHE_HOME`", normalized)
-        self.assertIn("no Antigravity resume runner is justified yet", normalized)
-        self.assertIn("Do not add a Hermes runner", survey)
+        self.assertIn("Use only the narrow `antigravity_live_session` runner", survey)
+        self.assertIn("Use only the narrow `hermes_live_session` runner", survey)
+        self.assertIn("generic `antigravity_cli`, bare `--continue`, PTY prompt bridging, or one-shot `--print`", normalized)
+        self.assertIn("generic `hermes_cli`, `--continue`, terminal prompt bridging, or one-shot `--query`", normalized)
 
-    def test_antigravity_continuity_note_records_global_store_boundary(self):
+    def test_antigravity_continuity_note_records_conversation_runner_boundary(self):
         survey = (ROOT / "docs" / "cli-evidence-survey.md").read_text(encoding="utf-8")
         note = (ROOT / "docs" / "provider-continuity" / "antigravity.md").read_text(encoding="utf-8")
         normalized_note = " ".join(note.split())
         self.assertIn("Antigravity CLI Continuity Evidence", note)
-        self.assertIn("global-store-contaminated-no-runner", note)
-        self.assertIn("did not reproduce suffix recall through either `--continue` or `--conversation <candidate>`", normalized_note)
-        self.assertIn("symlinks still resolved outside the temporary proof root", normalized_note)
-        self.assertIn("Do not route Antigravity resident participation through one-shot `local_cli`", note)
-        self.assertIn("did not isolate the provider home/config store", survey)
+        self.assertIn("provider-conversation-resume-runner", note)
+        self.assertIn("`agy --conversation <a>` recalled only tag A", normalized_note)
+        self.assertIn("A fresh no-resume control recalled neither tag", normalized_note)
+        self.assertIn("It must not use bare `--continue`, generic `antigravity_cli`", normalized_note)
+        self.assertIn("Older `--continue` and candidate-id probes were global-store contaminated", survey)
         self.assertNotIn("/Users/", note)
         self.assertNotIn("/var/folders/", note)
         self.assertNotIn("file://", note)
         self.assertNotRegex(note, r"/(?:private/)?(?:tmp|var|Users|Volumes|home)/")
         self.assertNotRegex(note, r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 
-    def test_hermes_continuity_note_records_ambiguous_control_without_raw_evidence(self):
+    def test_hermes_continuity_note_records_session_runner_boundary(self):
         note = (ROOT / "docs" / "provider-continuity" / "hermes.md").read_text(encoding="utf-8")
         normalized_note = " ".join(note.split())
         self.assertIn("Hermes CLI Continuity Evidence", note)
-        self.assertIn("global-recall-contaminated-no-runner", note)
+        self.assertIn("provider-session-resume-runner", note)
         self.assertIn("A later approved disambiguation run used two independent temporary git cwds", normalized_note)
-        self.assertIn("A fresh no-resume control also surfaced suffix A", normalized_note)
-        self.assertIn("Do not add a Hermes runner", note)
+        self.assertIn("That older run stayed `global-recall-contaminated-no-runner`", normalized_note)
+        self.assertIn("no-resume controls recalled neither tag", normalized_note)
+        self.assertIn("It must not present generic `hermes_cli`, `--continue`", normalized_note)
         self.assertNotRegex(note, r"\b[a-z]+-\d{4}\b")
         self.assertNotRegex(note, r"\b20\d{6}_\d{6}_[0-9a-f]+\b")
         self.assertNotIn("/Users/", note)

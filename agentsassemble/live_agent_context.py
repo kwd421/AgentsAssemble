@@ -13,8 +13,10 @@ LIVE_AGENT_JOIN_SEMANTICS = {
     "self_service_room_loop",
     "codex_exec_resume",
     "kiro_chat_resume",
+    "antigravity_conversation_resume",
     "cursor_chat_resume",
     "grok_session_resume",
+    "hermes_chat_resume",
     "jsonl_live_session",
     "unknown",
 }
@@ -83,6 +85,12 @@ def live_agent_context_contract(provider_kind: object, connection_kind: object) 
                 "context_durability": "provider_managed_resume",
                 "sandbox_enforcement": sandbox_enforcement,
             }
+        if provider == "antigravity_live_session":
+            return {
+                "join_semantics": "antigravity_conversation_resume",
+                "context_durability": "provider_managed_resume",
+                "sandbox_enforcement": sandbox_enforcement,
+            }
         if provider == "cursor_live_session":
             return {
                 "join_semantics": "cursor_chat_resume",
@@ -92,6 +100,12 @@ def live_agent_context_contract(provider_kind: object, connection_kind: object) 
         if provider == "grok_live_session":
             return {
                 "join_semantics": "grok_session_resume",
+                "context_durability": "provider_managed_resume",
+                "sandbox_enforcement": sandbox_enforcement,
+            }
+        if provider == "hermes_live_session":
+            return {
+                "join_semantics": "hermes_chat_resume",
                 "context_durability": "provider_managed_resume",
                 "sandbox_enforcement": sandbox_enforcement,
             }

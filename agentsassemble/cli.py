@@ -17,6 +17,7 @@ import urllib.request
 from pathlib import Path
 
 from agentsassemble.bridges.claude_code_bridge import serve_bridge
+from agentsassemble.antigravity_resident import AntigravityResidentCommandRunner
 from agentsassemble.codex_resident import CodexResidentCommandRunner
 from agentsassemble.cursor_resident import (
     CursorResidentCommandRunner,
@@ -24,6 +25,7 @@ from agentsassemble.cursor_resident import (
     cursor_terminal_session_superseded_error,
 )
 from agentsassemble.grok_resident import GrokResidentCommandRunner
+from agentsassemble.hermes_resident import HermesResidentCommandRunner
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.codex_sessions import (
     DEFAULT_INVITE_CONFIG_PATH,
@@ -3692,12 +3694,15 @@ def _safe_cli_smoke_id(value: object) -> str:
 
 
 def _format_live_agent_continuity_proof(result: dict[str, object]) -> str:
+    recall_state = "yes" if result.get("expected_suffix_recalled") else "no"
+    if result.get("recall_match_mode"):
+        recall_state = f"{recall_state} ({result.get('recall_match_mode')})"
     return (
         f"continuity proof {result.get('status') or 'unknown'}: "
         f"{result.get('provider_kind') or 'provider'} "
         f"{result.get('method') or 'provider_resume_suffix_recall'}; "
         f"session {'yes' if result.get('session_id_captured') else 'no'}; "
-        f"suffix {'yes' if result.get('expected_suffix_matched') else 'no'}; "
+        f"suffix {recall_state}; "
         f"reason {result.get('reason') or 'unknown'}; "
         "limits two-turn provider-owned resume recall only; "
         "does not prove room admission or tool safety"
@@ -6886,6 +6891,10 @@ def _validate_resident_config(config: ResidentAgentConfig) -> None:
         raise ValueError("cursor_live_session resident requires live_session connection_kind.")
     if config.provider_kind == "grok_live_session" and config.connection_kind != "live_session":
         raise ValueError("grok_live_session resident requires live_session connection_kind.")
+    if config.provider_kind == "antigravity_live_session" and config.connection_kind != "live_session":
+        raise ValueError("antigravity_live_session resident requires live_session connection_kind.")
+    if config.provider_kind == "hermes_live_session" and config.connection_kind != "live_session":
+        raise ValueError("hermes_live_session resident requires live_session connection_kind.")
     cursor_superseded_error = cursor_terminal_session_superseded_error(
         config.provider_kind,
         config.connection_kind,
@@ -6917,6 +6926,10 @@ def _command_runner_for_config(config: ResidentAgentConfig):
         return CursorResidentCommandRunner(config)
     if config.provider_kind == "grok_live_session" and config.connection_kind == "live_session":
         return GrokResidentCommandRunner(config)
+    if config.provider_kind == "antigravity_live_session" and config.connection_kind == "live_session":
+        return AntigravityResidentCommandRunner(config)
+    if config.provider_kind == "hermes_live_session" and config.connection_kind == "live_session":
+        return HermesResidentCommandRunner(config)
     if config.connection_kind == "live_session":
         return _JsonlLiveSessionCommandRunner()
     if config.connection_kind == "terminal_session":

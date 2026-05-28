@@ -1,21 +1,40 @@
 from __future__ import annotations
 
 import secrets
+import re
 import string
+import subprocess
+import tempfile
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Iterator
 
 from agentsassemble.codex_resident import CodexResidentCommandRunner
+from agentsassemble.antigravity_resident import AntigravityResidentCommandRunner
 from agentsassemble.cursor_resident import CursorResidentCommandRunner
 from agentsassemble.grok_resident import GrokResidentCommandRunner
+from agentsassemble.hermes_resident import HermesResidentCommandRunner
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.meeting_events import clean_lobby_text
 
 
 SUPPORTED_CONTINUITY_PROVIDER_KINDS = frozenset(
-    {"codex_live_session", "kiro_live_session", "cursor_live_session", "grok_live_session"}
+    {
+        "codex_live_session",
+        "kiro_live_session",
+        "cursor_live_session",
+        "grok_live_session",
+        "antigravity_live_session",
+        "hermes_live_session",
+    }
+)
+FORMATTING_TOLERANT_CONTINUITY_PROVIDER_KINDS = frozenset(
+    {"antigravity_live_session", "hermes_live_session"}
+)
+ISOLATED_CWD_CONTINUITY_PROVIDER_KINDS = frozenset(
+    {"antigravity_live_session", "hermes_live_session"}
 )
 CONTINUITY_PROOF_LIMITATIONS = [
     "two_turn_provider_resume_recall_only",
@@ -79,9 +98,13 @@ def run_live_agent_continuity_proof(
     second_prompt = _second_prompt()
     runner = None
     try:
-        runner = _runner_for_config(normalized_config, command_runner=command_runner, cwd=cwd)
-        first_reply = runner([], first_prompt, timeout_seconds=max(1, int(normalized_config.timeout_seconds or 120)))
-        second_reply = runner([], second_prompt, timeout_seconds=max(1, int(normalized_config.timeout_seconds or 120)))
+        with _continuity_proof_cwd(provider_kind, cwd) as proof_cwd:
+            runner = _runner_for_config(normalized_config, command_runner=command_runner, cwd=proof_cwd)
+            try:
+                first_reply = runner([], first_prompt, timeout_seconds=max(1, int(normalized_config.timeout_seconds or 120)))
+                second_reply = runner([], second_prompt, timeout_seconds=max(1, int(normalized_config.timeout_seconds or 120)))
+            finally:
+                _close_runner(runner)
     except Exception as error:
         return {
             "status": "failed",
@@ -98,30 +121,32 @@ def run_live_agent_continuity_proof(
             "session_id_suffix": _safe_session_suffix(getattr(runner, "session_id", "") if runner is not None else ""),
             "limitations": CONTINUITY_PROOF_LIMITATIONS,
         }
-    finally:
-        if runner is not None:
-            _close_runner(runner)
 
     first_reply_is_ready = first_reply.strip() == "READY"
     first_reply_ready_normalized = _first_reply_ready_normalized(first_reply)
+    first_reply_ready_acknowledged = _first_reply_ready_acknowledged(provider_kind, first_reply)
     first_revealed_code = code in first_reply
     first_revealed_suffix = suffix in first_reply
     second_replayed_code = code in second_prompt
     expected_suffix_matched = second_reply.strip() == suffix
+    recall_match_mode = _recall_match_mode(provider_kind, second_reply, suffix)
+    expected_suffix_recalled = recall_match_mode in {"exact", "mentioned"}
+    second_reply_revealed_code = code in second_reply
     session_id = str(getattr(runner, "session_id", "") or "")
     ok = (
         bool(session_id)
-        and first_reply_ready_normalized
+        and first_reply_ready_acknowledged
         and not first_revealed_code
         and not first_revealed_suffix
         and not second_replayed_code
-        and expected_suffix_matched
+        and not second_reply_revealed_code
+        and expected_suffix_recalled
     )
     return {
         "status": "ok" if ok else "failed",
         "reason": "ok" if ok else _failure_reason(
             session_id_captured=bool(session_id),
-            first_reply_ready_normalized=first_reply_ready_normalized,
+            first_reply_ready_acknowledged=first_reply_ready_acknowledged,
             first_revealed_code=first_revealed_code,
             first_revealed_suffix=first_revealed_suffix,
             second_replayed_code=second_replayed_code,
@@ -140,10 +165,14 @@ def run_live_agent_continuity_proof(
         "second_reply_length": len(second_reply),
         "first_reply_is_ready": first_reply_is_ready,
         "first_reply_ready_normalized": first_reply_ready_normalized,
+        "first_reply_ready_acknowledged": first_reply_ready_acknowledged,
         "first_reply_revealed_code": first_revealed_code,
         "first_reply_revealed_suffix": first_revealed_suffix,
         "second_prompt_replayed_code": second_replayed_code,
         "expected_suffix_matched": expected_suffix_matched,
+        "expected_suffix_recalled": expected_suffix_recalled,
+        "recall_match_mode": recall_match_mode,
+        "second_reply_revealed_code": second_reply_revealed_code,
         "limitations": CONTINUITY_PROOF_LIMITATIONS,
     }
 
@@ -213,7 +242,37 @@ def _runner_for_config(config: ResidentAgentConfig, *, command_runner: Any | Non
         return CursorResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
     if config.provider_kind == "grok_live_session":
         return GrokResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
+    if config.provider_kind == "antigravity_live_session":
+        return AntigravityResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
+    if config.provider_kind == "hermes_live_session":
+        return HermesResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
     raise ValueError(f"Provider does not support continuity proof: {config.provider_kind}")
+
+
+@contextmanager
+def _continuity_proof_cwd(provider_kind: str, cwd: Path | None) -> Iterator[Path]:
+    base_cwd = Path(cwd or Path.cwd())
+    if provider_kind not in ISOLATED_CWD_CONTINUITY_PROVIDER_KINDS:
+        yield base_cwd
+        return
+    with tempfile.TemporaryDirectory(prefix="agentsassemble-continuity-proof-") as temp_dir:
+        proof_cwd = Path(temp_dir)
+        _best_effort_git_init(proof_cwd)
+        yield proof_cwd
+
+
+def _best_effort_git_init(cwd: Path) -> None:
+    try:
+        subprocess.run(
+            ["git", "init", "-q"],
+            cwd=str(cwd),
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
 
 
 def _config_supports_continuity_proof(config: ResidentAgentConfig) -> bool:
@@ -237,6 +296,12 @@ def _continuity_structural_setup_error(config: ResidentAgentConfig) -> str:
             return "resident_setup_failed"
     if provider_kind == "grok_live_session":
         if len(command) != 1 or executable_name not in {"grok", "grok.exe"}:
+            return "resident_setup_failed"
+    if provider_kind == "antigravity_live_session":
+        if len(command) != 1 or executable_name not in {"agy", "agy.exe", "antigravity", "antigravity.exe"}:
+            return "resident_setup_failed"
+    if provider_kind == "hermes_live_session":
+        if len(command) != 1 or executable_name not in {"hermes", "hermes.exe"}:
             return "resident_setup_failed"
     return ""
 
@@ -283,10 +348,18 @@ def _first_reply_ready_normalized(reply: str) -> bool:
     return len(text) == len("READY.") and text.startswith("READY") and text[-1] in _READY_MARKER_TERMINAL_PUNCTUATION
 
 
+def _first_reply_ready_acknowledged(provider_kind: str, reply: str) -> bool:
+    if _first_reply_ready_normalized(reply):
+        return True
+    if provider_kind not in FORMATTING_TOLERANT_CONTINUITY_PROVIDER_KINDS:
+        return False
+    return bool(re.search(r"(?<![A-Za-z0-9])READY(?![A-Za-z0-9])", reply))
+
+
 def _failure_reason(
     *,
     session_id_captured: bool,
-    first_reply_ready_normalized: bool,
+    first_reply_ready_acknowledged: bool,
     first_revealed_code: bool,
     first_revealed_suffix: bool,
     second_replayed_code: bool,
@@ -298,13 +371,28 @@ def _failure_reason(
         return "first_reply_revealed_code"
     if first_revealed_suffix:
         return "first_reply_revealed_suffix"
-    if not first_reply_ready_normalized:
+    if not first_reply_ready_acknowledged:
         return "first_reply_not_ready"
     if second_replayed_code:
         return "second_prompt_replayed_code"
     if not expected_suffix_matched:
         return "suffix_not_recalled"
     return "unknown"
+
+
+def _recall_match_mode(provider_kind: str, reply: str, suffix: str) -> str:
+    if reply.strip() == suffix:
+        return "exact"
+    if provider_kind in FORMATTING_TOLERANT_CONTINUITY_PROVIDER_KINDS and _reply_mentions_suffix(reply, suffix):
+        return "mentioned"
+    return "none"
+
+
+def _reply_mentions_suffix(reply: str, suffix: str) -> bool:
+    if not suffix:
+        return False
+    pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(suffix)}(?![A-Za-z0-9])")
+    return bool(pattern.search(reply))
 
 
 def _safe_batch_error(config: ResidentAgentConfig, error: Exception) -> dict[str, object]:

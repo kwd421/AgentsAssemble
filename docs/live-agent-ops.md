@@ -215,23 +215,24 @@ Session controls also enforce that ownership. `start-session` with an explicit m
 
 The real-provider `configs/live-agents.example.json` contains a real `claude`
 command. Do not start it until the real-provider checklist below is satisfied.
-It intentionally does not include bare `agy`, legacy `antigravity`, or `hermes`
-commands because their current continuity evidence is inventory-only.
+Discovery may now generate provider-specific `antigravity_live_session` and
+`hermes_live_session` entries when `agy` and `hermes` are installed. Those are
+approval-required live-session residents, not generic one-shot local CLI calls.
+They must still pass preflight and current operator approval before launch.
 `configs/live-agents.provider-staging.example.json` is a broader
 contract example, not a native-ready bundle: it shows the current conservative
 Claude Code, Cursor, Grok Build, and OpenClaw resident shapes with
 `moderator_called`, but each row still needs local install,
 explicit approval, preflight, and a provider-specific smoke before use.
-The current Antigravity CLI evidence is specifically for the `agy` executable:
-`agy --print --continue` can recall one prior turn on this local install, but a
-later isolated-HOME disambiguation did not prove a deterministic
-`--conversation <id>` handle and still created `.antigravitycli` symlinks that
-resolved outside the temporary proof root. That does not make the checked-in
-Antigravity self-service examples native-ready and does not justify a
-provider-specific resume runner. Use a real wrapper that owns room polling
-before treating Antigravity as a resident participant, and do not persist raw
-Antigravity output, conversation ids, global-store paths, symlink targets, or
-config symlinks as proof artifacts.
+The current Antigravity CLI evidence is specifically for the `agy` executable.
+Older `--continue` probes were not enough for a runner, but the later
+conversation-id proof did justify the narrow `antigravity_live_session` path:
+the runner captures `Created conversation <id>` from an `agy --log-file ...
+--print` call and resumes only through explicit `agy --conversation <id>`.
+That still does not make generic `antigravity_cli`, PTY prompt bridging, or
+one-shot `local_cli` native-ready, and public evidence must not persist raw
+Antigravity output, full conversation ids, global-store paths, symlink targets,
+or config symlinks.
 The current Cursor Agent evidence is also narrow: `cursor-agent
 create-chat` plus `cursor-agent --resume <chat_id> --print` can preserve one
 chat's context on this local install only when the same workspace is reused.
@@ -241,14 +242,15 @@ resident can start, connect, answer one redacted lobby probe, stop, and report
 post-stop `stopped` with safe counts. Cursor still has not proven official-turn
 quality, restart, recover, tool safety, future billing stability, production
 readiness, or sandboxing.
-The current Hermes evidence is weaker than the provider-specific resident
-paths. A/B probes show `--resume <session_a>` and `--resume <session_b>` can
-recall their own suffixes, so Hermes has useful provider-owned context. But a
-fresh no-resume control also recalled a prior session suffix, so Hermes remains
-a global-recall-contaminated provider-owned context surface rather than a
-session-id-specific resident path. Keep Hermes in the same explicit-approval
-staging lane until a clean session-id proof or self-service room loop is
-verified.
+The current Hermes evidence is specifically for `hermes chat`. Older probes
+showed useful context but were global-recall contaminated. The later
+source-isolated proof did justify the narrow `hermes_live_session` path: the
+runner uses `hermes chat --ignore-user-config --ignore-rules --source ...
+--pass-session-id` to capture a session id and resumes only through explicit
+`--resume <session_id>`. That still does not make generic `hermes_cli`,
+`--continue`, terminal prompt bridging, or one-shot `--query` native-ready.
+Do not persist raw Hermes output, full session ids, exported transcript bodies,
+local paths, or provider logs as proof artifacts.
 
 ## GUI Startup Autostart
 
@@ -1358,7 +1360,60 @@ python3 -m agentsassemble.cli live-agent discover \
   --json
 ```
 
-Discovery writes `.agentsassemble/live-agents.discovered.local.json` by default. It only checks whether known executables are on `PATH`; it does not run Claude, Codex, Kiro, Antigravity, Gemini, Cursor, Grok, Hermes CLI, openclaw, model prompts, login checks, network calls, or billing-affecting operations. Detected `claude`, `openclaw`, and legacy `gemini` are `terminal_session` candidates when PTY terminal sessions are available; their `join_semantics` is `terminal_pty_prompt_bridge`, their `context_durability` is `process_lifetime`, and their `evidence_basis` is `path_and_pty_preflight`. Hand-authored `self_service` residents remain supported through `join_semantics: "self_service_room_loop"` when a wrapper truly owns the room loop; discovery does not invent that wrapper for a bare provider executable. Detected `codex` becomes a `codex_live_session` resident that omits `command` so the existing Codex default and safety preflight remain centralized; its discovery contract is `join_semantics: "codex_exec_resume"`, `context_durability: "provider_managed_resume"`, and `evidence_basis: "path_and_codex_safety_preflight"`. Detected `kiro` becomes a `kiro_live_session` resident that omits `command` so the resident runner applies the Kiro default command shape; its discovery contract is `join_semantics: "kiro_chat_resume"`, `context_durability: "provider_managed_resume"`, and `evidence_basis: "path_and_kiro_resume_preflight"`. Detected `cursor-agent` becomes a `cursor_live_session` resident that omits `command` so the resident runner applies `cursor-agent create-chat` plus `--resume` with a runner-owned workspace; the older generic `cursor` / `terminal_session` row is still reported as `entry_status: "superseded"` for evidence/back-compat visibility, but it is not written into generated resident configs or approval targets. Detected `grok` becomes a `grok_live_session` resident that omits `command` so the resident runner applies the Grok default JSON stdout resume shape; its discovery contract is `join_semantics: "grok_session_resume"`, `context_durability: "provider_managed_resume"`, and `evidence_basis: "path_and_grok_resume_preflight"`. Detected `agy` or legacy `antigravity`, plus detected `hermes`, are reported as `unsupported_evidence` inventory rows only; their `join_semantics` is `unsupported_evidence`, their `context_durability` is `not_proven`, and their `evidence_basis` is `path_and_negative_continuity_evidence`, so they are not written into the generated resident config or session bundle. Detected `gemini` is reported as legacy and skipped unless `--include-legacy-gemini` is set. If PTY terminal sessions are unavailable on the host, terminal-session candidates such as Claude, openclaw, and legacy Gemini are not written into the generated resident config; their discovery rows use `entry_status: "unsupported"`, `operator_action: "unsupported_terminal"`, and `reason: "terminal_unsupported"` with a `safety_note` explaining the PTY limit. Each discovery row also includes `agent_id`, `entry_status`, `entry_mode`, `operator_action`, `requires_approval`, and `safety_note` so the CLI, GUI, and scripts can explain whether that candidate is ready for `auto_join`, needs `include_legacy_gemini`, needs `install_cli`, is blocked because PTY terminal sessions are unavailable, is superseded by a provider-specific resident, or is evidence-only. Discovery defaults generated agents to `engagement_mode: "mentioned"` so a discovered real-provider group does not answer every lobby message unless the operator explicitly chooses `--engagement-mode always`. A successful JSON response includes the generated resident config plus `next_commands.preflight` and `next_commands.run_group`.
+Discovery writes `.agentsassemble/live-agents.discovered.local.json` by default.
+It only checks whether known executables are on `PATH`; it does not run Claude,
+Codex, Kiro, Antigravity, Gemini, Cursor, Grok, Hermes CLI, openclaw, model
+prompts, login checks, network calls, or billing-affecting operations. Detected
+`claude`, `openclaw`, and legacy `gemini` are `terminal_session` candidates when
+PTY terminal sessions are available; their `join_semantics` is
+`terminal_pty_prompt_bridge`, their `context_durability` is `process_lifetime`,
+and their `evidence_basis` is `path_and_pty_preflight`. Hand-authored
+`self_service` residents remain supported through `join_semantics:
+"self_service_room_loop"` when a wrapper truly owns the room loop; discovery
+does not invent that wrapper for a bare provider executable. Detected `codex`
+becomes a `codex_live_session` resident that omits `command` so the existing
+Codex default and safety preflight remain centralized; its discovery contract is
+`join_semantics: "codex_exec_resume"`, `context_durability:
+"provider_managed_resume"`, and `evidence_basis:
+"path_and_codex_safety_preflight"`. Detected `kiro` becomes a
+`kiro_live_session` resident that omits `command` so the resident runner applies
+the Kiro default command shape; its discovery contract is `join_semantics:
+"kiro_chat_resume"`, `context_durability: "provider_managed_resume"`, and
+`evidence_basis: "path_and_kiro_resume_preflight"`. Detected `cursor-agent`
+becomes a `cursor_live_session` resident that omits `command` so the resident
+runner applies `cursor-agent create-chat` plus `--resume` with a runner-owned
+workspace; the older generic `cursor` / `terminal_session` row is still reported
+as `entry_status: "superseded"` for evidence/back-compat visibility, but it is
+not written into generated resident configs or approval targets. Detected `grok`
+becomes a `grok_live_session` resident that omits `command` so the resident
+runner applies the Grok default JSON stdout resume shape; its discovery contract
+is `join_semantics: "grok_session_resume"`, `context_durability:
+"provider_managed_resume"`, and `evidence_basis:
+"path_and_grok_resume_preflight"`. Detected `agy` or legacy `antigravity`
+becomes an `antigravity_live_session` resident using
+`join_semantics: "antigravity_conversation_resume"` and
+`evidence_basis: "path_and_antigravity_conversation_preflight"`. Detected
+`hermes` becomes a `hermes_live_session` resident using `join_semantics:
+"hermes_chat_resume"` and `evidence_basis: "path_and_hermes_resume_preflight"`.
+Both remain approval-required, advisory-sandbox live-session residents; generic
+`antigravity_cli`, generic `hermes_cli`, one-shot local CLI calls, and
+`--continue` shortcuts are still non-live. Detected `gemini` is reported as
+legacy and skipped unless `--include-legacy-gemini` is set. If PTY terminal
+sessions are unavailable on the host, terminal-session candidates such as
+Claude, openclaw, and legacy Gemini are not written into the generated resident
+config; their discovery rows use `entry_status: "unsupported"`,
+`operator_action: "unsupported_terminal"`, and `reason: "terminal_unsupported"`
+with a `safety_note` explaining the PTY limit. Each discovery row also includes
+`agent_id`, `entry_status`, `entry_mode`, `operator_action`,
+`requires_approval`, and `safety_note` so the CLI, GUI, and scripts can explain
+whether that candidate is ready for `auto_join`, needs `include_legacy_gemini`,
+needs `install_cli`, is blocked because PTY terminal sessions are unavailable,
+is superseded by a provider-specific resident, or is evidence-only. Discovery
+defaults generated agents to `engagement_mode: "mentioned"` so a discovered
+real-provider group does not answer every lobby message unless the operator
+explicitly chooses `--engagement-mode always`. A successful JSON response
+includes the generated resident config plus `next_commands.preflight` and
+`next_commands.run_group`.
 
 Add `--session-bundle` when discovery should also prepare the official resident meeting entry surface:
 
@@ -1788,11 +1843,13 @@ admission, session start/stop cleanup, official turn quality, tool safety, or
 restart behavior. Pair it with `real-session-smoke` when you need room-level
 start/probe/stop evidence for a host-approved resident config.
 
-The 2026-05-28 approved group proof over the current discovery-generated
-provider-specific resident config for this local install returned 4/4 passing
-rows for Codex, Kiro, Cursor, and Grok. All four captured provider session ids,
-returned the ready marker on the first turn, matched the expected suffix on the
-second turn, and kept the same two-turn-only limitations above.
+The 2026-05-28 approved proof runs over this local install have passing rows for
+Codex, Kiro, Cursor, Grok, Antigravity, and Hermes. All captured provider
+session ids, acknowledged the ready marker on the first turn, recalled the
+expected suffix on the second turn, and kept the same two-turn-only limitations
+above. Antigravity and Hermes are explicitly formatting-tolerant in the proof
+report: they may return `recall_match_mode: "mentioned"` instead of exact
+one-token suffix output.
 
 For Cursor:
 
@@ -2169,7 +2226,21 @@ python3 -m agentsassemble.cli live-agent session-runs retry-now \
   --group-id local-cli-group
 ```
 
-Durable session-run records are restart intent, not stored provider approval. The durable ensure API and lifecycle-owned session-run monitor can automatically reconcile credential-free fake/local residents, but if the saved session-run config or the matching persisted process-group config resolves to a real provider resident such as `terminal_session`, `codex_live_session`, `antigravity_cli`, `cursor`, or `remote_bridge`, the server records a failed or degraded approval-required result instead of invoking the provider. If a legacy run has no saved config and the process group cannot be inspected, the monitor fails closed with the same safe approval-required evidence. Use `--approve-real-providers` only on the current `retry-now` command when the operator wants that one retry action to relaunch real provider residents; the flag is treated as approval only when it is JSON/CLI true, and it is not persisted into `session-runs.json` or public session-run output:
+Durable session-run records are restart intent, not stored provider approval.
+The durable ensure API and lifecycle-owned session-run monitor can automatically
+reconcile credential-free fake/local residents, but if the saved session-run
+config or the matching persisted process-group config resolves to a real
+provider resident such as `terminal_session`, `codex_live_session`,
+`kiro_live_session`, `cursor_live_session`, `grok_live_session`,
+`antigravity_live_session`, `hermes_live_session`, `antigravity_cli`, `cursor`,
+or `remote_bridge`, the server records a failed or degraded approval-required
+result instead of invoking the provider. If a legacy run has no saved config and
+the process group cannot be inspected, the monitor fails closed with the same
+safe approval-required evidence. Use `--approve-real-providers` only on the
+current `retry-now` command when the operator wants that one retry action to
+relaunch real provider residents; the flag is treated as approval only when it
+is JSON/CLI true, and it is not persisted into `session-runs.json` or public
+session-run output:
 
 ```bash
 python3 -m agentsassemble.cli live-agent session-runs retry-now \
@@ -2481,7 +2552,17 @@ If approved and installed, `configs/live-agents.example.json` still shows the ge
 ["claude"]
 ```
 
-The Claude example uses `connection_kind: "terminal_session"` so it stays alive behind a PTY instead of using one-shot stdin/stdout delegation. Antigravity is not listed as a bare `agy`/legacy `antigravity` runner recommendation: current continuity evidence keeps bare Antigravity discovery as `unsupported_evidence`, and only a separately written wrapper that truly owns the room loop should be hand-authored as `connection_kind: "self_service"`. Hermes is also evidence-only in discovery until a clean session-id proof or self-service wrapper exists. Gemini CLI is now legacy for consumer use after Google's May 19, 2026 transition announcement; do not substitute bare Antigravity discovery as a runnable Google-backed resident without new proof.
+The Claude example uses `connection_kind: "terminal_session"` so it stays alive
+behind a PTY instead of using one-shot stdin/stdout delegation. Antigravity and
+Hermes are startable only through their provider-specific live-session kinds:
+`antigravity_live_session` captures a conversation id from `agy --log-file ...
+--print` and resumes with `agy --conversation <id>`, while
+`hermes_live_session` captures a session id with `hermes chat
+--pass-session-id` and resumes with `--resume <id>`. Do not hand-author bare
+generic `antigravity_cli`, generic `hermes_cli`, `--continue`, or one-shot
+local CLI configs as resident sessions. Gemini CLI is now legacy for consumer
+use after Google's May 19, 2026 transition announcement; do not substitute bare
+Antigravity discovery as a runnable Google-backed resident without new proof.
 
 For the first Codex resident shape, use `configs/live-agents.codex-session.example.json`. It uses `provider_kind: "codex_live_session"` with `connection_kind: "live_session"` and may omit `command`, in which case the resident runner defaults to `["codex"]`:
 

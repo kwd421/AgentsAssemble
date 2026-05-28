@@ -175,6 +175,133 @@ class LiveAgentContinuityProofTests(unittest.TestCase):
         self.assertIn("--resume", calls[1]["command"])
         self.assertNotIn("KCODE-ABCDE12345", " ".join(calls[1]["command"]))
 
+    def test_antigravity_continuity_proof_accepts_conversation_recall_with_verbose_reply(self):
+        calls = []
+        conversation_id = "a" * 36
+
+        def command_runner(command, **kwargs):
+            calls.append({"command": command, "kwargs": kwargs})
+            if "--log-file" in command:
+                log_path = Path(command[command.index("--log-file") + 1])
+                log_path.write_text(f"Created conversation {conversation_id}\n", encoding="utf-8")
+            if "--conversation" in command:
+                self.assertNotIn("KCODE-ABCDE12345", " ".join(command))
+                return subprocess.CompletedProcess(command, 0, stdout="The suffix is 2345.", stderr="KCODE-ABCDE12345")
+            self.assertIn("KCODE-ABCDE12345", " ".join(command))
+            return subprocess.CompletedProcess(command, 0, stdout="READY\n", stderr="KCODE-ABCDE12345")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_live_agent_continuity_proof(
+                config(provider_kind="antigravity_live_session", command=["agy"]),
+                approve_real_providers=True,
+                command_runner=command_runner,
+                code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+                cwd=Path(temp_dir),
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["provider_kind"], "antigravity_live_session")
+        self.assertTrue(result["session_id_captured"])
+        self.assertEqual(result["session_id_suffix"], "aaaaaa")
+        self.assertFalse(result["expected_suffix_matched"])
+        self.assertTrue(result["expected_suffix_recalled"])
+        self.assertEqual(result["recall_match_mode"], "mentioned")
+        self.assertNotIn("KCODE-ABCDE12345", str(result))
+        self.assertIn("--conversation", calls[1]["command"])
+
+    def test_antigravity_continuity_proof_uses_isolated_cwd_for_provider_sidecars(self):
+        calls = []
+        seen_cwds = []
+        conversation_id = "b" * 36
+
+        def command_runner(command, **kwargs):
+            calls.append({"command": command, "kwargs": kwargs})
+            cwd = Path(kwargs["cwd"])
+            seen_cwds.append(cwd)
+            (cwd / ".antigravitycli").mkdir(exist_ok=True)
+            if "--log-file" in command:
+                log_path = Path(command[command.index("--log-file") + 1])
+                log_path.write_text(f"Created conversation {conversation_id}\n", encoding="utf-8")
+            if "--conversation" in command:
+                return subprocess.CompletedProcess(command, 0, stdout="The suffix is 2345.", stderr="")
+            return subprocess.CompletedProcess(command, 0, stdout="READY\n", stderr="")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_cwd = Path(temp_dir) / "repo"
+            repo_cwd.mkdir()
+            result = run_live_agent_continuity_proof(
+                config(provider_kind="antigravity_live_session", command=["agy"]),
+                approve_real_providers=True,
+                command_runner=command_runner,
+                code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+                cwd=repo_cwd,
+            )
+
+            self.assertFalse((repo_cwd / ".antigravitycli").exists())
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(seen_cwds)
+        self.assertTrue(all(cwd != repo_cwd for cwd in seen_cwds))
+        self.assertTrue(all(cwd.name.startswith("agentsassemble-continuity-proof-") for cwd in seen_cwds))
+
+    def test_hermes_continuity_proof_accepts_session_recall_with_verbose_reply(self):
+        calls = []
+        session_id = "hermes-session-abc123"
+
+        def command_runner(command, **kwargs):
+            calls.append({"command": command, "kwargs": kwargs})
+            if "--resume" in command:
+                self.assertNotIn("KCODE-ABCDE12345", " ".join(command))
+                return subprocess.CompletedProcess(command, 0, stdout="The suffix is 2345.", stderr=f"session_id: {session_id}\n")
+            self.assertIn("KCODE-ABCDE12345", " ".join(command))
+            return subprocess.CompletedProcess(command, 0, stdout="READY. I have stored it for the next turn.", stderr=f"session_id: {session_id}\n")
+
+        result = run_live_agent_continuity_proof(
+            config(provider_kind="hermes_live_session", command=["hermes"]),
+            approve_real_providers=True,
+            command_runner=command_runner,
+            code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+        )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["provider_kind"], "hermes_live_session")
+        self.assertTrue(result["session_id_captured"])
+        self.assertEqual(result["session_id_suffix"], "abc123")
+        self.assertFalse(result["first_reply_ready_normalized"])
+        self.assertTrue(result["first_reply_ready_acknowledged"])
+        self.assertFalse(result["expected_suffix_matched"])
+        self.assertTrue(result["expected_suffix_recalled"])
+        self.assertEqual(result["recall_match_mode"], "mentioned")
+        self.assertNotIn("KCODE-ABCDE12345", str(result))
+        self.assertIn("--resume", calls[1]["command"])
+
+    def test_hermes_continuity_proof_uses_isolated_cwd(self):
+        seen_cwds = []
+        session_id = "hermes-session-abc123"
+
+        def command_runner(command, **kwargs):
+            seen_cwds.append(Path(kwargs["cwd"]))
+            if "--resume" in command:
+                return subprocess.CompletedProcess(command, 0, stdout="The suffix is 2345.", stderr=f"session_id: {session_id}\n")
+            return subprocess.CompletedProcess(command, 0, stdout="READY\n", stderr=f"session_id: {session_id}\n")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_cwd = Path(temp_dir) / "repo"
+            repo_cwd.mkdir()
+            result = run_live_agent_continuity_proof(
+                config(provider_kind="hermes_live_session", command=["hermes"]),
+                approve_real_providers=True,
+                command_runner=command_runner,
+                code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+                cwd=repo_cwd,
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(seen_cwds)
+        self.assertTrue(all(cwd != repo_cwd for cwd in seen_cwds))
+        self.assertTrue(all(cwd.name.startswith("agentsassemble-continuity-proof-") for cwd in seen_cwds))
+
     def test_cursor_continuity_proof_uses_chat_resume_and_stable_workspace(self):
         calls = []
         chat_id = "cursor-chat-abc123"

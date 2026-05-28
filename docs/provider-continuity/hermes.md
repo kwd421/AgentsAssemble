@@ -3,8 +3,9 @@
 Date: 2026-05-27; updated 2026-05-28
 
 This note records the bounded Hermes CLI continuity probes used for the
-provider live-session matrix. They are evidence only: no resident runner,
-config promotion, or sandbox claim was added from these probes.
+provider live-session matrix. The latest evidence is strong enough for the
+narrow `hermes_live_session` runner, while generic `hermes_cli` and one-shot
+`--query` paths remain non-live.
 
 ## Safe Contract Surface
 
@@ -59,27 +60,35 @@ Safe fields showed:
 - A fresh no-resume control also surfaced suffix A.
 - Reusing session A from a different cwd surfaced suffix A.
 
-This proves Hermes can preserve useful provider-owned session context, but it
-also proves that a fresh no-resume call can reach at least one session secret.
-That breaks the negative-control requirement for an AgentsAssemble
-provider-specific resident runner.
+That run proved Hermes can preserve useful provider-owned session context, but
+also showed a fresh no-resume call could reach at least one session secret.
+That older run stayed `global-recall-contaminated-no-runner`.
+
+A newer approved refresh used a unique `--source` value plus
+`--ignore-user-config --ignore-rules` for each call. Safe fields showed:
+
+- Session A and session B both returned distinct safe session ids.
+- Both seed calls returned the ready marker and did not reveal their tags.
+- `--resume <session_a>` recalled only tag A.
+- `--resume <session_b>` recalled only tag B.
+- Same-source and fresh-source no-resume controls recalled neither tag and
+  returned the expected no-context marker.
+- A checked-in `live-agent continuity-proof` run returned `status: "ok"` with
+  session capture, no code/suffix leak, no prompt replay, and
+  `recall_match_mode: "mentioned"` because Hermes wrapped the suffix in
+  explanatory text instead of outputting exactly one token.
 
 ## Verdict
 
-Hermes is `global-recall-contaminated-no-runner` for this slice.
+Hermes is now `provider-session-resume-runner` only for the
+`hermes_live_session` contract.
 
-The current local install can recall prior probes after `--resume`, and the A/B
-disambiguation shows the session ids are not simply ignored. However, a fresh
-no-resume control can also recall a prior session secret. That is useful
-evidence that Hermes has provider-owned context, but it is not enough to build
-or advertise a deterministic live-room resident runner.
-
-Do not add a Hermes runner until a later slice proves one of these:
-
-- a stable session-id-only recall path with a clean no-resume negative control;
-- or an agent-owned self-service wrapper that registers, waits, replies,
-  heartbeats, and leaves through room tools without relying on hidden global
-  recall.
+The runner must use explicit `hermes chat --resume <session_id>` with the
+runner-owned `--source` shape and the rule-suppression flags proven above. It
+must not present generic `hermes_cli`, `--continue`, terminal prompt bridging,
+or one-shot `--query` calls as live participation. Formatting compliance
+remains weaker than session recall, so continuity proof reports
+`expected_suffix_matched` separately from `expected_suffix_recalled`.
 
 Public docs must keep raw prompts, raw replies, full session ids, codewords,
 absolute local paths, account data, provider logs, and exported transcript bodies

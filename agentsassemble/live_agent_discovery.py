@@ -27,11 +27,23 @@ KIRO_LIVE_SESSION_CONTRACT = {
     "sandbox_enforcement": "advisory",
     "evidence_basis": "path_and_kiro_resume_preflight",
 }
+ANTIGRAVITY_LIVE_SESSION_CONTRACT = {
+    "join_semantics": "antigravity_conversation_resume",
+    "context_durability": "provider_managed_resume",
+    "sandbox_enforcement": "advisory",
+    "evidence_basis": "path_and_antigravity_conversation_preflight",
+}
 GROK_LIVE_SESSION_CONTRACT = {
     "join_semantics": "grok_session_resume",
     "context_durability": "provider_managed_resume",
     "sandbox_enforcement": "advisory",
     "evidence_basis": "path_and_grok_resume_preflight",
+}
+HERMES_LIVE_SESSION_CONTRACT = {
+    "join_semantics": "hermes_chat_resume",
+    "context_durability": "provider_managed_resume",
+    "sandbox_enforcement": "advisory",
+    "evidence_basis": "path_and_hermes_resume_preflight",
 }
 CURSOR_LIVE_SESSION_CONTRACT = {
     "join_semantics": "cursor_chat_resume",
@@ -122,7 +134,7 @@ def build_discovered_live_agent_config(
             discovery["superseded_by"] = str(spec.get("superseded_by") or "")
         discoveries.append(discovery)
         if included:
-            agents.append(_agent_entry(spec, meeting_id=meeting_id, engagement_mode=engagement_mode))
+            agents.append(_agent_entry(spec, command=command, meeting_id=meeting_id, engagement_mode=engagement_mode))
     config = {
         "server": server,
         "poll_interval": 2,
@@ -262,17 +274,12 @@ def _candidate_specs() -> list[dict[str, Any]]:
         {
             "command": "agy",
             "commands": ["agy", "antigravity"],
-            "agent_id": "antigravity-cli-live",
-            "display_name": "Antigravity CLI",
-            "provider_kind": "antigravity_cli",
-            "connection_kind": "unsupported_evidence",
-            "timeout_seconds": 120,
-            "unsupported_evidence": True,
-            "unsupported_note": (
-                "Antigravity is inventory-only: isolated probes did not prove a deterministic "
-                "conversation id and created global-store symlink side effects."
-            ),
-            **UNSUPPORTED_EVIDENCE_CONTRACT,
+            "agent_id": "antigravity-live",
+            "display_name": "Antigravity",
+            "provider_kind": "antigravity_live_session",
+            "connection_kind": "live_session",
+            "timeout_seconds": 180,
+            **ANTIGRAVITY_LIVE_SESSION_CONTRACT,
         },
         {
             "command": "cursor-agent",
@@ -308,17 +315,12 @@ def _candidate_specs() -> list[dict[str, Any]]:
         },
         {
             "command": "hermes",
-            "agent_id": "hermes-cli-live",
-            "display_name": "Hermes CLI",
-            "provider_kind": "hermes_cli",
-            "connection_kind": "unsupported_evidence",
-            "timeout_seconds": 120,
-            "unsupported_evidence": True,
-            "unsupported_note": (
-                "Hermes is inventory-only: resume can recall session context, but a fresh "
-                "no-resume control also recalled prior session material."
-            ),
-            **UNSUPPORTED_EVIDENCE_CONTRACT,
+            "agent_id": "hermes-live",
+            "display_name": "Hermes",
+            "provider_kind": "hermes_live_session",
+            "connection_kind": "live_session",
+            "timeout_seconds": 180,
+            **HERMES_LIVE_SESSION_CONTRACT,
         },
         {
             "command": "openclaw",
@@ -353,7 +355,7 @@ def _resolve_candidate_command(spec: dict[str, Any], resolver: Callable[[str], s
     return str(spec["command"]), False
 
 
-def _agent_entry(spec: dict[str, Any], *, meeting_id: str, engagement_mode: str) -> dict[str, Any]:
+def _agent_entry(spec: dict[str, Any], *, command: str, meeting_id: str, engagement_mode: str) -> dict[str, Any]:
     entry = {
         "agent_id": spec["agent_id"],
         "display_name": spec["display_name"],
@@ -368,7 +370,7 @@ def _agent_entry(spec: dict[str, Any], *, meeting_id: str, engagement_mode: str)
         "evidence_basis": spec["evidence_basis"],
     }
     if not spec.get("omit_command"):
-        entry["command"] = [spec["command"]]
+        entry["command"] = [command]
     if "terminal_idle_timeout" in spec:
         entry["terminal_idle_timeout"] = spec["terminal_idle_timeout"]
     return entry
@@ -433,10 +435,14 @@ def _entry_mode(spec: dict[str, Any]) -> str:
         return "codex_live_session"
     if spec["provider_kind"] == "kiro_live_session":
         return "kiro_live_session"
+    if spec["provider_kind"] == "antigravity_live_session":
+        return "antigravity_live_session"
     if spec["provider_kind"] == "cursor_live_session":
         return "cursor_live_session"
     if spec["provider_kind"] == "grok_live_session":
         return "grok_live_session"
+    if spec["provider_kind"] == "hermes_live_session":
+        return "hermes_live_session"
     return str(spec["connection_kind"])
 
 
@@ -476,10 +482,14 @@ def _safety_note(spec: dict[str, Any], entry_status: str) -> str:
         return "Codex defaults and safety checks stay centralized in preflight."
     if spec["provider_kind"] == "kiro_live_session":
         return "Kiro uses kiro chat --resume-id; run preflight before auto join starts the resident."
+    if spec["provider_kind"] == "antigravity_live_session":
+        return "Antigravity uses agy --conversation after clean continuity evidence; run preflight before auto join starts the resident."
     if spec["provider_kind"] == "cursor_live_session":
         return "Cursor uses cursor-agent create-chat plus --resume and a runner-owned stable workspace; run preflight before auto join starts the resident."
     if spec["provider_kind"] == "grok_live_session":
         return "Grok uses JSON stdout plus --resume; run preflight before auto join starts the resident."
+    if spec["provider_kind"] == "hermes_live_session":
+        return "Hermes uses hermes chat --resume with fresh no-resume controls; run preflight before auto join starts the resident."
     if spec["connection_kind"] == "self_service":
         return "Self-service process is supervised; it owns its own room loop after preflight."
     if spec["connection_kind"] == "terminal_session":

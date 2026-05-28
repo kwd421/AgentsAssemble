@@ -802,6 +802,10 @@ def _allowed_resident_connection_kinds(provider_kind: str) -> frozenset[str]:
         return frozenset({"live_session"})
     if provider_kind == "grok_live_session":
         return frozenset({"live_session"})
+    if provider_kind == "antigravity_live_session":
+        return frozenset({"live_session"})
+    if provider_kind == "hermes_live_session":
+        return frozenset({"live_session"})
     if provider_kind == "local_cli":
         return frozenset({"local_cli", "live_session", "terminal_session", "self_service"})
     return SUPPORTED_SESSION_CONNECTION_KINDS
@@ -1096,6 +1100,10 @@ def _resident_connection_kind_for_provider(provider_kind: str) -> str:
     if provider_kind == "cursor_live_session":
         return "live_session"
     if provider_kind == "grok_live_session":
+        return "live_session"
+    if provider_kind == "antigravity_live_session":
+        return "live_session"
+    if provider_kind == "hermes_live_session":
         return "live_session"
     if provider_kind == "local_cli":
         return "local_cli"
