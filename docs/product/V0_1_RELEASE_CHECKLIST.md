@@ -114,6 +114,9 @@ verified, and separate from broad frontend redesign.
 3. Add current-step evidence:
    - show whether the room is preparing, waiting for agents, running official
      turns, waiting on pending turns, finalized, or stopped.
+   - expose the same state through the selected meeting payload and compact
+     `/api/meetings/<meeting-id>/lifecycle` projection without leaking prompt,
+     provider, command, session, event-body, or raw path data.
 4. Tighten empty and post-run states:
    - make the next action clear when no meeting exists.
    - make final artifacts easy to find after finalization.
@@ -130,7 +133,7 @@ The next implementation slice should be chosen from this queue:
   next action per state.
 - Add or improve tests that verify the GUI does not replace live-event rows
   unnecessarily during refresh.
-- Add a compact current-step/status projection for meeting lifecycle state.
+- Surface the compact meeting lifecycle projection in the React operator UI.
 - Expand `assemble release-health run` only when a later slice needs additional
   v0.1 release evidence.
 

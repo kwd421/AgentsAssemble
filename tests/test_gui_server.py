@@ -576,6 +576,56 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(payload["artifacts"]["transcript.md"], "")
 
+    def test_meeting_payload_exposes_lifecycle_projection(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(
+                meeting_dir,
+                {
+                    "meeting_id": "m1",
+                    "topic": "runtime",
+                    "live_status": "running",
+                    "roles": [{"id": "architect", "display_name": "Architect"}],
+                    "agent_bindings": [
+                        {"role_id": "architect", "agent_id": "agent-a", "permission_profile_id": "meeting"}
+                    ],
+                    "permission_profiles": {"meeting": {"id": "meeting", "meeting_read": True, "official_turn": True}},
+                },
+            )
+
+            payload = build_meeting_payload(meeting_dir)
+
+            self.assertEqual(payload["lifecycle"]["state"], "waiting_for_agents")
+            self.assertEqual(payload["lifecycle"]["role_hints"][0]["role_id"], "architect")
+            serialized = json.dumps(payload["lifecycle"], ensure_ascii=False)
+            self.assertNotIn("permission_profile_id", serialized)
+            self.assertNotIn(str(root), serialized)
+
+    def test_meeting_lifecycle_endpoint_returns_compact_projection(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "runtime", "live_status": "running"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/meetings/m1/lifecycle", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["meeting_id"], "m1")
+            self.assertEqual(payload["lifecycle"]["state"], "preparing")
+            serialized = json.dumps(payload, ensure_ascii=False)
+            self.assertNotIn("artifacts", serialized)
+            self.assertNotIn("live_events", serialized)
+            self.assertNotIn(str(root), serialized)
+
     def test_build_meeting_payload_preserves_codex_live_session_binding_metadata(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"

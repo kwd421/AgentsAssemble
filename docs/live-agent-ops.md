@@ -193,6 +193,19 @@ Session-owned supervised groups persist the safe `meeting_id` in `live-agent-run
 
 `/api/live-agent-health` also includes an `observations` overlay for ready resident sessions. It compares the latest bounded lobby event and each bound agent's latest official turn request against that agent's preserved lobby/live cursors and reply timestamp, then reports compact counts such as ready agents, lobby-behind, live-behind, active error count, and observation attention labels. This is read-only: health refreshes do not call providers, run probes, append operation rows, start or stop processes, post lobby messages, or expose lobby text, official request content, presence error text, provider output, config paths, endpoints, or auth refs.
 
+The selected meeting payload includes a compact read-only `lifecycle`
+projection, and `GET /api/meetings/<meeting-id>/lifecycle` returns only that
+projection plus the safe meeting id. The projection answers whether one room is
+archived, preparing, waiting for agents, running official turns, blocked by
+pending turns, finalized, or stopped by stale running-state inference. It is
+computed from the meeting record, bounded live events, optional roster presence,
+and the same stale-running threshold used by the GUI status inference. It does
+not persist state, call providers, start/stop sessions, expose event bodies,
+prompts, provider output, config paths, command arguments, raw local paths,
+session ids, or unsafe permission names. Role hints include only role id,
+display name, admission status, allowlisted safe permission booleans, and an
+unsafe-permission count.
+
 `/api/local-resources` is a separate read-only local resource snapshot for the
 operator console. It runs a bounded `ps` read, uses a short cache, and reports
 only load average, CPU count, aggregate tracked-process CPU/RSS, and sanitized

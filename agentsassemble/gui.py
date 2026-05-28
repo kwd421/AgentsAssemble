@@ -106,6 +106,7 @@ from agentsassemble.mafia_game import (
     start_mafia_game,
 )
 from agentsassemble.meeting import run_demo_meeting
+from agentsassemble.meeting_lifecycle import infer_live_status, project_meeting_lifecycle
 from agentsassemble.provider_health import provider_health_report
 from agentsassemble.release_health import release_health_catalog_payload
 from agentsassemble.meeting_events import (
@@ -126,7 +127,6 @@ from agentsassemble.models import ProviderConfig, Role
 
 TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
 TABS = ["lobby", "live", "board", "archive"]
-STALE_RUNNING_SECONDS = 300
 LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT = PROBE_REPLY_EVENT_TAIL_LIMIT
 SSE_ERROR_MESSAGE_LIMIT = 500
 REMOTE_LOBBY_REQUESTER = None
@@ -561,7 +561,7 @@ def list_meetings(output_root: Path, now: float | None = None) -> list[dict[str,
             continue
         if _is_diagnostic_meeting_record(meeting):
             continue
-        meeting = _with_inferred_live_status(
+        meeting = infer_live_status(
             meeting,
             meeting_dir,
             has_final_record=has_final_record,
@@ -588,7 +588,7 @@ def _is_diagnostic_meeting_record(meeting: dict[str, object]) -> bool:
 
 def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[str, object]:
     meeting, _, has_final_record = _load_meeting_record(meeting_dir)
-    meeting = _with_inferred_live_status(
+    meeting = infer_live_status(
         meeting,
         meeting_dir,
         has_final_record=has_final_record,
@@ -629,6 +629,7 @@ def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[s
         "tabs": TABS,
         "tab_labels": TAB_LABELS,
         "meeting": meeting,
+        "lifecycle": project_meeting_lifecycle(meeting_dir, now=now),
         "artifacts": artifacts,
         "tasks": tasks,
         "return_packets": return_packets,
@@ -674,35 +675,6 @@ def _load_meeting_record(meeting_dir: Path) -> tuple[dict[str, object], Path, bo
             if not live_path.exists():
                 raise
     return json.loads(live_path.read_text(encoding="utf-8")), live_path, False
-
-
-def _with_inferred_live_status(
-    meeting: dict[str, object],
-    meeting_dir: Path,
-    has_final_record: bool,
-    now: float | None = None,
-) -> dict[str, object]:
-    if has_final_record or meeting.get("live_status") != "running":
-        return meeting
-    latest_mtime = _latest_live_mtime(meeting_dir)
-    if latest_mtime is None:
-        return meeting
-    if (now if now is not None else time.time()) - latest_mtime < STALE_RUNNING_SECONDS:
-        return meeting
-    inferred = dict(meeting)
-    inferred["live_status"] = "stalled"
-    inferred["stalled_reason"] = "No live meeting update has been observed recently."
-    inferred["last_live_update_mtime"] = latest_mtime
-    return inferred
-
-
-def _latest_live_mtime(meeting_dir: Path) -> float | None:
-    mtimes = [
-        path.stat().st_mtime
-        for path in (meeting_dir / "live_state.json", meeting_dir / "live_events.jsonl")
-        if path.exists()
-    ]
-    return max(mtimes) if mtimes else None
 
 
 def serve_gui(
@@ -7210,6 +7182,23 @@ def _make_handler(
                     self._send_json({"meeting": None})
                     return
                 self._send_json(build_meeting_payload(Path(str(meetings[0]["path"]))))
+                return
+            if path.startswith("/api/meetings/") and path.endswith("/lifecycle"):
+                meeting_id = unquote(path.removeprefix("/api/meetings/").removesuffix("/lifecycle").strip("/"))
+                try:
+                    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
+                    return
+                if not meeting_dir.exists():
+                    self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
+                    return
+                self._send_json(
+                    {
+                        "meeting_id": meeting_id,
+                        "lifecycle": project_meeting_lifecycle(meeting_dir, now=time.time()),
+                    }
+                )
                 return
             meeting_events_id = self._meeting_events_id(path)
             if meeting_events_id:
