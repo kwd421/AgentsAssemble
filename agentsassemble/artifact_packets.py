@@ -197,6 +197,9 @@ def _handoff_checklist(meeting: dict[str, Any], research: dict[str, Any], task: 
         checklist.append("Redo failed research before making implementation decisions.")
     if task and task != "No task assigned.":
         checklist.append("Confirm assigned task scope before editing files.")
+    task_scope_report = meeting.get("task_scope_report") if isinstance(meeting.get("task_scope_report"), dict) else {}
+    if int(task_scope_report.get("overlap_count") or 0) > 0:
+        checklist.append("Review task_scope_report.md for overlapping file scope before editing files.")
     return checklist
 
 

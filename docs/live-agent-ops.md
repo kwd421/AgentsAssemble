@@ -2376,6 +2376,13 @@ What to check:
   events. `live_agent_turn_request` and `live_agent_turn_cancelled` are
   non-official control events; only official `message`/`synthesis` events feed
   transcript, shared memory, decision artifacts, tasks, and return packets.
+- `meetings/<meeting_id>/task_scope_report.md` and
+  `task_scope_report.json`: advisory overlap evidence derived from
+  `moderator_synthesis.tasks`. The report only records safe relative
+  file-shaped or directory-shaped tokens that appear in more than one role's
+  task scope. It drops absolute local paths, URLs, and raw task body snippets,
+  and it does not approve implementation, filesystem writes, git writes, or
+  provider execution.
 - `.agentsassemble/live-agent-runs/processes.json`: durable group records with `group_id`, `status`, `pid`, `config_path`, `server`, `log_path`, timestamps, `returncode`, `last_error`, and a safe launch-time `agents` manifest. Process list/API/GUI output redacts suspicious `last_error` text before display, and new auto-restart `restart_failed` records store a compact redacted restart-failure label when the relaunch exception contains tokens, endpoints, config paths, command options, env refs, or path-like values. Safe short failures such as a missing agent command remain visible.
 - `.agentsassemble/live-agent-runs/session-runs.json`: durable high-level session-run records created by `/api/live-agent-session-runs/ensure`. These records are the operator intent layer above process mechanics: they track `run_id`, `action`, `status`, `active`, `phase`, safe meeting/group ids, timestamps, reconcile count, retry backoff fields, and safe session result summaries. Use `assemble live-agent session-runs list` or `GET /api/live-agent-session-runs` to inspect them.
 - agents manifest entries contain only `agent_id`, `display_name`, `provider_kind`, and `connection_kind`. The manifest does not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.

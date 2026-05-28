@@ -22,6 +22,8 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertTrue((meeting_dir / "transcript.md").exists())
             self.assertTrue((meeting_dir / "decision.md").exists())
             self.assertTrue((meeting_dir / "meeting.json").exists())
+            self.assertTrue((meeting_dir / "task_scope_report.md").exists())
+            self.assertTrue((meeting_dir / "task_scope_report.json").exists())
 
             meeting = json.loads((meeting_dir / "meeting.json").read_text(encoding="utf-8"))
             live_events = [
@@ -62,6 +64,10 @@ class DemoMeetingTests(unittest.TestCase):
             self.assertTrue(all("engagement_mode" in binding for binding in meeting["agent_bindings"]))
             self.assertEqual(meeting["evidence_gate"]["status"], "pass")
             self.assertEqual(meeting["decision_gate"]["status"], "split_decision")
+            self.assertEqual(meeting["artifacts"]["task_scope_report"], "task_scope_report.md")
+            self.assertEqual(meeting["artifacts"]["task_scope_report_json"], "task_scope_report.json")
+            self.assertEqual(meeting["task_scope_report"]["version"], "task_scope_report_v0")
+            self.assertIn(meeting["task_scope_report"]["summary"], {"no_obvious_overlaps", "scope_overlap_evidence"})
             self.assertEqual(meeting["decision_gate"]["required_action"], "record_split_decision")
             self.assertEqual(meeting["decision_status"]["status"], "partial")
             self.assertIn("next_actions", meeting["decision_status"])

@@ -9,6 +9,7 @@ from agentsassemble.persona_artifact_contract import apply_persona_artifact_cont
 from agentsassemble.artifact_public import render_agenda, render_decision, render_transcript
 from agentsassemble.delegate_packets import build_delegate_packet, render_delegate_packet_markdown
 from agentsassemble.models import Role
+from agentsassemble.task_scope_report import write_task_scope_report
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
@@ -214,6 +215,8 @@ def write_public_artifacts(meeting_dir: Path, meeting: dict[str, Any], *, transc
     synthesis = meeting["moderator_synthesis"]
     for role_id, task in synthesis["tasks"].items():
         (tasks_dir / f"{role_id}.md").write_text(f"# Task\n\n{task}\n", encoding="utf-8")
+
+    write_task_scope_report(meeting_dir, meeting)
 
     delegate_packet_dir = meeting_dir / "delegate_packets"
     delegate_packet_dir.mkdir(exist_ok=True)

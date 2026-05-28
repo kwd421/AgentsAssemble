@@ -165,6 +165,16 @@ The operator may explicitly close pending requests, which records non-official
 `live_agent_turn_cancelled` events and then finalizes from the real official
 messages that exist.
 
+Task scope conflict reports are advisory Work Mode artifacts. When public
+artifacts are written, AgentsAssemble may derive `task_scope_report.md` and
+`task_scope_report.json` from task assignments to show obvious repeated
+relative file or directory references across roles. This report is not
+implementation approval, does not grant filesystem or git write permission,
+does not expand globs or inspect the workspace, and must not include absolute
+local paths, URLs, prompts, provider output, raw task bodies, or Play Mode
+chatter. Agents still need an explicit implementation decision before editing
+files.
+
 ## GUI Text And Refresh Policy
 
 The vanilla GUI should optimize for trustworthy operations before polish:
