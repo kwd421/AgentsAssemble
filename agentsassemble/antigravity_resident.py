@@ -18,6 +18,7 @@ ANTIGRAVITY_SUBPROCESS_TIMEOUT = "antigravity_subprocess_timeout"
 ANTIGRAVITY_SUBPROCESS_NONZERO = "antigravity_subprocess_nonzero"
 ANTIGRAVITY_EMPTY_REPLY = "antigravity_empty_reply"
 ANTIGRAVITY_MISSING_CONVERSATION_ID = "antigravity_missing_conversation_id"
+ANTIGRAVITY_BACKEND_ERROR = "antigravity_backend_error"
 
 
 class AntigravityResidentRuntimeError(RuntimeError):
@@ -71,6 +72,7 @@ class AntigravityResidentCommandRunner:
                     "Antigravity live session did not expose a safe conversation id.",
                     category=ANTIGRAVITY_MISSING_CONVERSATION_ID,
                 )
+        self._raise_backend_error_from_log(log_path)
         reply = _text(getattr(completed, "stdout", "")).strip()
         if not reply:
             raise AntigravityResidentValueError(
@@ -130,6 +132,18 @@ class AntigravityResidentCommandRunner:
             if conversation_id:
                 return conversation_id
         return ""
+
+    def _raise_backend_error_from_log(self, log_path: Path) -> None:
+        try:
+            text = log_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return
+        if "RESOURCE_EXHAUSTED" not in text and "agent executor error" not in text:
+            return
+        raise AntigravityResidentRuntimeError(
+            "Antigravity live session backend reported an execution or quota error.",
+            category=ANTIGRAVITY_BACKEND_ERROR,
+        )
 
 
 def default_antigravity_resident_command(provider_kind: str, connection_kind: str, command: list[str]) -> list[str]:

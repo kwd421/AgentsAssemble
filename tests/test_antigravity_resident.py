@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from agentsassemble.antigravity_resident import (
+    ANTIGRAVITY_BACKEND_ERROR,
     ANTIGRAVITY_EMPTY_REPLY,
     ANTIGRAVITY_MISSING_CONVERSATION_ID,
     ANTIGRAVITY_SUBPROCESS_NONZERO,
@@ -115,6 +116,30 @@ class AntigravityResidentTests(unittest.TestCase):
         finally:
             empty_runner.close()
         self.assertEqual(antigravity_error_category(empty_error.exception), ANTIGRAVITY_EMPTY_REPLY)
+
+    def test_runner_rejects_stale_stdout_when_backend_reports_quota_error(self):
+        conversation_id = "a" * 36
+
+        def quota_error(command, **kwargs):
+            log_path = Path(command[command.index("--log-file") + 1])
+            log_path.write_text(
+                "Created conversation aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+                "agent executor error: RESOURCE_EXHAUSTED (code 429): quota reached\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 0, stdout="previous successful reply", stderr="")
+
+        runner = AntigravityResidentCommandRunner(
+            config(session_id=conversation_id),
+            command_runner=quota_error,
+            cwd=Path.cwd(),
+        )
+        try:
+            with self.assertRaisesRegex(RuntimeError, "backend reported") as caught:
+                runner([], "prompt", timeout_seconds=45)
+        finally:
+            runner.close()
+        self.assertEqual(antigravity_error_category(caught.exception), ANTIGRAVITY_BACKEND_ERROR)
 
     def test_provider_checks_and_defaults_are_narrow(self):
         self.assertEqual(default_antigravity_resident_command("antigravity_live_session", "live_session", []), ["agy"])
