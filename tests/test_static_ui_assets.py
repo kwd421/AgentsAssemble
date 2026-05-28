@@ -85,6 +85,32 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('<p className="text-[14px] leading-relaxed text-text-secondary preserve-words">', live_source)
         self.assertIn("{event.message}", live_source)
 
+    def test_react_live_timeline_keeps_reader_scroll_until_latest_jump(self):
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertNotIn(
+            "if (element) element.scrollTop = element.scrollHeight;\n  }, [events.length]);",
+            live_source,
+        )
+        self.assertIn("useLayoutEffect", live_source)
+        self.assertIn("pinnedToLatest", live_source)
+        self.assertIn("setPinnedToLatest", live_source)
+        self.assertIn("pinnedToLatestRef", live_source)
+        self.assertIn("scrollHeight - scrollTop - clientHeight", live_source)
+        self.assertIn("<= 64", live_source)
+        self.assertIn("onScroll={handleTimelineScroll}", live_source)
+        self.assertIn("scrollToLatest", live_source)
+        self.assertIn('aria-label="최신 메시지로 이동"', live_source)
+        self.assertIn("최신으로", live_source)
+
+    def test_react_live_flow_switch_keeps_state_updates_outside_event_updater(self):
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertIn("const flowChanged = lastFlowIdRef.current !== activeFlowId;", live_source)
+        self.assertIn("if (flowChanged) {", live_source)
+        self.assertIn("setEvents(sortEvents(flowEvents));", live_source)
+        self.assertNotIn("setEvents((previous) => {\n      if (lastFlowIdRef.current !== activeFlowId)", live_source)
+
     def test_react_admin_surfaces_release_health_catalog_as_cli_only(self):
         source = frontend_source()
 

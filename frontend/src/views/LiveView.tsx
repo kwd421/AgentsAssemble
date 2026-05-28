@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import {
   Activity,
   Bot,
@@ -68,6 +68,11 @@ function mergeEvents(existing: LobbyEvent[], incoming: LobbyEvent[]) {
     if (event.id) byId.set(event.id, event);
   }
   return sortEvents(Array.from(byId.values()));
+}
+
+function liveTimelineIsNearBottom(element: HTMLDivElement) {
+  const { scrollHeight, scrollTop, clientHeight } = element;
+  return scrollHeight - scrollTop - clientHeight <= 64;
 }
 
 function actionTone(event: LobbyEvent) {
@@ -582,8 +587,10 @@ export default function LiveView({
   lifecycleError: Error | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pinnedToLatestRef = useRef(true);
   const lastFlowIdRef = useRef<string | undefined>(flow.flow_id);
   const [events, setEvents] = useState<LobbyEvent[]>(flowEvents);
+  const [pinnedToLatest, setPinnedToLatest] = useState(true);
   const isRunning = flow.status === "running";
   const isFinished = flow.status === "finished" || flow.status === "stopped";
   const activeFlowId = flow.flow_id;
@@ -616,20 +623,38 @@ export default function LiveView({
     [events.length, isFinished, isRunning]
   );
 
-  useEffect(() => {
+  const updatePinnedToLatest = useCallback((nextPinned: boolean) => {
+    pinnedToLatestRef.current = nextPinned;
+    setPinnedToLatest(nextPinned);
+  }, []);
+
+  const scrollToLatest = useCallback(() => {
     const element = scrollRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [events.length]);
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+    updatePinnedToLatest(true);
+  }, [updatePinnedToLatest]);
+
+  const handleTimelineScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    updatePinnedToLatest(liveTimelineIsNearBottom(event.currentTarget));
+  }, [updatePinnedToLatest]);
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!element || !pinnedToLatestRef.current) return;
+    element.scrollTop = element.scrollHeight;
+  }, [events]);
 
   useEffect(() => {
-    setEvents((previous) => {
-      if (lastFlowIdRef.current !== activeFlowId) {
-        lastFlowIdRef.current = activeFlowId;
-        return sortEvents(flowEvents);
-      }
-      return mergeEvents(previous, flowEvents);
-    });
-  }, [activeFlowId, flowEvents]);
+    const flowChanged = lastFlowIdRef.current !== activeFlowId;
+    if (flowChanged) {
+      lastFlowIdRef.current = activeFlowId;
+      updatePinnedToLatest(true);
+      setEvents(sortEvents(flowEvents));
+      return;
+    }
+    setEvents((previous) => mergeEvents(previous, flowEvents));
+  }, [activeFlowId, flowEvents, updatePinnedToLatest]);
 
   const mergeFlowEvents = useCallback(
     (incoming: LobbyEvent[]) => {
@@ -752,8 +777,18 @@ export default function LiveView({
             </button>
           </div>
 
-          <div ref={scrollRef} className="relative flex-1 overflow-y-auto px-4 py-5 chat-scroll">
+          <div ref={scrollRef} onScroll={handleTimelineScroll} className="relative flex-1 overflow-y-auto px-4 py-5 chat-scroll">
             <div className="absolute bottom-6 left-[35px] top-6 w-px bg-accent/20" />
+            {!pinnedToLatest && events.length > 0 && (
+              <button
+                type="button"
+                onClick={scrollToLatest}
+                aria-label="최신 메시지로 이동"
+                className="ops-button sticky top-3 z-[1] ml-auto mb-3 block rounded-lg px-3 py-2 text-[12px] font-black text-accent shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
+              >
+                최신으로
+              </button>
+            )}
             {events.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center px-6 text-center">
                 <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-accent/24 bg-accent/8 text-accent">
