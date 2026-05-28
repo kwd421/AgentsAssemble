@@ -20,6 +20,10 @@ FLOW_ACTIONS: set[str] = {
 }
 FLOW_SPEAKING_ACTIONS = FLOW_ACTIONS - {"wait"}
 FLOW_TERMINAL_EVENT_TYPES = {"finished", "stopped"}
+DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW = 24
+DEFAULT_FLOW_FAIRNESS_MIN_GAP = 1
+DEFAULT_FLOW_FAIRNESS_MAX_LEAD = 0
+DEFAULT_FLOW_FAIRNESS_START_ORDER = True
 
 
 @dataclass(frozen=True)
@@ -181,6 +185,9 @@ def flow_should_yield_for_fairness(
     agent_id: str,
     participant_agent_ids: list[str],
     max_lead: int = 0,
+    recent_window: int | None = None,
+    min_gap: int = 0,
+    start_order: bool = False,
 ) -> bool:
     """Return true when the current active participant should silently yield.
 
@@ -194,18 +201,96 @@ def flow_should_yield_for_fairness(
     participant_ids = _unique_agent_ids(participant_agent_ids)
     if not clean_flow_id or not clean_agent_id or clean_agent_id not in participant_ids:
         return False
+    if len(participant_ids) <= 1:
+        return False
+    speaking_events = _flow_speaking_events(events, flow_id=clean_flow_id, participant_ids=participant_ids)
+    if recent_window is not None:
+        window = max(0, int(recent_window))
+        if window:
+            speaking_events = speaking_events[-window:]
     counts = {participant_id: 0 for participant_id in participant_ids}
+    for event in speaking_events:
+        counts[str(event.get("actor_id") or "").strip()] += 1
+    selected_agent_id = _next_fair_flow_speaker(
+        counts,
+        speaking_events=speaking_events,
+        participant_ids=participant_ids,
+        max_lead=max_lead,
+        min_gap=min_gap,
+        start_order=start_order,
+    )
+    if selected_agent_id:
+        return clean_agent_id != selected_agent_id
+    self_count = counts[clean_agent_id]
+    minimum_count = min(counts.values())
+    return self_count > minimum_count + max(0, int(max_lead))
+
+
+def _flow_speaking_events(
+    events: list[dict[str, object]],
+    *,
+    flow_id: str,
+    participant_ids: list[str],
+) -> list[dict[str, object]]:
+    participants = set(participant_ids)
+    result: list[dict[str, object]] = []
     for event in events:
-        if str(event.get("flow_id") or "") != clean_flow_id:
+        if str(event.get("flow_id") or "") != flow_id:
             continue
         if str(event.get("flow_action") or "") not in FLOW_SPEAKING_ACTIONS:
             continue
         actor_id = str(event.get("actor_id") or "").strip()
-        if actor_id in counts:
-            counts[actor_id] += 1
-    self_count = counts[clean_agent_id]
+        if actor_id in participants:
+            result.append(event)
+    return result
+
+
+def _next_fair_flow_speaker(
+    counts: dict[str, int],
+    *,
+    speaking_events: list[dict[str, object]],
+    participant_ids: list[str],
+    max_lead: int,
+    min_gap: int,
+    start_order: bool,
+) -> str:
+    if not counts:
+        return ""
+    gap_blocked = _gap_blocked_agent_ids(speaking_events, participant_ids=participant_ids, min_gap=min_gap)
+    if gap_blocked:
+        gap_candidates = [agent_id for agent_id in participant_ids if agent_id not in gap_blocked]
+        if gap_candidates:
+            minimum_gap_count = min(counts[agent_id] for agent_id in gap_candidates)
+            for agent_id in gap_candidates:
+                if counts[agent_id] == minimum_gap_count:
+                    return agent_id
     minimum_count = min(counts.values())
-    return self_count > minimum_count + max(0, int(max_lead))
+    eligible = [agent_id for agent_id in participant_ids if counts[agent_id] <= minimum_count + max(0, int(max_lead))]
+    if not eligible:
+        return ""
+    if start_order:
+        return eligible[0]
+    return ""
+
+
+def _gap_blocked_agent_ids(
+    speaking_events: list[dict[str, object]],
+    *,
+    participant_ids: list[str],
+    min_gap: int,
+) -> set[str]:
+    gap = max(0, int(min_gap))
+    if gap <= 0 or not speaking_events:
+        return set()
+    recent_speakers = [
+        str(event.get("actor_id") or "").strip()
+        for event in speaking_events[-gap:]
+        if str(event.get("actor_id") or "").strip()
+    ]
+    blocked = set(recent_speakers)
+    if len(blocked) >= len(participant_ids):
+        return set()
+    return blocked
 
 
 def _unique_agent_ids(agent_ids: list[str]) -> list[str]:

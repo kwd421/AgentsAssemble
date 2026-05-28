@@ -23,6 +23,10 @@ from agentsassemble.live_agent_turns import (
     is_review_checkpoint_reply_event,
 )
 from agentsassemble.live_agent_flow import (
+    DEFAULT_FLOW_FAIRNESS_MAX_LEAD,
+    DEFAULT_FLOW_FAIRNESS_MIN_GAP,
+    DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW,
+    DEFAULT_FLOW_FAIRNESS_START_ORDER,
     FlowDecision,
     FLOW_SPEAKING_ACTIONS,
     FLOW_TERMINAL_EVENT_TYPES,
@@ -70,6 +74,10 @@ class ResidentAgentConfig:
     cooldown: float
     max_chain_depth: int
     max_ticks: int = 0
+    flow_fairness_recent_window: int = DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW
+    flow_fairness_min_gap: int = DEFAULT_FLOW_FAIRNESS_MIN_GAP
+    flow_fairness_max_lead: int = DEFAULT_FLOW_FAIRNESS_MAX_LEAD
+    flow_fairness_start_order: bool = DEFAULT_FLOW_FAIRNESS_START_ORDER
     persona_id: str = ""
     persona_path: str = ""
     character_mode: str = "on"
@@ -328,6 +336,10 @@ class LiveAgentRunner:
             flow_id=flow_id,
             agent_id=self.config.agent_id,
             participant_agent_ids=_active_flow_participant_agent_ids(room, self.config.agent_id, meeting_id),
+            max_lead=self.config.flow_fairness_max_lead,
+            recent_window=self.config.flow_fairness_recent_window,
+            min_gap=self.config.flow_fairness_min_gap,
+            start_order=self.config.flow_fairness_start_order,
         ):
             self._heartbeat_if_due()
             return 0
@@ -1289,6 +1301,25 @@ def load_group_configs(
         "cooldown": live_agent_nonnegative_float(data.get("cooldown"), 5.0, "cooldown"),
         "max_chain_depth": live_agent_nonnegative_int(data.get("max_chain_depth"), 1, "max_chain_depth"),
         "max_ticks": live_agent_nonnegative_int(data.get("max_ticks"), 0, "max_ticks"),
+        "flow_fairness_recent_window": live_agent_nonnegative_int(
+            data.get("flow_fairness_recent_window"),
+            DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW,
+            "flow_fairness_recent_window",
+        ),
+        "flow_fairness_min_gap": live_agent_nonnegative_int(
+            data.get("flow_fairness_min_gap"),
+            DEFAULT_FLOW_FAIRNESS_MIN_GAP,
+            "flow_fairness_min_gap",
+        ),
+        "flow_fairness_max_lead": live_agent_nonnegative_int(
+            data.get("flow_fairness_max_lead"),
+            DEFAULT_FLOW_FAIRNESS_MAX_LEAD,
+            "flow_fairness_max_lead",
+        ),
+        "flow_fairness_start_order": live_agent_bool(
+            data.get("flow_fairness_start_order"),
+            DEFAULT_FLOW_FAIRNESS_START_ORDER,
+        ),
     }
     if max_ticks_override is not None:
         defaults["max_ticks"] = live_agent_nonnegative_int(max_ticks_override, 0, "max_ticks")
@@ -1325,6 +1356,10 @@ def config_from_args(args: object) -> ResidentAgentConfig:
         cooldown=float(getattr(args, "cooldown")),
         max_chain_depth=int(getattr(args, "max_chain_depth")),
         max_ticks=int(getattr(args, "max_ticks")),
+        flow_fairness_recent_window=DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW,
+        flow_fairness_min_gap=DEFAULT_FLOW_FAIRNESS_MIN_GAP,
+        flow_fairness_max_lead=DEFAULT_FLOW_FAIRNESS_MAX_LEAD,
+        flow_fairness_start_order=DEFAULT_FLOW_FAIRNESS_START_ORDER,
         persona_id=clean_persona_card_id(getattr(args, "persona_id", "") or getattr(args, "persona_card_id", "")),
         persona_path=str(getattr(args, "persona_path", "")),
         character_mode=normalize_character_mode(
@@ -1348,7 +1383,7 @@ def _config_from_mapping(
     data: dict[str, object],
     *,
     server: str,
-    defaults: dict[str, int | float],
+    defaults: dict[str, int | float | bool],
     server_override: str | None = None,
     config_dir: Path = Path("."),
 ) -> ResidentAgentConfig:
@@ -1400,6 +1435,25 @@ def _config_from_mapping(
             "max_chain_depth",
         ),
         max_ticks=live_agent_nonnegative_int(data.get("max_ticks"), defaults["max_ticks"], "max_ticks"),
+        flow_fairness_recent_window=live_agent_nonnegative_int(
+            data.get("flow_fairness_recent_window"),
+            int(defaults["flow_fairness_recent_window"]),
+            "flow_fairness_recent_window",
+        ),
+        flow_fairness_min_gap=live_agent_nonnegative_int(
+            data.get("flow_fairness_min_gap"),
+            int(defaults["flow_fairness_min_gap"]),
+            "flow_fairness_min_gap",
+        ),
+        flow_fairness_max_lead=live_agent_nonnegative_int(
+            data.get("flow_fairness_max_lead"),
+            int(defaults["flow_fairness_max_lead"]),
+            "flow_fairness_max_lead",
+        ),
+        flow_fairness_start_order=live_agent_bool(
+            data.get("flow_fairness_start_order"),
+            bool(defaults["flow_fairness_start_order"]),
+        ),
         persona_id=clean_persona_card_id(data.get("persona_id") or data.get("persona_card_id") or ""),
         persona_path=_resident_persona_path(data.get("persona_path"), base_dir=config_dir),
         character_mode=normalize_character_mode(
@@ -1476,6 +1530,16 @@ def live_agent_nonnegative_int(value: object, default: int, field_name: str) -> 
     if parsed < 0:
         raise ValueError(f"Live agent {field_name} must be a non-negative integer.")
     return parsed
+
+
+def live_agent_bool(value: object, default: bool) -> bool:
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _lobby_events(room: dict[str, object]) -> list[dict[str, object]]:

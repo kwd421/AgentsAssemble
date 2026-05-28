@@ -9,6 +9,8 @@ from pathlib import Path
 from agentsassemble.cli import build_parser, main
 from agentsassemble.room_event_benchmark import (
     RoomEventBenchmarkOptions,
+    SCHEDULER_IMBALANCE_MARGIN,
+    SCHEDULER_P99_LATENCY_CEILING_MS,
     flow_speaking_distribution,
     run_room_event_benchmark,
 )
@@ -47,6 +49,15 @@ class RoomEventBenchmarkTests(unittest.TestCase):
         self.assertEqual(fairness["total_speaking_turns"], 24)
         self.assertEqual(fairness["agent_count"], 3)
         self.assertEqual(fairness["imbalance_ratio"], 1.0)
+        scheduler = metrics["flow_scheduler_comparison"]
+        self.assertGreaterEqual(
+            scheduler["scheduler_off"]["normalized_imbalance"] - scheduler["scheduler_on"]["normalized_imbalance"],
+            SCHEDULER_IMBALANCE_MARGIN,
+        )
+        self.assertLessEqual(
+            scheduler["predicate_latency_ms"]["p99_ms"],
+            SCHEDULER_P99_LATENCY_CEILING_MS,
+        )
         self.assertTrue(any("SSE delivery time" in note for note in result["notes"]))
 
     def test_flow_speaking_distribution_defines_imbalance_ratio(self):

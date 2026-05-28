@@ -176,6 +176,108 @@ class LiveAgentFlowFairnessTests(unittest.TestCase):
             )
         )
 
+    def test_recent_window_prevents_old_turns_from_permanently_punishing_agent(self):
+        events = [
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-b"},
+        ]
+
+        self.assertFalse(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-a",
+                participant_agent_ids=["agent-a", "agent-b"],
+                recent_window=1,
+            )
+        )
+
+    def test_min_gap_blocks_immediate_repeat_until_another_active_participant_speaks(self):
+        events = [{"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"}]
+
+        self.assertTrue(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-a",
+                participant_agent_ids=["agent-a", "agent-b"],
+                min_gap=1,
+                start_order=True,
+            )
+        )
+        self.assertFalse(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-b",
+                participant_agent_ids=["agent-a", "agent-b"],
+                min_gap=1,
+                start_order=True,
+            )
+        )
+
+    def test_min_gap_blocks_underrepresented_agent_from_immediate_repeat(self):
+        events = (
+            [{"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-b"} for _ in range(10)]
+            + [{"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-c"} for _ in range(10)]
+            + [{"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"}]
+        )
+
+        self.assertTrue(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-a",
+                participant_agent_ids=["agent-a", "agent-b", "agent-c"],
+                min_gap=1,
+                start_order=True,
+            )
+        )
+        self.assertFalse(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-b",
+                participant_agent_ids=["agent-a", "agent-b", "agent-c"],
+                min_gap=1,
+                start_order=True,
+            )
+        )
+
+    def test_start_order_makes_empty_history_deterministic(self):
+        events = []
+
+        decisions = [
+            (
+                flow_should_yield_for_fairness(
+                    events,
+                    flow_id="flow-1",
+                    agent_id="agent-a",
+                    participant_agent_ids=["agent-a", "agent-b", "agent-c"],
+                    start_order=True,
+                ),
+                flow_should_yield_for_fairness(
+                    events,
+                    flow_id="flow-1",
+                    agent_id="agent-b",
+                    participant_agent_ids=["agent-a", "agent-b", "agent-c"],
+                    start_order=True,
+                ),
+                flow_should_yield_for_fairness(
+                    events,
+                    flow_id="flow-1",
+                    agent_id="agent-c",
+                    participant_agent_ids=["agent-a", "agent-b", "agent-c"],
+                    start_order=True,
+                ),
+            )
+            for _ in range(100)
+        ]
+
+        self.assertEqual(set(decisions), {(False, True, True)})
+
 
 class LiveAgentFlowCliTests(unittest.TestCase):
     def test_flow_parser_has_timebox_defaults(self):

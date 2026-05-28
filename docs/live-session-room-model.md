@@ -52,15 +52,24 @@ that direction. It measures the existing local append/read functions for lobby
 and live-event logs, reports read-after-cursor and tail-read latency, and
 includes a synthetic flow speaking-distribution metric. The imbalance metric is
 defined as `max_agent_speaking_count / max(min_agent_speaking_count, 1)`. This
-first benchmark does not measure SSE delivery, queue wait time, or backpressure
-counts yet; those require a later server/fanout slice. Treat the output as
-operator evidence for comparing local changes on the same machine, not as a
-service-level objective.
+benchmark also reports a synthetic scheduler-on versus scheduler-off comparison
+using `normalized_imbalance =
+(max_agent_speaking_count - min_agent_speaking_count) / total_speaking_turns`,
+plus a pure predicate latency sample over a 10k-event synthetic flow. It still
+does not measure SSE delivery, queue wait time, or backpressure counts yet;
+those require a later server/fanout slice. Treat the output as operator
+evidence for comparing local changes on the same machine, not as a service-level
+objective.
 
-Play Mode flow fairness starts as a runner-side silent yield. Before a resident
-calls its provider, it compares its own speaking count against the current
-active `flow` participants in the same meeting. If it is already ahead of the
-least-active participant, it skips that tick without advancing the visible room,
+Play Mode flow fairness is a runner-side silent yield. Before a resident calls
+its provider, it compares its own speaking count against the current active
+`flow` participants in the same meeting. The default guard looks at the last 24
+speaking events, blocks an immediate repeat with a one-speaking-turn `min_gap`,
+uses `max_lead=0`, and breaks empty-history/tie cases by the active participant
+order supplied by the room. A resident can set `flow_fairness_recent_window`,
+`flow_fairness_min_gap`, `flow_fairness_max_lead`, or
+`flow_fairness_start_order` in its live-agent config to tune that policy. If the
+resident should yield, it skips that tick without advancing the visible room,
 posting a nudge, or turning the room into a moderator. This guard applies only
 to informal flow participation, not official Work Mode turns; stale/offline
 participants are not used as the baseline.

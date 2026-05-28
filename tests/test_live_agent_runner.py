@@ -413,6 +413,57 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(runner.last_observed_event_id, "")
         self.assertFalse([call for call in client.calls if call[0].endswith("/lobby")])
 
+    def test_flow_runner_yields_on_fairness_min_gap_from_config(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow", "meeting_id": "m1"},
+            "agents": [
+                {"agent_id": "agent-a", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+                {"agent_id": "agent-b", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+            ],
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "자유토론 시작",
+                    "flow_id": "flow-1",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_topic": "고죠 vs 스쿠나",
+                },
+                {
+                    "id": "agent-a-1",
+                    "actor_id": "agent-a",
+                    "name": "Agent A",
+                    "message": "방금 말함",
+                    "flow_id": "flow-1",
+                    "flow_action": "speak",
+                },
+            ],
+        }
+        client = FakeRoomClient([room])
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            raise AssertionError("flow fairness min-gap should yield before provider call")
+
+        runner = LiveAgentRunner(
+            config(
+                engagement_mode="flow",
+                meeting_id="m1",
+                flow_fairness_min_gap=1,
+                flow_fairness_start_order=True,
+            ),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        runner.last_observed_event_id = "agent-a-1"
+
+        self.assertEqual(runner.run(), 0)
+        self.assertFalse([call for call in client.calls if call[0].endswith("/lobby")])
+
     def test_flow_runner_allows_lagging_participant_to_speak(self):
         clock = FakeClock()
         room = {
@@ -3181,6 +3232,33 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(loaded[0].poll_interval, 0)
         self.assertEqual(loaded[0].heartbeat_interval, 0)
         self.assertEqual(loaded[0].max_chain_depth, 0)
+
+    def test_group_config_accepts_flow_fairness_scheduler_options(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "live-agents.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "flow_fairness_recent_window": 12,
+                        "flow_fairness_min_gap": 1,
+                        "flow_fairness_start_order": True,
+                        "agents": [
+                            {
+                                "agent_id": "agent-a",
+                                "command": ["fake"],
+                                "flow_fairness_recent_window": 8,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = load_group_configs(path)
+
+        self.assertEqual(loaded[0].flow_fairness_recent_window, 8)
+        self.assertEqual(loaded[0].flow_fairness_min_gap, 1)
+        self.assertTrue(loaded[0].flow_fairness_start_order)
 
     def test_group_config_accepts_official_turn_timeout_without_changing_general_timeout(self):
         with tempfile.TemporaryDirectory() as temp_dir:

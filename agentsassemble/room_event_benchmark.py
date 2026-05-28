@@ -10,6 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+from agentsassemble.live_agent_flow import (
+    DEFAULT_FLOW_FAIRNESS_MAX_LEAD,
+    DEFAULT_FLOW_FAIRNESS_MIN_GAP,
+    DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW,
+    DEFAULT_FLOW_FAIRNESS_START_ORDER,
+    flow_should_yield_for_fairness,
+)
 from agentsassemble.meeting_events import (
     append_live_event,
     append_lobby_event_to_file,
@@ -21,6 +28,12 @@ from agentsassemble.meeting_events import (
 
 
 BENCHMARK_SCHEMA_VERSION = 1
+SCHEDULER_IMBALANCE_MARGIN = 0.5
+# A 10k-event O(n) scan should stay comfortably below this on local dev machines;
+# this is a regression tripwire, not a product latency SLA.
+SCHEDULER_P99_LATENCY_CEILING_MS = 75.0
+SCHEDULER_LATENCY_EVENT_COUNT = 10_000
+SCHEDULER_LATENCY_CALLS = 60
 
 
 @dataclass(frozen=True)
@@ -78,6 +91,7 @@ def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, ob
         _, lobby_tail_ms = _timed_ms(lambda: read_lobby_events(lobby_path, limit=read_window))
         _, live_tail_ms = _timed_ms(lambda: read_live_events(meeting_dir, limit=read_window))
         fairness = flow_speaking_distribution(_synthetic_flow_events(agent_count=agent_count, turns=events), flow_id="benchmark-flow")
+        scheduler_comparison = flow_scheduler_comparison(agent_count=agent_count, turns=events)
         payload: dict[str, object] = {
             "schema_version": BENCHMARK_SCHEMA_VERSION,
             "benchmark": "room_event_log_v1",
@@ -107,10 +121,12 @@ def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, ob
                 "lobby_tail_read_ms": _single_latency(lobby_tail_ms),
                 "live_tail_read_ms": _single_latency(live_tail_ms),
                 "flow_speaking_distribution": fairness,
+                "flow_scheduler_comparison": scheduler_comparison,
             },
             "notes": [
                 "This benchmark calls the existing meeting_events append/read functions and does not add fsync.",
                 "Tail metrics use read_lobby_events/read_live_events with the configured read_window.",
+                "Flow scheduler comparison is synthetic and measures turn distribution, not provider quality.",
                 "SSE delivery time, queue wait time, and backpressure counts are out of scope for this slice.",
                 "This is an operator regression signal, not an SLA.",
             ],
@@ -127,8 +143,42 @@ def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, ob
     return payload
 
 
-def flow_speaking_distribution(events: list[dict[str, object]], *, flow_id: str) -> dict[str, object]:
-    counts: dict[str, int] = {}
+def flow_scheduler_comparison(*, agent_count: int, turns: int) -> dict[str, object]:
+    clean_agent_count = max(1, int(agent_count))
+    clean_turns = max(1, int(turns))
+    participant_ids = [f"bench-agent-{index}" for index in range(clean_agent_count)]
+    off_events = _synthetic_unfair_flow_events(agent_count=clean_agent_count, turns=clean_turns)
+    on_events = _simulate_fair_scheduler_flow_events(agent_count=clean_agent_count, turns=clean_turns)
+    off_distribution = flow_speaking_distribution(off_events, flow_id="benchmark-flow", participant_agent_ids=participant_ids)
+    on_distribution = flow_speaking_distribution(on_events, flow_id="benchmark-flow", participant_agent_ids=participant_ids)
+    off_normalized = _normalized_imbalance(off_distribution)
+    on_normalized = _normalized_imbalance(on_distribution)
+    return {
+        "definition": "normalized_imbalance=(max_agent_speaking_count-min_agent_speaking_count)/total_speaking_turns",
+        "scheduler_off": {**off_distribution, "normalized_imbalance": off_normalized},
+        "scheduler_on": {**on_distribution, "normalized_imbalance": on_normalized},
+        "normalized_improvement": round(off_normalized - on_normalized, 6),
+        "fairness_params": {
+            "recent_window": DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW,
+            "min_gap": DEFAULT_FLOW_FAIRNESS_MIN_GAP,
+            "max_lead": DEFAULT_FLOW_FAIRNESS_MAX_LEAD,
+            "start_order": DEFAULT_FLOW_FAIRNESS_START_ORDER,
+        },
+        "predicate_latency_ms": _measure_fairness_predicate_latency(clean_agent_count),
+    }
+
+
+def flow_speaking_distribution(
+    events: list[dict[str, object]],
+    *,
+    flow_id: str,
+    participant_agent_ids: list[str] | None = None,
+) -> dict[str, object]:
+    counts: dict[str, int] = {
+        str(agent_id): 0
+        for agent_id in (participant_agent_ids or [])
+        if str(agent_id).strip()
+    }
     for event in events:
         if str(event.get("flow_id") or "") != flow_id:
             continue
@@ -154,6 +204,14 @@ def flow_speaking_distribution(events: list[dict[str, object]], *, flow_id: str)
         "spread": max_count - min_count,
         "imbalance_ratio": imbalance_ratio,
     }
+
+
+def _normalized_imbalance(distribution: dict[str, object]) -> float:
+    total = int(distribution.get("total_speaking_turns") or 0)
+    if total <= 0:
+        return 0.0
+    spread = int(distribution.get("spread") or 0)
+    return round(spread / total, 6)
 
 
 def _benchmark_run_root(output_root: Path | None) -> tuple[Path, Path | None]:
@@ -208,13 +266,14 @@ def _latency_stats(values: list[float]) -> dict[str, object]:
         "avg_ms": round(sum(sorted_values) / len(sorted_values), 6),
         "p50_ms": round(_percentile_nearest_rank(sorted_values, 0.50), 6),
         "p95_ms": round(_percentile_nearest_rank(sorted_values, 0.95), 6),
+        "p99_ms": round(_percentile_nearest_rank(sorted_values, 0.99), 6),
         "max_ms": round(sorted_values[-1], 6),
     }
 
 
 def _single_latency(value: float) -> dict[str, object]:
     latency = round(max(0.0, float(value)), 6)
-    return {"count": 1, "avg_ms": latency, "p50_ms": latency, "p95_ms": latency, "max_ms": latency}
+    return {"count": 1, "avg_ms": latency, "p50_ms": latency, "p95_ms": latency, "p99_ms": latency, "max_ms": latency}
 
 
 def _percentile_nearest_rank(sorted_values: list[float], percentile: float) -> float:
@@ -256,3 +315,62 @@ def _synthetic_flow_events(*, agent_count: int, turns: int) -> list[dict[str, ob
         }
         for index in range(max(1, turns))
     ]
+
+
+def _synthetic_unfair_flow_events(*, agent_count: int, turns: int) -> list[dict[str, object]]:
+    del agent_count
+    return [
+        {
+            "flow_id": "benchmark-flow",
+            "flow_action": "speak",
+            "actor_id": "bench-agent-0",
+        }
+        for _ in range(max(1, turns))
+    ]
+
+
+def _simulate_fair_scheduler_flow_events(*, agent_count: int, turns: int) -> list[dict[str, object]]:
+    participant_ids = [f"bench-agent-{index}" for index in range(max(1, agent_count))]
+    events: list[dict[str, object]] = []
+    for _ in range(max(1, turns)):
+        speaker = participant_ids[0]
+        for candidate in participant_ids:
+            if not flow_should_yield_for_fairness(
+                events,
+                flow_id="benchmark-flow",
+                agent_id=candidate,
+                participant_agent_ids=participant_ids,
+                max_lead=DEFAULT_FLOW_FAIRNESS_MAX_LEAD,
+                recent_window=DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW,
+                min_gap=DEFAULT_FLOW_FAIRNESS_MIN_GAP,
+                start_order=DEFAULT_FLOW_FAIRNESS_START_ORDER,
+            ):
+                speaker = candidate
+                break
+        events.append({"flow_id": "benchmark-flow", "flow_action": "speak", "actor_id": speaker})
+    return events
+
+
+def _measure_fairness_predicate_latency(agent_count: int) -> dict[str, object]:
+    participant_ids = [f"bench-agent-{index}" for index in range(max(1, agent_count))]
+    events = _synthetic_flow_events(agent_count=len(participant_ids), turns=SCHEDULER_LATENCY_EVENT_COUNT)
+    durations: list[float] = []
+    for index in range(SCHEDULER_LATENCY_CALLS):
+        agent_id = participant_ids[index % len(participant_ids)]
+        _, elapsed_ms = _timed_ms(
+            lambda agent_id=agent_id: flow_should_yield_for_fairness(
+                events,
+                flow_id="benchmark-flow",
+                agent_id=agent_id,
+                participant_agent_ids=participant_ids,
+                max_lead=DEFAULT_FLOW_FAIRNESS_MAX_LEAD,
+                recent_window=DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW,
+                min_gap=DEFAULT_FLOW_FAIRNESS_MIN_GAP,
+                start_order=DEFAULT_FLOW_FAIRNESS_START_ORDER,
+            )
+        )
+        durations.append(elapsed_ms)
+    stats = _latency_stats(durations)
+    stats["events_scanned"] = SCHEDULER_LATENCY_EVENT_COUNT
+    stats["calls"] = SCHEDULER_LATENCY_CALLS
+    return stats
