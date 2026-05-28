@@ -1,7 +1,15 @@
 # AgentsAssemble Frontend
 
 React + Vite + Tailwind v4 frontend for AgentsAssemble.
-Discord-inspired live room UI. Separate from the legacy vanilla GUI.
+Discord-inspired live room UI. Separate from the default vanilla backend/operator console.
+
+The default entry point is still:
+
+```bash
+python3 -m agentsassemble.cli gui --port 8765
+```
+
+This React/Vite surface is opt-in until API/SSE parity and fallback behavior are verified.
 
 ## Prerequisites
 
@@ -20,7 +28,7 @@ Open http://localhost:5173
 
 ## Backend Proxy
 
-Vite dev server proxies `/api/*` to `http://127.0.0.1:8766` by default.
+Vite dev server proxies `/api/*` to `http://127.0.0.1:8765` by default.
 
 Override with env:
 
@@ -31,7 +39,13 @@ AGENTSASSEMBLE_API_TARGET=http://127.0.0.1:8765 npm run dev
 Start the backend:
 
 ```bash
-python3 -m agentsassemble.cli gui --port 8766
+python3 -m agentsassemble.cli gui --port 8765
+```
+
+Read-only launch guidance:
+
+```bash
+python3 -m agentsassemble.cli frontend-info
 ```
 
 ## Build

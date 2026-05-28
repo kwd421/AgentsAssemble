@@ -70,7 +70,7 @@ export default function App() {
   });
 
   const flowFetcher = useCallback(() => fetchLiveAgentFlow(), []);
-  const [flowData, , , refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
+  const [flowData, flowLoading, flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
   const mafiaFetcher = useCallback((): Promise<MafiaGameResponse> => {
     if (!mafiaGameId) return Promise.resolve({ game: null });
     return fetchMafiaGame(mafiaGameId, "host");
@@ -92,6 +92,11 @@ export default function App() {
   ).length;
   const flowRunning = flow.status === "running";
   const mafiaGame = mafiaData?.game ?? null;
+  const backendStatusText = flowLoading
+    ? "백엔드 확인 중"
+    : flowError
+      ? "백엔드 응답 없음"
+      : "백엔드 응답";
 
   function handleMafiaStarted(game: MafiaGame) {
     try {
@@ -165,6 +170,15 @@ export default function App() {
                   }`}
                 />
                 Local-first
+              </div>
+
+              <div className="hidden items-center gap-2 rounded-lg border border-accent/16 bg-black/20 px-3 py-2 text-[12px] font-semibold text-text-secondary lg:flex">
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    flowError ? "bg-offline" : flowLoading ? "bg-idle" : "bg-online"
+                  }`}
+                />
+                <span>{backendStatusText}</span>
               </div>
 
               <div className="hidden max-w-[230px] items-center gap-2 rounded-lg border border-accent/18 bg-black/22 px-3 py-2 text-[12px] text-text-secondary md:flex">

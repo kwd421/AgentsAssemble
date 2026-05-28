@@ -254,6 +254,14 @@ def build_parser() -> argparse.ArgumentParser:
     gui.add_argument("--live-agent-restart-backoff-seconds", type=parse_nonnegative_float, default=5.0)
     gui.add_argument("--live-agent-stale-restart-after-seconds", type=parse_nonnegative_float, default=0.0)
 
+    frontend_info = subparsers.add_parser(
+        "frontend-info",
+        help="Print read-only launch guidance for the opt-in React/Vite frontend.",
+    )
+    frontend_info.add_argument("--backend", default="http://127.0.0.1:8765", help="Backend GUI URL used by the Vite proxy.")
+    frontend_info.add_argument("--port", type=parse_positive_int, default=5173, help="React/Vite dev server port.")
+    frontend_info.add_argument("--json", action="store_true", dest="as_json", help="Print machine-readable launch guidance.")
+
     bridge = subparsers.add_parser("claude-bridge", help="Run a friend-owned Claude Code bridge.")
     bridge.add_argument("--host", default="127.0.0.1")
     bridge.add_argument("--port", type=int, default=8777)
@@ -1467,6 +1475,8 @@ def main(argv: list[str] | None = None) -> int:
             live_agent_stale_restart_after_seconds=args.live_agent_stale_restart_after_seconds,
         )
         return 0
+    if args.command == "frontend-info":
+        return run_frontend_info_command(args)
     if args.command == "claude-bridge":
         serve_bridge(host=args.host, port=args.port, token=args.token, command=args.bridge_command)
         return 0
@@ -1484,6 +1494,49 @@ def main(argv: list[str] | None = None) -> int:
         return run_sessions_command(args)
 
     return 1
+
+
+def frontend_info_payload(*, backend: str = "http://127.0.0.1:8765", port: int = 5173) -> dict[str, object]:
+    backend_url = str(backend or "http://127.0.0.1:8765").rstrip("/") or "http://127.0.0.1:8765"
+    frontend_port = int(port)
+    frontend_url = f"http://127.0.0.1:{frontend_port}"
+    backend_parts = urllib.parse.urlparse(backend_url)
+    backend_host = backend_parts.hostname or "127.0.0.1"
+    backend_port = backend_parts.port or 8765
+    return {
+        "frontend_dir": "frontend",
+        "frontend_url": frontend_url,
+        "frontend_dev_port": frontend_port,
+        "frontend_dev_proxy_target": backend_url,
+        "backend_url": backend_url,
+        "legacy_console_url": backend_url,
+        "is_default_entry_point": False,
+        "launch_commands": [
+            f"python3 -m agentsassemble.cli gui --host {backend_host} --port {backend_port} --output-root .agentsassemble",
+            "cd frontend && AGENTSASSEMBLE_API_TARGET=" + backend_url + " npm run dev",
+        ],
+        "notes": [
+            "assemble gui remains the default dependency-light vanilla backend/operator console.",
+            "The React/Vite frontend is an opt-in development surface and does not start provider CLIs.",
+            "The Vite proxy should target the same backend URL shown here unless AGENTSASSEMBLE_API_TARGET overrides it.",
+        ],
+    }
+
+
+def run_frontend_info_command(args: argparse.Namespace) -> int:
+    payload = frontend_info_payload(backend=args.backend, port=args.port)
+    if args.as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+    print("AgentsAssemble frontend launch info")
+    print(f"- Default console/backend: {payload['legacy_console_url']}")
+    print(f"- React/Vite opt-in UI: {payload['frontend_url']}")
+    print(f"- Vite API proxy target: {payload['frontend_dev_proxy_target']}")
+    print("- Commands:")
+    for command in payload["launch_commands"]:
+        print(f"  {command}")
+    print("- Note: React/Vite is not the default entry point yet.")
+    return 0
 
 
 def run_persona_command(args: argparse.Namespace) -> int:

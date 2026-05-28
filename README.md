@@ -76,6 +76,14 @@ Default URL:
 http://127.0.0.1:8765
 ```
 
+This is the default dependency-light vanilla backend/operator console. The
+React/Vite frontend under `frontend/` is an opt-in development surface, not the
+default entry point yet. To see the current launch commands and proxy target:
+
+```bash
+python3 -m agentsassemble.cli frontend-info
+```
+
 The GUI has four tabs:
 
 - `lobby` / 로비: informal staging room, readiness, and deploy intent

@@ -33,6 +33,24 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("docs/product/OPERATING_MODEL.md", agents)
         self.assertIn("docs/product/OPERATING_MODEL.md", roadmap)
 
+    def test_frontend_launch_docs_distinguish_default_console_from_react_opt_in(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        live_agent_ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
+        frontend_readme = (ROOT / "frontend" / "README.md").read_text(encoding="utf-8")
+        frontend_design = (ROOT / "frontend" / "DESIGN.md").read_text(encoding="utf-8")
+        vite_config = (ROOT / "frontend" / "vite.config.ts").read_text(encoding="utf-8")
+        combined = "\n".join([readme, live_agent_ops, frontend_readme, frontend_design])
+        normalized_ops = " ".join(live_agent_ops.split())
+
+        self.assertIn("default dependency-light vanilla backend/operator console", combined)
+        self.assertIn("React/Vite frontend", combined)
+        self.assertIn("opt-in development surface", combined)
+        self.assertIn("python3 -m agentsassemble.cli frontend-info", combined)
+        self.assertIn("http://127.0.0.1:8765", frontend_readme)
+        self.assertIn("http://127.0.0.1:8765", vite_config)
+        self.assertIn("does not start a dev server, GUI backend, or provider CLI", normalized_ops)
+        self.assertIn("aspirational React/Vite direction", frontend_design)
+
     def test_operating_model_records_room_first_agent_owned_context(self):
         operating_model = (ROOT / "docs" / "product" / "OPERATING_MODEL.md").read_text(encoding="utf-8")
         live_agent_ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")

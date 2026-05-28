@@ -22,6 +22,10 @@ The reference direction is a sci-fi operations room:
 This is not a Discord clone anymore. Borrow only the useful density and
 real-time readability; the visual language is now "neon mission control."
 
+This document remains the aspirational React/Vite direction. The current
+checked-in app may advance in smaller launch-clarity slices before every visual
+surface is fully aligned with this design.
+
 ## Product Boundaries
 
 - Do not invent provider execution, admission, or official-record behavior.

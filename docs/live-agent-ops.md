@@ -16,6 +16,13 @@ Open:
 http://127.0.0.1:8765
 ```
 
+This is the default dependency-light vanilla backend/operator console. The
+React/Vite frontend in `frontend/` is an opt-in development surface on port
+5173 and proxies API calls to this backend by default. Use
+`python3 -m agentsassemble.cli frontend-info` for read-only launch guidance;
+that command prints instructions only and does not start a dev server, GUI
+backend, or provider CLI.
+
 The lobby is the public room surface and should read first as a staging room,
 similar to a pick room before the live client opens. The default "상주 실행"
 surface keeps the current meeting id, Play Mode free-conversation controls,

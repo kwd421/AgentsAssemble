@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from contextlib import redirect_stdout
 from io import StringIO
 from unittest.mock import patch
 
@@ -103,6 +104,41 @@ class CliTimeoutTests(unittest.TestCase):
         args = build_parser().parse_args(["demo", "--council-config", "configs/silly-fake-expert.json"])
 
         self.assertEqual(args.council_config, "configs/silly-fake-expert.json")
+
+    def test_frontend_info_parser_defaults_to_gui_backend(self):
+        args = build_parser().parse_args(["frontend-info"])
+
+        self.assertEqual(args.command, "frontend-info")
+        self.assertEqual(args.backend, "http://127.0.0.1:8765")
+        self.assertEqual(args.port, 5173)
+        self.assertFalse(args.as_json)
+
+    def test_frontend_info_prints_json_contract_without_starting_processes(self):
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            exit_code = main(["frontend-info", "--backend", "http://127.0.0.1:9999", "--port", "5199", "--json"])
+        payload = json.loads(stdout.getvalue())
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["frontend_dir"], "frontend")
+        self.assertEqual(payload["frontend_dev_port"], 5199)
+        self.assertEqual(payload["frontend_dev_proxy_target"], "http://127.0.0.1:9999")
+        self.assertEqual(payload["backend_url"], "http://127.0.0.1:9999")
+        self.assertFalse(payload["is_default_entry_point"])
+        self.assertIn("--port 9999", payload["launch_commands"][0])
+        self.assertIn("npm run dev", " ".join(payload["launch_commands"]))
+        self.assertIn("does not start provider CLIs", " ".join(payload["notes"]))
+
+    def test_frontend_info_text_mode_keeps_react_opt_in(self):
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            exit_code = main(["frontend-info"])
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("Default console/backend: http://127.0.0.1:8765", output)
+        self.assertIn("React/Vite opt-in UI: http://127.0.0.1:5173", output)
+        self.assertIn("not the default entry point", output)
 
     def test_demo_accepts_meeting_mode_and_moderator_options(self):
         args = build_parser().parse_args(["demo", "--meeting-mode", "free-chat", "--moderator", "off"])
