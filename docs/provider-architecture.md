@@ -270,8 +270,10 @@ not have a provider-specific resume adapter.
 For Cursor, the runner creates a fresh Cursor chat id when needed and then calls
 `cursor-agent --resume` with one runner-owned workspace directory for its
 lifetime. Both the chat id and workspace are part of the proven continuity key.
-This is not yet a Cursor room smoke, official-turn proof, restart proof, or
-sandbox proof.
+A later one-resident approved real room smoke proved bounded start/probe/stop
+for the local install with safe counts only. This is still not a Cursor
+official-turn proof, restart proof, recover proof, tool-safety proof, future
+billing proof, production-readiness proof, or sandbox proof.
 
 The resident launch contract now has a small `SandboxLauncher` abstraction. `NoSandboxLauncher` declares `sandbox_enforcement: "advisory"` and does not constrain the child process. Codex uses the Codex read-only launcher and declares `codex_readonly`. Only a provider launched through a verified OS sandbox, restricted worktree, environment scrubber, or equivalent hard boundary may declare `os_sandboxed`.
 

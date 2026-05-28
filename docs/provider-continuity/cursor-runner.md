@@ -3,9 +3,11 @@
 Date: 2026-05-28
 
 This note records the first checked-in Cursor live-session runner slice. It is
-implementation evidence for the narrow adapter shape only: it does not prove
-room admission, official-turn quality, stop/restart behavior, recover behavior,
-future billing/model availability, tool safety, or OS-level sandboxing.
+implementation evidence for the narrow adapter shape only. A later approved
+one-resident room smoke proved bounded start/probe/stop for this local install,
+but this note does not prove official-turn quality, restart behavior, recover
+behavior, future billing/model availability, tool safety, or OS-level
+sandboxing.
 
 ## Runner Contract
 
@@ -58,8 +60,10 @@ billing data, or Cursor stdout/stderr logs.
 
 ## Remaining Proof
 
-Before Cursor is advertised as a full resident room participant, run a separate
-operator-approved real-room smoke that starts one approved Cursor resident,
-posts a lobby probe, verifies one safe reply count, stops the group, and records
-only safe counts. Official-turn quality, restart, recover, production safety,
-and sandboxing stay separate proof slices.
+An operator-approved real-room smoke later started one approved Cursor resident,
+posted a redacted lobby probe, verified one safe reply count, stopped the group,
+and recorded only safe counts: start ready, connected 1/1, reply probe 1/1,
+stop stopped, and post-stop stopped.
+
+Official-turn quality, restart, recover, production safety, and sandboxing stay
+separate proof slices.

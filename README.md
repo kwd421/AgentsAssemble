@@ -93,8 +93,10 @@ experimental Codex CLI resident path based on `codex exec resume`.
 
 This is not yet the final native multi-provider room. Codex remains the most
 advanced resident path, Kiro has an experimental `kiro chat --resume-id`
-resident path, and Grok has a narrower experimental JSON stdout
-`grok --resume` continuity path. The native Claude Code/Cursor/Antigravity/
+resident path, Cursor has a narrow `cursor-agent create-chat` plus `--resume`
+resident path with one approved start/probe/stop room smoke, and Grok has a
+narrower experimental JSON stdout `grok --resume` continuity path with deeper
+official-turn/restart smoke evidence. The native Claude Code/Antigravity/
 Hermes/OpenClaw integrations are not complete, and non-Codex local CLI read-only is not a hard OS sandbox.
 Ordinary `local_cli` is a stateless delegate path, not a provider-owned resident
 session. `terminal_session`, `self_service`, and remote bridge participants

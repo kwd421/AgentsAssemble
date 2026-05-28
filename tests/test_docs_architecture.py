@@ -755,6 +755,7 @@ class DocsArchitectureTests(unittest.TestCase):
 
     def test_readme_documents_live_room_status_and_honest_limits(self):
         doc = (ROOT / "README.md").read_text(encoding="utf-8")
+        normalized_doc = " ".join(doc.split())
 
         self.assertIn("## Live Room Status", doc)
         self.assertIn("Safe fake resident session quickstart", doc)
@@ -765,8 +766,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("python3 -m agentsassemble.cli live-agent stop-session", doc)
         self.assertIn("Experimental Codex live session quickstart", doc)
         self.assertIn("no-model fake Codex lifecycle regression", doc)
-        self.assertIn("Grok has a narrower experimental JSON stdout", doc)
-        self.assertIn("native Claude Code/Cursor/Antigravity/", doc)
+        self.assertIn("Grok has a narrower experimental JSON stdout `grok --resume` continuity path", normalized_doc)
+        self.assertIn("native Claude Code/Antigravity/", doc)
         self.assertIn("non-Codex local CLI read-only is not a hard OS sandbox", doc)
         self.assertIn("SandboxLauncher", doc)
         self.assertIn("sandbox_enforcement", doc)
@@ -805,8 +806,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("Codex, Kiro, Cursor, and Grok are the provider-specific resume residents", doc)
         self.assertIn("local_cli is a stateless delegate", doc)
         normalized_evidence = " ".join(evidence.split())
-        self.assertIn("Grok is still the only non-Codex/Kiro provider with both a passing two-turn continuity probe", normalized_evidence)
-        self.assertIn("Cursor now has a narrow checked-in runner", normalized_evidence)
+        self.assertIn("Grok and Cursor are now the non-Codex/Kiro providers with both a passing two-turn continuity probe", normalized_evidence)
+        self.assertIn("Cursor's room evidence is only the initial one-resident start/probe/stop shape", normalized_evidence)
         self.assertIn("Antigravity has narrower positive continuity evidence", normalized_evidence)
         for provider in ("claude_code", "cursor", "antigravity_cli", "grok_build_cli", "hermes_cli", "openclaw_cli"):
             self.assertIn(provider, evidence)
@@ -839,7 +840,10 @@ class DocsArchitectureTests(unittest.TestCase):
     def test_cli_evidence_survey_records_real_probe_outcomes(self):
         survey = (ROOT / "docs" / "cli-evidence-survey.md").read_text(encoding="utf-8")
         matrix = (ROOT / "docs" / "provider-live-session-matrix.md").read_text(encoding="utf-8")
-        combined = "\n".join([survey, matrix])
+        ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
+        cursor_note = (ROOT / "docs" / "provider-continuity" / "cursor.md").read_text(encoding="utf-8")
+        provider_arch = (ROOT / "docs" / "provider-architecture.md").read_text(encoding="utf-8")
+        combined = "\n".join([survey, matrix, ops, provider_arch])
         normalized = " ".join(combined.split())
 
         self.assertIn("Real Continuity Probe Summary", survey)
@@ -857,9 +861,15 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("implemented the narrow Grok runner/proof path", normalized)
         self.assertIn("grok_session_resume", normalized)
         self.assertIn("bounded room start/probe/stop smoke", normalized)
+        self.assertIn("Cursor Agent is now `room-smoke-proven-limited`", cursor_note)
+        self.assertIn("connected 1/1, reply probe 1/1, stop stopped, and post-stop stopped", normalized)
+        self.assertIn("official round answered `1/1` with `0` timeouts", normalized)
+        self.assertIn("A later one-resident approved real room smoke proved bounded start/probe/stop", normalized)
         self.assertIn("does not prove official-turn quality", normalized)
         self.assertIn("do not present one-shot `--print` as resident participation", normalized)
-        self.assertIn("not a resident-room runner", normalized)
+        self.assertIn("official-turn quality, restart, recover, tool safety", normalized)
+        self.assertNotIn("current Grok official-turn-quality failure", combined)
+        self.assertNotIn("This is not yet a Cursor room smoke", combined)
         self.assertIn("Do not add an Antigravity runner yet", survey)
         self.assertIn("not promoted to a resident runner", survey)
         self.assertIn("Do not add a Hermes runner yet", survey)

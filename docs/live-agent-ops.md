@@ -226,14 +226,15 @@ that does not make the checked-in Antigravity self-service examples native-ready
 Use a real wrapper that owns room polling before treating Antigravity as a
 resident participant, and do not persist raw Antigravity output, conversation
 ids, global-store paths, or config symlinks as proof artifacts.
-The current Cursor Agent evidence is similarly narrow: `cursor-agent
+The current Cursor Agent evidence is also narrow: `cursor-agent
 create-chat` plus `cursor-agent --resume <chat_id> --print` can preserve one
 chat's context on this local install only when the same workspace is reused.
 The checked-in `cursor_live_session` runner preserves that chat id plus
-workspace pair, but it is still a continuity runner rather than a full room
-smoke. Cursor must still prove room registration, cursor reads, lobby or
-official reply, heartbeat, and clean stop with safe counts before docs can
-present it as full resident participation.
+workspace pair, and a later approved real room smoke proved one host-approved
+resident can start, connect, answer one redacted lobby probe, stop, and report
+post-stop `stopped` with safe counts. Cursor still has not proven official-turn
+quality, restart, recover, tool safety, future billing stability, production
+readiness, or sandboxing.
 The current Hermes evidence is weaker: a seed/resume probe recalled a prior
 codeword, but a fresh no-resume control also recalled it, so Hermes remains an
 ambiguous provider-owned context surface rather than a session-id-specific
@@ -1778,6 +1779,43 @@ admission, session start/stop cleanup, official turn quality, tool safety, or
 restart behavior. Pair it with `real-session-smoke` when you need room-level
 start/probe/stop evidence for a host-approved resident config.
 
+For Cursor:
+
+```bash
+python3 -m agentsassemble.cli live-agent continuity-proof \
+  --provider-kind cursor_live_session \
+  --connection-kind live_session \
+  --agent-id cursor-proof \
+  --timeout 180 \
+  --approve-real-providers \
+  --json \
+  --command cursor-agent
+```
+
+After the continuity proof, a one-resident Cursor room smoke can use an
+operator-written config whose only resident has `provider_kind:
+cursor_live_session`, `connection_kind: live_session`, and no command arguments
+after `cursor-agent`. The approved smoke should stay narrow:
+
+```bash
+python3 -m agentsassemble.cli live-agent real-session-smoke \
+  --server http://127.0.0.1:8765 \
+  --live-agent-config /path/to/live-agents.cursor.json \
+  --council-config /path/to/council.cursor.json \
+  --agent-config /path/to/agents.cursor.json \
+  --group-id cursor-room-smoke \
+  --meeting-id cursor-room-smoke \
+  --timeout 180 \
+  --approve-real-providers \
+  --json
+```
+
+The first approved local Cursor room smoke returned only safe status/count
+evidence: `status: "ok"`, `start_status: "ready"`, connected 1/1, reply probe
+1/1, `stop_status: "stopped"`, and `post_stop_process_status: "stopped"`.
+Do not store raw Cursor prompts, replies, chat ids, workspace paths, account
+data, or logs as public evidence.
+
 In short, the Codex resume path is still `codex exec resume`; the resident runner inserts the read-only sandbox flags at the `codex exec` level before the `resume` subcommand.
 
 When a Codex resident extracts a new session id, later heartbeats store it on the live-agent roster. If that resident process is restarted or recovered from a config that does not include a `session_id`, the fresh runner reads the existing roster entry during registration and seeds the Codex command runner before the next provider call, so it can resume the same Codex CLI session instead of starting over.
@@ -2491,13 +2529,16 @@ connected/expected `1/1`, reply-probe `1/1`, `stop_status: "stopped"`, and
 start/probe/stop path, not official-turn quality, restart/recover behavior,
 future billing state, tool safety, or sandboxing.
 
-A later Grok-only run with `--official-round-smoke --restart-smoke` returned
-safe evidence that restart/reconnect and the post-restart reply probe worked
-(`restart_status: "ready"`, post-restart connected/expected `1/1`, and
-post-restart reply-probe `1/1`) while the official round timed out
-(`official_rounds_status: "timeout"`, answered `0/1`). Treat that as a current
-Grok official-turn-quality failure, not as a production-ready official-turn
-claim.
+A deeper Grok-only run first timed out on the official round, which is kept as
+historical evidence that slow provider CLIs need a separate official-turn
+command budget. After the fake lifecycle regression covered that routing
+boundary, a later approved rerun with `--official-round-smoke --restart-smoke`
+returned safe evidence that the official round and restart path worked:
+official round answered `1/1` with `0` timeouts, `restart_status: "ready"`,
+post-restart connected/expected `1/1`, post-restart reply-probe `1/1`,
+`stop_status: "stopped"`, and post-stop process stopped. Treat that as limited
+local official-turn and restart evidence, not as production-ready recover, tool
+safety, future billing, or sandbox evidence.
 
 Resident configs may set `official_turn_timeout_seconds` for a provider command
 budget that applies only while answering targeted official turns. The default is
