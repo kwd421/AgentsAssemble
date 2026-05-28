@@ -205,6 +205,12 @@ event count, and per-agent speaking distribution. Kafka, Flink, Redis Streams,
 RDMA, DPDK, CPU pinning, and similar infrastructure are future scaling studies,
 not requirements for the local-first v1 room.
 
+The first benchmark surface is `assemble live-agent room-benchmark`. It calls
+the existing local append/read functions, does not fsync when the product path
+does not fsync, and reports local append/read/tail latency plus a synthetic flow
+speaking-distribution imbalance ratio. It intentionally does not claim SSE
+delivery, queue wait, or backpressure coverage yet.
+
 ## Future Roadmap Board
 
 The roadmap page should be separate from the live meeting progress view.

@@ -47,6 +47,16 @@ backpressure counts, and per-agent speaking distribution. These numbers are
 operator evidence and regression signals, not permission to add a heavyweight
 distributed streaming stack before the local room contract needs it.
 
+`assemble live-agent room-benchmark` is the first small benchmark surface for
+that direction. It measures the existing local append/read functions for lobby
+and live-event logs, reports read-after-cursor and tail-read latency, and
+includes a synthetic flow speaking-distribution metric. The imbalance metric is
+defined as `max_agent_speaking_count / max(min_agent_speaking_count, 1)`. This
+first benchmark does not measure SSE delivery, queue wait time, or backpressure
+counts yet; those require a later server/fanout slice. Treat the output as
+operator evidence for comparing local changes on the same machine, not as a
+service-level objective.
+
 ## Live Room Infrastructure vs Council Workflow
 
 AgentsAssemble should learn from Stoops-style live room infrastructure without becoming only a chatroom.

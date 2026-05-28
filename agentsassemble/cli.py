@@ -508,6 +508,18 @@ def build_parser() -> argparse.ArgumentParser:
     live_flow.add_argument("--max-silence-seconds", type=parse_nonnegative_float, default=20.0)
     live_flow.add_argument("--json", action="store_true", dest="as_json", help="Print the raw flow result payload.")
 
+    live_room_benchmark = live_agent_subparsers.add_parser(
+        "room-benchmark",
+        help="Measure local room event append/read latency without starting provider processes.",
+    )
+    live_room_benchmark.add_argument("--output-root", default="", help="Parent directory for a temporary benchmark run.")
+    live_room_benchmark.add_argument("--events", type=parse_positive_int, default=500)
+    live_room_benchmark.add_argument("--read-window", type=parse_positive_int, default=80)
+    live_room_benchmark.add_argument("--warmup-events", type=parse_nonnegative_int, default=20)
+    live_room_benchmark.add_argument("--agent-count", type=parse_positive_int, default=5)
+    live_room_benchmark.add_argument("--keep-output", action="store_true", help="Keep the benchmark run directory for inspection.")
+    live_room_benchmark.add_argument("--json", action="store_true", dest="as_json", help="Print machine-readable benchmark results.")
+
     live_call_remaining_rounds = live_agent_subparsers.add_parser(
         "call-remaining-rounds",
         parents=[live_server],
@@ -1700,6 +1712,8 @@ def run_live_agent_command(args: argparse.Namespace) -> int:
             return _run_live_agent_call_preset(args)
         if args.live_agent_command == "flow":
             return _run_live_agent_flow(args)
+        if args.live_agent_command == "room-benchmark":
+            return _run_live_agent_room_benchmark(args)
         if args.live_agent_command == "call-remaining-rounds":
             return _run_live_agent_call_remaining_rounds(args)
         if args.live_agent_command == "review-checkpoint":
@@ -2326,6 +2340,36 @@ def _run_live_agent_flow(args: argparse.Namespace) -> int:
             f"{flow.get('agent_count', 0)} agents"
         )
     return 0 if str((response.get("flow") if isinstance(response.get("flow"), dict) else {}).get("status") or "") in {"finished", "stopped"} else 1
+
+
+def _run_live_agent_room_benchmark(args: argparse.Namespace) -> int:
+    from agentsassemble.room_event_benchmark import RoomEventBenchmarkOptions, run_room_event_benchmark
+
+    output_root = Path(args.output_root) if args.output_root else None
+    result = run_room_event_benchmark(
+        RoomEventBenchmarkOptions(
+            output_root=output_root,
+            events=int(args.events),
+            read_window=int(args.read_window),
+            warmup_events=int(args.warmup_events),
+            agent_count=int(args.agent_count),
+            cleanup=not bool(args.keep_output),
+        )
+    )
+    if args.as_json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
+        lobby_append = metrics.get("lobby_append_ms") if isinstance(metrics.get("lobby_append_ms"), dict) else {}
+        live_append = metrics.get("live_append_ms") if isinstance(metrics.get("live_append_ms"), dict) else {}
+        lobby_tail = metrics.get("lobby_tail_read_ms") if isinstance(metrics.get("lobby_tail_read_ms"), dict) else {}
+        fairness = metrics.get("flow_speaking_distribution") if isinstance(metrics.get("flow_speaking_distribution"), dict) else {}
+        print("Room event benchmark:")
+        print(f"- lobby append avg/p95: {lobby_append.get('avg_ms', 0)} / {lobby_append.get('p95_ms', 0)} ms")
+        print(f"- live append avg/p95: {live_append.get('avg_ms', 0)} / {live_append.get('p95_ms', 0)} ms")
+        print(f"- lobby tail read: {lobby_tail.get('avg_ms', 0)} ms")
+        print(f"- speaking imbalance: {fairness.get('imbalance_ratio', 0)} ({fairness.get('definition', '')})")
+    return 0
 
 
 def _run_live_agent_call_remaining_rounds(args: argparse.Namespace) -> int:
