@@ -89,6 +89,47 @@ class HermesResidentTests(unittest.TestCase):
 
         self.assertEqual(reply, "visible reply")
 
+    def test_runner_rejects_dsml_tool_call_only_reply(self):
+        session_id = "hermes-session-abc123"
+
+        def dsml_only(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    '<｜｜DSML｜｜tool_calls> <｜｜DSML｜｜invoke name="send_message"> '
+                    '<｜｜DSML｜｜parameter name="target" string="true">discord</｜｜DSML｜｜parameter> '
+                    "</｜｜DSML｜｜invoke> </｜｜DSML｜｜tool_calls>"
+                ),
+                stderr=f"session_id: {session_id}\n",
+            )
+
+        runner = HermesResidentCommandRunner(config(session_id=session_id), command_runner=dsml_only, cwd=Path.cwd())
+        with self.assertRaisesRegex(ValueError, "empty reply") as empty:
+            runner([], "prompt", timeout_seconds=45)
+
+        self.assertEqual(hermes_error_category(empty.exception), HERMES_EMPTY_REPLY)
+
+    def test_runner_removes_dsml_tool_call_blocks_around_visible_text(self):
+        session_id = "hermes-session-abc123"
+
+        def mixed_dsml(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    '<｜｜DSML｜｜tool_calls> <｜｜DSML｜｜invoke name="skill_view">x</｜｜DSML｜｜invoke> '
+                    "</｜｜DSML｜｜tool_calls>\n"
+                    "visible reply"
+                ),
+                stderr=f"session_id: {session_id}\n",
+            )
+
+        runner = HermesResidentCommandRunner(config(session_id=session_id), command_runner=mixed_dsml, cwd=Path.cwd())
+        reply = runner([], "prompt", timeout_seconds=45)
+
+        self.assertEqual(reply, "visible reply")
+
     def test_runner_reports_safe_failures(self):
         def no_session(command, **kwargs):
             return subprocess.CompletedProcess(command, 0, stdout="READY", stderr="")

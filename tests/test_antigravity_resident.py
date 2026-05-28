@@ -141,6 +141,192 @@ class AntigravityResidentTests(unittest.TestCase):
             runner.close()
         self.assertEqual(antigravity_error_category(caught.exception), ANTIGRAVITY_BACKEND_ERROR)
 
+    def test_runner_keeps_latest_json_object_from_conversation_replay(self):
+        conversation_id = "a" * 36
+
+        def replayed_json(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    '{"action":"speak","message":"old reply","reason":"old","target_agent_id":""}\n'
+                    '{"action":"speak","message":"latest reply","reason":"new","target_agent_id":""}\n'
+                ),
+                stderr="",
+            )
+
+        runner = AntigravityResidentCommandRunner(
+            config(session_id=conversation_id),
+            command_runner=replayed_json,
+            cwd=Path.cwd(),
+        )
+        try:
+            reply = runner([], "prompt", timeout_seconds=45)
+        finally:
+            runner.close()
+
+        self.assertEqual(reply, '{"action":"speak","message":"latest reply","reason":"new","target_agent_id":""}')
+
+    def test_runner_rejects_ready_banner_with_unterminated_action_fragment(self):
+        conversation_id = "a" * 36
+
+        def bad_fragment(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    "Antigravity (antigravity-live) is present and ready for AgentsAssemble. "
+                    'Connection active at cursor abc123. {"action":"speak","message":"half'
+                ),
+                stderr="",
+            )
+
+        runner = AntigravityResidentCommandRunner(
+            config(session_id=conversation_id),
+            command_runner=bad_fragment,
+            cwd=Path.cwd(),
+        )
+        try:
+            with self.assertRaisesRegex(ValueError, "empty reply") as empty:
+                runner([], "prompt", timeout_seconds=45)
+        finally:
+            runner.close()
+
+        self.assertEqual(antigravity_error_category(empty.exception), ANTIGRAVITY_EMPTY_REPLY)
+
+    def test_runner_rejects_status_only_stdout(self):
+        conversation_id = "a" * 36
+
+        def status_only(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout="Antigravity (antigravity-live) is present and ready for AgentsAssemble. Connection active at cursor abc123.",
+                stderr="",
+            )
+
+        runner = AntigravityResidentCommandRunner(
+            config(session_id=conversation_id),
+            command_runner=status_only,
+            cwd=Path.cwd(),
+        )
+        try:
+            with self.assertRaisesRegex(ValueError, "empty reply") as empty:
+                runner([], "prompt", timeout_seconds=45)
+        finally:
+            runner.close()
+
+        self.assertEqual(antigravity_error_category(empty.exception), ANTIGRAVITY_EMPTY_REPLY)
+
+    def test_runner_rejects_old_valid_json_when_latest_action_is_fragmented(self):
+        conversation_id = "a" * 36
+
+        def old_valid_then_fragment(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    '{"action":"speak","message":"old reply","reason":"old","target_agent_id":""}\n'
+                    '{"action":"speak","message":"half'
+                ),
+                stderr="",
+            )
+
+        runner = AntigravityResidentCommandRunner(
+            config(session_id=conversation_id),
+            command_runner=old_valid_then_fragment,
+            cwd=Path.cwd(),
+        )
+        try:
+            with self.assertRaisesRegex(ValueError, "empty reply") as empty:
+                runner([], "prompt", timeout_seconds=45)
+        finally:
+            runner.close()
+
+        self.assertEqual(antigravity_error_category(empty.exception), ANTIGRAVITY_EMPTY_REPLY)
+
+    def test_runner_keeps_latest_pretty_json_object_from_conversation_replay(self):
+        conversation_id = "a" * 36
+
+        def replayed_pretty_json(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    '{"action":"speak","message":"old reply","reason":"old","target_agent_id":""}\n'
+                    "{\n"
+                    '  "action": "speak",\n'
+                    '  "message": "pretty latest",\n'
+                    '  "reason": "new",\n'
+                    '  "target_agent_id": ""\n'
+                    "}\n"
+                ),
+                stderr="",
+            )
+
+        runner = AntigravityResidentCommandRunner(
+            config(session_id=conversation_id),
+            command_runner=replayed_pretty_json,
+            cwd=Path.cwd(),
+        )
+        try:
+            reply = runner([], "prompt", timeout_seconds=45)
+        finally:
+            runner.close()
+
+        self.assertEqual(reply, '{"action":"speak","message":"pretty latest","reason":"new","target_agent_id":""}')
+
+    def test_runner_rejects_spaced_action_fragment(self):
+        conversation_id = "a" * 36
+
+        def spaced_fragment(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout='{ "action": "speak", "message": "half',
+                stderr="",
+            )
+
+        runner = AntigravityResidentCommandRunner(
+            config(session_id=conversation_id),
+            command_runner=spaced_fragment,
+            cwd=Path.cwd(),
+        )
+        try:
+            with self.assertRaisesRegex(ValueError, "empty reply") as empty:
+                runner([], "prompt", timeout_seconds=45)
+        finally:
+            runner.close()
+
+        self.assertEqual(antigravity_error_category(empty.exception), ANTIGRAVITY_EMPTY_REPLY)
+
+    def test_runner_rejects_old_valid_json_when_latest_output_is_status(self):
+        conversation_id = "a" * 36
+
+        def old_valid_then_status(command, **kwargs):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=(
+                    '{"action":"speak","message":"old reply","reason":"old","target_agent_id":""}\n'
+                    "Connection active at cursor abc123."
+                ),
+                stderr="",
+            )
+
+        runner = AntigravityResidentCommandRunner(
+            config(session_id=conversation_id),
+            command_runner=old_valid_then_status,
+            cwd=Path.cwd(),
+        )
+        try:
+            with self.assertRaisesRegex(ValueError, "empty reply") as empty:
+                runner([], "prompt", timeout_seconds=45)
+        finally:
+            runner.close()
+
+        self.assertEqual(antigravity_error_category(empty.exception), ANTIGRAVITY_EMPTY_REPLY)
+
     def test_provider_checks_and_defaults_are_narrow(self):
         self.assertEqual(default_antigravity_resident_command("antigravity_live_session", "live_session", []), ["agy"])
         self.assertEqual(default_antigravity_resident_command("antigravity_cli", "live_session", []), [])

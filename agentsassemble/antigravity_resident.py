@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import tempfile
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
 
 _SAFE_CONVERSATION_ID_RE = re.compile(r"[A-Za-z0-9_.:-]{1,200}")
 _CREATED_CONVERSATION_RE = re.compile(r"Created conversation\s+([A-Za-z0-9_.:-]{1,200})")
+_ACTION_FRAGMENT_RE = re.compile(r'\{\s*"action"\s*:', re.IGNORECASE)
 
 ANTIGRAVITY_SUBPROCESS_TIMEOUT = "antigravity_subprocess_timeout"
 ANTIGRAVITY_SUBPROCESS_NONZERO = "antigravity_subprocess_nonzero"
@@ -73,7 +75,7 @@ class AntigravityResidentCommandRunner:
                     category=ANTIGRAVITY_MISSING_CONVERSATION_ID,
                 )
         self._raise_backend_error_from_log(log_path)
-        reply = _text(getattr(completed, "stdout", "")).strip()
+        reply = _visible_antigravity_reply(getattr(completed, "stdout", ""))
         if not reply:
             raise AntigravityResidentValueError(
                 "Antigravity live session returned an empty reply.",
@@ -207,3 +209,46 @@ def _text(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return str(value)
+
+
+def _visible_antigravity_reply(stdout: object) -> str:
+    text = _text(stdout).strip()
+    if not text:
+        return ""
+    json_spans = _json_object_spans_in_text(text)
+    if json_spans:
+        payload, _start, end = json_spans[-1]
+        trailing = text[end:].strip()
+        if _looks_like_antigravity_status(trailing) or _ACTION_FRAGMENT_RE.search(trailing):
+            return ""
+        if trailing:
+            return _latest_nonempty_line(trailing)
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    candidate = _latest_nonempty_line(text)
+    if _looks_like_antigravity_status(candidate) or _ACTION_FRAGMENT_RE.search(candidate):
+        return ""
+    return candidate
+
+
+def _json_object_spans_in_text(text: str) -> list[tuple[dict[str, object], int, int]]:
+    decoder = json.JSONDecoder()
+    spans: list[tuple[dict[str, object], int, int]] = []
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            payload, _end = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            spans.append((payload, index, index + _end))
+    return spans
+
+
+def _looks_like_antigravity_status(text: str) -> bool:
+    return "is present and ready for AgentsAssemble" in text or "Connection active at cursor" in text
+
+
+def _latest_nonempty_line(text: str) -> str:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[-1] if lines else ""

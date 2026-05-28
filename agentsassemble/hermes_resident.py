@@ -200,7 +200,26 @@ def _visible_hermes_reply(stdout: object) -> str:
             text = text[marker_index + len(summary_marker) :].strip()
     text = re.sub(r"^\s*\S?\s*Resumed session [^\n]*?\)\s*", "", text).strip()
     text = re.sub(r"^\([^)]* timed out after [^)]*\)\s*", "", text).strip()
+    text = _strip_dsml_tool_calls(text).strip()
     return text
+
+
+def _strip_dsml_tool_calls(text: str) -> str:
+    start_marker = "<｜｜DSML｜｜tool_calls>"
+    end_marker = "</｜｜DSML｜｜tool_calls>"
+    cleaned = text
+    while start_marker in cleaned:
+        start = cleaned.find(start_marker)
+        end = cleaned.find(end_marker, start)
+        if end >= 0:
+            cleaned = cleaned[:start] + cleaned[end + len(end_marker) :]
+            continue
+        line_end = cleaned.find("\n", start)
+        if line_end >= 0:
+            cleaned = cleaned[:start] + cleaned[line_end + 1 :]
+            continue
+        cleaned = cleaned[:start]
+    return cleaned
 
 
 def _text(value: Any) -> str:
