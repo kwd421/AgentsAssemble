@@ -20,6 +20,10 @@ def frontend_source() -> str:
     return "\n".join(path.read_text() for path in sorted(FRONTEND_DIR.rglob("*")) if path.suffix in {".ts", ".tsx"})
 
 
+def frontend_file(relative_path: str) -> str:
+    return (FRONTEND_DIR / relative_path).read_text()
+
+
 class StaticUiAssetTests(unittest.TestCase):
     def test_responsive_layout_hooks_are_present(self):
         css = static_css()
@@ -64,6 +68,22 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('return { label: "Host-approved", tone: "online" };', source)
         self.assertIn('return { label: "Not host-approved", tone: "idle" };', source)
         self.assertIn("{agent.provider_kind || \"resident\"} · {agent.connection_kind || agent.engagement_mode || \"room\"}", source)
+
+    def test_react_room_messages_wrap_natural_language_without_truncating_body(self):
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+        lobby_body_class = lobby_source.split("{event.message}")[0].rsplit('<p className="', 1)[1].split('">', 1)[0]
+        lobby_speaker_class = lobby_source.split('{event.name || "Room"}')[0].rsplit('<p className="', 1)[1].split('">', 1)[0]
+
+        self.assertIn("truncate", lobby_speaker_class)
+        self.assertIn("preserve-words", lobby_speaker_class)
+        self.assertIn("leading-relaxed", lobby_body_class)
+        self.assertIn("preserve-words", lobby_body_class)
+        self.assertNotIn("truncate", lobby_body_class)
+        self.assertNotIn("line-clamp", lobby_body_class)
+
+        self.assertIn('<p className="text-[14px] leading-relaxed text-text-secondary preserve-words">', live_source)
+        self.assertIn("{event.message}", live_source)
 
     def test_react_admin_surfaces_release_health_catalog_as_cli_only(self):
         source = frontend_source()

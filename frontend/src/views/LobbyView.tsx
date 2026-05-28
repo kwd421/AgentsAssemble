@@ -197,7 +197,7 @@ function EventRow({ event }: { event: LobbyEvent }) {
             {event.kind === "message" ? "발언" : event.kind}
           </span>
         </p>
-        <p className="truncate text-[12px] text-text-muted preserve-words">
+        <p className="text-[12px] leading-relaxed text-text-muted preserve-words">
           {event.message}
         </p>
       </div>
