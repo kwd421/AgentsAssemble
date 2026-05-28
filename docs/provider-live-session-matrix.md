@@ -12,6 +12,11 @@ heartbeat/stop/restart semantics still need explicit real-provider smoke before
 being treated as production-ready for a given local install. Grok has the
 deepest non-Codex/Kiro room evidence so far because it has official-turn and
 restart smoke coverage. Cursor has only a one-resident start/probe/stop smoke.
+An approved 2026-05-28 `continuity-proof-group` over the current
+discovery-generated provider-specific resident config for this local install
+returned 4/4 two-turn provider-managed resume recalls for Codex, Kiro, Cursor,
+and Grok; this remains continuity evidence only, not room admission or
+tool-safety evidence.
 
 `local_cli` is a stateless delegate, not a resident session. In plain terms:
 local_cli is a stateless delegate. It can be useful

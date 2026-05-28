@@ -1771,8 +1771,8 @@ started. This is the safer way to answer "which of these local CLIs are actually
 session-style right now?" without pretending terminal or self-service candidates
 have provider-owned resume evidence. An audit where every row is unsupported is
 a successful inspection with `status: "unsupported"`; a row that claims Codex,
-Kiro, or Grok resume support still must pass the normal resident setup checks
-before any provider command is called:
+Kiro, Cursor, or Grok resume support still must pass the normal resident setup
+checks before any provider command is called:
 
 ```bash
 python3 -m agentsassemble.cli live-agent continuity-proof-group \
@@ -1787,6 +1787,12 @@ AgentsAssemble replaying the first private code. It does not prove room
 admission, session start/stop cleanup, official turn quality, tool safety, or
 restart behavior. Pair it with `real-session-smoke` when you need room-level
 start/probe/stop evidence for a host-approved resident config.
+
+The 2026-05-28 approved group proof over the current discovery-generated
+provider-specific resident config for this local install returned 4/4 passing
+rows for Codex, Kiro, Cursor, and Grok. All four captured provider session ids,
+returned the ready marker on the first turn, matched the expected suffix on the
+second turn, and kept the same two-turn-only limitations above.
 
 For Cursor:
 

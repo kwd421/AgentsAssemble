@@ -82,6 +82,19 @@ directories. Public records keep only safe booleans and lengths; they do not
 store raw prompts, raw provider output, full session ids, account data, config
 paths, provider logs, nonce values, or nonce suffixes.
 
+On 2026-05-28, an approved `live-agent continuity-proof-group` run against the
+current discovery-generated provider-specific resident config for this local
+install returned
+`status: "ok"` with 4/4 passing rows: `codex_live_session`,
+`kiro_live_session`, `cursor_live_session`, and `grok_live_session`. Every row
+captured a provider session id, returned the first-turn ready marker, kept the
+first reply length at 5 and second reply length at 4, avoided revealing the
+private continuity code or suffix in the first reply, did not replay the code in
+the second prompt, and matched the expected suffix. This proves only two-turn
+provider-managed resume recall for those configured residents; it does not
+prove room admission, tool safety, stop/restart behavior, recover behavior, or
+official-turn quality.
+
 | Provider kind | Probe result | Resume mechanism | Safe evidence | Runner implication |
 | --- | --- | --- | --- | --- |
 | `cursor_live_session` | passed limited chat-id resume recall with workspace control; runner and room smoke implemented | `cursor-agent create-chat`, then `cursor-agent --resume <chat_id> --print --mode ask --sandbox enabled --trust --workspace <tmp>` for bounded same-chat and control turns; later `live-agent real-session-smoke` for a one-resident room probe | a fresh empty chat id was created; first resumed turn returned exactly the expected ready marker; second resumed turn recalled the prior suffix exactly; a fresh-chat negative control did not recall; a same-chat different-workspace control did not recall; the checked-in runner preserves both chat id and workspace in fake tests; an approved real `continuity-proof` returned `status: "ok"`; an approved real room smoke returned start ready, connected 1/1, reply probe 1/1, stop stopped, and post-stop stopped | use for controlled local lobby start/probe/stop experiments only; official-turn quality, restart, recover, tool safety, future billing, and sandboxing remain unproven |
