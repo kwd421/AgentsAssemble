@@ -42,6 +42,7 @@ import {
   lifecycleStatusSourceLabel,
   type LifecycleTone,
 } from "../lib/lifecycleLabels";
+import LobbyAttachments from "./components/LobbyAttachments";
 import ProviderTruthChips from "./components/ProviderTruthChips";
 
 function formatTime(iso: string): string {
@@ -235,6 +236,7 @@ function FlowMessage({ event }: { event: LobbyEvent }) {
             {event.message}
           </p>
         )}
+        <LobbyAttachments attachments={event.attachments} />
       </div>
     </article>
   );

@@ -27,6 +27,7 @@ import {
   agentTruthBadges,
   lastObservedSummary,
 } from "../lib/agentLabels";
+import LobbyAttachments from "./components/LobbyAttachments";
 import ProviderTruthChips from "./components/ProviderTruthChips";
 
 const MODE_CARDS = [
@@ -200,6 +201,7 @@ function EventRow({ event }: { event: LobbyEvent }) {
         <p className="text-[12px] leading-relaxed text-text-muted preserve-words">
           {event.message}
         </p>
+        <LobbyAttachments attachments={event.attachments} />
       </div>
     </div>
   );

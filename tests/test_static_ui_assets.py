@@ -85,6 +85,54 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('<p className="text-[14px] leading-relaxed text-text-secondary preserve-words">', live_source)
         self.assertIn("{event.message}", live_source)
 
+    def test_react_lobby_event_type_includes_attachment_metadata_contract(self):
+        api_source = frontend_file("api.ts")
+
+        self.assertIn("export interface LobbyAttachmentRef", api_source)
+        self.assertIn("id: string;", api_source)
+        self.assertIn("filename: string;", api_source)
+        self.assertIn("content_type: string;", api_source)
+        self.assertIn("size: number;", api_source)
+        self.assertIn("is_image: boolean;", api_source)
+        self.assertIn("url: string;", api_source)
+        self.assertIn("download_url: string;", api_source)
+        self.assertIn("attachments?: LobbyAttachmentRef[];", api_source)
+
+    def test_react_lobby_and_live_render_attachment_metadata(self):
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+        attachment_source = frontend_file("views/components/LobbyAttachments.tsx")
+
+        self.assertIn("LobbyAttachments", lobby_source)
+        self.assertIn("attachments={event.attachments}", lobby_source)
+        self.assertIn("LobbyAttachments", live_source)
+        self.assertIn("attachments={event.attachments}", live_source)
+        self.assertIn("attachment.is_image && attachment.url", attachment_source)
+        self.assertIn("<img", attachment_source)
+        self.assertIn('loading="lazy"', attachment_source)
+        self.assertIn("attachment.download_url || attachment.url", attachment_source)
+        self.assertIn("download={attachment.filename}", attachment_source)
+        self.assertIn("formatAttachmentSize", attachment_source)
+        self.assertIn("KB", attachment_source)
+        self.assertIn("MB", attachment_source)
+
+    def test_react_attachment_renderer_uses_public_metadata_only(self):
+        sources = "\n".join(
+            [
+                frontend_file("api.ts"),
+                frontend_file("views/LobbyView.tsx"),
+                frontend_file("views/LiveView.tsx"),
+                frontend_file("views/components/LobbyAttachments.tsx"),
+            ]
+        )
+
+        self.assertNotIn("data_base64", sources)
+        self.assertNotIn("data:application/", sources)
+        self.assertNotIn("file://", sources)
+        self.assertNotIn("/Users/", sources)
+        self.assertNotIn("/var/", sources)
+        self.assertNotIn("/tmp/", sources)
+
     def test_react_live_timeline_keeps_reader_scroll_until_latest_jump(self):
         live_source = frontend_file("views/LiveView.tsx")
 

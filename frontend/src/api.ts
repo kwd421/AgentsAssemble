@@ -1,5 +1,15 @@
 // API client for the AgentsAssemble GUI backend.
 
+export interface LobbyAttachmentRef {
+  id: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  is_image: boolean;
+  url: string;
+  download_url: string;
+}
+
 export interface LobbyEvent {
   id: string;
   kind: string;
@@ -16,6 +26,7 @@ export interface LobbyEvent {
   flow_action?: string;
   flow_reason?: string;
   target_agent_id?: string;
+  attachments?: LobbyAttachmentRef[];
 }
 
 export interface LiveAgent {

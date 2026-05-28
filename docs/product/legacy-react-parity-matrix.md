@@ -51,7 +51,7 @@ Status values:
 | Flow status | `/api/live-agent-flow` | `fetchFlow()` | partial | `frontend/src/api.ts` | Play Mode only. |
 | Release health | `/api/release-health` | `fetchReleaseHealth()` | partial | `tests/test_static_ui_assets.py::test_react_admin_surfaces_release_health_catalog_as_cli_only` | GUI must not start checks. |
 | Local resources | `/api/local-resources` | `fetchLocalResources()` | partial | `frontend/src/api.ts` | Read-only observability. |
-| Attachment downloads | `/api/attachments/<id>` | Link or preview from event metadata | partial | `tests/test_gui_server.py::test_attachment_upload_sanitizes_and_downloads_image` | Events keep ids and URLs, not raw bytes. |
+| Attachment downloads | `/api/attachments/<id>` | Link or preview from event metadata | verified-read | `tests/test_gui_server.py::test_attachment_upload_sanitizes_and_downloads_image`, `tests/test_static_ui_assets.py::test_react_lobby_and_live_render_attachment_metadata` | React reads event metadata only; upload/composer parity remains a separate write-surface slice. |
 | Lobby SSE | `/api/events/lobby` | `subscribeLobby()` | partial | `frontend/src/api.ts`, `tests/test_gui_server.py::test_lobby_sse_keeps_connection_open_with_heartbeat` | Browser delivery smoothness needs separate proof. |
 | Side-chat SSE | `/api/events/side-chat` | Not fully surfaced | unverified | `agentsassemble/gui.py` | Must not collapse into lobby. |
 | Meeting SSE | `/api/meetings/<meeting-id>/events` | Not fully surfaced | unverified | `agentsassemble/gui.py` | Required before Live defaulting. |
