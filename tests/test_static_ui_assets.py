@@ -75,6 +75,23 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("CLI-only", source)
         self.assertNotIn("startReleaseHealthRun", source)
 
+    def test_react_live_tab_surfaces_meeting_lifecycle_projection(self):
+        source = frontend_source()
+
+        self.assertIn("export interface LifecycleProjection", source)
+        self.assertIn("export function fetchMeetingLifecycle", source)
+        self.assertIn('`/api/meetings/${encodeURIComponent(meetingId)}/lifecycle`', source)
+        self.assertIn("lifecycleStateLabel", source)
+        self.assertIn("LifecyclePanel", source)
+        self.assertIn("라이프사이클", source)
+        self.assertIn("라이프사이클 확인 중", source)
+        self.assertIn("라이프사이클 응답 없음", source)
+        self.assertIn("권한 검토 필요", source)
+        self.assertIn("미입실", source)
+        self.assertIn("unsafe_permission_violations", source)
+        self.assertNotIn("permission_profile_id}</", source)
+        self.assertNotIn("session_id}</", source)
+
     def test_lobby_separates_stage_from_activity_feed(self):
         script = static_js()
         css = static_css()

@@ -14,8 +14,11 @@ import {
 import {
   fetchLiveAgentFlow,
   fetchMafiaGame,
+  fetchMeetingLifecycle,
   type FlowResponse,
+  type MeetingLifecycleResponse,
   type LiveAgent,
+  type LifecycleProjection,
   type MafiaGame,
   type MafiaGameResponse,
 } from "./api";
@@ -71,16 +74,24 @@ export default function App() {
 
   const flowFetcher = useCallback(() => fetchLiveAgentFlow(), []);
   const [flowData, flowLoading, flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
+  const flow = flowData?.flow ?? { status: "idle" };
+  const lifecycleFetcher = useCallback((): Promise<MeetingLifecycleResponse> => {
+    if (!flow.meeting_id) return Promise.resolve({ meeting_id: "", lifecycle: null });
+    return fetchMeetingLifecycle(flow.meeting_id);
+  }, [flow.meeting_id]);
+  const [lifecycleData, lifecycleLoading, lifecycleError] =
+    usePoll<MeetingLifecycleResponse>(lifecycleFetcher, 5000);
   const mafiaFetcher = useCallback((): Promise<MafiaGameResponse> => {
     if (!mafiaGameId) return Promise.resolve({ game: null });
     return fetchMafiaGame(mafiaGameId, "host");
   }, [mafiaGameId]);
   const [mafiaData, , , refreshMafia] = usePoll<MafiaGameResponse>(mafiaFetcher, 3500);
 
-  const flow = flowData?.flow ?? { status: "idle" };
   const agents: LiveAgent[] = Array.isArray(flowData?.agents)
     ? flowData.agents
     : [];
+  const lifecycle: LifecycleProjection | null =
+    lifecycleData?.meeting_id === flow.meeting_id ? lifecycleData?.lifecycle ?? null : null;
   const flowEvents = Array.isArray(flowData?.flow_events)
     ? flowData.flow_events
     : Array.isArray(flowData?.events)
@@ -234,6 +245,9 @@ export default function App() {
               agents={agents}
               mafiaGame={mafiaGame}
               refreshMafia={refreshMafia}
+              lifecycle={lifecycle}
+              lifecycleLoading={Boolean(flow.meeting_id) && lifecycleLoading}
+              lifecycleError={Boolean(flow.meeting_id) ? lifecycleError : null}
             />
           ) : channel === "board" ? (
             <BoardView flow={flow} agents={agents} events={flowEvents} />

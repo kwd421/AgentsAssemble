@@ -57,6 +57,39 @@ export interface FlowResponse {
   flow_events: LobbyEvent[];
 }
 
+export interface LifecycleRoleHint {
+  role_id: string;
+  display_name: string;
+  admission_status: string;
+  permissions: {
+    meeting_read: boolean;
+    lobby_chat: boolean;
+    official_turn: boolean;
+    web_search: boolean;
+    tool_use: boolean;
+  };
+  unsafe_permission_violations: number;
+}
+
+export interface LifecycleProjection {
+  state: string;
+  status_source: string;
+  counts: {
+    roles: number;
+    bindings: number;
+    live_agents: number;
+    pending_turns: number;
+    official_messages: number;
+  };
+  role_hints: LifecycleRoleHint[];
+  attention: string[];
+}
+
+export interface MeetingLifecycleResponse {
+  meeting_id: string;
+  lifecycle: LifecycleProjection | null;
+}
+
 export interface MeetingSummary {
   meeting_id: string;
   topic: string;
@@ -78,6 +111,7 @@ export interface MeetingDetailResponse {
   tasks: Record<string, string>;
   return_packets?: Record<string, string>;
   review_checkpoints?: Record<string, string>;
+  lifecycle?: LifecycleProjection;
 }
 
 export interface HealthStatus {
@@ -206,6 +240,12 @@ export function fetchMeetings() {
 export function fetchMeetingDetail(meetingId: string) {
   return fetchJson<MeetingDetailResponse>(
     `/api/meetings/${encodeURIComponent(meetingId)}`
+  );
+}
+
+export function fetchMeetingLifecycle(meetingId: string) {
+  return fetchJson<MeetingLifecycleResponse>(
+    `/api/meetings/${encodeURIComponent(meetingId)}/lifecycle`
   );
 }
 

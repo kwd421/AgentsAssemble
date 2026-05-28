@@ -24,6 +24,7 @@ import {
   sendMafiaChat,
   subscribeLobby,
   type FlowState,
+  type LifecycleProjection,
   type LiveAgent,
   type LobbyEvent,
   type MafiaGame,
@@ -35,6 +36,12 @@ import {
   providerExecutionLabel,
   sandboxBadge,
 } from "../lib/agentLabels";
+import {
+  lifecycleAttentionLabel,
+  lifecycleStateLabel,
+  lifecycleStatusSourceLabel,
+  type LifecycleTone,
+} from "../lib/lifecycleLabels";
 import ProviderTruthChips from "./components/ProviderTruthChips";
 
 function formatTime(iso: string): string {
@@ -84,6 +91,108 @@ function agentStatusLabel(status: string) {
   if (status === "idle") return "준비";
   if (status === "error") return "오류";
   return "오프라인";
+}
+
+function lifecycleToneClass(tone: LifecycleTone) {
+  if (tone === "online") return "border-online/30 bg-online/10 text-online";
+  if (tone === "idle") return "border-idle/35 bg-idle/10 text-idle";
+  if (tone === "danger") return "border-danger/35 bg-danger/10 text-danger";
+  if (tone === "muted") return "border-text-muted/25 bg-black/18 text-text-muted";
+  return "border-accent/30 bg-accent/10 text-accent";
+}
+
+function LifecyclePanel({
+  lifecycle,
+  loading,
+  error,
+}: {
+  lifecycle: LifecycleProjection | null;
+  loading: boolean;
+  error: Error | null;
+}) {
+  const state = lifecycle
+    ? lifecycleStateLabel(lifecycle.state)
+    : { label: "기록 없음", tone: "muted" as LifecycleTone };
+  const counts = lifecycle?.counts;
+  const roleHints = lifecycle?.role_hints ?? [];
+  const missingRoles = roleHints.filter((role) => role.admission_status !== "bound_to_meeting").length;
+  const unsafeCount = roleHints.reduce(
+    (total, role) => total + Math.max(0, role.unsafe_permission_violations || 0),
+    0
+  );
+
+  // Lifecycle is the meeting-record state projection, not the Play Mode flow status.
+  return (
+    <section className="ops-panel ops-cut p-4">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-[17px] font-black">라이프사이클</h2>
+        <span className={`rounded-md border px-2 py-1 text-[11px] font-black ${lifecycleToneClass(state.tone)}`}>
+          {loading ? "확인 중" : error ? "응답 없음" : state.label}
+        </span>
+      </div>
+
+      {!lifecycle && (
+        <div className="ops-inner rounded-lg p-4 text-[13px] leading-relaxed text-text-muted preserve-words">
+          {error ? "라이프사이클 응답 없음" : loading ? "라이프사이클 확인 중" : "선택된 회의 기록 없음"}
+        </div>
+      )}
+
+      {lifecycle && (
+        <div className="space-y-3">
+          <div className="ops-inner rounded-lg p-4">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+              상태 근거
+            </p>
+            <p className="mt-1 text-[14px] font-bold text-text-secondary preserve-words">
+              {lifecycleStatusSourceLabel(lifecycle.status_source)}
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[12px] sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
+              <div className="rounded-md border border-accent/10 bg-black/18 p-2">
+                <p className="text-text-muted">바인딩</p>
+                <p className="text-[16px] font-black text-text-primary">{counts?.bindings ?? 0}</p>
+              </div>
+              <div className="rounded-md border border-accent/10 bg-black/18 p-2">
+                <p className="text-text-muted">입장</p>
+                <p className="text-[16px] font-black text-text-primary">{counts?.live_agents ?? 0}</p>
+              </div>
+              <div className="rounded-md border border-accent/10 bg-black/18 p-2">
+                <p className="text-text-muted">공식</p>
+                <p className="text-[16px] font-black text-text-primary">{counts?.official_messages ?? 0}</p>
+              </div>
+              <div className="rounded-md border border-accent/10 bg-black/18 p-2">
+                <p className="text-text-muted">대기</p>
+                <p className="text-[16px] font-black text-text-primary">{counts?.pending_turns ?? 0}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-md border border-accent/20 bg-accent/8 px-2 py-1 text-[11px] font-bold text-accent">
+              역할 {roleHints.length}
+            </span>
+            {missingRoles > 0 && (
+              <span className="rounded-md border border-idle/30 bg-idle/10 px-2 py-1 text-[11px] font-bold text-idle">
+                미입실 {missingRoles}
+              </span>
+            )}
+            {unsafeCount > 0 && (
+              <span className="rounded-md border border-idle/35 bg-idle/10 px-2 py-1 text-[11px] font-bold text-idle">
+                권한 검토 필요 {unsafeCount}
+              </span>
+            )}
+            {lifecycle.attention.map((code) => (
+              <span
+                key={code}
+                className="rounded-md border border-danger/25 bg-danger/10 px-2 py-1 text-[11px] font-bold text-danger"
+              >
+                {lifecycleAttentionLabel(code)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function FlowMessage({ event }: { event: LobbyEvent }) {
@@ -459,12 +568,18 @@ export default function LiveView({
   agents,
   mafiaGame,
   refreshMafia,
+  lifecycle,
+  lifecycleLoading,
+  lifecycleError,
 }: {
   flow: FlowState;
   flowEvents: LobbyEvent[];
   agents: LiveAgent[];
   mafiaGame: MafiaGame | null;
   refreshMafia: () => void;
+  lifecycle: LifecycleProjection | null;
+  lifecycleLoading: boolean;
+  lifecycleError: Error | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastFlowIdRef = useRef<string | undefined>(flow.flow_id);
@@ -676,6 +791,8 @@ export default function LiveView({
       )}
 
       <aside className="space-y-4">
+        <LifecyclePanel lifecycle={lifecycle} loading={lifecycleLoading} error={lifecycleError} />
+
         <section className="ops-panel ops-cut p-4">
           <h2 className="mb-4 text-[17px] font-black">라이브 상태</h2>
           <div className="grid gap-3">
