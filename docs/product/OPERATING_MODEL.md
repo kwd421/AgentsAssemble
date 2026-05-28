@@ -82,6 +82,10 @@ report.
 - The current GUI remains a dependency-light vanilla HTML/CSS/JS operator
   console until that contract is stable; React, Vite, and Tailwind are a later
   frontend track, not part of live-room stabilization.
+- A React/Vite frontend may be developed and served as an opt-in operator
+  surface while those contracts settle, but it must not become the default
+  entry point until API/SSE parity, room-event contracts, and legacy fallback
+  behavior are verified.
 - The detailed roadmap board is a later product-UI feature, not another panel
   to bolt onto the current vanilla console. When the React/Vite frontend track
   starts, add a dedicated roadmap view that can show long-term epics and
@@ -184,6 +188,22 @@ The vanilla GUI should optimize for trustworthy operations before polish:
   the whole lobby when the visible control shape has not changed.
 - Input drafts, scroll position, and latest navigation are operator state and
   should survive background refreshes.
+
+## Room Event Bus Direction
+
+Low-latency infrastructure ideas should enter AgentsAssemble as small,
+measured room-event mechanics before any heavy queue stack. The near-term
+shape is an append-only room event log, per-agent and per-browser cursors,
+SSE fanout for new events, bounded queues for backpressure, and payloads that
+reference large attachments or artifacts by id rather than copying bytes into
+the event stream.
+
+Benchmarking is part of that direction. Each room-event or scheduler slice
+should add a cheap numeric check where practical: append latency, read-after
+cursor latency, SSE delivery latency, queue wait time, dropped/backpressured
+event count, and per-agent speaking distribution. Kafka, Flink, Redis Streams,
+RDMA, DPDK, CPU pinning, and similar infrastructure are future scaling studies,
+not requirements for the local-first v1 room.
 
 ## Future Roadmap Board
 

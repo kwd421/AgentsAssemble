@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from agentsassemble.meeting_events import (
     append_live_event,
+    append_lobby_event_to_file,
     read_live_events,
     read_lobby_events,
     read_side_chat_events,
@@ -13,6 +14,59 @@ from agentsassemble.meeting_events import (
 
 
 class MeetingEventsTests(unittest.TestCase):
+    def test_live_agent_lobby_messages_preserve_long_visible_replies(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            lobby_path = root / "lobby.jsonl"
+            long_reply = (
+                "Kiro Opus 4.7은 0.5초짜리 판단처럼 보이더라도 80kg 조건과 모르겠다... 같은 "
+                "자연어 토큰을 중간에서 자르지 않고 보존해야 한다. "
+                + "이 문장은 실제 provider 발언이 240자를 넘는 상황을 재현하기 위한 긴 답변이다. " * 8
+            )
+
+            event = append_lobby_event_to_file(
+                lobby_path,
+                {
+                    "name": "Kiro Opus 4.7",
+                    "side": "other-agent",
+                    "kind": "message",
+                    "message": long_reply,
+                    "actor_id": "kiro-live",
+                    "source_event_id": "human-1",
+                },
+                live_agent_endpoint=True,
+            )
+            read_back = read_lobby_events(lobby_path, limit=None)
+
+        self.assertGreater(len(long_reply), 240)
+        expected_reply = long_reply.strip()[:2000]
+        self.assertEqual(event["message"], expected_reply)
+        self.assertEqual(read_back[0]["message"], expected_reply)
+        self.assertIn("Kiro Opus 4.7", read_back[0]["message"])
+        self.assertIn("0.5", read_back[0]["message"])
+        self.assertIn("80kg", read_back[0]["message"])
+        self.assertIn("모르겠다...", read_back[0]["message"])
+
+    def test_human_lobby_messages_keep_short_safety_limit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            lobby_path = root / "lobby.jsonl"
+            human_message = "사람 입력 " + ("x" * 400)
+
+            event = append_lobby_event_to_file(
+                lobby_path,
+                {
+                    "name": "owner",
+                    "side": "mine",
+                    "kind": "message",
+                    "message": human_message,
+                },
+            )
+            read_back = read_lobby_events(lobby_path, limit=None)
+
+        self.assertEqual(len(event["message"]), 240)
+        self.assertEqual(read_back[0]["message"], human_message[:240])
+
     def test_limited_lobby_and_side_chat_reads_do_not_load_full_jsonl_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

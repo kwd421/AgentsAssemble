@@ -26,6 +26,27 @@ Events should be append-only records such as:
 
 This keeps a meeting auditable. A later agent should be able to read the room log and understand what happened without trusting hidden orchestration state.
 
+The local-first room should borrow the useful parts of low-latency event
+systems without pretending to be Kafka, Flink, or a kernel-bypass network
+stack. The first room-event bus foundation is:
+
+- append-only durable room logs for lobby, side-chat, official, game, and
+  system events.
+- cursor-based reads so agents and browsers can ask only for events after
+  their last observed id.
+- SSE fanout for new events, with polling as a fallback rather than the primary
+  feeling of the room.
+- bounded in-memory queues and fairness/backpressure policy when several
+  residents try to speak at once.
+- id/reference payloads for attachments and artifacts, so large bytes are not
+  copied through every event.
+
+Each implementation slice that changes this path should expose numeric evidence
+when practical: append/read latency, SSE delivery time, queue wait time,
+backpressure counts, and per-agent speaking distribution. These numbers are
+operator evidence and regression signals, not permission to add a heavyweight
+distributed streaming stack before the local room contract needs it.
+
 ## Live Room Infrastructure vs Council Workflow
 
 AgentsAssemble should learn from Stoops-style live room infrastructure without becoming only a chatroom.

@@ -37,6 +37,8 @@ LOBBY_KINDS: set[str] = {"message", "ready", "deploy"}
 LOBBY_CHANNELS: set[str] = {"lobby", "side_chat"}
 OFFICIAL_LIVE_KINDS: set[str] = {"message", "synthesis"}
 JSONL_TAIL_BLOCK_BYTES = 8192
+LOBBY_MESSAGE_LIMIT = 240
+LIVE_AGENT_LOBBY_MESSAGE_LIMIT = 2000
 
 
 @dataclass(frozen=True)
@@ -75,9 +77,15 @@ class LobbyEvent:
     attachments: list[dict[str, object]] = field(default_factory=list)
 
     @classmethod
-    def from_payload(cls, payload: dict[str, object], channel: Literal["lobby", "side_chat"] = "lobby") -> LobbyEvent:
+    def from_payload(
+        cls,
+        payload: dict[str, object],
+        channel: Literal["lobby", "side_chat"] = "lobby",
+        *,
+        message_limit: int = LOBBY_MESSAGE_LIMIT,
+    ) -> LobbyEvent:
         kind = payload.get("kind") if payload.get("kind") in LOBBY_KINDS else "message"
-        message = clean_lobby_text(payload.get("message", ""), limit=240)
+        message = clean_lobby_text(payload.get("message", ""), limit=message_limit)
         if kind == "ready" and not message:
             message = "준비됐습니다."
         if kind == "deploy" and not message:
@@ -128,7 +136,7 @@ class LobbyEvent:
             name=clean_lobby_text(payload.get("name", "guest"), limit=32) or "guest",
             side=normalize_lobby_side(payload.get("side")),
             kind=normalize_lobby_kind(payload.get("kind")),
-            message=clean_lobby_text(payload.get("message", ""), limit=240),
+            message=clean_lobby_text(payload.get("message", ""), limit=_lobby_message_limit_for_payload(payload)),
             channel=normalize_lobby_channel(payload.get("channel"), default=default_channel),
             audience=clean_lobby_text(payload.get("audience", "room"), limit=32) or "room",
             official_record=False,
@@ -290,7 +298,10 @@ def append_lobby_event_to_file(
     if not allow_flow_metadata:
         for key in FLOW_METADATA_KEYS:
             event_payload_input.pop(key, None)
-    event = LobbyEvent.from_payload(event_payload_input)
+    event = LobbyEvent.from_payload(
+        event_payload_input,
+        message_limit=LIVE_AGENT_LOBBY_MESSAGE_LIMIT if live_agent_endpoint else LOBBY_MESSAGE_LIMIT,
+    )
     event_payload = event.to_dict()
     event_payload["live_agent_endpoint"] = live_agent_endpoint
     with path.open("a", encoding="utf-8") as file:
@@ -441,6 +452,12 @@ def write_live_state(meeting_dir: Path, payload: dict[str, object]) -> None:
 
 def clean_lobby_text(value: object, limit: int) -> str:
     return str(value or "").replace("\n", " ").replace("\r", " ").strip()[:limit]
+
+
+def _lobby_message_limit_for_payload(payload: dict[str, object]) -> int:
+    if payload.get("live_agent_endpoint") is True:
+        return LIVE_AGENT_LOBBY_MESSAGE_LIMIT
+    return LOBBY_MESSAGE_LIMIT
 
 
 def clean_lobby_attachments(value: object) -> list[dict[str, object]]:

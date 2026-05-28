@@ -3933,6 +3933,47 @@ class GuiServerTests(unittest.TestCase):
         serialized = json.dumps({"result": result, "events": events}, ensure_ascii=False)
         self.assertNotIn("late provider reply contains private output", serialized)
 
+    def test_live_agent_lobby_payload_preserves_long_provider_reply(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "kiro-live",
+                    "display_name": "Kiro Opus 4.7",
+                    "provider_kind": "kiro_live_session",
+                    "connection_kind": "live_session",
+                    "status": "online",
+                },
+            )
+            long_reply = (
+                "Kiro Opus 4.7은 0.5와 80kg 같은 토큰을 살려서 말해야 하고, 모르겠다... 같은 말줄임도 "
+                "중간에서 끊기면 안 됩니다. "
+                + "실제 회의 발언이 길어지는 상황을 검증하기 위한 문장입니다. " * 10
+            )
+
+            result = live_agent_lobby_message_payload(
+                root,
+                "kiro-live",
+                {
+                    "message": long_reply,
+                    "source_event_id": "human-event",
+                    "flow_id": "flow-demo",
+                    "flow_action": "speak",
+                },
+            )
+            events = read_lobby(root, limit=None)
+
+        self.assertGreater(len(long_reply), 240)
+        self.assertEqual(result["event"]["message"], long_reply.strip()[:2000])
+        self.assertEqual(events[0]["message"], long_reply.strip()[:2000])
+        self.assertTrue(events[0]["live_agent_endpoint"])
+        self.assertEqual(events[0]["flow_id"], "flow-demo")
+        self.assertIn("Kiro Opus 4.7", events[0]["message"])
+        self.assertIn("0.5", events[0]["message"])
+        self.assertIn("80kg", events[0]["message"])
+        self.assertIn("모르겠다...", events[0]["message"])
+
     def test_live_agent_readiness_endpoint_rejects_negative_session_smoke_soak_payload(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
