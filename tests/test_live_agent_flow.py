@@ -7,6 +7,7 @@ from agentsassemble.live_agent_flow import (
     FlowOptions,
     LiveAgentFlowClient,
     active_flow_context,
+    flow_should_yield_for_fairness,
     parse_flow_decision,
 )
 
@@ -76,6 +77,104 @@ class LiveAgentFlowDecisionTests(unittest.TestCase):
         self.assertEqual(decision.action, "wait")
         self.assertEqual(decision.message, "")
         self.assertEqual(decision.reason, "이미 할 말이 나왔다")
+
+
+class LiveAgentFlowFairnessTests(unittest.TestCase):
+    def test_leading_agent_yields_to_less_active_participant(self):
+        events = [
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"},
+            {"flow_id": "flow-1", "flow_action": "challenge", "actor_id": "agent-a"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-b"},
+        ]
+
+        self.assertTrue(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-a",
+                participant_agent_ids=["agent-a", "agent-b"],
+            )
+        )
+
+    def test_even_or_lagging_agent_does_not_yield(self):
+        events = [
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-b"},
+        ]
+
+        self.assertFalse(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-a",
+                participant_agent_ids=["agent-a", "agent-b"],
+            )
+        )
+        self.assertFalse(
+            flow_should_yield_for_fairness(
+                events + [{"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"}],
+                flow_id="flow-1",
+                agent_id="agent-b",
+                participant_agent_ids=["agent-a", "agent-b"],
+            )
+        )
+
+    def test_zero_count_participant_sets_the_baseline(self):
+        events = [{"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"}]
+
+        self.assertTrue(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-a",
+                participant_agent_ids=["agent-a", "agent-b"],
+            )
+        )
+
+    def test_solo_empty_or_missing_self_baseline_does_not_deadlock(self):
+        events = [{"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"}]
+
+        self.assertFalse(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-a",
+                participant_agent_ids=["agent-a"],
+            )
+        )
+        self.assertFalse(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-a",
+                participant_agent_ids=[],
+            )
+        )
+        self.assertFalse(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-a",
+                participant_agent_ids=["agent-b"],
+            )
+        )
+
+    def test_max_lead_allows_a_small_gap(self):
+        events = [
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-b"},
+        ]
+
+        self.assertFalse(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-a",
+                participant_agent_ids=["agent-a", "agent-b"],
+                max_lead=1,
+            )
+        )
 
 
 class LiveAgentFlowCliTests(unittest.TestCase):

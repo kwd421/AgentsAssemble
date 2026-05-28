@@ -174,6 +174,52 @@ def flow_turn_count(events: list[dict[str, object]], *, flow_id: str, agent_id: 
     return count
 
 
+def flow_should_yield_for_fairness(
+    events: list[dict[str, object]],
+    *,
+    flow_id: str,
+    agent_id: str,
+    participant_agent_ids: list[str],
+    max_lead: int = 0,
+) -> bool:
+    """Return true when the current active participant should silently yield.
+
+    The baseline is the caller-provided current participant set, not every
+    historical speaker. The caller must include `agent_id` in
+    `participant_agent_ids`; an empty baseline or a missing self id yields
+    False so a broken roster does not deadlock a solo resident.
+    """
+    clean_flow_id = str(flow_id or "").strip()
+    clean_agent_id = str(agent_id or "").strip()
+    participant_ids = _unique_agent_ids(participant_agent_ids)
+    if not clean_flow_id or not clean_agent_id or clean_agent_id not in participant_ids:
+        return False
+    counts = {participant_id: 0 for participant_id in participant_ids}
+    for event in events:
+        if str(event.get("flow_id") or "") != clean_flow_id:
+            continue
+        if str(event.get("flow_action") or "") not in FLOW_SPEAKING_ACTIONS:
+            continue
+        actor_id = str(event.get("actor_id") or "").strip()
+        if actor_id in counts:
+            counts[actor_id] += 1
+    self_count = counts[clean_agent_id]
+    minimum_count = min(counts.values())
+    return self_count > minimum_count + max(0, int(max_lead))
+
+
+def _unique_agent_ids(agent_ids: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for agent_id in agent_ids:
+        clean_agent_id = str(agent_id or "").strip()
+        if not clean_agent_id or clean_agent_id in seen:
+            continue
+        seen.add(clean_agent_id)
+        unique.append(clean_agent_id)
+    return unique
+
+
 def _parse_json_object(text: str) -> object:
     candidate = _strip_markdown_json_fence(text)
     try:

@@ -28,6 +28,7 @@ from agentsassemble.live_agent_flow import (
     FLOW_TERMINAL_EVENT_TYPES,
     active_flow_context,
     flow_context_options,
+    flow_should_yield_for_fairness,
     flow_turn_count,
     parse_flow_decision,
 )
@@ -321,6 +322,15 @@ class LiveAgentRunner:
         if self._in_failure_backoff():
             self._heartbeat_if_due()
             return 0
+        flow_id = str(flow_context.get("flow_id") or "")
+        if flow_should_yield_for_fairness(
+            events,
+            flow_id=flow_id,
+            agent_id=self.config.agent_id,
+            participant_agent_ids=_active_flow_participant_agent_ids(room, self.config.agent_id, meeting_id),
+        ):
+            self._heartbeat_if_due()
+            return 0
 
         generated = self._generate_flow_decision(
             candidate,
@@ -329,7 +339,6 @@ class LiveAgentRunner:
         if generated is None:
             return 0
         source_event_id, decision = generated
-        flow_id = str(flow_context.get("flow_id") or "")
         if flow_id and not self._flow_still_active(flow_id, meeting_id):
             self._record_flow_wait_success(source_event_id)
             return 0
@@ -954,6 +963,26 @@ def _runtime_engagement_mode(config: ResidentAgentConfig, room: dict[str, object
         return config.engagement_mode
     mode = str(agent.get("engagement_mode") or "").strip()
     return mode if mode in ENGAGEMENT_MODES else config.engagement_mode
+
+
+def _active_flow_participant_agent_ids(room: dict[str, object], agent_id: str, meeting_id: str) -> list[str]:
+    agents = room.get("agents") if isinstance(room.get("agents"), list) else []
+    participant_ids: list[str] = []
+    for agent in agents:
+        if not isinstance(agent, dict):
+            continue
+        if meeting_id and str(agent.get("meeting_id") or "").strip() != meeting_id:
+            continue
+        if str(agent.get("engagement_mode") or "").strip().lower().replace("-", "_") != "flow":
+            continue
+        if str(agent.get("status") or "").strip().lower() not in {"online", "working"}:
+            continue
+        candidate_id = str(agent.get("agent_id") or "").strip()
+        if candidate_id:
+            participant_ids.append(candidate_id)
+    if agent_id not in participant_ids:
+        participant_ids.append(agent_id)
+    return participant_ids
 
 
 def should_reply_to_event(

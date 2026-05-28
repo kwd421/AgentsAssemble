@@ -372,6 +372,123 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(runner.run(), 0)
         self.assertFalse([call for call in client.calls if call[0].endswith("/lobby")])
 
+    def test_flow_runner_yields_when_ahead_of_active_participants(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow", "meeting_id": "m1"},
+            "agents": [
+                {"agent_id": "agent-a", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+                {"agent_id": "agent-b", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+            ],
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "자유토론 시작",
+                    "flow_id": "flow-1",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_topic": "고죠 vs 스쿠나",
+                },
+                {"id": "agent-a-1", "actor_id": "agent-a", "name": "Agent A", "message": "첫 발언", "flow_id": "flow-1", "flow_action": "speak"},
+                {"id": "agent-b-1", "actor_id": "agent-b", "name": "Agent B", "message": "응답", "flow_id": "flow-1", "flow_action": "speak"},
+                {"id": "agent-a-2", "actor_id": "agent-a", "name": "Agent A", "message": "두 번째 발언", "flow_id": "flow-1", "flow_action": "speak"},
+            ],
+        }
+        client = FakeRoomClient([room])
+
+        def command_runner(command, prompt, *, timeout_seconds):
+            raise AssertionError("leading flow agent should silently yield instead of calling the provider")
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="flow", meeting_id="m1"),
+            request_json=client,
+            command_runner=command_runner,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 0)
+        self.assertEqual(runner.last_observed_event_id, "")
+        self.assertFalse([call for call in client.calls if call[0].endswith("/lobby")])
+
+    def test_flow_runner_allows_lagging_participant_to_speak(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "agent": {"agent_id": "agent-b", "engagement_mode": "flow", "meeting_id": "m1"},
+            "agents": [
+                {"agent_id": "agent-a", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+                {"agent_id": "agent-b", "status": "working", "engagement_mode": "flow", "meeting_id": "m1"},
+            ],
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "자유토론 시작",
+                    "flow_id": "flow-1",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_topic": "고죠 vs 스쿠나",
+                },
+                {"id": "agent-a-1", "actor_id": "agent-a", "name": "Agent A", "message": "첫 발언", "flow_id": "flow-1", "flow_action": "speak"},
+                {"id": "agent-b-1", "actor_id": "agent-b", "name": "Agent B", "message": "응답", "flow_id": "flow-1", "flow_action": "speak"},
+                {"id": "agent-a-2", "actor_id": "agent-a", "name": "Agent A", "message": "두 번째 발언", "flow_id": "flow-1", "flow_action": "speak"},
+            ],
+        }
+        client = FakeRoomClient([room], register_agent={"agent_id": "agent-b", "status": "online"})
+
+        runner = LiveAgentRunner(
+            config(agent_id="agent-b", display_name="Agent B", engagement_mode="flow", meeting_id="m1"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: '{"action":"speak","message":"좋아, 내 차례면 이 지점을 짚을게."}',
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        runner.last_observed_event_id = "agent-b-1"
+
+        self.assertEqual(runner.run(), 1)
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["actor_id"], "agent-b")
+        self.assertEqual(lobby_payloads[0]["message"], "좋아, 내 차례면 이 지점을 짚을게.")
+
+    def test_flow_runner_does_not_wait_for_stale_flow_participants(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow", "meeting_id": "m1"},
+            "agents": [
+                {"agent_id": "agent-a", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+                {"agent_id": "agent-b", "status": "stale", "engagement_mode": "flow", "meeting_id": "m1"},
+            ],
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "자유토론 시작",
+                    "flow_id": "flow-1",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_topic": "고죠 vs 스쿠나",
+                },
+                {"id": "agent-a-1", "actor_id": "agent-a", "name": "Agent A", "message": "첫 발언", "flow_id": "flow-1", "flow_action": "speak"},
+            ],
+        }
+        client = FakeRoomClient([room])
+
+        runner = LiveAgentRunner(
+            config(engagement_mode="flow", meeting_id="m1"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: '{"action":"speak","message":"혼자 남은 상태면 계속 이어갈게."}',
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["message"], "혼자 남은 상태면 계속 이어갈게.")
+
     def test_flow_runner_reacts_to_silence_nudge(self):
         clock = FakeClock()
         room = {

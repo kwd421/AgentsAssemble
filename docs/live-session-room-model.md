@@ -57,6 +57,14 @@ counts yet; those require a later server/fanout slice. Treat the output as
 operator evidence for comparing local changes on the same machine, not as a
 service-level objective.
 
+Play Mode flow fairness starts as a runner-side silent yield. Before a resident
+calls its provider, it compares its own speaking count against the current
+active `flow` participants in the same meeting. If it is already ahead of the
+least-active participant, it skips that tick without advancing the visible room,
+posting a nudge, or turning the room into a moderator. This guard applies only
+to informal flow participation, not official Work Mode turns; stale/offline
+participants are not used as the baseline.
+
 ## Live Room Infrastructure vs Council Workflow
 
 AgentsAssemble should learn from Stoops-style live room infrastructure without becoming only a chatroom.
