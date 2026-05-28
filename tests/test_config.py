@@ -362,9 +362,7 @@ class ConfigTests(unittest.TestCase):
             [
                 "claude-code-live",
                 "cursor-agent-live",
-                "antigravity-cli-live",
                 "grok-build-live",
-                "hermes-cli-live",
                 "openclaw-cli-live",
             ],
         )
@@ -373,9 +371,7 @@ class ConfigTests(unittest.TestCase):
             {
                 "claude-code-live": "claude_code",
                 "cursor-agent-live": "cursor",
-                "antigravity-cli-live": "antigravity_cli",
                 "grok-build-live": "grok_build_cli",
-                "hermes-cli-live": "hermes_cli",
                 "openclaw-cli-live": "openclaw_cli",
             },
         )
@@ -384,9 +380,7 @@ class ConfigTests(unittest.TestCase):
             {
                 "claude-code-live": "terminal_session",
                 "cursor-agent-live": "terminal_session",
-                "antigravity-cli-live": "self_service",
                 "grok-build-live": "terminal_session",
-                "hermes-cli-live": "terminal_session",
                 "openclaw-cli-live": "terminal_session",
             },
         )

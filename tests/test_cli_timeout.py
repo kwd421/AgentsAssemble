@@ -5751,8 +5751,8 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         payload = json.loads(stdout.getvalue())
         self.assertEqual(payload["status"], "unsupported")
-        self.assertEqual(payload["total_count"], 6)
-        self.assertEqual(payload["unsupported_count"], 6)
+        self.assertEqual(payload["total_count"], 4)
+        self.assertEqual(payload["unsupported_count"], 4)
         self.assertEqual(payload["approval_required_count"], 0)
         self.assertEqual({item["status"] for item in payload["results"]}, {"unsupported"})
 

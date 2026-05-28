@@ -83,6 +83,12 @@ also recall a prior session secret. That global-recall contamination blocks a
 Hermes resume runner until a future proof shows clean session-id-only recall or
 a self-service wrapper owns the room loop.
 
+Discovery keeps these verdicts visible without turning them into runnable
+residents. `agy`/legacy `antigravity` and `hermes` discovery rows are
+`unsupported_evidence`: inventory records with negative continuity evidence,
+not `self_service`, `terminal_session`, or provider-specific live-session
+config entries.
+
 Imported memory/profile packs now have a safe inspection surface before they can
 affect meeting context. `assemble memory-capsule gate --path <capsule-dir>`
 produces a memory/profile capsule gate report with redacted local path evidence,
@@ -199,7 +205,7 @@ Local readiness can be verified with a fake command runner or a local smoke scri
 
 Resident `terminal_session` is the first local PTY-backed slice for Claude-like or legacy Gemini-like CLIs. It keeps one interactive terminal process alive, injects each room prompt as a terminal submission, and captures output after the terminal has been idle. This is closer to the Stoops-style live room shape than one-shot `local_cli`, but it is still not Claude Code Channels, Antigravity native sessions, tmux ownership, or OS-level sandboxing.
 
-Resident `self_service` is the first local process-supervision slice that stops AgentsAssemble from injecting each room prompt into the provider process. The supervisor registers the live agent, starts the configured command with `stdin` closed, exports `AGENTSASSEMBLE_*` environment variables plus shell-escaped room command templates such as `AGENTSASSEMBLE_WAIT_NEXT_COMMAND`, `AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE`, `AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE`, `AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE`, and `AGENTSASSEMBLE_LEAVE_COMMAND`, and lets the child call `wait-next`, `say`, `official-reply`, `heartbeat`, and intentional `leave` itself after splitting those templates into argv and replacing placeholders. Use it for Antigravity CLI or custom wrappers that can own their own room loop. `scripts/my_self_service_agent.py` is the runnable local example for that wrapper shape.
+Resident `self_service` is the first local process-supervision slice that stops AgentsAssemble from injecting each room prompt into the provider process. The supervisor registers the live agent, starts the configured command with `stdin` closed, exports `AGENTSASSEMBLE_*` environment variables plus shell-escaped room command templates such as `AGENTSASSEMBLE_WAIT_NEXT_COMMAND`, `AGENTSASSEMBLE_SAY_COMMAND_TEMPLATE`, `AGENTSASSEMBLE_OFFICIAL_REPLY_COMMAND_TEMPLATE`, `AGENTSASSEMBLE_HEARTBEAT_COMMAND_TEMPLATE`, and `AGENTSASSEMBLE_LEAVE_COMMAND`, and lets the child call `wait-next`, `say`, `official-reply`, `heartbeat`, and intentional `leave` itself after splitting those templates into argv and replacing placeholders. Use it for custom wrappers, including a future Antigravity wrapper, only when that wrapper truly owns its own room loop. `scripts/my_self_service_agent.py` is the runnable local example for that wrapper shape.
 
 The director-led team examples exercise that agent-owned path as an
 organization template, not as a real-provider launch recipe. The bundle is

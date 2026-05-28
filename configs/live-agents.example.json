@@ -14,15 +14,6 @@
       "command": ["claude"],
       "terminal_idle_timeout": 0.75,
       "timeout_seconds": 120
-    },
-    {
-      "agent_id": "antigravity-cli-live",
-      "display_name": "Antigravity CLI",
-      "provider_kind": "antigravity_cli",
-      "connection_kind": "self_service",
-      "engagement_mode": "always",
-      "command": ["antigravity"],
-      "timeout_seconds": 120
     }
   ]
 }

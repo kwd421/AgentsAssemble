@@ -28,16 +28,6 @@
       "timeout_seconds": 120
     },
     {
-      "agent_id": "antigravity-cli-live",
-      "display_name": "Antigravity CLI",
-      "provider_kind": "antigravity_cli",
-      "connection_kind": "self_service",
-      "meeting_id": "",
-      "engagement_mode": "moderator_called",
-      "command": ["antigravity"],
-      "timeout_seconds": 120
-    },
-    {
       "agent_id": "grok-build-live",
       "display_name": "Grok Build",
       "provider_kind": "grok_build_cli",
@@ -45,17 +35,6 @@
       "meeting_id": "",
       "engagement_mode": "moderator_called",
       "command": ["grok"],
-      "terminal_idle_timeout": 0.75,
-      "timeout_seconds": 120
-    },
-    {
-      "agent_id": "hermes-cli-live",
-      "display_name": "Hermes CLI",
-      "provider_kind": "hermes_cli",
-      "connection_kind": "terminal_session",
-      "meeting_id": "",
-      "engagement_mode": "moderator_called",
-      "command": ["hermes"],
       "terminal_idle_timeout": 0.75,
       "timeout_seconds": 120
     },

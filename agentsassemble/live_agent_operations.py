@@ -62,6 +62,7 @@ PUBLIC_ENUM_DETAIL_VALUES = {
         "path_and_pty_preflight",
         "path_and_codex_safety_preflight",
         "path_and_self_service_preflight",
+        "path_and_negative_continuity_evidence",
     },
 }
 

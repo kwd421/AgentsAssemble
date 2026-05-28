@@ -33,14 +33,19 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         self.assertEqual(report["status"], "ok")
         self.assertEqual(
             [agent["agent_id"] for agent in report["config"]["agents"]],
-            ["claude-code-live", "codex-live", "antigravity-cli-live"],
+            ["claude-code-live", "codex-live"],
         )
         self.assertEqual(report["config"]["agents"][0]["connection_kind"], "terminal_session")
         self.assertEqual(report["config"]["agents"][0]["engagement_mode"], "mentioned")
         self.assertEqual(report["config"]["agents"][1]["provider_kind"], "codex_live_session")
         self.assertNotIn("command", report["config"]["agents"][1])
         self.assertEqual(report["config"]["agents"][1]["timeout_seconds"], 240)
-        self.assertEqual(report["config"]["agents"][2]["connection_kind"], "self_service")
+        antigravity = next(item for item in report["discoveries"] if item["agent_id"] == "antigravity-cli-live")
+        self.assertEqual(antigravity["command"], "antigravity")
+        self.assertFalse(antigravity["included"])
+        self.assertEqual(antigravity["entry_status"], "unsupported_evidence")
+        self.assertEqual(antigravity["entry_mode"], "unsupported_evidence")
+        self.assertEqual(antigravity["operator_action"], "review_evidence")
         gemini = next(item for item in report["discoveries"] if item["command"] == "gemini")
         self.assertTrue(gemini["available"])
         self.assertFalse(gemini["included"])
@@ -79,14 +84,14 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         self.assertTrue(discoveries["codex"]["requires_approval"])
         self.assertIn("Codex", discoveries["codex"]["safety_note"])
 
-        self.assertEqual(discoveries["antigravity"]["entry_status"], "missing")
-        self.assertEqual(discoveries["antigravity"]["entry_mode"], "self_service")
-        self.assertEqual(discoveries["antigravity"]["join_semantics"], "self_service_room_loop")
-        self.assertEqual(discoveries["antigravity"]["context_durability"], "provider_managed_room_loop")
-        self.assertEqual(discoveries["antigravity"]["sandbox_enforcement"], "advisory")
-        self.assertEqual(discoveries["antigravity"]["evidence_basis"], "path_and_self_service_preflight")
-        self.assertEqual(discoveries["antigravity"]["operator_action"], "install_cli")
-        self.assertFalse(discoveries["antigravity"]["requires_approval"])
+        self.assertEqual(discoveries["agy"]["entry_status"], "missing")
+        self.assertEqual(discoveries["agy"]["entry_mode"], "unsupported_evidence")
+        self.assertEqual(discoveries["agy"]["join_semantics"], "unsupported_evidence")
+        self.assertEqual(discoveries["agy"]["context_durability"], "not_proven")
+        self.assertEqual(discoveries["agy"]["sandbox_enforcement"], "advisory")
+        self.assertEqual(discoveries["agy"]["evidence_basis"], "path_and_negative_continuity_evidence")
+        self.assertEqual(discoveries["agy"]["operator_action"], "install_cli")
+        self.assertFalse(discoveries["agy"]["requires_approval"])
 
         self.assertEqual(discoveries["gemini"]["entry_status"], "legacy")
         self.assertEqual(discoveries["gemini"]["entry_mode"], "terminal_session")
@@ -96,6 +101,30 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         self.assertEqual(discoveries["gemini"]["operator_action"], "include_legacy_gemini")
         self.assertFalse(discoveries["gemini"]["requires_approval"])
         self.assertIn("legacy", discoveries["gemini"]["safety_note"])
+
+    def test_discovery_prefers_agy_alias_without_startable_antigravity_duplicate(self):
+        def resolver(command):
+            return f"/opt/bin/{command}" if command in {"agy", "antigravity"} else None
+
+        report = build_discovered_live_agent_config(
+            server="http://room.local",
+            meeting_id="resident-m1",
+            command_resolver=resolver,
+            terminal_session_supported=lambda: True,
+        )
+
+        antigravity_rows = [item for item in report["discoveries"] if item["agent_id"] == "antigravity-cli-live"]
+        self.assertEqual(len(antigravity_rows), 1)
+        antigravity = antigravity_rows[0]
+        self.assertEqual(antigravity["command"], "agy")
+        self.assertEqual(antigravity["entry_status"], "unsupported_evidence")
+        self.assertEqual(antigravity["entry_mode"], "unsupported_evidence")
+        self.assertEqual(antigravity["join_semantics"], "unsupported_evidence")
+        self.assertEqual(antigravity["context_durability"], "not_proven")
+        self.assertEqual(antigravity["operator_action"], "review_evidence")
+        self.assertFalse(antigravity["included"])
+        self.assertFalse(antigravity["requires_approval"])
+        self.assertEqual(report["config"]["agents"], [])
 
     def test_discovery_includes_external_cli_candidates_with_prompt_bridge_contract(self):
         external_commands = {"cursor-agent", "grok", "hermes", "openclaw"}
@@ -113,9 +142,9 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         agents = report["config"]["agents"]
         self.assertEqual(
             [agent["agent_id"] for agent in agents],
-            ["cursor-agent-live", "cursor-agent-live-session", "grok-live", "hermes-cli-live", "openclaw-cli-live"],
+            ["cursor-agent-live", "cursor-agent-live-session", "grok-live", "openclaw-cli-live"],
         )
-        terminal_agents = [agents[0], agents[3], agents[4]]
+        terminal_agents = [agents[0], agents[3]]
         for agent in terminal_agents:
             self.assertEqual(agent["connection_kind"], "terminal_session")
             self.assertEqual(agent["join_semantics"], "terminal_pty_prompt_bridge")
@@ -138,11 +167,11 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         self.assertEqual(grok_agent["sandbox_enforcement"], "advisory")
         self.assertEqual(grok_agent["evidence_basis"], "path_and_grok_resume_preflight")
         self.assertNotIn("command", grok_agent)
-        self.assertEqual([agent.get("command") for agent in agents], [["cursor-agent"], None, None, ["hermes"], ["openclaw"]])
+        self.assertEqual([agent.get("command") for agent in agents], [["cursor-agent"], None, None, ["openclaw"]])
 
         discoveries = {item["agent_id"]: item for item in report["discoveries"]}
-        for command in {"cursor-agent", "hermes", "openclaw"}:
-            agent_id = {"cursor-agent": "cursor-agent-live", "hermes": "hermes-cli-live", "openclaw": "openclaw-cli-live"}[command]
+        for command in {"cursor-agent", "openclaw"}:
+            agent_id = {"cursor-agent": "cursor-agent-live", "openclaw": "openclaw-cli-live"}[command]
             self.assertTrue(discoveries[agent_id]["available"])
             self.assertTrue(discoveries[agent_id]["included"])
             self.assertTrue(discoveries[agent_id]["requires_approval"])
@@ -164,6 +193,14 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
         self.assertEqual(discoveries["grok-live"]["join_semantics"], "grok_session_resume")
         self.assertEqual(discoveries["grok-live"]["context_durability"], "provider_managed_resume")
         self.assertEqual(discoveries["grok-live"]["evidence_basis"], "path_and_grok_resume_preflight")
+        self.assertTrue(discoveries["hermes-cli-live"]["available"])
+        self.assertFalse(discoveries["hermes-cli-live"]["included"])
+        self.assertFalse(discoveries["hermes-cli-live"]["requires_approval"])
+        self.assertEqual(discoveries["hermes-cli-live"]["entry_status"], "unsupported_evidence")
+        self.assertEqual(discoveries["hermes-cli-live"]["entry_mode"], "unsupported_evidence")
+        self.assertEqual(discoveries["hermes-cli-live"]["join_semantics"], "unsupported_evidence")
+        self.assertEqual(discoveries["hermes-cli-live"]["context_durability"], "not_proven")
+        self.assertEqual(discoveries["hermes-cli-live"]["operator_action"], "review_evidence")
 
     def test_discovered_session_bundle_labels_stateless_prompt_call_honestly(self):
         bundle = build_discovered_session_bundle(
@@ -410,27 +447,27 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             agent_config = json.loads(agent_path.read_text(encoding="utf-8"))
             self.assertEqual(
                 [role["id"] for role in council["roles"]],
-                ["claude_code_live", "codex_live", "antigravity_cli_live"],
+                ["claude_code_live", "codex_live"],
             )
             self.assertEqual(
                 [binding["agent_id"] for binding in agent_config["agent_bindings"]],
-                ["claude-code-live", "codex-live", "antigravity-cli-live"],
+                ["claude-code-live", "codex-live"],
             )
             self.assertEqual(
                 [provider["kind"] for provider in agent_config["providers"]],
-                ["claude_code", "codex_live_session", "antigravity_cli"],
+                ["claude_code", "codex_live_session"],
             )
             self.assertEqual(
                 [role["join_semantics"] for role in council["roles"]],
-                ["terminal_pty_prompt_bridge", "codex_exec_resume", "self_service_room_loop"],
+                ["terminal_pty_prompt_bridge", "codex_exec_resume"],
             )
             self.assertEqual(
                 [role["context_durability"] for role in council["roles"]],
-                ["process_lifetime", "provider_managed_resume", "provider_managed_room_loop"],
+                ["process_lifetime", "provider_managed_resume"],
             )
             self.assertEqual(
                 [role["sandbox_enforcement"] for role in council["roles"]],
-                ["advisory", "codex_readonly", "advisory"],
+                ["advisory", "codex_readonly"],
             )
             self.assertNotIn("discovered local CLI transport", council["roles"][0]["research_focus"])
             self.assertIn("terminal_pty_prompt_bridge", council["roles"][0]["research_focus"])
@@ -438,8 +475,9 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(agent_config["providers"][0]["join_semantics"], "terminal_pty_prompt_bridge")
             self.assertEqual(agent_config["providers"][1]["context_durability"], "provider_managed_resume")
             self.assertEqual(agent_config["providers"][1]["sandbox_enforcement"], "codex_readonly")
-            self.assertEqual(agent_config["agent_bindings"][2]["evidence_basis"], "path_and_self_service_preflight")
-            self.assertEqual(agent_config["agent_bindings"][2]["sandbox_enforcement"], "advisory")
+            antigravity = next(item for item in payload["discoveries"] if item["agent_id"] == "antigravity-cli-live")
+            self.assertEqual(antigravity["entry_status"], "unsupported_evidence")
+            self.assertFalse(antigravity["included"])
             ensure = payload["next_commands"]["ensure_session"]
             self.assertIn("--council-config", ensure)
             self.assertIn(str(council_path), ensure)
@@ -560,7 +598,8 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertTrue(discoveries["codex"]["included"])
             self.assertEqual(discoveries["claude"]["approval_status"], "not_approved")
             self.assertFalse(discoveries["claude"]["included"])
-            self.assertEqual(discoveries["antigravity"]["approval_status"], "not_approved")
+            self.assertNotIn("approval_status", discoveries["antigravity"])
+            self.assertEqual(discoveries["antigravity"]["entry_status"], "unsupported_evidence")
             self.assertFalse(discoveries["antigravity"]["included"])
             self.assertEqual(payload["discovery"]["approval_filter"]["approved_agents"], ["codex-live"])
             self.assertEqual(payload["session"]["connection"]["expected"], 1)
@@ -1228,11 +1267,11 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 preflight_checker=lambda *args, **kwargs: {"status": "ok"},
             )
 
-            self.assertEqual([role.id for role in council.roles], ["claude_code_live", "codex_live", "antigravity_cli_live"])
-            self.assertEqual([provider["kind"] for provider in runtime["providers"]], ["claude_code", "codex_live_session", "antigravity_cli"])
+            self.assertEqual([role.id for role in council.roles], ["claude_code_live", "codex_live"])
+            self.assertEqual([provider["kind"] for provider in runtime["providers"]], ["claude_code", "codex_live_session"])
             self.assertEqual(session["status"], "starting")
-            self.assertEqual(session["process"]["expected"], 3)
-            self.assertEqual(session["connection"]["expected"], 3)
+            self.assertEqual(session["process"]["expected"], 2)
+            self.assertEqual(session["connection"]["expected"], 2)
             self.assertEqual(supervisor.started[0]["meeting_id"], "resident-m1")
 
     def test_live_agent_discover_returns_one_when_no_supported_cli_is_found(self):
@@ -1256,12 +1295,16 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
                 with patch("agentsassemble.cli.subprocess.Popen", side_effect=AssertionError("agent process started")):
                     with patch("agentsassemble.cli.subprocess.run", side_effect=AssertionError("command executed")):
                         with patch("agentsassemble.cli._request_json", side_effect=AssertionError("room contacted")):
-                            with patch("sys.stdout", StringIO()):
+                            with patch("sys.stdout", StringIO()) as stdout:
                                 exit_code = main(["live-agent", "discover", "--output", str(output_path), "--json"])
 
-            self.assertEqual(exit_code, 0)
-            written = json.loads(output_path.read_text(encoding="utf-8"))
-            self.assertEqual(written["agents"][0]["connection_kind"], "self_service")
+            self.assertEqual(exit_code, 1)
+            self.assertFalse(output_path.exists())
+            payload = json.loads(stdout.getvalue())
+            antigravity = next(item for item in payload["discoveries"] if item["agent_id"] == "antigravity-cli-live")
+            self.assertEqual(antigravity["command"], "antigravity")
+            self.assertEqual(antigravity["entry_status"], "unsupported_evidence")
+            self.assertFalse(antigravity["included"])
 
     def test_gui_discovery_api_writes_output_root_config_without_running_agents(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1301,16 +1344,20 @@ class LiveAgentDiscoveryTests(unittest.TestCase):
             self.assertEqual(payload["output"], str(output_path))
             self.assertTrue(output_path.exists())
             written = json.loads(output_path.read_text(encoding="utf-8"))
-            self.assertEqual([agent["agent_id"] for agent in written["agents"]], ["claude-code-live", "antigravity-cli-live"])
+            self.assertEqual([agent["agent_id"] for agent in written["agents"]], ["claude-code-live"])
             self.assertEqual(written["agents"][0]["meeting_id"], "resident-m1")
+            antigravity = next(item for item in payload["discoveries"] if item["agent_id"] == "antigravity-cli-live")
+            self.assertEqual(antigravity["entry_status"], "unsupported_evidence")
+            self.assertEqual(antigravity["operator_action"], "review_evidence")
+            self.assertFalse(antigravity["included"])
             self.assertEqual(payload["next_commands"]["preflight"][-1], str(output_path))
             operation = json.loads((root / "live-agent-runs" / "operations.jsonl").read_text(encoding="utf-8").splitlines()[-1])
             self.assertEqual(operation["operation"], "discovery.run")
-            self.assertEqual(operation["details"]["join_semantics"], ["self_service_room_loop", "terminal_pty_prompt_bridge"])
-            self.assertEqual(operation["details"]["context_durability"], ["process_lifetime", "provider_managed_room_loop"])
+            self.assertEqual(operation["details"]["join_semantics"], ["terminal_pty_prompt_bridge", "unsupported_evidence"])
+            self.assertEqual(operation["details"]["context_durability"], ["not_proven", "process_lifetime"])
             self.assertEqual(operation["details"]["sandbox_enforcement"], ["advisory"])
-            self.assertEqual(operation["details"]["evidence_basis"], ["path_and_pty_preflight", "path_and_self_service_preflight"])
-            self.assertEqual(operation["details"]["approval_required"], 2)
+            self.assertEqual(operation["details"]["evidence_basis"], ["path_and_negative_continuity_evidence", "path_and_pty_preflight"])
+            self.assertEqual(operation["details"]["approval_required"], 1)
             self.assertNotIn("/opt/bin", json.dumps(operation, ensure_ascii=False))
 
     def test_discovery_operation_contract_values_are_whitelisted(self):

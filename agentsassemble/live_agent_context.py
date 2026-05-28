@@ -6,6 +6,7 @@ from agentsassemble.sandbox_launcher import sandbox_launcher_for, safe_sandbox_e
 
 LIVE_AGENT_JOIN_SEMANTICS = {
     "manual_room_loop",
+    "unsupported_evidence",
     "stateless_prompt_call",
     "terminal_pty_prompt_bridge",
     "remote_bridge_room_loop",
@@ -19,6 +20,7 @@ LIVE_AGENT_JOIN_SEMANTICS = {
 }
 LIVE_AGENT_CONTEXT_DURABILITY = {
     "external_owner_managed",
+    "not_proven",
     "stateless_prompt",
     "process_lifetime",
     "remote_owner_managed",

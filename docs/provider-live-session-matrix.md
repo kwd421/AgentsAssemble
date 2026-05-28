@@ -20,9 +20,12 @@ not be presented as provider-owned live-room participation or context
 continuity evidence.
 
 `configs/live-agents.provider-staging.example.json` is the conservative
-non-Codex config reference for the rows below. It is a contract example, not a
-native-ready bundle; run discovery, explicit approval, preflight, and a targeted
-smoke before starting any real provider process from it.
+non-Codex config reference for currently startable staging rows below. It is a
+contract example, not a native-ready bundle; run discovery, explicit approval,
+preflight, and a targeted smoke before starting any real provider process from
+it. Evidence-only rows such as bare Antigravity and Hermes remain documented in
+this matrix but are intentionally omitted from that startable config until a
+clean wrapper or session proof exists.
 
 | Provider kind | Current status | Supported connection_kind | Context durability | Sandbox enforcement | Required wrapper | Next smoke test |
 | --- | --- | --- | --- | --- | --- | --- |

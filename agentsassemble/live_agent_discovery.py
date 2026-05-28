@@ -45,6 +45,12 @@ SELF_SERVICE_CONTRACT = {
     "sandbox_enforcement": "advisory",
     "evidence_basis": "path_and_self_service_preflight",
 }
+UNSUPPORTED_EVIDENCE_CONTRACT = {
+    "join_semantics": "unsupported_evidence",
+    "context_durability": "not_proven",
+    "sandbox_enforcement": "advisory",
+    "evidence_basis": "path_and_negative_continuity_evidence",
+}
 
 
 def build_discovered_live_agent_config(
@@ -61,16 +67,31 @@ def build_discovered_live_agent_config(
     discoveries = []
     agents = []
     for spec in _candidate_specs():
-        path = resolver(spec["command"])
-        available = bool(path)
+        command, available = _resolve_candidate_command(spec, resolver)
         supported = _candidate_supported(spec, terminal_supported=terminal_supported)
         legacy = bool(spec.get("legacy"))
-        included = available and supported and (not legacy or include_legacy_gemini)
-        reason = "included" if included else _discovery_skip_reason(available=available, supported=supported, legacy=legacy)
-        entry_status = _entry_status(available=available, supported=supported, included=included, legacy=legacy)
+        unsupported_evidence = bool(spec.get("unsupported_evidence"))
+        included = available and supported and (not legacy or include_legacy_gemini) and not unsupported_evidence
+        reason = (
+            "included"
+            if included
+            else _discovery_skip_reason(
+                available=available,
+                supported=supported,
+                legacy=legacy,
+                unsupported_evidence=unsupported_evidence,
+            )
+        )
+        entry_status = _entry_status(
+            available=available,
+            supported=supported,
+            included=included,
+            legacy=legacy,
+            unsupported_evidence=unsupported_evidence,
+        )
         discoveries.append(
             {
-                "command": spec["command"],
+                "command": command,
                 "agent_id": spec["agent_id"],
                 "provider_kind": spec["provider_kind"],
                 "connection_kind": spec["connection_kind"],
@@ -227,13 +248,19 @@ def _candidate_specs() -> list[dict[str, Any]]:
             **KIRO_LIVE_SESSION_CONTRACT,
         },
         {
-            "command": "antigravity",
+            "command": "agy",
+            "commands": ["agy", "antigravity"],
             "agent_id": "antigravity-cli-live",
             "display_name": "Antigravity CLI",
             "provider_kind": "antigravity_cli",
-            "connection_kind": "self_service",
+            "connection_kind": "unsupported_evidence",
             "timeout_seconds": 120,
-            **SELF_SERVICE_CONTRACT,
+            "unsupported_evidence": True,
+            "unsupported_note": (
+                "Antigravity is inventory-only: isolated probes did not prove a deterministic "
+                "conversation id and created global-store symlink side effects."
+            ),
+            **UNSUPPORTED_EVIDENCE_CONTRACT,
         },
         {
             "command": "cursor-agent",
@@ -270,10 +297,14 @@ def _candidate_specs() -> list[dict[str, Any]]:
             "agent_id": "hermes-cli-live",
             "display_name": "Hermes CLI",
             "provider_kind": "hermes_cli",
-            "connection_kind": "terminal_session",
-            "terminal_idle_timeout": 0.75,
+            "connection_kind": "unsupported_evidence",
             "timeout_seconds": 120,
-            **TERMINAL_PROMPT_BRIDGE_CONTRACT,
+            "unsupported_evidence": True,
+            "unsupported_note": (
+                "Hermes is inventory-only: resume can recall session context, but a fresh "
+                "no-resume control also recalled prior session material."
+            ),
+            **UNSUPPORTED_EVIDENCE_CONTRACT,
         },
         {
             "command": "openclaw",
@@ -299,6 +330,15 @@ def _candidate_specs() -> list[dict[str, Any]]:
     ]
 
 
+def _resolve_candidate_command(spec: dict[str, Any], resolver: Callable[[str], str | None]) -> tuple[str, bool]:
+    commands = spec.get("commands")
+    candidates = [str(command) for command in commands] if isinstance(commands, list) else [str(spec["command"])]
+    for command in candidates:
+        if command and resolver(command):
+            return command, True
+    return str(spec["command"]), False
+
+
 def _agent_entry(spec: dict[str, Any], *, meeting_id: str, engagement_mode: str) -> dict[str, Any]:
     entry = {
         "agent_id": spec["agent_id"],
@@ -320,9 +360,11 @@ def _agent_entry(spec: dict[str, Any], *, meeting_id: str, engagement_mode: str)
     return entry
 
 
-def _discovery_skip_reason(*, available: bool, supported: bool, legacy: bool) -> str:
+def _discovery_skip_reason(*, available: bool, supported: bool, legacy: bool, unsupported_evidence: bool) -> str:
     if not available:
         return "not_found"
+    if unsupported_evidence:
+        return "unsupported_evidence"
     if not supported:
         return "terminal_unsupported"
     if legacy:
@@ -330,9 +372,11 @@ def _discovery_skip_reason(*, available: bool, supported: bool, legacy: bool) ->
     return "not_included"
 
 
-def _entry_status(*, available: bool, supported: bool, included: bool, legacy: bool) -> str:
+def _entry_status(*, available: bool, supported: bool, included: bool, legacy: bool, unsupported_evidence: bool) -> str:
     if included:
         return "ready"
+    if available and unsupported_evidence:
+        return "unsupported_evidence"
     if available and not supported:
         return "unsupported"
     if available and legacy:
@@ -349,6 +393,8 @@ def _candidate_supported(spec: dict[str, Any], *, terminal_supported: bool) -> b
 
 
 def _entry_mode(spec: dict[str, Any]) -> str:
+    if spec.get("unsupported_evidence"):
+        return "unsupported_evidence"
     if spec["provider_kind"] == "codex_live_session":
         return "codex_live_session"
     if spec["provider_kind"] == "kiro_live_session":
@@ -363,6 +409,8 @@ def _entry_mode(spec: dict[str, Any]) -> str:
 def _operator_action(entry_status: str) -> str:
     if entry_status == "ready":
         return "auto_join"
+    if entry_status == "unsupported_evidence":
+        return "review_evidence"
     if entry_status == "legacy":
         return "include_legacy_gemini"
     if entry_status == "missing":
@@ -379,6 +427,8 @@ def _requires_approval(entry_status: str) -> bool:
 def _safety_note(spec: dict[str, Any], entry_status: str) -> str:
     if entry_status == "missing":
         return "CLI executable was not found on PATH."
+    if entry_status == "unsupported_evidence":
+        return str(spec.get("unsupported_note") or "Candidate is discovery evidence only and is not startable.")
     if entry_status == "unsupported":
         return "PTY terminal sessions are not available on this host."
     if entry_status == "legacy":
