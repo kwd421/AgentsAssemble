@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agentsassemble.antigravity_resident import ANTIGRAVITY_BACKEND_ERROR
 from agentsassemble.live_agent_continuity_proof import (
     _continuity_code,
     _first_reply_ready_normalized,
@@ -244,6 +245,35 @@ class LiveAgentContinuityProofTests(unittest.TestCase):
         self.assertTrue(seen_cwds)
         self.assertTrue(all(cwd != repo_cwd for cwd in seen_cwds))
         self.assertTrue(all(cwd.name.startswith("agentsassemble-continuity-proof-") for cwd in seen_cwds))
+
+    def test_antigravity_continuity_proof_reports_backend_error_category(self):
+        conversation_id = "c" * 36
+
+        def command_runner(command, **kwargs):
+            if "--log-file" in command:
+                log_path = Path(command[command.index("--log-file") + 1])
+                log_path.write_text(
+                    f"Created conversation {conversation_id}\n"
+                    "agent executor error: RESOURCE_EXHAUSTED (code 429): quota reached\n",
+                    encoding="utf-8",
+                )
+            if "--conversation" in command:
+                return subprocess.CompletedProcess(command, 0, stdout="previous reply", stderr="")
+            return subprocess.CompletedProcess(command, 0, stdout="READY\n", stderr="")
+
+        result = run_live_agent_continuity_proof(
+            config(provider_kind="antigravity_live_session", command=["agy"]),
+            approve_real_providers=True,
+            command_runner=command_runner,
+            code_factory=fixed_continuity_code_factory("KCODE-ABCDE12345"),
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["reason"], "provider_call_failed")
+        self.assertEqual(result["error_category"], ANTIGRAVITY_BACKEND_ERROR)
+        self.assertIn("backend reported", result["error_message"])
+        self.assertTrue(result["session_id_captured"])
+        self.assertNotIn("KCODE-ABCDE12345", str(result))
 
     def test_hermes_continuity_proof_accepts_session_recall_with_verbose_reply(self):
         calls = []

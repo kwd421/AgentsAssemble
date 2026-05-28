@@ -11,10 +11,10 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 from agentsassemble.codex_resident import CodexResidentCommandRunner
-from agentsassemble.antigravity_resident import AntigravityResidentCommandRunner
-from agentsassemble.cursor_resident import CursorResidentCommandRunner
-from agentsassemble.grok_resident import GrokResidentCommandRunner
-from agentsassemble.hermes_resident import HermesResidentCommandRunner
+from agentsassemble.antigravity_resident import AntigravityResidentCommandRunner, antigravity_error_category
+from agentsassemble.cursor_resident import CursorResidentCommandRunner, cursor_error_category
+from agentsassemble.grok_resident import GrokResidentCommandRunner, grok_error_category
+from agentsassemble.hermes_resident import HermesResidentCommandRunner, hermes_error_category
 from agentsassemble.kiro_resident import KiroResidentCommandRunner
 from agentsassemble.live_agent_runner import ResidentAgentConfig
 from agentsassemble.meeting_events import clean_lobby_text
@@ -106,7 +106,7 @@ def run_live_agent_continuity_proof(
             finally:
                 _close_runner(runner)
     except Exception as error:
-        return {
+        result = {
             "status": "failed",
             "reason": "provider_call_failed",
             "error_type": error.__class__.__name__,
@@ -121,6 +121,11 @@ def run_live_agent_continuity_proof(
             "session_id_suffix": _safe_session_suffix(getattr(runner, "session_id", "") if runner is not None else ""),
             "limitations": CONTINUITY_PROOF_LIMITATIONS,
         }
+        error_category = _continuity_error_category(error)
+        if error_category:
+            result["error_category"] = error_category
+            result["error_message"] = clean_lobby_text(str(error), limit=240)
+        return result
 
     first_reply_is_ready = first_reply.strip() == "READY"
     first_reply_ready_normalized = _first_reply_ready_normalized(first_reply)
@@ -247,6 +252,14 @@ def _runner_for_config(config: ResidentAgentConfig, *, command_runner: Any | Non
     if config.provider_kind == "hermes_live_session":
         return HermesResidentCommandRunner(config, command_runner=command_runner, cwd=cwd)
     raise ValueError(f"Provider does not support continuity proof: {config.provider_kind}")
+
+
+def _continuity_error_category(error: Exception) -> str:
+    for category_fn in (antigravity_error_category, hermes_error_category, grok_error_category, cursor_error_category):
+        category = category_fn(error)
+        if category:
+            return category
+    return ""
 
 
 @contextmanager
