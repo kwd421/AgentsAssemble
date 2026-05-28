@@ -1,10 +1,10 @@
 # Hermes CLI Continuity Evidence
 
-Date: 2026-05-27
+Date: 2026-05-27; updated 2026-05-28
 
-This note records the bounded Hermes CLI continuity probe used for the provider
-live-session matrix. It is evidence only: no resident runner, config promotion,
-or sandbox claim was added from this probe.
+This note records the bounded Hermes CLI continuity probes used for the
+provider live-session matrix. They are evidence only: no resident runner,
+config promotion, or sandbox claim was added from these probes.
 
 ## Safe Contract Surface
 
@@ -19,7 +19,7 @@ or sandbox claim was added from this probe.
 - `hermes sessions export --help` exposes `--session-id`, `--source`, and an
   output path.
 
-## Probe Summary
+## Initial Probe Summary
 
 The seed call used `hermes chat --query ... --quiet --ignore-user-config
 --ignore-rules --source tool --max-turns 1 --pass-session-id`. It returned a
@@ -39,14 +39,40 @@ session-id-specific continuity by itself.
 `hermes sessions export --session-id <session_id>` did export one JSONL session
 record. The export was inspected only for safe counts and was not committed.
 
+## Disambiguation Summary
+
+A later approved disambiguation run used two independent temporary git cwds and
+the same safe public-output rules. It created session A with code A and session
+B with code B, then compared targeted `--resume` calls with fresh no-resume
+controls.
+
+Safe fields showed:
+
+- Session A and session B both returned session ids, and the ids were distinct.
+- Session A's seed returned the expected ready marker and did not reveal code A.
+- Session B's seed returned successfully and did not reveal code B, but did not
+  exactly match the ready marker.
+- `--resume <session_a>` recalled suffix A.
+- `--resume <session_b>` recalled suffix B.
+- A cross-query against session A still surfaced suffix A rather than proving
+  access to B.
+- A fresh no-resume control also surfaced suffix A.
+- Reusing session A from a different cwd surfaced suffix A.
+
+This proves Hermes can preserve useful provider-owned session context, but it
+also proves that a fresh no-resume call can reach at least one session secret.
+That breaks the negative-control requirement for an AgentsAssemble
+provider-specific resident runner.
+
 ## Verdict
 
-Hermes is `continuity-ambiguous-no-runner` for this slice.
+Hermes is `global-recall-contaminated-no-runner` for this slice.
 
-The current local install can recall a prior probe after `--resume`, but a fresh
-no-resume control can also recall it. That is useful evidence that Hermes has a
-provider-owned context surface somewhere, but it is not enough to build or
-advertise a deterministic live-room resident runner.
+The current local install can recall prior probes after `--resume`, and the A/B
+disambiguation shows the session ids are not simply ignored. However, a fresh
+no-resume control can also recall a prior session secret. That is useful
+evidence that Hermes has provider-owned context, but it is not enough to build
+or advertise a deterministic live-room resident runner.
 
 Do not add a Hermes runner until a later slice proves one of these:
 

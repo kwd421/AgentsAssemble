@@ -77,6 +77,12 @@ did not prove a deterministic `--conversation <id>` handle and still created
 symlinks resolving outside the proof root, so no Antigravity resume runner is
 justified yet.
 
+Hermes also remains in the planned-provider lane. Its `--resume <session_id>`
+surface can recall session-specific suffixes, but a fresh no-resume control can
+also recall a prior session secret. That global-recall contamination blocks a
+Hermes resume runner until a future proof shows clean session-id-only recall or
+a self-service wrapper owns the room loop.
+
 Imported memory/profile packs now have a safe inspection surface before they can
 affect meeting context. `assemble memory-capsule gate --path <capsule-dir>`
 produces a memory/profile capsule gate report with redacted local path evidence,

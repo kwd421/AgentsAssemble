@@ -239,11 +239,14 @@ resident can start, connect, answer one redacted lobby probe, stop, and report
 post-stop `stopped` with safe counts. Cursor still has not proven official-turn
 quality, restart, recover, tool safety, future billing stability, production
 readiness, or sandboxing.
-The current Hermes evidence is weaker: a seed/resume probe recalled a prior
-codeword, but a fresh no-resume control also recalled it, so Hermes remains an
-ambiguous provider-owned context surface rather than a session-id-specific
-resident path. Keep Hermes in the same explicit-approval staging lane until a
-clean session-id proof or self-service room loop is verified.
+The current Hermes evidence is weaker than the provider-specific resident
+paths. A/B probes show `--resume <session_a>` and `--resume <session_b>` can
+recall their own suffixes, so Hermes has useful provider-owned context. But a
+fresh no-resume control also recalled a prior session suffix, so Hermes remains
+a global-recall-contaminated provider-owned context surface rather than a
+session-id-specific resident path. Keep Hermes in the same explicit-approval
+staging lane until a clean session-id proof or self-service room loop is
+verified.
 
 ## GUI Startup Autostart
 
