@@ -146,6 +146,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const [releaseHealthQueue] = usePoll<ReleaseHealthQueue>(releaseHealthQueueFetcher, 30000);
 
   const agents = health?.agents;
+  const sharedMemory = health?.shared_memory;
   const ok = health?.status === "ok";
   const resourceOk = resources?.status === "ok";
   const resourceRoleRows = resources?.summary.role_breakdown
@@ -222,6 +223,49 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                   {agents.attention.length > 3 &&
                     ` 외 ${agents.attention.length - 3}건`}
                 </p>
+              )}
+              {sharedMemory && (
+                <div className="rounded-lg border border-accent/18 bg-panel/35 px-4 py-3">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-[13px] font-black text-text-primary">공유 메모리</h3>
+                    <span className="rounded border border-line/60 bg-black/18 px-2 py-1 text-[10px] font-black text-text-muted">
+                      공식 메모리 카운트만 표시 · 본문 비표시
+                    </span>
+                  </div>
+                  <div className="grid gap-2 text-[12px] text-text-secondary sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="ops-inner rounded-lg px-3 py-2">
+                      메모리 보유{" "}
+                      <span className="font-black text-text-primary">
+                        {sharedMemory.with_memory}/{sharedMemory.ready_sessions}
+                      </span>
+                    </div>
+                    <div className="ops-inner rounded-lg px-3 py-2">
+                      공식 이벤트{" "}
+                      <span className="font-black text-text-primary">
+                        {sharedMemory.official_event_count}
+                      </span>
+                    </div>
+                    <div className="ops-inner rounded-lg px-3 py-2">
+                      열린 질문{" "}
+                      <span className="font-black text-text-primary">
+                        {sharedMemory.open_question_count}
+                      </span>
+                    </div>
+                    <div className="ops-inner rounded-lg px-3 py-2">
+                      액션 아이템{" "}
+                      <span className="font-black text-text-primary">
+                        {sharedMemory.action_item_count}
+                      </span>
+                    </div>
+                  </div>
+                  {sharedMemory.attention && sharedMemory.attention.length > 0 && (
+                    <p className="mt-3 rounded-md border border-idle/25 bg-idle/10 px-3 py-2 text-[12px] font-semibold text-idle preserve-words">
+                      메모리 주의: {sharedMemory.attention.slice(0, 3).join(", ")}
+                      {sharedMemory.attention.length > 3 &&
+                        ` 외 ${sharedMemory.attention.length - 3}건`}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           ) : (

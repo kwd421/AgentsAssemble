@@ -504,6 +504,45 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("file://", admin_source)
         self.assertNotIn("/Users/", admin_source)
 
+    def test_react_admin_surfaces_shared_memory_health_without_raw_context(self):
+        api_source = frontend_file("api.ts")
+        admin_source = frontend_file("views/AdminPanel.tsx")
+        self.assertIn("export interface LiveAgentSharedMemoryHealth", api_source)
+        self.assertIn("shared_memory?: LiveAgentSharedMemoryHealth;", api_source)
+        self.assertIn("ready_sessions: number;", api_source)
+        self.assertIn("with_memory: number;", api_source)
+        self.assertIn("official_event_count: number;", api_source)
+        self.assertIn("open_question_count: number;", api_source)
+        self.assertIn("action_item_count: number;", api_source)
+
+        self.assertIn("const sharedMemory = health?.shared_memory;", admin_source)
+        self.assertIn("공유 메모리", admin_source)
+        self.assertIn("sharedMemory.with_memory", admin_source)
+        self.assertIn("sharedMemory.ready_sessions", admin_source)
+        self.assertIn("sharedMemory.official_event_count", admin_source)
+        self.assertIn("sharedMemory.open_question_count", admin_source)
+        self.assertIn("sharedMemory.action_item_count", admin_source)
+        self.assertIn("공식 메모리 카운트만 표시", admin_source)
+        self.assertIn("본문 비표시", admin_source)
+
+        for forbidden in [
+            "rolling_summary",
+            "open_questions",
+            "action_items",
+            "decisions",
+            "official_reply_text",
+            "transcript_body",
+            "raw_memory",
+            "provider_output",
+            "prompt_body",
+            "session_id",
+            "config_path",
+            "auth_ref",
+            'method: "POST"',
+            "EventSource(",
+        ]:
+            self.assertNotIn(forbidden, admin_source)
+
     def test_react_admin_local_resources_renders_safe_process_observability(self):
         admin_source = frontend_file("views/AdminPanel.tsx")
         label_source = frontend_file("lib/localResourceLabels.ts")

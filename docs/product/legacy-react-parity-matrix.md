@@ -92,7 +92,7 @@ surface rather than silently counted as React parity.
 | `/api/live-agent-flow` | GET | exact | `fetchLiveAgentFlow()` | yes | React Play Mode status surface. |
 | `/api/live-agent-flow/start` | POST | exact | `startFlow()` | yes | React Play Mode start control; does not start providers. |
 | `/api/live-agent-flow/stop` | POST | exact | `stopFlow()` | yes | React Play Mode stop control. |
-| `/api/live-agent-health` | GET | exact | `fetchHealth()` | yes | React admin/status observability. |
+| `/api/live-agent-health` | GET | exact | `fetchHealth()` | yes | React admin/status observability, including safe shared-memory counts without memory bodies. |
 | `/api/live-agent-join-brief` | POST | exact | `createLiveAgentJoinBrief()` | yes | React can request a read-only external entry packet; it must not register, start providers, or generate LAN invite tokens. |
 | `/api/live-agent-meetings/start` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
 | `/api/live-agent-official-round-smoke` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |

@@ -265,6 +265,15 @@ export interface MeetingStreamState {
   lifecycle: LifecycleProjection | null;
 }
 
+export interface LiveAgentSharedMemoryHealth {
+  ready_sessions: number;
+  with_memory: number;
+  official_event_count: number;
+  open_question_count: number;
+  action_item_count: number;
+  attention?: string[];
+}
+
 export interface HealthStatus {
   status: string;
   agents?: {
@@ -273,6 +282,7 @@ export interface HealthStatus {
     counts: Record<string, number>;
     attention: string[];
   };
+  shared_memory?: LiveAgentSharedMemoryHealth;
 }
 
 export interface LocalResourceProcess {
