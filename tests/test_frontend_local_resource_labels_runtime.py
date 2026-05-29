@@ -50,6 +50,18 @@ class FrontendLocalResourceLabelsRuntimeTests(unittest.TestCase):
             assert.equal(labels.formatResourceMemory(512), "0.5 MB");
             assert.equal(labels.formatResourceMemory(120 * 1024), "120 MB");
             assert.equal(labels.formatResourceMemory(2 * 1024 * 1024), "2.0 GB");
+            assert.equal(
+              labels.localResourceUnavailableMessage(new Error("Not found")),
+              "현재 연결된 backend가 /api/local-resources를 제공하지 않습니다. 최신 GUI backend를 재시작하거나 /app/에서 확인하세요."
+            );
+            assert.equal(
+              labels.localResourceUnavailableMessage(new Error("404 Not Found")),
+              "현재 연결된 backend가 /api/local-resources를 제공하지 않습니다. 최신 GUI backend를 재시작하거나 /app/에서 확인하세요."
+            );
+            assert.equal(
+              labels.localResourceUnavailableMessage(new Error("Failed to fetch")),
+              "로컬 리소스 정보를 읽지 못했습니다."
+            );
             assert.deepEqual(
               labels.localResourceSpotlightRows([
                 { pid: 10, comm: "codex", role: "agentsassemble", cpu_pct: 15.25, rss_kb: 2048 },

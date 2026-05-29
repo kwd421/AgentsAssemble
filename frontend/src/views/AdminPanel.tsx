@@ -16,6 +16,7 @@ import { usePoll } from "../hooks";
 import {
   formatLoadAverageTriple,
   formatResourceMemory,
+  localResourceUnavailableMessage,
   localResourceSpotlightRows,
   resourceAttentionLabel,
   resourceRoleLabel,
@@ -413,7 +414,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
           ) : (
             <p className="text-[13px] text-text-muted">
               {resourcesError
-                ? "로컬 리소스 정보를 읽지 못했습니다."
+                ? localResourceUnavailableMessage(resourcesError)
                 : resourcesLoading
                   ? "리소스 확인 중..."
                   : "리소스 정보가 없습니다."}
