@@ -797,6 +797,18 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["entry_contract"]["provider_context"], "provider_owned")
         self.assertEqual(payload["entry_contract"]["host_prompt_injection"], "not_required")
         self.assertEqual(payload["entry_contract"]["flow_status"], "play_mode_demo_or_auxiliary")
+        self.assertIn("admission_contract", payload)
+        self.assertEqual(
+            payload["admission_contract"],
+            {
+                "host_admission": "required_before_room_access",
+                "identity_proof": "not_included_in_join_brief",
+                "lan_invite_proof": "separate_hmac_invite_optional",
+                "registration_effect": "not_registered_until_commands_register_runs",
+                "network_scope": "local_or_trusted_lan_only_until_signed_room_apis",
+                "provider_execution": "not_started_by_join_brief",
+            },
+        )
         self.assertEqual(
             payload["entry_contract"]["tool_order"],
             [

@@ -84,6 +84,7 @@ def build_live_agent_join_brief(
         "packet_kind": "agent_owned_entry_packet",
         "agent": agent,
         "entry_contract": _entry_contract(),
+        "admission_contract": _admission_contract(),
         "execution_contract": execution_contract,
         "commands": commands,
         "templates": templates,
@@ -105,6 +106,7 @@ def build_live_agent_join_brief(
             "Read room.shared_memory as official-only background context when present.",
             "Use execution_contract.context_durability as the declared agent-private context boundary.",
             "Use execution_contract.sandbox_enforcement as the declared sandbox boundary.",
+            "Treat admission_contract as the boundary: this packet is not host admission or identity proof by itself.",
             "For lobby actions, replace templates.say placeholders and run it once.",
             "For observe_lobby actions, run the returned ack_command and do not post a reply.",
             "For official_turn actions, replace templates.official_reply placeholders and run it once.",
@@ -118,6 +120,17 @@ def build_live_agent_join_brief(
             "provider_executed": False,
             "contains_secrets": False,
         },
+    }
+
+
+def _admission_contract() -> dict[str, str]:
+    return {
+        "host_admission": "required_before_room_access",
+        "identity_proof": "not_included_in_join_brief",
+        "lan_invite_proof": "separate_hmac_invite_optional",
+        "registration_effect": "not_registered_until_commands_register_runs",
+        "network_scope": "local_or_trusted_lan_only_until_signed_room_apis",
+        "provider_execution": "not_started_by_join_brief",
     }
 
 
