@@ -38,7 +38,7 @@ from agentsassemble.live_agent_flow import (
 )
 from agentsassemble.character_mode import clean_first_message_index, clean_persona_card_id, normalize_character_mode
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
-from agentsassemble.persona_cards import load_persona_card, persona_prompt_lines
+from agentsassemble.persona_cards import load_persona_card, persona_prompt_lines, render_persona_prompt
 from agentsassemble.remote_bridge_config import (
     remote_bridge_auth_ref_available,
     remote_bridge_auth_ref_value,
@@ -1122,14 +1122,13 @@ def _flow_persona_prompt_lines(
             "Continue without inventing a persona.",
         ]
     if config.character_mode == "work_speech_only":
-        lines = [
-            "Character speech style (work_speech_only; do not include raw lore/world/body context):",
-            f"- Persona id: {_prompt_text(card.id, limit=120)}",
-            f"- Character name: {_prompt_text(card.display_name, limit=160)}",
-            "- Keep the character's visible collaboration style when speaking in the room.",
-            "- Do not treat private persona lore as meeting evidence or copy card body text into Work Mode artifacts.",
-        ]
-        return lines
+        rendered = render_persona_prompt(
+            card,
+            recent_messages=recent_events,
+            mode="work_speech_only",
+            surface="work_speech",
+        )
+        return rendered.lines
     context_parts = [
         *recent_events,
         str(source_event.get("name") or ""),

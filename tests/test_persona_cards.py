@@ -614,6 +614,29 @@ class RisuModulePersonaTests(unittest.TestCase):
         self.assertIn("dry", rendered)
         self.assertIn("{{setvar::x::1}}", rendered)
 
+    def test_persona_card_preserves_operator_approved_speech_style_capsule(self):
+        from agentsassemble.persona_cards import PersonaCard
+
+        card = PersonaCard.from_dict(
+            {
+                "id": "yanagi",
+                "display_name": "Tsukishiro Yanagi",
+                "description": "RAW_DESCRIPTION_MARKER",
+                "personality": "RAW_PERSONALITY_MARKER",
+                "speech_style": {
+                    "tone": "차분하지만 직설적",
+                    "cadence": "짧은 문장, 결론 먼저",
+                    "collaboration_style": "반박할 때도 근거를 붙임",
+                    "do": ["한국어로 자연스럽게 말함"],
+                    "do_not": ["공식 산출물에 역할극 행동 묘사를 넣지 않음"],
+                },
+            }
+        )
+
+        self.assertEqual(card.speech_style["tone"], "차분하지만 직설적")
+        self.assertEqual(card.to_dict()["speech_style"]["cadence"], "짧은 문장, 결론 먼저")
+        self.assertEqual(card.safe_summary()["speech_style"], {"configured": True, "do": 1, "do_not": 1})
+
     def test_render_persona_prompt_orders_blocks_without_raw_ignored_payloads(self):
         card = PersonaCardForTests.with_lore(
             [
@@ -701,6 +724,13 @@ class RisuModulePersonaTests(unittest.TestCase):
             ],
             personality="RAW_PERSONALITY_MARKER",
             scenario="RAW_SCENARIO_MARKER",
+            speech_style={
+                "tone": "차분하지만 직설적",
+                "cadence": "짧은 문장, 결론 먼저",
+                "collaboration_style": "반박할 때도 근거를 붙임",
+                "do": ["한국어로 자연스럽게 말함"],
+                "do_not": ["공식 산출물에 역할극 행동 묘사를 넣지 않음"],
+            },
         )
 
         rendered = render_persona_prompt(
@@ -713,6 +743,10 @@ class RisuModulePersonaTests(unittest.TestCase):
 
         self.assertIn("Character speech style", text)
         self.assertIn("Tsukishiro Yanagi", text)
+        self.assertIn("차분하지만 직설적", text)
+        self.assertIn("짧은 문장, 결론 먼저", text)
+        self.assertIn("반박할 때도 근거를 붙임", text)
+        self.assertIn("한국어로 자연스럽게 말함", text)
         self.assertEqual(rendered.scan.entries, [])
         self.assertNotIn("RAW_PERSONALITY_MARKER", text)
         self.assertNotIn("RAW_SCENARIO_MARKER", text)

@@ -57,6 +57,10 @@ metadata and are not run by AgentsAssemble. Persona prompt context must not be
 promoted into official Work Mode records. Stateful residents with active Play
 Mode persona context should not answer official turns from the same flow loop,
 because provider-private context can carry character framing across calls.
+For Work Mode speech, `work_speech_only` may use only the card's reviewed
+`speech_style` capsule such as tone, cadence, collaboration attitude, and
+operator-approved do/do-not notes; it must not derive Work speech from raw lore,
+scenario, examples, NSFW/adult body text, or ignored runtime payloads.
 When a character-mode meeting writes Work Mode artifacts, AgentsAssemble records
 a safe persona artifact contract report with violation codes and counts only;
 it must not copy raw card lore, adult card bodies, or matched snippets into the

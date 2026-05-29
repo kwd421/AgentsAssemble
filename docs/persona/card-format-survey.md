@@ -48,6 +48,7 @@ normalized fields:
 | `example_messages` | example dialogue |
 | `post_history_instructions` | post-history/global-note style instruction |
 | `creator_notes` | metadata, not prompt by default |
+| `speech_style` | operator-approved safe Work Mode speech capsule |
 | `tags` | safe tags |
 | `talkativeness` | group speaker selection weight |
 | `lorebook` | normalized `PersonaLoreEntry` list |
@@ -61,6 +62,13 @@ normalized fields:
 Raw text bodies are allowed in local `card.json`. Safe API/CLI summaries must
 use counts, lengths, ids, hashes, and labels instead of raw lore/description
 bodies.
+
+`speech_style` is intentionally narrower than raw card text. It is not
+auto-derived from `personality`, `description`, lore, examples, greetings, or
+scenario text. Operators may add a compact reviewed capsule with fields such as
+`tone`, `cadence`, `collaboration_style`, `role_label`, `do`, and `do_not`.
+`work_speech_only` prompts may use that capsule while artifact surfaces still
+use the professional artifact contract and withhold card body text.
 
 ## CCv3 Mapping
 

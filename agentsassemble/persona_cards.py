@@ -132,6 +132,7 @@ class PersonaCard:
     example_messages: str = ""
     post_history_instructions: str = ""
     creator_notes: str = ""
+    speech_style: dict[str, object] = field(default_factory=dict)
     talkativeness: float = 0.66
     active: bool = True
     lorebook: list[PersonaLoreEntry] = field(default_factory=list)
@@ -157,6 +158,7 @@ class PersonaCard:
             "example_messages": self.example_messages,
             "post_history_instructions": self.post_history_instructions,
             "creator_notes": self.creator_notes,
+            "speech_style": self.speech_style,
             "talkativeness": self.talkativeness,
             "active": self.active,
             "lorebook": [entry.to_dict() for entry in self.lorebook],
@@ -179,6 +181,7 @@ class PersonaCard:
         ignored_payloads = data.get("ignored_payloads") if isinstance(data.get("ignored_payloads"), dict) else {}
         tags = data.get("tags") if isinstance(data.get("tags"), list) else []
         extra = data.get("extra") if isinstance(data.get("extra"), dict) else {}
+        speech_style = data.get("speech_style") if isinstance(data.get("speech_style"), dict) else {}
         return cls(
             id=_text(data.get("id")) or "persona",
             display_name=_text(data.get("display_name")) or _text(data.get("name")) or "Persona",
@@ -192,6 +195,7 @@ class PersonaCard:
             example_messages=_text(data.get("example_messages")),
             post_history_instructions=_text(data.get("post_history_instructions")),
             creator_notes=_text(data.get("creator_notes")),
+            speech_style=_safe_speech_style(speech_style),
             talkativeness=_float(data.get("talkativeness"), 0.66),
             active=bool(data.get("active", True)),
             lorebook=[PersonaLoreEntry.from_dict(entry) for entry in lorebook if isinstance(entry, dict)],
@@ -220,6 +224,7 @@ class PersonaCard:
                 "scenario": len(self.scenario),
                 "post_history_instructions": len(self.post_history_instructions),
             },
+            "speech_style": _safe_speech_style_summary(self.speech_style),
         }
 
 
@@ -258,6 +263,32 @@ def _safe_persona_source_summary(source: dict[str, object]) -> dict[str, object]
     if "imported_at" in source:
         safe["has_import_timestamp"] = True
     return safe
+
+
+def _safe_speech_style(value: dict[str, object]) -> dict[str, object]:
+    if not isinstance(value, dict) or not value:
+        return {}
+    safe: dict[str, object] = {}
+    for key in ("tone", "cadence", "collaboration_style", "role_label"):
+        text = _text(value.get(key))
+        if text:
+            safe[key] = text
+    for key in ("do", "do_not"):
+        items = _string_list(value.get(key))
+        if items:
+            safe[key] = items[:8]
+    return safe
+
+
+def _safe_speech_style_summary(value: dict[str, object]) -> dict[str, object]:
+    safe = _safe_speech_style(value)
+    if not safe:
+        return {"configured": False, "do": 0, "do_not": 0}
+    return {
+        "configured": True,
+        "do": len(safe.get("do", [])) if isinstance(safe.get("do"), list) else 0,
+        "do_not": len(safe.get("do_not", [])) if isinstance(safe.get("do_not"), list) else 0,
+    }
 
 
 def _safe_report_path(path: Path) -> str:
@@ -1416,6 +1447,7 @@ def _persona_artifact_contract_lines(card: PersonaCard) -> list[str]:
 
 
 def _persona_work_speech_capsule_lines(card: PersonaCard, *, recent_messages: str | list[str]) -> list[str]:
+    speech_style = _safe_speech_style(card.speech_style)
     lines = [
         "Character speech style (safe work_speech_only capsule; raw lore/world/body text withheld):",
         f"- Persona id: {_prompt_text(card.id, limit=120)}",
@@ -1423,6 +1455,21 @@ def _persona_work_speech_capsule_lines(card: PersonaCard, *, recent_messages: st
         "- Keep the character's visible collaboration style when speaking in the room.",
         "- Do not treat private persona lore as meeting evidence or copy card body text into Work Mode artifacts.",
     ]
+    for key, label in (
+        ("role_label", "Role label"),
+        ("tone", "Tone"),
+        ("cadence", "Cadence"),
+        ("collaboration_style", "Collaboration style"),
+    ):
+        value = speech_style.get(key)
+        if isinstance(value, str) and value:
+            lines.append(f"- {label}: {_prompt_text(value, limit=240)}")
+    for key, label in (("do", "Do"), ("do_not", "Do not")):
+        values = speech_style.get(key)
+        if isinstance(values, list) and values:
+            joined = "; ".join(_prompt_text(item, limit=180) for item in values if isinstance(item, str) and item)
+            if joined:
+                lines.append(f"- {label}: {joined}")
     context_text = _prompt_text(_recent_messages_text(recent_messages), limit=1200)
     if context_text:
         lines.append(f"- Recent room context: {context_text}")

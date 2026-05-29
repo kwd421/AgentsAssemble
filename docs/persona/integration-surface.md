@@ -95,6 +95,9 @@ Official Work Mode speech is narrower:
 - `on` does not apply to official Work Mode speech.
 - `work_speech_only` may apply only a safe style capsule: display name,
   operator-approved style notes, collaboration attitude, and role label.
+- The capsule is stored as `PersonaCard.speech_style` with safe fields such as
+  `tone`, `cadence`, `collaboration_style`, `role_label`, `do`, and `do_not`;
+  it is not generated from raw lore, scenario, examples, or card body text.
 - It must not include raw card lore, examples, alternate greetings, scenario,
   NSFW/adult body text, or ignored runtime payloads.
 - Stateful provider transports that used full Play Mode persona context should

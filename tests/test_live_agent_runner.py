@@ -964,6 +964,10 @@ class LiveAgentRunnerTests(unittest.TestCase):
                         "description": "RAW_DESCRIPTION_MARKER",
                         "personality": "RAW_PERSONALITY_MARKER",
                         "scenario": "RAW_SCENARIO_MARKER",
+                        "speech_style": {
+                            "tone": "차분하지만 직설적",
+                            "collaboration_style": "근거를 붙여 반박함",
+                        },
                         "lorebook": [
                             {
                                 "key": "Yanagi",
@@ -992,6 +996,8 @@ class LiveAgentRunnerTests(unittest.TestCase):
 
         self.assertIn("Character speech style", prompt)
         self.assertIn("Tsukishiro Yanagi", prompt)
+        self.assertIn("차분하지만 직설적", prompt)
+        self.assertIn("근거를 붙여 반박함", prompt)
         self.assertNotIn("RAW_PERSONALITY_MARKER", prompt)
         self.assertNotIn("RAW_DESCRIPTION_MARKER", prompt)
         self.assertNotIn("RAW_SCENARIO_MARKER", prompt)
