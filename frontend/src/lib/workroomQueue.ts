@@ -154,6 +154,23 @@ function sharedMemoryItem(
   };
 }
 
+function taskScopeOverlapLabel(overlap: { kind?: string; token?: string }): string {
+  const token = String(overlap.token || "").trim();
+  if (!token) return "";
+  const kind = String(overlap.kind || "").trim();
+  return kind ? `${kind}: ${token}` : token;
+}
+
+function taskScopeOverlapDetail(taskScope: WorkroomQueueInput["taskScope"], overlapCount: number): string {
+  const samples = (taskScope?.overlaps ?? [])
+    .map(taskScopeOverlapLabel)
+    .filter(Boolean)
+    .slice(0, 3);
+  const sampleText = samples.length ? ` 예: ${samples.join(", ")}.` : "";
+  const truncatedText = taskScope?.overlaps_truncated ? " 일부만 표시됩니다." : "";
+  return `${overlapCount}개 파일/디렉터리 후보가 여러 역할에 겹칩니다.${sampleText}${truncatedText} task_scope_report.md를 확인하세요.`;
+}
+
 export function summarizeWorkroomQueue(input: WorkroomQueueInput): WorkroomQueueSummary {
   const { pendingTurns, missingRoles, unsafePermissions } = lifecycleCounts(input.lifecycle);
   const blockedItems: WorkroomQueueItem[] = [];
@@ -191,7 +208,7 @@ export function summarizeWorkroomQueue(input: WorkroomQueueInput): WorkroomQueue
     reviewItems.push({
       id: "task_scope_overlaps",
       label: "작업 범위 충돌",
-      detail: `${taskScopeOverlapCount}개 파일/디렉터리 후보가 여러 역할에 겹칩니다. task_scope_report.md를 확인하세요.`,
+      detail: taskScopeOverlapDetail(input.taskScope, taskScopeOverlapCount),
       tone: "warn",
     });
   }

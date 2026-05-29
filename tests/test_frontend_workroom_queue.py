@@ -137,6 +137,8 @@ class FrontendWorkroomQueueTests(unittest.TestCase):
             ]);
             assert.equal(review.count, 3);
             assert.ok(review.items[0].detail.includes("2개"));
+            assert.ok(review.items[0].detail.includes("agentsassemble/gui.py"));
+            assert.ok(review.items[0].detail.includes("task_scope_report.md"));
 
             const official = summary.lanes.find((lane) => lane.id === "official_record");
             assert.equal(official.count, 4);
