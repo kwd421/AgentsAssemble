@@ -142,6 +142,12 @@ class FrontendAgentLabelTests(unittest.TestCase):
               genericUnknownAdmission: labels.admissionBadge(genericStateless).label,
               residentNonDuplicates,
               observed: labels.lastObservedSummary(observed),
+              roomSummary: labels.summarizeRoomContext([codex, stateless, bridge, manual]),
+              roomSummaryBadges: labels.roomContextSummaryBadges([codex, stateless, bridge, manual]).map((badge) => ({
+                label: badge.label,
+                tone: badge.tone,
+              })),
+              emptyRoomSummaryBadges: labels.roomContextSummaryBadges([]).length,
             };
             console.log(JSON.stringify(result));
             """
@@ -193,3 +199,25 @@ class FrontendAgentLabelTests(unittest.TestCase):
         self.assertTrue(all(payload["residentNonDuplicates"].values()))
         self.assertIn("lobby 4fd560dd...", payload["observed"])
         self.assertIn("official live_eve...", payload["observed"])
+        self.assertEqual(
+            payload["roomSummary"],
+            {
+                "total": 4,
+                "resident_session": 1,
+                "stateless": 1,
+                "external_owned": 2,
+                "advisory_sandbox": 2,
+                "pending_admission": 1,
+            },
+        )
+        self.assertEqual(
+            payload["roomSummaryBadges"],
+            [
+                {"label": "Resident 1", "tone": "online"},
+                {"label": "Stateless 1", "tone": "idle"},
+                {"label": "External 2", "tone": "muted"},
+                {"label": "Advisory 2", "tone": "idle"},
+                {"label": "미승인/충돌 1", "tone": "idle"},
+            ],
+        )
+        self.assertEqual(payload["emptyRoomSummaryBadges"], 0)

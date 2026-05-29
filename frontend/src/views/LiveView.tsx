@@ -51,6 +51,7 @@ import {
   type LifecycleTone,
 } from "../lib/lifecycleLabels";
 import LobbyAttachments from "./components/LobbyAttachments";
+import ParticipantContextSummary from "./components/ParticipantContextSummary";
 import ProviderTruthChips from "./components/ProviderTruthChips";
 
 function formatTime(iso: string): string {
@@ -869,6 +870,7 @@ export default function LiveView({
               {activeAgents.length} / {agents.length || 0}
             </span>
           </div>
+          <ParticipantContextSummary agents={agents} />
           <div className="space-y-2">
             {agents.length === 0 ? (
               <p className="ops-inner rounded-lg p-4 text-[13px] text-text-muted">

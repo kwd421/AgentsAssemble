@@ -57,3 +57,20 @@ class FrontendRosterTruthTests(unittest.TestCase):
             with self.subTest(unsafe=unsafe):
                 for name, source in surfaces.items():
                     self.assertNotIn(unsafe, source, msg=f"{unsafe} leaked through {name}")
+
+    def test_lobby_and_live_participant_panels_surface_context_summary(self):
+        component = frontend_file("views/components/ParticipantContextSummary.tsx")
+        lobby = frontend_file("views/LobbyView.tsx")
+        live = frontend_file("views/LiveView.tsx")
+
+        self.assertIn("roomContextSummaryBadges(agents)", component)
+        self.assertIn("ProviderTruthChips", component)
+        self.assertIn('aria-label="참가자 맥락 요약"', component)
+        self.assertIn('import ParticipantContextSummary from "./components/ParticipantContextSummary";', lobby)
+        self.assertIn('import ParticipantContextSummary from "./components/ParticipantContextSummary";', live)
+        self.assertIn("<ParticipantContextSummary agents={agents} />", lobby)
+        self.assertIn("<ParticipantContextSummary agents={agents} />", live)
+
+        for unsafe in ("session_id", "argv", "command", "provider_output", "last_error"):
+            with self.subTest(unsafe=unsafe):
+                self.assertNotIn(unsafe, component)

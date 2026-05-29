@@ -48,6 +48,9 @@ Content:
 - Unofficial lobby chatter that stays separate from the official transcript.
 - Clear distinction between the local user, the local user's agents, another participant, and another participant's agents.
 - Participant roster and agent counts.
+- A compact participant context summary that distinguishes resident/session
+  participants from stateless local CLI prompt calls, external-owner room loops,
+  advisory sandbox launches, and missing host approval or binding conflicts.
 
 Lobby events are not official meeting evidence unless a later workflow explicitly promotes them into a meeting artifact.
 
@@ -71,6 +74,13 @@ Content:
 - Source/citation hints where available.
 
 Initial GUI v0 may render completed meeting data after the run finishes. True token-by-token or event-by-event streaming can be added later.
+
+The Lobby and Live participant panels may summarize provider truth with safe
+aggregate chips only. Those chips are derived from `LiveAgent`
+`context_durability`, `connection_kind`, `sandbox_enforcement`,
+`host_approved_binding`, and `binding_conflicts`; they must not expose endpoint
+URLs, auth references, command arguments, config paths, session ids, provider
+stdout/stderr, prompts, or raw presence errors.
 
 ### `board` / 작전판
 

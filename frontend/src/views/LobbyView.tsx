@@ -33,6 +33,7 @@ import {
 import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
 import LifecycleBanner from "./components/LifecycleBanner";
+import ParticipantContextSummary from "./components/ParticipantContextSummary";
 import ProviderTruthChips from "./components/ProviderTruthChips";
 
 const MODE_CARDS = [
@@ -390,6 +391,7 @@ export default function LobbyView({
               {readyAgents.length} / {agents.length || 0}
             </span>
           </div>
+          <ParticipantContextSummary agents={agents} />
 
           <div className="space-y-3">
             {agents.length === 0 ? (

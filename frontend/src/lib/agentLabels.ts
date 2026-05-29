@@ -8,6 +8,15 @@ export type AgentTruthBadge = {
   title?: string;
 };
 
+export type RoomContextSummary = {
+  total: number;
+  resident_session: number;
+  stateless: number;
+  external_owned: number;
+  advisory_sandbox: number;
+  pending_admission: number;
+};
+
 const PROVIDER_EXECUTION_LABELS: Record<string, string> = {
   "codex_live_session/live_session": "Codex resident",
   "kiro_live_session/live_session": "Kiro resident",
@@ -191,6 +200,81 @@ export function agentTruthBadges(agent: LiveAgent): AgentTruthBadge[] {
   return [executionBadge(agent), contextBadge(agent), joinBadge(agent), sandboxBadge(agent), admissionBadge(agent)].filter(
     Boolean
   ) as AgentTruthBadge[];
+}
+
+export function summarizeRoomContext(agents: LiveAgent[]): RoomContextSummary {
+  const summary: RoomContextSummary = {
+    total: agents.length,
+    resident_session: 0,
+    stateless: 0,
+    external_owned: 0,
+    advisory_sandbox: 0,
+    pending_admission: 0,
+  };
+
+  for (const agent of agents) {
+    const kind = contextDurabilityKind(agent.context_durability);
+    const stateless = kind === "stateless" || agent.connection_kind === "local_cli";
+    if (stateless) {
+      summary.stateless += 1;
+    } else if (kind === "provider_owned" || kind === "process_lifetime") {
+      summary.resident_session += 1;
+    } else if (kind === "external_owned") {
+      summary.external_owned += 1;
+    }
+
+    if (agent.sandbox_enforcement === "advisory") {
+      summary.advisory_sandbox += 1;
+    }
+    if (agent.host_approved_binding === false || (agent.binding_conflicts?.length || 0) > 0) {
+      summary.pending_admission += 1;
+    }
+  }
+
+  return summary;
+}
+
+export function roomContextSummaryBadges(agents: LiveAgent[]): AgentTruthBadge[] {
+  const summary = summarizeRoomContext(agents);
+  if (summary.total === 0) return [];
+
+  const badges: AgentTruthBadge[] = [];
+  if (summary.resident_session > 0) {
+    badges.push({
+      label: `Resident ${summary.resident_session}`,
+      tone: "online",
+      title: "Provider-owned resume or process-lifetime resident sessions.",
+    });
+  }
+  if (summary.stateless > 0) {
+    badges.push({
+      label: `Stateless ${summary.stateless}`,
+      tone: "idle",
+      title: "One-shot local CLI prompt calls; not durable live teammates.",
+    });
+  }
+  if (summary.external_owned > 0) {
+    badges.push({
+      label: `External ${summary.external_owned}`,
+      tone: "muted",
+      title: "Manual, remote-owner, or external-owner room loops.",
+    });
+  }
+  if (summary.advisory_sandbox > 0) {
+    badges.push({
+      label: `Advisory ${summary.advisory_sandbox}`,
+      tone: "idle",
+      title: "Launch safety is advisory for these participants.",
+    });
+  }
+  if (summary.pending_admission > 0) {
+    badges.push({
+      label: `미승인/충돌 ${summary.pending_admission}`,
+      tone: "idle",
+      title: "Host approval is missing or binding conflicts are present.",
+    });
+  }
+  return badges;
 }
 
 function shortId(value?: string): string {
