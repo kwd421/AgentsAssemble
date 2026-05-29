@@ -18,6 +18,7 @@ from agentsassemble.room_event_benchmark import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RELEASE_HEALTH_TIMEOUT_SECONDS = 300.0
 OUTPUT_TAIL_LIMIT = 800
+LATEST_RELEASE_HEALTH_REPORT = Path("release_health") / "latest.json"
 ENV_ASSIGNMENT_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*=.*$")
 ROOM_BENCHMARK_PARAM_KEYS = (
     "events",
@@ -156,6 +157,159 @@ def release_health_catalog_payload(
         "generated_at": generated_at.isoformat(),
         "checks": checks,
     }
+
+
+def release_health_queue_payload(
+    *,
+    now: datetime | None = None,
+    latest_run: Mapping[str, object] | None = None,
+    output_root: Path | None = None,
+) -> dict[str, object]:
+    catalog = release_health_catalog_payload(now=now)
+    latest = latest_run
+    if latest is None and output_root is not None:
+        latest = load_latest_release_health_report(output_root=output_root)
+    latest_results = _latest_result_by_check_id(latest)
+    checks = [
+        _release_health_queue_check(check, latest_results.get(check["id"]))
+        for check in catalog["checks"]
+        if isinstance(check, dict)
+    ]
+    latest_summary = _mapping_value(latest or {}, "summary")
+    return {
+        "status": "ok",
+        "schema_version": 1,
+        "generated_at": catalog["generated_at"],
+        "source": _release_health_queue_source(latest),
+        "summary": {
+            "default_total": sum(1 for check in checks if check.get("default_run") is True),
+            "opt_in_total": sum(1 for check in checks if check.get("default_run") is not True),
+            "latest_total": _safe_int(latest_summary.get("total")),
+            "latest_passed": _safe_int(latest_summary.get("passed")),
+            "latest_failed": _safe_int(latest_summary.get("failed")),
+            "latest_skipped": _safe_int(latest_summary.get("skipped")),
+        },
+        "checks": checks,
+    }
+
+
+def latest_release_health_report_path(*, output_root: Path) -> Path:
+    return output_root / LATEST_RELEASE_HEALTH_REPORT
+
+
+def write_latest_release_health_report(payload: Mapping[str, object], *, output_root: Path) -> Path:
+    report_path = latest_release_health_report_path(output_root=output_root)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = report_path.with_suffix(".tmp")
+    temp_path.write_text(json.dumps(dict(payload), ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path.replace(report_path)
+    return report_path
+
+
+def load_latest_release_health_report(*, output_root: Path) -> dict[str, object] | None:
+    report_path = latest_release_health_report_path(output_root=output_root)
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _latest_result_by_check_id(latest_run: Mapping[str, object] | None) -> dict[str, Mapping[str, object]]:
+    if not isinstance(latest_run, Mapping):
+        return {}
+    results = latest_run.get("results")
+    if not isinstance(results, list):
+        return {}
+    by_id: dict[str, Mapping[str, object]] = {}
+    for result in results:
+        if not isinstance(result, Mapping):
+            continue
+        check_id = str(result.get("id") or "").strip()
+        if check_id:
+            by_id[check_id] = result
+    return by_id
+
+
+def _release_health_queue_source(latest_run: Mapping[str, object] | None) -> dict[str, object]:
+    if not isinstance(latest_run, Mapping):
+        return {
+            "has_latest_run": False,
+            "latest_status": "not_run",
+        }
+    return {
+        "has_latest_run": True,
+        "latest_status": _safe_release_health_status(latest_run.get("status"), fallback="unknown"),
+        "latest_completed_at": _safe_iso_text(latest_run.get("completed_at")),
+        "latest_duration_seconds": _safe_float(latest_run.get("duration_seconds")),
+    }
+
+
+def _release_health_queue_check(
+    check: Mapping[str, object],
+    latest_result: Mapping[str, object] | None,
+) -> dict[str, object]:
+    projected = {
+        "id": str(check.get("id") or ""),
+        "label": str(check.get("label") or check.get("id") or ""),
+        "kind": str(check.get("kind") or ""),
+        "category": str(check.get("category") or ""),
+        "requires": [str(item) for item in check.get("requires", []) if isinstance(item, str)]
+        if isinstance(check.get("requires"), list)
+        else [],
+        "optional": check.get("optional") is True,
+        "order": check.get("order") if isinstance(check.get("order"), int) else None,
+        "default_run": check.get("default_run") is True,
+        "safety_class": str(check.get("safety_class") or ""),
+    }
+    if not isinstance(latest_result, Mapping):
+        projected.update(
+            {
+                "latest_status": "not_run",
+                "latest_duration_seconds": None,
+            }
+        )
+        return projected
+    projected.update(
+        {
+            "latest_status": _safe_release_health_status(latest_result.get("status"), fallback="unknown"),
+            "latest_duration_seconds": _safe_float(latest_result.get("duration_seconds")),
+            "skipped_reason": _safe_skip_reason(latest_result.get("skipped_reason")),
+        }
+    )
+    return projected
+
+
+def _safe_release_health_status(value: object, *, fallback: str) -> str:
+    status = str(value or "").strip()
+    if status in {"ok", "failed", "passed", "skipped", "not_run", "unknown"}:
+        return status
+    return fallback
+
+
+def _safe_iso_text(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    return text[:64]
+
+
+def _safe_skip_reason(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text == "no_matching_files":
+        return text
+    if text.startswith("missing_tool:"):
+        tool = re.sub(r"[^A-Za-z0-9_.-]", "", text.split(":", 1)[1])[:32]
+        return f"missing_tool:{tool}" if tool else "missing_tool"
+    return "skipped"
 
 
 def validate_release_health_check_selection(

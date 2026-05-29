@@ -206,6 +206,13 @@ a stream-snapshot field rather than archive artifact bodies or private review
 turn text; the full meeting-detail payload remains an explicit archive read
 surface.
 
+Release-health and test/build status follows the same read-only rule. CLI runs
+may save a latest local report for operator visibility, but browser clients only
+receive a safe queue projection: check ids, labels, queue grouping, pass/fail or
+not-run state, duration, and aggregate counts. The projection must not include
+stdout/stderr tails, local paths, environment, command argv, provider prompts,
+session ids, or controls that start checks from the browser.
+
 ## GUI Text And Refresh Policy
 
 The vanilla GUI should optimize for trustworthy operations before polish:

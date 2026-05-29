@@ -103,6 +103,9 @@ Content:
   projection, review checkpoint presence, return-packet presence, final
   artifact coverage, and shared-memory artifact coverage into compact lanes:
   blocked, review, official record, and shared memory.
+- A read-only release-health queue status surface that can display a latest
+  saved CLI report as safe status/duration/counts without exposing stdout,
+  stderr, argv, cwd, env, local paths, prompts, provider output, or session ids.
 
 The board should avoid inventing conflict. If all agents reach the same conclusion, it should compare evidence quality, confidence, and uncertainty.
 

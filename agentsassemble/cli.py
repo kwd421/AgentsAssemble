@@ -117,6 +117,7 @@ from agentsassemble.release_health import (
     ReleaseHealthSelectionError,
     release_health_catalog_payload,
     run_release_health_checks,
+    write_latest_release_health_report,
 )
 
 
@@ -320,6 +321,16 @@ def build_parser() -> argparse.ArgumentParser:
         dest="as_json",
         default=argparse.SUPPRESS,
         help="Print JSON output.",
+    )
+    release_health_run.add_argument(
+        "--save-report",
+        action="store_true",
+        help="Write the latest local report for read-only GUI status projection.",
+    )
+    release_health_run.add_argument(
+        "--output-root",
+        default=".agentsassemble",
+        help="Output root used with --save-report.",
     )
 
     bridge = subparsers.add_parser("claude-bridge", help="Run a friend-owned Claude Code bridge.")
@@ -1688,6 +1699,11 @@ def run_release_health_command(args: argparse.Namespace) -> int:
         except ReleaseHealthSelectionError as error:
             print(str(error), file=sys.stderr)
             return 2
+        if getattr(args, "save_report", False):
+            write_latest_release_health_report(
+                payload,
+                output_root=Path(getattr(args, "output_root", ".agentsassemble")),
+            )
         if getattr(args, "as_json", False):
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:

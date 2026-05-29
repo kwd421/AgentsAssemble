@@ -4,10 +4,13 @@ import {
   fetchHealth,
   fetchLocalResources,
   fetchReleaseHealth,
+  fetchReleaseHealthQueue,
   type HealthStatus,
   type ReleaseHealthCheck,
+  type ReleaseHealthQueueCheck,
   type LocalResourceStatus,
   type ReleaseHealthCatalog,
+  type ReleaseHealthQueue,
 } from "../api";
 import { usePoll } from "../hooks";
 import {
@@ -18,9 +21,12 @@ import {
 } from "../lib/localResourceLabels";
 import {
   partitionReleaseHealthChecks,
+  releaseHealthLatestById,
   releaseHealthQueueBadge,
   releaseHealthSafetyLabel,
   releaseHealthSelector,
+  releaseHealthStatusLabel,
+  releaseHealthStatusTone,
 } from "../lib/releaseHealthLabels";
 
 function formatSnapshotAge(generatedAt?: string) {
@@ -39,8 +45,30 @@ function formatSnapshotAge(generatedAt?: string) {
   return `${minutes}분 전`;
 }
 
-function ReleaseHealthCard({ check }: { check: ReleaseHealthCheck }) {
+function releaseHealthStatusClass(status?: string) {
+  const tone = releaseHealthStatusTone(status);
+  if (tone === "online") return "border-online/25 bg-online/10 text-online";
+  if (tone === "danger") return "border-offline/35 bg-offline/10 text-offline";
+  if (tone === "warn") return "border-idle/35 bg-idle/10 text-idle";
+  return "border-line/60 bg-black/18 text-text-muted";
+}
+
+function formatCheckDuration(seconds?: number | null) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds)) return "";
+  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
+  return `${seconds.toFixed(1)}s`;
+}
+
+function ReleaseHealthCard({
+  check,
+  latest,
+}: {
+  check: ReleaseHealthCheck;
+  latest?: ReleaseHealthQueueCheck;
+}) {
   const badge = releaseHealthQueueBadge(check);
+  const latestStatus = latest?.latest_status || "not_run";
+  const duration = formatCheckDuration(latest?.latest_duration_seconds);
   return (
     <div className="ops-inner rounded-lg px-4 py-3">
       <div className="flex items-center justify-between gap-3">
@@ -60,10 +88,22 @@ function ReleaseHealthCard({ check }: { check: ReleaseHealthCheck }) {
         >
           {badge}
         </span>
+        <span
+          className={`shrink-0 rounded border px-2 py-0.5 text-[10px] font-bold ${releaseHealthStatusClass(latestStatus)}`}
+        >
+          {releaseHealthStatusLabel(latestStatus)}
+        </span>
       </div>
       <p className="mt-1 text-[11px] text-text-muted preserve-words">
         {check.category} · {releaseHealthSafetyLabel(check.safety_class)} · {check.requires.join(", ")}
       </p>
+      {latest && latest.latest_status !== "not_run" && (
+        <p className="mt-1 text-[11px] text-text-muted preserve-words">
+          최근 결과 {releaseHealthStatusLabel(latest.latest_status)}
+          {duration ? ` · ${duration}` : ""}
+          {latest.skipped_reason ? ` · ${latest.skipped_reason}` : ""}
+        </p>
+      )}
       <p className="mt-2 rounded-md border border-line/60 bg-black/18 px-3 py-2 font-mono text-[11px] text-text-secondary preserve-words">
         {releaseHealthSelector(check)}
       </p>
@@ -75,9 +115,11 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const healthFetcher = useCallback(() => fetchHealth(), []);
   const resourcesFetcher = useCallback(() => fetchLocalResources(), []);
   const releaseHealthFetcher = useCallback(() => fetchReleaseHealth(), []);
+  const releaseHealthQueueFetcher = useCallback(() => fetchReleaseHealthQueue(), []);
   const [health] = usePoll<HealthStatus>(healthFetcher, 8000);
   const [resources, resourcesLoading, resourcesError] = usePoll<LocalResourceStatus>(resourcesFetcher, 8000);
   const [releaseHealth] = usePoll<ReleaseHealthCatalog>(releaseHealthFetcher, 30000);
+  const [releaseHealthQueue] = usePoll<ReleaseHealthQueue>(releaseHealthQueueFetcher, 30000);
 
   const agents = health?.agents;
   const ok = health?.status === "ok";
@@ -89,6 +131,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
     defaultChecks: releaseHealthDefaultChecks,
     optInChecks: releaseHealthOptInChecks,
   } = partitionReleaseHealthChecks(releaseHealth);
+  const latestStatusById = releaseHealthLatestById(releaseHealthQueue);
 
   return (
     <div className="ops-panel ops-cut mx-auto flex min-h-full max-w-5xl flex-col overflow-hidden">
@@ -300,6 +343,28 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
               실행은 터미널에서 <code className="font-mono text-text-primary">assemble release-health run</code>
             </span>
           </div>
+          {releaseHealthQueue?.source?.has_latest_run && (
+            <div className="mb-4 grid gap-2 text-[12px] text-text-secondary sm:grid-cols-3">
+              <div className="ops-inner rounded-lg px-3 py-2">
+                최근 상태{" "}
+                <span className="font-black text-text-primary">
+                  {releaseHealthStatusLabel(releaseHealthQueue.source.latest_status)}
+                </span>
+              </div>
+              <div className="ops-inner rounded-lg px-3 py-2">
+                통과/실패{" "}
+                <span className="font-black text-text-primary">
+                  {releaseHealthQueue.summary.latest_passed}/{releaseHealthQueue.summary.latest_failed}
+                </span>
+              </div>
+              <div className="ops-inner rounded-lg px-3 py-2">
+                최근 실행{" "}
+                <span className="font-black text-text-primary">
+                  {formatSnapshotAge(releaseHealthQueue.source.latest_completed_at)}
+                </span>
+              </div>
+            </div>
+          )}
           {releaseHealth ? (
             <div className="space-y-4">
               <div>
@@ -311,7 +376,11 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {releaseHealthDefaultChecks.map((check) => (
-                    <ReleaseHealthCard key={check.id} check={check} />
+                    <ReleaseHealthCard
+                      key={check.id}
+                      check={check}
+                      latest={latestStatusById.get(check.id)}
+                    />
                   ))}
                 </div>
               </div>
@@ -324,7 +393,11 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {releaseHealthOptInChecks.map((check) => (
-                      <ReleaseHealthCard key={check.id} check={check} />
+                      <ReleaseHealthCard
+                        key={check.id}
+                        check={check}
+                        latest={latestStatusById.get(check.id)}
+                      />
                     ))}
                   </div>
                 </div>

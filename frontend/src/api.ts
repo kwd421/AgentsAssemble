@@ -273,11 +273,38 @@ export interface ReleaseHealthCheck {
   safety_class?: string;
 }
 
+export interface ReleaseHealthQueueCheck extends ReleaseHealthCheck {
+  latest_status: "passed" | "failed" | "skipped" | "not_run" | "unknown";
+  latest_duration_seconds?: number | null;
+  skipped_reason?: string;
+}
+
 export interface ReleaseHealthCatalog {
   status: string;
   schema_version: number;
   generated_at?: string;
   checks: ReleaseHealthCheck[];
+}
+
+export interface ReleaseHealthQueue {
+  status: string;
+  schema_version: number;
+  generated_at?: string;
+  source: {
+    has_latest_run: boolean;
+    latest_status?: string;
+    latest_completed_at?: string;
+    latest_duration_seconds?: number | null;
+  };
+  summary: {
+    default_total: number;
+    opt_in_total: number;
+    latest_total: number;
+    latest_passed: number;
+    latest_failed: number;
+    latest_skipped: number;
+  };
+  checks: ReleaseHealthQueueCheck[];
 }
 
 export interface MafiaPlayer {
@@ -692,6 +719,10 @@ export function fetchLocalResources() {
 
 export function fetchReleaseHealth() {
   return fetchJson<ReleaseHealthCatalog>("/api/release-health");
+}
+
+export function fetchReleaseHealthQueue() {
+  return fetchJson<ReleaseHealthQueue>("/api/release-health/queue");
 }
 
 export function fetchMafiaGame(gameId: string, viewerAgentId = "") {

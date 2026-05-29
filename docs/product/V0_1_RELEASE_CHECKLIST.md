@@ -98,6 +98,18 @@ room-event append/read evidence plus scheduler-fairness latency and
 first-speaker anchor-share regression signals. It is excluded from the default
 run so ordinary v0.1 hardening time stays bounded, and it remains CLI-only:
 React may display the catalog row but must not start the benchmark.
+When a local operator wants the React Admin panel to show the latest proof
+status, the CLI can persist a latest report:
+
+```bash
+assemble release-health run --save-report
+```
+
+`/api/release-health/queue` reads that local report and returns only a safe
+projection: ids, labels, default/opt-in grouping, status, duration, and aggregate
+counts. It intentionally strips stdout/stderr tails, exit codes, argv/cwd/env,
+local paths, prompts, provider output, and session ids. The browser still cannot
+start release-health checks.
 
 `assemble mcp serve` uses the official MCP Python SDK (`mcp>=1,<2`) through a
 lazy import. The unit tests cover the room-tool boundary without requiring the

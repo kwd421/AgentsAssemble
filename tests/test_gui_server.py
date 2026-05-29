@@ -20201,6 +20201,54 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn(str(root), serialized)
             self.assertNotIn("/Users/", serialized)
 
+    def test_release_health_queue_endpoint_returns_safe_latest_projection(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            latest_dir = root / "release_health"
+            latest_dir.mkdir(parents=True)
+            (latest_dir / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "completed_at": "2026-05-29T00:01:20+00:00",
+                        "duration_seconds": 12.5,
+                        "summary": {"total": 1, "passed": 0, "failed": 1, "skipped": 0, "ok": False},
+                        "results": [
+                            {
+                                "id": "node_check_static",
+                                "status": "failed",
+                                "duration_seconds": 0.7,
+                                "stdout_tail": f"private output {root}",
+                                "stderr_tail": "SECRET_TOKEN=abc",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/release-health/queue", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            serialized = json.dumps(payload, ensure_ascii=False)
+            self.assertEqual(payload["status"], "ok")
+            self.assertTrue(payload["source"]["has_latest_run"])
+            self.assertEqual(payload["source"]["latest_status"], "failed")
+            by_id = {check["id"]: check for check in payload["checks"]}
+            self.assertEqual(by_id["node_check_static"]["latest_status"], "failed")
+            self.assertEqual(by_id["node_check_static"]["latest_duration_seconds"], 0.7)
+            self.assertNotIn("stdout_tail", serialized)
+            self.assertNotIn("stderr_tail", serialized)
+            self.assertNotIn("SECRET_TOKEN", serialized)
+            self.assertNotIn(str(root), serialized)
+            self.assertNotIn("/Users/", serialized)
+
 
 def _write_health_resident_meeting(root: Path, *, agent_ids: list[str]) -> Path:
     meeting_dir = root / "meetings" / "resident-m1"

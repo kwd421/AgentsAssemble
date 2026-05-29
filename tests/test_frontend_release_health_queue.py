@@ -97,6 +97,22 @@ class FrontendReleaseHealthQueueTests(unittest.TestCase):
             assert.deepEqual(partitioned.optInChecks.map((check) => check.id), ["benchmark"]);
             assert.equal(labels.releaseHealthQueueBadge(partitioned.defaultChecks[0]), "default");
             assert.equal(labels.releaseHealthQueueBadge(partitioned.optInChecks[0]), "opt-in");
+            assert.equal(labels.releaseHealthStatusLabel("passed"), "통과");
+            assert.equal(labels.releaseHealthStatusLabel("ok"), "통과");
+            assert.equal(labels.releaseHealthStatusLabel("failed"), "실패");
+            assert.equal(labels.releaseHealthStatusLabel("not_run"), "미실행");
+            assert.equal(labels.releaseHealthStatusTone("failed"), "danger");
+            assert.equal(labels.releaseHealthStatusTone("ok"), "online");
+            assert.equal(labels.releaseHealthStatusTone("not_run"), "muted");
+            assert.deepEqual(
+              labels.releaseHealthLatestById({
+                checks: [
+                  { id: "early_default", latest_status: "passed", latest_duration_seconds: 0.2 },
+                  { id: "benchmark", latest_status: "not_run" },
+                ],
+              }).get("early_default"),
+              { id: "early_default", latest_status: "passed", latest_duration_seconds: 0.2 }
+            );
             assert.equal(
               labels.releaseHealthSelector(partitioned.optInChecks[0]),
               "assemble release-health run --check benchmark"

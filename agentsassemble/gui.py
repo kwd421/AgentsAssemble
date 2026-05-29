@@ -115,7 +115,7 @@ from agentsassemble.frontend_runtime import (
     default_frontend_dist_root,
     frontend_dist_status,
 )
-from agentsassemble.release_health import release_health_catalog_payload
+from agentsassemble.release_health import release_health_catalog_payload, release_health_queue_payload
 from agentsassemble.meeting_events import (
     append_live_event,
     append_lobby_event_to_file,
@@ -7386,6 +7386,9 @@ def _make_handler(
                 return
             if path == "/api/release-health":
                 self._send_json(release_health_catalog_payload())
+                return
+            if path == "/api/release-health/queue":
+                self._send_json(release_health_queue_payload(output_root=output_root))
                 return
             if path == "/api/live-agent-sessions/readiness":
                 try:

@@ -1,4 +1,9 @@
-import type { ReleaseHealthCatalog, ReleaseHealthCheck } from "../api";
+import type {
+  ReleaseHealthCatalog,
+  ReleaseHealthCheck,
+  ReleaseHealthQueue,
+  ReleaseHealthQueueCheck,
+} from "../api";
 
 export const RELEASE_HEALTH_SAFETY_LABELS: Record<string, string> = {
   frontend_static_syntax: "정적 JS 문법",
@@ -19,6 +24,32 @@ export function releaseHealthSelector(check: Pick<ReleaseHealthCheck, "id">) {
 
 export function releaseHealthQueueBadge(check: Pick<ReleaseHealthCheck, "default_run">) {
   return check.default_run === true ? "default" : "opt-in";
+}
+
+export function releaseHealthStatusLabel(status?: string) {
+  if (status === "ok") return "통과";
+  if (status === "passed") return "통과";
+  if (status === "failed") return "실패";
+  if (status === "skipped") return "건너뜀";
+  if (status === "not_run") return "미실행";
+  return "미확인";
+}
+
+export function releaseHealthStatusTone(status?: string) {
+  if (status === "ok") return "online";
+  if (status === "passed") return "online";
+  if (status === "failed") return "danger";
+  if (status === "skipped") return "warn";
+  return "muted";
+}
+
+export function releaseHealthLatestById(
+  queue?: Pick<ReleaseHealthQueue, "checks"> | null
+) {
+  const checks = Array.isArray(queue?.checks) ? queue.checks : [];
+  return new Map<string, ReleaseHealthQueueCheck>(
+    checks.map((check) => [check.id, check])
+  );
 }
 
 function releaseHealthOrder(check: ReleaseHealthCheck) {

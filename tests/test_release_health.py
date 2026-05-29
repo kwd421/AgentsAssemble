@@ -1,5 +1,6 @@
 import json
 import subprocess
+import tempfile
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
@@ -123,6 +124,94 @@ class ReleaseHealthTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, serialized)
 
+    def test_queue_projection_merges_latest_result_without_output_details(self):
+        from agentsassemble.release_health import release_health_queue_payload
+
+        latest = {
+            "status": "failed",
+            "started_at": "2026-05-29T00:00:00+00:00",
+            "completed_at": "2026-05-29T00:01:20+00:00",
+            "duration_seconds": 80.25,
+            "summary": {"total": 2, "passed": 1, "failed": 1, "skipped": 0, "ok": False},
+            "results": [
+                {
+                    "id": "node_check_static",
+                    "status": "passed",
+                    "duration_seconds": 1.5,
+                    "stdout_tail": f"private output {ROOT}",
+                    "stderr_tail": "SECRET_TOKEN=abc",
+                },
+                {
+                    "id": "git_diff_check",
+                    "status": "failed",
+                    "duration_seconds": 0.4,
+                    "exit_code": 1,
+                    "stdout_tail": "diff --check private line",
+                    "stderr_tail": "--warmup-events /Users/private",
+                },
+            ],
+        }
+
+        payload = release_health_queue_payload(
+            now=datetime(2026, 5, 29, 0, 2, tzinfo=UTC),
+            latest_run=latest,
+        )
+
+        by_id = {check["id"]: check for check in payload["checks"]}
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertTrue(payload["source"]["has_latest_run"])
+        self.assertEqual(payload["source"]["latest_status"], "failed")
+        self.assertEqual(payload["source"]["latest_duration_seconds"], 80.25)
+        self.assertEqual(payload["summary"]["latest_passed"], 1)
+        self.assertEqual(payload["summary"]["latest_failed"], 1)
+        self.assertEqual(by_id["node_check_static"]["latest_status"], "passed")
+        self.assertEqual(by_id["node_check_static"]["latest_duration_seconds"], 1.5)
+        self.assertEqual(by_id["git_diff_check"]["latest_status"], "failed")
+        self.assertEqual(by_id["unittest_static_ui_assets"]["latest_status"], "not_run")
+
+        serialized = json.dumps(payload, ensure_ascii=False)
+        for forbidden in (
+            "stdout_tail",
+            "stderr_tail",
+            "exit_code",
+            "SECRET_TOKEN",
+            str(ROOT),
+            "/Users/",
+            "--warmup-events",
+            "diff --check",
+            "private output",
+            "command",
+            "cwd",
+            "env",
+        ):
+            self.assertNotIn(forbidden, serialized)
+
+        unsafe_time_payload = release_health_queue_payload(
+            latest_run={"status": "ok", "completed_at": f"{ROOT}/not-a-time", "results": []}
+        )
+        self.assertEqual(unsafe_time_payload["source"]["latest_completed_at"], "")
+
+    def test_latest_release_health_report_round_trips_under_output_root(self):
+        from agentsassemble.release_health import (
+            load_latest_release_health_report,
+            write_latest_release_health_report,
+        )
+
+        report = {
+            "status": "ok",
+            "completed_at": "2026-05-29T00:01:20+00:00",
+            "results": [{"id": "node_check_static", "status": "passed"}],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_root = Path(temp_dir)
+
+            report_path = write_latest_release_health_report(report, output_root=output_root)
+            loaded = load_latest_release_health_report(output_root=output_root)
+
+        self.assertEqual(report_path.name, "latest.json")
+        self.assertEqual(loaded, report)
+
     def test_safety_class_values_are_closed_vocabulary(self):
         from agentsassemble.release_health import RELEASE_HEALTH_CHECKS, RELEASE_HEALTH_SAFETY_CLASSES
 
@@ -227,6 +316,19 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(run_args.skip, ["compileall_package"])
         self.assertEqual(run_args.timeout, 3.0)
         self.assertTrue(run_args.as_json)
+        save_args = build_parser().parse_args(
+            [
+                "release-health",
+                "run",
+                "--check",
+                "git_diff_check",
+                "--save-report",
+                "--output-root",
+                ".agentsassemble-test",
+            ]
+        )
+        self.assertTrue(save_args.save_report)
+        self.assertEqual(save_args.output_root, ".agentsassemble-test")
 
     def test_runner_uses_fixed_commands_and_reports_summary(self):
         from agentsassemble.release_health import run_release_health_checks
