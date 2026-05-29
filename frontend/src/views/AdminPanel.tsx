@@ -16,23 +16,12 @@ import {
   resourceAttentionLabel,
   resourceRoleLabel,
 } from "../lib/localResourceLabels";
-
-const RELEASE_HEALTH_SAFETY_LABELS: Record<string, string> = {
-  frontend_static_syntax: "정적 JS 문법",
-  python_unit: "Python 단위검증",
-  python_integration: "통합 검증",
-  python_compile: "패키지 컴파일",
-  git_format: "Git 형식",
-  local_room_benchmark: "로컬 룸 벤치",
-};
-
-function releaseHealthSafetyLabel(safetyClass?: string) {
-  return RELEASE_HEALTH_SAFETY_LABELS[safetyClass || ""] || "검증";
-}
-
-function releaseHealthSelector(check: ReleaseHealthCheck) {
-  return `assemble release-health run --check ${check.id}`;
-}
+import {
+  partitionReleaseHealthChecks,
+  releaseHealthQueueBadge,
+  releaseHealthSafetyLabel,
+  releaseHealthSelector,
+} from "../lib/releaseHealthLabels";
 
 function formatSnapshotAge(generatedAt?: string) {
   if (!generatedAt) {
@@ -50,6 +39,38 @@ function formatSnapshotAge(generatedAt?: string) {
   return `${minutes}분 전`;
 }
 
+function ReleaseHealthCard({ check }: { check: ReleaseHealthCheck }) {
+  const badge = releaseHealthQueueBadge(check);
+  return (
+    <div className="ops-inner rounded-lg px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-[13px] font-black text-text-primary preserve-words">
+          {check.order ? <span className="mr-2 text-accent">{check.order}</span> : null}
+          {check.label}
+        </p>
+        <span className="shrink-0 rounded border border-line/60 px-2 py-0.5 text-[10px] font-bold text-text-muted">
+          {check.kind}
+        </span>
+        <span
+          className={`shrink-0 rounded border px-2 py-0.5 text-[10px] font-bold ${
+            badge === "default"
+              ? "border-accent/25 bg-accent/8 text-accent"
+              : "border-idle/30 bg-idle/10 text-idle"
+          }`}
+        >
+          {badge}
+        </span>
+      </div>
+      <p className="mt-1 text-[11px] text-text-muted preserve-words">
+        {check.category} · {releaseHealthSafetyLabel(check.safety_class)} · {check.requires.join(", ")}
+      </p>
+      <p className="mt-2 rounded-md border border-line/60 bg-black/18 px-3 py-2 font-mono text-[11px] text-text-secondary preserve-words">
+        {releaseHealthSelector(check)}
+      </p>
+    </div>
+  );
+}
+
 export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const healthFetcher = useCallback(() => fetchHealth(), []);
   const resourcesFetcher = useCallback(() => fetchLocalResources(), []);
@@ -64,13 +85,10 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const resourceRoleRows = resources?.summary.role_breakdown
     ? Object.entries(resources.summary.role_breakdown)
     : [];
-  const releaseHealthDefaultChecks =
-    releaseHealth?.checks
-      .filter((check) => check.default_run ?? !check.optional)
-      .slice()
-      .sort((left, right) => (left.order ?? 999) - (right.order ?? 999)) || [];
-  const releaseHealthOptInChecks =
-    releaseHealth?.checks.filter((check) => !(check.default_run ?? !check.optional)) || [];
+  const {
+    defaultChecks: releaseHealthDefaultChecks,
+    optInChecks: releaseHealthOptInChecks,
+  } = partitionReleaseHealthChecks(releaseHealth);
 
   return (
     <div className="ops-panel ops-cut mx-auto flex min-h-full max-w-5xl flex-col overflow-hidden">
@@ -293,23 +311,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {releaseHealthDefaultChecks.map((check) => (
-                    <div key={check.id} className="ops-inner rounded-lg px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="min-w-0 truncate text-[13px] font-black text-text-primary preserve-words">
-                          <span className="mr-2 text-accent">{check.order ?? "-"}</span>
-                          {check.label}
-                        </p>
-                        <span className="shrink-0 rounded border border-line/60 px-2 py-0.5 text-[10px] font-bold text-text-muted">
-                          {check.kind}
-                        </span>
-                        <span className="shrink-0 rounded border border-accent/25 bg-accent/8 px-2 py-0.5 text-[10px] font-bold text-accent">
-                          {check.optional ? "opt-in" : "default"}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-[11px] text-text-muted preserve-words">
-                        {check.category} · {releaseHealthSafetyLabel(check.safety_class)} · {check.requires.join(", ")}
-                      </p>
-                    </div>
+                    <ReleaseHealthCard key={check.id} check={check} />
                   ))}
                 </div>
               </div>
@@ -318,29 +320,11 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <h3 className="text-[13px] font-black text-text-primary">선택 검사</h3>
-                    <span className="text-[11px] font-bold text-text-muted">수동 선택</span>
+                    <span className="text-[11px] font-bold text-text-muted">옵트인</span>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {releaseHealthOptInChecks.map((check) => (
-                      <div key={check.id} className="ops-inner rounded-lg px-4 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="min-w-0 truncate text-[13px] font-black text-text-primary preserve-words">
-                            {check.label}
-                          </p>
-                          <span className="shrink-0 rounded border border-line/60 px-2 py-0.5 text-[10px] font-bold text-text-muted">
-                            {check.kind}
-                          </span>
-                          <span className="shrink-0 rounded border border-idle/30 bg-idle/10 px-2 py-0.5 text-[10px] font-bold text-idle">
-                            opt-in
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[11px] text-text-muted preserve-words">
-                          {check.category} · {releaseHealthSafetyLabel(check.safety_class)} · {check.requires.join(", ")}
-                        </p>
-                        <p className="mt-2 rounded-md border border-line/60 bg-black/18 px-3 py-2 font-mono text-[11px] text-text-secondary preserve-words">
-                          {releaseHealthSelector(check)}
-                        </p>
-                      </div>
+                      <ReleaseHealthCard key={check.id} check={check} />
                     ))}
                   </div>
                 </div>
