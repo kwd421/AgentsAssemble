@@ -993,6 +993,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("relay", design)
         self.assertIn("WebRTC", design)
         self.assertIn("not start provider CLIs", design)
+        self.assertIn("React/browser action", design)
+        self.assertIn("read-only safe command skeletons only", design)
 
     def test_live_agent_ops_and_audit_note_record_report_continuation_slice(self):
         ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")

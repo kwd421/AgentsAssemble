@@ -65,6 +65,15 @@ const MODE_CARDS = [
   },
 ];
 
+const JOIN_BRIEF_COMMAND =
+  "assemble live-agent join-brief --server http://<host-lan-ip>:8765 --meeting-id <meeting-id> --agent-id <agent-id>";
+
+const LAN_INVITE_CREATE_COMMAND =
+  "assemble live-agent lan-invite create --server http://<host-lan-ip>:8765 --meeting-id <meeting-id> --agent-id <agent-id> --secret-ref env:AGENTSASSEMBLE_LAN_INVITE_SECRET --ttl-seconds 600";
+
+const LAN_INVITE_VERIFY_COMMAND =
+  'assemble live-agent lan-invite verify --token "$AGENTSASSEMBLE_LAN_INVITE_TOKEN" --secret-ref env:AGENTSASSEMBLE_LAN_INVITE_SECRET --expected-meeting-id <meeting-id> --expected-agent-id <agent-id>';
+
 function timeLabel(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString("ko-KR", {
@@ -411,15 +420,67 @@ export default function LobbyView({
 
         <section className="ops-panel ops-cut p-4">
           <h2 className="mb-4 text-[17px] font-black">외부 참여</h2>
-          <div className="space-y-3">
-            <button type="button" className="ops-button flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left">
-              <FilePlus2 size={20} className="text-text-secondary" />
-              <span className="font-semibold">Join Brief 생성</span>
-            </button>
-            <button type="button" className="ops-button flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left">
-              <Globe2 size={20} className="text-text-secondary" />
-              <span className="font-semibold">LAN Invite PoC</span>
-            </button>
+          <div className="space-y-3 text-[12px] text-text-secondary">
+            <article className="ops-inner rounded-lg p-4">
+              <div className="mb-3 flex items-start gap-3">
+                <FilePlus2 size={19} className="mt-0.5 shrink-0 text-accent" />
+                <div className="min-w-0">
+                  <h3 className="text-[14px] font-black text-text-primary">Join Brief</h3>
+                  <p className="mt-1 preserve-words">
+                    승인된 매뉴얼 레지던트용 시작 명령 생성 · CLI 전용
+                  </p>
+                </div>
+              </div>
+              <div className="mb-3 flex flex-wrap gap-1.5 text-[10px] font-black">
+                <span className="rounded border border-accent/25 bg-accent/10 px-2 py-1 text-accent">
+                  CLI 전용
+                </span>
+                <span className="rounded border border-online/25 bg-online/10 px-2 py-1 text-online">
+                  호스트 승인 필요
+                </span>
+                <span className="rounded border border-line/60 bg-panel/45 px-2 py-1 text-text-muted">
+                  provider 시작 아님
+                </span>
+              </div>
+              <pre className="overflow-x-auto rounded-lg border border-line/60 bg-black/20 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
+                <code>{JOIN_BRIEF_COMMAND}</code>
+              </pre>
+            </article>
+
+            <article className="ops-inner rounded-lg p-4">
+              <div className="mb-3 flex items-start gap-3">
+                <Globe2 size={19} className="mt-0.5 shrink-0 text-accent" />
+                <div className="min-w-0">
+                  <h3 className="text-[14px] font-black text-text-primary">LAN Invite (PoC)</h3>
+                  <p className="mt-1 preserve-words">
+                    LAN 한정 초대 토큰 PoC · CLI 전용 · HMAC 입장 증명만
+                  </p>
+                </div>
+              </div>
+              <div className="mb-3 flex flex-wrap gap-1.5 text-[10px] font-black">
+                <span className="rounded border border-accent/25 bg-accent/10 px-2 py-1 text-accent">
+                  CLI 전용
+                </span>
+                <span className="rounded border border-online/25 bg-online/10 px-2 py-1 text-online">
+                  호스트 승인 필요
+                </span>
+                <span className="rounded border border-line/60 bg-panel/45 px-2 py-1 text-text-muted">
+                  provider 시작 아님
+                </span>
+                <span className="rounded border border-line/60 bg-panel/45 px-2 py-1 text-text-muted">
+                  remote registration 아님
+                </span>
+                <span className="rounded border border-line/60 bg-panel/45 px-2 py-1 text-text-muted">
+                  relay/WebRTC 아님
+                </span>
+              </div>
+              <pre className="overflow-x-auto rounded-lg border border-line/60 bg-black/20 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
+                <code>{`${LAN_INVITE_CREATE_COMMAND}\n${LAN_INVITE_VERIFY_COMMAND}`}</code>
+              </pre>
+              <p className="mt-3 preserve-words">
+                URL·로그·roster·artifact에 토큰 비표시. 자세한 경계는 docs/no-tailscale-multi-host.md 참고.
+              </p>
+            </article>
           </div>
         </section>
       </aside>

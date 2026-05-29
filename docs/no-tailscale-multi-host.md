@@ -132,3 +132,5 @@ Recommended order:
   availability, context quality, or sandbox enforcement.
 - Do not claim relay or WebRTC readiness from the LAN token PoC.
 - Do not treat `remote_http_bridge` as the bridge-free native room client path.
+- Do not surface invite generation or invite verification as a React/browser action;
+  lobby cards are read-only safe command skeletons only.

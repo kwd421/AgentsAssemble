@@ -24,6 +24,19 @@ def frontend_file(relative_path: str) -> str:
     return (FRONTEND_DIR / relative_path).read_text()
 
 
+def react_lobby_external_participation_section() -> str:
+    source = frontend_file("views/LobbyView.tsx")
+    start = source.index("외부 참여")
+    return source[start : source.index("</section>", start)]
+
+
+def react_lobby_external_participation_surface() -> str:
+    source = frontend_file("views/LobbyView.tsx")
+    commands_start = source.index("const JOIN_BRIEF_COMMAND")
+    commands = source[commands_start : source.index("function timeLabel", commands_start)]
+    return f"{commands}\n{react_lobby_external_participation_section()}"
+
+
 class StaticUiAssetTests(unittest.TestCase):
     def test_responsive_layout_hooks_are_present(self):
         css = static_css()
@@ -233,6 +246,89 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("if (flowChanged) {", live_source)
         self.assertIn("setEvents(sortEvents(flowEvents));", live_source)
         self.assertNotIn("setEvents((previous) => {\n      if (lastFlowIdRef.current !== activeFlowId)", live_source)
+
+    def test_react_lobby_external_participation_renders_cli_only_cards_without_interactive_controls(self):
+        section = react_lobby_external_participation_section()
+
+        self.assertIn("외부 참여", section)
+        self.assertIn("CLI 전용", section)
+        self.assertIn("Join Brief", section)
+        self.assertIn("LAN Invite (PoC)", section)
+        self.assertNotIn("<button", section)
+        self.assertNotIn("onClick=", section)
+        self.assertNotIn('role="button"', section)
+        self.assertNotIn("ops-button", section)
+        self.assertNotIn("ops-cta", section)
+
+    def test_react_lobby_external_participation_uses_safe_command_skeletons_with_env_secret_refs(self):
+        source = frontend_file("views/LobbyView.tsx")
+        section = react_lobby_external_participation_section()
+        surface = react_lobby_external_participation_surface()
+
+        self.assertIn("JOIN_BRIEF_COMMAND", section)
+        self.assertIn("LAN_INVITE_CREATE_COMMAND", section)
+        self.assertIn("LAN_INVITE_VERIFY_COMMAND", section)
+        self.assertIn("assemble live-agent join-brief", source)
+        self.assertIn("assemble live-agent lan-invite create", source)
+        self.assertIn("assemble live-agent lan-invite verify", source)
+        self.assertIn("--secret-ref env:AGENTSASSEMBLE_LAN_INVITE_SECRET", source)
+        self.assertIn("<host-lan-ip>", source)
+        self.assertIn("<meeting-id>", source)
+        self.assertIn("<agent-id>", source)
+        self.assertNotIn("192.168.", surface)
+        self.assertNotIn("127.0.0.1", surface)
+        self.assertNotIn("0.0.0.0", surface)
+        self.assertNotIn("AGENTSASSEMBLE_LAN_INVITE_SECRET=", surface)
+
+    def test_react_lobby_external_participation_states_provider_startup_and_token_boundaries(self):
+        section = react_lobby_external_participation_section()
+
+        self.assertIn("호스트 승인 필요", section)
+        self.assertIn("provider 시작 아님", section)
+        self.assertIn("LAN 한정", section)
+        self.assertIn("URL·로그·roster·artifact에 토큰 비표시", section)
+        self.assertIn("relay/WebRTC 아님", section)
+        self.assertIn("HMAC 입장 증명만", section)
+        self.assertIn("remote registration 아님", section)
+
+    def test_react_lobby_external_participation_has_no_unsafe_actions_or_token_io(self):
+        source = frontend_file("views/LobbyView.tsx")
+        surface = react_lobby_external_participation_surface()
+
+        for forbidden in [
+            'method: "POST"',
+            'method: "DELETE"',
+            "EventSource(",
+            "fetch(",
+            "navigator.clipboard",
+            "localStorage",
+            "sessionStorage",
+            "window.location",
+            "process.env",
+            "data:application/",
+            "data:image/",
+            "file://",
+            "/Users/",
+            "/var/",
+            "/tmp/",
+            "lan_invite_token",
+            "AGENTSASSEMBLE_LAN_INVITE_TOKEN=ey",
+            "eyJ",
+            "flow.meeting_id",
+            "meetingId",
+        ]:
+            self.assertNotIn(forbidden, surface)
+
+        for forbidden in [
+            "generateInvite",
+            "createInvite",
+            "startInvite",
+            "generateJoinBrief",
+            "submitInvite",
+            "postInvite",
+            "runInvite",
+        ]:
+            self.assertNotIn(forbidden, source)
 
     def test_react_admin_surfaces_release_health_catalog_as_cli_only(self):
         source = frontend_source()
