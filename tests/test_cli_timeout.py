@@ -127,8 +127,12 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["legacy_console_path"], "/legacy/")
         self.assertEqual(payload["legacy_console_url"], "http://127.0.0.1:9999")
         self.assertEqual(payload["legacy_console_namespace_url"], "http://127.0.0.1:9999/legacy/")
+        self.assertEqual(payload["default_console_kind"], "legacy_vanilla")
+        self.assertEqual(payload["default_console_label"], "Legacy vanilla console (default entry point)")
         self.assertEqual(payload["react_app_path"], "/app/")
         self.assertEqual(payload["react_app_url"], "http://127.0.0.1:9999/app/")
+        self.assertEqual(payload["react_app_kind"], "react_preview_opt_in")
+        self.assertEqual(payload["react_app_label"], "React preview (opt-in, not the default entry point)")
         self.assertEqual(payload["app_dist_path"], "frontend/dist")
         self.assertIn("app_static_available", payload)
         self.assertIn("app_index_present", payload)
@@ -147,11 +151,12 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         output = stdout.getvalue()
-        self.assertIn("Default console/backend: http://127.0.0.1:8765", output)
-        self.assertIn("Legacy console namespace: http://127.0.0.1:8765/legacy/", output)
-        self.assertIn("React preview route: http://127.0.0.1:8765/app/", output)
+        self.assertIn("Legacy vanilla console (default entry point): http://127.0.0.1:8765", output)
+        self.assertIn("Legacy vanilla console (alias): http://127.0.0.1:8765/legacy/", output)
+        self.assertIn("React preview (opt-in, not the default entry point): http://127.0.0.1:8765/app/", output)
         self.assertIn("React/Vite opt-in UI: http://127.0.0.1:5173", output)
         self.assertIn("Parity matrix: docs/product/legacy-react-parity-matrix.md", output)
+        self.assertIn("Default surface kind: legacy_vanilla (React is opt-in only)", output)
         self.assertIn("not the default entry point", output)
 
     def test_frontend_info_reports_react_app_static_availability_from_dist(self):

@@ -1600,8 +1600,12 @@ def frontend_info_payload(
         "legacy_console_url": backend_url,
         "legacy_console_path": legacy_console_path,
         "legacy_console_namespace_url": legacy_console_url,
+        "default_console_kind": "legacy_vanilla",
+        "default_console_label": "Legacy vanilla console (default entry point)",
         "react_app_path": react_app_path,
         "react_app_url": react_app_url,
+        "react_app_kind": "react_preview_opt_in",
+        "react_app_label": "React preview (opt-in, not the default entry point)",
         "app_dist_path": "frontend/dist",
         "app_static_available": dist_status.static_available,
         "app_index_present": dist_status.index_present,
@@ -1628,13 +1632,14 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
     print("AgentsAssemble frontend launch info")
-    print(f"- Default console/backend: {payload['legacy_console_url']}")
-    print(f"- Legacy console namespace: {payload['legacy_console_namespace_url']}")
-    print(f"- React preview route: {payload['react_app_url']}")
+    print(f"- {payload['default_console_label']}: {payload['legacy_console_url']}")
+    print(f"- Legacy vanilla console (alias): {payload['legacy_console_namespace_url']}")
+    print(f"- {payload['react_app_label']}: {payload['react_app_url']}")
     print(f"- React/Vite opt-in UI: {payload['frontend_url']}")
     print(f"- Vite API proxy target: {payload['frontend_dev_proxy_target']}")
     print(f"- Built React static available: {payload['app_static_available']} ({payload['app_dist_path']})")
     print(f"- Parity matrix: {payload['parity_matrix_doc']}")
+    print(f"- Default surface kind: {payload['default_console_kind']} (React is opt-in only)")
     print("- Commands:")
     for command in payload["launch_commands"]:
         print(f"  {command}")

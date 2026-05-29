@@ -72,6 +72,12 @@ class LegacyReactParityInventoryTests(unittest.TestCase):
         missing = sorted(name for name in surface_wrappers if name not in api_wrappers)
         self.assertEqual([], missing)
 
+    def test_default_and_react_preview_labels_are_documented(self):
+        matrix_text = (ROOT / "docs" / "product" / "legacy-react-parity-matrix.md").read_text(encoding="utf-8")
+
+        self.assertIn("legacy vanilla console (default entry point)", matrix_text)
+        self.assertIn("React preview (opt-in)", matrix_text)
+
 
 def _parse_gui_routes(path: Path) -> set[Route]:
     text = path.read_text(encoding="utf-8")

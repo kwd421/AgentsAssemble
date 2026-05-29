@@ -7059,12 +7059,12 @@ def _print_gui_startup_banner(server_url: str, *, frontend_dist_root: Path | Non
     base_url = server_url.rstrip("/")
     dist_status = frontend_dist_status(frontend_dist_root)
     print(f"AgentsAssemble GUI: {base_url}")
-    print(f"- Default console: {base_url}/")
-    print(f"- Legacy console: {base_url}/legacy/")
+    print(f"- Legacy vanilla console (default entry point): {base_url}/")
+    print(f"- Legacy vanilla console (alias): {base_url}/legacy/")
     if dist_status.static_available:
-        print(f"- React preview: {base_url}/app/")
+        print(f"- React preview (opt-in, not the default entry point): {base_url}/app/")
     else:
-        print(f"- React preview build missing: run {REACT_APP_BUILD_COMMAND}")
+        print(f"- React preview (opt-in) build missing: run {REACT_APP_BUILD_COMMAND}")
 
 
 def _make_handler(

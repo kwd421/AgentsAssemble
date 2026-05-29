@@ -7541,10 +7541,10 @@ class GuiServerTests(unittest.TestCase):
 
         output = stdout.getvalue()
         self.assertIn("AgentsAssemble GUI:", output)
-        self.assertIn("Default console: http://127.0.0.1:48765/", output)
-        self.assertIn("Legacy console: http://127.0.0.1:48765/legacy/", output)
-        self.assertIn("React preview: http://127.0.0.1:48765/app/", output)
-        self.assertNotIn("React preview build missing", output)
+        self.assertIn("Legacy vanilla console (default entry point): http://127.0.0.1:48765/", output)
+        self.assertIn("Legacy vanilla console (alias): http://127.0.0.1:48765/legacy/", output)
+        self.assertIn("React preview (opt-in, not the default entry point): http://127.0.0.1:48765/app/", output)
+        self.assertNotIn("React preview (opt-in) build missing", output)
 
     def test_serve_gui_startup_banner_keeps_react_preview_as_build_hint_when_dist_is_missing(self):
         class FakeServer:
@@ -7578,10 +7578,10 @@ class GuiServerTests(unittest.TestCase):
                         serve_gui(host="127.0.0.1", port=0, output_root=root, frontend_dist_root=missing_dist)
 
         output = stdout.getvalue()
-        self.assertIn("Default console: http://127.0.0.1:48766/", output)
-        self.assertIn("Legacy console: http://127.0.0.1:48766/legacy/", output)
-        self.assertNotIn("React preview: http://127.0.0.1:48766/app/", output)
-        self.assertIn("React preview build missing: run npm --prefix frontend run build", output)
+        self.assertIn("Legacy vanilla console (default entry point): http://127.0.0.1:48766/", output)
+        self.assertIn("Legacy vanilla console (alias): http://127.0.0.1:48766/legacy/", output)
+        self.assertNotIn("React preview (opt-in, not the default entry point): http://127.0.0.1:48766/app/", output)
+        self.assertIn("React preview (opt-in) build missing: run npm --prefix frontend run build", output)
 
     def test_serve_gui_startup_banner_treats_partial_react_dist_as_missing(self):
         class FakeServer:
@@ -7617,8 +7617,8 @@ class GuiServerTests(unittest.TestCase):
                         serve_gui(host="127.0.0.1", port=0, output_root=root, frontend_dist_root=partial_dist)
 
         output = stdout.getvalue()
-        self.assertNotIn("React preview: http://127.0.0.1:48767/app/", output)
-        self.assertIn("React preview build missing: run npm --prefix frontend run build", output)
+        self.assertNotIn("React preview (opt-in, not the default entry point): http://127.0.0.1:48767/app/", output)
+        self.assertIn("React preview (opt-in) build missing: run npm --prefix frontend run build", output)
 
     def test_serve_gui_autostarts_explicit_live_agent_config_after_server_bind(self):
         class FakeServer:

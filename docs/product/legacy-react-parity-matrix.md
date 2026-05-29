@@ -29,6 +29,8 @@ from the vanilla console:
   `/app/assets/*`, and reports static availability through `frontend-info`.
 - `frontend-info` still reports `is_default_entry_point: false` until the
   future default flip is explicitly approved.
+- `/` is documented as the legacy vanilla console (default entry point), while
+  `/app/` is documented as the React preview (opt-in).
 - Play Mode, Work Mode, official records, and provider startup approval remain
   separated on both surfaces.
 
