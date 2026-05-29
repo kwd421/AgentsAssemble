@@ -1,4 +1,5 @@
-import { FileDown } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FileDown, X } from "lucide-react";
 import type { LobbyAttachmentRef } from "../../api";
 
 function formatAttachmentSize(size: number) {
@@ -12,49 +13,146 @@ export default function LobbyAttachments({
 }: {
   attachments?: LobbyAttachmentRef[];
 }) {
+  const [selectedImage, setSelectedImage] = useState<LobbyAttachmentRef | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const previewDialogRef = useRef<HTMLDivElement | null>(null);
   const visibleAttachments = (attachments || []).filter((attachment) => attachment.id);
+
+  const closeImagePreview = useCallback(() => {
+    setSelectedImage(null);
+    const opener = openerRef.current;
+    openerRef.current = null;
+    window.setTimeout(() => opener?.focus(), 0);
+  }, []);
+
+  const openImagePreview = useCallback((attachment: LobbyAttachmentRef) => {
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setSelectedImage(attachment);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedImage) return undefined;
+    previewDialogRef.current?.querySelector<HTMLElement>("[data-preview-close]")?.focus();
+
+    function handlePreviewKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeImagePreview();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusableElements = Array.from(
+        previewDialogRef.current?.querySelectorAll<HTMLElement>("a[href], button:not([disabled])") || []
+      );
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    window.addEventListener("keydown", handlePreviewKeyDown);
+    return () => window.removeEventListener("keydown", handlePreviewKeyDown);
+  }, [closeImagePreview, selectedImage]);
+
   if (visibleAttachments.length === 0) return null;
 
   return (
-    <div className="mt-3 flex flex-wrap gap-2">
-      {visibleAttachments.map((attachment) => {
-        const sizeLabel = formatAttachmentSize(attachment.size);
-        if (attachment.is_image && attachment.url) {
+    <>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {visibleAttachments.map((attachment) => {
+          const sizeLabel = formatAttachmentSize(attachment.size);
+          if (attachment.is_image && attachment.url) {
+            return (
+              <button
+                key={attachment.id}
+                type="button"
+                onClick={() => openImagePreview(attachment)}
+                className="ops-inner group max-w-[180px] overflow-hidden rounded-lg border-accent/20 bg-black/20 text-left transition hover:border-accent/45"
+                aria-label={`${attachment.filename} 크게 보기`}
+              >
+                <img
+                  src={attachment.url}
+                  alt={attachment.filename}
+                  loading="lazy"
+                  className="h-24 w-full object-cover"
+                />
+                <span className="block truncate px-2 py-1.5 text-[11px] font-bold text-text-secondary preserve-words">
+                  {attachment.filename}
+                </span>
+              </button>
+            );
+          }
+
           return (
             <a
               key={attachment.id}
-              href={attachment.url}
-              target="_blank"
-              rel="noreferrer"
-              className="ops-inner group max-w-[180px] overflow-hidden rounded-lg border-accent/20 bg-black/20 text-left transition hover:border-accent/45"
-              aria-label={`${attachment.filename} 크게 보기`}
+              href={attachment.download_url || attachment.url}
+              download={attachment.filename}
+              className="ops-inner flex max-w-full items-center gap-2 rounded-lg px-3 py-2 text-[12px] font-bold text-text-secondary transition hover:border-accent/45 hover:text-accent"
             >
-              <img
-                src={attachment.url}
-                alt={attachment.filename}
-                loading="lazy"
-                className="h-24 w-full object-cover"
-              />
-              <span className="block truncate px-2 py-1.5 text-[11px] font-bold text-text-secondary preserve-words">
-                {attachment.filename}
-              </span>
+              <FileDown size={15} className="shrink-0 text-accent" />
+              <span className="min-w-0 truncate preserve-words">{attachment.filename}</span>
+              {sizeLabel && <span className="shrink-0 text-[10px] text-text-muted">{sizeLabel}</span>}
             </a>
           );
-        }
+        })}
+      </div>
 
-        return (
-          <a
-            key={attachment.id}
-            href={attachment.download_url || attachment.url}
-            download={attachment.filename}
-            className="ops-inner flex max-w-full items-center gap-2 rounded-lg px-3 py-2 text-[12px] font-bold text-text-secondary transition hover:border-accent/45 hover:text-accent"
+      {selectedImage && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${selectedImage.filename} 이미지 미리보기`}
+          className="fixed inset-0 z-50 grid place-items-center bg-black/78 p-4 backdrop-blur-sm"
+          onClick={closeImagePreview}
+        >
+          <div
+            ref={previewDialogRef}
+            className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-xl border border-accent/24 bg-panel shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
+            onClick={(event) => event.stopPropagation()}
           >
-            <FileDown size={15} className="shrink-0 text-accent" />
-            <span className="min-w-0 truncate preserve-words">{attachment.filename}</span>
-            {sizeLabel && <span className="shrink-0 text-[10px] text-text-muted">{sizeLabel}</span>}
-          </a>
-        );
-      })}
-    </div>
+            <div className="flex items-center justify-between gap-3 border-b border-line/50 px-4 py-3">
+              <p className="min-w-0 truncate text-[13px] font-black text-text-primary preserve-words">
+                {selectedImage.filename}
+              </p>
+              <div className="flex shrink-0 items-center gap-2">
+                <a
+                  href={selectedImage.download_url || selectedImage.url}
+                  download={selectedImage.filename}
+                  className="ops-button grid h-9 w-9 place-items-center rounded-lg"
+                  aria-label={`${selectedImage.filename} 다운로드`}
+                >
+                  <FileDown size={16} />
+                </a>
+                <button
+                  data-preview-close
+                  type="button"
+                  onClick={closeImagePreview}
+                  className="ops-button grid h-9 w-9 place-items-center rounded-lg"
+                  aria-label="이미지 미리보기 닫기"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="max-h-[calc(90vh-58px)] overflow-auto bg-black/32 p-3">
+              <img
+                src={selectedImage.url}
+                alt={selectedImage.filename}
+                className="mx-auto max-h-[calc(90vh-90px)] max-w-full rounded-lg object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
