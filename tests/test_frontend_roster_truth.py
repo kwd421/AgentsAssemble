@@ -33,6 +33,11 @@ class FrontendRosterTruthTests(unittest.TestCase):
                 self.assertIn("lastObservedSummary(agent)", source)
                 self.assertIn("preserve-words", source)
 
+        lobby = surfaces["lobby"]
+        self.assertIn("providerExecutionLabel(agent)", lobby)
+        self.assertNotIn('agent.provider_kind || "resident"', lobby)
+        self.assertNotIn("agent.connection_kind ||", lobby)
+
         for unsafe in (
             "argv",
             "session_id",

@@ -26,6 +26,7 @@ import {
 import {
   agentTruthBadges,
   lastObservedSummary,
+  providerExecutionLabel,
 } from "../lib/agentLabels";
 import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
@@ -166,7 +167,7 @@ function AgentCard({ agent, owner = false }: { agent: LiveAgent; owner?: boolean
           )}
         </div>
         <p className="truncate text-[11px] text-text-muted preserve-words">
-          {agent.provider_kind || "resident"} · {agent.connection_kind || agent.engagement_mode || "room"}
+          {providerExecutionLabel(agent)}
         </p>
         <ProviderTruthChips badges={agentTruthBadges(agent)} compact limit={5} />
         {observation && (
