@@ -610,6 +610,43 @@ class StaticUiAssetTests(unittest.TestCase):
         ]:
             self.assertNotIn(forbidden, surface)
 
+    def test_react_app_surfaces_room_command_center_without_provider_actions(self):
+        app_source = frontend_file("App.tsx")
+        strip_source = frontend_file("views/components/RoomCommandStrip.tsx")
+        surface = f"{app_source}\n{strip_source}"
+
+        self.assertIn("import RoomCommandStrip", app_source)
+        self.assertIn("<RoomCommandStrip", app_source)
+        self.assertIn("type RoomSurface = Channel | \"admin\";", app_source)
+        self.assertIn("function handleCommandSurface", app_source)
+        self.assertIn("setAdminOpen(true)", app_source)
+        self.assertIn("setChannel(surface)", app_source)
+        self.assertIn("aria-label=\"룸 커맨드 센터\"", strip_source)
+        self.assertIn("SURFACE_COMMANDS", strip_source)
+        self.assertIn("로비 준비", strip_source)
+        self.assertIn("실황 보기", strip_source)
+        self.assertIn("작전판", strip_source)
+        self.assertIn("검증", strip_source)
+        self.assertIn("기록", strip_source)
+        self.assertIn("summarizeCompactLifecycle", strip_source)
+        self.assertIn("summary.nextAction", strip_source)
+        self.assertIn("provider 실행 없이 safe projection만 표시", strip_source)
+
+        for forbidden in [
+            "startProvider",
+            "launchProvider",
+            "startRealProvider",
+            "runReleaseHealth",
+            "room-benchmark",
+            '"/api/release-health"',
+            "permission_profile_id}</",
+            "session_id}</",
+            "provider_config",
+            "api_key",
+            "prompt:",
+        ]:
+            self.assertNotIn(forbidden, surface)
+
     def test_react_archive_surfaces_compact_meeting_lifecycle_banner(self):
         records_source = frontend_file("views/RecordsView.tsx")
         label_source = frontend_file("lib/lifecycleLabels.ts")

@@ -40,8 +40,10 @@ import BoardView from "./views/BoardView";
 import LiveView from "./views/LiveView";
 import LobbyView from "./views/LobbyView";
 import RecordsView from "./views/RecordsView";
+import RoomCommandStrip from "./views/components/RoomCommandStrip";
 
 type Channel = "lobby" | "live" | "board" | "records";
+type RoomSurface = Channel | "admin";
 
 type ChannelConfig = {
   id: Channel;
@@ -193,6 +195,7 @@ export default function App() {
       : [];
   const officialTimelineEvents = meetingLiveEventsToTimelineEvents(activeMeetingStreamState.events);
   const liveTimelineEvents = flowEvents.length ? flowEvents : officialTimelineEvents;
+  const activeSurface: RoomSurface = adminOpen ? "admin" : channel;
 
   const onlineCount = agents.filter(
     (agent) => agent.status === "online" || agent.status === "working"
@@ -225,6 +228,15 @@ export default function App() {
     setMafiaGameId("");
     refreshFlow();
     setChannel("live");
+    setAdminOpen(false);
+  }
+
+  function handleCommandSurface(surface: RoomSurface) {
+    if (surface === "admin") {
+      setAdminOpen(true);
+      return;
+    }
+    setChannel(surface);
     setAdminOpen(false);
   }
 
@@ -322,6 +334,14 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        <RoomCommandStrip
+          activeSurface={activeSurface}
+          agents={agents}
+          flow={flow}
+          lifecycle={lifecycle}
+          onSelectSurface={handleCommandSurface}
+        />
 
         <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-16 pt-3 chat-scroll lg:px-4 lg:pb-3">
           {adminOpen ? (

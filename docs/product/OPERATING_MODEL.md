@@ -233,6 +233,11 @@ The vanilla GUI should optimize for trustworthy operations before polish:
 - The Live tab may show a compact Play Mode surface with running/finished state,
   remaining time, participant status, and unofficial flow events. It must not
   make Play Mode chatter look like transcript or decision evidence.
+- The React preview may show a global room command strip for current step,
+  next action, participant counts, and safe navigation between room surfaces.
+  That strip must read existing safe lifecycle/agent projections only; it must
+  not start providers, run release checks, close turns, promote chatter, or
+  expose private session, prompt, path, or credential fields.
 - Natural-language room text should preserve readable tokens such as model
   versions, decimals, units, ellipses, and speaker names.
 - Forced mid-token wrapping belongs on technical strings such as URLs, logs,
