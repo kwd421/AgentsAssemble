@@ -195,6 +195,15 @@ export function summarizeWorkroomQueue(input: WorkroomQueueInput): WorkroomQueue
       tone: "warn",
     });
   }
+  if (returnPacketCount > 0 && reviewCheckpointCount === 0) {
+    reviewItems.push({
+      id: "review_checkpoint_needed",
+      label: "리뷰 호출 필요",
+      detail: "리턴 패킷이 준비됐지만 리뷰 체크포인트가 아직 없습니다.",
+      tone: "warn",
+      available: false,
+    });
+  }
   if (reviewCheckpointCount > 0) {
     reviewItems.push({
       id: "review_checkpoints",

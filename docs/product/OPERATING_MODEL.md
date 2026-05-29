@@ -208,6 +208,9 @@ safe projected live events, compact meeting metadata, and lifecycle state under
 a stream-snapshot field rather than archive artifact bodies or private review
 turn text; the full meeting-detail payload remains an explicit archive read
 surface.
+If return packets exist but no review checkpoint exists, the React queue may
+show a read-only "review needed" warning; that warning is not a provider call,
+approval grant, or automatic reviewer launch.
 
 Release-health and test/build status follows the same read-only rule. CLI runs
 may save a latest local report for operator visibility, but browser clients only

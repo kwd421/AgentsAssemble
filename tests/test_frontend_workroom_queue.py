@@ -162,6 +162,52 @@ class FrontendWorkroomQueueTests(unittest.TestCase):
             ]) {
               assert.equal(serialized.includes(forbidden), false, forbidden);
             }
+
+            const reviewNeeded = queue.summarizeWorkroomQueue({
+              lifecycle: {
+                state: "running_official_turns",
+                counts: {
+                  roles: 2,
+                  bindings: 2,
+                  live_agents: 2,
+                  pending_turns: 0,
+                  official_messages: 4,
+                },
+                role_hints: [
+                  {
+                    role_id: "implementer",
+                    admission_status: "bound_to_meeting",
+                    unsafe_permission_violations: 0,
+                    permissions: {},
+                  },
+                  {
+                    role_id: "reviewer",
+                    admission_status: "bound_to_meeting",
+                    unsafe_permission_violations: 0,
+                    permissions: {},
+                  },
+                ],
+                attention: [],
+              },
+              artifacts: {
+                "transcript.md": { available: true },
+                "decision.md": { available: true },
+              },
+              reviewCheckpointCount: 0,
+              returnPacketCount: 2,
+              taskScope: {
+                available: true,
+                overlap_count: 0,
+              },
+            });
+
+            const reviewNeededLane = reviewNeeded.lanes.find((lane) => lane.id === "review");
+            assert.deepEqual(reviewNeededLane.items.map((item) => item.id), [
+              "review_checkpoint_needed",
+              "return_packets",
+            ]);
+            assert.equal(reviewNeededLane.items[0].available, false);
+            assert.ok(reviewNeededLane.items[0].detail.includes("리뷰 체크포인트"));
             """
         )
         completed = subprocess.run(
