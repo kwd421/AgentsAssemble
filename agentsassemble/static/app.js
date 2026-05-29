@@ -78,9 +78,7 @@ async function refreshCurrentMeeting() {
   const payload = await fetchJson(`/api/meetings/${encodeURIComponent(meetingId)}`);
   const signature = payloadSignature(payload.meeting === null ? null : payload);
   if (signature === state.payloadSignature) return;
-  state.payload = payload.meeting === null ? null : payload;
-  state.payloadSignature = signature;
-  render({ liveRefresh: true });
+  applyFullMeetingPayload(payload.meeting === null ? null : payload);
 }
 
 async function refreshCurrentMeetingSafely() {
@@ -250,11 +248,31 @@ function applyMeetingStreamPayload(payload) {
   refreshLiveTranscript(state.payload);
 }
 
-function applyFullMeetingPayloadFromStream(payload) {
+export function applyFullMeetingPayloadFromStream(payload) {
   if (!payload?.meeting || payload.meeting.meeting_id !== state.payload?.meeting?.meeting_id) return;
+  applyFullMeetingPayload(payload);
+}
+
+function applyFullMeetingPayload(payload) {
+  const previousPayload = state.payload;
   state.payload = payload;
   state.payloadSignature = payloadSignature(state.payload);
+  if (shouldRefreshLiveTranscriptOnly(previousPayload, payload)) {
+    refreshLiveTranscript(state.payload);
+    return;
+  }
   render({ liveRefresh: true });
+}
+
+function shouldRefreshLiveTranscriptOnly(previousPayload, nextPayload) {
+  if (!previousPayload?.meeting || !nextPayload?.meeting) return false;
+  if (previousPayload.meeting.meeting_id !== nextPayload.meeting.meeting_id) return false;
+  return payloadWithoutLiveEventsSignature(previousPayload) === payloadWithoutLiveEventsSignature(nextPayload);
+}
+
+function payloadWithoutLiveEventsSignature(payload) {
+  if (!payload?.meeting) return "empty";
+  return JSON.stringify({ ...payload, live_events: [] });
 }
 
 function startPollingFallback() {

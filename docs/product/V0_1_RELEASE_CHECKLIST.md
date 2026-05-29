@@ -148,6 +148,10 @@ The next implementation slice should be chosen from this queue:
   next action per state.
 - Add or improve tests that verify the GUI does not replace live-event rows
   unnecessarily during refresh.
+  - Evidence: `node --test tests/static_app_runtime_smoke.mjs` covers a full
+    meeting payload where only `live_events` changed and verifies the vanilla
+    Live panel shell, stable live-event rows, and transcript scroll position are
+    preserved while the new row is appended.
 - Surface the compact meeting lifecycle projection in the React operator UI.
 - Expand `assemble release-health run` only when a later slice needs additional
   v0.1 release evidence.

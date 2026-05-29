@@ -36,13 +36,16 @@ class FakeElement {
     this.scrollTop = 0;
     this.scrollHeight = 100;
     this.clientHeight = 100;
+    this.scope = attributes.scope || "";
+    this.innerHtmlWriteCount = 0;
   }
 
   set innerHTML(html) {
     this._innerHTML = html;
+    this.innerHtmlWriteCount += 1;
     this.children = [];
     if (this.tagName === "SELECT") return;
-    this.ownerDocument?.loadInnerHtml(html);
+    this.ownerDocument?.loadInnerHtml(html, this.id || this.scope || "");
   }
 
   get innerHTML() {
@@ -67,12 +70,24 @@ class FakeElement {
     this.children.push(element);
   }
 
+  insertAdjacentHTML(position, html) {
+    if (position !== "beforeend") throw new Error(`Unsupported insertAdjacentHTML position: ${position}`);
+    this.ownerDocument?.appendInnerHtml(String(html), this.scope);
+  }
+
   setAttribute(name, value) {
     this.attributes[name] = String(value);
   }
 
   removeAttribute(name) {
     delete this.attributes[name];
+    if (name === "id") this.id = "";
+    if (name.startsWith("data-")) this.dataset = datasetFromAttributes(this.attributes);
+    this.ownerDocument?.reindexElement(this);
+  }
+
+  remove() {
+    this.ownerDocument?.removeElement(this);
   }
 }
 
@@ -85,6 +100,8 @@ class FakeDocument {
     };
     this.byId = new Map();
     this.byClass = new Map();
+    this.byData = new Map();
+    this.scopes = new Map();
     this.tabs = ["lobby", "live", "board", "archive"].map((tab) => new FakeElement("button", { class: "tab" }, this));
     this.panels = ["lobby", "live", "board", "archive"].map((id) => new FakeElement("section", { id, class: "panel" }, this));
     this.tabs.forEach((element, index) => {
@@ -106,7 +123,7 @@ class FakeDocument {
 
   querySelectorAll(selector) {
     if (selector.startsWith(".")) return this.byClass.get(selector.slice(1)) || [];
-    if (selector.startsWith("[data-")) return [];
+    if (selector.startsWith("[data-")) return this.byData.get(selector.slice(1, -1)) || [];
     return [];
   }
 
@@ -114,22 +131,72 @@ class FakeDocument {
     return new FakeElement(tagName, {}, this);
   }
 
-  loadInnerHtml(html) {
+  loadInnerHtml(html, scope = "") {
+    if (scope) this.clearScope(scope);
+    this.appendInnerHtml(html, scope);
+  }
+
+  appendInnerHtml(html, scope = "") {
     for (const match of html.matchAll(/<([a-zA-Z][\w-]*)([^>]*)>/g)) {
       const [, tagName, rawAttributes] = match;
       const attributes = parseAttributes(rawAttributes);
-      if (!attributes.id && !attributes.class) continue;
+      const dataAttributeNames = Object.keys(attributes).filter((name) => name.startsWith("data-"));
+      if (!attributes.id && !attributes.class && dataAttributeNames.length === 0) continue;
       const element = new FakeElement(tagName, attributes, this);
+      element.scope = scope;
       element.textContent = elementTextContent(html, match.index + match[0].length, tagName);
-      if (attributes.id) this.byId.set(attributes.id, element);
-      if (attributes.class) {
-        for (const className of attributes.class.split(/\s+/).filter(Boolean)) {
-          const elements = this.byClass.get(className) || [];
-          elements.push(element);
-          this.byClass.set(className, elements);
-        }
-      }
+      this.indexElement(element);
     }
+  }
+
+  indexElement(element) {
+    if (element.id) this.byId.set(element.id, element);
+    for (const className of String(element.attributes.class || "").split(/\s+/).filter(Boolean)) {
+      const elements = this.byClass.get(className) || [];
+      if (!elements.includes(element)) elements.push(element);
+      this.byClass.set(className, elements);
+    }
+    for (const dataAttributeName of Object.keys(element.attributes).filter((name) => name.startsWith("data-"))) {
+      const elements = this.byData.get(dataAttributeName) || [];
+      if (!elements.includes(element)) elements.push(element);
+      this.byData.set(dataAttributeName, elements);
+    }
+    if (element.scope) {
+      const elements = this.scopes.get(element.scope) || new Set();
+      elements.add(element);
+      this.scopes.set(element.scope, elements);
+    }
+  }
+
+  unindexElement(element) {
+    if (element.id && this.byId.get(element.id) === element) this.byId.delete(element.id);
+    for (const [className, elements] of [...this.byClass.entries()]) {
+      const filtered = elements.filter((candidate) => candidate !== element);
+      if (filtered.length) this.byClass.set(className, filtered);
+      else this.byClass.delete(className);
+    }
+    for (const [attributeName, elements] of [...this.byData.entries()]) {
+      const filtered = elements.filter((candidate) => candidate !== element);
+      if (filtered.length) this.byData.set(attributeName, filtered);
+      else this.byData.delete(attributeName);
+    }
+    if (element.scope) this.scopes.get(element.scope)?.delete(element);
+  }
+
+  reindexElement(element) {
+    this.unindexElement(element);
+    this.indexElement(element);
+  }
+
+  clearScope(scope) {
+    for (const element of Array.from(this.scopes.get(scope) || [])) {
+      this.unindexElement(element);
+    }
+    this.scopes.delete(scope);
+  }
+
+  removeElement(element) {
+    this.unindexElement(element);
   }
 }
 
@@ -160,7 +227,7 @@ function elementTextContent(html, contentStart, tagName) {
 }
 
 async function flushAsyncWork() {
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < 40; index += 1) {
     await Promise.resolve();
   }
 }
@@ -187,6 +254,12 @@ test("meeting refresh event reloads meetings and syncs the selector", async () =
   globalThis.requestAnimationFrame = (callback) => callback();
   globalThis.setInterval = () => 0;
   globalThis.window = {
+    scrollX: 0,
+    scrollY: 0,
+    scrollTo(x, y) {
+      this.scrollX = x;
+      this.scrollY = y;
+    },
     addEventListener(type, listener) {
       const items = listeners.get(type) || [];
       items.push(listener);
@@ -223,7 +296,110 @@ test("meeting refresh event reloads meetings and syncs the selector", async () =
   assert.equal(document.querySelector("#meeting-select").value, "resident-gui");
 });
 
-function meetingResponse(meetingId) {
+test("full meeting stream payload with only live event changes preserves the live panel shell and stable rows", async () => {
+  Object.assign(state, {
+    currentTab: "live",
+    meetings: [],
+    payload: null,
+    payloadSignature: "",
+    lobbyEvents: [],
+    lobbySignature: "[]",
+    sideChatEvents: [],
+    sideChatSignature: "[]",
+    liveAgentsLoaded: true,
+    liveAgentProcessesLoaded: true,
+    liveAgentOperationsLoaded: true,
+    codexSessionsLoaded: true,
+    liveAgentFlow: null,
+    liveAgentFlowEvents: [],
+  });
+  const document = new FakeDocument();
+  const requests = [];
+  const eventSources = [];
+  globalThis.document = document;
+  globalThis.localStorage = { getItem: () => "", setItem() {} };
+  globalThis.requestAnimationFrame = (callback) => callback();
+  globalThis.setInterval = () => 0;
+  class FakeEventSource {
+    constructor(url) {
+      this.url = url;
+      this.listeners = new Map();
+      eventSources.push(this);
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) || [];
+      listeners.push(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    close() {}
+  }
+  globalThis.EventSource = FakeEventSource;
+  globalThis.window = {
+    EventSource: FakeEventSource,
+    scrollX: 0,
+    scrollY: 0,
+    scrollTo(x, y) {
+      this.scrollX = x;
+      this.scrollY = y;
+    },
+    addEventListener() {},
+  };
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    if (url === "/api/lobby") return jsonResponse({ events: [] });
+    if (url === "/api/side-chat") return jsonResponse({ events: [] });
+    if (url === "/api/meetings") return jsonResponse({ meetings: [{ meeting_id: "resident-gui", topic: "resident", live_status: "running" }] });
+    if (url === "/api/meetings/resident-gui") return jsonResponse(meetingResponse("resident-gui", [{ id: "live-a", kind: "message", display_name: "Codex", content: "첫 발언", official_record: true }]));
+    return jsonResponse({});
+  };
+
+  const unhandled = [];
+  const onUnhandled = (error) => unhandled.push(error);
+  process.on("unhandledRejection", onUnhandled);
+  const app = await import(`../agentsassemble/static/app.js?runtime-smoke-live-refresh=${Date.now()}`);
+  await flushAsyncWork();
+  process.off("unhandledRejection", onUnhandled);
+  assert.deepEqual(unhandled, []);
+  assert.equal(state.payload?.meeting?.meeting_id, "resident-gui", `payload not loaded; requests=${requests.join(",")}`);
+  const livePanel = document.querySelector("#live");
+  const feed = document.querySelector(".live-transcript");
+  const firstRow = document.querySelectorAll("[data-live-item-id]").find((row) => row.dataset.liveItemId === "live-a");
+  assert.ok(feed, `live transcript not rendered; requests=${requests.join(",")} liveHtml=${livePanel?.innerHTML?.slice(0, 120) || ""}`);
+  assert.ok(firstRow, `initial live row not rendered; liveHtml=${livePanel?.innerHTML?.slice(0, 240) || ""}`);
+  feed.scrollHeight = 260;
+  feed.clientHeight = 100;
+  feed.scrollTop = 44;
+  for (const listener of feed.listeners.get("scroll") || []) listener();
+  const liveWritesBefore = livePanel.innerHtmlWriteCount;
+
+  app.applyFullMeetingPayloadFromStream(
+    meetingResponse("resident-gui", [
+      { id: "live-a", kind: "message", display_name: "Codex", content: "첫 발언", official_record: true },
+      { id: "live-b", kind: "message", display_name: "Kiro", content: "두 번째 발언", official_record: true },
+    ])
+  );
+  await flushAsyncWork();
+
+  const rows = document.querySelectorAll("[data-live-item-id]");
+  assert.equal(document.querySelector("#live"), livePanel);
+  assert.equal(document.querySelector(".live-transcript"), feed);
+  assert.equal(livePanel.innerHtmlWriteCount, liveWritesBefore);
+  assert.equal(rows.find((row) => row.dataset.liveItemId === "live-a"), firstRow);
+  assert.match(rows.find((row) => row.dataset.liveItemId === "live-b")?.textContent || "", /두 번째 발언/);
+  assert.equal(feed.scrollTop, 44);
+
+  const structuralPayload = meetingResponse("resident-gui", [
+    { id: "live-a", kind: "message", display_name: "Codex", content: "첫 발언", official_record: true },
+    { id: "live-b", kind: "message", display_name: "Kiro", content: "두 번째 발언", official_record: true },
+  ]);
+  structuralPayload.meeting.topic = "retitled";
+  app.applyFullMeetingPayloadFromStream(structuralPayload);
+  assert.ok(livePanel.innerHtmlWriteCount > liveWritesBefore);
+});
+
+function meetingResponse(meetingId, liveEvents = []) {
   return {
     meeting: {
       meeting_id: meetingId,
@@ -234,7 +410,7 @@ function meetingResponse(meetingId) {
       moderator_synthesis: {},
       decision_gate: {},
     },
-    live_events: [],
+    live_events: liveEvents,
     artifacts: { "decision.md": `# ${meetingId}` },
     tasks: {},
     return_packets: {},
