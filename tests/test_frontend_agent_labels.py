@@ -65,24 +65,82 @@ class FrontendAgentLabelTests(unittest.TestCase):
               sandbox_enforcement: "advisory",
               binding_conflicts: ["role_missing"],
             };
+            const residentKinds = [
+              ["kiro_live_session", "kiro_chat_resume"],
+              ["cursor_live_session", "cursor_chat_resume"],
+              ["grok_live_session", "grok_session_resume"],
+              ["antigravity_live_session", "antigravity_conversation_resume"],
+              ["hermes_live_session", "hermes_chat_resume"],
+            ];
+            const bridge = {
+              provider_kind: "remote_http_bridge",
+              connection_kind: "remote_bridge",
+              join_semantics: "remote_bridge_room_loop",
+              context_durability: "remote_owner_managed",
+              sandbox_enforcement: "advisory",
+            };
+            const manual = {
+              provider_kind: "manual",
+              connection_kind: "manual",
+              join_semantics: "manual_room_loop",
+              context_durability: "external_owner_managed",
+              sandbox_enforcement: "unknown",
+            };
             const observed = {
               last_observed_event_id: "4fd560ddb0b2",
               last_observed_live_event_id: "live_event_123456789",
               last_reply_at: "2026-05-24T11:09:56.000000+00:00",
             };
+            const residentNonDuplicates = Object.fromEntries(
+              residentKinds.map(([provider_kind, join_semantics]) => {
+                const agent = {
+                  provider_kind,
+                  connection_kind: "live_session",
+                  join_semantics,
+                  context_durability: "provider_managed_resume",
+                  sandbox_enforcement: "advisory",
+                };
+                return [
+                  provider_kind,
+                  labels.providerExecutionLabel(agent) !== labels.joinSemanticsLabel(join_semantics),
+                ];
+              })
+            );
 
             const result = {
               codexExecution: labels.providerExecutionLabel(codex),
               codexContext: labels.contextDurabilityLabel(codex.context_durability),
+              codexContextKind: labels.contextDurabilityKind(codex.context_durability),
+              codexContextBadge: labels.contextBadge(codex),
               codexJoin: labels.joinSemanticsLabel(codex.join_semantics),
+              codexExecutionDiffersFromJoin:
+                labels.providerExecutionLabel(codex) !== labels.joinSemanticsLabel(codex.join_semantics),
               codexSandbox: labels.sandboxEnforcementLabel(codex.sandbox_enforcement),
               codexAdmission: labels.admissionBadge(codex).label,
               statelessExecution: labels.providerExecutionLabel(stateless),
               statelessContext: labels.contextDurabilityLabel(stateless.context_durability),
+              statelessContextKind: labels.contextDurabilityKind(stateless.context_durability),
+              statelessContextBadge: labels.contextBadge(stateless),
+              statelessExecutionDiffersFromJoin:
+                labels.providerExecutionLabel(stateless) !== labels.joinSemanticsLabel(stateless.join_semantics),
               statelessAdmission: labels.admissionBadge(stateless).label,
+              bridgeExecution: labels.providerExecutionLabel(bridge),
+              bridgeJoin: labels.joinSemanticsLabel(bridge.join_semantics),
+              bridgeExecutionDiffersFromJoin:
+                labels.providerExecutionLabel(bridge) !== labels.joinSemanticsLabel(bridge.join_semantics),
+              manualExecution: labels.providerExecutionLabel(manual),
+              manualJoin: labels.joinSemanticsLabel(manual.join_semantics),
+              manualExecutionDiffersFromJoin:
+                labels.providerExecutionLabel(manual) !== labels.joinSemanticsLabel(manual.join_semantics),
+              roomLoopKind: labels.contextDurabilityKind("provider_managed_room_loop"),
+              processKind: labels.contextDurabilityKind("process_lifetime"),
+              remoteKind: labels.contextDurabilityKind("remote_owner_managed"),
+              externalKind: labels.contextDurabilityKind("external_owner_managed"),
+              unknownKind: labels.contextDurabilityKind(""),
               sparseExecution: labels.providerExecutionLabel(sparse),
               genericStatelessExecution: labels.providerExecutionLabel(genericStateless),
               genericUnknownAdmission: labels.admissionBadge(genericStateless).label,
+              residentNonDuplicates,
               observed: labels.lastObservedSummary(observed),
             };
             console.log(JSON.stringify(result));
@@ -102,16 +160,36 @@ class FrontendAgentLabelTests(unittest.TestCase):
             msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
         payload = json.loads(completed.stdout)
-        self.assertEqual(payload["codexExecution"], "Codex exec/resume")
+        self.assertEqual(payload["codexExecution"], "Codex resident")
         self.assertEqual(payload["codexContext"], "Provider-owned context")
+        self.assertEqual(payload["codexContextKind"], "provider_owned")
+        self.assertEqual(payload["codexContextBadge"]["label"], "맥락 · Provider-owned")
+        self.assertEqual(payload["codexContextBadge"]["tone"], "online")
         self.assertEqual(payload["codexJoin"], "Codex exec/resume")
+        self.assertEqual(payload["codexExecutionDiffersFromJoin"], True)
         self.assertEqual(payload["codexSandbox"], "Codex read-only")
         self.assertEqual(payload["codexAdmission"], "Host-approved")
-        self.assertEqual(payload["statelessExecution"], "Stateless prompt call")
+        self.assertEqual(payload["statelessExecution"], "Local CLI prompt")
         self.assertEqual(payload["statelessContext"], "Stateless prompt")
+        self.assertEqual(payload["statelessContextKind"], "stateless")
+        self.assertEqual(payload["statelessContextBadge"]["label"], "맥락 · Stateless")
+        self.assertEqual(payload["statelessContextBadge"]["tone"], "idle")
+        self.assertEqual(payload["statelessExecutionDiffersFromJoin"], True)
         self.assertEqual(payload["statelessAdmission"], "Not host-approved · 2 conflicts")
+        self.assertEqual(payload["bridgeExecution"], "Remote bridge endpoint")
+        self.assertEqual(payload["bridgeJoin"], "Remote bridge")
+        self.assertEqual(payload["bridgeExecutionDiffersFromJoin"], True)
+        self.assertEqual(payload["manualExecution"], "Manual participant")
+        self.assertEqual(payload["manualJoin"], "Manual room loop")
+        self.assertEqual(payload["manualExecutionDiffersFromJoin"], True)
+        self.assertEqual(payload["roomLoopKind"], "provider_owned")
+        self.assertEqual(payload["processKind"], "process_lifetime")
+        self.assertEqual(payload["remoteKind"], "external_owned")
+        self.assertEqual(payload["externalKind"], "external_owned")
+        self.assertEqual(payload["unknownKind"], "unknown")
         self.assertEqual(payload["sparseExecution"], "Custom provider")
-        self.assertEqual(payload["genericStatelessExecution"], "Stateless prompt call")
+        self.assertEqual(payload["genericStatelessExecution"], "Local CLI prompt")
         self.assertEqual(payload["genericUnknownAdmission"], "Admission unknown · 1 conflict")
+        self.assertTrue(all(payload["residentNonDuplicates"].values()))
         self.assertIn("lobby 4fd560dd...", payload["observed"])
         self.assertIn("official live_eve...", payload["observed"])

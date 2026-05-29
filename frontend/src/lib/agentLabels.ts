@@ -9,17 +9,17 @@ export type AgentTruthBadge = {
 };
 
 const PROVIDER_EXECUTION_LABELS: Record<string, string> = {
-  "codex_live_session/live_session": "Codex exec/resume",
-  "kiro_live_session/live_session": "Kiro chat resume",
-  "cursor_live_session/live_session": "Cursor chat resume",
-  "grok_live_session/live_session": "Grok session resume",
-  "antigravity_live_session/live_session": "Antigravity conversation resume",
-  "hermes_live_session/live_session": "Hermes chat resume",
-  "remote_http_bridge/remote_bridge": "Remote bridge",
-  "local_cli/local_cli": "Stateless prompt call",
-  "local_cli/terminal_session": "PTY terminal bridge",
-  "local_cli/self_service": "Self-service room loop",
-  "manual/manual": "Manual room loop",
+  "codex_live_session/live_session": "Codex resident",
+  "kiro_live_session/live_session": "Kiro resident",
+  "cursor_live_session/live_session": "Cursor resident",
+  "grok_live_session/live_session": "Grok resident",
+  "antigravity_live_session/live_session": "Antigravity resident",
+  "hermes_live_session/live_session": "Hermes resident",
+  "remote_http_bridge/remote_bridge": "Remote bridge endpoint",
+  "local_cli/local_cli": "Local CLI prompt",
+  "local_cli/terminal_session": "Local PTY terminal",
+  "local_cli/self_service": "Self-service loop",
+  "manual/manual": "Manual participant",
 };
 
 const JOIN_SEMANTICS_LABELS: Record<string, string> = {
@@ -52,6 +52,14 @@ const SANDBOX_LABELS: Record<string, string> = {
   unknown: "Unknown sandbox",
 };
 
+const CONTEXT_DURABILITY_KIND_LABELS: Record<string, string> = {
+  stateless: "Stateless",
+  process_lifetime: "Process-lifetime",
+  provider_owned: "Provider-owned",
+  external_owned: "External-owned",
+  unknown: "Unknown",
+};
+
 export function humanizeToken(value?: string): string {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -73,6 +81,19 @@ export function contextDurabilityLabel(value?: string): string {
   return CONTEXT_DURABILITY_LABELS[key] || humanizeToken(key);
 }
 
+export function contextDurabilityKind(value?: string): string {
+  const key = String(value || "").trim();
+  if (key === "stateless_prompt") return "stateless";
+  if (key === "process_lifetime") return "process_lifetime";
+  if (key === "provider_managed_resume" || key === "provider_managed_room_loop") {
+    return "provider_owned";
+  }
+  if (key === "remote_owner_managed" || key === "external_owner_managed") {
+    return "external_owned";
+  }
+  return "unknown";
+}
+
 export function sandboxEnforcementLabel(value?: string): string {
   const key = String(value || "").trim();
   return SANDBOX_LABELS[key] || humanizeToken(key);
@@ -81,13 +102,14 @@ export function sandboxEnforcementLabel(value?: string): string {
 export function providerExecutionLabel(
   agent: Pick<LiveAgent, "provider_kind" | "connection_kind" | "engagement_mode" | "join_semantics">
 ): string {
-  const joinLabel = joinSemanticsLabel(agent.join_semantics);
-  if (joinLabel) return joinLabel;
   const provider = String(agent.provider_kind || "").trim();
   const connection = String(agent.connection_kind || "").trim();
   const pair = `${provider}/${connection}`;
   if (PROVIDER_EXECUTION_LABELS[pair]) return PROVIDER_EXECUTION_LABELS[pair];
-  if (agent.engagement_mode === "self_service" && provider) return "Self-service room loop";
+  if (agent.engagement_mode === "self_service" && provider) return "Self-service loop";
+  if (connection === "local_cli") return "Local CLI prompt";
+  if (connection === "terminal_session") return "Local PTY terminal";
+  if (connection === "self_service") return "Self-service loop";
   return humanizeToken(provider || connection || agent.engagement_mode || "resident");
 }
 
@@ -134,7 +156,17 @@ export function executionBadge(agent: LiveAgent): AgentTruthBadge {
 export function contextBadge(agent: LiveAgent): AgentTruthBadge | null {
   const label = contextDurabilityLabel(agent.context_durability);
   if (!label) return null;
-  return { label, tone: agent.context_durability === "stateless_prompt" ? "idle" : "online" };
+  const kind = contextDurabilityKind(agent.context_durability);
+  const tone =
+    kind === "provider_owned"
+      ? "online"
+      : kind === "process_lifetime"
+        ? "accent"
+        : kind === "stateless"
+          ? "idle"
+          : "muted";
+  const kindLabel = CONTEXT_DURABILITY_KIND_LABELS[kind] || CONTEXT_DURABILITY_KIND_LABELS.unknown;
+  return { label: `맥락 · ${kindLabel}`, tone, title: label };
 }
 
 export function joinBadge(agent: LiveAgent): AgentTruthBadge | null {
