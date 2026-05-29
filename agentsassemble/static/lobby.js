@@ -60,7 +60,7 @@ export function renderLobby(options = {}) {
             </div>
           </div>
           <form id="lobby-form" class="lobby-form">
-            <input id="lobby-message" maxlength="240" placeholder="메시지를 입력하세요" />
+            <input id="lobby-message" maxlength="2000" placeholder="메시지를 입력하세요" />
             <label class="lobby-file-button" title="파일 첨부">
               <input id="lobby-attachments" type="file" multiple />
               첨부

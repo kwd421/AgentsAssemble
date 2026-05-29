@@ -67,7 +67,10 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('agent.last_reply_at ? `reply ${shortDateTime(agent.last_reply_at)}` : ""', source)
         self.assertIn('return { label: "Host-approved", tone: "online" };', source)
         self.assertIn('return { label: "Not host-approved", tone: "idle" };', source)
-        self.assertIn("{agent.provider_kind || \"resident\"} · {agent.connection_kind || agent.engagement_mode || \"room\"}", source)
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        self.assertIn("providerExecutionLabel(agent)", lobby_source)
+        self.assertNotIn('agent.provider_kind || "resident"', lobby_source)
+        self.assertNotIn("agent.connection_kind || agent.engagement_mode", lobby_source)
 
     def test_react_room_messages_wrap_natural_language_without_truncating_body(self):
         lobby_source = frontend_file("views/LobbyView.tsx")
@@ -328,6 +331,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("width: var(--lobby-avatar-size);", css)
         self.assertIn("white-space: nowrap;", css)
         self.assertIn("width: min(100%, 720px);", css)
+        self.assertIn('id="lobby-message" maxlength="2000"', script)
+        self.assertNotIn('id="lobby-message" maxlength="240"', script)
         self.assertIn('document.querySelector("#lobby-message")?.focus()', script)
         self.assertIn('event.key !== "Enter" || event.isComposing', script)
         send_lobby = script[script.index("async function sendLobbyEvent") : script.index("async function sendLobbyRemote")]
@@ -859,6 +864,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn(".side-mine .side-chat-avatar,\n.side-my-agent .side-chat-avatar {\n  grid-column: 2;", css)
         self.assertIn(".side-chat-bubble", css)
         self.assertIn('aria-label="비공식 채팅"', script)
+        self.assertIn('id="side-chat-message" maxlength="2000"', script)
+        self.assertNotIn('id="side-chat-message" maxlength="240"', script)
         self.assertIn('root.querySelector("#side-chat-message")?.focus()', script)
         self.assertIn("async function sendSideChatMessage", script)
         send_side_chat = script[script.index("async function sendSideChatMessage") : script.index("function isSideChatFeedNearBottom")]

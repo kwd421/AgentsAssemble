@@ -164,7 +164,7 @@ function renderSideChat() {
         ${events.length ? events.map(renderSideChatEvent).join("") : '<p class="side-chat-empty">아직 비공식 채팅이 없습니다.</p>'}
       </div>
       <form id="side-chat-form" class="side-chat-form">
-        <input id="side-chat-message" maxlength="240" placeholder="실황 보면서 한마디" />
+        <input id="side-chat-message" maxlength="2000" placeholder="실황 보면서 한마디" />
         <button type="submit">전송</button>
       </form>
     </aside>

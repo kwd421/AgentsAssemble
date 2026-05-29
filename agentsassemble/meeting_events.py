@@ -37,8 +37,7 @@ LOBBY_KINDS: set[str] = {"message", "ready", "deploy"}
 LOBBY_CHANNELS: set[str] = {"lobby", "side_chat"}
 OFFICIAL_LIVE_KINDS: set[str] = {"message", "synthesis"}
 JSONL_TAIL_BLOCK_BYTES = 8192
-LOBBY_MESSAGE_LIMIT = 240
-LIVE_AGENT_LOBBY_MESSAGE_LIMIT = 2000
+LOBBY_MESSAGE_LIMIT = 2000
 
 
 @dataclass(frozen=True)
@@ -136,7 +135,7 @@ class LobbyEvent:
             name=clean_lobby_text(payload.get("name", "guest"), limit=32) or "guest",
             side=normalize_lobby_side(payload.get("side")),
             kind=normalize_lobby_kind(payload.get("kind")),
-            message=clean_lobby_text(payload.get("message", ""), limit=_lobby_message_limit_for_payload(payload)),
+            message=clean_lobby_text(payload.get("message", ""), limit=LOBBY_MESSAGE_LIMIT),
             channel=normalize_lobby_channel(payload.get("channel"), default=default_channel),
             audience=clean_lobby_text(payload.get("audience", "room"), limit=32) or "room",
             official_record=False,
@@ -300,7 +299,7 @@ def append_lobby_event_to_file(
             event_payload_input.pop(key, None)
     event = LobbyEvent.from_payload(
         event_payload_input,
-        message_limit=LIVE_AGENT_LOBBY_MESSAGE_LIMIT if live_agent_endpoint else LOBBY_MESSAGE_LIMIT,
+        message_limit=LOBBY_MESSAGE_LIMIT,
     )
     event_payload = event.to_dict()
     event_payload["live_agent_endpoint"] = live_agent_endpoint
@@ -451,13 +450,7 @@ def write_live_state(meeting_dir: Path, payload: dict[str, object]) -> None:
 
 
 def clean_lobby_text(value: object, limit: int) -> str:
-    return str(value or "").replace("\n", " ").replace("\r", " ").strip()[:limit]
-
-
-def _lobby_message_limit_for_payload(payload: dict[str, object]) -> int:
-    if payload.get("live_agent_endpoint") is True:
-        return LIVE_AGENT_LOBBY_MESSAGE_LIMIT
-    return LOBBY_MESSAGE_LIMIT
+    return str(value or "").replace("\n", " ").replace("\r", " ").strip()[:limit].strip()
 
 
 def clean_lobby_attachments(value: object) -> list[dict[str, object]]:

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from agentsassemble.meeting_events import (
     append_live_event,
     append_lobby_event_to_file,
+    append_side_chat_event_to_file,
     read_live_events,
     read_lobby_events,
     read_side_chat_events,
@@ -47,11 +48,15 @@ class MeetingEventsTests(unittest.TestCase):
         self.assertIn("80kg", read_back[0]["message"])
         self.assertIn("모르겠다...", read_back[0]["message"])
 
-    def test_human_lobby_messages_keep_short_safety_limit(self):
+    def test_human_lobby_messages_share_visible_room_message_budget(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             lobby_path = root / "lobby.jsonl"
-            human_message = "사람 입력 " + ("x" * 400)
+            human_message = (
+                "사람 입력도 긴 회의 맥락을 남길 수 있어야 한다. "
+                + "Kiro Opus 4.7, 0.5, 80kg, 모르겠다... 같은 토큰을 보존한다. "
+                + ("x" * 2200)
+            )
 
             event = append_lobby_event_to_file(
                 lobby_path,
@@ -64,8 +69,35 @@ class MeetingEventsTests(unittest.TestCase):
             )
             read_back = read_lobby_events(lobby_path, limit=None)
 
-        self.assertEqual(len(event["message"]), 240)
-        self.assertEqual(read_back[0]["message"], human_message[:240])
+        expected_message = human_message.strip()[:2000].strip()
+        self.assertEqual(event["message"], expected_message)
+        self.assertEqual(read_back[0]["message"], expected_message)
+        self.assertIn("Kiro Opus 4.7", read_back[0]["message"])
+        self.assertIn("0.5", read_back[0]["message"])
+        self.assertIn("80kg", read_back[0]["message"])
+        self.assertIn("모르겠다...", read_back[0]["message"])
+
+    def test_side_chat_messages_share_visible_room_message_budget(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            side_path = root / "side_chat.jsonl"
+            side_message = "실황 옆 긴 메모 " + ("side " * 500)
+
+            event = append_side_chat_event_to_file(
+                side_path,
+                {
+                    "name": "owner",
+                    "side": "mine",
+                    "kind": "message",
+                    "message": side_message,
+                },
+            )
+            read_back = read_side_chat_events(side_path, limit=None)
+
+        expected_message = side_message.strip()[:2000].strip()
+        self.assertEqual(event["message"], expected_message)
+        self.assertEqual(read_back[0]["message"], expected_message)
+        self.assertEqual(read_back[0]["channel"], "side_chat")
 
     def test_limited_lobby_and_side_chat_reads_do_not_load_full_jsonl_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -41,6 +41,10 @@ stack. The first room-event bus foundation is:
 - id/reference payloads for attachments and artifacts, so large bytes are not
   copied through every event.
 
+Lobby and side-chat messages share the same 2000-character visible room-message
+budget for humans and resident agents. Compact control fields such as topics,
+statuses, ids, paths, and error summaries keep their narrower limits.
+
 Each implementation slice that changes this path should expose numeric evidence
 when practical: append/read latency, SSE delivery time, queue wait time,
 backpressure counts, and per-agent speaking distribution. These numbers are
