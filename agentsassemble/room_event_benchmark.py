@@ -5,9 +5,13 @@ import platform
 import shutil
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
+from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import urlopen
 from uuid import uuid4
 
 from agentsassemble.live_agent_flow import (
@@ -34,6 +38,8 @@ SCHEDULER_IMBALANCE_MARGIN = 0.5
 SCHEDULER_P99_LATENCY_CEILING_MS = 75.0
 SCHEDULER_LATENCY_EVENT_COUNT = 10_000
 SCHEDULER_LATENCY_CALLS = 60
+SSE_POLLING_CADENCE_SECONDS = 1.0
+SSE_SAMPLE_TIMEOUT_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -43,6 +49,7 @@ class RoomEventBenchmarkOptions:
     read_window: int = 80
     warmup_events: int = 20
     agent_count: int = 5
+    sse_samples: int = 0
     cleanup: bool = True
 
 
@@ -51,6 +58,7 @@ def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, ob
     read_window = max(1, int(options.read_window))
     warmup_events = max(0, int(options.warmup_events))
     agent_count = max(1, int(options.agent_count))
+    sse_samples = max(0, int(options.sse_samples))
     run_root, temporary_root = _benchmark_run_root(options.output_root)
     run_root.mkdir(parents=True, exist_ok=False)
     lobby_path = run_root / "lobby.jsonl"
@@ -92,6 +100,29 @@ def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, ob
         _, live_tail_ms = _timed_ms(lambda: read_live_events(meeting_dir, limit=read_window))
         fairness = flow_speaking_distribution(_synthetic_flow_events(agent_count=agent_count, turns=events), flow_id="benchmark-flow")
         scheduler_comparison = flow_scheduler_comparison(agent_count=agent_count, turns=events)
+        sse_delivery = _measure_lobby_sse_append_to_frame_ms(
+            run_root,
+            lobby_path,
+            samples=sse_samples,
+            last_event_id=all_lobby_ids[-1] if all_lobby_ids else "",
+        )
+        metrics: dict[str, object] = {
+            "lobby_append_ms": _latency_stats(measured_lobby_appends),
+            "live_append_ms": _latency_stats(measured_live_appends),
+            "lobby_read_after_cursor_ms": _latency_stats(lobby_read_after),
+            "live_read_after_cursor_ms": _latency_stats(live_read_after),
+            "lobby_tail_read_ms": _single_latency(lobby_tail_ms),
+            "live_tail_read_ms": _single_latency(live_tail_ms),
+            "flow_speaking_distribution": fairness,
+            "flow_scheduler_comparison": scheduler_comparison,
+        }
+        if sse_samples:
+            metrics["lobby_sse_append_to_frame_ms"] = {
+                **_latency_stats(sse_delivery),
+                "samples_requested": sse_samples,
+                "polling_cadence_seconds": SSE_POLLING_CADENCE_SECONDS,
+                "enabled": True,
+            }
         payload: dict[str, object] = {
             "schema_version": BENCHMARK_SCHEMA_VERSION,
             "benchmark": "room_event_log_v1",
@@ -105,6 +136,7 @@ def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, ob
                 "read_window": read_window,
                 "warmup_events": warmup_events,
                 "agent_count": agent_count,
+                "sse_samples": sse_samples,
                 "cleanup": bool(options.cleanup),
             },
             "paths": {
@@ -113,21 +145,12 @@ def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, ob
                 "live_log": str(meeting_dir / "live_events.jsonl"),
                 "temporary_root": str(temporary_root) if temporary_root else "",
             },
-            "metrics": {
-                "lobby_append_ms": _latency_stats(measured_lobby_appends),
-                "live_append_ms": _latency_stats(measured_live_appends),
-                "lobby_read_after_cursor_ms": _latency_stats(lobby_read_after),
-                "live_read_after_cursor_ms": _latency_stats(live_read_after),
-                "lobby_tail_read_ms": _single_latency(lobby_tail_ms),
-                "live_tail_read_ms": _single_latency(live_tail_ms),
-                "flow_speaking_distribution": fairness,
-                "flow_scheduler_comparison": scheduler_comparison,
-            },
+            "metrics": metrics,
             "notes": [
                 "This benchmark calls the existing meeting_events append/read functions and does not add fsync.",
                 "Tail metrics use read_lobby_events/read_live_events with the configured read_window.",
                 "Flow scheduler comparison is synthetic and measures turn distribution, not provider quality.",
-                "SSE delivery time, queue wait time, and backpressure counts are out of scope for this slice.",
+                "Lobby SSE append-to-frame latency is reported when --sse-samples is set and is dominated by the 1 s polling cadence; queue wait time and backpressure counts remain out of scope.",
                 "This is an operator regression signal, not an SLA.",
             ],
         }
@@ -244,6 +267,79 @@ def _measure_read_after_live(meeting_dir: Path, event_ids: list[str], read_windo
         _, elapsed_ms = _timed_ms(lambda event_id=event_id: read_live_events_after(meeting_dir, event_id, limit=read_window))
         durations.append(elapsed_ms)
     return durations
+
+
+def _measure_lobby_sse_append_to_frame_ms(
+    run_root: Path,
+    lobby_path: Path,
+    *,
+    samples: int,
+    last_event_id: str,
+    per_sample_timeout_seconds: float = SSE_SAMPLE_TIMEOUT_SECONDS,
+) -> list[float]:
+    clean_samples = max(0, int(samples))
+    if clean_samples <= 0:
+        return []
+    from agentsassemble.gui import _make_handler
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(run_root))
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    durations: list[float] = []
+    current_cursor = str(last_event_id or "")
+    thread.start()
+    try:
+        base_url = f"http://127.0.0.1:{server.server_port}/api/events/lobby"
+        for index in range(clean_samples):
+            query = urlencode({"last_event_id": current_cursor}) if current_cursor else ""
+            url = f"{base_url}?{query}" if query else base_url
+            response = urlopen(url, timeout=per_sample_timeout_seconds)
+            try:
+                _read_sse_frame(response)
+                event = append_lobby_event_to_file(
+                    lobby_path,
+                    _lobby_payload(index=100_000 + index, warmup=False),
+                    live_agent_endpoint=True,
+                    allow_flow_metadata=True,
+                )
+                event_id = str(event.get("id") or "")
+                started = time.perf_counter_ns()
+                _read_sse_frame_containing(
+                    response,
+                    event_id,
+                    timeout_seconds=per_sample_timeout_seconds,
+                )
+                durations.append((time.perf_counter_ns() - started) / 1_000_000)
+                current_cursor = event_id
+            finally:
+                response.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+    return durations
+
+
+def _read_sse_frame(response) -> str:
+    lines: list[str] = []
+    while True:
+        line = response.readline()
+        if line == b"":
+            return "\n".join(lines)
+        decoded = line.decode("utf-8").rstrip("\n")
+        if decoded == "":
+            return "\n".join(lines)
+        lines.append(decoded)
+
+
+def _read_sse_frame_containing(response, event_id: str, *, timeout_seconds: float) -> str:
+    deadline = time.monotonic() + max(0.1, float(timeout_seconds))
+    while time.monotonic() < deadline:
+        frame = _read_sse_frame(response)
+        if event_id in frame:
+            return frame
+        if not frame:
+            break
+    raise TimeoutError(f"Timed out waiting for lobby SSE frame {event_id}")
 
 
 def _cursor_samples(event_ids: list[str], read_window: int) -> list[str]:

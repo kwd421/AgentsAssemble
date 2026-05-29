@@ -58,7 +58,45 @@ class RoomEventBenchmarkTests(unittest.TestCase):
             scheduler["predicate_latency_ms"]["p99_ms"],
             SCHEDULER_P99_LATENCY_CEILING_MS,
         )
-        self.assertTrue(any("SSE delivery time" in note for note in result["notes"]))
+        self.assertNotIn("lobby_sse_append_to_frame_ms", metrics)
+        self.assertTrue(any("Lobby SSE append-to-frame latency" in note for note in result["notes"]))
+        self.assertTrue(any("queue wait time and backpressure counts remain out of scope" in note for note in result["notes"]))
+
+    def test_benchmark_reports_finite_lobby_sse_delivery_metric_when_samples_are_enabled(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_room_event_benchmark(
+                RoomEventBenchmarkOptions(
+                    output_root=Path(temp_dir),
+                    events=4,
+                    read_window=3,
+                    warmup_events=1,
+                    agent_count=2,
+                    sse_samples=2,
+                    cleanup=True,
+                )
+            )
+
+        metric = result["metrics"]["lobby_sse_append_to_frame_ms"]
+        self.assertEqual(metric["count"], 2)
+        self.assertEqual(metric["samples_requested"], 2)
+        self.assertEqual(metric["polling_cadence_seconds"], 1.0)
+        self.assertTrue(metric["enabled"])
+        self.assert_metric_is_finite(metric)
+
+    def test_default_benchmark_omits_lobby_sse_delivery_metric(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = run_room_event_benchmark(
+                RoomEventBenchmarkOptions(
+                    output_root=Path(temp_dir),
+                    events=4,
+                    read_window=2,
+                    warmup_events=1,
+                    agent_count=2,
+                    cleanup=True,
+                )
+            )
+
+        self.assertNotIn("lobby_sse_append_to_frame_ms", result["metrics"])
 
     def test_flow_speaking_distribution_defines_imbalance_ratio(self):
         events = [
@@ -90,6 +128,8 @@ class RoomEventBenchmarkTests(unittest.TestCase):
                 "2",
                 "--agent-count",
                 "3",
+                "--sse-samples",
+                "2",
                 "--json",
             ]
         )
@@ -100,7 +140,15 @@ class RoomEventBenchmarkTests(unittest.TestCase):
         self.assertEqual(args.read_window, 4)
         self.assertEqual(args.warmup_events, 2)
         self.assertEqual(args.agent_count, 3)
+        self.assertEqual(args.sse_samples, 2)
         self.assertTrue(args.as_json)
+
+    def test_cli_parser_defaults_and_rejects_negative_sse_samples(self):
+        args = build_parser().parse_args(["live-agent", "room-benchmark"])
+
+        self.assertEqual(args.sse_samples, 0)
+        with self.assertRaises(SystemExit):
+            build_parser().parse_args(["live-agent", "room-benchmark", "--sse-samples", "-1"])
 
     def test_cli_room_benchmark_outputs_parseable_json(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -131,7 +179,7 @@ class RoomEventBenchmarkTests(unittest.TestCase):
 
     def assert_metric_is_finite(self, metric):
         self.assertGreater(metric["count"], 0)
-        for key in ("avg_ms", "p50_ms", "p95_ms", "max_ms"):
+        for key in ("avg_ms", "p50_ms", "p95_ms", "p99_ms", "max_ms"):
             value = metric[key]
             self.assertIsInstance(value, float)
             self.assertTrue(math.isfinite(value), key)

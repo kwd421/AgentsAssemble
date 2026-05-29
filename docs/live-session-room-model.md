@@ -55,9 +55,13 @@ defined as `max_agent_speaking_count / max(min_agent_speaking_count, 1)`. This
 benchmark also reports a synthetic scheduler-on versus scheduler-off comparison
 using `normalized_imbalance =
 (max_agent_speaking_count - min_agent_speaking_count) / total_speaking_turns`,
-plus a pure predicate latency sample over a 10k-event synthetic flow. It still
-does not measure SSE delivery, queue wait time, or backpressure counts yet;
-those require a later server/fanout slice. Treat the output as operator
+plus a pure predicate latency sample over a 10k-event synthetic flow. When
+`--sse-samples N` is set, it also reports a small
+`lobby_sse_append_to_frame_ms` measurement against the existing local
+`/api/events/lobby` SSE endpoint. This number is dominated by the current
+1-second polling cadence and is a regression tripwire on the same machine, not
+an SLA. Queue wait time and backpressure counts still require a later
+server/fanout slice and remain out of scope. Treat the output as operator
 evidence for comparing local changes on the same machine, not as a service-level
 objective.
 

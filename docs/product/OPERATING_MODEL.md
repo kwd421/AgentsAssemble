@@ -222,8 +222,12 @@ not requirements for the local-first v1 room.
 The first benchmark surface is `assemble live-agent room-benchmark`. It calls
 the existing local append/read functions, does not fsync when the product path
 does not fsync, and reports local append/read/tail latency plus a synthetic flow
-speaking-distribution imbalance ratio. It intentionally does not claim SSE
-delivery, queue wait, or backpressure coverage yet.
+speaking-distribution imbalance ratio. When `--sse-samples N` is set, it also
+reports a small `lobby_sse_append_to_frame_ms` measurement against the existing
+local `/api/events/lobby` SSE endpoint. This number is dominated by the current
+1-second polling cadence and is a regression tripwire on the same machine, not
+an SLA. Queue wait time and backpressure counts still require a later
+server/fanout slice and remain out of scope.
 
 ## Local Resource Visibility
 
