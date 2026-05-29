@@ -16,6 +16,7 @@ import { usePoll } from "../hooks";
 import {
   formatLoadAverageTriple,
   formatResourceMemory,
+  localResourceSpotlightRows,
   resourceAttentionLabel,
   resourceRoleLabel,
 } from "../lib/localResourceLabels";
@@ -152,6 +153,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const resourceRoleRows = resources?.summary.role_breakdown
     ? Object.entries(resources.summary.role_breakdown)
     : [];
+  const resourceSpotlightRows = localResourceSpotlightRows(resources?.processes ?? []);
   const {
     defaultChecks: releaseHealthDefaultChecks,
     optInChecks: releaseHealthOptInChecks,
@@ -343,6 +345,30 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                   {resources.summary.attention.length > 3 &&
                     ` 외 ${resources.summary.attention.length - 3}건`}
                 </p>
+              )}
+              {resourceSpotlightRows.length > 0 && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {resourceSpotlightRows.map((row) => (
+                    <div key={row.id} className="ops-inner rounded-lg px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                            {row.label}
+                          </p>
+                          <p className="mt-1 truncate text-[15px] font-black text-text-primary preserve-words">
+                            {row.processName}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-[18px] font-black text-accent">
+                          {row.value}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-[11px] text-text-muted preserve-words">
+                        {row.roleLabel} · {row.detail}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               )}
               {resourceRoleRows.length > 0 && (
                 <div className="flex flex-wrap gap-2 text-[12px] text-text-secondary">

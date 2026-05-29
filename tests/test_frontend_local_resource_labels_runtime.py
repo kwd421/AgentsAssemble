@@ -50,6 +50,31 @@ class FrontendLocalResourceLabelsRuntimeTests(unittest.TestCase):
             assert.equal(labels.formatResourceMemory(512), "0.5 MB");
             assert.equal(labels.formatResourceMemory(120 * 1024), "120 MB");
             assert.equal(labels.formatResourceMemory(2 * 1024 * 1024), "2.0 GB");
+            assert.deepEqual(
+              labels.localResourceSpotlightRows([
+                { pid: 10, comm: "codex", role: "agentsassemble", cpu_pct: 15.25, rss_kb: 2048 },
+                { pid: 11, comm: "kiro", role: "supervised_resident", cpu_pct: 8.0, rss_kb: 900 * 1024 },
+              ]),
+              [
+                {
+                  id: "top_cpu",
+                  label: "상위 CPU",
+                  processName: "codex",
+                  roleLabel: "AA 자식",
+                  value: "15.3%",
+                  detail: "PID 10",
+                },
+                {
+                  id: "top_memory",
+                  label: "상위 메모리",
+                  processName: "kiro",
+                  roleLabel: "감독 중",
+                  value: "900 MB",
+                  detail: "PID 11",
+                },
+              ]
+            );
+            assert.deepEqual(labels.localResourceSpotlightRows([]), []);
             console.log(JSON.stringify({ ok: true }));
             """
         )

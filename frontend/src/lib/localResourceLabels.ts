@@ -17,6 +17,23 @@ export type LoadAverageTriple = {
   fifteen?: number;
 };
 
+export type LocalResourceProcessLike = {
+  pid?: number;
+  comm?: string;
+  role?: string;
+  cpu_pct?: number;
+  rss_kb?: number;
+};
+
+export type LocalResourceSpotlightRow = {
+  id: "top_cpu" | "top_memory";
+  label: string;
+  processName: string;
+  roleLabel: string;
+  value: string;
+  detail: string;
+};
+
 export function resourceRoleLabel(role: string) {
   return RESOURCE_ROLE_LABELS[role] || role;
 }
@@ -39,10 +56,55 @@ export function formatLoadAverageTriple(loadAverage: LoadAverageTriple) {
   )} / ${formatLoadAverageValue(loadAverage.fifteen)}`;
 }
 
+export function localResourceSpotlightRows(
+  processes: LocalResourceProcessLike[]
+): LocalResourceSpotlightRow[] {
+  if (!Array.isArray(processes) || processes.length === 0) return [];
+  const topCpu = processes
+    .slice()
+    .sort((left, right) => finiteNumber(right.cpu_pct) - finiteNumber(left.cpu_pct))[0];
+  const topMemory = processes
+    .slice()
+    .sort((left, right) => finiteNumber(right.rss_kb) - finiteNumber(left.rss_kb))[0];
+  return [
+    {
+      id: "top_cpu",
+      label: "상위 CPU",
+      processName: processName(topCpu),
+      roleLabel: resourceRoleLabel(String(topCpu.role || "other")),
+      value: `${finiteNumber(topCpu.cpu_pct).toFixed(1)}%`,
+      detail: processPidDetail(topCpu),
+    },
+    {
+      id: "top_memory",
+      label: "상위 메모리",
+      processName: processName(topMemory),
+      roleLabel: resourceRoleLabel(String(topMemory.role || "other")),
+      value: formatResourceMemory(finiteNumber(topMemory.rss_kb)),
+      detail: processPidDetail(topMemory),
+    },
+  ];
+}
+
 function formatLoadAverageValue(value?: number) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric) || numeric < 0) {
     return "0.00";
   }
   return numeric.toFixed(2);
+}
+
+function finiteNumber(value?: number) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric < 0) return 0;
+  return numeric;
+}
+
+function processName(process: LocalResourceProcessLike) {
+  return String(process.comm || "process");
+}
+
+function processPidDetail(process: LocalResourceProcessLike) {
+  const pid = Number(process.pid || 0);
+  return Number.isFinite(pid) && pid > 0 ? `PID ${Math.trunc(pid)}` : "PID --";
 }
