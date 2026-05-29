@@ -21,6 +21,12 @@ import {
   type MeetingSummary,
 } from "../api";
 import { usePoll } from "../hooks";
+import {
+  agentTruthBadges,
+  lastObservedSummary,
+  providerExecutionLabel,
+} from "../lib/agentLabels";
+import ProviderTruthChips from "./components/ProviderTruthChips";
 
 function statusLabel(status: string): string {
   if (status === "active") return "진행 중";
@@ -334,22 +340,31 @@ function ArchiveSide({ agents }: { agents: LiveAgent[] }) {
           참가자 ({activeAgents.length})
         </h2>
         <div className="space-y-3">
-          {activeAgents.slice(0, 6).map((agent) => (
-            <div key={agent.agent_id} className="flex items-center gap-3">
-              <span className="hex-badge h-9 w-9">
-                <Users size={14} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-bold preserve-words">
-                  {agent.display_name || agent.agent_id}
-                </p>
-                <p className="truncate text-[11px] text-text-muted preserve-words">
-                  {agent.provider_kind || agent.engagement_mode || "resident"}
-                </p>
+          {activeAgents.slice(0, 6).map((agent) => {
+            const observation = lastObservedSummary(agent);
+            return (
+              <div key={agent.agent_id} className="flex items-start gap-3">
+                <span className="hex-badge h-9 w-9">
+                  <Users size={14} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-bold preserve-words">
+                    {agent.display_name || agent.agent_id}
+                  </p>
+                  <p className="truncate text-[11px] text-text-muted preserve-words">
+                    {providerExecutionLabel(agent)}
+                  </p>
+                  <ProviderTruthChips badges={agentTruthBadges(agent)} compact limit={5} />
+                  {observation && (
+                    <p className="mt-1 text-[10px] text-text-muted preserve-words">
+                      {observation}
+                    </p>
+                  )}
+                </div>
+                <span className="h-2.5 w-2.5 rounded-full bg-online" />
               </div>
-              <span className="h-2.5 w-2.5 rounded-full bg-online" />
-            </div>
-          ))}
+            );
+          })}
           {activeAgents.length === 0 && (
             <p className="text-[13px] text-text-muted">표시할 참가자가 없습니다.</p>
           )}

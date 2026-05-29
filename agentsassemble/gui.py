@@ -142,6 +142,16 @@ REAL_SESSION_SMOKE_CONFIG_REQUIRED_MESSAGE = (
 REAL_SESSION_SMOKE_PROBE_REDACTION = "[redacted real session smoke probe]"
 
 
+def _safe_live_agent_flow_agents(output_root: Path) -> list[dict[str, object]]:
+    payload = _live_agent_roster_with_admission_evidence(
+        output_root,
+        {"agents": read_live_agents(output_root)},
+    )
+    safe_payload = safe_live_agent_roster_payload(payload)
+    agents = safe_payload.get("agents")
+    return agents if isinstance(agents, list) else []
+
+
 class LiveAgentFlowSupervisor:
     def __init__(self, output_root: Path) -> None:
         self.output_root = output_root
@@ -226,7 +236,7 @@ class LiveAgentFlowSupervisor:
                 flow = _restored_flow_state(events, meeting_id=meeting_id)
                 return {
                     "flow": flow or {"status": "idle"},
-                    "agents": read_live_agents(self.output_root),
+                    "agents": _safe_live_agent_flow_agents(self.output_root),
                     "events": events,
                     "flow_events": _flow_events_for_state(events, flow),
                 }
@@ -234,7 +244,7 @@ class LiveAgentFlowSupervisor:
             flow = self._public_state(run)
             return {
                 "flow": flow,
-                "agents": read_live_agents(self.output_root),
+                "agents": _safe_live_agent_flow_agents(self.output_root),
                 "events": events,
                 "flow_events": _flow_events_for_state(events, flow),
             }
@@ -258,7 +268,7 @@ class LiveAgentFlowSupervisor:
             flow = self._public_state(run)
             return {
                 "flow": flow,
-                "agents": read_live_agents(self.output_root),
+                "agents": _safe_live_agent_flow_agents(self.output_root),
                 "events": events,
                 "flow_events": _flow_events_for_state(events, flow),
             }

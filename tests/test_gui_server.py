@@ -18202,6 +18202,76 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual([event.get("flow_event_type") or event.get("flow_action") for event in payload["flow_events"]], ["started", "speak"])
             self.assertNotIn("flow-other", {event.get("flow_id") for event in payload["flow_events"]})
 
+    def test_live_agent_flow_status_returns_safe_roster_admission_evidence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "resident-m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "resident-m1",
+                        "agent_bindings": [
+                            {
+                                "agent_id": "agent-a",
+                                "role_id": "architect",
+                                "provider_id": "local-cli",
+                                "permission_profile_id": "meeting_readonly",
+                                "join_mode": "resident",
+                            }
+                        ],
+                        "provider_configs": {
+                            "local-cli": {
+                                "id": "local-cli",
+                                "kind": "local_cli",
+                                "display_name": "Local CLI",
+                            }
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "resident-m1",
+                    "session_id": "private-session-a",
+                    "last_error": "token=secret-token /Users/me/private-config.json",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/live-agent-flow?meeting_id=resident-m1",
+                    timeout=4,
+                ) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            agent = payload["agents"][0]
+            self.assertEqual(agent["agent_id"], "agent-a")
+            self.assertEqual(agent["admission_status"], "bound_to_meeting")
+            self.assertEqual(agent["admission_evidence_source"], "meeting_record")
+            self.assertTrue(agent["host_approved_binding"])
+            self.assertEqual(agent["binding_role_id"], "architect")
+            self.assertEqual(agent["binding_provider_id"], "local-cli")
+            self.assertEqual(agent["binding_provider_kind"], "local_cli")
+            self.assertEqual(agent["binding_permission_profile_id"], "meeting_readonly")
+            self.assertEqual(agent["binding_join_mode"], "resident")
+            encoded = json.dumps(payload, ensure_ascii=False)
+            self.assertNotIn("private-session-a", encoded)
+            self.assertNotIn("secret-token", encoded)
+            self.assertNotIn("private-config.json", encoded)
+
     def test_live_agent_flow_status_restores_latest_flow_from_lobby_log(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
