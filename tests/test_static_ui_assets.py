@@ -163,7 +163,8 @@ class StaticUiAssetTests(unittest.TestCase):
 
         self.assertIn("mergeLobbyEvents", lobby_source)
         self.assertNotIn("function mergeLobbyEvents", lobby_source)
-        self.assertIn("mergeLobbyEventsByCreatedAt", live_source)
+        self.assertIn("mergeLiveTimelineEvents", live_source)
+        self.assertIn("filterFlowTimelineEvents", live_source)
         self.assertNotIn("function mergeEvents", live_source)
 
     def test_react_lobby_and_live_render_attachment_metadata(self):
@@ -300,11 +301,23 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_react_live_flow_switch_keeps_state_updates_outside_event_updater(self):
         live_source = frontend_file("views/LiveView.tsx")
+        helper_source = frontend_file("lib/liveTimelineState.ts")
+        surface = f"{live_source}\n{helper_source}"
 
-        self.assertIn("const flowChanged = lastFlowIdRef.current !== activeFlowId;", live_source)
-        self.assertIn("if (flowChanged) {", live_source)
-        self.assertIn("setEvents(sortEvents(flowEvents));", live_source)
+        self.assertIn("liveTimelineResetReason", live_source)
+        self.assertIn("mergeLiveTimelineEvents", live_source)
+        self.assertIn("nextTimelinePinnedToLatest", live_source)
+        self.assertIn("filterFlowTimelineEvents", live_source)
+        self.assertIn("export function mergeLiveTimelineEvents", helper_source)
+        self.assertIn("return sameTimelineArray(previousEvents, sorted) ? previousEvents : sorted;", helper_source)
+        self.assertIn("export function nextTimelinePinnedToLatest", helper_source)
+        self.assertIn("export function filterFlowTimelineEvents", helper_source)
+        self.assertNotIn("const flowChanged = lastFlowIdRef.current !== activeFlowId;", live_source)
+        self.assertNotIn("mergeLobbyEventsByCreatedAt", live_source)
         self.assertNotIn("setEvents((previous) => {\n      if (lastFlowIdRef.current !== activeFlowId)", live_source)
+        self.assertNotIn("window.scrollTo", surface)
+        self.assertNotIn("startProvider", surface)
+        self.assertNotIn("launchProvider", surface)
 
     def test_react_lobby_external_participation_renders_cli_only_cards_without_interactive_controls(self):
         section = react_lobby_external_participation_section()

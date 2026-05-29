@@ -117,6 +117,9 @@ Completed evidence:
 - React Lobby and Archive now surface compact lifecycle next-action evidence,
   complementing the existing React Live lifecycle panel and Board current-step
   summary while keeping browser parity and default-route flip separate.
+- React Live timeline state now has a focused delta-refresh proof for active
+  meeting/flow filtering, stable identical-event refreshes, and pinned-to-latest
+  intent; browser-rendered smoothness remains separate.
 
 1. Clarify the room surfaces:
    - Lobby means pre-meeting staging and agent admission.
@@ -161,6 +164,10 @@ The next implementation slice should be chosen from this queue:
     meeting payload where only `live_events` changed and verifies the vanilla
     Live panel shell, stable live-event rows, and transcript scroll position are
     preserved while the new row is appended.
+  - Evidence: `python3 -m unittest tests.test_frontend_live_timeline_state -v`
+    covers React Live timeline delta state, active meeting/flow filtering, stable
+    identical-event refreshes, and pinned-to-latest intent without claiming
+    browser-rendered scroll parity.
 - Surface the compact meeting lifecycle projection in the React operator UI.
 - Expand `assemble release-health run` only when a later slice needs additional
   v0.1 release evidence.

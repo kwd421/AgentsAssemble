@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import {
   castMafiaVote,
-  mergeLobbyEventsByCreatedAt,
   postSideChatMessage,
   resolveMafiaPhase,
   sendMafiaChat,
@@ -38,6 +37,13 @@ import {
   lastObservedSummary,
   providerExecutionLabel,
 } from "../lib/agentLabels";
+import {
+  filterFlowTimelineEvents,
+  liveTimelineResetReason,
+  mergeLiveTimelineEvents,
+  nextTimelinePinnedToLatest,
+  sortLiveTimelineEvents,
+} from "../lib/liveTimelineState";
 import {
   lifecycleAttentionLabel,
   lifecycleStateLabel,
@@ -57,12 +63,6 @@ function formatTime(iso: string): string {
   } catch {
     return "";
   }
-}
-
-function sortEvents(events: LobbyEvent[]) {
-  return events
-    .slice()
-    .sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
 function liveTimelineIsNearBottom(element: HTMLDivElement) {
@@ -776,48 +776,49 @@ export default function LiveView({
   }, [events]);
 
   useEffect(() => {
-    const flowChanged = lastFlowIdRef.current !== activeFlowId;
-    const meetingChanged = lastMeetingIdRef.current !== activeMeetingId;
-    const sourceChanged = displayedTimelineSourceRef.current !== timelineSource;
-    if (flowChanged) {
-      lastFlowIdRef.current = activeFlowId;
-      lastMeetingIdRef.current = activeMeetingId;
-      displayedTimelineSourceRef.current = timelineSource;
-      updatePinnedToLatest(true);
-      setEvents(sortEvents(flowEvents));
-      return;
-    }
-    if (sourceChanged) {
-      displayedTimelineSourceRef.current = timelineSource;
-      updatePinnedToLatest(true);
-      setEvents(sortEvents(flowEvents));
-      return;
-    }
-    if (meetingChanged) {
-      lastMeetingIdRef.current = activeMeetingId;
-      updatePinnedToLatest(true);
-      setEvents(sortEvents(flowEvents));
-      return;
-    }
-    setEvents((previous) => mergeLobbyEventsByCreatedAt(previous, flowEvents));
+    const resetReason = liveTimelineResetReason({
+      previousFlowId: lastFlowIdRef.current,
+      nextFlowId: activeFlowId,
+      previousMeetingId: lastMeetingIdRef.current,
+      nextMeetingId: activeMeetingId,
+      previousTimelineSource: displayedTimelineSourceRef.current,
+      nextTimelineSource: timelineSource,
+    });
+    lastFlowIdRef.current = activeFlowId;
+    lastMeetingIdRef.current = activeMeetingId;
+    displayedTimelineSourceRef.current = timelineSource;
+    const nextPinned = nextTimelinePinnedToLatest(pinnedToLatestRef.current, resetReason);
+    if (nextPinned !== pinnedToLatestRef.current) updatePinnedToLatest(nextPinned);
+    setEvents((previous) =>
+      mergeLiveTimelineEvents({
+        previousEvents: previous,
+        incomingEvents: flowEvents,
+        reset: Boolean(resetReason),
+      })
+    );
   }, [activeFlowId, activeMeetingId, flowEvents, timelineSource, updatePinnedToLatest]);
 
   const mergeFlowEvents = useCallback(
     (incoming: LobbyEvent[]) => {
-      const matching = incoming.filter((event) => {
-        if (!event.id || (!event.flow_event_type && !event.flow_action)) return false;
-        if (!activeFlowId && activeMeetingId) return event.flow_meeting_id === activeMeetingId;
-        if (!activeFlowId) return true;
-        return event.flow_id === activeFlowId;
+      const matching = filterFlowTimelineEvents({
+        incomingEvents: incoming,
+        activeFlowId,
+        activeMeetingId,
       });
       if (matching.length === 0) return;
       if (displayedTimelineSourceRef.current !== "flow") {
         displayedTimelineSourceRef.current = "flow";
         updatePinnedToLatest(true);
-        setEvents(sortEvents(matching));
+        setEvents(sortLiveTimelineEvents(matching));
         return;
       }
-      setEvents((previous) => mergeLobbyEventsByCreatedAt(previous, matching));
+      setEvents((previous) =>
+        mergeLiveTimelineEvents({
+          previousEvents: previous,
+          incomingEvents: matching,
+          reset: false,
+        })
+      );
     },
     [activeFlowId, activeMeetingId, updatePinnedToLatest]
   );
