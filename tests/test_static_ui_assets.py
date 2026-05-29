@@ -527,6 +527,85 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("permission_profile_id}</", source)
         self.assertNotIn("session_id}</", source)
 
+    def test_react_lobby_surfaces_compact_meeting_lifecycle_banner(self):
+        app_source = frontend_file("App.tsx")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        label_source = frontend_file("lib/lifecycleLabels.ts")
+        banner_source = frontend_file("views/components/LifecycleBanner.tsx")
+        surface = "\n".join([app_source, lobby_source, label_source, banner_source])
+
+        self.assertIn("import LifecycleBanner", lobby_source)
+        self.assertIn("type LifecycleProjection", lobby_source)
+        self.assertIn("lifecycle: LifecycleProjection | null;", lobby_source)
+        self.assertIn("<LifecycleBanner lifecycle={lifecycle} surface=\"lobby\" />", lobby_source)
+        self.assertIn("lifecycle={lifecycle}", app_source)
+        self.assertIn("export function summarizeCompactLifecycle", label_source)
+        self.assertIn("회의 목표와 역할 바인딩을 확인하세요.", label_source)
+        self.assertIn("회의 없음", label_source)
+        self.assertIn("로비에서 새 회의를 시작하거나 기존 회의를 선택하세요.", label_source)
+        self.assertIn("data-lifecycle-surface={surface}", banner_source)
+        self.assertIn("summary.nextAction", banner_source)
+        self.assertIn('emptyHint?: "noMeeting" | "selectMeeting";', banner_source)
+        self.assertIn("역할 ${summary.boundRoles}/${summary.rolesTotal}", banner_source)
+        self.assertIn("summary.missingRoles ? `미입실 ${summary.missingRoles}`", banner_source)
+        self.assertIn("summary.pendingTurns ? `대기 턴 ${summary.pendingTurns}`", banner_source)
+        self.assertIn("summary.officialMessages ? `공식 ${summary.officialMessages}`", banner_source)
+        self.assertIn("권한 검토 ${summary.unsafePermissionViolations}", banner_source)
+        self.assertIn("provider 실행 없음", banner_source)
+
+        for forbidden in [
+            "startProvider",
+            "launchProvider",
+            "startRealProvider",
+            "runReleaseHealth",
+            "room-benchmark",
+            "is_default_entry_point: true",
+            "permission_profile_id}</",
+            "session_id}</",
+            "provider_config",
+            "api_key",
+            "prompt:",
+        ]:
+            self.assertNotIn(forbidden, surface)
+
+    def test_react_archive_surfaces_compact_meeting_lifecycle_banner(self):
+        records_source = frontend_file("views/RecordsView.tsx")
+        label_source = frontend_file("lib/lifecycleLabels.ts")
+        banner_source = frontend_file("views/components/LifecycleBanner.tsx")
+        surface = "\n".join([records_source, label_source, banner_source])
+
+        self.assertIn("import LifecycleBanner", records_source)
+        self.assertIn("summarizeCompactLifecycle", records_source)
+        self.assertIn("const detailLifecycle = detail?.lifecycle ?? null;", records_source)
+        self.assertIn("const lifecycleSummary = summarizeCompactLifecycle(detailLifecycle);", records_source)
+        self.assertIn("<LifecycleBanner lifecycle={detailLifecycle} surface=\"archive\" emptyHint=\"selectMeeting\" />", records_source)
+        self.assertIn("<LifecycleBanner lifecycle={null} surface=\"archive\" emptyHint=\"selectMeeting\" />", records_source)
+        self.assertIn("lifecycleSummary.nextAction", records_source)
+        self.assertIn("lifecycleSummary.stepLabel", records_source)
+        self.assertIn("회의 선택", banner_source)
+        self.assertIn("왼쪽에서 세션을 선택하면 transcript, decision, shared memory를 확인할 수 있습니다.", banner_source)
+        self.assertIn("아카이브에서 transcript, decision, shared memory를 확인하세요.", label_source)
+        self.assertIn("아카이브에서 최종 산출물과 리뷰 기록을 확인하세요.", label_source)
+        self.assertIn("summary.attentionItems.length > 0", banner_source)
+        self.assertIn("summary.unsafePermissionViolations", banner_source)
+        self.assertIn("ArtifactContent", records_source)
+        self.assertIn("artifactNames.map", records_source)
+
+        for forbidden in [
+            "startProvider",
+            "launchProvider",
+            "startRealProvider",
+            "runReleaseHealth",
+            "room-benchmark",
+            "is_default_entry_point: true",
+            "permission_profile_id}</",
+            "session_id}</",
+            "provider_config",
+            "api_key",
+            "prompt:",
+        ]:
+            self.assertNotIn(forbidden, surface)
+
     def test_react_live_tab_subscribes_to_meeting_sse_without_route_flip_or_provider_start(self):
         source = frontend_source()
         api_source = frontend_file("api.ts")

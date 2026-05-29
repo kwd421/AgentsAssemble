@@ -66,6 +66,60 @@ class FrontendLifecycleLabelTests(unittest.TestCase):
                 labels.lifecycleStatusSourceLabel("final_record"),
                 labels.lifecycleStatusSourceLabel("stale_running_inference"),
               ],
+              summary: labels.summarizeCompactLifecycle({
+                state: "blocked_by_pending_turns",
+                status_source: "live_state",
+                counts: {
+                  roles: 3,
+                  bindings: 2,
+                  live_agents: 1,
+                  pending_turns: 2,
+                  official_messages: 5,
+                },
+                role_hints: [
+                  {
+                    role_id: "director",
+                    display_name: "Director",
+                    admission_status: "bound_to_meeting",
+                    unsafe_permission_violations: 0,
+                    permissions: {
+                      meeting_read: true,
+                      lobby_chat: true,
+                      official_turn: true,
+                      web_search: false,
+                      tool_use: false,
+                    },
+                  },
+                  {
+                    role_id: "reviewer",
+                    display_name: "Reviewer",
+                    admission_status: "requested",
+                    unsafe_permission_violations: 2,
+                    permissions: {
+                      meeting_read: true,
+                      lobby_chat: true,
+                      official_turn: false,
+                      web_search: true,
+                      tool_use: true,
+                    },
+                  },
+                ],
+                attention: ["pending_official_turns", "malformed"],
+              }),
+              emptySummary: labels.summarizeCompactLifecycle(null),
+              missingSourceSummary: labels.summarizeCompactLifecycle({
+                state: "preparing",
+                counts: {},
+                role_hints: [],
+                attention: [],
+              }),
+              unknownSourceSummary: labels.summarizeCompactLifecycle({
+                state: "preparing",
+                status_source: "provider_config_/Users/secret_prompt",
+                counts: {},
+                role_hints: [],
+                attention: [],
+              }),
               unknown: labels.lifecycleStateLabel("some_new_state"),
             };
             console.log(JSON.stringify(result));
@@ -96,12 +150,57 @@ class FrontendLifecycleLabelTests(unittest.TestCase):
         self.assertEqual(payload["attention"], ["공식 턴 대기", "장시간 갱신 없음", "기록 파싱 오류"])
         self.assertEqual(payload["sources"], ["실시간 상태", "최종 기록", "정지 추정"])
         self.assertEqual(payload["unknown"], {"label": "Some new state", "tone": "muted"})
+        self.assertEqual(payload["summary"]["state"], "blocked_by_pending_turns")
+        self.assertEqual(payload["summary"]["stepLabel"], "응답 대기")
+        self.assertIn("대기 중인 공식 턴", payload["summary"]["nextAction"])
+        self.assertEqual(payload["summary"]["statusSourceLabel"], "실시간 상태")
+        self.assertEqual(payload["summary"]["rolesTotal"], 3)
+        self.assertEqual(payload["summary"]["boundRoles"], 1)
+        self.assertEqual(payload["summary"]["missingRoles"], 2)
+        self.assertEqual(payload["summary"]["liveAgents"], 1)
+        self.assertEqual(payload["summary"]["pendingTurns"], 2)
+        self.assertEqual(payload["summary"]["officialMessages"], 5)
+        self.assertEqual(payload["summary"]["unsafePermissionViolations"], 2)
+        self.assertEqual(
+            [item["label"] for item in payload["summary"]["attentionItems"]],
+            ["공식 턴 대기", "기록 파싱 오류"],
+        )
+        self.assertEqual(payload["summary"]["hasLifecycle"], True)
+        self.assertEqual(payload["emptySummary"]["state"], "none")
+        self.assertEqual(payload["emptySummary"]["stepLabel"], "회의 없음")
+        self.assertEqual(
+            payload["emptySummary"]["nextAction"],
+            "로비에서 새 회의를 시작하거나 기존 회의를 선택하세요.",
+        )
+        self.assertEqual(payload["emptySummary"]["statusSourceLabel"], "기록 없음")
+        self.assertEqual(payload["emptySummary"]["hasLifecycle"], False)
+        self.assertEqual(payload["missingSourceSummary"]["statusSourceLabel"], "기록 없음")
+        self.assertEqual(payload["unknownSourceSummary"]["statusSourceLabel"], "기록 없음")
 
         visible_labels = json.dumps(
             {
                 "states": [value["label"] for value in payload["states"].values()],
                 "attention": payload["attention"],
                 "sources": payload["sources"],
+                "summary": {
+                    "stepLabel": payload["summary"]["stepLabel"],
+                    "nextAction": payload["summary"]["nextAction"],
+                    "statusSourceLabel": payload["summary"]["statusSourceLabel"],
+                    "attention": [item["label"] for item in payload["summary"]["attentionItems"]],
+                },
+                "emptySummary": {
+                    "stepLabel": payload["emptySummary"]["stepLabel"],
+                    "nextAction": payload["emptySummary"]["nextAction"],
+                    "statusSourceLabel": payload["emptySummary"]["statusSourceLabel"],
+                },
+                "missingSourceSummary": {
+                    "stepLabel": payload["missingSourceSummary"]["stepLabel"],
+                    "statusSourceLabel": payload["missingSourceSummary"]["statusSourceLabel"],
+                },
+                "unknownSourceSummary": {
+                    "stepLabel": payload["unknownSourceSummary"]["stepLabel"],
+                    "statusSourceLabel": payload["unknownSourceSummary"]["statusSourceLabel"],
+                },
                 "unknown": payload["unknown"]["label"],
             },
             ensure_ascii=False,
@@ -112,6 +211,7 @@ class FrontendLifecycleLabelTests(unittest.TestCase):
             "blocked_by_pending_turns",
             "pending_official_turns",
             "stale_running_inference",
+            "provider_config_/Users/secret_prompt",
             "/Users/",
         ):
             self.assertNotIn(raw_contract, visible_labels)

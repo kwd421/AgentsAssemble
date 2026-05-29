@@ -318,6 +318,7 @@ export default function App() {
             <LobbyView
               flow={flow}
               agents={agents}
+              lifecycle={lifecycle}
               refreshFlow={refreshFlow}
               onMafiaStarted={handleMafiaStarted}
               onFlowStarted={handleFlowStarted}

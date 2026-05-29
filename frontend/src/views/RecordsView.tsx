@@ -26,6 +26,8 @@ import {
   lastObservedSummary,
   providerExecutionLabel,
 } from "../lib/agentLabels";
+import { summarizeCompactLifecycle } from "../lib/lifecycleLabels";
+import LifecycleBanner from "./components/LifecycleBanner";
 import ProviderTruthChips from "./components/ProviderTruthChips";
 
 function statusLabel(status: string): string {
@@ -196,6 +198,8 @@ function ArchiveDetail({
   const meeting = detail?.meeting ?? {};
   const artifacts = detail?.artifacts ?? {};
   const artifactNames = Object.keys(artifacts).filter((key) => artifacts[key]);
+  const detailLifecycle = detail?.lifecycle ?? null;
+  const lifecycleSummary = summarizeCompactLifecycle(detailLifecycle);
 
   useEffect(() => {
     if (!activeArtifact && artifactNames.length > 0) {
@@ -206,7 +210,8 @@ function ArchiveDetail({
   if (!detail) {
     return (
       <section className="ops-panel ops-cut flex min-h-[620px] items-center justify-center p-8 text-center">
-        <div>
+        <div className="w-full max-w-2xl">
+          <LifecycleBanner lifecycle={null} surface="archive" emptyHint="selectMeeting" />
           <span className="ops-logo-mark mx-auto mb-5 h-16 w-16" aria-hidden />
           <h1 className="text-[30px] font-black">아카이브</h1>
           <p className="mt-2 max-w-md text-[14px] text-text-muted preserve-words">
@@ -277,6 +282,8 @@ function ArchiveDetail({
 
       <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_410px]">
         <div className="space-y-4">
+          <LifecycleBanner lifecycle={detailLifecycle} surface="archive" emptyHint="selectMeeting" />
+
           <section className="ops-inner rounded-lg p-4">
             <h2 className="mb-3 flex items-center gap-2 text-[17px] font-black">
               <FileText size={18} className="text-accent" />
@@ -296,10 +303,16 @@ function ArchiveDetail({
           <section className="ops-inner rounded-lg p-4">
             <h2 className="mb-3 text-[15px] font-black">다음 단계</h2>
             <div className="space-y-2 text-[13px] text-text-secondary">
-              {["공식 산출물 확인", "미결 질문 검토", "필요 시 Work Mode 승격"].map((item) => (
+              <div className="flex items-center justify-between gap-3 border-b border-accent/10 py-2">
+                <span className="preserve-words">{lifecycleSummary.nextAction}</span>
+                <span className="text-text-muted preserve-words">
+                  {lifecycleSummary.stepLabel}
+                </span>
+              </div>
+              {["미결 질문 검토", "필요 시 Work Mode 승격"].map((item) => (
                 <div key={item} className="flex items-center justify-between gap-3 border-b border-accent/10 py-2 last:border-b-0">
                   <span className="preserve-words">{item}</span>
-                  <span className="text-text-muted">대기</span>
+                  <span className="text-text-muted">참고</span>
                 </div>
               ))}
             </div>

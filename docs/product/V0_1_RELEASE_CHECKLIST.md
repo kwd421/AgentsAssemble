@@ -109,6 +109,15 @@ environment where that dependency is installed.
 These are the next small completion slices. Each one should stay narrow,
 verified, and separate from broad frontend redesign.
 
+Completed evidence:
+
+- Vanilla Lobby, Live, Board, and Archive render compact lifecycle step,
+  next-action, safe counts, and attention labels through the shared static GUI
+  banner.
+- React Lobby and Archive now surface compact lifecycle next-action evidence,
+  complementing the existing React Live lifecycle panel and Board current-step
+  summary while keeping browser parity and default-route flip separate.
+
 1. Clarify the room surfaces:
    - Lobby means pre-meeting staging and agent admission.
    - Live means official room progress.

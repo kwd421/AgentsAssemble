@@ -20,6 +20,7 @@ import {
   stopFlow,
   subscribeLobby,
   type FlowState,
+  type LifecycleProjection,
   type LiveAgent,
   type LobbyEvent,
   type MafiaGame,
@@ -31,6 +32,7 @@ import {
 } from "../lib/agentLabels";
 import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
+import LifecycleBanner from "./components/LifecycleBanner";
 import ProviderTruthChips from "./components/ProviderTruthChips";
 
 const MODE_CARDS = [
@@ -256,12 +258,14 @@ function ModeCard({
 export default function LobbyView({
   flow,
   agents,
+  lifecycle,
   refreshFlow,
   onMafiaStarted,
   onFlowStarted,
 }: {
   flow: FlowState;
   agents: LiveAgent[];
+  lifecycle: LifecycleProjection | null;
   refreshFlow: () => void;
   onMafiaStarted: (game: MafiaGame) => void;
   onFlowStarted: () => void;
@@ -481,6 +485,8 @@ export default function LobbyView({
             </div>
           </div>
         </div>
+
+        <LifecycleBanner lifecycle={lifecycle} surface="lobby" />
 
         <div className="ops-panel ops-cut overflow-hidden">
           <div className="border-b border-accent/14 px-4 py-3">
