@@ -16,6 +16,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from agentsassemble.frontend_runtime import frontend_dist_status
 from agentsassemble.bridges.claude_code_bridge import serve_bridge
 from agentsassemble.antigravity_resident import AntigravityResidentCommandRunner
 from agentsassemble.codex_resident import CodexResidentCommandRunner
@@ -1567,9 +1568,7 @@ def frontend_info_payload(
     backend_parts = urllib.parse.urlparse(backend_url)
     backend_host = backend_parts.hostname or "127.0.0.1"
     backend_port = backend_parts.port or 8765
-    dist_root = frontend_dist_root or _default_frontend_dist_root()
-    app_index_present = (dist_root / "index.html").is_file()
-    app_assets_dir_present = (dist_root / "assets").is_dir()
+    dist_status = frontend_dist_status(frontend_dist_root)
     return {
         "frontend_dir": "frontend",
         "frontend_url": frontend_url,
@@ -1582,9 +1581,9 @@ def frontend_info_payload(
         "react_app_path": react_app_path,
         "react_app_url": react_app_url,
         "app_dist_path": "frontend/dist",
-        "app_static_available": app_index_present and app_assets_dir_present,
-        "app_index_present": app_index_present,
-        "app_assets_dir_present": app_assets_dir_present,
+        "app_static_available": dist_status.static_available,
+        "app_index_present": dist_status.index_present,
+        "app_assets_dir_present": dist_status.assets_dir_present,
         "parity_matrix_doc": parity_matrix_doc,
         "is_default_entry_point": False,
         "launch_commands": [
@@ -1619,12 +1618,6 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
         print(f"  {command}")
     print("- Note: React/Vite is not the default entry point yet.")
     return 0
-
-
-def _default_frontend_dist_root() -> Path:
-    return Path(__file__).resolve().parent.parent / "frontend" / "dist"
-
-
 def run_release_health_command(args: argparse.Namespace) -> int:
     if getattr(args, "release_health_command", None) in {None, "list"}:
         payload = release_health_catalog_payload()

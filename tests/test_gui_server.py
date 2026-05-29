@@ -7402,6 +7402,120 @@ class GuiServerTests(unittest.TestCase):
         self.assertTrue(servers[0].closed)
         self.assertTrue(FakeSupervisor.instances[0].closed)
 
+    def test_serve_gui_startup_banner_shows_react_preview_when_dist_is_available(self):
+        class FakeServer:
+            def __init__(self, address, handler):
+                self.server_address = (address[0], 48765 if address[1] == 0 else address[1])
+
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+            def server_close(self):
+                return None
+
+        class FakeSupervisor:
+            def __init__(self, output_root):
+                del output_root
+
+            def start_monitor(self):
+                return None
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            dist = Path(temp_dir) / "dist"
+            (dist / "assets").mkdir(parents=True)
+            (dist / "index.html").write_text("<div id='root'></div>", encoding="utf-8")
+            stdout = StringIO()
+
+            with patch("agentsassemble.gui.LiveAgentProcessSupervisor", FakeSupervisor):
+                with patch("agentsassemble.gui.ThreadingHTTPServer", FakeServer):
+                    with patch("sys.stdout", stdout):
+                        serve_gui(host="127.0.0.1", port=0, output_root=root, frontend_dist_root=dist)
+
+        output = stdout.getvalue()
+        self.assertIn("AgentsAssemble GUI:", output)
+        self.assertIn("Default console: http://127.0.0.1:48765/", output)
+        self.assertIn("Legacy console: http://127.0.0.1:48765/legacy/", output)
+        self.assertIn("React preview: http://127.0.0.1:48765/app/", output)
+        self.assertNotIn("React preview build missing", output)
+
+    def test_serve_gui_startup_banner_keeps_react_preview_as_build_hint_when_dist_is_missing(self):
+        class FakeServer:
+            def __init__(self, address, handler):
+                self.server_address = (address[0], 48766 if address[1] == 0 else address[1])
+
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+            def server_close(self):
+                return None
+
+        class FakeSupervisor:
+            def __init__(self, output_root):
+                del output_root
+
+            def start_monitor(self):
+                return None
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            missing_dist = Path(temp_dir) / "missing-dist"
+            stdout = StringIO()
+
+            with patch("agentsassemble.gui.LiveAgentProcessSupervisor", FakeSupervisor):
+                with patch("agentsassemble.gui.ThreadingHTTPServer", FakeServer):
+                    with patch("sys.stdout", stdout):
+                        serve_gui(host="127.0.0.1", port=0, output_root=root, frontend_dist_root=missing_dist)
+
+        output = stdout.getvalue()
+        self.assertIn("Default console: http://127.0.0.1:48766/", output)
+        self.assertIn("Legacy console: http://127.0.0.1:48766/legacy/", output)
+        self.assertNotIn("React preview: http://127.0.0.1:48766/app/", output)
+        self.assertIn("React preview build missing: run npm --prefix frontend run build", output)
+
+    def test_serve_gui_startup_banner_treats_partial_react_dist_as_missing(self):
+        class FakeServer:
+            def __init__(self, address, handler):
+                self.server_address = (address[0], 48767 if address[1] == 0 else address[1])
+
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+            def server_close(self):
+                return None
+
+        class FakeSupervisor:
+            def __init__(self, output_root):
+                del output_root
+
+            def start_monitor(self):
+                return None
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            partial_dist = Path(temp_dir) / "partial-dist"
+            partial_dist.mkdir()
+            (partial_dist / "index.html").write_text("<div id='root'></div>", encoding="utf-8")
+            stdout = StringIO()
+
+            with patch("agentsassemble.gui.LiveAgentProcessSupervisor", FakeSupervisor):
+                with patch("agentsassemble.gui.ThreadingHTTPServer", FakeServer):
+                    with patch("sys.stdout", stdout):
+                        serve_gui(host="127.0.0.1", port=0, output_root=root, frontend_dist_root=partial_dist)
+
+        output = stdout.getvalue()
+        self.assertNotIn("React preview: http://127.0.0.1:48767/app/", output)
+        self.assertIn("React preview build missing: run npm --prefix frontend run build", output)
+
     def test_serve_gui_autostarts_explicit_live_agent_config_after_server_bind(self):
         class FakeServer:
             def __init__(self, address, handler):

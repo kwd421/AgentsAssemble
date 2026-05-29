@@ -108,6 +108,12 @@ from agentsassemble.mafia_game import (
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_lifecycle import infer_live_status, project_meeting_lifecycle
 from agentsassemble.provider_health import provider_health_report
+from agentsassemble.frontend_runtime import (
+    REACT_APP_BUILD_COMMAND,
+    REACT_APP_MISSING_BUILD_MESSAGE,
+    default_frontend_dist_root,
+    frontend_dist_status,
+)
 from agentsassemble.release_health import release_health_catalog_payload
 from agentsassemble.meeting_events import (
     append_live_event,
@@ -699,6 +705,7 @@ def serve_gui(
     live_agent_max_restarts: int = 0,
     live_agent_restart_backoff_seconds: float = 5.0,
     live_agent_stale_restart_after_seconds: float = 0.0,
+    frontend_dist_root: Path | None = None,
 ) -> None:
     root = output_root or Path(".agentsassemble")
     process_supervisor = LiveAgentProcessSupervisor(root)
@@ -716,6 +723,7 @@ def serve_gui(
         session_run_controller=session_run_controller,
         session_run_monitor=session_run_monitor,
         flow_supervisor=flow_supervisor,
+        frontend_dist_root=frontend_dist_root,
     )
     server = ThreadingHTTPServer((host, port), handler)
     try:
@@ -735,7 +743,7 @@ def serve_gui(
                 stale_restart_after_seconds=live_agent_stale_restart_after_seconds,
             )
         session_run_monitor.start()
-        print(f"AgentsAssemble GUI: {server_url}")
+        _print_gui_startup_banner(server_url, frontend_dist_root=frontend_dist_root)
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping AgentsAssemble GUI")
@@ -7008,6 +7016,18 @@ def _local_server_url(server_address: tuple[object, ...]) -> str:
     return f"http://{host}:{port}"
 
 
+def _print_gui_startup_banner(server_url: str, *, frontend_dist_root: Path | None = None) -> None:
+    base_url = server_url.rstrip("/")
+    dist_status = frontend_dist_status(frontend_dist_root)
+    print(f"AgentsAssemble GUI: {base_url}")
+    print(f"- Default console: {base_url}/")
+    print(f"- Legacy console: {base_url}/legacy/")
+    if dist_status.static_available:
+        print(f"- React preview: {base_url}/app/")
+    else:
+        print(f"- React preview build missing: run {REACT_APP_BUILD_COMMAND}")
+
+
 def _make_handler(
     output_root: Path,
     *,
@@ -7018,7 +7038,7 @@ def _make_handler(
     frontend_dist_root: Path | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     static_root = Path(__file__).parent / "static"
-    react_app_root = (frontend_dist_root or _default_frontend_dist_root()).resolve()
+    react_app_root = (frontend_dist_root or default_frontend_dist_root()).resolve()
     live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
     live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
     live_agent_flow_supervisor = flow_supervisor or LiveAgentFlowSupervisor(output_root)
@@ -9197,8 +9217,8 @@ def _make_handler(
 
         def _send_react_app_index(self, frontend_root: Path) -> None:
             index_path = frontend_root / "index.html"
-            if not index_path.exists() or not index_path.is_file():
-                self._send_error(HTTPStatus.SERVICE_UNAVAILABLE, _REACT_APP_MISSING_BUILD_MESSAGE)
+            if not frontend_dist_status(frontend_root).static_available:
+                self._send_error(HTTPStatus.SERVICE_UNAVAILABLE, REACT_APP_MISSING_BUILD_MESSAGE)
                 return
             html = index_path.read_text(encoding="utf-8")
             data = _rewrite_react_app_index(html).encode("utf-8")
@@ -9417,7 +9437,6 @@ def _safe_static_path(static_root: Path, relative_path: str) -> Path | None:
     return candidate
 
 
-_REACT_APP_MISSING_BUILD_MESSAGE = "React frontend build is not available. Run npm --prefix frontend run build."
 _REACT_APP_CONTENT_TYPES = {
     ".css": "text/css; charset=utf-8",
     ".html": "text/html; charset=utf-8",
@@ -9431,10 +9450,6 @@ _REACT_APP_CONTENT_TYPES = {
     ".webp": "image/webp",
     ".woff2": "font/woff2",
 }
-
-
-def _default_frontend_dist_root() -> Path:
-    return Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
 def _react_app_content_type(path: Path) -> str:

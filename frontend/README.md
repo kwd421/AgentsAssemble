@@ -27,7 +27,9 @@ Open http://127.0.0.1:8765/app/
 
 This preview route is still opt-in. `/` remains the vanilla console and
 `/legacy/` remains the fallback until the parity matrix supports a deliberate
-default flip.
+default flip. The GUI startup banner prints the `/app/` preview URL when the
+build is present; otherwise it prints the build command instead of implying that
+the React preview is ready.
 
 ## Prerequisites
 
