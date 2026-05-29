@@ -258,6 +258,18 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("promoteLobby", source)
         self.assertNotIn("lobby.promote_to_official", source)
 
+    def test_react_shell_identifies_latest_client_and_legacy_boundary(self):
+        app_source = frontend_file("App.tsx")
+        css = (FRONTEND_DIR / "index.css").read_text()
+
+        self.assertIn("ops-client-marker", app_source)
+        self.assertIn("신형 React", app_source)
+        self.assertIn("room client", app_source)
+        self.assertIn('href="/legacy/"', app_source)
+        self.assertIn("구형 콘솔", app_source)
+        self.assertIn(".ops-client-marker", css)
+        self.assertIn(".ops-legacy-link", css)
+
     def test_react_lobby_composer_restores_draft_on_submit_failure(self):
         composer_source = frontend_file("views/components/LobbyComposer.tsx")
         model_source = frontend_file("lib/lobbyComposerModel.ts")

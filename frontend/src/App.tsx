@@ -259,6 +259,18 @@ export default function App() {
                 AgentsAssemble
               </span>
             </button>
+            <div className="ops-client-marker hidden items-center gap-2 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wide md:flex">
+              <span className="text-accent">신형 React</span>
+              <span className="h-1 w-1 rounded-full bg-text-muted/60" aria-hidden />
+              <span className="text-text-muted">room client</span>
+              <a
+                href="/legacy/"
+                className="ops-legacy-link rounded-md px-2 py-1 text-[10px] font-black uppercase"
+                aria-label="구형 콘솔 열기"
+              >
+                구형 콘솔
+              </a>
+            </div>
 
             <nav className="ops-nav-scroll order-3 flex min-w-full flex-1 items-center justify-start gap-1 overflow-x-auto rounded-xl border border-accent/10 bg-black/18 px-1 py-1 sm:order-none sm:min-w-0 sm:justify-center lg:mx-6">
               {CHANNELS.map(({ id, label, icon: Icon }) => {
