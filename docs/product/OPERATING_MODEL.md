@@ -90,6 +90,10 @@ report.
   vanilla console is reachable at both `/` and `/legacy/`, the default entry
   point is unchanged, and React defaulting still requires the documented parity
   evidence instead of a route flip alone.
+- The built React/Vite frontend may be served by the Python GUI at `/app/` as
+  an opt-in preview when `frontend/dist` exists. This does not make React the
+  default entry point; `/` remains the vanilla console and `/legacy/` remains
+  the fallback.
 - The detailed roadmap board is a later product-UI feature, not another panel
   to bolt onto the current vanilla console. When the React/Vite frontend track
   starts, add a dedicated roadmap view that can show long-term epics and

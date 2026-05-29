@@ -15,6 +15,20 @@ operator console is available at `/` and `/legacy/`; the default entry point is 
 The parity gate for any future default-route change lives in
 `docs/product/legacy-react-parity-matrix.md`.
 
+When a production build exists, the Python GUI can also serve the React preview
+from the same backend at `/app/`:
+
+```bash
+npm run build
+python3 -m agentsassemble.cli gui --port 8765
+```
+
+Open http://127.0.0.1:8765/app/
+
+This preview route is still opt-in. `/` remains the vanilla console and
+`/legacy/` remains the fallback until the parity matrix supports a deliberate
+default flip.
+
 ## Prerequisites
 
 - Node.js 20.19+ or newer

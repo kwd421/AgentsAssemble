@@ -7015,8 +7015,10 @@ def _make_handler(
     session_run_controller: LiveAgentSessionRunController | None = None,
     session_run_monitor: LiveAgentSessionRunMonitor | None = None,
     flow_supervisor: LiveAgentFlowSupervisor | None = None,
+    frontend_dist_root: Path | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     static_root = Path(__file__).parent / "static"
+    react_app_root = (frontend_dist_root or _default_frontend_dist_root()).resolve()
     live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
     live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
     live_agent_flow_supervisor = flow_supervisor or LiveAgentFlowSupervisor(output_root)
@@ -7031,6 +7033,24 @@ def _make_handler(
                 return
             if path in {"/legacy", "/legacy/"}:
                 self._send_file(static_root / "index.html", "text/html; charset=utf-8")
+                return
+            if path in {"/app", "/app/"}:
+                self._send_react_app_index(react_app_root)
+                return
+            if path.startswith("/app/"):
+                rel = unquote(path.removeprefix("/app/"))
+                app_path = _safe_static_path(react_app_root, rel)
+                if app_path is None:
+                    self._send_error(HTTPStatus.NOT_FOUND, "File not found")
+                    return
+                if app_path.name == "index.html":
+                    self._send_react_app_index(react_app_root)
+                    return
+                self._send_file(
+                    app_path,
+                    _react_app_content_type(app_path),
+                    cache_control=_react_app_cache_control(app_path),
+                )
                 return
             if path.startswith("/legacy/static/"):
                 rel = path.removeprefix("/legacy/static/")
@@ -9175,16 +9195,34 @@ def _make_handler(
             )
             self._send_json({"status": response_status, "session_run": session_run})
 
-        def _send_file(self, path: Path, content_type: str | None = None) -> None:
+        def _send_react_app_index(self, frontend_root: Path) -> None:
+            index_path = frontend_root / "index.html"
+            if not index_path.exists() or not index_path.is_file():
+                self._send_error(HTTPStatus.SERVICE_UNAVAILABLE, _REACT_APP_MISSING_BUILD_MESSAGE)
+                return
+            html = index_path.read_text(encoding="utf-8")
+            data = _rewrite_react_app_index(html).encode("utf-8")
+            self._send_bytes(data, "text/html; charset=utf-8", cache_control="no-cache")
+
+        def _send_file(
+            self,
+            path: Path,
+            content_type: str | None = None,
+            *,
+            cache_control: str = "no-store",
+        ) -> None:
             if not path.exists() or not path.is_file():
                 self._send_error(HTTPStatus.NOT_FOUND, "File not found")
                 return
             guessed = content_type or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             data = path.read_bytes()
+            self._send_bytes(data, guessed, cache_control=cache_control)
+
+        def _send_bytes(self, data: bytes, content_type: str, *, cache_control: str) -> None:
             self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", guessed)
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", cache_control)
             self.end_headers()
             self.wfile.write(data)
 
@@ -9377,3 +9415,35 @@ def _safe_static_path(static_root: Path, relative_path: str) -> Path | None:
     except ValueError:
         return None
     return candidate
+
+
+_REACT_APP_MISSING_BUILD_MESSAGE = "React frontend build is not available. Run npm --prefix frontend run build."
+_REACT_APP_CONTENT_TYPES = {
+    ".css": "text/css; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+    ".ico": "image/x-icon",
+    ".js": "text/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".map": "application/json; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".webp": "image/webp",
+    ".woff2": "font/woff2",
+}
+
+
+def _default_frontend_dist_root() -> Path:
+    return Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+
+def _react_app_content_type(path: Path) -> str:
+    return _REACT_APP_CONTENT_TYPES.get(path.suffix.lower()) or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+
+
+def _react_app_cache_control(path: Path) -> str:
+    return "no-cache" if path.name == "index.html" else "public, max-age=31536000, immutable"
+
+
+def _rewrite_react_app_index(html: str) -> str:
+    return html.replace('src="/assets/', 'src="/app/assets/').replace('href="/assets/', 'href="/app/assets/')

@@ -3,7 +3,9 @@
 ## Purpose And Non-Goals
 
 This matrix tracks the evidence required before a future slice may make the
-React/Vite frontend the default entry point for the local GUI room.
+React/Vite frontend the default entry point for the local GUI room. The Python
+GUI may serve the built React app at `/app/` as an opt-in preview route, but
+that route is not the default flip.
 
 Filled rows are necessary, but filled rows are not sufficient for defaulting React.
 A route flip still needs an explicit product/operator decision, fresh
@@ -22,6 +24,9 @@ from the vanilla console:
   attachment, and lifecycle reads.
 - The legacy fallback at `/legacy/` and `/legacy/static/*` is reachable,
   isolated, and tested.
+- The React preview route at `/app/` is reachable only when `frontend/dist`
+  exists, rejects traversal, rewrites Vite `/assets/*` references under
+  `/app/assets/*`, and reports static availability through `frontend-info`.
 - `frontend-info` still reports `is_default_entry_point: false` until the
   future default flip is explicitly approved.
 - Play Mode, Work Mode, official records, and provider startup approval remain
@@ -40,8 +45,8 @@ Status values:
 | --- | --- | --- | --- | --- | --- |
 | Default entry | `/` | Future React build | verified for vanilla only | `tests/test_gui_server.py::test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes` | `/` still serves vanilla. |
 | Legacy fallback | `/legacy/` | Not applicable | verified | `tests/test_gui_server.py::test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes` | Required before any route flip. |
-| Static assets | `/static/*` | `/legacy/static/*`, Vite dev assets | verified for vanilla fallback, partial for React | `tests/test_static_ui_assets.py`, `npm run build` when React changes | React dist is not served by Python yet. |
-| Vite dev surface | Not applicable | `http://127.0.0.1:5173` | partial | `frontend/README.md`, `frontend/vite.config.ts` | Dev proxy only; not the default entry point. |
+| Static assets | `/static/*` | `/legacy/static/*`, `/app/*`, Vite dev assets | verified for vanilla fallback and React preview serving, partial for React parity | `tests/test_static_ui_assets.py`, `tests/test_gui_server.py::test_react_app_preview_route_serves_dist_without_changing_default_routes`, `npm run build` when React changes | `/app/` serves ignored build output only when `frontend/dist` exists; `/` is still vanilla. |
+| Vite dev surface | Not applicable | `http://127.0.0.1:5173`, `/app/` built preview | partial | `frontend/README.md`, `frontend/vite.config.ts`, `python3 -m agentsassemble.cli frontend-info --json` | Dev proxy and built preview only; neither is the default entry point. |
 | Meeting list | `/api/meetings` | `fetchMeetings()` | partial | `frontend/src/api.ts`, `tests/test_static_ui_assets.py` | Needs browser parity proof before flip. |
 | Meeting payload | `/api/meetings/<meeting-id>` | `fetchMeeting()` | partial | `frontend/src/api.ts` | Full archive rendering parity is not proven. |
 | Meeting lifecycle | `/api/meetings/<meeting-id>/lifecycle` | `fetchMeetingLifecycle()` | partial | `tests/test_static_ui_assets.py::test_react_live_tab_surfaces_meeting_lifecycle_projection` | Labels are tested; live browser parity remains separate. |
@@ -86,9 +91,24 @@ The legacy console namespace is the fallback for future React work:
   path guard.
 - The default entry point is unchanged until the future flip is approved.
 
+The React preview namespace is the same-backend opt-in route:
+
+- `/app/` serves `frontend/dist/index.html` when the ignored build output
+  exists.
+- `/app/assets/*` serves files from `frontend/dist/assets/*` through the same
+  root-resolution guard.
+- `/app/` returns a clear build hint instead of crashing when `frontend/dist`
+  is absent.
+- `/app/` rewrites Vite `/assets/*` references to `/app/assets/*`, so the
+  backend route does not need to expose root-level `/assets/*`.
+- `frontend-info` reports `react_app_url`, `app_static_available`, and the
+  individual index/assets checks.
+
 Evidence:
 
 - `tests/test_gui_server.py::test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes`
+- `tests/test_gui_server.py::test_react_app_preview_route_serves_dist_without_changing_default_routes`
+- `tests/test_gui_server.py::test_react_app_preview_route_reports_missing_dist_without_crashing`
 - `python3 -m agentsassemble.cli frontend-info --json`
 
 ## Verification Index
@@ -98,7 +118,7 @@ Use these checks to support parity rows:
 | Check | Supports |
 | --- | --- |
 | `python3 -m unittest tests.test_docs_architecture -v` | Matrix existence, cross-references, opt-in boundary. |
-| `python3 -m unittest tests.test_cli_timeout -v` | `frontend-info` contract and `is_default_entry_point` boundary. |
+| `python3 -m unittest tests.test_cli_timeout -v` | `frontend-info` contract, `/app/` preview metadata, and `is_default_entry_point` boundary. |
 | `python3 -m unittest tests.test_static_ui_assets -v` | Static asset contracts and React source evidence labels. |
 | `python3 -m unittest tests.test_gui_server -v` | Python GUI routes, legacy fallback, REST/SSE safety. |
 | `cd frontend && npm run build` | React build health when React source changes. |
@@ -108,7 +128,7 @@ Use these checks to support parity rows:
 ## Explicit Non-Goals
 
 - No route flip in this slice.
-- No serving `frontend/dist` from the Python GUI server.
+- No default-serving React from `/`.
 - No React component, Tailwind, Vite, or build pipeline change.
 - No new REST or SSE endpoint.
 - No default-entry-point change.

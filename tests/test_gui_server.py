@@ -19358,6 +19358,70 @@ class GuiServerTests(unittest.TestCase):
         finally:
             raised.exception.close()
 
+    def test_react_app_preview_route_serves_dist_without_changing_default_routes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            dist = Path(temp_dir) / "dist"
+            assets = dist / "assets"
+            assets.mkdir(parents=True)
+            (dist / "index.html").write_text(
+                '<div id="root"></div><script type="module" src="/assets/app.js"></script>'
+                '<link rel="stylesheet" href="/assets/app.css">',
+                encoding="utf-8",
+            )
+            (assets / "app.js").write_text("console.log('react preview');", encoding="utf-8")
+            (assets / "app.css").write_text("body{color:white}", encoding="utf-8")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, frontend_dist_root=dist))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                root_html = urlopen(f"{base}/", timeout=4).read()
+                legacy_html = urlopen(f"{base}/legacy/", timeout=4).read()
+                app_response = urlopen(f"{base}/app/", timeout=4)
+                app_html = app_response.read().decode("utf-8")
+                asset_response = urlopen(f"{base}/app/assets/app.js", timeout=4)
+                asset_body = asset_response.read().decode("utf-8")
+                with self.assertRaises(HTTPError) as escaped:
+                    urlopen(f"{base}/app/assets/%2e%2e/%2e%2e/secret.txt", timeout=4)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        self.assertEqual(root_html, legacy_html)
+        self.assertIn('src="/app/assets/app.js"', app_html)
+        self.assertIn('href="/app/assets/app.css"', app_html)
+        self.assertEqual(app_response.headers.get("Content-Type"), "text/html; charset=utf-8")
+        self.assertEqual(app_response.headers.get("Cache-Control"), "no-cache")
+        self.assertIn("javascript", asset_response.headers.get("Content-Type", ""))
+        self.assertEqual(asset_response.headers.get("Cache-Control"), "public, max-age=31536000, immutable")
+        self.assertEqual(asset_body, "console.log('react preview');")
+        try:
+            self.assertEqual(escaped.exception.code, 404)
+        finally:
+            escaped.exception.close()
+
+    def test_react_app_preview_route_reports_missing_dist_without_crashing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "room"
+            missing_dist = Path(temp_dir) / "missing-dist"
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root, frontend_dist_root=missing_dist))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(f"{base}/app/", timeout=4)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+        try:
+            self.assertEqual(raised.exception.code, 503)
+            self.assertIn("npm --prefix frontend run build", raised.exception.read().decode("utf-8"))
+        finally:
+            raised.exception.close()
+
     def test_meeting_payload_endpoint_cannot_escape_meetings_root(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

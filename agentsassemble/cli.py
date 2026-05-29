@@ -1550,16 +1550,26 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
-def frontend_info_payload(*, backend: str = "http://127.0.0.1:8765", port: int = 5173) -> dict[str, object]:
+def frontend_info_payload(
+    *,
+    backend: str = "http://127.0.0.1:8765",
+    port: int = 5173,
+    frontend_dist_root: Path | None = None,
+) -> dict[str, object]:
     backend_url = str(backend or "http://127.0.0.1:8765").rstrip("/") or "http://127.0.0.1:8765"
     frontend_port = int(port)
     frontend_url = f"http://127.0.0.1:{frontend_port}"
     legacy_console_path = "/legacy/"
     legacy_console_url = backend_url + legacy_console_path
+    react_app_path = "/app/"
+    react_app_url = backend_url + react_app_path
     parity_matrix_doc = "docs/product/legacy-react-parity-matrix.md"
     backend_parts = urllib.parse.urlparse(backend_url)
     backend_host = backend_parts.hostname or "127.0.0.1"
     backend_port = backend_parts.port or 8765
+    dist_root = frontend_dist_root or _default_frontend_dist_root()
+    app_index_present = (dist_root / "index.html").is_file()
+    app_assets_dir_present = (dist_root / "assets").is_dir()
     return {
         "frontend_dir": "frontend",
         "frontend_url": frontend_url,
@@ -1569,6 +1579,12 @@ def frontend_info_payload(*, backend: str = "http://127.0.0.1:8765", port: int =
         "legacy_console_url": backend_url,
         "legacy_console_path": legacy_console_path,
         "legacy_console_namespace_url": legacy_console_url,
+        "react_app_path": react_app_path,
+        "react_app_url": react_app_url,
+        "app_dist_path": "frontend/dist",
+        "app_static_available": app_index_present and app_assets_dir_present,
+        "app_index_present": app_index_present,
+        "app_assets_dir_present": app_assets_dir_present,
         "parity_matrix_doc": parity_matrix_doc,
         "is_default_entry_point": False,
         "launch_commands": [
@@ -1577,6 +1593,7 @@ def frontend_info_payload(*, backend: str = "http://127.0.0.1:8765", port: int =
         ],
         "notes": [
             "assemble gui remains the default dependency-light vanilla backend/operator console.",
+            "The built React preview is available from the same GUI at /app/ after npm --prefix frontend run build.",
             "The React/Vite frontend is an opt-in development surface and does not start provider CLIs.",
             "The Vite proxy should target the same backend URL shown here unless AGENTSASSEMBLE_API_TARGET overrides it.",
             f"Review {parity_matrix_doc} before any future default flip to React.",
@@ -1592,14 +1609,20 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
     print("AgentsAssemble frontend launch info")
     print(f"- Default console/backend: {payload['legacy_console_url']}")
     print(f"- Legacy console namespace: {payload['legacy_console_namespace_url']}")
+    print(f"- React preview route: {payload['react_app_url']}")
     print(f"- React/Vite opt-in UI: {payload['frontend_url']}")
     print(f"- Vite API proxy target: {payload['frontend_dev_proxy_target']}")
+    print(f"- Built React static available: {payload['app_static_available']} ({payload['app_dist_path']})")
     print(f"- Parity matrix: {payload['parity_matrix_doc']}")
     print("- Commands:")
     for command in payload["launch_commands"]:
         print(f"  {command}")
     print("- Note: React/Vite is not the default entry point yet.")
     return 0
+
+
+def _default_frontend_dist_root() -> Path:
+    return Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
 def run_release_health_command(args: argparse.Namespace) -> int:

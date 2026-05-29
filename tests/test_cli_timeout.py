@@ -17,7 +17,7 @@ from io import StringIO
 from unittest.mock import patch
 
 from agentsassemble import cli as cli_module
-from agentsassemble.cli import build_parser, main
+from agentsassemble.cli import build_parser, frontend_info_payload, main
 from agentsassemble.gui import _make_handler, append_lobby_event, read_lobby
 from agentsassemble.live_agent_operations import append_live_agent_operation
 from agentsassemble.live_agent_runner import ResidentAgentConfig
@@ -127,6 +127,12 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["legacy_console_path"], "/legacy/")
         self.assertEqual(payload["legacy_console_url"], "http://127.0.0.1:9999")
         self.assertEqual(payload["legacy_console_namespace_url"], "http://127.0.0.1:9999/legacy/")
+        self.assertEqual(payload["react_app_path"], "/app/")
+        self.assertEqual(payload["react_app_url"], "http://127.0.0.1:9999/app/")
+        self.assertEqual(payload["app_dist_path"], "frontend/dist")
+        self.assertIn("app_static_available", payload)
+        self.assertIn("app_index_present", payload)
+        self.assertIn("app_assets_dir_present", payload)
         self.assertEqual(payload["parity_matrix_doc"], "docs/product/legacy-react-parity-matrix.md")
         self.assertFalse(payload["is_default_entry_point"])
         self.assertIn("--port 9999", payload["launch_commands"][0])
@@ -143,9 +149,35 @@ class CliTimeoutTests(unittest.TestCase):
         output = stdout.getvalue()
         self.assertIn("Default console/backend: http://127.0.0.1:8765", output)
         self.assertIn("Legacy console namespace: http://127.0.0.1:8765/legacy/", output)
+        self.assertIn("React preview route: http://127.0.0.1:8765/app/", output)
         self.assertIn("React/Vite opt-in UI: http://127.0.0.1:5173", output)
         self.assertIn("Parity matrix: docs/product/legacy-react-parity-matrix.md", output)
         self.assertIn("not the default entry point", output)
+
+    def test_frontend_info_reports_react_app_static_availability_from_dist(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing_dist = Path(temp_dir) / "missing"
+            missing_payload = frontend_info_payload(
+                backend="http://127.0.0.1:9876",
+                port=5178,
+                frontend_dist_root=missing_dist,
+            )
+
+            dist = Path(temp_dir) / "dist"
+            (dist / "assets").mkdir(parents=True)
+            (dist / "index.html").write_text("<div></div>", encoding="utf-8")
+            present_payload = frontend_info_payload(
+                backend="http://127.0.0.1:9876",
+                port=5178,
+                frontend_dist_root=dist,
+            )
+
+        self.assertFalse(missing_payload["app_static_available"])
+        self.assertFalse(missing_payload["app_index_present"])
+        self.assertFalse(missing_payload["app_assets_dir_present"])
+        self.assertTrue(present_payload["app_static_available"])
+        self.assertTrue(present_payload["app_index_present"])
+        self.assertTrue(present_payload["app_assets_dir_present"])
 
     def test_live_agent_local_resources_parser(self):
         args = build_parser().parse_args(
