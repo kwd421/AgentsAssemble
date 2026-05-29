@@ -68,10 +68,30 @@ class FrontendBoardLifecycleTests(unittest.TestCase):
                     official_turn: false,
                     web_search: true,
                     tool_use: true,
+                    git_write: true,
+                    secrets: true,
+                  },
+                },
+                {
+                  role_id: "review",
+                  display_name: "Review Lead",
+                  admission_status: "present_unapproved",
+                  unsafe_permission_violations: 1,
+                  permissions: {
+                    meeting_read: true,
+                    lobby_chat: false,
+                    official_turn: false,
+                    web_search: false,
+                    tool_use: false,
                   },
                 },
               ],
-              attention: ["pending_official_turns"],
+              attention: [
+                "pending_official_turns",
+                "stalled_running_state",
+                "malformed",
+                "future_attention_code",
+              ],
             };
 
             const states = [
@@ -125,10 +145,31 @@ class FrontendBoardLifecycleTests(unittest.TestCase):
         self.assertEqual(summary["rolesTotal"], 3)
         self.assertEqual(summary["boundRoles"], 1)
         self.assertEqual(summary["missingRoles"], 2)
-        self.assertEqual(summary["unsafePermissionViolations"], 2)
+        self.assertEqual(summary["unsafePermissionViolations"], 3)
         self.assertEqual(summary["officialTurnRoles"], 1)
         self.assertEqual(summary["toolUseRoles"], 1)
         self.assertEqual(summary["webSearchRoles"], 1)
+        self.assertEqual(
+            [item["label"] for item in summary["attentionItems"]],
+            ["공식 턴 대기", "세션 정지 추정", "기록 손상", "future_attention_code"],
+        )
+        self.assertEqual(
+            [item["tone"] for item in summary["attentionItems"]],
+            ["warn", "danger", "danger", "info"],
+        )
+        self.assertEqual(
+            [role["admissionLabel"] for role in summary["roles"]],
+            ["입장 완료", "입장 대기", "미승인 입장"],
+        )
+        self.assertEqual(summary["roles"][0]["roleId"], "director")
+        self.assertEqual(summary["roles"][0]["displayName"], "Director")
+        self.assertEqual(summary["roles"][1]["unsafePermissionViolations"], 2)
+        self.assertEqual(summary["roles"][1]["permissions"]["tool_use"], True)
+        self.assertNotIn("git_write", summary["roles"][1]["permissions"])
+        self.assertNotIn("secrets", summary["roles"][1]["permissions"])
+        self.assertEqual(summary["roles"][2]["permissions"]["lobby_chat"], False)
+        self.assertEqual(payload["empty"]["attentionItems"], [])
+        self.assertEqual(payload["empty"]["roles"], [])
         self.assertEqual(payload["empty"]["stepLabel"], "상태 불명")
         self.assertEqual(payload["empty"]["rolesTotal"], 0)
 

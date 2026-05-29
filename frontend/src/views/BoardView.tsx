@@ -115,6 +115,18 @@ function BoardCard({
   );
 }
 
+function attentionToneClass(tone: "info" | "warn" | "danger") {
+  if (tone === "danger") return "border-offline/45 bg-offline/10 text-offline";
+  if (tone === "warn") return "border-idle/45 bg-idle/10 text-idle";
+  return "border-accent/35 bg-accent/8 text-accent";
+}
+
+function admissionToneClass(status: string) {
+  if (status === "bound_to_meeting") return "text-online";
+  if (status === "present_unapproved" || status === "missing_binding") return "text-offline";
+  return "text-idle";
+}
+
 export default function BoardView({
   flow,
   agents,
@@ -182,6 +194,24 @@ export default function BoardView({
               {lifecycleSummary.nextAction}
             </p>
           </div>
+          {lifecycleSummary.attentionItems.length > 0 && (
+            <div className="mt-3 rounded-lg border border-idle/20 bg-idle/5 p-3">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                주의
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {lifecycleSummary.attentionItems.map((item) => (
+                  <span
+                    key={item.code}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] font-bold preserve-words ${attentionToneClass(item.tone)}`}
+                    title={item.code}
+                  >
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
             <div className="ops-inner rounded-lg p-3">
               <p className="text-text-muted">공식 턴 대기</p>
@@ -195,25 +225,65 @@ export default function BoardView({
         </section>
 
         <section className="ops-panel ops-cut p-4">
-          <h2 className="mb-4 text-[17px] font-black">역할 필터</h2>
+          <h2 className="mb-4 text-[17px] font-black">역할 상세</h2>
           <div className="space-y-2">
-            {agents.slice(0, 6).map((agent, index) => (
-              <label key={agent.agent_id} className="ops-inner flex items-center gap-3 rounded-lg px-3 py-2 text-[13px]">
-                <input
-                  type="checkbox"
-                  checked
-                  readOnly
-                  className="h-4 w-4 accent-cyan-400"
-                />
-                <span className="hex-badge h-7 w-7">
-                  <Bot size={12} />
-                </span>
-                <span className="min-w-0 flex-1 truncate preserve-words">
-                  {agentName(agent)}
-                </span>
-                <span className="text-text-muted">#{index + 1}</span>
-              </label>
-            ))}
+            {lifecycleSummary.roles.length ? (
+              lifecycleSummary.roles.map((role, index) => (
+                <article key={role.roleId} className="ops-inner rounded-lg px-3 py-3 text-[13px]">
+                  <div className="flex items-start gap-3">
+                    <span className="hex-badge h-8 w-8 shrink-0">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate font-black text-text-primary preserve-words">
+                          {role.displayName}
+                        </p>
+                        <span className={`text-[11px] font-bold ${admissionToneClass(role.admissionStatus)}`}>
+                          {role.admissionLabel}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-bold">
+                        {role.permissions.meeting_read && (
+                          <span className="rounded border border-accent/25 px-2 py-1 text-accent">
+                            회의읽기
+                          </span>
+                        )}
+                        {role.permissions.lobby_chat && (
+                          <span className="rounded border border-accent/25 px-2 py-1 text-accent">
+                            로비
+                          </span>
+                        )}
+                        {role.permissions.official_turn && (
+                          <span className="rounded border border-online/25 px-2 py-1 text-online">
+                            공식
+                          </span>
+                        )}
+                        {role.permissions.tool_use && (
+                          <span className="rounded border border-idle/25 px-2 py-1 text-idle">
+                            도구
+                          </span>
+                        )}
+                        {role.permissions.web_search && (
+                          <span className="rounded border border-violet-300/30 px-2 py-1 text-violet-300">
+                            검색
+                          </span>
+                        )}
+                      </div>
+                      {role.unsafePermissionViolations > 0 && (
+                        <p className="mt-2 text-[11px] font-bold text-offline">
+                          권한 검토 필요 {role.unsafePermissionViolations}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="ops-inner rounded-lg p-3 text-[12px] text-text-muted preserve-words">
+                lifecycle role_hints가 오면 역할별 입장과 권한이 표시됩니다.
+              </p>
+            )}
           </div>
         </section>
       </aside>
