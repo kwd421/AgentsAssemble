@@ -626,6 +626,110 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn("live_events", serialized)
             self.assertNotIn(str(root), serialized)
 
+    def test_meeting_lifecycle_uses_current_bound_live_agent_roster(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            meeting_record = {
+                "meeting_id": "m1",
+                "topic": "runtime",
+                "live_status": "running",
+                "roles": [{"id": "architect", "display_name": "Architect"}],
+                "agent_bindings": [
+                    {
+                        "role_id": "architect",
+                        "agent_id": "agent-a",
+                        "provider_id": "local-cli",
+                        "permission_profile_id": "meeting",
+                    }
+                ],
+                "provider_configs": {"local-cli": {"id": "local-cli", "kind": "local_cli"}},
+                "permission_profiles": {"meeting": {"id": "meeting", "meeting_read": True, "official_turn": True}},
+            }
+            (meeting_dir / "meeting.json").write_text(json.dumps(meeting_record, ensure_ascii=False), encoding="utf-8")
+            append_live_event(meeting_dir, {"id": "system-1", "kind": "system", "message": "meeting exists"})
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "meeting_id": "m1",
+                    "status": "online",
+                },
+            )
+
+            payload = build_meeting_payload(meeting_dir)
+            snapshot = _stream_snapshot_payload(root, "meeting", meeting_id="m1")
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/meetings/m1/lifecycle", timeout=4) as response:
+                    endpoint_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            for lifecycle in (
+                payload["lifecycle"],
+                snapshot["meeting_payload"]["lifecycle"],
+                endpoint_payload["lifecycle"],
+            ):
+                self.assertEqual(lifecycle["counts"]["live_agents"], 1)
+                self.assertEqual(lifecycle["role_hints"][0]["admission_status"], "bound_to_meeting")
+                self.assertEqual(lifecycle["state"], "preparing")
+
+    def test_meeting_lifecycle_does_not_bind_same_agent_from_other_or_blank_meeting(self):
+        for registered_meeting_id in ("m2", ""):
+            with self.subTest(registered_meeting_id=registered_meeting_id or "blank"):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    root = Path(temp_dir)
+                    meeting_dir = root / "meetings" / "m1"
+                    meeting_dir.mkdir(parents=True)
+                    (meeting_dir / "meeting.json").write_text(
+                        json.dumps(
+                            {
+                                "meeting_id": "m1",
+                                "topic": "runtime",
+                                "live_status": "running",
+                                "roles": [{"id": "architect", "display_name": "Architect"}],
+                                "agent_bindings": [
+                                    {
+                                        "role_id": "architect",
+                                        "agent_id": "agent-a",
+                                        "provider_id": "local-cli",
+                                        "permission_profile_id": "meeting",
+                                    }
+                                ],
+                                "provider_configs": {"local-cli": {"id": "local-cli", "kind": "local_cli"}},
+                                "permission_profiles": {
+                                    "meeting": {"id": "meeting", "meeting_read": True, "official_turn": True}
+                                },
+                            },
+                            ensure_ascii=False,
+                        ),
+                        encoding="utf-8",
+                    )
+                    registration = {
+                        "agent_id": "agent-a",
+                        "display_name": "Agent A",
+                        "provider_kind": "local_cli",
+                        "connection_kind": "local_cli",
+                        "status": "online",
+                    }
+                    if registered_meeting_id:
+                        registration["meeting_id"] = registered_meeting_id
+                    connect_live_agent(root, registration)
+
+                    lifecycle = build_meeting_payload(meeting_dir)["lifecycle"]
+
+                    self.assertEqual(lifecycle["counts"]["live_agents"], 0)
+                    self.assertEqual(lifecycle["role_hints"][0]["admission_status"], "waiting_for_agent")
+                    self.assertEqual(lifecycle["state"], "waiting_for_agents")
+
     def test_build_meeting_payload_preserves_codex_live_session_binding_metadata(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             meeting_dir = Path(temp_dir) / "meetings" / "m1"

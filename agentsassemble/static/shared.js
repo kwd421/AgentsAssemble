@@ -134,6 +134,128 @@ export function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+const lifecycleCopy = {
+  preparing: {
+    stepLabel: "준비 중",
+    nextAction: "회의 목표와 역할 바인딩을 확인하세요.",
+  },
+  waiting_for_agents: {
+    stepLabel: "입장 대기",
+    nextAction: "미입실 역할을 초대하거나 승인 상태를 확인하세요.",
+  },
+  running_official_turns: {
+    stepLabel: "공식 진행",
+    nextAction: "공식 발언과 공유 메모리 갱신을 확인하세요.",
+  },
+  blocked_by_pending_turns: {
+    stepLabel: "응답 대기",
+    nextAction: "대기 중인 공식 턴을 기다리거나 명시적으로 닫으세요.",
+  },
+  finalized: {
+    stepLabel: "완료됨",
+    nextAction: "아카이브에서 transcript, decision, shared memory를 확인하세요.",
+  },
+  stopped: {
+    stepLabel: "정지됨",
+    nextAction: "필요하면 명시적으로 재개하거나 종료 기록을 확인하세요.",
+  },
+  archived: {
+    stepLabel: "기록만 있음",
+    nextAction: "아카이브에서 최종 산출물과 리뷰 기록을 확인하세요.",
+  },
+  unknown: {
+    stepLabel: "상태 불명",
+    nextAction: "라이프사이클 기록을 확인하세요.",
+  },
+  none: {
+    stepLabel: "회의 없음",
+    nextAction: "로비에서 새 회의를 시작하거나 기존 회의를 선택하세요.",
+  },
+};
+
+const lifecycleAttentionCopy = {
+  pending_official_turns: "공식 턴 대기",
+  stalled_running_state: "장시간 갱신 없음",
+  malformed: "기록 파싱 오류",
+};
+
+const lifecycleStatusSourceCopy = {
+  live_state: "실시간 상태",
+  final_record: "최종 기록",
+  stale_running_inference: "정지 추정",
+  missing_state: "기록 없음",
+  malformed_record: "손상된 기록",
+};
+
+export function summarizeLifecycleForStaticGui(lifecycle) {
+  const hasLifecycle = lifecycle && typeof lifecycle === "object";
+  const lifecycleState = hasLifecycle ? String(lifecycle.state || "unknown").trim() : "none";
+  const copy = lifecycleCopy[lifecycleState] || lifecycleCopy.unknown;
+  const roleHints = Array.isArray(lifecycle?.role_hints) ? lifecycle.role_hints : [];
+  const counts = lifecycle?.counts && typeof lifecycle.counts === "object" ? lifecycle.counts : {};
+  const rolesTotal = Math.max(nonNegativeNumber(counts.roles), roleHints.length);
+  const boundRoles = roleHints.filter((role) => String(role?.admission_status || "") === "bound_to_meeting").length;
+  const unsafePermissionViolations = roleHints.reduce(
+    (total, role) => total + nonNegativeNumber(role?.unsafe_permission_violations),
+    0
+  );
+  return {
+    state: lifecycleCopy[lifecycleState] ? lifecycleState : "unknown",
+    stepLabel: copy.stepLabel,
+    nextAction: copy.nextAction,
+    statusSourceLabel: lifecycleStatusSourceCopy[String(lifecycle?.status_source || "").trim()] || "기록 없음",
+    rolesTotal,
+    boundRoles,
+    missingRoles: Math.max(0, rolesTotal - boundRoles),
+    unsafePermissionViolations,
+    liveAgents: nonNegativeNumber(counts.live_agents),
+    pendingTurns: nonNegativeNumber(counts.pending_turns),
+    officialMessages: nonNegativeNumber(counts.official_messages),
+    attentionLabels: (Array.isArray(lifecycle?.attention) ? lifecycle.attention : [])
+      .map((code) => lifecycleAttentionCopy[String(code || "").trim()] || String(code || "").trim())
+      .filter(Boolean),
+  };
+}
+
+export function renderLifecycleBanner(payload, options = {}) {
+  const lifecycle = payload?.lifecycle || null;
+  const summary = summarizeLifecycleForStaticGui(lifecycle);
+  const surface = String(options.surface || "room").trim() || "room";
+  const detailChips = lifecycle
+    ? [
+        `역할 ${summary.boundRoles}/${summary.rolesTotal}`,
+        `상주 ${summary.liveAgents}`,
+        summary.pendingTurns ? `대기 턴 ${summary.pendingTurns}` : "",
+        summary.officialMessages ? `공식 ${summary.officialMessages}` : "",
+      ].filter(Boolean)
+    : ["회의 선택 필요"];
+  const attention = summary.attentionLabels.length
+    ? `<div class="meeting-lifecycle-attention" aria-label="주의">${summary.attentionLabels
+        .map((label) => `<span>${escapeHtml(label)}</span>`)
+        .join("")}</div>`
+    : "";
+  return `
+    <section class="meeting-lifecycle-banner meeting-lifecycle-${escapeHtml(summary.state)}" data-lifecycle-surface="${escapeHtml(surface)}" aria-label="라이프사이클">
+      <div class="meeting-lifecycle-copy">
+        <span>${escapeHtml(summary.statusSourceLabel)}</span>
+        <strong>${escapeHtml(summary.stepLabel)}</strong>
+        <p>${escapeHtml(summary.nextAction)}</p>
+      </div>
+      <div class="meeting-lifecycle-meta">
+        ${detailChips.map((label) => `<em>${escapeHtml(label)}</em>`).join("")}
+        ${summary.unsafePermissionViolations ? `<em class="is-warning">권한 검토 ${escapeHtml(summary.unsafePermissionViolations)}</em>` : ""}
+      </div>
+      ${attention}
+    </section>
+  `;
+}
+
+function nonNegativeNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.trunc(number));
+}
+
 export async function fetchJson(url, options) {
   const response = await fetch(url, options);
   if (!response.ok) {

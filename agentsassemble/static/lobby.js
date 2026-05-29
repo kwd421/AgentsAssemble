@@ -3,6 +3,7 @@ import {
   displayTopic,
   escapeHtml,
   fetchJson,
+  renderLifecycleBanner,
   roleMeta,
   setLiveAgentOperations,
   setLiveAgentProcesses,
@@ -44,6 +45,7 @@ export function renderLobby(options = {}) {
           <span class="room-status room-status-hot">투입 준비</span>
         </div>
       </div>
+      ${renderLifecycleBanner(state.payload, { surface: "lobby" })}
       <div class="lobby-main">
         <div class="lobby-panel">
           ${renderLobbySummary(roster)}

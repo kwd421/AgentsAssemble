@@ -1,4 +1,4 @@
-import { escapeHtml, roleMeta, state } from "./shared.js";
+import { escapeHtml, renderLifecycleBanner, roleMeta, state } from "./shared.js";
 
 export function renderArchive(payload) {
   const archive = document.querySelector("#archive");
@@ -23,6 +23,7 @@ export function renderArchive(payload) {
         <span class="room-status room-status-hot">${escapeHtml(archiveKindLabel(state.archiveKey))}</span>
       </div>
     </div>
+    ${renderLifecycleBanner(payload, { surface: "archive" })}
     <section class="archive-vault">
       <div class="archive-vault-copy">
         <span class="room-kicker">record vault</span>

@@ -1,4 +1,4 @@
-import { bindingSummary, displayQuestion, escapeHtml, fetchJson, focusLabels, lensLabels, roleMeta, roundLabel, setSideChatEvents, state } from "./shared.js";
+import { bindingSummary, displayQuestion, escapeHtml, fetchJson, focusLabels, lensLabels, renderLifecycleBanner, roleMeta, roundLabel, setSideChatEvents, state } from "./shared.js";
 
 let liveTranscriptPinnedToLatest = true;
 
@@ -47,6 +47,7 @@ export function renderLive(payload, options = {}) {
           </div>
         </div>
       </section>
+      ${renderLifecycleBanner(payload, { surface: "live" })}
       ${renderPlayModeFlowSurface(payload)}
       ${renderLiveOverview(payload, liveOverviewItems)}
       <section class="live-chat-room">
@@ -1015,6 +1016,7 @@ export function renderBoard(payload) {
           <span class="room-status">결정 ${escapeHtml(decisionGateLabel(gate.status))}</span>
         </div>
       </div>
+      ${renderLifecycleBanner(payload, { surface: "board" })}
       <section class="board-command">
         <div class="board-command-copy">
           <span class="room-kicker">decision map</span>

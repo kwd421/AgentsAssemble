@@ -124,6 +124,9 @@ verified, and separate from broad frontend redesign.
    - expose the same state through the selected meeting payload and compact
      `/api/meetings/<meeting-id>/lifecycle` projection without leaking prompt,
      provider, command, session, event-body, or raw path data.
+   - the vanilla Lobby, Live, Board, and Archive tabs render the compact
+     lifecycle step, next action, safe counts, and attention labels through the
+     shared static GUI lifecycle banner.
 4. Tighten empty and post-run states:
    - make the next action clear when no meeting exists.
    - make final artifacts easy to find after finalization.

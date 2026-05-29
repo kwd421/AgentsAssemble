@@ -74,6 +74,95 @@
   color: #ffe0a0;
 }
 
+.meeting-lifecycle-banner {
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(91, 215, 255, 0.1), rgba(242, 184, 75, 0.06)),
+    rgba(7, 10, 16, 0.72);
+  border: 1px solid rgba(91, 215, 255, 0.22);
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: -4px 2px 14px;
+  padding: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.meeting-lifecycle-finalized,
+.meeting-lifecycle-archived {
+  border-color: rgba(136, 223, 136, 0.26);
+}
+
+.meeting-lifecycle-stopped,
+.meeting-lifecycle-unknown {
+  border-color: rgba(255, 112, 104, 0.3);
+}
+
+.meeting-lifecycle-copy {
+  min-width: 0;
+}
+
+.meeting-lifecycle-copy span,
+.meeting-lifecycle-copy strong,
+.meeting-lifecycle-copy p {
+  display: block;
+}
+
+.meeting-lifecycle-copy span {
+  color: var(--accent-2);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.meeting-lifecycle-copy strong {
+  font-size: clamp(15px, calc(18px * var(--text-scale)), 19px);
+  margin-top: 3px;
+}
+
+.meeting-lifecycle-copy p {
+  color: var(--muted);
+  line-height: 1.45;
+  margin-top: 4px;
+}
+
+.meeting-lifecycle-meta,
+.meeting-lifecycle-attention {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.meeting-lifecycle-meta em,
+.meeting-lifecycle-attention span {
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(212, 225, 255, 0.13);
+  border-radius: 999px;
+  color: #dbe7f8;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 750;
+  padding: 5px 7px;
+  white-space: nowrap;
+}
+
+.meeting-lifecycle-meta .is-warning,
+.meeting-lifecycle-attention span {
+  background: rgba(242, 184, 75, 0.1);
+  border-color: rgba(242, 184, 75, 0.28);
+  color: #ffe0a0;
+}
+
+.meeting-lifecycle-attention {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+}
+
 .lobby-main {
   align-items: stretch;
   display: grid;

@@ -604,13 +604,22 @@ def _is_diagnostic_meeting_record(meeting: dict[str, object]) -> bool:
     return _payload_bool(meeting.get("diagnostic"))
 
 
-def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[str, object]:
+def build_meeting_payload(
+    meeting_dir: Path,
+    now: float | None = None,
+    *,
+    output_root: Path | None = None,
+) -> dict[str, object]:
     meeting, _, has_final_record = _load_meeting_record(meeting_dir)
     meeting = infer_live_status(
         meeting,
         meeting_dir,
         has_final_record=has_final_record,
         now=now,
+    )
+    lifecycle_live_agents = _lifecycle_live_agents_for_meeting(
+        output_root or _output_root_for_meeting_dir(meeting_dir),
+        meeting,
     )
     artifacts = {
         name: _read_optional(meeting_dir / name)
@@ -647,7 +656,7 @@ def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[s
         "tabs": TABS,
         "tab_labels": TAB_LABELS,
         "meeting": meeting,
-        "lifecycle": project_meeting_lifecycle(meeting_dir, now=now),
+        "lifecycle": project_meeting_lifecycle(meeting_dir, now=now, live_agents=lifecycle_live_agents),
         "artifacts": artifacts,
         "tasks": tasks,
         "return_packets": return_packets,
@@ -656,6 +665,35 @@ def build_meeting_payload(meeting_dir: Path, now: float | None = None) -> dict[s
         "research_json": research_json,
         "live_events": read_live_events(meeting_dir),
     }
+
+
+def _output_root_for_meeting_dir(meeting_dir: Path) -> Path | None:
+    parent = meeting_dir.parent
+    if parent.name != "meetings":
+        return None
+    return parent.parent
+
+
+def _lifecycle_live_agents_for_meeting(
+    output_root: Path | None,
+    meeting: dict[str, object],
+) -> list[dict[str, object]]:
+    if output_root is None:
+        return []
+    meeting_id = clean_lobby_text(meeting.get("meeting_id"), limit=128)
+    agents = []
+    for agent in read_live_agents(output_root):
+        agent_id = clean_lobby_text(agent.get("agent_id"), limit=64)
+        agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
+        if not meeting_id or agent_meeting_id != meeting_id:
+            continue
+        agents.append(
+            {
+                **agent,
+                **_live_agent_admission_details_from_meeting(meeting, agent, agent_id=agent_id),
+            }
+        )
+    return agents
 
 
 def _shared_memory_artifacts(
@@ -1205,7 +1243,7 @@ def _stream_snapshot_payload(
         }
         if (meeting_dir / "meeting.json").exists():
             try:
-                meeting_payload = build_meeting_payload(meeting_dir)
+                meeting_payload = build_meeting_payload(meeting_dir, output_root=output_root)
             except FileNotFoundError as error:
                 raise _meeting_not_found_error(meeting_id) from error
             except json.JSONDecodeError:
@@ -7244,7 +7282,7 @@ def _make_handler(
                 if not meetings:
                     self._send_json({"meeting": None})
                     return
-                self._send_json(build_meeting_payload(Path(str(meetings[0]["path"]))))
+                self._send_json(build_meeting_payload(Path(str(meetings[0]["path"])), output_root=output_root))
                 return
             if path.startswith("/api/meetings/") and path.endswith("/lifecycle"):
                 meeting_id = unquote(path.removeprefix("/api/meetings/").removesuffix("/lifecycle").strip("/"))
@@ -7256,10 +7294,21 @@ def _make_handler(
                 if not meeting_dir.exists():
                     self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
                     return
+                try:
+                    lifecycle_meeting = _read_meeting_record(meeting_dir)
+                except (OSError, json.JSONDecodeError):
+                    lifecycle_meeting = {"meeting_id": meeting_id}
                 self._send_json(
                     {
                         "meeting_id": meeting_id,
-                        "lifecycle": project_meeting_lifecycle(meeting_dir, now=time.time()),
+                        "lifecycle": project_meeting_lifecycle(
+                            meeting_dir,
+                            now=time.time(),
+                            live_agents=_lifecycle_live_agents_for_meeting(
+                                output_root,
+                                lifecycle_meeting,
+                            ),
+                        ),
                     }
                 )
                 return
@@ -7285,7 +7334,7 @@ def _make_handler(
                 if not meeting_dir.exists():
                     self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
                     return
-                self._send_json(build_meeting_payload(meeting_dir))
+                self._send_json(build_meeting_payload(meeting_dir, output_root=output_root))
                 return
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { refreshLiveTranscript, renderLive } from "../agentsassemble/static/meeting-views.js";
-import { state } from "../agentsassemble/static/shared.js";
+import { renderLifecycleBanner, state, summarizeLifecycleForStaticGui } from "../agentsassemble/static/shared.js";
 
 class FakeElement {
   constructor(tagName, attributes = {}, ownerDocument = null) {
@@ -248,4 +248,78 @@ test("live transcript refresh preserves stable rows, appends new rows, updates c
   assert.match(updatedSecond.textContent, /수정됨/);
   assert.match(appendedThird.textContent, /세 번째 공식 발언/);
   assert.equal(feed.scrollTop, 44);
+});
+
+test("static lifecycle summary maps current step, next action, counts, and attention safely", () => {
+  const summary = summarizeLifecycleForStaticGui({
+    state: "blocked_by_pending_turns",
+    status_source: "live_state",
+    counts: {
+      roles: 3,
+      bindings: 2,
+      live_agents: 1,
+      pending_turns: 2,
+      official_messages: 5,
+    },
+    attention: ["pending_official_turns", "malformed"],
+    role_hints: [
+      {
+        role_id: "architect",
+        display_name: "Architect",
+        admission_status: "bound_to_meeting",
+        permissions: { meeting_read: true, lobby_chat: true, official_turn: true },
+        unsafe_permission_violations: 0,
+      },
+      {
+        role_id: "critic",
+        display_name: "Critic",
+        admission_status: "waiting_for_agent",
+        permissions: { meeting_read: true, lobby_chat: true, official_turn: false },
+        unsafe_permission_violations: 1,
+      },
+    ],
+  });
+
+  assert.equal(summary.stepLabel, "응답 대기");
+  assert.match(summary.nextAction, /대기 중인 공식 턴/);
+  assert.equal(summary.boundRoles, 1);
+  assert.equal(summary.missingRoles, 2);
+  assert.equal(summary.pendingTurns, 2);
+  assert.equal(summary.officialMessages, 5);
+  assert.deepEqual(summary.attentionLabels, ["공식 턴 대기", "기록 파싱 오류"]);
+  assert.equal(summary.statusSourceLabel, "실시간 상태");
+});
+
+test("static lifecycle banner renders safe visible copy without provider-private fields", () => {
+  const html = renderLifecycleBanner(
+    {
+      meeting: { meeting_id: "resident-gui", topic: "lifecycle smoke" },
+      lifecycle: {
+        state: "waiting_for_agents",
+        status_source: "live_state",
+        counts: { roles: 2, bindings: 2, live_agents: 0, pending_turns: 0, official_messages: 0 },
+        attention: [],
+        role_hints: [
+          {
+            role_id: "planner",
+            display_name: "Planner",
+            admission_status: "waiting_for_agent",
+            permissions: { meeting_read: true, lobby_chat: true, official_turn: true },
+            unsafe_permission_violations: 0,
+          },
+        ],
+        prompt: "secret prompt",
+        session_id: "sess-secret",
+        provider_config: { api_key: "sk-secret" },
+        source_path: "/Users/seinel/private/meeting.json",
+      },
+    },
+    { surface: "live" }
+  );
+
+  assert.match(html, /라이프사이클/);
+  assert.match(html, /입장 대기/);
+  assert.match(html, /미입실 역할/);
+  assert.match(html, /역할 0\/2/);
+  assert.doesNotMatch(html, /secret prompt|sess-secret|sk-secret|\/Users\/seinel/);
 });

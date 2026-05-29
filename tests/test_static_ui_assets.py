@@ -502,6 +502,27 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("배포 보류", board_source)
         self.assertNotIn("실험 진행", board_source)
 
+    def test_vanilla_gui_surfaces_lifecycle_next_action_on_core_tabs(self):
+        script = static_js()
+        css = static_css()
+
+        self.assertIn("export function summarizeLifecycleForStaticGui", script)
+        self.assertIn("export function renderLifecycleBanner", script)
+        self.assertIn("meeting-lifecycle-banner", script)
+        self.assertIn("회의 목표와 역할 바인딩을 확인하세요.", script)
+        self.assertIn("미입실 역할을 초대하거나 승인 상태를 확인하세요.", script)
+        self.assertIn("대기 중인 공식 턴을 기다리거나 명시적으로 닫으세요.", script)
+        self.assertIn("아카이브에서 transcript, decision, shared memory를 확인하세요.", script)
+        self.assertIn('renderLifecycleBanner(state.payload, { surface: "lobby" })', script)
+        self.assertIn('renderLifecycleBanner(payload, { surface: "live" })', script)
+        self.assertIn('renderLifecycleBanner(payload, { surface: "board" })', script)
+        self.assertIn('renderLifecycleBanner(payload, { surface: "archive" })', script)
+        self.assertIn(".meeting-lifecycle-banner", css)
+        self.assertIn(".meeting-lifecycle-meta", css)
+        self.assertIn(".meeting-lifecycle-attention", css)
+        for forbidden in ["provider_config", "session_id", "source_path", "api_key", "prompt:"]:
+            self.assertNotIn(forbidden, script[script.index("export function renderLifecycleBanner") : script.index("export async function fetchJson")])
+
     def test_lobby_separates_stage_from_activity_feed(self):
         script = static_js()
         css = static_css()
