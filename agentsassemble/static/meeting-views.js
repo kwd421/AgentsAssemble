@@ -114,7 +114,12 @@ export function refreshLiveTranscript(payload, options = {}) {
       return;
     }
     messageIds.add(messageId);
-    if (existing.has(messageId)) continue;
+    const element = existing.get(messageId);
+    if (element) {
+      const signature = liveItemSignature(message);
+      if (element.dataset.liveItemSignature !== signature) updateLiveItemElement(element, message, signature);
+      continue;
+    }
     feed.insertAdjacentHTML("beforeend", renderLiveItem(message));
   }
   for (const [messageId, element] of existing.entries()) {
@@ -407,7 +412,7 @@ function renderRoomChatEvent(event) {
   const meta = roleMeta[event.role_id] || { color: "purple", badge: "자유채팅", avatar: "/static/avatar-moderator.svg" };
   const displayName = displayNameLabel(event);
   return `
-    <article class="message message-${escapeHtml(meta.color)} message-room-chat" data-live-item-id="${escapeHtml(liveItemId(event))}">
+    <article class="message message-${escapeHtml(meta.color)} message-room-chat" data-live-item-id="${escapeHtml(liveItemId(event))}" data-live-item-signature="${escapeHtml(liveItemSignature(event))}">
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
       <div class="message-body">
         <div class="message-header">
@@ -447,7 +452,7 @@ function renderLiveEvent(event) {
   const displayName = displayNameLabel(event);
   const route = event.round ? `${roundKindLabel(event.round)} · ${eventKindLabel(event.kind)}` : eventKindLabel(event.kind);
   return `
-    <article class="message message-${escapeHtml(meta.color)} live-event-bubble" data-live-item-id="${escapeHtml(liveItemId(event))}">
+    <article class="message message-${escapeHtml(meta.color)} live-event-bubble" data-live-item-id="${escapeHtml(liveItemId(event))}" data-live-item-signature="${escapeHtml(liveItemSignature(event))}">
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
       <div class="message-body">
         <div class="message-header">
@@ -469,7 +474,7 @@ function renderSystemLine(event) {
   const content = userVisibleSummary(event.content || "");
   const showName = name !== "시스템" && !content.includes(name);
   return `
-    <div class="system-line" role="status" data-live-item-id="${escapeHtml(liveItemId(event))}">
+    <div class="system-line" role="status" data-live-item-id="${escapeHtml(liveItemId(event))}" data-live-item-signature="${escapeHtml(liveItemSignature(event))}">
       <span>${escapeHtml(eventKindLabel(event.kind))}</span>
       ${showName ? `<strong>${escapeHtml(name)}</strong>` : ""}
       <p>${escapeHtml(content)}</p>
@@ -481,7 +486,7 @@ function renderResearchEvent(event) {
   const meta = roleMeta[event.role_id] || { color: "cyan", badge: "리서치", avatar: "/static/avatar-moderator.svg" };
   const displayName = displayNameLabel(event);
   return `
-    <details class="research-card research-${escapeHtml(meta.color)}" data-live-item-id="${escapeHtml(liveItemId(event))}">
+    <details class="research-card research-${escapeHtml(meta.color)}" data-live-item-id="${escapeHtml(liveItemId(event))}" data-live-item-signature="${escapeHtml(liveItemSignature(event))}">
       <summary>
         <img class="profile profile-tiny" src="${escapeHtml(meta.avatar)}" alt="" />
         <span><strong>${escapeHtml(displayName)}</strong><em>리서치 요약 · ${escapeHtml(confidenceLabel(event.confidence))}${renderRetryBadge(event)}</em></span>
@@ -722,7 +727,7 @@ function renderMessage(message) {
   const stance = stanceLabel(message.stance_status);
   const position = messagePosition(message, state.payload?.meeting);
   return `
-    <article class="message message-${meta.color}" data-live-item-id="${escapeHtml(liveItemId(message))}">
+    <article class="message message-${meta.color}" data-live-item-id="${escapeHtml(liveItemId(message))}" data-live-item-signature="${escapeHtml(liveItemSignature(message))}">
       <img class="profile" src="${escapeHtml(meta.avatar)}" alt="" />
       <div class="message-body">
       <div class="message-header">
@@ -826,6 +831,71 @@ function liveItemId(item) {
       item.turn_id ||
       [item.role_id, item.round, item.roundTitle, item.created_at, item.content].filter(Boolean).join(":")
   ).trim();
+}
+
+function liveItemSignature(item) {
+  return stableUiSignature(item);
+}
+
+function stableUiSignature(value) {
+  const text = JSON.stringify(value || {});
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function updateLiveItemElement(element, item, signature = liveItemSignature(item)) {
+  const rendered = renderLiveItem(item).trim();
+  const parsed = parseFirstRenderedElement(rendered);
+  if (!parsed || element.tagName?.toLowerCase() !== parsed.tagName.toLowerCase()) {
+    if ("outerHTML" in element) element.outerHTML = rendered;
+    return;
+  }
+  syncElementAttributes(element, parsed.attributes);
+  element.setAttribute("data-live-item-id", liveItemId(item));
+  element.setAttribute("data-live-item-signature", signature);
+  element.innerHTML = parsed.body;
+}
+
+function parseFirstRenderedElement(html) {
+  const match = html.match(/^<([a-zA-Z][\w-]*)([^>]*)>([\s\S]*)<\/\1>$/);
+  if (!match) return null;
+  return { tagName: match[1], attributes: parseRenderedAttributes(match[2]), body: match[3].trim() };
+}
+
+function parseRenderedAttributes(rawAttributes) {
+  const attributes = {};
+  for (const [, name, quotedValue, bareValue] of rawAttributes.matchAll(/([\w-]+)(?:="([^"]*)"|=(\S+))?/g)) {
+    attributes[name] = unescapeRenderedAttribute(quotedValue ?? bareValue ?? "");
+  }
+  return attributes;
+}
+
+function syncElementAttributes(element, nextAttributes) {
+  for (const name of currentAttributeNames(element)) {
+    if (!Object.hasOwn(nextAttributes, name)) element.removeAttribute(name);
+  }
+  for (const [name, value] of Object.entries(nextAttributes)) {
+    element.setAttribute(name, value);
+  }
+}
+
+function currentAttributeNames(element) {
+  if (typeof element.getAttributeNames === "function") return element.getAttributeNames();
+  if (element.attributes && typeof element.attributes === "object") return Object.keys(element.attributes);
+  return [];
+}
+
+function unescapeRenderedAttribute(value) {
+  return String(value)
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#039;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
 }
 
 function outcomeEmptyText(meeting) {

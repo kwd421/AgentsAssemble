@@ -300,7 +300,12 @@ export function refreshLobbyFeed(options = {}) {
         return;
       }
       eventIds.add(eventId);
-      if (existing.has(eventId)) continue;
+      const element = existing.get(eventId);
+      if (element) {
+        const signature = lobbyEventSignature(event);
+        if (element.dataset.lobbyEventSignature !== signature) updateLobbyEventElement(element, event, signature);
+        continue;
+      }
       feed.insertAdjacentHTML("beforeend", renderLobbyEvent(event));
     }
     for (const [eventId, element] of existing.entries()) {
@@ -583,6 +588,30 @@ function renderPendingLobbyAttachments() {
 }
 
 function renderLobbyEvent(event) {
+  const eventId = String(event.id || "");
+  const signature = lobbyEventSignature(event);
+  return `
+    <article class="${escapeHtml(lobbyEventClassName(event))}" data-lobby-event-id="${escapeHtml(eventId)}" data-lobby-event-signature="${escapeHtml(signature)}">
+      ${renderLobbyEventBody(event)}
+    </article>
+  `;
+}
+
+function updateLobbyEventElement(element, event, signature = lobbyEventSignature(event)) {
+  element.setAttribute("class", lobbyEventClassName(event));
+  element.setAttribute("data-lobby-event-id", String(event.id || ""));
+  element.setAttribute("data-lobby-event-signature", signature);
+  element.innerHTML = renderLobbyEventBody(event);
+}
+
+function lobbyEventClassName(event) {
+  const currentName = localStorage.getItem("agentsassemble.name") || "";
+  const storedSide = lobbySides.has(event.side) ? event.side : "";
+  const side = storedSide || (currentName && event.name === currentName ? "mine" : "other");
+  return `lobby-event lobby-${event.kind || "message"} lobby-${side}`;
+}
+
+function renderLobbyEventBody(event) {
   const currentName = localStorage.getItem("agentsassemble.name") || "";
   const storedSide = lobbySides.has(event.side) ? event.side : "";
   const side = storedSide || (currentName && event.name === currentName ? "mine" : "other");
@@ -591,19 +620,31 @@ function renderLobbyEvent(event) {
   const sideLabel = lobbySideLabel(side);
   const showSideLabel = name !== sideLabel;
   return `
-    <article class="lobby-event lobby-${escapeHtml(event.kind || "message")} lobby-${side}" data-lobby-event-id="${escapeHtml(event.id || "")}">
-      <div class="lobby-avatar">${escapeHtml(initials(name))}</div>
-      <div class="lobby-bubble">
-        <div class="lobby-meta">
-          <strong>${escapeHtml(name)}</strong>
-          ${showSideLabel ? `<span>${escapeHtml(sideLabel)}</span>` : ""}
-          <span>${escapeHtml(lobbyKindLabel(event.kind))}</span>
-        </div>
-        <p>${escapeHtml(content)}</p>
-        ${renderLobbyAttachments(event.attachments)}
+    <div class="lobby-avatar">${escapeHtml(initials(name))}</div>
+    <div class="lobby-bubble">
+      <div class="lobby-meta">
+        <strong>${escapeHtml(name)}</strong>
+        ${showSideLabel ? `<span>${escapeHtml(sideLabel)}</span>` : ""}
+        <span>${escapeHtml(lobbyKindLabel(event.kind))}</span>
       </div>
-    </article>
+      <p>${escapeHtml(content)}</p>
+      ${renderLobbyAttachments(event.attachments)}
+    </div>
   `;
+}
+
+function lobbyEventSignature(event) {
+  return stableUiSignature(event);
+}
+
+function stableUiSignature(value) {
+  const text = JSON.stringify(value || {});
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
 }
 
 function renderLobbyAttachments(attachments) {

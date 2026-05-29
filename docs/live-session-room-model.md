@@ -51,6 +51,14 @@ backpressure counts, and per-agent speaking distribution. These numbers are
 operator evidence and regression signals, not permission to add a heavyweight
 distributed streaming stack before the local room contract needs it.
 
+Legacy GUI room feeds should preserve operator reading state while those events
+arrive. Lobby and live transcript refreshes keep existing event rows mounted
+when their payload is unchanged, append newly observed rows at the end, update
+only rows whose same-id payload changed, and preserve reader scroll/focus when
+the operator is not pinned to the latest message. This is a DOM update contract
+only; it does not change event ordering, SSE polling cadence, message copy, or
+official record boundaries.
+
 `assemble live-agent room-benchmark` is the first small benchmark surface for
 that direction. It measures the existing local append/read functions for lobby
 and live-event logs, reports read-after-cursor and tail-read latency, and

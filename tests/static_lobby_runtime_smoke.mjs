@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { refreshLiveAgentRuntimeSurfaces, renderLobby } from "../agentsassemble/static/lobby.js";
+import { refreshLiveAgentRuntimeSurfaces, refreshLobbyFeed, renderLobby } from "../agentsassemble/static/lobby.js";
 import { state } from "../agentsassemble/static/shared.js";
 
 class FakeElement {
@@ -10,6 +10,7 @@ class FakeElement {
     this.attributes = { ...attributes };
     this.ownerDocument = ownerDocument;
     this.listeners = new Map();
+    this.id = attributes.id || "";
     this.value = attributes.value || "";
     this.checked = Boolean(attributes.checked);
     this.disabled = Boolean(attributes.disabled);
@@ -24,7 +25,10 @@ class FakeElement {
   set innerHTML(html) {
     this.innerHTMLWriteCount += 1;
     this._innerHTML = html;
-    this.ownerDocument?.loadInnerHtml(html);
+    this.textContent = elementTextContent(String(html), 0, "");
+    if (this.id === "lobby") {
+      this.ownerDocument?.loadInnerHtml(html);
+    }
   }
 
   get innerHTML() {
@@ -43,6 +47,23 @@ class FakeElement {
     const listeners = this.listeners.get(type) || [];
     listeners.push(listener);
     this.listeners.set(type, listeners);
+  }
+
+  insertAdjacentHTML(position, html) {
+    if (position !== "beforeend") throw new Error(`Unsupported insertAdjacentHTML position: ${position}`);
+    this.ownerDocument?.appendInnerHtml(html);
+  }
+
+  setAttribute(name, value) {
+    this.ownerDocument?.updateElementAttribute(this, name, String(value));
+  }
+
+  removeAttribute(name) {
+    this.ownerDocument?.removeElementAttribute(this, name);
+  }
+
+  remove() {
+    this.ownerDocument?.removeElement(this);
   }
 
   focus() {
@@ -91,6 +112,10 @@ class FakeDocument {
     this.byId = new Map([["lobby", this.lobby]]);
     this.byClass = new Map();
     this.byData = new Map();
+    this.appendInnerHtml(html);
+  }
+
+  appendInnerHtml(html) {
     for (const match of html.matchAll(/<([a-zA-Z][\w-]*)([^>]*)>/g)) {
       const [, tagName, rawAttributes] = match;
       const attributes = parseAttributes(rawAttributes);
@@ -98,27 +123,64 @@ class FakeDocument {
       if (!attributes.id && !attributes.class && dataAttributeNames.length === 0) continue;
       const element = new FakeElement(tagName, attributes, this);
       element.textContent = elementTextContent(html, match.index + match[0].length, tagName);
-      if (attributes.id) this.byId.set(attributes.id, element);
-      if (attributes.class) {
-        for (const className of attributes.class.split(/\s+/).filter(Boolean)) {
-          const elements = this.byClass.get(className) || [];
-          elements.push(element);
-          this.byClass.set(className, elements);
-        }
-      }
-      for (const dataAttributeName of dataAttributeNames) {
-        const elements = this.byData.get(dataAttributeName) || [];
-        elements.push(element);
-        this.byData.set(dataAttributeName, elements);
-      }
+      this.indexElement(element);
     }
+  }
+
+  indexElement(element) {
+    if (element.id) this.byId.set(element.id, element);
+    const classNames = String(element.attributes.class || "").split(/\s+/).filter(Boolean);
+    for (const className of classNames) {
+      const elements = this.byClass.get(className) || [];
+      if (!elements.includes(element)) elements.push(element);
+      this.byClass.set(className, elements);
+    }
+    for (const dataAttributeName of Object.keys(element.attributes).filter((name) => name.startsWith("data-"))) {
+      const elements = this.byData.get(dataAttributeName) || [];
+      if (!elements.includes(element)) elements.push(element);
+      this.byData.set(dataAttributeName, elements);
+    }
+  }
+
+  unindexElement(element) {
+    if (element.id && this.byId.get(element.id) === element) this.byId.delete(element.id);
+    for (const [className, elements] of [...this.byClass.entries()]) {
+      const filtered = elements.filter((candidate) => candidate !== element);
+      if (filtered.length) this.byClass.set(className, filtered);
+      else this.byClass.delete(className);
+    }
+    for (const [attributeName, elements] of [...this.byData.entries()]) {
+      const filtered = elements.filter((candidate) => candidate !== element);
+      if (filtered.length) this.byData.set(attributeName, filtered);
+      else this.byData.delete(attributeName);
+    }
+  }
+
+  updateElementAttribute(element, name, value) {
+    this.unindexElement(element);
+    element.attributes[name] = value;
+    if (name === "id") element.id = value;
+    if (name.startsWith("data-")) element.dataset = datasetFromAttributes(element.attributes);
+    this.indexElement(element);
+  }
+
+  removeElementAttribute(element, name) {
+    this.unindexElement(element);
+    delete element.attributes[name];
+    if (name === "id") element.id = "";
+    if (name.startsWith("data-")) element.dataset = datasetFromAttributes(element.attributes);
+    this.indexElement(element);
+  }
+
+  removeElement(element) {
+    this.unindexElement(element);
   }
 }
 
 function elementTextContent(html, contentStart, tagName) {
-  const closeIndex = html.indexOf(`</${tagName}>`, contentStart);
+  const closeIndex = tagName ? html.indexOf(`</${tagName}>`, contentStart) : html.length;
   if (closeIndex < 0) return "";
-  return unescapeHtml(html.slice(contentStart, closeIndex).replaceAll(/<[^>]*>/g, "").trim());
+  return unescapeHtml(html.slice(contentStart, closeIndex).replaceAll(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim());
 }
 
 function parseAttributes(rawAttributes) {
@@ -772,6 +834,43 @@ test("readiness button omits official round smoke when the checkbox is unchecked
   assert.deepEqual(request.jsonBody, { group_id: "doctor-smoke", timeout: 12 });
   assert.equal(Object.hasOwn(request.jsonBody, "official_round_smoke"), false);
   assert.equal(Object.hasOwn(request.jsonBody, "session_smoke"), false);
+});
+
+test("lobby feed refresh preserves stable rows, appends new rows, updates changed rows, and keeps operator position", () => {
+  resetState();
+  state.lobbyEvents = [
+    { id: "event-a", name: "Codex", side: "other-agent", kind: "message", message: "첫 발언" },
+    { id: "event-b", name: "Kiro", side: "other-agent", kind: "message", message: "두 번째 발언" },
+  ];
+  const { document } = installHarness();
+  renderLobby({ followLatest: false });
+  const feed = document.querySelector(".lobby-feed");
+  feed.scrollHeight = 220;
+  feed.clientHeight = 100;
+  feed.scrollTop = 37;
+  for (const listener of feed.listeners.get("scroll") || []) listener();
+  document.querySelector("#lobby-message").focus();
+  const firstRow = document.querySelectorAll("[data-lobby-event-id]").find((row) => row.dataset.lobbyEventId === "event-a");
+  const secondRow = document.querySelectorAll("[data-lobby-event-id]").find((row) => row.dataset.lobbyEventId === "event-b");
+
+  state.lobbyEvents = [
+    { id: "event-a", name: "Codex", side: "other-agent", kind: "message", message: "첫 발언" },
+    { id: "event-b", name: "Kiro", side: "other-agent", kind: "message", message: "두 번째 발언 수정됨" },
+    { id: "event-c", name: "Grok", side: "other-agent", kind: "message", message: "세 번째 발언" },
+  ];
+  refreshLobbyFeed({ followLatest: false });
+
+  const rows = document.querySelectorAll("[data-lobby-event-id]");
+  const updatedFirst = rows.find((row) => row.dataset.lobbyEventId === "event-a");
+  const updatedSecond = rows.find((row) => row.dataset.lobbyEventId === "event-b");
+  const appendedThird = rows.find((row) => row.dataset.lobbyEventId === "event-c");
+  assert.equal(updatedFirst, firstRow);
+  assert.equal(updatedSecond, secondRow);
+  assert.ok(appendedThird);
+  assert.match(updatedSecond.textContent, /수정됨/);
+  assert.match(appendedThird.textContent, /세 번째 발언/);
+  assert.equal(feed.scrollTop, 37);
+  assert.equal(document.activeElement.id, "lobby-message");
 });
 
 test("codex invite refreshes operation history after writing the invite", async () => {
