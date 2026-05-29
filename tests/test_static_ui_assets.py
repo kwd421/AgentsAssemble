@@ -288,6 +288,26 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("permission_profile_id}</", source)
         self.assertNotIn("session_id}</", source)
 
+    def test_react_board_uses_lifecycle_current_step_instead_of_artificial_rounds(self):
+        app_source = frontend_file("App.tsx")
+        board_source = frontend_file("views/BoardView.tsx")
+
+        self.assertIn("summarizeBoardLifecycle", board_source)
+        self.assertIn("LifecycleProjection", board_source)
+        self.assertIn("lifecycle: LifecycleProjection | null;", board_source)
+        self.assertIn("lifecycle={lifecycle}", app_source)
+        self.assertIn("현재 단계", board_source)
+        self.assertIn("다음 행동", board_source)
+        self.assertIn("역할 입장", board_source)
+        self.assertIn("권한 요약", board_source)
+        self.assertIn("unsafePermissionViolations", board_source)
+        self.assertIn("boundRoles", board_source)
+        self.assertNotIn('["조사", "주장", "반박", "결정"]', board_source)
+        self.assertNotIn('index === 2 && flow.status === "running"', board_source)
+        self.assertNotIn("FlaskConical", board_source)
+        self.assertNotIn("배포 보류", board_source)
+        self.assertNotIn("실험 진행", board_source)
+
     def test_lobby_separates_stage_from_activity_feed(self):
         script = static_js()
         css = static_css()

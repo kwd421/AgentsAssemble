@@ -3,22 +3,19 @@ import {
   AlertTriangle,
   Bot,
   CheckCircle2,
-  Circle,
   Compass,
-  FlaskConical,
   HelpCircle,
   Layers3,
   MoveRight,
-  PauseCircle,
-  Search,
   ShieldCheck,
 } from "lucide-react";
-import type { FlowState, LiveAgent, LobbyEvent } from "../api";
+import type { FlowState, LifecycleProjection, LiveAgent, LobbyEvent } from "../api";
 import {
   agentTruthBadges,
   lastObservedSummary,
   providerExecutionLabel,
 } from "../lib/agentLabels";
+import { summarizeBoardLifecycle } from "../lib/boardLifecycle";
 import ProviderTruthChips from "./components/ProviderTruthChips";
 
 function agentName(agent: LiveAgent) {
@@ -35,12 +32,6 @@ function consensusPercent(agents: LiveAgent[], events: LobbyEvent[]) {
   const base = agents.length ? Math.round((readyAgents(agents).length / agents.length) * 55) : 25;
   const eventBoost = Math.min(events.length * 3, 28);
   return Math.min(92, Math.max(18, base + eventBoost));
-}
-
-function phaseLabel(flow: FlowState) {
-  if (flow.status === "running") return "토론 단계";
-  if (flow.status === "finished" || flow.status === "stopped") return "검토 단계";
-  return "준비 단계";
 }
 
 function AgentMiniCard({
@@ -128,20 +119,18 @@ export default function BoardView({
   flow,
   agents,
   events,
+  lifecycle,
 }: {
   flow: FlowState;
   agents: LiveAgent[];
   events: LobbyEvent[];
+  lifecycle: LifecycleProjection | null;
 }) {
   const ready = readyAgents(agents);
   const consensus = consensusPercent(agents, events);
+  const lifecycleSummary = summarizeBoardLifecycle(lifecycle);
   const currentTopic =
     flow.topic || flow.meeting_id || "룸이 시작되면 이곳에 현재 쟁점이 표시됩니다.";
-  const actionOptions = [
-    { label: "추가 조사", icon: Search, metric: "우선순위", value: "높음" },
-    { label: "배포 보류", icon: PauseCircle, metric: "안정성", value: "중간" },
-    { label: "실험 진행", icon: FlaskConical, metric: "학습", value: "높음" },
-  ];
 
   return (
     <div className="grid min-h-full gap-4 xl:grid-cols-[300px_minmax(0,1fr)_330px]">
@@ -160,7 +149,7 @@ export default function BoardView({
             </div>
             <div className="flex items-center justify-between gap-4 border-b border-accent/10 pb-3">
               <dt className="text-text-muted">현재 단계</dt>
-              <dd className="font-bold text-violet-300">{phaseLabel(flow)}</dd>
+              <dd className="font-bold text-violet-300">{lifecycleSummary.stepLabel}</dd>
             </div>
             <div className="flex items-center justify-between gap-4">
               <dt className="text-text-muted">이벤트</dt>
@@ -178,24 +167,31 @@ export default function BoardView({
         </section>
 
         <section className="ops-panel ops-cut p-4">
-          <h2 className="mb-4 text-[17px] font-black">작전 진행 상황</h2>
-          {["조사", "주장", "반박", "결정"].map((step, index) => {
-            const active = index === 2 && flow.status === "running";
-            const done = flow.status === "finished" || index < 2;
-            return (
-              <div key={step} className="mb-3 flex items-center gap-3 last:mb-0">
-                <span className={`hex-badge h-9 w-9 ${active ? "violet" : done ? "green" : ""}`}>
-                  {done ? <CheckCircle2 size={15} /> : <Circle size={15} />}
-                </span>
-                <span className="min-w-0 flex-1 font-semibold text-text-secondary">
-                  {step}
-                </span>
-                <span className={done ? "text-[12px] font-bold text-online" : active ? "text-[12px] font-bold text-violet-300" : "text-[12px] text-text-muted"}>
-                  {done ? "완료" : active ? "현재" : "대기"}
-                </span>
-              </div>
-            );
-          })}
+          <h2 className="mb-4 text-[17px] font-black">회의 현재 단계</h2>
+          <div className="ops-inner rounded-lg p-4">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+              현재 단계
+            </p>
+            <p className="mt-1 text-[20px] font-black text-text-primary preserve-words">
+              {lifecycleSummary.stepLabel}
+            </p>
+            <p className="mt-4 text-[11px] font-bold uppercase tracking-wider text-text-muted">
+              다음 행동
+            </p>
+            <p className="mt-1 text-[13px] leading-relaxed text-text-secondary preserve-words">
+              {lifecycleSummary.nextAction}
+            </p>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
+            <div className="ops-inner rounded-lg p-3">
+              <p className="text-text-muted">공식 턴 대기</p>
+              <p className="text-[18px] font-black text-idle">{lifecycleSummary.pendingTurns}</p>
+            </div>
+            <div className="ops-inner rounded-lg p-3">
+              <p className="text-text-muted">공식 발언</p>
+              <p className="text-[18px] font-black text-accent">{lifecycleSummary.officialMessages}</p>
+            </div>
+          </div>
         </section>
 
         <section className="ops-panel ops-cut p-4">
@@ -286,16 +282,38 @@ export default function BoardView({
             </div>
           </BoardCard>
 
-          <BoardCard number="4" title="다음 행동 / Intent" subtitle="권장 행동 옵션" tone="gold">
+          <BoardCard number="4" title="다음 행동 / Intent" subtitle="회의 lifecycle 기반 안내" tone="gold">
             <div className="grid gap-3 md:grid-cols-3">
-              {actionOptions.map(({ label, icon: Icon, metric, value }) => (
-                <button key={label} type="button" disabled className="ops-button rounded-lg p-4 text-left">
-                  <Icon className="mb-3 text-accent" size={22} />
-                  <p className="font-black text-text-primary">{label}</p>
-                  <p className="mt-3 text-[11px] text-text-muted">{metric}</p>
-                  <p className="text-[13px] font-bold text-idle">{value}</p>
-                </button>
-              ))}
+              <div className="ops-inner rounded-lg p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                  다음 행동
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed text-text-secondary preserve-words">
+                  {lifecycleSummary.nextAction}
+                </p>
+              </div>
+              <div className="ops-inner rounded-lg p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                  역할 입장
+                </p>
+                <p className="mt-2 text-[13px] font-bold text-text-primary">
+                  {lifecycleSummary.boundRoles}/{lifecycleSummary.rolesTotal}
+                </p>
+                <p className="mt-1 text-[12px] text-text-muted">
+                  미입실 {lifecycleSummary.missingRoles}
+                </p>
+              </div>
+              <div className="ops-inner rounded-lg p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                  권한 요약
+                </p>
+                <p className="mt-2 text-[12px] text-text-secondary">
+                  공식 {lifecycleSummary.officialTurnRoles} · 도구 {lifecycleSummary.toolUseRoles} · 검색 {lifecycleSummary.webSearchRoles}
+                </p>
+                <p className="mt-1 text-[12px] font-bold text-idle">
+                  권한 검토 {lifecycleSummary.unsafePermissionViolations}
+                </p>
+              </div>
             </div>
           </BoardCard>
         </div>

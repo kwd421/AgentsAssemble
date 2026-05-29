@@ -250,7 +250,7 @@ export default function App() {
               lifecycleError={Boolean(flow.meeting_id) ? lifecycleError : null}
             />
           ) : channel === "board" ? (
-            <BoardView flow={flow} agents={agents} events={flowEvents} />
+            <BoardView flow={flow} agents={agents} events={flowEvents} lifecycle={lifecycle} />
           ) : (
             <RecordsView agents={agents} />
           )}
