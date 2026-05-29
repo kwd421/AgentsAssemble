@@ -154,6 +154,27 @@ p {
   min-width: 0;
 }
 
+.preview-link {
+  align-items: center;
+  background: rgba(91, 215, 255, 0.1);
+  border: 1px solid rgba(91, 215, 255, 0.32);
+  border-radius: 9px;
+  color: #bdf4ff;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  justify-content: center;
+  min-height: calc(34px * var(--ui-scale));
+  padding: 0 calc(10px * var(--ui-scale));
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.preview-link:hover {
+  background: rgba(91, 215, 255, 0.16);
+  border-color: rgba(91, 215, 255, 0.46);
+}
+
 .app-status {
   border: 1px solid rgba(91, 215, 255, 0.22);
   border-radius: 999px;
@@ -228,6 +249,7 @@ button:disabled {
 
 button:focus-visible,
 select:focus-visible,
+a:focus-visible,
 input:focus-visible {
   outline: 2px solid rgba(91, 215, 255, 0.74);
   outline-offset: 3px;
