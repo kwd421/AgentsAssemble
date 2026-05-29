@@ -1627,6 +1627,8 @@ def frontend_info_payload(
         "app_static_available": dist_status.static_available,
         "app_index_present": dist_status.index_present,
         "app_assets_dir_present": dist_status.assets_dir_present,
+        "app_referenced_assets_present": dist_status.referenced_assets_present,
+        "app_build_status": dist_status.build_status,
         "parity_matrix_doc": parity_matrix_doc,
         "is_default_entry_point": False,
         "launch_commands": [
@@ -1656,6 +1658,7 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
     print(f"- React/Vite opt-in UI: {payload['frontend_url']}")
     print(f"- Vite API proxy target: {payload['frontend_dev_proxy_target']}")
     print(f"- Built React static available: {payload['app_static_available']} ({payload['app_dist_path']})")
+    print(f"- React build status: {payload['app_build_status']}")
     print(f"- Parity matrix: {payload['parity_matrix_doc']}")
     print(f"- Default surface kind: {payload['default_console_kind']} (React is opt-in only)")
     print("- Commands:")

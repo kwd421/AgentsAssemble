@@ -205,10 +205,10 @@ The React preview namespace is the same-backend opt-in route:
   is absent.
 - `/app/` rewrites Vite `/assets/*` references to `/app/assets/*`, so the
   backend route does not need to expose root-level `/assets/*`.
-- `frontend-info` reports `react_app_url`, `app_static_available`, the
-  individual index/assets checks, and a `recommended_ui_url` that points to
-  `/app/` only when a complete React build exists. This is launch guidance, not
-  default-entry approval.
+- `frontend-info` reports `react_app_url`, `app_static_available`,
+  `app_build_status`, the individual index/assets/reference checks, and a
+  `recommended_ui_url` that points to `/app/` only when a complete React build
+  exists. This is launch guidance, not default-entry approval.
 
 Evidence:
 

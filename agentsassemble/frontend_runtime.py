@@ -21,6 +21,14 @@ class FrontendDistStatus:
     def static_available(self) -> bool:
         return self.index_present and self.assets_dir_present and self.referenced_assets_present
 
+    @property
+    def build_status(self) -> str:
+        if self.static_available:
+            return "available"
+        if not self.index_present and not self.assets_dir_present:
+            return "missing"
+        return "incomplete"
+
 
 def default_frontend_dist_root() -> Path:
     return Path(__file__).resolve().parent.parent / "frontend" / "dist"

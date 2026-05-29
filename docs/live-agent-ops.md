@@ -21,7 +21,9 @@ React/Vite frontend in `frontend/` is an opt-in development surface on port
 5173 and proxies API calls to this backend by default. Use
 `python3 -m agentsassemble.cli frontend-info` for read-only launch guidance;
 that command prints a recommended current UI URL based on whether the built
-React preview is available, and it does not start a dev server, GUI backend, or
+React preview is available. Its JSON also includes `app_build_status` and
+`app_referenced_assets_present` so partial or stale builds explain why the
+legacy fallback is recommended. It does not start a dev server, GUI backend, or
 provider CLI. The default-route parity gate is tracked in
 `docs/product/legacy-react-parity-matrix.md`.
 
