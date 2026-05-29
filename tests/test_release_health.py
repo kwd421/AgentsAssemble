@@ -15,6 +15,48 @@ class Completed:
         self.stderr = stderr
 
 
+def benchmark_payload(*, predicate_p99_ms: float = 12.5) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "benchmark": "room_event_log_v1",
+        "environment": {
+            "platform": "private-platform",
+            "python": "3.12.0",
+        },
+        "params": {
+            "events": 120,
+            "read_window": 20,
+            "warmup_events": 10,
+            "agent_count": 3,
+            "sse_samples": 2,
+            "cleanup": True,
+        },
+        "paths": {
+            "run_root": str(ROOT / "private-benchmark-run"),
+            "lobby_log": str(ROOT / "private-benchmark-run" / "lobby.jsonl"),
+            "live_log": str(ROOT / "private-benchmark-run" / "meetings" / "m1" / "live_events.jsonl"),
+            "temporary_root": "/tmp/agentsassemble-room-benchmark-private",
+        },
+        "metrics": {
+            "lobby_append_ms": {"p99_ms": 0.11, "p95_ms": 0.1, "count": 120},
+            "live_append_ms": {"p99_ms": 0.22, "p95_ms": 0.2, "count": 120},
+            "lobby_read_after_cursor_ms": {"p99_ms": 0.33, "p95_ms": 0.3, "count": 20},
+            "live_read_after_cursor_ms": {"p99_ms": 0.44, "p95_ms": 0.4, "count": 20},
+            "lobby_tail_read_ms": {"p99_ms": 0.55, "avg_ms": 0.55},
+            "live_tail_read_ms": {"p99_ms": 0.66, "avg_ms": 0.66},
+            "lobby_sse_append_to_frame_ms": {"p99_ms": 8.8, "count": 2},
+            "flow_scheduler_comparison": {
+                "normalized_improvement": 1.0,
+                "predicate_latency_ms": {"p99_ms": predicate_p99_ms, "count": 60},
+                "scheduler_on": {"normalized_imbalance": 0.0},
+                "scheduler_off": {"normalized_imbalance": 1.0},
+            },
+        },
+        "notes": ["private implementation detail"],
+        "unexpected_future_field": {"do_not_echo": True},
+    }
+
+
 class ReleaseHealthTests(unittest.TestCase):
     def test_catalog_matches_v0_1_release_check_order_without_command_details(self):
         from agentsassemble.release_health import RELEASE_HEALTH_CHECK_IDS, release_health_catalog_payload
@@ -274,6 +316,137 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(result["status"], "skipped")
         self.assertEqual(result["skipped_reason"], "missing_tool:git")
         self.assertEqual(payload["summary"], {"total": 1, "passed": 0, "failed": 0, "skipped": 1, "ok": True})
+
+    def test_room_event_benchmark_result_includes_structured_summary(self):
+        from agentsassemble.release_health import run_release_health_checks
+
+        def fake_runner(argv, **kwargs):
+            return Completed(stdout=json.dumps(benchmark_payload()))
+
+        payload = run_release_health_checks(
+            check_ids=["room_event_benchmark"],
+            runner=fake_runner,
+            now_fn=lambda: datetime(2026, 5, 29, 0, 0, tzinfo=UTC),
+        )
+
+        result = payload["results"][0]
+        self.assertEqual(result["status"], "passed")
+        summary = result["benchmark_summary"]
+        self.assertEqual(summary["status"], "ok")
+        self.assertEqual(summary["schema_version"], 1)
+        self.assertEqual(
+            summary["params"],
+            {
+                "events": 120,
+                "read_window": 20,
+                "warmup_events": 10,
+                "agent_count": 3,
+                "sse_samples": 2,
+            },
+        )
+        self.assertEqual(
+            summary["metrics_summary"],
+            {
+                "lobby_append_p99_ms": 0.11,
+                "live_append_p99_ms": 0.22,
+                "lobby_read_after_cursor_p99_ms": 0.33,
+                "live_read_after_cursor_p99_ms": 0.44,
+                "lobby_tail_read_ms": 0.55,
+                "live_tail_read_ms": 0.66,
+                "lobby_sse_append_to_frame_p99_ms": 8.8,
+                "flow_normalized_improvement": 1.0,
+                "flow_scheduler_predicate_p99_ms": 12.5,
+            },
+        )
+        self.assertEqual(
+            summary["regression_signals"],
+            [
+                {
+                    "name": "flow_scheduler_predicate_p99_ms",
+                    "value_ms": 12.5,
+                    "ceiling_ms": 75.0,
+                    "ok": True,
+                }
+            ],
+        )
+        self.assertEqual(summary["ceilings"], {"flow_scheduler_predicate_p99_ms": 75.0})
+
+    def test_room_event_benchmark_summary_marks_unparsed_when_stdout_is_not_json(self):
+        from agentsassemble.release_health import run_release_health_checks
+
+        def fake_runner(argv, **kwargs):
+            return Completed(stdout="not json")
+
+        payload = run_release_health_checks(
+            check_ids=["room_event_benchmark"],
+            runner=fake_runner,
+            now_fn=lambda: datetime(2026, 5, 29, 0, 0, tzinfo=UTC),
+        )
+
+        result = payload["results"][0]
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["benchmark_summary"], {"status": "unparsed"})
+
+    def test_room_event_benchmark_summary_omits_paths_commands_and_unknown_future_fields(self):
+        from agentsassemble.release_health import run_release_health_checks
+
+        def fake_runner(argv, **kwargs):
+            return Completed(stdout=json.dumps(benchmark_payload()))
+
+        payload = run_release_health_checks(
+            check_ids=["room_event_benchmark"],
+            runner=fake_runner,
+            now_fn=lambda: datetime(2026, 5, 29, 0, 0, tzinfo=UTC),
+        )
+
+        result = payload["results"][0]
+        self.assertEqual(result["stdout_tail"], "room benchmark stdout omitted; use benchmark_summary")
+        serialized = json.dumps(result, ensure_ascii=False)
+        for forbidden in (
+            "paths",
+            "notes",
+            "environment",
+            '"metrics"',
+            "unexpected_future_field",
+            "private-benchmark-run",
+            "/tmp/",
+            str(ROOT),
+            "argv",
+            "cwd",
+            "command",
+            "--warmup-events",
+            "agentsassemble.cli",
+        ):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_room_event_benchmark_regression_signal_counts_ceiling_breach_without_failing_check(self):
+        from agentsassemble.release_health import run_release_health_checks
+
+        def fake_runner(argv, **kwargs):
+            return Completed(stdout=json.dumps(benchmark_payload(predicate_p99_ms=100.0)))
+
+        payload = run_release_health_checks(
+            check_ids=["room_event_benchmark"],
+            runner=fake_runner,
+            now_fn=lambda: datetime(2026, 5, 29, 0, 0, tzinfo=UTC),
+        )
+
+        result = payload["results"][0]
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(payload["status"], "ok")
+        self.assertTrue(payload["summary"]["ok"])
+        self.assertGreaterEqual(payload["summary"]["regression_signals_failed"], 1)
+        self.assertEqual(
+            result["benchmark_summary"]["regression_signals"],
+            [
+                {
+                    "name": "flow_scheduler_predicate_p99_ms",
+                    "value_ms": 100.0,
+                    "ceiling_ms": 75.0,
+                    "ok": False,
+                }
+            ],
+        )
 
 
 if __name__ == "__main__":

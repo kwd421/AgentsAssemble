@@ -234,6 +234,14 @@ slower cadence; the number is a regression tripwire on the same machine, not an
 SLA. Queue wait time and backpressure counts still require a later server/fanout
 slice and remain out of scope.
 
+`assemble release-health run --check room_event_benchmark --as-json` lifts a
+safe `benchmark_summary` from that benchmark output so operators can compare
+numeric p99 and scheduler fairness signals without reading raw paths,
+environment details, command arguments, or full benchmark logs. Regression
+signal ceilings are informational tripwires in this local-first v1 stage; they
+do not make the check fail by themselves and React must not start the benchmark
+from the browser.
+
 ## Local Resource Visibility
 
 The room may show a small local resource monitor for operator awareness, but it

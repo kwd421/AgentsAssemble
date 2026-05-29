@@ -1,18 +1,28 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Mapping
+
+from agentsassemble.room_event_benchmark import SCHEDULER_P99_LATENCY_CEILING_MS
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RELEASE_HEALTH_TIMEOUT_SECONDS = 300.0
 OUTPUT_TAIL_LIMIT = 800
 ENV_ASSIGNMENT_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*=.*$")
+ROOM_BENCHMARK_PARAM_KEYS = (
+    "events",
+    "read_window",
+    "warmup_events",
+    "agent_count",
+    "sse_samples",
+)
 
 
 class ReleaseHealthSelectionError(ValueError):
@@ -287,14 +297,20 @@ def _run_release_health_check(
                 repo_root=repo_root,
             )
 
+    benchmark_summary = None
+    stdout_tail = _joined_output(stdout_parts)
+    if check.id == "room_event_benchmark":
+        benchmark_summary = room_event_benchmark_summary_from_stdout(stdout_tail)
+        stdout_tail = "room benchmark stdout omitted; use benchmark_summary"
     return _release_health_result(
         check,
         status="passed",
         duration_seconds=time.monotonic() - check_started,
         exit_code=exit_code,
-        stdout_tail=_joined_output(stdout_parts),
+        stdout_tail=stdout_tail,
         stderr_tail=_joined_output(stderr_parts),
         repo_root=repo_root,
+        benchmark_summary=benchmark_summary,
     )
 
 
@@ -345,6 +361,7 @@ def _release_health_result(
     stderr_tail: object = "",
     skipped_reason: str = "",
     repo_root: Path = REPO_ROOT,
+    benchmark_summary: dict[str, object] | None = None,
 ) -> dict[str, object]:
     result: dict[str, object] = {
         "id": check.id,
@@ -359,6 +376,8 @@ def _release_health_result(
     }
     if skipped_reason:
         result["skipped_reason"] = skipped_reason
+    if benchmark_summary is not None:
+        result["benchmark_summary"] = benchmark_summary
     return result
 
 
@@ -366,13 +385,140 @@ def _release_health_summary(results: list[dict[str, object]]) -> dict[str, objec
     passed = sum(1 for result in results if result.get("status") == "passed")
     failed = sum(1 for result in results if result.get("status") == "failed")
     skipped = sum(1 for result in results if result.get("status") == "skipped")
-    return {
+    summary: dict[str, object] = {
         "total": len(results),
         "passed": passed,
         "failed": failed,
         "skipped": skipped,
         "ok": failed == 0,
     }
+    regression_signals_failed = _regression_signals_failed(results)
+    if regression_signals_failed:
+        summary["regression_signals_failed"] = regression_signals_failed
+    return summary
+
+
+def room_event_benchmark_summary_from_stdout(raw_stdout: object) -> dict[str, object]:
+    payload = _parse_room_event_benchmark_stdout(raw_stdout)
+    if payload is None:
+        return {"status": "unparsed"}
+    return _room_event_benchmark_summary(payload)
+
+
+def _parse_room_event_benchmark_stdout(raw_stdout: object) -> Mapping[str, object] | None:
+    text = _safe_text(raw_stdout).strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, Mapping):
+        return None
+    if str(payload.get("benchmark") or "") != "room_event_log_v1":
+        return None
+    return payload
+
+
+def _room_event_benchmark_summary(payload: Mapping[str, object]) -> dict[str, object]:
+    params = _safe_benchmark_params(_mapping_value(payload, "params"))
+    metrics = _mapping_value(payload, "metrics")
+    metrics_summary = _benchmark_metrics_summary(metrics)
+    regression_signals = _benchmark_regression_signals(metrics_summary)
+    return {
+        "status": "ok",
+        "schema_version": _safe_int(payload.get("schema_version")),
+        "params": params,
+        "metrics_summary": metrics_summary,
+        "regression_signals": regression_signals,
+        "ceilings": {
+            "flow_scheduler_predicate_p99_ms": SCHEDULER_P99_LATENCY_CEILING_MS,
+        },
+    }
+
+
+def _safe_benchmark_params(params: Mapping[str, object]) -> dict[str, int]:
+    safe: dict[str, int] = {}
+    for key in ROOM_BENCHMARK_PARAM_KEYS:
+        safe[key] = _safe_int(params.get(key))
+    return safe
+
+
+def _benchmark_metrics_summary(metrics: Mapping[str, object]) -> dict[str, float | None]:
+    scheduler = _mapping_value(metrics, "flow_scheduler_comparison")
+    predicate_latency = _mapping_value(scheduler, "predicate_latency_ms")
+    return {
+        "lobby_append_p99_ms": _latency_p99(metrics, "lobby_append_ms"),
+        "live_append_p99_ms": _latency_p99(metrics, "live_append_ms"),
+        "lobby_read_after_cursor_p99_ms": _latency_p99(metrics, "lobby_read_after_cursor_ms"),
+        "live_read_after_cursor_p99_ms": _latency_p99(metrics, "live_read_after_cursor_ms"),
+        "lobby_tail_read_ms": _latency_p99(metrics, "lobby_tail_read_ms"),
+        "live_tail_read_ms": _latency_p99(metrics, "live_tail_read_ms"),
+        "lobby_sse_append_to_frame_p99_ms": _latency_p99(metrics, "lobby_sse_append_to_frame_ms"),
+        "flow_normalized_improvement": _safe_float(scheduler.get("normalized_improvement")),
+        "flow_scheduler_predicate_p99_ms": _safe_float(predicate_latency.get("p99_ms")),
+    }
+
+
+def _benchmark_regression_signals(metrics_summary: Mapping[str, object]) -> list[dict[str, object]]:
+    predicate_p99 = _safe_float(metrics_summary.get("flow_scheduler_predicate_p99_ms"))
+    if predicate_p99 is None:
+        return []
+    ceiling = float(SCHEDULER_P99_LATENCY_CEILING_MS)
+    return [
+        {
+            "name": "flow_scheduler_predicate_p99_ms",
+            "value_ms": predicate_p99,
+            "ceiling_ms": ceiling,
+            "ok": predicate_p99 <= ceiling,
+        }
+    ]
+
+
+def _regression_signals_failed(results: list[dict[str, object]]) -> int:
+    failed = 0
+    for result in results:
+        benchmark_summary = result.get("benchmark_summary")
+        if not isinstance(benchmark_summary, Mapping):
+            continue
+        signals = benchmark_summary.get("regression_signals")
+        if not isinstance(signals, list):
+            continue
+        failed += sum(1 for signal in signals if isinstance(signal, Mapping) and signal.get("ok") is False)
+    return failed
+
+
+def _latency_p99(metrics: Mapping[str, object], key: str) -> float | None:
+    latency = _mapping_value(metrics, key)
+    value = _safe_float(latency.get("p99_ms"))
+    if value is not None:
+        return value
+    return _safe_float(latency.get("avg_ms"))
+
+
+def _mapping_value(source: Mapping[str, object], key: str) -> Mapping[str, object]:
+    value = source.get(key)
+    if isinstance(value, Mapping):
+        return value
+    return {}
+
+
+def _safe_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return 0
+
+
+def _safe_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
 
 
 def _safe_text(value: object) -> str:
