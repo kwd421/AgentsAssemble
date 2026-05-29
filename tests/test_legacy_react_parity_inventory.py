@@ -1,0 +1,269 @@
+import re
+import unittest
+from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@dataclass(frozen=True, order=True)
+class Route:
+    path: str
+    method: str
+    handler_form: str
+
+
+@dataclass(frozen=True)
+class MatrixRoute:
+    route: Route
+    react_wrapper: str
+    react_wired: str
+
+
+class LegacyReactParityInventoryTests(unittest.TestCase):
+    def test_gui_routes_match_matrix_appendix(self):
+        gui_routes = _parse_gui_routes(ROOT / "agentsassemble" / "gui.py")
+        matrix_routes = {entry.route for entry in _parse_matrix_appendix(ROOT / "docs" / "product" / "legacy-react-parity-matrix.md")}
+
+        self.assertEqual(gui_routes, matrix_routes)
+
+    def test_appendix_react_wrappers_resolve_in_api_ts(self):
+        entries = _parse_matrix_appendix(ROOT / "docs" / "product" / "legacy-react-parity-matrix.md")
+        api_wrappers_by_route = _parse_api_ts_wrappers_by_route(ROOT / "frontend" / "src" / "api.ts")
+
+        mismatched_wrappers: list[str] = []
+        wrongly_labeled: list[str] = []
+        for entry in entries:
+            expected_wrappers = set(_wrapper_names(entry.react_wrapper))
+            react_wired = entry.react_wired.casefold()
+            if react_wired == "yes":
+                actual_wrappers = api_wrappers_by_route.get(entry.route, set())
+                if expected_wrappers != actual_wrappers:
+                    mismatched_wrappers.append(
+                        f"{entry.route.method} {entry.route.path} expected {sorted(expected_wrappers)} "
+                        f"from appendix but api.ts has {sorted(actual_wrappers)}"
+                    )
+            elif expected_wrappers:
+                wrongly_labeled.append(
+                    f"{entry.route.method} {entry.route.path} is {entry.react_wired} but lists "
+                    f"{sorted(expected_wrappers)}"
+                )
+
+        self.assertEqual([], mismatched_wrappers)
+        self.assertEqual([], wrongly_labeled)
+
+    def test_api_ts_endpoints_covered_by_react_wired_appendix_rows(self):
+        api_routes = _parse_api_ts_routes(ROOT / "frontend" / "src" / "api.ts")
+        react_wired_matrix_routes = {
+            entry.route
+            for entry in _parse_matrix_appendix(ROOT / "docs" / "product" / "legacy-react-parity-matrix.md")
+            if entry.react_wired.casefold() == "yes"
+        }
+
+        self.assertEqual(api_routes, react_wired_matrix_routes)
+
+    def test_surface_inventory_api_wrapper_names_exist(self):
+        matrix_path = ROOT / "docs" / "product" / "legacy-react-parity-matrix.md"
+        surface_wrappers = _parse_surface_inventory_api_wrapper_names(matrix_path)
+        api_wrappers = _parse_api_ts_exported_functions(ROOT / "frontend" / "src" / "api.ts")
+
+        missing = sorted(name for name in surface_wrappers if name not in api_wrappers)
+        self.assertEqual([], missing)
+
+
+def _parse_gui_routes(path: Path) -> set[Route]:
+    text = path.read_text(encoding="utf-8")
+    routes: set[Route] = set()
+    current_method = ""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("def do_GET"):
+            current_method = "GET"
+            continue
+        if stripped.startswith("def do_POST"):
+            current_method = "POST"
+            continue
+        if stripped.startswith("def log_message"):
+            current_method = ""
+            continue
+        if current_method not in {"GET", "POST"}:
+            continue
+
+        exact = re.search(r'(?:path|parsed\.path) == "(/api/[^"]+)"', stripped)
+        if exact:
+            route_path = _normalize_gui_literal(exact.group(1))
+            routes.add(Route(route_path, current_method, _handler_form(route_path)))
+            continue
+
+        startswith = re.search(r'path\.startswith\("(/api/[^"]+)"\)', stripped)
+        if startswith:
+            prefix = startswith.group(1)
+            if prefix == "/api/attachments/":
+                routes.add(Route("/api/attachments/{attachment_id}", current_method, "prefix"))
+            elif prefix == "/api/meetings/":
+                # More specific meeting lifecycle and event routes are modeled
+                # below from their guards/helper calls.
+                routes.add(Route("/api/meetings/{meeting_id}", current_method, "prefix"))
+
+        meeting_lifecycle = 'path.startswith("/api/meetings/") and path.endswith("/lifecycle")' in stripped
+        if meeting_lifecycle:
+            routes.add(Route("/api/meetings/{meeting_id}/lifecycle", current_method, "prefix"))
+
+        if "self._meeting_events_id(path)" in stripped:
+            routes.add(Route("/api/meetings/{meeting_id}/events", current_method, "sse"))
+
+        for action in _helper_actions(stripped, "_live_agent_action_path"):
+            routes.add(Route(f"/api/live-agents/{{agent_id}}/{action}", current_method, "prefix"))
+        for action in _helper_actions(stripped, "_meeting_live_agent_turn_action_path"):
+            routes.add(Route(f"/api/meetings/{{meeting_id}}/live-agent-turns/{action}", current_method, "prefix"))
+        for function_name, action in (
+            ("_meeting_live_agent_turn_request_path", "request"),
+            ("_meeting_live_agent_turn_call_path", "call"),
+            ("_meeting_live_agent_turn_sequence_path", "sequence"),
+            ("_meeting_live_agent_turn_rounds_path", "rounds"),
+            ("_meeting_live_agent_turn_round_path", "round"),
+            ("_meeting_live_agent_turn_preset_path", "preset"),
+        ):
+            if function_name in stripped:
+                routes.add(Route(f"/api/meetings/{{meeting_id}}/live-agent-turns/{action}", current_method, "prefix"))
+        if "_meeting_finalize_path" in stripped:
+            routes.add(Route("/api/meetings/{meeting_id}/finalize", current_method, "prefix"))
+        if "_meeting_review_checkpoint_path" in stripped:
+            routes.add(Route("/api/meetings/{meeting_id}/review-checkpoints", current_method, "prefix"))
+        for action in _helper_actions(stripped, "_live_agent_process_action_path"):
+            routes.add(Route(f"/api/live-agent-processes/{{group_id}}/{action}", current_method, "prefix"))
+        for action in _helper_actions(stripped, "_live_agent_session_run_action_path"):
+            routes.add(Route(f"/api/live-agent-session-runs/{{run_id}}/{action}", current_method, "prefix"))
+
+    return routes
+
+
+def _helper_actions(line: str, helper_name: str) -> list[str]:
+    pattern = rf"{re.escape(helper_name)}\((?:path|parsed\.path), \"([^\"]+)\"\)"
+    return re.findall(pattern, line)
+
+
+def _handler_form(path: str) -> str:
+    if path in {"/api/events/lobby", "/api/events/side-chat"}:
+        return "sse"
+    return "exact"
+
+
+def _normalize_gui_literal(path: str) -> str:
+    return path.rstrip("?")
+
+
+def _parse_api_ts_routes(path: Path) -> set[Route]:
+    text = path.read_text(encoding="utf-8")
+    routes: set[Route] = set()
+    for matched_path, method, _wrapper in _api_ts_route_refs(text):
+        routes.add(_route_from_api_ts_ref(matched_path, method))
+    return routes
+
+
+def _parse_api_ts_wrappers_by_route(path: Path) -> dict[Route, set[str]]:
+    text = path.read_text(encoding="utf-8")
+    wrappers_by_route: dict[Route, set[str]] = defaultdict(set)
+    for matched_path, method, wrapper in _api_ts_route_refs(text):
+        wrappers_by_route[_route_from_api_ts_ref(matched_path, method)].add(wrapper)
+    return dict(wrappers_by_route)
+
+
+def _parse_api_ts_exported_functions(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8")
+    return set(re.findall(r"\bexport function ([A-Za-z0-9_]+)\(", text))
+
+
+def _route_from_api_ts_ref(path: str, method: str) -> Route:
+    normalized = _normalize_api_ts_path(path)
+    handler_form = "sse" if method == "GET_SSE" else "exact"
+    if method == "GET_SSE":
+        method = "GET"
+    elif "{" in normalized:
+        handler_form = "prefix"
+    return Route(normalized, method, handler_form)
+
+
+def _api_ts_route_refs(text: str) -> list[tuple[str, str, str]]:
+    lines = text.splitlines()
+    refs: list[tuple[str, str, str]] = []
+    current_function = ""
+    for line in lines:
+        function_match = re.search(r"\bexport function ([A-Za-z0-9_]+)\(", line)
+        if function_match:
+            current_function = function_match.group(1)
+        for matched_path in re.findall(r'["`](/api/[^"`]+)["`]', line):
+            method = "GET"
+            if "postJson" in line:
+                method = "POST"
+            elif "EventSource" in line:
+                method = "GET_SSE"
+            refs.append((matched_path, method, current_function))
+    return refs
+
+
+def _normalize_api_ts_path(path: str) -> str:
+    path = path.split("?", 1)[0]
+    path = re.sub(r"\$\{encodeURIComponent\(meetingId\)\}", "{meeting_id}", path)
+    return path
+
+
+def _parse_matrix_appendix(path: Path) -> list[MatrixRoute]:
+    text = path.read_text(encoding="utf-8")
+    heading = "## API/SSE Inventory Appendix"
+    if heading not in text:
+        raise AssertionError(f"{heading} is missing from {path}")
+    section = text.split(heading, 1)[1]
+    section = section.split("\n## ", 1)[0]
+    entries: list[MatrixRoute] = []
+    for raw_line in section.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("|") or line.startswith("| Path ") or line.startswith("| ---"):
+            continue
+        columns = [part.strip() for part in line.strip("|").split("|")]
+        if len(columns) != 6:
+            raise AssertionError(f"Inventory appendix row must have 6 columns: {raw_line}")
+        path_value, method, handler_form, react_wrapper, react_wired, _notes = columns
+        entries.append(
+            MatrixRoute(
+                Route(_strip_markdown_code(path_value), method, handler_form),
+                _strip_markdown_code(react_wrapper),
+                react_wired,
+            )
+        )
+    if not entries:
+        raise AssertionError(f"{heading} has no route rows")
+    return entries
+
+
+def _parse_surface_inventory_api_wrapper_names(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8")
+    section = text.split("## Surface Inventory", 1)[1].split("\n## ", 1)[0]
+    wrappers: set[str] = set()
+    for raw_line in section.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("|") or line.startswith("| Surface ") or line.startswith("| ---"):
+            continue
+        columns = [part.strip() for part in line.strip("|").split("|")]
+        if len(columns) < 3:
+            continue
+        react_equivalent = columns[2]
+        for name in re.findall(r"`([a-z][A-Za-z0-9_]+)\(\)`", react_equivalent):
+            if name.startswith(("fetch", "post", "upload", "start", "stop", "subscribe", "send", "cast", "resolve")):
+                wrappers.add(name)
+    return wrappers
+
+
+def _wrapper_names(value: str) -> list[str]:
+    if not value or value == "-":
+        return []
+    return [part.strip().rstrip("()") for part in value.split(",") if part.strip()]
+
+
+def _strip_markdown_code(value: str) -> str:
+    value = value.strip()
+    if value.startswith("`") and value.endswith("`"):
+        return value[1:-1].strip()
+    return value

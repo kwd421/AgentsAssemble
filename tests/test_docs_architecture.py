@@ -69,6 +69,7 @@ class DocsArchitectureTests(unittest.TestCase):
             "## Purpose And Non-Goals",
             "## Default-Flip Preconditions",
             "## Surface Inventory",
+            "## API/SSE Inventory Appendix",
             "## Room-Event Contract Signals",
             "## Legacy Fallback Status",
             "## Verification Index",
@@ -82,6 +83,8 @@ class DocsArchitectureTests(unittest.TestCase):
             "room-event contracts",
             "legacy fallback",
             "filled rows are not sufficient for defaulting React",
+            "tests/test_legacy_react_parity_inventory.py",
+            "| Full REST/SSE inventory | `agentsassemble/gui.py` | `frontend/src/api.ts` | verified |",
             "tests/test_gui_server.py::test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes",
         ):
             self.assertIn(required, matrix)

@@ -48,15 +48,15 @@ Status values:
 | Static assets | `/static/*` | `/legacy/static/*`, `/app/*`, Vite dev assets | verified for vanilla fallback and React preview serving, partial for React parity | `tests/test_static_ui_assets.py`, `tests/test_gui_server.py::test_react_app_preview_route_serves_dist_without_changing_default_routes`, `npm run build` when React changes | `/app/` serves ignored build output only when `frontend/dist` exists; `/` is still vanilla. |
 | Vite dev surface | Not applicable | `http://127.0.0.1:5173`, `/app/` built preview | partial | `frontend/README.md`, `frontend/vite.config.ts`, `python3 -m agentsassemble.cli frontend-info --json` | Dev proxy and built preview only; neither is the default entry point. |
 | Meeting list | `/api/meetings` | `fetchMeetings()` | partial | `frontend/src/api.ts`, `tests/test_static_ui_assets.py` | Needs browser parity proof before flip. |
-| Meeting payload | `/api/meetings/<meeting-id>` | `fetchMeeting()` | partial | `frontend/src/api.ts` | Full archive rendering parity is not proven. |
+| Meeting payload | `/api/meetings/<meeting-id>` | `fetchMeetingDetail()` | partial | `frontend/src/api.ts` | Full archive rendering parity is not proven. |
 | Meeting lifecycle | `/api/meetings/<meeting-id>/lifecycle` | `fetchMeetingLifecycle()` | partial | `tests/test_static_ui_assets.py::test_react_live_tab_surfaces_meeting_lifecycle_projection`, `tests/test_static_ui_assets.py::test_vanilla_gui_surfaces_lifecycle_next_action_on_core_tabs`, `tests/test_static_meeting_views_runtime.py` | Both surfaces have lifecycle labels/next-action copy; live browser parity remains separate. |
 | Board current step | `/api/meetings/<meeting-id>/lifecycle` | `BoardView` via `summarizeBoardLifecycle()` | partial | `tests/test_frontend_board_lifecycle.py`, `tests/test_static_ui_assets.py::test_react_board_uses_lifecycle_current_step_instead_of_artificial_rounds`, `tests/test_static_ui_assets.py::test_vanilla_gui_surfaces_lifecycle_next_action_on_core_tabs` | Board uses lifecycle current step, next action, role admission, and permission counts instead of artificial debate rounds; vanilla core tabs now show the same compact next action. |
 | Lobby events | `/api/lobby` | `fetchLobby()`, `postLobbyMessage()` | partial | `frontend/src/api.ts`, `tests/test_static_ui_assets.py::test_react_lobby_composer_uploads_attachments_then_posts_lobby` | Includes informal room history only. |
 | Lobby composer | Vanilla lobby composer | `LobbyComposer` | partial | `tests/test_static_ui_assets.py::test_react_lobby_composer_uploads_attachments_then_posts_lobby` | React can post text and attachment refs; browser parity proof remains separate. |
 | Lobby external participation | Join brief and LAN invite CLI surfaces | `LobbyView` read-only cards | partial | `tests/test_static_ui_assets.py::test_react_lobby_external_participation_renders_cli_only_cards_without_interactive_controls`, `tests/test_static_ui_assets.py::test_react_lobby_external_participation_uses_safe_command_skeletons_with_env_secret_refs`, `tests/test_static_ui_assets.py::test_react_lobby_external_participation_states_provider_startup_and_token_boundaries`, `tests/test_static_ui_assets.py::test_react_lobby_external_participation_has_no_unsafe_actions_or_token_io` | CLI-only read-only cards; no token generation, no provider start, no fetch/POST/SSE; safe command skeletons only. |
 | Side chat | `/api/side-chat` | `fetchSideChat()`, `postSideChatMessage()`, `SideChatPanel` | partial | `tests/test_frontend_side_chat_runtime.py`, `tests/test_static_ui_assets.py::test_react_side_chat_uses_separate_room_contract`, `cd frontend && npm run build` | React surfaces a separate unofficial side-chat panel; browser parity proof remains separate before defaulting. |
-| Live agents | `/api/live-agents` | `fetchLiveAgents()` | partial | `tests/test_static_ui_assets.py::test_react_lobby_preserves_agent_owned_room_evidence` | Host approval and context labels are represented. |
-| Flow status | `/api/live-agent-flow` | `fetchFlow()` | partial | `frontend/src/api.ts` | Play Mode only. |
+| Live agents | `/api/live-agents` | `FlowResponse.agents` via `fetchLiveAgentFlow()` | partial | `tests/test_static_ui_assets.py::test_react_lobby_preserves_agent_owned_room_evidence`, `frontend/src/api.ts` | Host approval and context labels are represented through the Play Mode flow payload; direct `/api/live-agents` parity remains vanilla-only. |
+| Flow status | `/api/live-agent-flow` | `fetchLiveAgentFlow()` | partial | `frontend/src/api.ts` | Play Mode only. |
 | Release health | `/api/release-health` | `fetchReleaseHealth()` | partial | `tests/test_static_ui_assets.py::test_react_admin_surfaces_release_health_catalog_as_cli_only`, `tests/test_static_ui_assets.py::test_react_admin_release_health_groups_default_queue_and_opt_in_with_safe_selectors` | React groups the read-only default proof queue and opt-in benchmark selector; GUI must not start checks. |
 | Local resources | `/api/local-resources` | `fetchLocalResources()`, `AdminPanel` | partial | `tests/test_static_ui_assets.py::test_react_admin_local_resources_renders_safe_process_observability`, `tests/test_frontend_local_resource_labels_runtime.py`, `tests/test_local_resources.py`, `tests/test_gui_server.py::test_local_resources_endpoint_returns_sanitized_read_only_snapshot` | React shows read-only sanitized local resource observability, including displayed-set CPU/RSS totals, 1/5/15m load, PPID, role legend, and humanized attention labels. Browser parity proof remains separate before defaulting. |
 | Attachment downloads | `/api/attachments/<id>` | Link or preview from event metadata | partial | `tests/test_gui_server.py::test_attachment_upload_sanitizes_and_downloads_image`, `tests/test_static_ui_assets.py::test_react_lobby_and_live_render_attachment_metadata`, `tests/test_static_ui_assets.py::test_react_lobby_composer_uploads_attachments_then_posts_lobby` | React reads event metadata and can upload attachment refs through the existing lobby composer contract; browser parity proof remains separate. |
@@ -64,7 +64,101 @@ Status values:
 | Side-chat SSE | `/api/events/side-chat` | `subscribeSideChat()` | partial | `tests/test_frontend_side_chat_runtime.py`, `tests/test_static_ui_assets.py::test_react_side_chat_uses_separate_room_contract`, `cd frontend && npm run build` | React subscribes to `side_chat` events through the side-chat stream and ignores lobby-stream payloads. |
 | Meeting SSE | `/api/meetings/<meeting-id>/events` | `subscribeMeetingEvents()`, official live-event fallback in `LiveView` | verified | `tests/test_frontend_meeting_stream_runtime.py`, `tests/test_static_ui_assets.py::test_react_live_tab_subscribes_to_meeting_sse_without_route_flip_or_provider_start`, `cd frontend && npm run build` | React Live subscribes to meeting stream snapshots/deltas and uses official live events only when Play Mode flow events are absent. Browser parity remains separate before defaulting. |
 | Flow start/stop mutation | `/api/live-agent-flow/start`, `/api/live-agent-flow/stop` | `startFlow()`, `stopFlow()` | partial | `frontend/src/api.ts` | Does not start provider CLIs. |
-| Full REST/SSE inventory | `agentsassemble/gui.py` | `frontend/src/api.ts` | unverified | Manual diff required | The matrix must not silently drift from `gui.py`. |
+| Full REST/SSE inventory | `agentsassemble/gui.py` | `frontend/src/api.ts` | verified | `tests/test_legacy_react_parity_inventory.py`, `API/SSE Inventory Appendix` | The matrix is guarded against silent route and React-wrapper drift from `gui.py` and `frontend/src/api.ts`. |
+
+## API/SSE Inventory Appendix
+
+This appendix records the current `/api/...` surface served by `agentsassemble/gui.py`.
+Rows marked `React wired: no` are intentionally documented as vanilla/admin/operator
+surface rather than silently counted as React parity.
+
+| Path | Method | Handler form | React wrapper | React wired | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `/api/attachments` | POST | exact | `uploadLobbyAttachment()` | yes | React composer uploads attachments before posting lobby messages. |
+| `/api/attachments/{attachment_id}` | GET | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/codex-sessions` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/codex-sessions/invite` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/codex-sessions/join` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/demo` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/events/lobby` | GET | sse | `subscribeLobby()` | yes | React lobby subscribes to lobby stream. |
+| `/api/events/side-chat` | GET | sse | `subscribeSideChat()` | yes | React side chat subscribes to separate stream. |
+| `/api/live-agent-discovery` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-flow` | GET | exact | `fetchLiveAgentFlow()` | yes | React Play Mode status surface. |
+| `/api/live-agent-flow/start` | POST | exact | `startFlow()` | yes | React Play Mode start control; does not start providers. |
+| `/api/live-agent-flow/stop` | POST | exact | `stopFlow()` | yes | React Play Mode stop control. |
+| `/api/live-agent-health` | GET | exact | `fetchHealth()` | yes | React admin/status observability. |
+| `/api/live-agent-join-brief` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-meetings/start` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-official-round-smoke` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-operations` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-preflight` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-process-events` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-processes` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-processes/start` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-processes/stop-running` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-processes/{group_id}/recover` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-processes/{group_id}/restart` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-processes/{group_id}/stop` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-readiness` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-real-session-smoke` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-session-runs` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-session-runs/ensure` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-session-runs/pause` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-session-runs/resume` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-session-runs/retry-now` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-session-runs/stop` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-session-runs/{run_id}/pause` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-session-runs/{run_id}/resume` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-session-runs/{run_id}/retry-now` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-session-runs/{run_id}/stop` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-session-smoke` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-sessions/check` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-sessions/ensure` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-sessions/readiness` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-sessions/recover` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-sessions/restart` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-sessions/resume` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-sessions/start` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-sessions/stop` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agent-smoke` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agents` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agents` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agents/{agent_id}/engagement` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agents/{agent_id}/heartbeat` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agents/{agent_id}/leave` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agents/{agent_id}/lobby` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agents/{agent_id}/official-turn` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agents/{agent_id}/probe` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agents/{agent_id}/return-packet` | GET | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/live-agents/{agent_id}/room` | GET | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/lobby` | GET | exact | `fetchLobby()` | yes | React lobby read/write. |
+| `/api/lobby` | POST | exact | `postLobbyMessage()` | yes | React lobby read/write. |
+| `/api/lobby/promote` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/lobby/remote` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/local-resources` | GET | exact | `fetchLocalResources()` | yes | React read-only resource monitor. |
+| `/api/meetings` | GET | exact | `fetchMeetings()` | yes | React meeting selector/archive list. |
+| `/api/meetings/latest` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/meetings/{meeting_id}` | GET | prefix | `fetchMeetingDetail()` | yes | React meeting detail/archive payload. |
+| `/api/meetings/{meeting_id}/events` | GET | sse | `subscribeMeetingEvents()` | yes | React Live stream subscription. |
+| `/api/meetings/{meeting_id}/finalize` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/meetings/{meeting_id}/lifecycle` | GET | prefix | `fetchMeetingLifecycle()` | yes | React lifecycle/board projection. |
+| `/api/meetings/{meeting_id}/live-agent-turns/call` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/meetings/{meeting_id}/live-agent-turns/preset` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/meetings/{meeting_id}/live-agent-turns/request` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/meetings/{meeting_id}/live-agent-turns/round` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/meetings/{meeting_id}/live-agent-turns/rounds` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/meetings/{meeting_id}/live-agent-turns/sequence` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/meetings/{meeting_id}/review-checkpoints` | POST | prefix | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/play/mafia` | GET | exact | `fetchMafiaGame()` | yes | React Mafia game view. |
+| `/api/play/mafia/chat` | POST | exact | `sendMafiaChat()` | yes | React Mafia chat action. |
+| `/api/play/mafia/resolve` | POST | exact | `resolveMafiaPhase()` | yes | React Mafia phase resolution. |
+| `/api/play/mafia/start` | POST | exact | `startMafiaGame()` | yes | React Mafia start action. |
+| `/api/play/mafia/vote` | POST | exact | `castMafiaVote()` | yes | React Mafia vote action. |
+| `/api/provider-health` | POST | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/providers` | GET | exact | `-` | no | Vanilla/admin/operator endpoint; not wrapped by React preview yet. |
+| `/api/release-health` | GET | exact | `fetchReleaseHealth()` | yes | React read-only release health catalog. |
+| `/api/side-chat` | GET | exact | `fetchSideChat()` | yes | React side-chat read/write. |
+| `/api/side-chat` | POST | exact | `postSideChatMessage()` | yes | React side-chat read/write. |
 
 ## Room-Event Contract Signals
 
@@ -120,6 +214,7 @@ Use these checks to support parity rows:
 | Check | Supports |
 | --- | --- |
 | `python3 -m unittest tests.test_docs_architecture -v` | Matrix existence, cross-references, opt-in boundary. |
+| `python3 -m unittest tests.test_legacy_react_parity_inventory -v` | GUI API/SSE inventory appendix, React wrapper labels, and React API endpoint coverage. |
 | `python3 -m unittest tests.test_cli_timeout -v` | `frontend-info` contract, `/app/` preview metadata, and `is_default_entry_point` boundary. |
 | `python3 -m unittest tests.test_static_ui_assets -v` | Static asset contracts and React source evidence labels. |
 | `python3 -m unittest tests.test_frontend_lobby_sse_runtime -v` | React lobby SSE parser, merge, and EventSource subscription behavior. |
