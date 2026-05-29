@@ -34,6 +34,23 @@ export interface LobbyPostResponse {
   events: LobbyEvent[];
 }
 
+export interface SideChatEvent {
+  id: string;
+  kind: string;
+  name: string;
+  message: string;
+  side: string;
+  created_at: string;
+  channel?: string;
+  audience?: string;
+  official_record?: boolean;
+}
+
+export interface SideChatPostResponse {
+  event?: SideChatEvent;
+  events: SideChatEvent[];
+}
+
 export interface MeetingLiveEvent {
   id?: string;
   event_id?: string;
@@ -356,6 +373,29 @@ export function postLobbyMessage({
   });
 }
 
+export function fetchSideChat() {
+  return fetchJson<{ events: SideChatEvent[] }>("/api/side-chat");
+}
+
+export function postSideChatMessage({
+  name,
+  side = "mine",
+  kind = "message",
+  message,
+}: {
+  name: string;
+  side?: string;
+  kind?: "message";
+  message: string;
+}) {
+  return postJson<SideChatPostResponse>("/api/side-chat", {
+    name,
+    side,
+    kind,
+    message,
+  });
+}
+
 export function fetchLiveAgentFlow() {
   return fetchJson<FlowResponse>("/api/live-agent-flow");
 }
@@ -431,6 +471,36 @@ export function mergeMeetingLiveEvents(
   return order.map((eventId) => byId.get(eventId)).filter(Boolean) as MeetingLiveEvent[];
 }
 
+export function sideChatEventId(event: SideChatEvent): string {
+  return String(
+    event.id ||
+      [event.name, event.kind, event.created_at, event.message]
+        .filter(Boolean)
+        .join(":")
+  ).trim();
+}
+
+export function mergeSideChatEvents(
+  existing: SideChatEvent[],
+  incoming: SideChatEvent[]
+): SideChatEvent[] {
+  const byId = new Map<string, SideChatEvent>();
+  const order: string[] = [];
+  for (const event of existing) {
+    const eventId = sideChatEventId(event);
+    if (!eventId) continue;
+    byId.set(eventId, event);
+    order.push(eventId);
+  }
+  for (const event of incoming) {
+    const eventId = sideChatEventId(event);
+    if (!eventId) continue;
+    if (!byId.has(eventId)) order.push(eventId);
+    byId.set(eventId, event);
+  }
+  return order.map((eventId) => byId.get(eventId)).filter(Boolean) as SideChatEvent[];
+}
+
 export function initialMeetingStreamState(meetingId = ""): MeetingStreamState {
   return {
     meetingId,
@@ -496,6 +566,27 @@ export function meetingLiveEventsToTimelineEvents(events: MeetingLiveEvent[]): L
       } satisfies LobbyEvent;
     })
     .filter(Boolean) as LobbyEvent[];
+}
+
+export function parseSideChatStreamData(raw: string): SideChatEvent[] {
+  try {
+    const data = JSON.parse(raw) as { stream?: string; events?: unknown[] } | SideChatEvent | null;
+    if (!data || typeof data !== "object") return [];
+    if ("stream" in data && data.stream && data.stream !== "side_chat") return [];
+    if ("events" in data && Array.isArray(data.events)) {
+      return data.events.filter(isSideChatEvent) as SideChatEvent[];
+    }
+    return isSideChatEvent(data) ? [data] : [];
+  } catch {
+    return [];
+  }
+}
+
+function isSideChatEvent(value: unknown): value is SideChatEvent {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Partial<SideChatEvent>;
+  if (typeof event.channel === "string" && event.channel !== "side_chat") return false;
+  return typeof event.id === "string" && typeof event.message === "string";
 }
 
 export function fetchHealth() {
@@ -602,6 +693,23 @@ export function subscribeLobby(
 
   source.addEventListener("lobby", (e) => handleData((e as MessageEvent).data));
   source.onmessage = (e) => handleData(e.data);
+  if (onError) source.onerror = onError;
+  return () => source.close();
+}
+
+export function subscribeSideChat(
+  onEvents: (events: SideChatEvent[]) => void,
+  onError?: (err: Event) => void
+): () => void {
+  const source = new EventSource("/api/events/side-chat");
+
+  function handleData(raw: string) {
+    const events = parseSideChatStreamData(raw);
+    if (events.length) onEvents(events);
+  }
+
+  source.addEventListener("side_chat", (event) => handleData((event as MessageEvent).data));
+  source.onmessage = (event) => handleData(event.data);
   if (onError) source.onerror = onError;
   return () => source.close();
 }

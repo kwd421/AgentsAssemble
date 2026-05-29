@@ -15,11 +15,14 @@ import {
   fetchLiveAgentFlow,
   fetchMafiaGame,
   fetchMeetingLifecycle,
+  fetchSideChat,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
+  mergeSideChatEvents,
   meetingLiveEventsToTimelineEvents,
   meetingStreamStateForActiveMeeting,
   subscribeMeetingEvents,
+  subscribeSideChat,
   type FlowResponse,
   type MeetingStreamState,
   type MeetingLifecycleResponse,
@@ -27,6 +30,7 @@ import {
   type LifecycleProjection,
   type MafiaGame,
   type MafiaGameResponse,
+  type SideChatEvent,
 } from "./api";
 import { usePoll } from "./hooks";
 import AdminPanel from "./views/AdminPanel";
@@ -81,6 +85,8 @@ export default function App() {
     initialMeetingStreamState("")
   );
   const [meetingStreamError, setMeetingStreamError] = useState<Error | null>(null);
+  const [sideChatEvents, setSideChatEvents] = useState<SideChatEvent[]>([]);
+  const [sideChatError, setSideChatError] = useState<Error | null>(null);
 
   const flowFetcher = useCallback(() => fetchLiveAgentFlow(), []);
   const [flowData, flowLoading, flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
@@ -125,6 +131,41 @@ export default function App() {
       unsubscribe();
     };
   }, [flow.meeting_id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSideChat()
+      .then((payload) => {
+        if (cancelled) return;
+        if (Array.isArray(payload.events)) {
+          setSideChatEvents((previous) => mergeSideChatEvents(previous, payload.events));
+        }
+        setSideChatError(null);
+      })
+      .catch((errorValue) => {
+        if (!cancelled) {
+          setSideChatError(errorValue instanceof Error ? errorValue : new Error("Side chat unavailable"));
+        }
+      });
+    const unsubscribe = subscribeSideChat(
+      (incoming) => {
+        if (cancelled) return;
+        setSideChatError(null);
+        setSideChatEvents((previous) => mergeSideChatEvents(previous, incoming));
+      },
+      () => {
+        if (!cancelled) setSideChatError(new Error("Side chat stream disconnected"));
+      }
+    );
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  const handleSideChatPosted = useCallback((events: SideChatEvent[]) => {
+    setSideChatEvents((previous) => mergeSideChatEvents(previous, events));
+  }, []);
 
   const activeMeetingStreamState = meetingStreamStateForActiveMeeting(
     meetingStreamState,
@@ -292,6 +333,9 @@ export default function App() {
               lifecycle={lifecycle}
               lifecycleLoading={Boolean(flow.meeting_id) && lifecycleLoading}
               lifecycleError={Boolean(flow.meeting_id) ? lifecycleError || meetingStreamError : null}
+              sideChatEvents={sideChatEvents}
+              sideChatError={sideChatError}
+              onSideChatPosted={handleSideChatPosted}
             />
           ) : channel === "board" ? (
             <BoardView flow={flow} agents={agents} events={flowEvents} lifecycle={lifecycle} />

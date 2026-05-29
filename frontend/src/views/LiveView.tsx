@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import {
   castMafiaVote,
+  postSideChatMessage,
   resolveMafiaPhase,
   sendMafiaChat,
   subscribeLobby,
@@ -29,6 +30,7 @@ import {
   type LobbyEvent,
   type MafiaGame,
   type MafiaPlayer,
+  type SideChatEvent,
 } from "../api";
 import {
   agentTruthBadges,
@@ -273,6 +275,120 @@ function AgentLiveRow({ agent }: { agent: LiveAgent }) {
         {agentStatusLabel(agent.status)}
       </span>
     </div>
+  );
+}
+
+function SideChatPanel({
+  events,
+  error,
+  onPosted,
+}: {
+  events: SideChatEvent[];
+  error: Error | null;
+  onPosted: (events: SideChatEvent[]) => void;
+}) {
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sendError, setSendError] = useState("");
+  const visibleEvents = events.slice(-12);
+
+  async function handleSend() {
+    const trimmed = message.trim();
+    if (!trimmed || busy) return;
+    const previousMessage = message;
+    setMessage("");
+    setBusy(true);
+    setSendError("");
+    try {
+      const payload = await postSideChatMessage({
+        name: "나",
+        side: "mine",
+        message: trimmed,
+      });
+      onPosted(payload.events?.length ? payload.events : payload.event ? [payload.event] : []);
+    } catch (errorValue) {
+      setMessage(previousMessage);
+      setSendError(errorValue instanceof Error ? errorValue.message : "사이드챗 전송 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="ops-panel ops-cut p-4" aria-label="비공식 사이드챗">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[17px] font-black">비공식 사이드챗</h2>
+          <p className="mt-1 text-[11px] font-bold text-text-muted">
+            공식 기록 제외
+          </p>
+        </div>
+        <span className="rounded-md border border-text-muted/25 px-2 py-1 text-[10px] font-black text-text-muted">
+          {events.length}개
+        </span>
+      </div>
+
+      {(error || sendError) && (
+        <p className="mb-3 rounded-lg border border-danger/25 bg-danger/10 px-3 py-2 text-[12px] text-danger preserve-words">
+          {sendError || "사이드챗 연결 대기 중"}
+        </p>
+      )}
+
+      <div className="ops-inner mb-3 max-h-[260px] min-h-[150px] overflow-y-auto rounded-lg p-3 chat-scroll">
+        {visibleEvents.length === 0 ? (
+          <div className="flex h-[120px] items-center justify-center text-center text-[13px] text-text-muted preserve-words">
+            아직 비공식 사이드챗이 없습니다.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {visibleEvents.map((event) => (
+              <article
+                key={event.id}
+                className={`rounded-lg border p-3 ${
+                  event.side === "mine" || event.side === "my-agent"
+                    ? "border-accent/18 bg-accent/8"
+                    : "border-accent/10 bg-black/16"
+                }`}
+              >
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <p className="truncate text-[12px] font-black text-text-primary preserve-words">
+                    {event.name || "side"}
+                  </p>
+                  <span className="font-mono text-[10px] text-text-muted">
+                    {formatTime(event.created_at)}
+                  </span>
+                </div>
+                <p className="text-[12px] leading-relaxed text-text-secondary preserve-words">
+                  {event.message}
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_40px]">
+        <input
+          value={message}
+          maxLength={2000}
+          onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void handleSend();
+          }}
+          className="ops-input min-w-0 rounded-lg px-3 py-2.5 text-[13px]"
+          placeholder="실황 보면서 한마디"
+        />
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={busy || !message.trim()}
+          className="grid h-10 place-items-center rounded-lg border border-accent/35 bg-accent/10 text-accent disabled:opacity-40"
+          aria-label="사이드챗 보내기"
+        >
+          <Send size={16} />
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -588,6 +704,9 @@ export default function LiveView({
   lifecycle,
   lifecycleLoading,
   lifecycleError,
+  sideChatEvents,
+  sideChatError,
+  onSideChatPosted,
 }: {
   flow: FlowState;
   flowEvents: LobbyEvent[];
@@ -598,6 +717,9 @@ export default function LiveView({
   lifecycle: LifecycleProjection | null;
   lifecycleLoading: boolean;
   lifecycleError: Error | null;
+  sideChatEvents: SideChatEvent[];
+  sideChatError: Error | null;
+  onSideChatPosted: (events: SideChatEvent[]) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToLatestRef = useRef(true);
@@ -864,6 +986,12 @@ export default function LiveView({
 
       <aside className="space-y-4">
         <LifecyclePanel lifecycle={lifecycle} loading={lifecycleLoading} error={lifecycleError} />
+
+        <SideChatPanel
+          events={sideChatEvents}
+          error={sideChatError}
+          onPosted={onSideChatPosted}
+        />
 
         <section className="ops-panel ops-cut p-4">
           <h2 className="mb-4 text-[17px] font-black">라이브 상태</h2>

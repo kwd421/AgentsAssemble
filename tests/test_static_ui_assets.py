@@ -114,6 +114,39 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("download_url: string;", api_source)
         self.assertIn("attachments?: LobbyAttachmentRef[];", api_source)
 
+    def test_react_side_chat_uses_separate_room_contract(self):
+        api_source = frontend_file("api.ts")
+        app_source = frontend_file("App.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertIn("export interface SideChatEvent", api_source)
+        self.assertIn("export interface SideChatPostResponse", api_source)
+        self.assertIn("export function fetchSideChat", api_source)
+        self.assertIn('"/api/side-chat"', api_source)
+        self.assertIn("export function postSideChatMessage", api_source)
+        self.assertIn("export function subscribeSideChat", api_source)
+        self.assertIn('new EventSource("/api/events/side-chat")', api_source)
+        self.assertIn('source.addEventListener("side_chat"', api_source)
+
+        side_chat_api = api_source[
+            api_source.index("export function fetchSideChat") : api_source.index("export function fetchLiveAgentFlow")
+        ]
+        self.assertNotIn('"/api/lobby"', side_chat_api)
+        self.assertNotIn("/api/lobby/promote", api_source)
+
+        self.assertIn("sideChatEvents", app_source)
+        self.assertIn("subscribeSideChat", app_source)
+        self.assertIn("fetchSideChat", app_source)
+        self.assertIn("mergeSideChatEvents(previous, payload.events)", app_source)
+        self.assertIn("sideChatEvents={sideChatEvents}", app_source)
+
+        self.assertIn("sideChatEvents", live_source)
+        self.assertIn("SideChatPanel", live_source)
+        self.assertIn("비공식 사이드챗", live_source)
+        self.assertIn("공식 기록 제외", live_source)
+        self.assertIn("postSideChatMessage", live_source)
+        self.assertNotIn("promote", live_source)
+
     def test_react_lobby_and_live_render_attachment_metadata(self):
         lobby_source = frontend_file("views/LobbyView.tsx")
         live_source = frontend_file("views/LiveView.tsx")
