@@ -255,6 +255,31 @@ test("live transcript refresh preserves stable rows, appends new rows, updates c
   assert.equal(feed.scrollTop, 44);
 });
 
+test("live transcript keeps versions decimals and ellipses inside readable paragraphs", () => {
+  const { document } = installHarness();
+  const payload = payloadWithEvents([
+    {
+      id: "live-token",
+      kind: "message",
+      display_name: "Kiro Opus 4.7",
+      content:
+        "Kiro Opus 4.7은 0.5초짜리 판단처럼 보이더라도 80kg 조건과 모르겠다... 같은 말줄임을 중간에 자르면 안 됩니다. 진짜 문장 끝에서만 다음 문단으로 넘어갑니다.",
+      confidence: "medium",
+      official_record: true,
+    },
+  ]);
+  state.payload = payload;
+  renderLive(payload, { followLatest: false });
+
+  const row = document.querySelectorAll("[data-live-item-id]").find((item) => item.dataset.liveItemId === "live-token");
+  assert.ok(row);
+  assert.match(row.textContent, /Kiro Opus 4\.7은 0\.5초/);
+  assert.match(row.textContent, /모르겠다\.\.\./);
+  assert.doesNotMatch(document.live.innerHTML, /Opus 4\.<\/p>\s*<p>7/);
+  assert.doesNotMatch(document.live.innerHTML, /0\.<\/p>\s*<p>5/);
+  assert.doesNotMatch(document.live.innerHTML, /모르겠다\.<\/p>\s*<p>\./);
+});
+
 test("static lifecycle summary maps current step, next action, counts, and attention safely", () => {
   const summary = summarizeLifecycleForStaticGui({
     state: "blocked_by_pending_turns",

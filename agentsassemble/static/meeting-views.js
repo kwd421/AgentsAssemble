@@ -935,17 +935,61 @@ function renderTextBlocks(text, options = {}) {
 function paragraphize(text) {
   const normalized = String(text || "").replace(/\s+/g, " ").trim();
   if (!normalized) return [""];
-  const sentences = normalized.match(/[^.!?。！？]+[.!?。！？]?/g) || [normalized];
+  const sentences = splitSentences(normalized);
   return sentences.flatMap((sentence) => splitLongSentence(sentence.trim())).filter(Boolean);
 }
 
+function splitSentences(text) {
+  const sentences = [];
+  let start = 0;
+  let index = 0;
+  while (index < text.length) {
+    if (!isSentenceBoundary(text, index)) {
+      index += 1;
+      continue;
+    }
+    let end = index + 1;
+    while (end < text.length && isClosingSentencePunctuation(text[end])) end += 1;
+    sentences.push(text.slice(start, end).trim());
+    while (end < text.length && /\s/.test(text[end])) end += 1;
+    start = end;
+    index = end;
+  }
+  if (start < text.length) sentences.push(text.slice(start).trim());
+  return sentences.length ? sentences : [text];
+}
+
+function isSentenceBoundary(text, index) {
+  const char = text[index];
+  if (!".!?。！？".includes(char)) return false;
+  if (char === ".") {
+    const previous = text[index - 1] || "";
+    const next = text[index + 1] || "";
+    if (/\d/.test(previous) && /\d/.test(next)) return false;
+    if (previous === "." || next === ".") return false;
+  }
+  if ("。！？".includes(char)) return true;
+  const nextIndex = skipClosingSentencePunctuation(text, index + 1);
+  return nextIndex >= text.length || /\s/.test(text[nextIndex]);
+}
+
+function skipClosingSentencePunctuation(text, index) {
+  let current = index;
+  while (current < text.length && isClosingSentencePunctuation(text[current])) current += 1;
+  return current;
+}
+
+function isClosingSentencePunctuation(char) {
+  return "\"'”’)]}〉》」』".includes(char);
+}
+
 function splitLongSentence(sentence) {
-  if (sentence.length <= 150) return [sentence];
+  if (sentence.length <= 180) return [sentence];
   const chunks = [];
   let current = "";
   for (const part of sentence.split(/([,;:，；：、])/)) {
     const next = `${current}${part}`.trim();
-    if (next.length > 110 && current) {
+    if (next.length > 180 && current) {
       chunks.push(current.trim());
       current = part.trim();
     } else {
@@ -953,15 +997,6 @@ function splitLongSentence(sentence) {
     }
   }
   if (current) chunks.push(current.trim());
-  return chunks.flatMap(splitOverlongText);
-}
-
-function splitOverlongText(text) {
-  if (text.length <= 150) return [text];
-  const chunks = [];
-  for (let index = 0; index < text.length; index += 110) {
-    chunks.push(text.slice(index, index + 110).trim());
-  }
   return chunks.filter(Boolean);
 }
 

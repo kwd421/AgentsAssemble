@@ -684,7 +684,7 @@
   max-width: 78ch;
   white-space: normal;
   word-break: keep-all;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .message-body p + p {
