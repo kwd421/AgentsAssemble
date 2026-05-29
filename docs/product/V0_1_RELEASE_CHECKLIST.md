@@ -124,6 +124,10 @@ Completed evidence:
   behind a CLI-only disclosure by default, so the first read stays focused on
   participant readiness and the basic start path while preserving the same safe
   command skeletons.
+- React Archive now surfaces canonical final artifacts (`transcript.md`,
+  `decision.md`, and shared-memory summaries/questions/actions) with generated
+  or missing states before secondary artifacts, making post-finalization review
+  easier without adding download/export APIs.
 
 1. Clarify the room surfaces:
    - Lobby means pre-meeting staging and agent admission.

@@ -596,6 +596,21 @@ class StaticUiAssetTests(unittest.TestCase):
 
         self.assertIn("import LifecycleBanner", records_source)
         self.assertIn("summarizeCompactLifecycle", records_source)
+        self.assertIn("canonicalArchiveArtifactRows", records_source)
+        self.assertIn("defaultArchiveArtifactSelection", records_source)
+        self.assertIn("otherArchiveArtifactNames", records_source)
+        self.assertIn("previousMeetingIdRef", records_source)
+        self.assertIn("sameMeeting ? activeArtifact : null", records_source)
+        self.assertIn("CANONICAL_FINAL_ARTIFACTS", records_source)
+        self.assertIn('"transcript.md"', records_source)
+        self.assertIn('"decision.md"', records_source)
+        self.assertIn('"shared_memory/rolling-summary.md"', records_source)
+        self.assertIn('"shared_memory/action-items.md"', records_source)
+        self.assertIn('"shared_memory/open-questions.md"', records_source)
+        self.assertIn("최종 산출물 / Final artifacts", records_source)
+        self.assertIn("기타 산출물 / Other artifacts", records_source)
+        self.assertIn("{artifact.available ? \"생성됨\" : \"미생성\"}", records_source)
+        self.assertLess(records_source.index("최종 산출물 / Final artifacts"), records_source.index("기타 산출물 / Other artifacts"))
         self.assertIn("const detailLifecycle = detail?.lifecycle ?? null;", records_source)
         self.assertIn("const lifecycleSummary = summarizeCompactLifecycle(detailLifecycle);", records_source)
         self.assertIn("<LifecycleBanner lifecycle={detailLifecycle} surface=\"archive\" emptyHint=\"selectMeeting\" />", records_source)
@@ -610,6 +625,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("summary.unsafePermissionViolations", banner_source)
         self.assertIn("ArtifactContent", records_source)
         self.assertIn("artifactNames.map", records_source)
+        self.assertIn("회의가 없다면 로비에서 새 회의를 시작하세요.", records_source)
+        self.assertIn("일반적으로 회의 최종화 후 transcript", records_source)
 
         for forbidden in [
             "startProvider",

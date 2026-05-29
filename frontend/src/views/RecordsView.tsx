@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   CalendarDays,
@@ -29,6 +29,94 @@ import {
 import { summarizeCompactLifecycle } from "../lib/lifecycleLabels";
 import LifecycleBanner from "./components/LifecycleBanner";
 import ProviderTruthChips from "./components/ProviderTruthChips";
+
+export type ArchiveArtifactMap = Record<string, string | null | undefined>;
+
+export type CanonicalArchiveArtifact = {
+  path: string;
+  label: string;
+  description: string;
+};
+
+export type CanonicalArchiveArtifactRow = CanonicalArchiveArtifact & {
+  available: boolean;
+};
+
+export const CANONICAL_FINAL_ARTIFACTS: CanonicalArchiveArtifact[] = [
+  {
+    path: "transcript.md",
+    label: "실황 기록 / Transcript",
+    description: "공식 발언으로 만든 회의록",
+  },
+  {
+    path: "decision.md",
+    label: "결정문 / Decision",
+    description: "결정 게이트와 후속 판단",
+  },
+  {
+    path: "shared_memory/rolling-summary.md",
+    label: "공유 메모리: 요약",
+    description: "공식 기록 기반 장기 맥락",
+  },
+  {
+    path: "shared_memory/action-items.md",
+    label: "공유 메모리: 실행 항목",
+    description: "공식 기록에서 추출한 액션",
+  },
+  {
+    path: "shared_memory/open-questions.md",
+    label: "공유 메모리: 미해결 질문",
+    description: "다음 회의가 이어받을 질문",
+  },
+];
+
+const CANONICAL_FINAL_ARTIFACT_PATHS = new Set(
+  CANONICAL_FINAL_ARTIFACTS.map((artifact) => artifact.path)
+);
+
+export function archiveArtifactHasContent(
+  artifacts: ArchiveArtifactMap,
+  path: string
+): boolean {
+  return Boolean(artifacts[path]);
+}
+
+export function canonicalArchiveArtifactRows(
+  artifacts: ArchiveArtifactMap
+): CanonicalArchiveArtifactRow[] {
+  return CANONICAL_FINAL_ARTIFACTS.map((artifact) => ({
+    ...artifact,
+    available: archiveArtifactHasContent(artifacts, artifact.path),
+  }));
+}
+
+export function availableArchiveArtifactNames(
+  artifacts: ArchiveArtifactMap
+): string[] {
+  return Object.keys(artifacts).filter((path) =>
+    archiveArtifactHasContent(artifacts, path)
+  );
+}
+
+export function otherArchiveArtifactNames(artifacts: ArchiveArtifactMap): string[] {
+  return availableArchiveArtifactNames(artifacts).filter(
+    (path) => !CANONICAL_FINAL_ARTIFACT_PATHS.has(path)
+  );
+}
+
+export function defaultArchiveArtifactSelection(
+  artifacts: ArchiveArtifactMap,
+  currentSelection?: string | null
+): string | null {
+  if (currentSelection && archiveArtifactHasContent(artifacts, currentSelection)) {
+    return currentSelection;
+  }
+  const canonical = CANONICAL_FINAL_ARTIFACTS.find((artifact) =>
+    archiveArtifactHasContent(artifacts, artifact.path)
+  );
+  if (canonical) return canonical.path;
+  return otherArchiveArtifactNames(artifacts)[0] ?? null;
+}
 
 function statusLabel(status: string): string {
   if (status === "active") return "진행 중";
@@ -187,6 +275,10 @@ function ArtifactContent({ content }: { content: string }) {
   return <div className="space-y-0.5">{elements}</div>;
 }
 
+function artifactDisplayName(path: string): string {
+  return path.replace("shared_memory/", "").replace(".md", "").replace(".json", "");
+}
+
 function ArchiveDetail({
   detail,
   onBack,
@@ -197,15 +289,28 @@ function ArchiveDetail({
   const [activeArtifact, setActiveArtifact] = useState<string | null>(null);
   const meeting = detail?.meeting ?? {};
   const artifacts = detail?.artifacts ?? {};
-  const artifactNames = Object.keys(artifacts).filter((key) => artifacts[key]);
+  const artifactNames = useMemo(() => otherArchiveArtifactNames(artifacts), [artifacts]);
+  const canonicalArtifacts = useMemo(
+    () => canonicalArchiveArtifactRows(artifacts),
+    [artifacts]
+  );
+  const availableCanonicalCount = canonicalArtifacts.filter((artifact) => artifact.available).length;
   const detailLifecycle = detail?.lifecycle ?? null;
   const lifecycleSummary = summarizeCompactLifecycle(detailLifecycle);
+  const meetingId = String(meeting.meeting_id || "");
+  const previousMeetingIdRef = useRef(meetingId);
 
   useEffect(() => {
-    if (!activeArtifact && artifactNames.length > 0) {
-      setActiveArtifact(artifactNames[0]);
+    const sameMeeting = previousMeetingIdRef.current === meetingId;
+    const nextSelection = defaultArchiveArtifactSelection(
+      artifacts,
+      sameMeeting ? activeArtifact : null
+    );
+    previousMeetingIdRef.current = meetingId;
+    if (nextSelection !== activeArtifact) {
+      setActiveArtifact(nextSelection);
     }
-  }, [activeArtifact, artifactNames]);
+  }, [activeArtifact, artifacts, meetingId]);
 
   if (!detail) {
     return (
@@ -216,6 +321,10 @@ function ArchiveDetail({
           <h1 className="text-[30px] font-black">아카이브</h1>
           <p className="mt-2 max-w-md text-[14px] text-text-muted preserve-words">
             왼쪽에서 세션을 선택하면 요약, 산출물, 하이라이트를 검토할 수 있습니다.
+          </p>
+          <p className="mx-auto mt-4 max-w-md text-[13px] text-text-secondary preserve-words">
+            회의가 없다면 로비에서 새 회의를 시작하세요. 완료된 회의는 transcript, decision,
+            shared memory를 여기서 확인합니다.
           </p>
         </div>
       </section>
@@ -261,28 +370,85 @@ function ArchiveDetail({
         </div>
       </div>
 
-      {artifactNames.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto border-b border-accent/14 px-4 py-3 chat-scroll">
-          {artifactNames.map((name) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => setActiveArtifact(name)}
-              className={`shrink-0 rounded-md border px-3 py-2 text-[12px] font-bold transition-colors ${
-                activeArtifact === name
-                  ? "border-accent/70 bg-accent/12 text-accent"
-                  : "border-accent/16 bg-panel-soft/45 text-text-muted hover:text-text-primary"
-              }`}
-            >
-              {name.replace(".md", "").replace(".json", "")}
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_410px]">
         <div className="space-y-4">
           <LifecycleBanner lifecycle={detailLifecycle} surface="archive" emptyHint="selectMeeting" />
+
+          <section className="ops-inner rounded-lg p-4">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-[17px] font-black">최종 산출물 / Final artifacts</h2>
+                <p className="mt-1 text-[12px] text-text-muted preserve-words">
+                  최종화 후 확인해야 하는 공식 회의록, 결정문, 공유 메모리입니다.
+                </p>
+              </div>
+              <span className="rounded border border-accent/25 bg-accent/10 px-2.5 py-1.5 text-[11px] font-black text-accent">
+                {availableCanonicalCount}/{canonicalArtifacts.length} 생성
+              </span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {canonicalArtifacts.map((artifact) => (
+                <button
+                  key={artifact.path}
+                  type="button"
+                  disabled={!artifact.available}
+                  onClick={() => artifact.available && setActiveArtifact(artifact.path)}
+                  className={`rounded-lg border p-3 text-left transition ${
+                    artifact.available
+                      ? activeArtifact === artifact.path
+                        ? "border-accent/70 bg-accent/12 text-text-primary"
+                        : "border-accent/18 bg-black/16 text-text-secondary hover:border-accent/45 hover:text-text-primary"
+                      : "cursor-not-allowed border-line/55 bg-panel/30 text-text-muted opacity-65"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-black preserve-words">
+                        {artifact.label}
+                      </p>
+                      <p className="mt-1 text-[11px] preserve-words">
+                        {artifact.description}
+                      </p>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded border px-2 py-1 text-[10px] font-black ${
+                        artifact.available
+                          ? "border-online/30 bg-online/10 text-online"
+                          : "border-line/60 bg-panel/45 text-text-muted"
+                      }`}
+                    >
+                      {artifact.available ? "생성됨" : "미생성"}
+                    </span>
+                  </div>
+                  <p className="mt-2 truncate font-mono text-[10px] text-text-muted">
+                    {artifact.path}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {artifactNames.length > 0 && (
+            <section className="ops-inner rounded-lg p-4">
+              <h2 className="mb-3 text-[15px] font-black">기타 산출물 / Other artifacts</h2>
+              <div className="flex gap-2 overflow-x-auto pb-1 chat-scroll">
+                {artifactNames.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => setActiveArtifact(name)}
+                    className={`shrink-0 rounded-md border px-3 py-2 text-[12px] font-bold transition-colors ${
+                      activeArtifact === name
+                        ? "border-accent/70 bg-accent/12 text-accent"
+                        : "border-accent/16 bg-panel-soft/45 text-text-muted hover:text-text-primary"
+                    }`}
+                  >
+                    {artifactDisplayName(name)}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="ops-inner rounded-lg p-4">
             <h2 className="mb-3 flex items-center gap-2 text-[17px] font-black">
@@ -293,7 +459,8 @@ function ArchiveDetail({
               <ArtifactContent content={artifacts[activeArtifact]!} />
             ) : (
               <p className="text-[13px] text-text-muted preserve-words">
-                아직 생성된 문서가 없습니다.
+                아직 생성된 문서가 없습니다. 일반적으로 회의 최종화 후 transcript,
+                decision, shared memory 산출물이 생성됩니다.
               </p>
             )}
           </section>
