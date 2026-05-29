@@ -224,10 +224,11 @@ the existing local append/read functions, does not fsync when the product path
 does not fsync, and reports local append/read/tail latency plus a synthetic flow
 speaking-distribution imbalance ratio. When `--sse-samples N` is set, it also
 reports a small `lobby_sse_append_to_frame_ms` measurement against the existing
-local `/api/events/lobby` SSE endpoint. This number is dominated by the current
-1-second polling cadence and is a regression tripwire on the same machine, not
-an SLA. Queue wait time and backpressure counts still require a later
-server/fanout slice and remain out of scope.
+local `/api/events/lobby` SSE endpoint. The stream checks the file-backed event
+log on a low-latency polling cadence while keeping idle keep-alive frames on a
+slower cadence; the number is a regression tripwire on the same machine, not an
+SLA. Queue wait time and backpressure counts still require a later server/fanout
+slice and remain out of scope.
 
 ## Local Resource Visibility
 

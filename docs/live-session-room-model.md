@@ -58,12 +58,12 @@ using `normalized_imbalance =
 plus a pure predicate latency sample over a 10k-event synthetic flow. When
 `--sse-samples N` is set, it also reports a small
 `lobby_sse_append_to_frame_ms` measurement against the existing local
-`/api/events/lobby` SSE endpoint. This number is dominated by the current
-1-second polling cadence and is a regression tripwire on the same machine, not
-an SLA. Queue wait time and backpressure counts still require a later
-server/fanout slice and remain out of scope. Treat the output as operator
-evidence for comparing local changes on the same machine, not as a service-level
-objective.
+`/api/events/lobby` SSE endpoint. The stream checks the file-backed event log on
+a low-latency polling cadence while keeping idle keep-alive frames on a slower
+cadence; the number is a regression tripwire on the same machine, not an SLA.
+Queue wait time and backpressure counts still require a later server/fanout
+slice and remain out of scope. Treat the output as operator evidence for
+comparing local changes on the same machine, not as a service-level objective.
 
 Play Mode flow fairness is a runner-side silent yield. Before a resident calls
 its provider, it compares its own speaking count against the current active

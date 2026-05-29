@@ -18796,6 +18796,33 @@ class GuiServerTests(unittest.TestCase):
             self.assertIn(": keep-alive", body)
             self.assertNotIn("ConnectionResetError", stderr.getvalue())
 
+    def test_lobby_sse_delivers_appended_event_below_polling_cadence(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            initial = append_lobby_event(root, {"name": "나", "side": "mine", "message": "첫 로비"})
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/events/lobby?last_event_id={initial['id']}",
+                    timeout=4,
+                ) as response:
+                    _read_sse_frame(response)
+                    started = time.perf_counter()
+                    event = append_lobby_event(root, {"name": "친구", "side": "other", "message": "빠르게 보여야 함"})
+                    frame = ""
+                    deadline = time.time() + 2
+                    while time.time() < deadline and str(event["id"]) not in frame:
+                        frame = _read_sse_frame(response, timeout=2)
+                    elapsed_seconds = time.perf_counter() - started
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertIn(str(event["id"]), frame)
+            self.assertLess(elapsed_seconds, 0.7)
+
     def test_sse_client_disconnect_does_not_log_connection_reset_traceback(self):
         stderr = StringIO()
         with tempfile.TemporaryDirectory() as temp_dir:

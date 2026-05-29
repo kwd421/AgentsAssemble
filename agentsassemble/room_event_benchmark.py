@@ -29,6 +29,7 @@ from agentsassemble.meeting_events import (
     read_lobby_events,
     read_lobby_events_after,
 )
+from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS, SSE_KEEPALIVE_INTERVAL_SECONDS
 
 
 BENCHMARK_SCHEMA_VERSION = 1
@@ -38,7 +39,6 @@ SCHEDULER_IMBALANCE_MARGIN = 0.5
 SCHEDULER_P99_LATENCY_CEILING_MS = 75.0
 SCHEDULER_LATENCY_EVENT_COUNT = 10_000
 SCHEDULER_LATENCY_CALLS = 60
-SSE_POLLING_CADENCE_SECONDS = 1.0
 SSE_SAMPLE_TIMEOUT_SECONDS = 5.0
 
 
@@ -120,7 +120,8 @@ def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, ob
             metrics["lobby_sse_append_to_frame_ms"] = {
                 **_latency_stats(sse_delivery),
                 "samples_requested": sse_samples,
-                "polling_cadence_seconds": SSE_POLLING_CADENCE_SECONDS,
+                "polling_cadence_seconds": SSE_EVENT_POLL_INTERVAL_SECONDS,
+                "keepalive_interval_seconds": SSE_KEEPALIVE_INTERVAL_SECONDS,
                 "enabled": True,
             }
         payload: dict[str, object] = {
@@ -150,7 +151,7 @@ def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, ob
                 "This benchmark calls the existing meeting_events append/read functions and does not add fsync.",
                 "Tail metrics use read_lobby_events/read_live_events with the configured read_window.",
                 "Flow scheduler comparison is synthetic and measures turn distribution, not provider quality.",
-                "Lobby SSE append-to-frame latency is reported when --sse-samples is set and is dominated by the 1 s polling cadence; queue wait time and backpressure counts remain out of scope.",
+                "Lobby SSE append-to-frame latency is reported when --sse-samples is set; the local server polls the file-backed event log on a low-latency cadence and emits keep-alive frames separately, while queue wait time and backpressure counts remain out of scope.",
                 "This is an operator regression signal, not an SLA.",
             ],
         }

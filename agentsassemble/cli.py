@@ -2556,7 +2556,8 @@ def _run_live_agent_room_benchmark(args: argparse.Namespace) -> int:
             print(
                 "- lobby SSE append-to-frame avg/p95: "
                 f"{lobby_sse.get('avg_ms', 0)} / {lobby_sse.get('p95_ms', 0)} ms "
-                f"(samples={lobby_sse.get('count', 0)}, cadence={lobby_sse.get('polling_cadence_seconds', 0)}s)"
+                f"(samples={lobby_sse.get('count', 0)}, cadence={lobby_sse.get('polling_cadence_seconds', 0)}s, "
+                f"keepalive={lobby_sse.get('keepalive_interval_seconds', 0)}s)"
             )
         print(f"- speaking imbalance: {fairness.get('imbalance_ratio', 0)} ({fairness.get('definition', '')})")
     return 0

@@ -79,9 +79,11 @@ class RoomEventBenchmarkTests(unittest.TestCase):
         metric = result["metrics"]["lobby_sse_append_to_frame_ms"]
         self.assertEqual(metric["count"], 2)
         self.assertEqual(metric["samples_requested"], 2)
-        self.assertEqual(metric["polling_cadence_seconds"], 1.0)
+        self.assertEqual(metric["polling_cadence_seconds"], 0.2)
+        self.assertEqual(metric["keepalive_interval_seconds"], 1.0)
         self.assertTrue(metric["enabled"])
         self.assert_metric_is_finite(metric)
+        self.assertLess(metric["max_ms"], 700.0)
 
     def test_default_benchmark_omits_lobby_sse_delivery_metric(self):
         with tempfile.TemporaryDirectory() as temp_dir:

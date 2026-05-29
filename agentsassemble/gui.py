@@ -124,6 +124,7 @@ from agentsassemble.meeting_events import (
 )
 from agentsassemble.adapters import default_provider_registry
 from agentsassemble.models import ProviderConfig, Role
+from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS, SSE_KEEPALIVE_INTERVAL_SECONDS
 
 TAB_LABELS = {"lobby": "로비", "live": "실황", "board": "작전판", "archive": "아카이브"}
 TABS = ["lobby", "live", "board", "archive"]
@@ -9235,6 +9236,7 @@ def _make_handler(
             self.end_headers()
             current_last_event_id = last_event_id
             current_payload_signature: str | None = None
+            last_write_at = 0.0
             while True:
                 try:
                     payload = _stream_snapshot_payload(
@@ -9244,17 +9246,23 @@ def _make_handler(
                         last_event_id=current_last_event_id,
                     )
                     latest_event_id = _last_payload_event_id(payload)
+                    wrote_frame = False
                     if latest_event_id:
                         self.wfile.write(_sse_event(event_name, payload, event_id=latest_event_id))
                         current_last_event_id = latest_event_id
                         current_payload_signature = _payload_signature(payload)
+                        wrote_frame = True
                     elif _payload_signature(payload) and _payload_signature(payload) != current_payload_signature:
                         self.wfile.write(_sse_event(event_name, payload))
                         current_payload_signature = _payload_signature(payload)
-                    else:
+                        wrote_frame = True
+                    elif time.monotonic() - last_write_at >= SSE_KEEPALIVE_INTERVAL_SECONDS:
                         self.wfile.write(b": keep-alive\n\n")
-                    self.wfile.flush()
-                    time.sleep(1)
+                        wrote_frame = True
+                    if wrote_frame:
+                        self.wfile.flush()
+                        last_write_at = time.monotonic()
+                    time.sleep(SSE_EVENT_POLL_INTERVAL_SECONDS)
                 except (ValueError, FileNotFoundError) as error:
                     error_payload = _sse_stream_error_payload(stream, error, meeting_id=meeting_id)
                     try:
