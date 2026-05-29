@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
+import urllib.parse
 
 
 REACT_APP_BUILD_COMMAND = "npm --prefix frontend run build"
@@ -13,10 +15,11 @@ class FrontendDistStatus:
     root: Path
     index_present: bool
     assets_dir_present: bool
+    referenced_assets_present: bool
 
     @property
     def static_available(self) -> bool:
-        return self.index_present and self.assets_dir_present
+        return self.index_present and self.assets_dir_present and self.referenced_assets_present
 
 
 def default_frontend_dist_root() -> Path:
@@ -25,8 +28,30 @@ def default_frontend_dist_root() -> Path:
 
 def frontend_dist_status(frontend_dist_root: Path | None = None) -> FrontendDistStatus:
     root = frontend_dist_root or default_frontend_dist_root()
+    index_path = root / "index.html"
+    assets_dir = root / "assets"
     return FrontendDistStatus(
         root=root,
-        index_present=(root / "index.html").is_file(),
-        assets_dir_present=(root / "assets").is_dir(),
+        index_present=index_path.is_file(),
+        assets_dir_present=assets_dir.is_dir(),
+        referenced_assets_present=_referenced_assets_present(index_path, assets_dir),
     )
+
+
+def _referenced_assets_present(index_path: Path, assets_dir: Path) -> bool:
+    if not index_path.is_file() or not assets_dir.is_dir():
+        return False
+    try:
+        html = index_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    refs = re.findall(r"""(?:src|href)=["']/assets/([^"']+)["']""", html)
+    if not refs:
+        return False
+    for ref in refs:
+        clean_ref = urllib.parse.unquote(ref.split("?", 1)[0].split("#", 1)[0])
+        if not clean_ref or clean_ref.startswith("/") or ".." in Path(clean_ref).parts:
+            return False
+        if not (assets_dir / clean_ref).is_file():
+            return False
+    return True

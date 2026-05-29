@@ -48,7 +48,7 @@ Status values:
 | Default entry | `/` | Future React build | verified for vanilla only | `tests/test_gui_server.py::test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes` | `/` still serves vanilla. |
 | Legacy fallback | `/legacy/` | Not applicable | verified | `tests/test_gui_server.py::test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes` | Required before any route flip. |
 | Static assets | `/static/*` | `/legacy/static/*`, `/app/*`, Vite dev assets | verified for vanilla fallback and React preview serving, partial for React parity | `tests/test_static_ui_assets.py`, `tests/test_gui_server.py::test_react_app_preview_route_serves_dist_without_changing_default_routes`, `npm run build` when React changes | `/app/` serves ignored build output only when `frontend/dist` exists; `/` is still vanilla. |
-| Vite dev surface | Not applicable | `http://127.0.0.1:5173`, `/app/` built preview | partial | `frontend/README.md`, `frontend/vite.config.ts`, `python3 -m agentsassemble.cli frontend-info --json` | Dev proxy and built preview only; neither is the default entry point. |
+| Vite dev surface | Not applicable | `http://127.0.0.1:5173`, `/app/` built preview | partial | `frontend/README.md`, `frontend/vite.config.ts`, `python3 -m agentsassemble.cli frontend-info --json` | Dev proxy and built preview only; neither is the default entry point. Startup guidance and `frontend-info` may recommend `/app/` when a complete build exists, but that recommendation is not a route flip. |
 | Room command strip | No single vanilla equivalent | `RoomCommandStrip` in `App.tsx` | partial | `tests/test_static_ui_assets.py::test_react_app_surfaces_room_command_center_without_provider_actions`, `cd frontend && npm run build` | React shows current step, next action, participant counts, and safe surface navigation from existing lifecycle/agent projections; it must not start providers, run release checks, close turns, promote chatter, or expose private session/prompt/path/credential fields. |
 | Meeting list | `/api/meetings` | `fetchMeetings()` | partial | `frontend/src/api.ts`, `tests/test_static_ui_assets.py` | Needs browser parity proof before flip. |
 | Meeting payload | `/api/meetings/<meeting-id>` | `fetchMeetingDetail()` | partial | `frontend/src/api.ts` | Full archive rendering parity is not proven. |
@@ -205,8 +205,10 @@ The React preview namespace is the same-backend opt-in route:
   is absent.
 - `/app/` rewrites Vite `/assets/*` references to `/app/assets/*`, so the
   backend route does not need to expose root-level `/assets/*`.
-- `frontend-info` reports `react_app_url`, `app_static_available`, and the
-  individual index/assets checks.
+- `frontend-info` reports `react_app_url`, `app_static_available`, the
+  individual index/assets checks, and a `recommended_ui_url` that points to
+  `/app/` only when a complete React build exists. This is launch guidance, not
+  default-entry approval.
 
 Evidence:
 

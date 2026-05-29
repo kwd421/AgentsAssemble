@@ -137,6 +137,14 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("app_static_available", payload)
         self.assertIn("app_index_present", payload)
         self.assertIn("app_assets_dir_present", payload)
+        if payload["app_static_available"]:
+            self.assertEqual(payload["recommended_ui_kind"], "react_preview")
+            self.assertEqual(payload["recommended_ui_url"], "http://127.0.0.1:9999/app/")
+            self.assertEqual(payload["recommended_ui_label"], "React preview")
+        else:
+            self.assertEqual(payload["recommended_ui_kind"], "legacy_fallback")
+            self.assertEqual(payload["recommended_ui_url"], "http://127.0.0.1:9999/")
+            self.assertEqual(payload["recommended_ui_label"], "Legacy fallback")
         self.assertEqual(payload["parity_matrix_doc"], "docs/product/legacy-react-parity-matrix.md")
         self.assertFalse(payload["is_default_entry_point"])
         self.assertIn("--port 9999", payload["launch_commands"][0])
@@ -157,6 +165,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertIn("React/Vite opt-in UI: http://127.0.0.1:5173", output)
         self.assertIn("Parity matrix: docs/product/legacy-react-parity-matrix.md", output)
         self.assertIn("Default surface kind: legacy_vanilla (React is opt-in only)", output)
+        self.assertIn("Recommended current UI:", output)
         self.assertIn("not the default entry point", output)
 
     def test_frontend_info_reports_react_app_static_availability_from_dist(self):
@@ -169,18 +178,47 @@ class CliTimeoutTests(unittest.TestCase):
             )
 
             dist = Path(temp_dir) / "dist"
-            (dist / "assets").mkdir(parents=True)
-            (dist / "index.html").write_text("<div></div>", encoding="utf-8")
+            assets = dist / "assets"
+            assets.mkdir(parents=True)
+            (dist / "index.html").write_text(
+                '<div id="root"></div><script type="module" src="/assets/app.js"></script>'
+                '<link rel="stylesheet" href="/assets/app.css">',
+                encoding="utf-8",
+            )
+            (assets / "app.js").write_text("console.log('react preview');", encoding="utf-8")
+            (assets / "app.css").write_text("body{color:white}", encoding="utf-8")
             present_payload = frontend_info_payload(
                 backend="http://127.0.0.1:9876",
                 port=5178,
                 frontend_dist_root=dist,
             )
+            incomplete_dist = Path(temp_dir) / "incomplete-dist"
+            (incomplete_dist / "assets").mkdir(parents=True)
+            (incomplete_dist / "index.html").write_text(
+                '<div id="root"></div><script type="module" src="/assets/missing.js"></script>',
+                encoding="utf-8",
+            )
+            incomplete_payload = frontend_info_payload(
+                backend="http://127.0.0.1:9876",
+                port=5178,
+                frontend_dist_root=incomplete_dist,
+            )
 
         self.assertFalse(missing_payload["app_static_available"])
+        self.assertEqual(missing_payload["recommended_ui_kind"], "legacy_fallback")
+        self.assertEqual(missing_payload["recommended_ui_url"], "http://127.0.0.1:9876/")
+        self.assertEqual(missing_payload["recommended_ui_label"], "Legacy fallback")
         self.assertFalse(missing_payload["app_index_present"])
         self.assertFalse(missing_payload["app_assets_dir_present"])
+        self.assertFalse(incomplete_payload["app_static_available"])
+        self.assertTrue(incomplete_payload["app_index_present"])
+        self.assertTrue(incomplete_payload["app_assets_dir_present"])
+        self.assertEqual(incomplete_payload["recommended_ui_kind"], "legacy_fallback")
+        self.assertEqual(incomplete_payload["recommended_ui_url"], "http://127.0.0.1:9876/")
         self.assertTrue(present_payload["app_static_available"])
+        self.assertEqual(present_payload["recommended_ui_kind"], "react_preview")
+        self.assertEqual(present_payload["recommended_ui_url"], "http://127.0.0.1:9876/app/")
+        self.assertEqual(present_payload["recommended_ui_label"], "React preview")
         self.assertTrue(present_payload["app_index_present"])
         self.assertTrue(present_payload["app_assets_dir_present"])
 

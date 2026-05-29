@@ -7733,8 +7733,15 @@ class GuiServerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             dist = Path(temp_dir) / "dist"
-            (dist / "assets").mkdir(parents=True)
-            (dist / "index.html").write_text("<div id='root'></div>", encoding="utf-8")
+            assets = dist / "assets"
+            assets.mkdir(parents=True)
+            (dist / "index.html").write_text(
+                '<div id="root"></div><script type="module" src="/assets/app.js"></script>'
+                '<link rel="stylesheet" href="/assets/app.css">',
+                encoding="utf-8",
+            )
+            (assets / "app.js").write_text("console.log('react preview');", encoding="utf-8")
+            (assets / "app.css").write_text("body{color:white}", encoding="utf-8")
             stdout = StringIO()
 
             with patch("agentsassemble.gui.LiveAgentProcessSupervisor", FakeSupervisor):
@@ -7744,6 +7751,7 @@ class GuiServerTests(unittest.TestCase):
 
         output = stdout.getvalue()
         self.assertIn("AgentsAssemble GUI:", output)
+        self.assertIn("Recommended current UI: http://127.0.0.1:48765/app/ (React preview)", output)
         self.assertIn("Legacy vanilla console (default entry point): http://127.0.0.1:48765/", output)
         self.assertIn("Legacy vanilla console (alias): http://127.0.0.1:48765/legacy/", output)
         self.assertIn("React preview (opt-in, not the default entry point): http://127.0.0.1:48765/app/", output)
@@ -7781,6 +7789,7 @@ class GuiServerTests(unittest.TestCase):
                         serve_gui(host="127.0.0.1", port=0, output_root=root, frontend_dist_root=missing_dist)
 
         output = stdout.getvalue()
+        self.assertIn("Recommended current UI: http://127.0.0.1:48766/ (legacy fallback)", output)
         self.assertIn("Legacy vanilla console (default entry point): http://127.0.0.1:48766/", output)
         self.assertIn("Legacy vanilla console (alias): http://127.0.0.1:48766/legacy/", output)
         self.assertNotIn("React preview (opt-in, not the default entry point): http://127.0.0.1:48766/app/", output)
@@ -7810,8 +7819,11 @@ class GuiServerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "room"
             partial_dist = Path(temp_dir) / "partial-dist"
-            partial_dist.mkdir()
-            (partial_dist / "index.html").write_text("<div id='root'></div>", encoding="utf-8")
+            (partial_dist / "assets").mkdir(parents=True)
+            (partial_dist / "index.html").write_text(
+                '<div id="root"></div><script type="module" src="/assets/missing.js"></script>',
+                encoding="utf-8",
+            )
             stdout = StringIO()
 
             with patch("agentsassemble.gui.LiveAgentProcessSupervisor", FakeSupervisor):
@@ -7820,6 +7832,7 @@ class GuiServerTests(unittest.TestCase):
                         serve_gui(host="127.0.0.1", port=0, output_root=root, frontend_dist_root=partial_dist)
 
         output = stdout.getvalue()
+        self.assertIn("Recommended current UI: http://127.0.0.1:48767/ (legacy fallback)", output)
         self.assertNotIn("React preview (opt-in, not the default entry point): http://127.0.0.1:48767/app/", output)
         self.assertIn("React preview (opt-in) build missing: run npm --prefix frontend run build", output)
 

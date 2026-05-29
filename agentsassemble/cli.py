@@ -1602,6 +1602,9 @@ def frontend_info_payload(
     backend_host = backend_parts.hostname or "127.0.0.1"
     backend_port = backend_parts.port or 8765
     dist_status = frontend_dist_status(frontend_dist_root)
+    recommended_ui_kind = "react_preview" if dist_status.static_available else "legacy_fallback"
+    recommended_ui_url = react_app_url if dist_status.static_available else backend_url + "/"
+    recommended_ui_label = "React preview" if dist_status.static_available else "Legacy fallback"
     return {
         "frontend_dir": "frontend",
         "frontend_url": frontend_url,
@@ -1617,6 +1620,9 @@ def frontend_info_payload(
         "react_app_url": react_app_url,
         "react_app_kind": "react_preview_opt_in",
         "react_app_label": "React preview (opt-in, not the default entry point)",
+        "recommended_ui_kind": recommended_ui_kind,
+        "recommended_ui_url": recommended_ui_url,
+        "recommended_ui_label": recommended_ui_label,
         "app_dist_path": "frontend/dist",
         "app_static_available": dist_status.static_available,
         "app_index_present": dist_status.index_present,
@@ -1646,6 +1652,7 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
     print(f"- {payload['default_console_label']}: {payload['legacy_console_url']}")
     print(f"- Legacy vanilla console (alias): {payload['legacy_console_namespace_url']}")
     print(f"- {payload['react_app_label']}: {payload['react_app_url']}")
+    print(f"- Recommended current UI: {payload['recommended_ui_url']} ({payload['recommended_ui_label']})")
     print(f"- React/Vite opt-in UI: {payload['frontend_url']}")
     print(f"- Vite API proxy target: {payload['frontend_dev_proxy_target']}")
     print(f"- Built React static available: {payload['app_static_available']} ({payload['app_dist_path']})")
