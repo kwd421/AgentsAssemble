@@ -236,9 +236,10 @@ The room may show a small local resource monitor for operator awareness, but it
 is read-only observability, not a scheduler or process manager. The resource
 surface can report sanitized process basenames, pid/ppid, CPU percent, RSS,
 load average, CPU count, and whether a process is an AgentsAssemble child or a
-supervised resident. It must not expose argv, env, cwd, absolute paths, config
-paths, endpoint URLs, auth refs, prompts, provider output, log tails, account
-state, or provider session ids.
+supervised resident. Aggregate CPU/RSS totals and role breakdowns are computed
+only from the already sanitized, displayed process set. It must not expose argv,
+env, cwd, absolute paths, config paths, endpoint URLs, auth refs, prompts,
+provider output, log tails, account state, or provider session ids.
 
 Resource polling should stay low pressure: cache OS process snapshots briefly,
 cap the displayed process list, and avoid adding dependencies for the local v1

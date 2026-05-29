@@ -163,6 +163,14 @@ export interface LocalResourceStatus {
     supervised_resident_count: number;
     total_cpu_pct: number;
     total_rss_kb: number;
+    role_breakdown?: Record<
+      string,
+      {
+        count: number;
+        cpu_pct: number;
+        rss_kb: number;
+      }
+    >;
     attention: string[];
   };
   processes: LocalResourceProcess[];

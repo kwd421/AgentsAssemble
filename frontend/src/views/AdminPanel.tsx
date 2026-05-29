@@ -20,12 +20,42 @@ const RELEASE_HEALTH_SAFETY_LABELS: Record<string, string> = {
   local_room_benchmark: "로컬 룸 벤치",
 };
 
+const RESOURCE_ROLE_LABELS: Record<string, string> = {
+  supervised_resident: "감독 중",
+  agentsassemble: "AA 자식",
+  other: "기타",
+};
+
 function releaseHealthSafetyLabel(safetyClass?: string) {
   return RELEASE_HEALTH_SAFETY_LABELS[safetyClass || ""] || "검증";
 }
 
 function releaseHealthSelector(check: ReleaseHealthCheck) {
   return `assemble release-health run --check ${check.id}`;
+}
+
+function formatResourceMemory(rssKb?: number) {
+  const mb = Math.max(0, Number(rssKb || 0) / 1024);
+  if (mb >= 1024) {
+    return `${(mb / 1024).toFixed(1)} GB`;
+  }
+  return `${mb >= 100 ? mb.toFixed(0) : mb.toFixed(1)} MB`;
+}
+
+function formatSnapshotAge(generatedAt?: string) {
+  if (!generatedAt) {
+    return "미확인";
+  }
+  const timestamp = new Date(generatedAt).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return "미확인";
+  }
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (seconds < 60) {
+    return `${seconds}초 전`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}분 전`;
 }
 
 export default function AdminPanel({ onClose }: { onClose: () => void }) {
@@ -39,6 +69,9 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
   const agents = health?.agents;
   const ok = health?.status === "ok";
   const resourceOk = resources?.status === "ok";
+  const resourceRoleRows = resources?.summary.role_breakdown
+    ? Object.entries(resources.summary.role_breakdown)
+    : [];
   const releaseHealthDefaultChecks =
     releaseHealth?.checks
       .filter((check) => check.default_run ?? !check.optional)
@@ -149,6 +182,30 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                     {resources.summary.process_count}
                   </span>
                 </div>
+                <div className="ops-inner rounded-lg px-4 py-3">
+                  추적 CPU{" "}
+                  <span className="font-black text-text-primary">
+                    {resources.summary.total_cpu_pct.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="ops-inner rounded-lg px-4 py-3">
+                  추적 메모리{" "}
+                  <span className="font-black text-text-primary">
+                    {formatResourceMemory(resources.summary.total_rss_kb)}
+                  </span>
+                </div>
+                <div className="ops-inner rounded-lg px-4 py-3">
+                  감독 중{" "}
+                  <span className="font-black text-text-primary">
+                    {resources.summary.supervised_resident_count}/{resources.summary.process_count}
+                  </span>
+                </div>
+                <div className="ops-inner rounded-lg px-4 py-3">
+                  스냅샷{" "}
+                  <span className="font-black text-text-primary">
+                    {formatSnapshotAge(resources.generated_at)}
+                  </span>
+                </div>
               </div>
               {resources.summary.attention.length > 0 && (
                 <p className="rounded-lg border border-idle/25 bg-idle/10 px-4 py-3 text-[13px] font-semibold text-idle preserve-words">
@@ -156,6 +213,18 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                   {resources.summary.attention.length > 3 &&
                     ` 외 ${resources.summary.attention.length - 3}건`}
                 </p>
+              )}
+              {resourceRoleRows.length > 0 && (
+                <div className="flex flex-wrap gap-2 text-[12px] text-text-secondary">
+                  {resourceRoleRows.map(([role, row]) => (
+                    <span key={role} className="rounded-lg border border-line/60 bg-panel/35 px-3 py-2 preserve-words">
+                      <span className="font-black text-text-primary">
+                        {RESOURCE_ROLE_LABELS[role] || role}
+                      </span>{" "}
+                      {row.count}개 · {row.cpu_pct.toFixed(1)}% · {formatResourceMemory(row.rss_kb)}
+                    </span>
+                  ))}
+                </div>
               )}
               <div className="overflow-hidden rounded-lg border border-line/60">
                 <div className="grid grid-cols-[80px_1fr_96px_96px] gap-2 border-b border-line/60 bg-panel/45 px-3 py-2 text-[11px] font-black uppercase text-text-muted">
@@ -175,7 +244,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                       <span className="ml-2 text-text-muted">{process.role}</span>
                     </span>
                     <span>{process.cpu_pct.toFixed(1)}%</span>
-                    <span>{(process.rss_kb / 1024).toFixed(1)} MB</span>
+                    <span>{formatResourceMemory(process.rss_kb)}</span>
                   </div>
                 ))}
                 {resources.processes.length === 0 && (

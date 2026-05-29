@@ -12,6 +12,7 @@ DEFAULT_RESOURCE_PROCESS_LIMIT = 30
 DEFAULT_RESOURCE_CACHE_SECONDS = 2.0
 HIGH_LOAD_PER_CPU = 1.5
 HIGH_PROCESS_CPU_PCT = 90.0
+RESOURCE_PROCESS_ROLES = ("supervised_resident", "agentsassemble", "other")
 SAFE_PROCESS_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.+-]{1,64}$")
 UUIDISH_TOKEN_PATTERN = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
@@ -283,10 +284,26 @@ def _resource_payload(
             "supervised_resident_count": sum(1 for process in processes if process.get("role") == "supervised_resident"),
             "total_cpu_pct": total_cpu_pct,
             "total_rss_kb": total_rss_kb,
+            "role_breakdown": _resource_role_breakdown(processes),
             "attention": attention,
         },
         "processes": processes,
     }
+
+
+def _resource_role_breakdown(processes: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    breakdown: dict[str, dict[str, object]] = {
+        role: {"count": 0, "cpu_pct": 0.0, "rss_kb": 0} for role in RESOURCE_PROCESS_ROLES
+    }
+    for process in processes:
+        role = str(process.get("role") or "other")
+        if role not in breakdown:
+            role = "other"
+        row = breakdown[role]
+        row["count"] = int(row["count"]) + 1
+        row["cpu_pct"] = round(float(row["cpu_pct"]) + float(process.get("cpu_pct") or 0.0), 1)
+        row["rss_kb"] = int(row["rss_kb"]) + int(process.get("rss_kb") or 0)
+    return breakdown
 
 
 def _safe_load_average(load_average_fn: Callable[[], tuple[float, float, float]]) -> dict[str, float]:
