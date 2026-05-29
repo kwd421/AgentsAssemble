@@ -13,6 +13,12 @@ def frontend_file(relative_path: str) -> str:
 
 
 class FrontendRosterTruthTests(unittest.TestCase):
+    def test_participant_truth_does_not_live_in_unused_roster_component(self):
+        self.assertFalse(
+            (FRONTEND / "views" / "Roster.tsx").exists(),
+            "React participant truth should stay on the rendered Lobby/Live/Board/Records surfaces.",
+        )
+
     def test_used_participant_surfaces_render_provider_context_and_cursor_evidence(self):
         app = frontend_file("App.tsx")
         surfaces = {
