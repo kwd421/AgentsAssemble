@@ -352,11 +352,33 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("LAN Invite (PoC)", section)
         self.assertLess(section.index("<summary"), section.index("Join Brief"))
         self.assertLess(section.index("<summary"), section.index("JOIN_BRIEF_COMMAND"))
-        self.assertNotIn("<button", section)
-        self.assertNotIn("onClick=", section)
+        self.assertIn("입장 패킷 생성", section)
+        self.assertIn("onClick={handleCreateJoinBrief}", section)
         self.assertNotIn('role="button"', section)
         self.assertNotIn("ops-button", section)
         self.assertNotIn("ops-cta", section)
+
+    def test_react_lobby_external_participation_wraps_safe_join_brief_endpoint(self):
+        api_source = frontend_file("api.ts")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        section = react_lobby_external_participation_section()
+
+        self.assertIn("export interface LiveAgentJoinBriefRequest", api_source)
+        self.assertIn("export interface LiveAgentJoinBrief", api_source)
+        self.assertIn("export function createLiveAgentJoinBrief", api_source)
+        self.assertIn('"/api/live-agent-join-brief"', api_source)
+        self.assertIn("packet_kind?: string;", api_source)
+        self.assertIn("execution_contract?:", api_source)
+        self.assertIn("safety?:", api_source)
+
+        self.assertIn("createLiveAgentJoinBrief", lobby_source)
+        self.assertIn("handleCreateJoinBrief", lobby_source)
+        self.assertIn("joinBriefAgentId", lobby_source)
+        self.assertIn("joinBrief?.safety?.provider_executed", section)
+        self.assertIn("joinBrief?.safety?.room_contacted", section)
+        self.assertIn("joinBriefPreview", lobby_source)
+        self.assertIn("not_started_by_join_brief", section)
+        self.assertIn("Provider 실행 없음", section)
 
     def test_react_lobby_external_participation_uses_safe_command_skeletons_with_env_secret_refs(self):
         source = frontend_file("views/LobbyView.tsx")
@@ -394,7 +416,6 @@ class StaticUiAssetTests(unittest.TestCase):
         surface = react_lobby_external_participation_surface()
 
         for forbidden in [
-            'method: "POST"',
             'method: "DELETE"',
             "EventSource(",
             "fetch(",
@@ -413,9 +434,11 @@ class StaticUiAssetTests(unittest.TestCase):
             "AGENTSASSEMBLE_LAN_INVITE_TOKEN=ey",
             "eyJ",
             "flow.meeting_id",
-            "meetingId",
         ]:
             self.assertNotIn(forbidden, surface)
+
+        self.assertEqual(surface.count("handleCreateJoinBrief"), 1)
+        self.assertIn("createLiveAgentJoinBrief", source)
 
         for forbidden in [
             "generateInvite",

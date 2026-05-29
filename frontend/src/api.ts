@@ -93,6 +93,43 @@ export interface LiveAgent {
   capabilities: string[];
 }
 
+export interface LiveAgentJoinBriefRequest {
+  agent_id: string;
+  display_name?: string;
+  provider_kind?: string;
+  connection_kind?: string;
+  meeting_id?: string;
+  engagement_mode?: string;
+  timeout?: number;
+  poll_interval?: number;
+  max_chain_depth?: number;
+}
+
+export interface LiveAgentJoinBrief {
+  status?: string;
+  packet_kind?: string;
+  agent?: {
+    agent_id?: string;
+    display_name?: string;
+    provider_kind?: string;
+    connection_kind?: string;
+    meeting_id?: string;
+    engagement_mode?: string;
+  };
+  entry_contract?: Record<string, unknown>;
+  execution_contract?: Record<string, unknown>;
+  commands?: Record<string, string[]>;
+  templates?: Record<string, string[]>;
+  mcp?: Record<string, unknown>;
+  env?: Record<string, string>;
+  instructions?: string[];
+  safety?: {
+    room_contacted?: boolean;
+    provider_executed?: boolean;
+    contains_secrets?: boolean;
+  };
+}
+
 export interface FlowState {
   status: string;
   flow_id?: string;
@@ -490,6 +527,10 @@ export function postSideChatMessage({
     kind,
     message,
   });
+}
+
+export function createLiveAgentJoinBrief(params: LiveAgentJoinBriefRequest) {
+  return postJson<LiveAgentJoinBrief>("/api/live-agent-join-brief", params);
 }
 
 export function fetchLiveAgentFlow() {

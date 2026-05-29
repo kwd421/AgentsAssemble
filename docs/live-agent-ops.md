@@ -430,6 +430,15 @@ POST /api/live-agent-join-brief
 
 The HTTP endpoint returns the same command arrays and templates, defaults the packet server URL to the current GUI request host, and still does not register the agent, write files, append operation records, start providers, or execute commands.
 
+The React preview lobby exposes this endpoint as a collapsed `외부 참여`
+operator surface. The `입장 패킷 생성` control posts only the manual external
+agent id, display name, current meeting id, and conservative room-loop defaults
+to `/api/live-agent-join-brief`, then renders the returned packet for the host to
+hand to another agent. That control is not a provider launcher, discovery scan,
+LAN invite token generator, clipboard writer, or storage-backed approval grant;
+LAN invite token creation remains CLI-only until authenticated remote room APIs
+are designed.
+
 The leave command is also available directly:
 
 ```bash

@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  createLiveAgentJoinBrief,
   fetchLobby,
   mergeLobbyEvents,
   startMafiaGame,
@@ -22,6 +23,7 @@ import {
   type FlowState,
   type LifecycleProjection,
   type LiveAgent,
+  type LiveAgentJoinBrief,
   type LobbyEvent,
   type MafiaGame,
 } from "../api";
@@ -114,6 +116,11 @@ function statusColor(status: string) {
   if (status === "idle") return "text-idle";
   if (status === "error") return "text-danger";
   return "text-text-muted";
+}
+
+function joinBriefPreview(packet: LiveAgentJoinBrief | null): string {
+  if (!packet) return "";
+  return JSON.stringify(packet, null, 2);
 }
 
 function mafiaPlayersFromAgents(agents: LiveAgent[]) {
@@ -279,12 +286,19 @@ export default function LobbyView({
   const [selectedMode, setSelectedMode] = useState("council");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [joinBriefAgentId, setJoinBriefAgentId] = useState("external-agent");
+  const [joinBriefDisplayName, setJoinBriefDisplayName] = useState("External Agent");
+  const [joinBrief, setJoinBrief] = useState<LiveAgentJoinBrief | null>(null);
+  const [joinBriefBusy, setJoinBriefBusy] = useState(false);
+  const [joinBriefError, setJoinBriefError] = useState("");
 
   const isRunning = flow.status === "running";
+  const joinBriefMeetingId = (meetingId.trim() || flow.meeting_id || "resident-m1").trim();
   const readyAgents = agents.filter(
     (agent) => agent.status === "online" || agent.status === "working"
   );
   const latestEvents = useMemo(() => events.slice(-6).reverse(), [events]);
+  const renderedJoinBrief = useMemo(() => joinBriefPreview(joinBrief), [joinBrief]);
 
   useEffect(() => {
     let cancelled = false;
@@ -378,6 +392,34 @@ export default function LobbyView({
     }
   }
 
+  async function handleCreateJoinBrief() {
+    const agentId = joinBriefAgentId.trim();
+    if (!agentId) {
+      setJoinBriefError("agent id를 입력하세요");
+      return;
+    }
+    setJoinBriefBusy(true);
+    setJoinBriefError("");
+    try {
+      const packet = await createLiveAgentJoinBrief({
+        agent_id: agentId,
+        display_name: joinBriefDisplayName.trim() || agentId,
+        provider_kind: "manual",
+        connection_kind: "manual",
+        meeting_id: joinBriefMeetingId,
+        engagement_mode: "mentioned",
+        timeout: 30,
+        poll_interval: 2,
+        max_chain_depth: 1,
+      });
+      setJoinBrief(packet);
+    } catch (errorValue) {
+      setJoinBriefError(errorValue instanceof Error ? errorValue.message : "입장 패킷 생성 실패");
+    } finally {
+      setJoinBriefBusy(false);
+    }
+  }
+
   return (
     <div className="grid min-h-full gap-4 xl:grid-cols-[390px_minmax(0,1fr)_390px]">
       <aside className="space-y-4">
@@ -437,13 +479,13 @@ export default function LobbyView({
                 <div className="min-w-0">
                   <h3 className="text-[14px] font-black text-text-primary">Join Brief</h3>
                   <p className="mt-1 preserve-words">
-                    승인된 매뉴얼 레지던트용 시작 명령 생성 · CLI 전용
+                    승인된 매뉴얼 레지던트용 입장 패킷 생성 · provider 시작 아님
                   </p>
                 </div>
               </div>
               <div className="mb-3 flex flex-wrap gap-1.5 text-[10px] font-black">
                 <span className="rounded border border-accent/25 bg-accent/10 px-2 py-1 text-accent">
-                  CLI 전용
+                  React 생성
                 </span>
                 <span className="rounded border border-online/25 bg-online/10 px-2 py-1 text-online">
                   호스트 승인 필요
@@ -451,7 +493,59 @@ export default function LobbyView({
                 <span className="rounded border border-line/60 bg-panel/45 px-2 py-1 text-text-muted">
                   provider 시작 아님
                 </span>
+                <span className="rounded border border-line/60 bg-panel/45 px-2 py-1 text-text-muted">
+                  not_started_by_join_brief
+                </span>
               </div>
+              <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                <label className="grid gap-1 text-[11px] font-bold text-text-muted">
+                  Agent ID
+                  <input
+                    className="min-w-0 rounded border border-line/70 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30"
+                    value={joinBriefAgentId}
+                    onChange={(event) => setJoinBriefAgentId(event.target.value)}
+                    spellCheck={false}
+                  />
+                </label>
+                <label className="grid gap-1 text-[11px] font-bold text-text-muted">
+                  Display name
+                  <input
+                    className="min-w-0 rounded border border-line/70 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30"
+                    value={joinBriefDisplayName}
+                    onChange={(event) => setJoinBriefDisplayName(event.target.value)}
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+                <span className="rounded border border-line/60 bg-panel/50 px-2 py-1">
+                  meeting {joinBriefMeetingId}
+                </span>
+                <span className="rounded border border-line/60 bg-panel/50 px-2 py-1">
+                  {joinBrief?.safety?.provider_executed ? "Provider 실행됨" : "Provider 실행 없음"}
+                </span>
+                <span className="rounded border border-line/60 bg-panel/50 px-2 py-1">
+                  {joinBrief?.safety?.room_contacted ? "room write 발생" : "room write 없음"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleCreateJoinBrief}
+                disabled={joinBriefBusy}
+                className="mb-3 w-full rounded-lg border border-accent/45 bg-accent/10 px-3 py-2 text-[12px] font-black text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {joinBriefBusy ? "생성 중" : "입장 패킷 생성"}
+              </button>
+              {joinBriefError && (
+                <p className="mb-3 rounded border border-danger/35 bg-danger/10 px-3 py-2 text-[12px] font-bold text-danger preserve-words">
+                  {joinBriefError}
+                </p>
+              )}
+              {renderedJoinBrief && (
+                <pre className="mb-3 max-h-64 overflow-auto rounded-lg border border-online/25 bg-black/25 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
+                  <code>{renderedJoinBrief}</code>
+                </pre>
+              )}
               <pre className="overflow-x-auto rounded-lg border border-line/60 bg-black/20 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
                 <code>{JOIN_BRIEF_COMMAND}</code>
               </pre>
