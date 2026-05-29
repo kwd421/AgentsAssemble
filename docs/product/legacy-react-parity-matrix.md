@@ -62,7 +62,7 @@ Status values:
 | Attachment downloads | `/api/attachments/<id>` | Link or preview from event metadata | partial | `tests/test_gui_server.py::test_attachment_upload_sanitizes_and_downloads_image`, `tests/test_static_ui_assets.py::test_react_lobby_and_live_render_attachment_metadata`, `tests/test_static_ui_assets.py::test_react_lobby_composer_uploads_attachments_then_posts_lobby` | React reads event metadata and can upload attachment refs through the existing lobby composer contract; browser parity proof remains separate. |
 | Lobby SSE | `/api/events/lobby` | `subscribeLobby()` | partial | `frontend/src/api.ts`, `tests/test_gui_server.py::test_lobby_sse_keeps_connection_open_with_heartbeat` | Browser delivery smoothness needs separate proof. |
 | Side-chat SSE | `/api/events/side-chat` | Not fully surfaced | unverified | `agentsassemble/gui.py` | Must not collapse into lobby. |
-| Meeting SSE | `/api/meetings/<meeting-id>/events` | Not fully surfaced | unverified | `agentsassemble/gui.py` | Required before Live defaulting. |
+| Meeting SSE | `/api/meetings/<meeting-id>/events` | `subscribeMeetingEvents()`, official live-event fallback in `LiveView` | verified | `tests/test_frontend_meeting_stream_runtime.py`, `tests/test_static_ui_assets.py::test_react_live_tab_subscribes_to_meeting_sse_without_route_flip_or_provider_start`, `cd frontend && npm run build` | React Live subscribes to meeting stream snapshots/deltas and uses official live events only when Play Mode flow events are absent. Browser parity remains separate before defaulting. |
 | Flow start/stop mutation | `/api/live-agent-flow/start`, `/api/live-agent-flow/stop` | `startFlow()`, `stopFlow()` | partial | `frontend/src/api.ts` | Does not start provider CLIs. |
 | Full REST/SSE inventory | `agentsassemble/gui.py` | `frontend/src/api.ts` | unverified | Manual diff required | The matrix must not silently drift from `gui.py`. |
 
@@ -122,6 +122,7 @@ Use these checks to support parity rows:
 | `python3 -m unittest tests.test_docs_architecture -v` | Matrix existence, cross-references, opt-in boundary. |
 | `python3 -m unittest tests.test_cli_timeout -v` | `frontend-info` contract, `/app/` preview metadata, and `is_default_entry_point` boundary. |
 | `python3 -m unittest tests.test_static_ui_assets -v` | Static asset contracts and React source evidence labels. |
+| `python3 -m unittest tests.test_frontend_meeting_stream_runtime -v` | React meeting SSE parser, merge, timeline conversion, and EventSource subscription behavior. |
 | `python3 -m unittest tests.test_gui_server -v` | Python GUI routes, legacy fallback, REST/SSE safety. |
 | `cd frontend && npm run build` | React build health when React source changes. |
 | `python3 -m compileall -q agentsassemble` | Python syntax after CLI/server edits. |

@@ -34,6 +34,24 @@ export interface LobbyPostResponse {
   events: LobbyEvent[];
 }
 
+export interface MeetingLiveEvent {
+  id?: string;
+  event_id?: string;
+  turn_id?: string;
+  kind?: string;
+  role_id?: string;
+  display_name?: string;
+  name?: string;
+  actor_id?: string;
+  content?: string;
+  message?: string;
+  summary?: string;
+  created_at?: string;
+  official_record?: boolean;
+  attachments?: LobbyAttachmentRef[];
+  [key: string]: unknown;
+}
+
 export interface LiveAgent {
   agent_id: string;
   display_name: string;
@@ -128,6 +146,29 @@ export interface MeetingDetailResponse {
   return_packets?: Record<string, string>;
   review_checkpoints?: Record<string, string>;
   lifecycle?: LifecycleProjection;
+  live_events?: MeetingLiveEvent[];
+}
+
+export interface MeetingStreamPayload {
+  stream?: string;
+  meeting_id?: string;
+  events?: MeetingLiveEvent[];
+  meeting_payload?: MeetingDetailResponse;
+  meeting_payload_pending?: boolean;
+  payload_signature?: string;
+}
+
+export interface MeetingStreamUpdate {
+  meetingId?: string;
+  events: MeetingLiveEvent[];
+  meetingPayload?: MeetingDetailResponse;
+  lifecycle?: LifecycleProjection | null;
+}
+
+export interface MeetingStreamState {
+  meetingId: string;
+  events: MeetingLiveEvent[];
+  lifecycle: LifecycleProjection | null;
 }
 
 export interface HealthStatus {
@@ -335,6 +376,128 @@ export function fetchMeetingLifecycle(meetingId: string) {
   );
 }
 
+export function parseMeetingStreamData(raw: string): MeetingStreamUpdate | null {
+  try {
+    const payload = JSON.parse(raw) as MeetingStreamPayload | null;
+    if (!payload || typeof payload !== "object") return null;
+    const meetingPayload = payload.meeting_payload;
+    const events = Array.isArray(payload.meeting_payload?.live_events)
+      ? payload.meeting_payload.live_events
+      : Array.isArray(payload.events)
+        ? payload.events
+        : [];
+    const lifecycle = payload.meeting_payload?.lifecycle ?? null;
+    if (!events.length && !meetingPayload && !lifecycle) return null;
+    return {
+      meetingId: payload.meeting_id || meetingPayload?.meeting?.meeting_id,
+      events: events.filter((event) => meetingLiveEventId(event)),
+      meetingPayload,
+      lifecycle,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function meetingLiveEventId(event: MeetingLiveEvent): string {
+  return String(
+    event.id ||
+      event.event_id ||
+      event.turn_id ||
+      [event.role_id, event.kind, event.created_at, event.content || event.message || event.summary]
+        .filter(Boolean)
+        .join(":")
+  ).trim();
+}
+
+export function mergeMeetingLiveEvents(
+  existing: MeetingLiveEvent[],
+  incoming: MeetingLiveEvent[]
+): MeetingLiveEvent[] {
+  const byId = new Map<string, MeetingLiveEvent>();
+  const order: string[] = [];
+  for (const event of existing) {
+    const eventId = meetingLiveEventId(event);
+    if (!eventId) continue;
+    byId.set(eventId, event);
+    order.push(eventId);
+  }
+  for (const event of incoming) {
+    const eventId = meetingLiveEventId(event);
+    if (!eventId) continue;
+    if (!byId.has(eventId)) order.push(eventId);
+    byId.set(eventId, event);
+  }
+  return order.map((eventId) => byId.get(eventId)).filter(Boolean) as MeetingLiveEvent[];
+}
+
+export function initialMeetingStreamState(meetingId = ""): MeetingStreamState {
+  return {
+    meetingId,
+    events: [],
+    lifecycle: null,
+  };
+}
+
+export function applyMeetingStreamUpdate(
+  previous: MeetingStreamState,
+  subscribedMeetingId: string,
+  update: MeetingStreamUpdate
+): MeetingStreamState {
+  if (!subscribedMeetingId) return initialMeetingStreamState("");
+  if (update.meetingId && update.meetingId !== subscribedMeetingId) {
+    return previous.meetingId === subscribedMeetingId
+      ? previous
+      : initialMeetingStreamState(subscribedMeetingId);
+  }
+  const base =
+    previous.meetingId === subscribedMeetingId
+      ? previous
+      : initialMeetingStreamState(subscribedMeetingId);
+  const events = update.events.length
+    ? update.meetingPayload?.live_events
+      ? update.events
+      : mergeMeetingLiveEvents(base.events, update.events)
+    : base.events;
+  return {
+    meetingId: subscribedMeetingId,
+    events,
+    lifecycle: update.lifecycle ?? base.lifecycle,
+  };
+}
+
+export function meetingStreamStateForActiveMeeting(
+  state: MeetingStreamState,
+  activeMeetingId = ""
+): MeetingStreamState {
+  if (state.meetingId === activeMeetingId) return state;
+  return initialMeetingStreamState(activeMeetingId);
+}
+
+export function meetingLiveEventsToTimelineEvents(events: MeetingLiveEvent[]): LobbyEvent[] {
+  return events
+    .map((event) => {
+      const eventId = meetingLiveEventId(event);
+      if (!eventId) return null;
+      const name = String(
+        event.display_name || event.name || event.actor_id || event.role_id || event.kind || "Room"
+      );
+      const message = String(event.message || event.content || event.summary || event.kind || "");
+      return {
+        id: eventId,
+        kind: String(event.kind || "message"),
+        name,
+        message,
+        side: "other-agent",
+        created_at: String(event.created_at || ""),
+        official_record: Boolean(event.official_record),
+        actor_id: typeof event.actor_id === "string" ? event.actor_id : undefined,
+        attachments: event.attachments,
+      } satisfies LobbyEvent;
+    })
+    .filter(Boolean) as LobbyEvent[];
+}
+
 export function fetchHealth() {
   return fetchJson<HealthStatus>("/api/live-agent-health");
 }
@@ -439,6 +602,25 @@ export function subscribeLobby(
 
   source.addEventListener("lobby", (e) => handleData((e as MessageEvent).data));
   source.onmessage = (e) => handleData(e.data);
+  if (onError) source.onerror = onError;
+  return () => source.close();
+}
+
+export function subscribeMeetingEvents(
+  meetingId: string,
+  onUpdate: (update: MeetingStreamUpdate) => void,
+  onError?: (err: Event) => void
+): () => void {
+  if (!meetingId) return () => {};
+  const source = new EventSource(`/api/meetings/${encodeURIComponent(meetingId)}/events`);
+
+  function handleData(raw: string) {
+    const update = parseMeetingStreamData(raw);
+    if (update) onUpdate(update);
+  }
+
+  source.addEventListener("meeting", (event) => handleData((event as MessageEvent).data));
+  source.onmessage = (event) => handleData(event.data);
   if (onError) source.onerror = onError;
   return () => source.close();
 }

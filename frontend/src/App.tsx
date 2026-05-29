@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Archive,
@@ -15,7 +15,13 @@ import {
   fetchLiveAgentFlow,
   fetchMafiaGame,
   fetchMeetingLifecycle,
+  applyMeetingStreamUpdate,
+  initialMeetingStreamState,
+  meetingLiveEventsToTimelineEvents,
+  meetingStreamStateForActiveMeeting,
+  subscribeMeetingEvents,
   type FlowResponse,
+  type MeetingStreamState,
   type MeetingLifecycleResponse,
   type LiveAgent,
   type LifecycleProjection,
@@ -71,6 +77,10 @@ export default function App() {
       return "";
     }
   });
+  const [meetingStreamState, setMeetingStreamState] = useState<MeetingStreamState>(() =>
+    initialMeetingStreamState("")
+  );
+  const [meetingStreamError, setMeetingStreamError] = useState<Error | null>(null);
 
   const flowFetcher = useCallback(() => fetchLiveAgentFlow(), []);
   const [flowData, flowLoading, flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
@@ -90,13 +100,46 @@ export default function App() {
   const agents: LiveAgent[] = Array.isArray(flowData?.agents)
     ? flowData.agents
     : [];
+  useEffect(() => {
+    const meetingId = flow.meeting_id || "";
+    setMeetingStreamState(initialMeetingStreamState(meetingId));
+    setMeetingStreamError(null);
+    if (!meetingId) return;
+    let cancelled = false;
+    const unsubscribe = subscribeMeetingEvents(
+      meetingId,
+      (update) => {
+        if (cancelled) return;
+        if (update.meetingId && update.meetingId !== meetingId) return;
+        setMeetingStreamError(null);
+        setMeetingStreamState((previous) =>
+          applyMeetingStreamUpdate(previous, meetingId, update)
+        );
+      },
+      () => {
+        if (!cancelled) setMeetingStreamError(new Error("Meeting stream disconnected"));
+      }
+    );
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [flow.meeting_id]);
+
+  const activeMeetingStreamState = meetingStreamStateForActiveMeeting(
+    meetingStreamState,
+    flow.meeting_id || ""
+  );
   const lifecycle: LifecycleProjection | null =
-    lifecycleData?.meeting_id === flow.meeting_id ? lifecycleData?.lifecycle ?? null : null;
+    activeMeetingStreamState.lifecycle ??
+    (lifecycleData?.meeting_id === flow.meeting_id ? lifecycleData?.lifecycle ?? null : null);
   const flowEvents = Array.isArray(flowData?.flow_events)
     ? flowData.flow_events
     : Array.isArray(flowData?.events)
       ? flowData.events
       : [];
+  const officialTimelineEvents = meetingLiveEventsToTimelineEvents(activeMeetingStreamState.events);
+  const liveTimelineEvents = flowEvents.length ? flowEvents : officialTimelineEvents;
 
   const onlineCount = agents.filter(
     (agent) => agent.status === "online" || agent.status === "working"
@@ -241,13 +284,14 @@ export default function App() {
           ) : channel === "live" ? (
             <LiveView
               flow={flow}
-              flowEvents={flowEvents}
+              flowEvents={liveTimelineEvents}
+              timelineSource={flowEvents.length ? "flow" : "official"}
               agents={agents}
               mafiaGame={mafiaGame}
               refreshMafia={refreshMafia}
               lifecycle={lifecycle}
               lifecycleLoading={Boolean(flow.meeting_id) && lifecycleLoading}
-              lifecycleError={Boolean(flow.meeting_id) ? lifecycleError : null}
+              lifecycleError={Boolean(flow.meeting_id) ? lifecycleError || meetingStreamError : null}
             />
           ) : channel === "board" ? (
             <BoardView flow={flow} agents={agents} events={flowEvents} lifecycle={lifecycle} />

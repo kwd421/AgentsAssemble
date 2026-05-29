@@ -475,6 +475,48 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("permission_profile_id}</", source)
         self.assertNotIn("session_id}</", source)
 
+    def test_react_live_tab_subscribes_to_meeting_sse_without_route_flip_or_provider_start(self):
+        source = frontend_source()
+        api_source = frontend_file("api.ts")
+        app_source = frontend_file("App.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertIn("export interface MeetingLiveEvent", api_source)
+        self.assertIn("export interface MeetingStreamPayload", api_source)
+        self.assertIn("export function parseMeetingStreamData", api_source)
+        self.assertIn("export function initialMeetingStreamState", api_source)
+        self.assertIn("export function applyMeetingStreamUpdate", api_source)
+        self.assertIn("export function meetingStreamStateForActiveMeeting", api_source)
+        self.assertIn("export function mergeMeetingLiveEvents", api_source)
+        self.assertIn("export function meetingLiveEventsToTimelineEvents", api_source)
+        self.assertIn("export function subscribeMeetingEvents", api_source)
+        self.assertIn("new EventSource(`/api/meetings/${encodeURIComponent(meetingId)}/events`)", api_source)
+        self.assertIn("meeting_payload?.live_events", api_source)
+        self.assertIn("meeting_payload?.lifecycle", api_source)
+        self.assertIn("subscribeMeetingEvents", app_source)
+        self.assertIn("meetingLiveEventsToTimelineEvents", app_source)
+        self.assertIn("setMeetingStreamState", app_source)
+        self.assertIn("applyMeetingStreamUpdate", app_source)
+        self.assertIn("meetingStreamStateForActiveMeeting", app_source)
+        self.assertIn("let cancelled = false;", app_source)
+        self.assertIn("if (cancelled) return;", app_source)
+        self.assertIn("update.meetingId && update.meetingId !== meetingId", app_source)
+        self.assertIn("flowEvents.length ? flowEvents : officialTimelineEvents", app_source)
+        self.assertIn('timelineSource={flowEvents.length ? "flow" : "official"}', app_source)
+        self.assertIn("flow_id", live_source)
+        self.assertIn("official_record", live_source)
+        self.assertIn('timelineSource: "flow" | "official";', live_source)
+        self.assertIn('displayedTimelineSourceRef.current !== "flow"', live_source)
+        self.assertNotIn("is_default_entry_point: true", source)
+        for forbidden in [
+            "startProvider",
+            "launchProvider",
+            "startRealProvider",
+            "runReleaseHealth",
+            "room-benchmark",
+        ]:
+            self.assertNotIn(forbidden, app_source)
+
     def test_react_board_uses_lifecycle_current_step_instead_of_artificial_rounds(self):
         app_source = frontend_file("App.tsx")
         board_source = frontend_file("views/BoardView.tsx")

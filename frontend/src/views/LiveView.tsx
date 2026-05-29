@@ -229,6 +229,11 @@ function FlowMessage({ event }: { event: LobbyEvent }) {
               {action}
             </span>
           )}
+          {event.official_record && (
+            <span className="rounded-md border border-online/25 bg-online/10 px-2 py-1 text-[10px] font-black text-online">
+              공식 기록
+            </span>
+          )}
         </div>
         {event.message && (
           <p className="text-[14px] leading-relaxed text-text-secondary preserve-words">
@@ -576,6 +581,7 @@ function MafiaPanel({
 export default function LiveView({
   flow,
   flowEvents,
+  timelineSource,
   agents,
   mafiaGame,
   refreshMafia,
@@ -585,6 +591,7 @@ export default function LiveView({
 }: {
   flow: FlowState;
   flowEvents: LobbyEvent[];
+  timelineSource: "flow" | "official";
   agents: LiveAgent[];
   mafiaGame: MafiaGame | null;
   refreshMafia: () => void;
@@ -594,7 +601,9 @@ export default function LiveView({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToLatestRef = useRef(true);
+  const displayedTimelineSourceRef = useRef<"flow" | "official">(timelineSource);
   const lastFlowIdRef = useRef<string | undefined>(flow.flow_id);
+  const lastMeetingIdRef = useRef<string | undefined>(flow.meeting_id);
   const [events, setEvents] = useState<LobbyEvent[]>(flowEvents);
   const [pinnedToLatest, setPinnedToLatest] = useState(true);
   const isRunning = flow.status === "running";
@@ -653,14 +662,30 @@ export default function LiveView({
 
   useEffect(() => {
     const flowChanged = lastFlowIdRef.current !== activeFlowId;
+    const meetingChanged = lastMeetingIdRef.current !== activeMeetingId;
+    const sourceChanged = displayedTimelineSourceRef.current !== timelineSource;
     if (flowChanged) {
       lastFlowIdRef.current = activeFlowId;
+      lastMeetingIdRef.current = activeMeetingId;
+      displayedTimelineSourceRef.current = timelineSource;
+      updatePinnedToLatest(true);
+      setEvents(sortEvents(flowEvents));
+      return;
+    }
+    if (sourceChanged) {
+      displayedTimelineSourceRef.current = timelineSource;
+      updatePinnedToLatest(true);
+      setEvents(sortEvents(flowEvents));
+      return;
+    }
+    if (meetingChanged) {
+      lastMeetingIdRef.current = activeMeetingId;
       updatePinnedToLatest(true);
       setEvents(sortEvents(flowEvents));
       return;
     }
     setEvents((previous) => mergeEvents(previous, flowEvents));
-  }, [activeFlowId, flowEvents, updatePinnedToLatest]);
+  }, [activeFlowId, activeMeetingId, flowEvents, timelineSource, updatePinnedToLatest]);
 
   const mergeFlowEvents = useCallback(
     (incoming: LobbyEvent[]) => {
@@ -671,9 +696,15 @@ export default function LiveView({
         return event.flow_id === activeFlowId;
       });
       if (matching.length === 0) return;
+      if (displayedTimelineSourceRef.current !== "flow") {
+        displayedTimelineSourceRef.current = "flow";
+        updatePinnedToLatest(true);
+        setEvents(sortEvents(matching));
+        return;
+      }
       setEvents((previous) => mergeEvents(previous, matching));
     },
-    [activeFlowId, activeMeetingId]
+    [activeFlowId, activeMeetingId, updatePinnedToLatest]
   );
 
   useEffect(() => subscribeLobby(mergeFlowEvents), [mergeFlowEvents]);
