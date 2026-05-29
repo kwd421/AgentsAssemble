@@ -82,6 +82,8 @@ export interface LiveAgent {
   last_reply_at: string;
   last_observed_event_id?: string;
   last_observed_live_event_id?: string;
+  persona_card_id?: string;
+  character_mode?: string;
   join_semantics?: string;
   context_durability?: string;
   sandbox_enforcement: string;

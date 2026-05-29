@@ -61,6 +61,12 @@ const SANDBOX_LABELS: Record<string, string> = {
   unknown: "Unknown sandbox",
 };
 
+const CHARACTER_MODE_LABELS: Record<string, string> = {
+  on: "ON",
+  work_speech_only: "Work speech",
+  off: "OFF",
+};
+
 const CONTEXT_DURABILITY_KIND_LABELS: Record<string, string> = {
   stateless: "Stateless",
   process_lifetime: "Process-lifetime",
@@ -106,6 +112,19 @@ export function contextDurabilityKind(value?: string): string {
 export function sandboxEnforcementLabel(value?: string): string {
   const key = String(value || "").trim();
   return SANDBOX_LABELS[key] || humanizeToken(key);
+}
+
+export function characterModeLabel(value?: string): string {
+  const key = String(value || "").trim();
+  return CHARACTER_MODE_LABELS[key] || humanizeToken(key);
+}
+
+export function characterModeKind(value?: string): "on" | "work_speech" | "off" | "unknown" {
+  const key = String(value || "").trim();
+  if (key === "on") return "on";
+  if (key === "work_speech_only") return "work_speech";
+  if (key === "off") return "off";
+  return "unknown";
 }
 
 export function providerExecutionLabel(
@@ -196,10 +215,27 @@ export function sandboxBadge(agent: LiveAgent): AgentTruthBadge | null {
   return { label, tone };
 }
 
+export function characterBadge(agent: LiveAgent): AgentTruthBadge | null {
+  const kind = characterModeKind(agent.character_mode);
+  if (kind === "unknown" || kind === "off") return null;
+  const label = characterModeLabel(agent.character_mode);
+  const card = String(agent.persona_card_id || "").trim();
+  return {
+    label: `Character · ${label}`,
+    tone: kind === "work_speech" ? "accent" : "online",
+    title: card ? `Persona ${card}` : "Character mode active",
+  };
+}
+
 export function agentTruthBadges(agent: LiveAgent): AgentTruthBadge[] {
-  return [executionBadge(agent), contextBadge(agent), joinBadge(agent), sandboxBadge(agent), admissionBadge(agent)].filter(
-    Boolean
-  ) as AgentTruthBadge[];
+  return [
+    executionBadge(agent),
+    characterBadge(agent),
+    contextBadge(agent),
+    joinBadge(agent),
+    sandboxBadge(agent),
+    admissionBadge(agent),
+  ].filter(Boolean) as AgentTruthBadge[];
 }
 
 export function summarizeRoomContext(agents: LiveAgent[]): RoomContextSummary {

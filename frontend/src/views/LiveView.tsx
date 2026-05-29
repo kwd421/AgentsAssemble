@@ -257,7 +257,7 @@ function AgentLiveRow({ agent }: { agent: LiveAgent }) {
         <p className="truncate text-[11px] text-text-muted preserve-words">
           {providerExecutionLabel(agent)}
         </p>
-        <ProviderTruthChips badges={agentTruthBadges(agent)} compact limit={5} />
+        <ProviderTruthChips badges={agentTruthBadges(agent)} compact limit={6} />
         {observation && (
           <p className="mt-1 text-[10px] text-text-muted preserve-words">
             {observation}

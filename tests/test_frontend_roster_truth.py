@@ -36,6 +36,8 @@ class FrontendRosterTruthTests(unittest.TestCase):
             with self.subTest(surface=name):
                 self.assertIn("ProviderTruthChips", source)
                 self.assertIn("agentTruthBadges(agent)", source)
+                self.assertIn("limit={6}", source)
+                self.assertNotIn("limit={5}", source)
                 self.assertIn("lastObservedSummary(agent)", source)
                 self.assertIn("preserve-words", source)
 
@@ -70,7 +72,9 @@ class FrontendRosterTruthTests(unittest.TestCase):
         self.assertIn('import ParticipantContextSummary from "./components/ParticipantContextSummary";', live)
         self.assertIn("<ParticipantContextSummary agents={agents} />", lobby)
         self.assertIn("<ParticipantContextSummary agents={agents} />", live)
+        self.assertIn("characterBadge(agent)", frontend_file("lib/agentLabels.ts"))
+        self.assertIn("Character ·", frontend_file("lib/agentLabels.ts"))
 
-        for unsafe in ("session_id", "argv", "command", "provider_output", "last_error"):
+        for unsafe in ("session_id", "argv", "command", "provider_output", "last_error", "source_path"):
             with self.subTest(unsafe=unsafe):
                 self.assertNotIn(unsafe, component)

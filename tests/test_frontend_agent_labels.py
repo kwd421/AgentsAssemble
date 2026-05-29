@@ -39,6 +39,8 @@ class FrontendAgentLabelTests(unittest.TestCase):
               join_semantics: "codex_exec_resume",
               context_durability: "provider_managed_resume",
               sandbox_enforcement: "codex_readonly",
+              persona_card_id: "yanagi",
+              character_mode: "work_speech_only",
               admission_status: "approved",
               host_approved_binding: true,
               binding_conflicts: [],
@@ -112,6 +114,9 @@ class FrontendAgentLabelTests(unittest.TestCase):
               codexContext: labels.contextDurabilityLabel(codex.context_durability),
               codexContextKind: labels.contextDurabilityKind(codex.context_durability),
               codexContextBadge: labels.contextBadge(codex),
+              codexCharacterMode: labels.characterModeLabel(codex.character_mode),
+              codexCharacterModeKind: labels.characterModeKind(codex.character_mode),
+              codexCharacterBadge: labels.characterBadge(codex),
               codexJoin: labels.joinSemanticsLabel(codex.join_semantics),
               codexExecutionDiffersFromJoin:
                 labels.providerExecutionLabel(codex) !== labels.joinSemanticsLabel(codex.join_semantics),
@@ -171,6 +176,11 @@ class FrontendAgentLabelTests(unittest.TestCase):
         self.assertEqual(payload["codexContextKind"], "provider_owned")
         self.assertEqual(payload["codexContextBadge"]["label"], "맥락 · Provider-owned")
         self.assertEqual(payload["codexContextBadge"]["tone"], "online")
+        self.assertEqual(payload["codexCharacterMode"], "Work speech")
+        self.assertEqual(payload["codexCharacterModeKind"], "work_speech")
+        self.assertEqual(payload["codexCharacterBadge"]["label"], "Character · Work speech")
+        self.assertEqual(payload["codexCharacterBadge"]["tone"], "accent")
+        self.assertEqual(payload["codexCharacterBadge"]["title"], "Persona yanagi")
         self.assertEqual(payload["codexJoin"], "Codex exec/resume")
         self.assertEqual(payload["codexExecutionDiffersFromJoin"], True)
         self.assertEqual(payload["codexSandbox"], "Codex read-only")
