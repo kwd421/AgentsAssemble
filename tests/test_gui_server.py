@@ -443,6 +443,50 @@ class GuiServerTests(unittest.TestCase):
                 json.dumps({"secret": "SECRET_REVIEW_JSON"}),
                 encoding="utf-8",
             )
+            (meeting_dir / "task_scope_report.json").write_text(
+                json.dumps(
+                    {
+                        "version": "task_scope_report_v0",
+                        "summary": "scope_overlap_evidence",
+                        "overlap_count": 2,
+                        "candidate_count_total": 5,
+                        "overlaps": [
+                            {
+                                "kind": "file",
+                                "token": "agentsassemble/gui.py",
+                                "role_ids": [
+                                    "SESSION_TOKEN_abc123",
+                                    "sk-secret123456",
+                                    "auth_ref_prod",
+                                ],
+                                "display_names": ["Architect", "Critic"],
+                                "task_body": "SECRET_TASK_BODY",
+                            },
+                            {
+                                "kind": "file",
+                                "token": "SESSION_TOKEN_abc123/foo.py",
+                            },
+                            {
+                                "kind": "file",
+                                "token": "auth_ref_prod/config.py",
+                            },
+                            {
+                                "kind": "file",
+                                "token": "--api-key/value.py",
+                            },
+                            {
+                                "kind": "file",
+                                "token": "/Users/seinel/private.py",
+                                "role_ids": ["leaker"],
+                                "display_names": ["/Users/seinel/private-name"],
+                            },
+                        ],
+                        "overlaps_truncated": False,
+                        "raw_prompt": "SECRET_PROMPT",
+                    }
+                ),
+                encoding="utf-8",
+            )
             (meeting_dir / "private_research" / "architect" / "research.md").write_text(
                 "SECRET_RESEARCH_BODY",
                 encoding="utf-8",
@@ -470,6 +514,16 @@ class GuiServerTests(unittest.TestCase):
                 "SECRET_REVIEW_REPLY",
                 "SECRET_REVIEW_JSON",
                 "SECRET_RESEARCH_BODY",
+                "SECRET_TASK_BODY",
+                "SECRET_PROMPT",
+                "SESSION_TOKEN_abc123",
+                "sk-secret123456",
+                "auth_ref_prod",
+                "--api-key",
+                "Architect",
+                "Critic",
+                "/Users/seinel/private.py",
+                "/Users/seinel/private-name",
             ):
                 self.assertNotIn(forbidden, serialized)
             self.assertEqual(payload["meeting_id"], "m1")
@@ -479,7 +533,77 @@ class GuiServerTests(unittest.TestCase):
             self.assertFalse(payload["artifacts"]["shared_memory/action-items.md"]["available"])
             self.assertEqual(payload["return_packets"]["count"], 1)
             self.assertEqual(payload["review_checkpoints"]["count"], 1)
+            self.assertEqual(payload["task_scope"]["overlap_count"], 2)
+            self.assertEqual(payload["task_scope"]["candidate_count_total"], 5)
+            self.assertEqual(
+                payload["task_scope"]["overlaps"],
+                [
+                    {
+                        "kind": "file",
+                        "token": "agentsassemble/gui.py",
+                    }
+                ],
+            )
+            self.assertTrue(payload["task_scope"]["overlaps_truncated"])
             self.assertIn("lifecycle", payload)
+
+    def test_workroom_queue_task_scope_rejects_nonfinite_counts_and_keeps_safe_overlap_warning(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "topic",
+                        "question": "question",
+                        "roles": [],
+                        "debate_rounds": [],
+                        "moderator_synthesis": {},
+                        "live_status": "running",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (meeting_dir / "task_scope_report.json").write_text(
+                json.dumps(
+                    {
+                        "summary": "scope_overlap_evidence",
+                        "overlap_count": float("inf"),
+                        "candidate_count_total": float("inf"),
+                        "overlaps": [
+                            {
+                                "kind": "file",
+                                "token": "agentsassemble/gui.py",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/workroom-queue",
+                    timeout=4,
+                ) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            serialized = json.dumps(payload)
+            self.assertNotIn("Infinity", serialized)
+            self.assertEqual(payload["task_scope"]["candidate_count_total"], 0)
+            self.assertEqual(payload["task_scope"]["overlap_count"], 1)
+            self.assertEqual(
+                payload["task_scope"]["overlaps"],
+                [{"kind": "file", "token": "agentsassemble/gui.py"}],
+            )
 
     def test_live_agent_operations_endpoint_filters_operation_target_and_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:

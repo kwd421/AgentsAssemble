@@ -194,11 +194,14 @@ files.
 
 The React workroom queue follows the same boundary. It is a read-only projection
 over safe lifecycle counts, review checkpoint presence, return-packet presence,
-canonical final artifact coverage, and shared-memory artifact coverage. It helps
-the operator see what is blocked, what needs review, and what official artifacts
-exist, but it does not close pending turns, promote lobby/play chatter, finalize
-meetings, start providers, or expose raw artifact bodies, provider output,
-prompts, local paths, auth refs, endpoints, or session ids. Browser clients
+canonical final artifact coverage, shared-memory artifact coverage, and
+task-scope overlap evidence. It helps the operator see what is blocked, what
+needs review, what official artifacts exist, and whether implementation roles
+appear to share file or directory scope, but it does not close pending turns,
+promote lobby/play chatter, finalize meetings, start providers, grant
+implementation permission, or expose raw artifact bodies, raw task bodies,
+provider output, prompts, local paths, auth refs, endpoints, URLs, or session
+ids. Browser clients
 should consume a safe queue projection for this view instead of polling the full
 meeting-detail payload to compute counts. Meeting SSE should likewise carry
 safe projected live events, compact meeting metadata, and lifecycle state under

@@ -2404,6 +2404,13 @@ What to check:
   task scope. It drops absolute local paths, URLs, and raw task body snippets,
   and it does not approve implementation, filesystem writes, git writes, or
   provider execution.
+- `/api/meetings/<meeting_id>/workroom-queue`: the React Board reads this
+  safe projection instead of full meeting detail. Its `task_scope` block exposes
+  only report availability, summary, overlap/candidate counts, and a small
+  allowlisted overlap sample with safe relative file or directory tokens. It must
+  not expose raw task bodies, prompts, provider output, absolute local paths,
+  URLs, command arguments, auth refs, session ids, or credential-looking path
+  segments, and it does not grant implementation permission.
 - `.agentsassemble/live-agent-runs/processes.json`: durable group records with `group_id`, `status`, `pid`, `config_path`, `server`, `log_path`, timestamps, `returncode`, `last_error`, and a safe launch-time `agents` manifest. Process list/API/GUI output redacts suspicious `last_error` text before display, and new auto-restart `restart_failed` records store a compact redacted restart-failure label when the relaunch exception contains tokens, endpoints, config paths, command options, env refs, or path-like values. Safe short failures such as a missing agent command remain visible.
 - `.agentsassemble/live-agent-runs/session-runs.json`: durable high-level session-run records created by `/api/live-agent-session-runs/ensure`. These records are the operator intent layer above process mechanics: they track `run_id`, `action`, `status`, `active`, `phase`, safe meeting/group ids, timestamps, reconcile count, retry backoff fields, and safe session result summaries. Use `assemble live-agent session-runs list` or `GET /api/live-agent-session-runs` to inspect them.
 - agents manifest entries contain only `agent_id`, `display_name`, `provider_kind`, and `connection_kind`. The manifest does not include command arguments, endpoint URLs, auth references, command paths, prompts, or environment-derived values.

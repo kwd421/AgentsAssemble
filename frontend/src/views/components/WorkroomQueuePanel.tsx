@@ -37,6 +37,7 @@ export default function WorkroomQueuePanel({
     artifacts: evidence?.artifacts ?? {},
     reviewCheckpointCount: evidence?.review_checkpoints?.count ?? 0,
     returnPacketCount: evidence?.return_packets?.count ?? 0,
+    taskScope: evidence?.task_scope ?? null,
   });
 
   return (

@@ -177,6 +177,17 @@ export interface WorkroomQueueEvidence {
   review_checkpoints: {
     count: number;
   };
+  task_scope?: {
+    available: boolean;
+    summary: string;
+    overlap_count: number;
+    candidate_count_total: number;
+    overlaps: Array<{
+      kind: string;
+      token: string;
+    }>;
+    overlaps_truncated?: boolean;
+  };
 }
 
 export interface MeetingStreamPayload {

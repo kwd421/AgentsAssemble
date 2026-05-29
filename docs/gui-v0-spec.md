@@ -101,8 +101,9 @@ Content:
   - why the conclusion followed from the debate
 - A read-only workroom queue / approval gate that combines the lifecycle
   projection, review checkpoint presence, return-packet presence, final
-  artifact coverage, and shared-memory artifact coverage into compact lanes:
-  blocked, review, official record, and shared memory.
+  artifact coverage, shared-memory artifact coverage, and safe task-scope
+  overlap evidence into compact lanes: blocked, review, official record, and
+  shared memory.
 - A read-only release-health queue status surface that can display a latest
   saved CLI report as safe status/duration/counts without exposing stdout,
   stderr, argv, cwd, env, local paths, prompts, provider output, or session ids.

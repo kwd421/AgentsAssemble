@@ -674,6 +674,24 @@ WORKROOM_QUEUE_ARTIFACT_PATHS = (
     "shared_memory/action-items.md",
     "shared_memory/open-questions.md",
 )
+WORKROOM_QUEUE_SCOPE_OVERLAP_LIMIT = 5
+WORKROOM_QUEUE_SCOPE_SUMMARIES = {"scope_overlap_evidence", "no_obvious_overlaps"}
+WORKROOM_QUEUE_SCOPE_KINDS = {"file", "dir"}
+WORKROOM_QUEUE_SCOPE_UNSAFE_SEGMENT_MARKERS = (
+    "authorization",
+    "auth_ref",
+    "api-key",
+    "api_key",
+    "apikey",
+    "x-api-key",
+    "bearer",
+    "credential",
+    "password",
+    "secret",
+    "session",
+    "token",
+    "cookie",
+)
 
 SAFE_MEETING_STREAM_EVENT_STRING_FIELDS = (
     "id",
@@ -741,6 +759,7 @@ def build_workroom_queue_payload(
         "review_checkpoints": {
             "count": _count_existing_stems(meeting_dir / "review_checkpoints", {".md", ".json"}),
         },
+        "task_scope": _workroom_task_scope_payload(meeting_dir, meeting),
     }
 
 
@@ -771,6 +790,109 @@ def _count_existing_stems(root: Path, suffixes: set[str]) -> int:
         if path.is_file() and path.suffix in suffixes
     }
     return len(stems)
+
+
+def _workroom_task_scope_payload(meeting_dir: Path, meeting: dict[str, object]) -> dict[str, object]:
+    report = _read_workroom_task_scope_report(meeting_dir)
+    summary_source = report if report is not None else meeting.get("task_scope_report")
+    if not isinstance(summary_source, dict):
+        summary_source = {}
+    overlaps = _safe_workroom_task_scope_overlaps(
+        report.get("overlaps") if isinstance(report, dict) else []
+    )
+    overlap_count = max(
+        _safe_nonnegative_int(summary_source.get("overlap_count")),
+        len(overlaps),
+    )
+    return {
+        "available": bool(report or summary_source),
+        "summary": _safe_workroom_task_scope_summary(summary_source.get("summary")),
+        "overlap_count": overlap_count,
+        "candidate_count_total": _safe_nonnegative_int(summary_source.get("candidate_count_total")),
+        "overlaps": overlaps,
+        "overlaps_truncated": bool(
+            summary_source.get("overlaps_truncated")
+            or (report and len(report.get("overlaps") if isinstance(report.get("overlaps"), list) else []) > len(overlaps))
+        ),
+    }
+
+
+def _read_workroom_task_scope_report(meeting_dir: Path) -> dict[str, object] | None:
+    try:
+        payload = json.loads((meeting_dir / "task_scope_report.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _safe_workroom_task_scope_summary(value: object) -> str:
+    summary = str(value or "").strip()
+    return summary if summary in WORKROOM_QUEUE_SCOPE_SUMMARIES else "unknown"
+
+
+def _safe_workroom_task_scope_overlaps(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    overlaps: list[dict[str, object]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "").strip()
+        token = _safe_workroom_scope_token(item.get("token"))
+        if kind not in WORKROOM_QUEUE_SCOPE_KINDS or not token:
+            continue
+        overlaps.append(
+            {
+                "kind": kind,
+                "token": token,
+            }
+        )
+        if len(overlaps) >= WORKROOM_QUEUE_SCOPE_OVERLAP_LIMIT:
+            break
+    return overlaps
+
+
+def _safe_workroom_scope_token(value: object) -> str:
+    token = str(value or "").strip().strip("`'\"")
+    if not token or len(token) > 160:
+        return ""
+    if token.startswith(("/", "~")) or "://" in token or "\\" in token:
+        return ""
+    segments = [segment for segment in token.split("/") if segment]
+    if len(segments) < 2 or any(segment in {".", ".."} for segment in segments):
+        return ""
+    if any(_workroom_scope_segment_looks_sensitive(segment) for segment in segments):
+        return ""
+    first = segments[0].rstrip(".")
+    if "." in first or ":" in token:
+        return ""
+    if token.endswith("/"):
+        return token if all(re.fullmatch(r"[A-Za-z0-9._-]+", segment) for segment in segments) else ""
+    if not re.fullmatch(r"(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]+\.[A-Za-z0-9]{1,8}", token):
+        return ""
+    return token
+
+
+def _workroom_scope_segment_looks_sensitive(segment: str) -> bool:
+    lowered = segment.casefold()
+    if segment.startswith((".", "-")) or "=" in segment:
+        return True
+    return any(marker in lowered for marker in WORKROOM_QUEUE_SCOPE_UNSAFE_SEGMENT_MARKERS)
+
+
+def _safe_nonnegative_int(value: object) -> int:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    if not math.isfinite(number):
+        return 0
+    try:
+        return max(0, int(number))
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 def project_meeting_stream_events(events: list[dict[str, object]]) -> list[dict[str, object]]:

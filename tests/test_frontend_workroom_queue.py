@@ -91,6 +91,18 @@ class FrontendWorkroomQueueTests(unittest.TestCase):
               },
               reviewCheckpointCount: 1,
               returnPacketCount: 1,
+              taskScope: {
+                available: true,
+                summary: "scope_overlap_evidence",
+                overlap_count: 2,
+                candidate_count_total: 4,
+                overlaps: [
+                  {
+                    kind: "file",
+                    token: "agentsassemble/gui.py",
+                  },
+                ],
+              },
               lobbyEvents: [
                 {
                   id: "lobby-1",
@@ -119,10 +131,12 @@ class FrontendWorkroomQueueTests(unittest.TestCase):
 
             const review = summary.lanes.find((lane) => lane.id === "review");
             assert.deepEqual(review.items.map((item) => item.id), [
+              "task_scope_overlaps",
               "review_checkpoints",
               "return_packets",
             ]);
-            assert.equal(review.count, 2);
+            assert.equal(review.count, 3);
+            assert.ok(review.items[0].detail.includes("2개"));
 
             const official = summary.lanes.find((lane) => lane.id === "official_record");
             assert.equal(official.count, 4);
@@ -142,6 +156,9 @@ class FrontendWorkroomQueueTests(unittest.TestCase):
             const serialized = JSON.stringify(summary);
             for (const forbidden of [
               "SECRET_UNPROMOTED_PLAY_CHATTER",
+              "Architect",
+              "Critic",
+              "SESSION_TOKEN_abc123",
             ]) {
               assert.equal(serialized.includes(forbidden), false, forbidden);
             }
@@ -177,6 +194,8 @@ class FrontendWorkroomQueueTests(unittest.TestCase):
         self.assertNotIn("fetchMeetingDetail", app_source)
         self.assertNotIn("meetingDetail={", app_source)
         self.assertIn("summarizeWorkroomQueue", panel_source)
+        self.assertIn("taskScope", panel_source)
+        self.assertIn("작업 범위 충돌", frontend_file("lib/workroomQueue.ts"))
 
         for forbidden in ("onClick=", "fetch(", "postJson", "EventSource", "dangerouslySetInnerHTML"):
             self.assertNotIn(forbidden, panel_source)

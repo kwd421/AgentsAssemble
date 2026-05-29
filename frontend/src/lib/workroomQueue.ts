@@ -41,6 +41,17 @@ export type WorkroomQueueInput = {
   artifacts?: Record<string, boolean | { available?: boolean } | null | undefined>;
   reviewCheckpointCount?: number;
   returnPacketCount?: number;
+  taskScope?: {
+    available?: boolean;
+    summary?: string;
+    overlap_count?: number;
+    candidate_count_total?: number;
+    overlaps?: Array<{
+      kind?: string;
+      token?: string;
+    }>;
+    overlaps_truncated?: boolean;
+  } | null;
   lobbyEvents?: Pick<LobbyEvent, "official_record" | "kind" | "message">[];
 };
 
@@ -174,7 +185,16 @@ export function summarizeWorkroomQueue(input: WorkroomQueueInput): WorkroomQueue
 
   const reviewCheckpointCount = Math.max(0, input.reviewCheckpointCount ?? 0);
   const returnPacketCount = Math.max(0, input.returnPacketCount ?? 0);
+  const taskScopeOverlapCount = Math.max(0, input.taskScope?.overlap_count ?? 0);
   const reviewItems: WorkroomQueueItem[] = [];
+  if (taskScopeOverlapCount > 0) {
+    reviewItems.push({
+      id: "task_scope_overlaps",
+      label: "작업 범위 충돌",
+      detail: `${taskScopeOverlapCount}개 파일/디렉터리 후보가 여러 역할에 겹칩니다. task_scope_report.md를 확인하세요.`,
+      tone: "warn",
+    });
+  }
   if (reviewCheckpointCount > 0) {
     reviewItems.push({
       id: "review_checkpoints",
