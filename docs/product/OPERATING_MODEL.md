@@ -235,7 +235,8 @@ not requirements for the local-first v1 room.
 The first benchmark surface is `assemble live-agent room-benchmark`. It calls
 the existing local append/read functions, does not fsync when the product path
 does not fsync, and reports local append/read/tail latency plus a synthetic flow
-speaking-distribution imbalance ratio. When `--sse-samples N` is set, it also
+speaking-distribution imbalance ratio plus first-speaker anchor-share metrics.
+When `--sse-samples N` is set, it also
 reports a small `lobby_sse_append_to_frame_ms` measurement against the existing
 local `/api/events/lobby` SSE endpoint. The stream checks the file-backed event
 log on a low-latency polling cadence while keeping idle keep-alive frames on a
@@ -245,11 +246,11 @@ slice and remain out of scope.
 
 `assemble release-health run --check room_event_benchmark --as-json` lifts a
 safe `benchmark_summary` from that benchmark output so operators can compare
-numeric p99 and scheduler fairness signals without reading raw paths,
-environment details, command arguments, or full benchmark logs. Regression
-signal ceilings are informational tripwires in this local-first v1 stage; they
-do not make the check fail by themselves and React must not start the benchmark
-from the browser.
+numeric p99, scheduler fairness, and first-speaker anchor-share signals without
+reading raw paths, environment details, command arguments, or full benchmark
+logs. Regression signal ceilings and floors are informational tripwires in this
+local-first v1 stage; they do not make the check fail by themselves and React
+must not start the benchmark from the browser.
 
 ## Local Resource Visibility
 

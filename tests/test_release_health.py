@@ -15,7 +15,7 @@ class Completed:
         self.stderr = stderr
 
 
-def benchmark_payload(*, predicate_p99_ms: float = 12.5) -> dict[str, object]:
+def benchmark_payload(*, predicate_p99_ms: float = 12.5, anchor_share_improvement: float = 0.4) -> dict[str, object]:
     return {
         "schema_version": 1,
         "benchmark": "room_event_log_v1",
@@ -47,9 +47,12 @@ def benchmark_payload(*, predicate_p99_ms: float = 12.5) -> dict[str, object]:
             "lobby_sse_append_to_frame_ms": {"p99_ms": 8.8, "count": 2},
             "flow_scheduler_comparison": {
                 "normalized_improvement": 1.0,
+                "anchor_share_off": 0.65,
+                "anchor_share_on": round(0.65 - anchor_share_improvement, 6),
+                "anchor_share_improvement": anchor_share_improvement,
                 "predicate_latency_ms": {"p99_ms": predicate_p99_ms, "count": 60},
-                "scheduler_on": {"normalized_imbalance": 0.0},
-                "scheduler_off": {"normalized_imbalance": 1.0},
+                "scheduler_on": {"normalized_imbalance": 0.0, "first_speaker_share": round(0.65 - anchor_share_improvement, 6)},
+                "scheduler_off": {"normalized_imbalance": 1.0, "first_speaker_share": 0.65},
             },
         },
         "notes": ["private implementation detail"],
@@ -355,6 +358,9 @@ class ReleaseHealthTests(unittest.TestCase):
                 "live_tail_read_ms": 0.66,
                 "lobby_sse_append_to_frame_p99_ms": 8.8,
                 "flow_normalized_improvement": 1.0,
+                "flow_anchor_share_off": 0.65,
+                "flow_anchor_share_on": 0.25,
+                "flow_anchor_share_improvement": 0.4,
                 "flow_scheduler_predicate_p99_ms": 12.5,
             },
         )
@@ -366,10 +372,17 @@ class ReleaseHealthTests(unittest.TestCase):
                     "value_ms": 12.5,
                     "ceiling_ms": 75.0,
                     "ok": True,
-                }
+                },
+                {
+                    "name": "flow_anchor_share_improvement",
+                    "value": 0.4,
+                    "floor": 0.25,
+                    "ok": True,
+                },
             ],
         )
         self.assertEqual(summary["ceilings"], {"flow_scheduler_predicate_p99_ms": 75.0})
+        self.assertEqual(summary["floors"], {"flow_anchor_share_improvement": 0.25})
 
     def test_room_event_benchmark_summary_marks_unparsed_when_stdout_is_not_json(self):
         from agentsassemble.release_health import run_release_health_checks
@@ -444,7 +457,48 @@ class ReleaseHealthTests(unittest.TestCase):
                     "value_ms": 100.0,
                     "ceiling_ms": 75.0,
                     "ok": False,
-                }
+                },
+                {
+                    "name": "flow_anchor_share_improvement",
+                    "value": 0.4,
+                    "floor": 0.25,
+                    "ok": True,
+                },
+            ],
+        )
+
+    def test_room_event_benchmark_regression_signal_counts_anchor_improvement_floor_breach(self):
+        from agentsassemble.release_health import run_release_health_checks
+
+        def fake_runner(argv, **kwargs):
+            return Completed(stdout=json.dumps(benchmark_payload(anchor_share_improvement=0.1)))
+
+        payload = run_release_health_checks(
+            check_ids=["room_event_benchmark"],
+            runner=fake_runner,
+            now_fn=lambda: datetime(2026, 5, 29, 0, 0, tzinfo=UTC),
+        )
+
+        result = payload["results"][0]
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(payload["status"], "ok")
+        self.assertTrue(payload["summary"]["ok"])
+        self.assertGreaterEqual(payload["summary"]["regression_signals_failed"], 1)
+        self.assertEqual(
+            result["benchmark_summary"]["regression_signals"],
+            [
+                {
+                    "name": "flow_scheduler_predicate_p99_ms",
+                    "value_ms": 12.5,
+                    "ceiling_ms": 75.0,
+                    "ok": True,
+                },
+                {
+                    "name": "flow_anchor_share_improvement",
+                    "value": 0.1,
+                    "floor": 0.25,
+                    "ok": False,
+                },
             ],
         )
 

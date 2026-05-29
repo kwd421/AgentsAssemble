@@ -9,7 +9,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
-from agentsassemble.room_event_benchmark import SCHEDULER_P99_LATENCY_CEILING_MS
+from agentsassemble.room_event_benchmark import (
+    SCHEDULER_ANCHOR_IMPROVEMENT_FLOOR,
+    SCHEDULER_P99_LATENCY_CEILING_MS,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -434,6 +437,9 @@ def _room_event_benchmark_summary(payload: Mapping[str, object]) -> dict[str, ob
         "ceilings": {
             "flow_scheduler_predicate_p99_ms": SCHEDULER_P99_LATENCY_CEILING_MS,
         },
+        "floors": {
+            "flow_anchor_share_improvement": SCHEDULER_ANCHOR_IMPROVEMENT_FLOOR,
+        },
     }
 
 
@@ -456,23 +462,38 @@ def _benchmark_metrics_summary(metrics: Mapping[str, object]) -> dict[str, float
         "live_tail_read_ms": _latency_p99(metrics, "live_tail_read_ms"),
         "lobby_sse_append_to_frame_p99_ms": _latency_p99(metrics, "lobby_sse_append_to_frame_ms"),
         "flow_normalized_improvement": _safe_float(scheduler.get("normalized_improvement")),
+        "flow_anchor_share_off": _safe_float(scheduler.get("anchor_share_off")),
+        "flow_anchor_share_on": _safe_float(scheduler.get("anchor_share_on")),
+        "flow_anchor_share_improvement": _safe_float(scheduler.get("anchor_share_improvement")),
         "flow_scheduler_predicate_p99_ms": _safe_float(predicate_latency.get("p99_ms")),
     }
 
 
 def _benchmark_regression_signals(metrics_summary: Mapping[str, object]) -> list[dict[str, object]]:
+    signals: list[dict[str, object]] = []
     predicate_p99 = _safe_float(metrics_summary.get("flow_scheduler_predicate_p99_ms"))
-    if predicate_p99 is None:
-        return []
-    ceiling = float(SCHEDULER_P99_LATENCY_CEILING_MS)
-    return [
-        {
-            "name": "flow_scheduler_predicate_p99_ms",
-            "value_ms": predicate_p99,
-            "ceiling_ms": ceiling,
-            "ok": predicate_p99 <= ceiling,
-        }
-    ]
+    if predicate_p99 is not None:
+        ceiling = float(SCHEDULER_P99_LATENCY_CEILING_MS)
+        signals.append(
+            {
+                "name": "flow_scheduler_predicate_p99_ms",
+                "value_ms": predicate_p99,
+                "ceiling_ms": ceiling,
+                "ok": predicate_p99 <= ceiling,
+            }
+        )
+    anchor_improvement = _safe_float(metrics_summary.get("flow_anchor_share_improvement"))
+    if anchor_improvement is not None:
+        floor = float(SCHEDULER_ANCHOR_IMPROVEMENT_FLOOR)
+        signals.append(
+            {
+                "name": "flow_anchor_share_improvement",
+                "value": anchor_improvement,
+                "floor": floor,
+                "ok": anchor_improvement >= floor,
+            }
+        )
+    return signals
 
 
 def _regression_signals_failed(results: list[dict[str, object]]) -> int:

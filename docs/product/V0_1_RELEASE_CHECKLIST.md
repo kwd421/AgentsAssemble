@@ -94,10 +94,10 @@ raw local paths. The catalog may include safe queue metadata such as default
 run order, whether a check is opt-in, and a closed safety-class label so the
 React UI can group the proof queue without reconstructing internal commands.
 `assemble release-health run --check room_event_benchmark` produces numeric
-room-event append/read and scheduler-fairness latency evidence. It is excluded
-from the default run so ordinary v0.1 hardening time stays bounded, and it
-remains CLI-only: React may display the catalog row but must not start the
-benchmark.
+room-event append/read evidence plus scheduler-fairness latency and
+first-speaker anchor-share regression signals. It is excluded from the default
+run so ordinary v0.1 hardening time stays bounded, and it remains CLI-only:
+React may display the catalog row but must not start the benchmark.
 
 `assemble mcp serve` uses the official MCP Python SDK (`mcp>=1,<2`) through a
 lazy import. The unit tests cover the room-tool boundary without requiring the

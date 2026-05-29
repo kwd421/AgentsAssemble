@@ -9,6 +9,7 @@ from pathlib import Path
 from agentsassemble.cli import build_parser, main
 from agentsassemble.room_event_benchmark import (
     RoomEventBenchmarkOptions,
+    SCHEDULER_ANCHOR_IMPROVEMENT_FLOOR,
     SCHEDULER_IMBALANCE_MARGIN,
     SCHEDULER_P99_LATENCY_CEILING_MS,
     flow_speaking_distribution,
@@ -54,6 +55,12 @@ class RoomEventBenchmarkTests(unittest.TestCase):
             scheduler["scheduler_off"]["normalized_imbalance"] - scheduler["scheduler_on"]["normalized_imbalance"],
             SCHEDULER_IMBALANCE_MARGIN,
         )
+        self.assertIn("anchor_definition", scheduler)
+        self.assertGreaterEqual(scheduler["anchor_share_improvement"], SCHEDULER_ANCHOR_IMPROVEMENT_FLOOR)
+        self.assertGreater(scheduler["anchor_share_off"], scheduler["anchor_share_on"])
+        self.assertGreater(scheduler["anchor_window_share_off"], scheduler["anchor_window_share_on"])
+        self.assertIn("first_speaker_share", scheduler["scheduler_off"])
+        self.assertIn("anchor_window_speaker_share", scheduler["scheduler_on"])
         self.assertLessEqual(
             scheduler["predicate_latency_ms"]["p99_ms"],
             SCHEDULER_P99_LATENCY_CEILING_MS,
@@ -114,6 +121,29 @@ class RoomEventBenchmarkTests(unittest.TestCase):
         self.assertEqual(distribution["counts"], {"a": 2, "b": 1})
         self.assertEqual(distribution["spread"], 1)
         self.assertEqual(distribution["imbalance_ratio"], 2.0)
+        self.assertEqual(distribution["anchor_agent_id"], "a")
+        self.assertEqual(distribution["anchor_window_turns"], 3)
+        self.assertEqual(distribution["anchor_window_speaker_share"], 0.666667)
+        self.assertEqual(distribution["first_speaker_share"], 0.666667)
+
+    def test_flow_speaking_distribution_can_measure_configured_anchor(self):
+        events = [
+            {"flow_id": "f1", "flow_action": "speak", "actor_id": "b"},
+            {"flow_id": "f1", "flow_action": "speak", "actor_id": "a"},
+            {"flow_id": "f1", "flow_action": "challenge", "actor_id": "a"},
+            {"flow_id": "f1", "flow_action": "speak", "actor_id": "b"},
+        ]
+
+        distribution = flow_speaking_distribution(
+            events,
+            flow_id="f1",
+            participant_agent_ids=["a", "b"],
+        )
+
+        self.assertEqual(distribution["anchor_agent_id"], "a")
+        self.assertEqual(distribution["anchor_window_turns"], 4)
+        self.assertEqual(distribution["anchor_window_speaker_share"], 0.5)
+        self.assertEqual(distribution["first_speaker_share"], 0.5)
 
     def test_cli_parser_accepts_room_benchmark_options(self):
         args = build_parser().parse_args(

@@ -34,6 +34,10 @@ from agentsassemble.sse_cadence import SSE_EVENT_POLL_INTERVAL_SECONDS, SSE_KEEP
 
 BENCHMARK_SCHEMA_VERSION = 1
 SCHEDULER_IMBALANCE_MARGIN = 0.5
+# A deterministic anchor-bias baseline should show the fair scheduler reducing
+# first-speaker dominance by at least this much. This is a regression tripwire,
+# not a product fairness SLA.
+SCHEDULER_ANCHOR_IMPROVEMENT_FLOOR = 0.25
 # A 10k-event O(n) scan should stay comfortably below this on local dev machines;
 # this is a regression tripwire, not a product latency SLA.
 SCHEDULER_P99_LATENCY_CEILING_MS = 75.0
@@ -151,6 +155,7 @@ def run_room_event_benchmark(options: RoomEventBenchmarkOptions) -> dict[str, ob
                 "This benchmark calls the existing meeting_events append/read functions and does not add fsync.",
                 "Tail metrics use read_lobby_events/read_live_events with the configured read_window.",
                 "Flow scheduler comparison is synthetic and measures turn distribution, not provider quality.",
+                "Flow anchor-share comparison measures how much the first participant dominates the early and total synthetic turns.",
                 "Lobby SSE append-to-frame latency is reported when --sse-samples is set; the local server polls the file-backed event log on a low-latency cadence and emits keep-alive frames separately, while queue wait time and backpressure counts remain out of scope.",
                 "This is an operator regression signal, not an SLA.",
             ],
@@ -182,6 +187,19 @@ def flow_scheduler_comparison(*, agent_count: int, turns: int) -> dict[str, obje
         "scheduler_off": {**off_distribution, "normalized_imbalance": off_normalized},
         "scheduler_on": {**on_distribution, "normalized_imbalance": on_normalized},
         "normalized_improvement": round(off_normalized - on_normalized, 6),
+        "anchor_definition": (
+            "anchor_share_improvement=scheduler_off.first_speaker_share-"
+            "scheduler_on.first_speaker_share; first_speaker_share is the "
+            "speaker share held by the first participant over all speaking turns"
+        ),
+        "anchor_share_off": off_distribution["first_speaker_share"],
+        "anchor_share_on": on_distribution["first_speaker_share"],
+        "anchor_share_improvement": round(
+            float(off_distribution["first_speaker_share"]) - float(on_distribution["first_speaker_share"]),
+            6,
+        ),
+        "anchor_window_share_off": off_distribution["anchor_window_speaker_share"],
+        "anchor_window_share_on": on_distribution["anchor_window_speaker_share"],
         "fairness_params": {
             "recent_window": DEFAULT_FLOW_FAIRNESS_RECENT_WINDOW,
             "min_gap": DEFAULT_FLOW_FAIRNESS_MIN_GAP,
@@ -198,11 +216,16 @@ def flow_speaking_distribution(
     flow_id: str,
     participant_agent_ids: list[str] | None = None,
 ) -> dict[str, object]:
-    counts: dict[str, int] = {
-        str(agent_id): 0
+    participant_ids = [
+        str(agent_id).strip()
         for agent_id in (participant_agent_ids or [])
         if str(agent_id).strip()
+    ]
+    counts: dict[str, int] = {
+        agent_id: 0
+        for agent_id in participant_ids
     }
+    speaking_actor_ids: list[str] = []
     for event in events:
         if str(event.get("flow_id") or "") != flow_id:
             continue
@@ -212,12 +235,21 @@ def flow_speaking_distribution(
         actor_id = str(event.get("actor_id") or "").strip()
         if not actor_id:
             continue
+        speaking_actor_ids.append(actor_id)
         counts[actor_id] = counts.get(actor_id, 0) + 1
     values = list(counts.values())
     total = sum(values)
     max_count = max(values) if values else 0
     min_count = min(values) if values else 0
     imbalance_ratio = float(max_count / max(min_count, 1)) if values else 0.0
+    anchor_agent_id = participant_ids[0] if participant_ids else (speaking_actor_ids[0] if speaking_actor_ids else "")
+    anchor_count = counts.get(anchor_agent_id, 0) if anchor_agent_id else 0
+    anchor_window_turns = min(total, max(0, len(counts) * 2))
+    anchor_window_count = (
+        speaking_actor_ids[:anchor_window_turns].count(anchor_agent_id)
+        if anchor_agent_id and anchor_window_turns
+        else 0
+    )
     return {
         "definition": "imbalance_ratio=max_agent_speaking_count/max(min_agent_speaking_count,1)",
         "counts": dict(sorted(counts.items())),
@@ -227,6 +259,10 @@ def flow_speaking_distribution(
         "min_count": min_count,
         "spread": max_count - min_count,
         "imbalance_ratio": imbalance_ratio,
+        "anchor_agent_id": anchor_agent_id,
+        "anchor_window_turns": anchor_window_turns,
+        "anchor_window_speaker_share": round(anchor_window_count / anchor_window_turns, 6) if anchor_window_turns else 0.0,
+        "first_speaker_share": round(anchor_count / total, 6) if total else 0.0,
     }
 
 
@@ -415,15 +451,21 @@ def _synthetic_flow_events(*, agent_count: int, turns: int) -> list[dict[str, ob
 
 
 def _synthetic_unfair_flow_events(*, agent_count: int, turns: int) -> list[dict[str, object]]:
-    del agent_count
-    return [
-        {
-            "flow_id": "benchmark-flow",
-            "flow_action": "speak",
-            "actor_id": "bench-agent-0",
-        }
-        for _ in range(max(1, turns))
-    ]
+    clean_agent_count = max(1, int(agent_count))
+    events: list[dict[str, object]] = []
+    for index in range(max(1, turns)):
+        if clean_agent_count == 1 or index % 3 in {0, 1}:
+            actor_id = "bench-agent-0"
+        else:
+            actor_id = f"bench-agent-{1 + ((index // 3) % (clean_agent_count - 1))}"
+        events.append(
+            {
+                "flow_id": "benchmark-flow",
+                "flow_action": "speak",
+                "actor_id": actor_id,
+            }
+        )
+    return events
 
 
 def _simulate_fair_scheduler_flow_events(*, agent_count: int, turns: int) -> list[dict[str, object]]:
