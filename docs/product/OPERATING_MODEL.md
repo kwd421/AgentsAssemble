@@ -192,6 +192,20 @@ local paths, URLs, prompts, provider output, raw task bodies, or Play Mode
 chatter. Agents still need an explicit implementation decision before editing
 files.
 
+The React workroom queue follows the same boundary. It is a read-only projection
+over safe lifecycle counts, review checkpoint presence, return-packet presence,
+canonical final artifact coverage, and shared-memory artifact coverage. It helps
+the operator see what is blocked, what needs review, and what official artifacts
+exist, but it does not close pending turns, promote lobby/play chatter, finalize
+meetings, start providers, or expose raw artifact bodies, provider output,
+prompts, local paths, auth refs, endpoints, or session ids. Browser clients
+should consume a safe queue projection for this view instead of polling the full
+meeting-detail payload to compute counts. Meeting SSE should likewise carry
+safe projected live events, compact meeting metadata, and lifecycle state under
+a stream-snapshot field rather than archive artifact bodies or private review
+turn text; the full meeting-detail payload remains an explicit archive read
+surface.
+
 ## GUI Text And Refresh Policy
 
 The vanilla GUI should optimize for trustworthy operations before polish:

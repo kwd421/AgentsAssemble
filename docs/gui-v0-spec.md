@@ -99,8 +99,26 @@ Content:
   - caveats
   - confidence
   - why the conclusion followed from the debate
+- A read-only workroom queue / approval gate that combines the lifecycle
+  projection, review checkpoint presence, return-packet presence, final
+  artifact coverage, and shared-memory artifact coverage into compact lanes:
+  blocked, review, official record, and shared memory.
 
 The board should avoid inventing conflict. If all agents reach the same conclusion, it should compare evidence quality, confidence, and uncertainty.
+
+The workroom queue is an operator visibility surface, not an execution surface.
+It must not start providers, finalize meetings, promote lobby chatter, close
+pending turns, or post messages. It may show safe counts, canonical artifact
+filenames, and lifecycle attention labels, but it must not expose raw transcript
+body text, review replies, return-packet bodies, provider stdout/stderr,
+prompts, local paths, endpoint URLs, auth references, or session ids.
+The React preview should read this surface through a safe queue projection
+rather than polling the full meeting-detail payload just to derive counts.
+The meeting SSE stream follows the same projection rule: it may carry live
+events, compact meeting metadata, and lifecycle state under a distinct stream
+snapshot field, but archive artifact bodies remain behind the explicit archive
+detail endpoint. Review/private agent-turn events and provider-private fields
+must not be streamed to browser clients.
 
 ### `archive` / 아카이브
 

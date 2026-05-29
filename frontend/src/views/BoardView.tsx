@@ -9,7 +9,13 @@ import {
   MoveRight,
   ShieldCheck,
 } from "lucide-react";
-import type { FlowState, LifecycleProjection, LiveAgent, LobbyEvent } from "../api";
+import type {
+  FlowState,
+  LifecycleProjection,
+  LiveAgent,
+  LobbyEvent,
+  WorkroomQueueEvidence,
+} from "../api";
 import {
   agentTruthBadges,
   lastObservedSummary,
@@ -17,6 +23,7 @@ import {
 } from "../lib/agentLabels";
 import { summarizeBoardLifecycle } from "../lib/boardLifecycle";
 import ProviderTruthChips from "./components/ProviderTruthChips";
+import WorkroomQueuePanel from "./components/WorkroomQueuePanel";
 
 function agentName(agent: LiveAgent) {
   return agent.display_name || agent.agent_id;
@@ -132,11 +139,13 @@ export default function BoardView({
   agents,
   events,
   lifecycle,
+  workroomQueueEvidence,
 }: {
   flow: FlowState;
   agents: LiveAgent[];
   events: LobbyEvent[];
   lifecycle: LifecycleProjection | null;
+  workroomQueueEvidence: WorkroomQueueEvidence | null;
 }) {
   const ready = readyAgents(agents);
   const consensus = consensusPercent(agents, events);
@@ -309,6 +318,10 @@ export default function BoardView({
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
+          <div className="lg:col-span-2">
+            <WorkroomQueuePanel lifecycle={lifecycle} evidence={workroomQueueEvidence} />
+          </div>
+
           <BoardCard number="1" title="주요 주장" subtitle="핵심 근거와 제안" tone="gold">
             <div className="grid gap-3 md:grid-cols-2">
               {(ready.length ? ready : agents).slice(0, 2).map((agent, index) => (

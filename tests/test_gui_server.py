@@ -402,6 +402,85 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["tab_labels"]["board"], "작전판")
             self.assertEqual(payload["tab_labels"]["archive"], "아카이브")
 
+    def test_workroom_queue_endpoint_returns_safe_presence_without_artifact_bodies(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "shared_memory").mkdir()
+            (meeting_dir / "return_packets").mkdir()
+            (meeting_dir / "review_checkpoints").mkdir()
+            (meeting_dir / "private_research" / "architect").mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "Safe workroom queue",
+                        "question": "No raw bodies?",
+                        "roles": [],
+                        "debate_rounds": [],
+                        "moderator_synthesis": {},
+                        "live_status": "running",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (meeting_dir / "transcript.md").write_text("SECRET_TRANSCRIPT_BODY", encoding="utf-8")
+            (meeting_dir / "decision.md").write_text("SECRET_DECISION_BODY", encoding="utf-8")
+            (meeting_dir / "shared_memory" / "rolling-summary.md").write_text(
+                "SECRET_MEMORY_BODY",
+                encoding="utf-8",
+            )
+            (meeting_dir / "return_packets" / "architect.md").write_text(
+                "SECRET_RETURN_PACKET",
+                encoding="utf-8",
+            )
+            (meeting_dir / "review_checkpoints" / "checkpoint-1.md").write_text(
+                "SECRET_REVIEW_REPLY",
+                encoding="utf-8",
+            )
+            (meeting_dir / "review_checkpoints" / "checkpoint-1.json").write_text(
+                json.dumps({"secret": "SECRET_REVIEW_JSON"}),
+                encoding="utf-8",
+            )
+            (meeting_dir / "private_research" / "architect" / "research.md").write_text(
+                "SECRET_RESEARCH_BODY",
+                encoding="utf-8",
+            )
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/meetings/m1/workroom-queue",
+                    timeout=4,
+                ) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            serialized = json.dumps(payload, ensure_ascii=False)
+            for forbidden in (
+                "SECRET_TRANSCRIPT_BODY",
+                "SECRET_DECISION_BODY",
+                "SECRET_MEMORY_BODY",
+                "SECRET_RETURN_PACKET",
+                "SECRET_REVIEW_REPLY",
+                "SECRET_REVIEW_JSON",
+                "SECRET_RESEARCH_BODY",
+            ):
+                self.assertNotIn(forbidden, serialized)
+            self.assertEqual(payload["meeting_id"], "m1")
+            self.assertTrue(payload["artifacts"]["transcript.md"]["available"])
+            self.assertTrue(payload["artifacts"]["decision.md"]["available"])
+            self.assertTrue(payload["artifacts"]["shared_memory/rolling-summary.md"]["available"])
+            self.assertFalse(payload["artifacts"]["shared_memory/action-items.md"]["available"])
+            self.assertEqual(payload["return_packets"]["count"], 1)
+            self.assertEqual(payload["review_checkpoints"]["count"], 1)
+            self.assertIn("lifecycle", payload)
+
     def test_live_agent_operations_endpoint_filters_operation_target_and_status(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -675,7 +754,7 @@ class GuiServerTests(unittest.TestCase):
 
             for lifecycle in (
                 payload["lifecycle"],
-                snapshot["meeting_payload"]["lifecycle"],
+                snapshot["meeting_stream_snapshot"]["lifecycle"],
                 endpoint_payload["lifecycle"],
             ):
                 self.assertEqual(lifecycle["counts"]["live_agents"], 1)
@@ -19141,7 +19220,7 @@ class GuiServerTests(unittest.TestCase):
                 with urlopen(request, timeout=4) as response:
                     lines = []
                     deadline = time.time() + 3
-                    while time.time() < deadline and "meeting_payload" not in "\n".join(lines):
+                    while time.time() < deadline and "meeting_stream_snapshot" not in "\n".join(lines):
                         lines.append(response.readline().decode("utf-8").strip())
             finally:
                 server.shutdown()
@@ -19149,8 +19228,155 @@ class GuiServerTests(unittest.TestCase):
 
             body = "\n".join(lines)
             self.assertIn("event: meeting", body)
-            self.assertIn('"meeting_payload"', body)
+            self.assertIn('"meeting_stream_snapshot"', body)
             self.assertIn('"live_status": "complete"', body)
+            self.assertIn('"live_events"', body)
+
+    def test_meeting_sse_payload_excludes_archive_artifact_bodies(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "return_packets").mkdir()
+            (meeting_dir / "review_checkpoints").mkdir()
+            (meeting_dir / "private_research" / "architect").mkdir(parents=True)
+            append_live_event(meeting_dir, {"kind": "message", "content": "SAFE_OFFICIAL_EVENT"})
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "테스트",
+                        "question": "완료됐나?",
+                        "roles": [],
+                        "debate_rounds": [],
+                        "live_status": "complete",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (meeting_dir / "transcript.md").write_text("SECRET_TRANSCRIPT_BODY", encoding="utf-8")
+            (meeting_dir / "decision.md").write_text("SECRET_DECISION_BODY", encoding="utf-8")
+            (meeting_dir / "return_packets" / "architect.md").write_text(
+                "SECRET_RETURN_PACKET",
+                encoding="utf-8",
+            )
+            (meeting_dir / "review_checkpoints" / "checkpoint.md").write_text(
+                "SECRET_REVIEW_REPLY",
+                encoding="utf-8",
+            )
+            (meeting_dir / "private_research" / "architect" / "research.md").write_text(
+                "SECRET_RESEARCH_BODY",
+                encoding="utf-8",
+            )
+
+            payload = _stream_snapshot_payload(root, "meeting", meeting_id="m1")
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertIn("SAFE_OFFICIAL_EVENT", serialized)
+            self.assertIn("meeting_stream_snapshot", payload)
+            self.assertIn("live_events", payload["meeting_stream_snapshot"])
+            for raw_key in (
+                "artifacts",
+                "return_packets",
+                "review_checkpoints",
+                "research",
+                "tasks",
+            ):
+                self.assertNotIn(raw_key, payload["meeting_stream_snapshot"])
+            for forbidden in (
+                "SECRET_TRANSCRIPT_BODY",
+                "SECRET_DECISION_BODY",
+                "SECRET_RETURN_PACKET",
+                "SECRET_REVIEW_REPLY",
+                "SECRET_RESEARCH_BODY",
+            ):
+                self.assertNotIn(forbidden, serialized)
+
+    def test_meeting_sse_payload_excludes_private_review_events_and_raw_fields(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "meeting.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "테스트",
+                        "question": "완료됐나?",
+                        "roles": [],
+                        "debate_rounds": [],
+                        "live_status": "running",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            raw_events = [
+                {
+                    "id": "public-1",
+                    "kind": "message",
+                    "channel": "official",
+                    "official_record": True,
+                    "display_name": "Public Agent",
+                    "content": "PUBLIC_OFFICIAL_MESSAGE",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                },
+                {
+                    "id": "review-request",
+                    "kind": "live_agent_turn_request",
+                    "channel": "review",
+                    "audience": "agent:critic",
+                    "content": "SECRET_REVIEW_PROMPT_DO_NOT_STREAM",
+                    "prompt": "SECRET_PROMPT_FIELD",
+                    "stdout": "SECRET_STDOUT",
+                    "stderr": "SECRET_STDERR",
+                    "session_id": "SECRET_SESSION_ID",
+                    "endpoint_url": "https://example.invalid/SECRET_ENDPOINT",
+                    "local_path": "/Users/seinel/SECRET_PATH",
+                    "created_at": "2026-01-01T00:00:01+00:00",
+                },
+                {
+                    "id": "review-reply",
+                    "kind": "message",
+                    "channel": "review",
+                    "official_record": False,
+                    "source_event_id": "review-request",
+                    "content": "SECRET_REVIEW_REPLY_DO_NOT_STREAM",
+                    "created_at": "2026-01-01T00:00:02+00:00",
+                },
+            ]
+            (meeting_dir / "live_events.jsonl").write_text(
+                "\n".join(json.dumps(event, ensure_ascii=False) for event in raw_events) + "\n",
+                encoding="utf-8",
+            )
+
+            payload = _stream_snapshot_payload(root, "meeting", meeting_id="m1")
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertIn("PUBLIC_OFFICIAL_MESSAGE", serialized)
+            self.assertEqual([event["id"] for event in payload["events"]], ["public-1"])
+            self.assertEqual(
+                [event["id"] for event in payload["meeting_stream_snapshot"]["live_events"]],
+                ["public-1"],
+            )
+            for forbidden in (
+                "SECRET_REVIEW_PROMPT_DO_NOT_STREAM",
+                "SECRET_REVIEW_REPLY_DO_NOT_STREAM",
+                "SECRET_PROMPT_FIELD",
+                "SECRET_STDOUT",
+                "SECRET_STDERR",
+                "SECRET_SESSION_ID",
+                "SECRET_ENDPOINT",
+                "SECRET_PATH",
+                "prompt",
+                "stdout",
+                "stderr",
+                "session_id",
+                "endpoint_url",
+                "local_path",
+            ):
+                self.assertNotIn(forbidden, serialized)
 
     def test_meeting_sse_reports_error_if_meeting_disappears_during_stream(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -19191,7 +19417,7 @@ class GuiServerTests(unittest.TestCase):
             (meeting_dir / "meeting.json").write_text("{}", encoding="utf-8")
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
-            with patch("agentsassemble.gui.build_meeting_payload", side_effect=FileNotFoundError("lost")):
+            with patch("agentsassemble.gui.build_meeting_stream_payload", side_effect=FileNotFoundError("lost")):
                 with patch("sys.stderr", stderr):
                     thread.start()
                     try:
@@ -19255,7 +19481,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(meeting_payload["meeting_id"], "m1")
             self.assertEqual(meeting_payload["events"][0]["content"], "공식")
 
-    def test_meeting_stream_includes_full_payload_after_final_record(self):
+    def test_meeting_stream_includes_safe_payload_after_final_record(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             result = run_demo_meeting(adapter_name="mock", output_root=root)
@@ -19263,9 +19489,13 @@ class GuiServerTests(unittest.TestCase):
             payload = _stream_snapshot_payload(root, "meeting", meeting_id=result.meeting_id)
 
             self.assertEqual(payload["stream"], "meeting")
-            self.assertEqual(payload["meeting_payload"]["meeting"]["live_status"], "complete")
-            self.assertIn("decision_gate", payload["meeting_payload"]["meeting"])
-            self.assertIn("decision.md", payload["meeting_payload"]["artifacts"])
+            self.assertEqual(payload["meeting_stream_snapshot"]["meeting"]["live_status"], "complete")
+            self.assertIn("lifecycle", payload["meeting_stream_snapshot"])
+            self.assertIn("live_events", payload["meeting_stream_snapshot"])
+            self.assertNotIn("artifacts", payload["meeting_stream_snapshot"])
+            self.assertNotIn("return_packets", payload["meeting_stream_snapshot"])
+            self.assertNotIn("review_checkpoints", payload["meeting_stream_snapshot"])
+            self.assertNotIn("research", payload["meeting_stream_snapshot"])
 
     def test_meeting_stream_survives_partial_final_record(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -19278,8 +19508,8 @@ class GuiServerTests(unittest.TestCase):
             payload = _stream_snapshot_payload(root, "meeting", meeting_id="m1")
 
             self.assertEqual(payload["stream"], "meeting")
-            self.assertTrue(payload["meeting_payload_pending"])
-            self.assertNotIn("meeting_payload", payload)
+            self.assertTrue(payload["meeting_stream_snapshot_pending"])
+            self.assertNotIn("meeting_stream_snapshot", payload)
 
             (meeting_dir / "meeting.json").write_text(
                 json.dumps(
@@ -19299,7 +19529,7 @@ class GuiServerTests(unittest.TestCase):
             recovered = _stream_snapshot_payload(root, "meeting", meeting_id="m1", last_event_id=event["id"])
 
             self.assertEqual(recovered["events"], [])
-            self.assertEqual(recovered["meeting_payload"]["meeting"]["live_status"], "complete")
+            self.assertEqual(recovered["meeting_stream_snapshot"]["meeting"]["live_status"], "complete")
 
     def test_lobby_remote_bridge_reply_is_recorded_as_other_agent(self):
         import agentsassemble.gui as gui

@@ -15,6 +15,7 @@ import {
   fetchLiveAgentFlow,
   fetchMafiaGame,
   fetchMeetingLifecycle,
+  fetchWorkroomQueueEvidence,
   fetchSideChat,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
@@ -28,6 +29,7 @@ import {
   type MeetingLifecycleResponse,
   type LiveAgent,
   type LifecycleProjection,
+  type WorkroomQueueEvidence,
   type MafiaGame,
   type MafiaGameResponse,
   type SideChatEvent,
@@ -97,6 +99,14 @@ export default function App() {
   }, [flow.meeting_id]);
   const [lifecycleData, lifecycleLoading, lifecycleError] =
     usePoll<MeetingLifecycleResponse>(lifecycleFetcher, 5000);
+  const workroomQueueFetcher = useCallback((): Promise<WorkroomQueueEvidence | null> => {
+    if (!flow.meeting_id || adminOpen || channel !== "board") return Promise.resolve(null);
+    return fetchWorkroomQueueEvidence(flow.meeting_id);
+  }, [adminOpen, channel, flow.meeting_id]);
+  const [workroomQueueEvidence] = usePoll<WorkroomQueueEvidence | null>(
+    workroomQueueFetcher,
+    8000
+  );
   const mafiaFetcher = useCallback((): Promise<MafiaGameResponse> => {
     if (!mafiaGameId) return Promise.resolve({ game: null });
     return fetchMafiaGame(mafiaGameId, "host");
@@ -110,7 +120,7 @@ export default function App() {
     const meetingId = flow.meeting_id || "";
     setMeetingStreamState(initialMeetingStreamState(meetingId));
     setMeetingStreamError(null);
-    if (!meetingId) return;
+    if (!meetingId || adminOpen || channel !== "live") return;
     let cancelled = false;
     const unsubscribe = subscribeMeetingEvents(
       meetingId,
@@ -130,7 +140,7 @@ export default function App() {
       cancelled = true;
       unsubscribe();
     };
-  }, [flow.meeting_id]);
+  }, [adminOpen, channel, flow.meeting_id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,6 +184,8 @@ export default function App() {
   const lifecycle: LifecycleProjection | null =
     activeMeetingStreamState.lifecycle ??
     (lifecycleData?.meeting_id === flow.meeting_id ? lifecycleData?.lifecycle ?? null : null);
+  const scopedWorkroomQueueEvidence =
+    workroomQueueEvidence?.meeting_id === flow.meeting_id ? workroomQueueEvidence : null;
   const flowEvents = Array.isArray(flowData?.flow_events)
     ? flowData.flow_events
     : Array.isArray(flowData?.events)
@@ -339,7 +351,13 @@ export default function App() {
               onSideChatPosted={handleSideChatPosted}
             />
           ) : channel === "board" ? (
-            <BoardView flow={flow} agents={agents} events={flowEvents} lifecycle={lifecycle} />
+            <BoardView
+              flow={flow}
+              agents={agents}
+              events={flowEvents}
+              lifecycle={lifecycle}
+              workroomQueueEvidence={scopedWorkroomQueueEvidence}
+            />
           ) : (
             <RecordsView agents={agents} />
           )}

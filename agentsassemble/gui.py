@@ -667,6 +667,197 @@ def build_meeting_payload(
     }
 
 
+WORKROOM_QUEUE_ARTIFACT_PATHS = (
+    "transcript.md",
+    "decision.md",
+    "shared_memory/rolling-summary.md",
+    "shared_memory/action-items.md",
+    "shared_memory/open-questions.md",
+)
+
+SAFE_MEETING_STREAM_EVENT_STRING_FIELDS = (
+    "id",
+    "event_id",
+    "created_at",
+    "kind",
+    "meeting_id",
+    "channel",
+    "audience",
+    "actor_id",
+    "target_agent_id",
+    "source_event_id",
+    "role_id",
+    "display_name",
+    "artifact_kind",
+    "round",
+    "turn_id",
+    "engagement_mode",
+    "confidence",
+    "retry_status",
+)
+SAFE_MEETING_STREAM_TEXT_FIELDS = (
+    "content",
+    "message",
+    "summary",
+    "position",
+    "change_reason",
+    "remaining_resistance",
+)
+PRIVATE_MEETING_STREAM_CHANNELS = {"review"}
+PRIVATE_MEETING_STREAM_KINDS = {"live_agent_turn_request"}
+
+
+def build_workroom_queue_payload(
+    meeting_dir: Path,
+    now: float | None = None,
+    *,
+    output_root: Path | None = None,
+) -> dict[str, object]:
+    meeting, _, has_final_record = _load_meeting_record(meeting_dir)
+    meeting = infer_live_status(
+        meeting,
+        meeting_dir,
+        has_final_record=has_final_record,
+        now=now,
+    )
+    lifecycle_live_agents = _lifecycle_live_agents_for_meeting(
+        output_root or _output_root_for_meeting_dir(meeting_dir),
+        meeting,
+    )
+    return {
+        "meeting_id": clean_lobby_text(meeting.get("meeting_id") or meeting_dir.name, limit=128),
+        "lifecycle": project_meeting_lifecycle(
+            meeting_dir,
+            now=now,
+            live_agents=lifecycle_live_agents,
+        ),
+        "artifacts": {
+            path: {"available": _workroom_artifact_available(meeting_dir, path)}
+            for path in WORKROOM_QUEUE_ARTIFACT_PATHS
+        },
+        "return_packets": {
+            "count": _count_existing_files(meeting_dir / "return_packets", {".md"}),
+        },
+        "review_checkpoints": {
+            "count": _count_existing_stems(meeting_dir / "review_checkpoints", {".md", ".json"}),
+        },
+    }
+
+
+def _workroom_artifact_available(meeting_dir: Path, artifact_path: str) -> bool:
+    path = meeting_dir / artifact_path
+    try:
+        return path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _count_existing_files(root: Path, suffixes: set[str]) -> int:
+    if not root.exists():
+        return 0
+    count = 0
+    for path in root.iterdir():
+        if path.is_file() and path.suffix in suffixes:
+            count += 1
+    return count
+
+
+def _count_existing_stems(root: Path, suffixes: set[str]) -> int:
+    if not root.exists():
+        return 0
+    stems = {
+        path.stem
+        for path in root.iterdir()
+        if path.is_file() and path.suffix in suffixes
+    }
+    return len(stems)
+
+
+def project_meeting_stream_events(events: list[dict[str, object]]) -> list[dict[str, object]]:
+    projected: list[dict[str, object]] = []
+    for event in events:
+        safe_event = _project_meeting_stream_event(event)
+        if safe_event is not None:
+            projected.append(safe_event)
+    return projected
+
+
+def _project_meeting_stream_event(event: dict[str, object]) -> dict[str, object] | None:
+    kind = clean_lobby_text(event.get("kind"), limit=64)
+    channel = clean_lobby_text(event.get("channel"), limit=32)
+    audience = clean_lobby_text(event.get("audience"), limit=64)
+    if channel in PRIVATE_MEETING_STREAM_CHANNELS:
+        return None
+    if kind in PRIVATE_MEETING_STREAM_KINDS or audience.startswith("agent:"):
+        return None
+    safe: dict[str, object] = {}
+    for field in SAFE_MEETING_STREAM_EVENT_STRING_FIELDS:
+        value = clean_lobby_text(event.get(field), limit=256)
+        if value:
+            safe[field] = value
+    if isinstance(event.get("official_record"), bool):
+        safe["official_record"] = event["official_record"]
+    for field in ("turn_index", "retry_attempts"):
+        value = event.get(field)
+        if isinstance(value, int) and not isinstance(value, bool):
+            safe[field] = value
+    for field in ("artifact_path", "artifact_json_path"):
+        value = _safe_meeting_stream_relative_path(event.get(field))
+        if value:
+            safe[field] = value
+    for field in SAFE_MEETING_STREAM_TEXT_FIELDS:
+        value = clean_lobby_text(event.get(field), limit=2000)
+        if value:
+            safe[field] = value
+    return safe if safe.get("id") else None
+
+
+def _safe_meeting_stream_relative_path(value: object) -> str:
+    text = clean_lobby_text(value, limit=256)
+    if not text:
+        return ""
+    if text.startswith(("/", "\\", "~")) or "\\" in text or ":" in text:
+        return ""
+    parts = [part for part in text.split("/") if part]
+    if not parts or any(part in {".", ".."} for part in parts):
+        return ""
+    return "/".join(parts)
+
+
+def build_meeting_stream_payload(
+    meeting_dir: Path,
+    now: float | None = None,
+    *,
+    output_root: Path | None = None,
+) -> dict[str, object]:
+    meeting, _, has_final_record = _load_meeting_record(meeting_dir)
+    meeting = infer_live_status(
+        meeting,
+        meeting_dir,
+        has_final_record=has_final_record,
+        now=now,
+    )
+    meeting_id = clean_lobby_text(meeting.get("meeting_id") or meeting_dir.name, limit=128)
+    lifecycle_live_agents = _lifecycle_live_agents_for_meeting(
+        output_root or _output_root_for_meeting_dir(meeting_dir),
+        meeting,
+    )
+    return {
+        "meeting": {
+            "meeting_id": meeting_id,
+            "topic": clean_lobby_text(meeting.get("topic"), limit=240),
+            "question": clean_lobby_text(meeting.get("question"), limit=240),
+            "live_status": clean_lobby_text(meeting.get("live_status"), limit=64),
+        },
+        "lifecycle": project_meeting_lifecycle(
+            meeting_dir,
+            now=now,
+            live_agents=lifecycle_live_agents,
+        ),
+        "live_events": project_meeting_stream_events(read_live_events(meeting_dir)),
+    }
+
+
 def _output_root_for_meeting_dir(meeting_dir: Path) -> Path | None:
     parent = meeting_dir.parent
     if parent.name != "meetings":
@@ -1230,7 +1421,7 @@ def _stream_snapshot_payload(
         if not meeting_dir.exists():
             raise _meeting_not_found_error(meeting_id)
         try:
-            events = read_live_events_after(meeting_dir, last_event_id)
+            events = project_meeting_stream_events(read_live_events_after(meeting_dir, last_event_id))
         except FileNotFoundError as error:
             raise _meeting_not_found_error(meeting_id) from error
         if not meeting_dir.exists():
@@ -1243,14 +1434,14 @@ def _stream_snapshot_payload(
         }
         if (meeting_dir / "meeting.json").exists():
             try:
-                meeting_payload = build_meeting_payload(meeting_dir, output_root=output_root)
+                meeting_payload = build_meeting_stream_payload(meeting_dir, output_root=output_root)
             except FileNotFoundError as error:
                 raise _meeting_not_found_error(meeting_id) from error
             except json.JSONDecodeError:
-                payload["meeting_payload_pending"] = True
+                payload["meeting_stream_snapshot_pending"] = True
                 payload["payload_signature"] = json.dumps(payload, ensure_ascii=False, sort_keys=True)
             else:
-                payload["meeting_payload"] = meeting_payload
+                payload["meeting_stream_snapshot"] = meeting_payload
                 payload["payload_signature"] = json.dumps(meeting_payload, ensure_ascii=False, sort_keys=True)
         return payload
     raise ValueError(f"Unknown event stream: {stream}")
@@ -7310,6 +7501,24 @@ def _make_handler(
                             ),
                         ),
                     }
+                )
+                return
+            if path.startswith("/api/meetings/") and path.endswith("/workroom-queue"):
+                meeting_id = unquote(path.removeprefix("/api/meetings/").removesuffix("/workroom-queue").strip("/"))
+                try:
+                    meeting_dir = _safe_meeting_dir(output_root, meeting_id)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.NOT_FOUND, str(error))
+                    return
+                if not meeting_dir.exists():
+                    self._send_error(HTTPStatus.NOT_FOUND, "Meeting not found")
+                    return
+                self._send_json(
+                    build_workroom_queue_payload(
+                        meeting_dir,
+                        now=time.time(),
+                        output_root=output_root,
+                    )
                 )
                 return
             meeting_events_id = self._meeting_events_id(path)

@@ -117,6 +117,10 @@ def _parse_gui_routes(path: Path) -> set[Route]:
         if meeting_lifecycle:
             routes.add(Route("/api/meetings/{meeting_id}/lifecycle", current_method, "prefix"))
 
+        meeting_workroom_queue = 'path.startswith("/api/meetings/") and path.endswith("/workroom-queue")' in stripped
+        if meeting_workroom_queue:
+            routes.add(Route("/api/meetings/{meeting_id}/workroom-queue", current_method, "prefix"))
+
         if "self._meeting_events_id(path)" in stripped:
             routes.add(Route("/api/meetings/{meeting_id}/events", current_method, "sse"))
 

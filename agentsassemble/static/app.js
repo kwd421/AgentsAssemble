@@ -7,6 +7,7 @@ import {
   lobbyEventsSignature,
   meetingStatusLabel,
   mergeEventsById,
+  mergeMeetingStreamSnapshotPayload,
   setLobbyEvents,
   setSideChatEvents,
   state,
@@ -237,6 +238,10 @@ function applyMeetingStreamPayload(payload) {
   if (!state.payload?.meeting) return;
   if (payload.meeting_id && payload.meeting_id !== state.payload.meeting.meeting_id) return;
   showAppStatus("", "info");
+  if (payload.meeting_stream_snapshot?.meeting) {
+    applyMeetingStreamSnapshot(payload.meeting_stream_snapshot);
+    return;
+  }
   if (payload.meeting_payload?.meeting) {
     applyFullMeetingPayloadFromStream(payload.meeting_payload);
     return;
@@ -244,6 +249,14 @@ function applyMeetingStreamPayload(payload) {
   const events = payload?.events || [];
   if (!events.length) return;
   state.payload.live_events = mergeEventsById(state.payload.live_events || [], events);
+  state.payloadSignature = payloadSignature(state.payload);
+  refreshLiveTranscript(state.payload);
+}
+
+function applyMeetingStreamSnapshot(snapshot) {
+  const nextPayload = mergeMeetingStreamSnapshotPayload(state.payload, snapshot);
+  if (nextPayload === state.payload) return;
+  state.payload = nextPayload;
   state.payloadSignature = payloadSignature(state.payload);
   refreshLiveTranscript(state.payload);
 }

@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { refreshLiveTranscript, renderLive } from "../agentsassemble/static/meeting-views.js";
-import { renderLifecycleBanner, state, summarizeLifecycleForStaticGui } from "../agentsassemble/static/shared.js";
+import {
+  mergeMeetingStreamSnapshotPayload,
+  renderLifecycleBanner,
+  state,
+  summarizeLifecycleForStaticGui,
+} from "../agentsassemble/static/shared.js";
 
 class FakeElement {
   constructor(tagName, attributes = {}, ownerDocument = null) {
@@ -322,4 +327,47 @@ test("static lifecycle banner renders safe visible copy without provider-private
   assert.match(html, /미입실 역할/);
   assert.match(html, /역할 0\/2/);
   assert.doesNotMatch(html, /secret prompt|sess-secret|sk-secret|\/Users\/seinel/);
+});
+
+test("meeting stream snapshot merge preserves full archive fields", () => {
+  const previousPayload = {
+    meeting: {
+      meeting_id: "resident-gui",
+      question: "full question",
+      live_status: "running",
+      roles: [{ id: "architect", display_name: "Architect" }],
+      debate_rounds: [{ id: "round_1", messages: [] }],
+    },
+    artifacts: { "transcript.md": "FULL_TRANSCRIPT_BODY" },
+    tasks: { "architect.md": "FULL_TASK_BODY" },
+    research: { "architect.md": "FULL_RESEARCH_BODY" },
+    return_packets: { "architect.md": "FULL_RETURN_PACKET_BODY" },
+    review_checkpoints: { "checkpoint.md": "FULL_REVIEW_BODY" },
+    live_events: [{ id: "live-a", kind: "message", content: "old" }],
+  };
+  const snapshot = {
+    meeting: {
+      meeting_id: "resident-gui",
+      live_status: "complete",
+    },
+    lifecycle: {
+      state: "complete",
+      status_source: "live_state",
+      counts: { roles: 1, bindings: 1, live_agents: 1, pending_turns: 0, official_messages: 1 },
+      attention: [],
+      role_hints: [],
+    },
+    live_events: [{ id: "live-b", kind: "message", content: "new" }],
+  };
+
+  const merged = mergeMeetingStreamSnapshotPayload(previousPayload, snapshot);
+
+  assert.equal(merged.meeting.live_status, "complete");
+  assert.deepEqual(merged.meeting.roles, previousPayload.meeting.roles);
+  assert.equal(merged.artifacts["transcript.md"], "FULL_TRANSCRIPT_BODY");
+  assert.equal(merged.tasks["architect.md"], "FULL_TASK_BODY");
+  assert.equal(merged.research["architect.md"], "FULL_RESEARCH_BODY");
+  assert.equal(merged.return_packets["architect.md"], "FULL_RETURN_PACKET_BODY");
+  assert.equal(merged.review_checkpoints["checkpoint.md"], "FULL_REVIEW_BODY");
+  assert.deepEqual(merged.live_events.map((event) => event.id), ["live-a", "live-b"]);
 });

@@ -667,8 +667,12 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("export function meetingLiveEventsToTimelineEvents", api_source)
         self.assertIn("export function subscribeMeetingEvents", api_source)
         self.assertIn("new EventSource(`/api/meetings/${encodeURIComponent(meetingId)}/events`)", api_source)
-        self.assertIn("meeting_payload?.live_events", api_source)
-        self.assertIn("meeting_payload?.lifecycle", api_source)
+        self.assertIn("meeting_stream_snapshot?: MeetingStreamSnapshot", api_source)
+        self.assertIn("meeting_stream_snapshot_pending?: boolean", api_source)
+        self.assertIn("payload.meeting_stream_snapshot || payload.meeting_payload", api_source)
+        self.assertIn("meetingPayload?.live_events", api_source)
+        self.assertIn("meetingPayload?.lifecycle", api_source)
+        self.assertIn("meeting_payload?: MeetingStreamSnapshot", api_source)
         self.assertIn("subscribeMeetingEvents", app_source)
         self.assertIn("meetingLiveEventsToTimelineEvents", app_source)
         self.assertIn("setMeetingStreamState", app_source)
@@ -676,6 +680,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("meetingStreamStateForActiveMeeting", app_source)
         self.assertIn("let cancelled = false;", app_source)
         self.assertIn("if (cancelled) return;", app_source)
+        self.assertIn('channel !== "live"', app_source)
         self.assertIn("update.meetingId && update.meetingId !== meetingId", app_source)
         self.assertIn("flowEvents.length ? flowEvents : officialTimelineEvents", app_source)
         self.assertIn('timelineSource={flowEvents.length ? "flow" : "official"}', app_source)
@@ -1233,9 +1238,16 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function applySideChatStreamPayload", script)
         self.assertIn("function applyMeetingStreamPayload", script)
         self.assertIn("payload.meeting_payload", script)
+        self.assertIn("payload.meeting_stream_snapshot", script)
+        self.assertIn("function applyMeetingStreamSnapshot", script)
+        self.assertIn("mergeMeetingStreamSnapshotPayload", script)
         meeting_stream_handler = script[
             script.index("function applyMeetingStreamPayload") : script.index("function applyFullMeetingPayloadFromStream")
         ]
+        self.assertLess(
+            meeting_stream_handler.index("payload.meeting_stream_snapshot?.meeting"),
+            meeting_stream_handler.index("payload.meeting_payload?.meeting"),
+        )
         self.assertLess(
             meeting_stream_handler.index("payload.meeting_payload?.meeting"),
             meeting_stream_handler.index("const events = payload?.events || []"),

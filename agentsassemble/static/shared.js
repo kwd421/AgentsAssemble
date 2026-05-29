@@ -115,6 +115,22 @@ export function displayQuestion(question) {
   return question || "";
 }
 
+export function mergeMeetingStreamSnapshotPayload(previousPayload, snapshot) {
+  if (!previousPayload?.meeting || !snapshot?.meeting) return previousPayload;
+  if (snapshot.meeting.meeting_id && snapshot.meeting.meeting_id !== previousPayload.meeting.meeting_id) {
+    return previousPayload;
+  }
+  return {
+    ...previousPayload,
+    meeting: {
+      ...previousPayload.meeting,
+      ...snapshot.meeting,
+    },
+    lifecycle: snapshot.lifecycle ?? previousPayload.lifecycle,
+    live_events: mergeEventsById(previousPayload.live_events || [], snapshot.live_events || []),
+  };
+}
+
 export function meetingStatusLabel(status) {
   return {
     running: "진행 중",

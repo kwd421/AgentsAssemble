@@ -46,7 +46,7 @@ class FrontendMeetingStreamRuntimeTests(unittest.TestCase):
             const snapshot = api.parseMeetingStreamData(JSON.stringify({
               stream: "meeting",
               meeting_id: "m1",
-              meeting_payload: {
+              meeting_stream_snapshot: {
                 meeting: { meeting_id: "m1" },
                 live_events: [
                   { id: "live-a", kind: "message", display_name: "Codex", content: "첫 발언", created_at: "2026-01-01T00:00:00Z", official_record: true },

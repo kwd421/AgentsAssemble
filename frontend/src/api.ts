@@ -167,19 +167,45 @@ export interface MeetingDetailResponse {
   live_events?: MeetingLiveEvent[];
 }
 
+export interface WorkroomQueueEvidence {
+  meeting_id: string;
+  lifecycle?: LifecycleProjection | null;
+  artifacts: Record<string, { available: boolean }>;
+  return_packets: {
+    count: number;
+  };
+  review_checkpoints: {
+    count: number;
+  };
+}
+
 export interface MeetingStreamPayload {
   stream?: string;
   meeting_id?: string;
   events?: MeetingLiveEvent[];
-  meeting_payload?: MeetingDetailResponse;
+  meeting_stream_snapshot?: MeetingStreamSnapshot;
+  meeting_stream_snapshot_pending?: boolean;
+  meeting_payload?: MeetingStreamSnapshot;
   meeting_payload_pending?: boolean;
   payload_signature?: string;
+}
+
+export interface MeetingStreamSnapshot {
+  meeting?: {
+    meeting_id?: string;
+    topic?: string;
+    question?: string;
+    live_status?: string;
+    [key: string]: unknown;
+  };
+  lifecycle?: LifecycleProjection | null;
+  live_events?: MeetingLiveEvent[];
 }
 
 export interface MeetingStreamUpdate {
   meetingId?: string;
   events: MeetingLiveEvent[];
-  meetingPayload?: MeetingDetailResponse;
+  meetingPayload?: MeetingStreamSnapshot;
   lifecycle?: LifecycleProjection | null;
 }
 
@@ -417,17 +443,23 @@ export function fetchMeetingLifecycle(meetingId: string) {
   );
 }
 
+export function fetchWorkroomQueueEvidence(meetingId: string) {
+  return fetchJson<WorkroomQueueEvidence>(
+    `/api/meetings/${encodeURIComponent(meetingId)}/workroom-queue`
+  );
+}
+
 export function parseMeetingStreamData(raw: string): MeetingStreamUpdate | null {
   try {
     const payload = JSON.parse(raw) as MeetingStreamPayload | null;
     if (!payload || typeof payload !== "object") return null;
-    const meetingPayload = payload.meeting_payload;
-    const events = Array.isArray(payload.meeting_payload?.live_events)
-      ? payload.meeting_payload.live_events
+    const meetingPayload = payload.meeting_stream_snapshot || payload.meeting_payload;
+    const events = Array.isArray(meetingPayload?.live_events)
+      ? meetingPayload.live_events
       : Array.isArray(payload.events)
         ? payload.events
         : [];
-    const lifecycle = payload.meeting_payload?.lifecycle ?? null;
+    const lifecycle = meetingPayload?.lifecycle ?? null;
     if (!events.length && !meetingPayload && !lifecycle) return null;
     return {
       meetingId: payload.meeting_id || meetingPayload?.meeting?.meeting_id,
