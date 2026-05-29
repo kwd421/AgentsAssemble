@@ -20373,6 +20373,124 @@ class GuiServerTests(unittest.TestCase):
             self.assertNotIn(str(root), serialized)
             self.assertNotIn("/Users/", serialized)
 
+    def test_release_health_queue_endpoint_projects_safe_room_benchmark_summary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            latest_dir = root / "release_health"
+            latest_dir.mkdir(parents=True)
+            (latest_dir / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "completed_at": "2026-05-29T00:01:20+00:00",
+                        "duration_seconds": float("inf"),
+                        "summary": {"total": float("inf"), "passed": 1, "failed": 0, "skipped": 0, "ok": True},
+                        "results": [
+                            {
+                                "id": "node_check_static",
+                                "status": "passed",
+                                "duration_seconds": 0.1,
+                                "benchmark_summary": {
+                                    "status": "ok",
+                                    "metrics_summary": {
+                                        "flow_anchor_share_improvement": 0.99,
+                                    },
+                                },
+                            },
+                            {
+                                "id": "room_event_benchmark",
+                                "status": "passed",
+                                "duration_seconds": 1.25,
+                                "benchmark_summary": {
+                                    "status": "ok",
+                                    "metrics_summary": {
+                                        "flow_anchor_share_off": 0.65,
+                                        "flow_anchor_share_on": 0.25,
+                                        "flow_anchor_share_improvement": 0.4,
+                                        "flow_scheduler_predicate_p99_ms": 12.5,
+                                        "secret_metric": "SECRET_TOKEN=abc",
+                                    },
+                                    "regression_signals": [
+                                        {
+                                            "name": "flow_scheduler_predicate_p99_ms",
+                                            "value_ms": 12.5,
+                                            "ceiling_ms": 75.0,
+                                            "ok": True,
+                                            "raw_path": str(root),
+                                        },
+                                        {
+                                            "name": "flow_anchor_share_improvement",
+                                            "value": 0.4,
+                                            "floor": 0.25,
+                                            "ok": True,
+                                            "command": "--warmup-events",
+                                        },
+                                        {
+                                            "name": "SECRET_TOKEN_signal",
+                                            "value": 999,
+                                            "ok": False,
+                                        },
+                                    ],
+                                    "temporary_root": str(root),
+                                    "argv": ["python3", "-m", "agentsassemble.cli"],
+                                    "raw_stdout": "SECRET_PROVIDER_OUTPUT",
+                                },
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/release-health/queue", timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            serialized = json.dumps(payload, ensure_ascii=False)
+            by_id = {check["id"]: check for check in payload["checks"]}
+            self.assertNotIn("benchmark_summary", by_id["node_check_static"])
+            benchmark = by_id["room_event_benchmark"]["benchmark_summary"]
+            self.assertEqual(benchmark["status"], "ok")
+            self.assertEqual(benchmark["metrics_summary"]["flow_anchor_share_improvement"], 0.4)
+            self.assertEqual(benchmark["metrics_summary"]["flow_scheduler_predicate_p99_ms"], 12.5)
+            self.assertEqual(
+                benchmark["regression_signals"],
+                [
+                    {
+                        "name": "flow_scheduler_predicate_p99_ms",
+                        "ok": True,
+                        "value_ms": 12.5,
+                        "ceiling_ms": 75.0,
+                    },
+                    {
+                        "name": "flow_anchor_share_improvement",
+                        "ok": True,
+                        "value": 0.4,
+                        "floor": 0.25,
+                    },
+                ],
+            )
+            self.assertEqual(payload["source"]["latest_duration_seconds"], None)
+            self.assertEqual(payload["summary"]["latest_total"], 0)
+            for forbidden in (
+                "SECRET_TOKEN",
+                "SECRET_PROVIDER_OUTPUT",
+                "secret_metric",
+                "temporary_root",
+                "argv",
+                "raw_stdout",
+                "--warmup-events",
+                str(root),
+                "/Users/",
+                "agentsassemble.cli",
+            ):
+                self.assertNotIn(forbidden, serialized)
+
 
 def _write_health_resident_meeting(root: Path, *, agent_ids: list[str]) -> Path:
     meeting_dir = root / "meetings" / "resident-m1"

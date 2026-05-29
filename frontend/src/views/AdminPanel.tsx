@@ -23,6 +23,7 @@ import {
   partitionReleaseHealthChecks,
   releaseHealthLatestById,
   releaseHealthQueueBadge,
+  releaseHealthBenchmarkRows,
   releaseHealthSafetyLabel,
   releaseHealthSelector,
   releaseHealthStatusLabel,
@@ -69,6 +70,7 @@ function ReleaseHealthCard({
   const badge = releaseHealthQueueBadge(check);
   const latestStatus = latest?.latest_status || "not_run";
   const duration = formatCheckDuration(latest?.latest_duration_seconds);
+  const benchmarkRows = releaseHealthBenchmarkRows(latest?.benchmark_summary);
   return (
     <div className="ops-inner rounded-lg px-4 py-3">
       <div className="flex items-center justify-between gap-3">
@@ -103,6 +105,28 @@ function ReleaseHealthCard({
           {duration ? ` · ${duration}` : ""}
           {latest.skipped_reason ? ` · ${latest.skipped_reason}` : ""}
         </p>
+      )}
+      {benchmarkRows.length > 0 && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {benchmarkRows.map((row) => (
+            <div key={row.id} className="rounded-md border border-line/60 bg-black/16 px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 text-[10px] font-bold text-text-muted preserve-words">
+                  {row.label}
+                </span>
+                <span
+                  className={`shrink-0 text-[10px] font-black ${
+                    row.ok === false ? "text-offline" : row.ok === true ? "text-online" : "text-text-secondary"
+                  }`}
+                >
+                  {row.ok === false ? "주의" : row.ok === true ? "정상" : "참고"}
+                </span>
+              </div>
+              <p className="mt-1 text-[15px] font-black text-text-primary">{row.value}</p>
+              <p className="text-[10px] text-text-muted preserve-words">{row.detail}</p>
+            </div>
+          ))}
+        </div>
       )}
       <p className="mt-2 rounded-md border border-line/60 bg-black/18 px-3 py-2 font-mono text-[11px] text-text-secondary preserve-words">
         {releaseHealthSelector(check)}

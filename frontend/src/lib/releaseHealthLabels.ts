@@ -1,4 +1,5 @@
 import type {
+  ReleaseHealthBenchmarkSummary,
   ReleaseHealthCatalog,
   ReleaseHealthCheck,
   ReleaseHealthQueue,
@@ -65,4 +66,69 @@ export function partitionReleaseHealthChecks(catalog?: Pick<ReleaseHealthCatalog
       .sort((left, right) => releaseHealthOrder(left) - releaseHealthOrder(right)),
     optInChecks: checks.filter((check) => check.default_run !== true),
   };
+}
+
+export type ReleaseHealthBenchmarkRow = {
+  id: string;
+  label: string;
+  value: string;
+  detail: string;
+  ok: boolean | null;
+};
+
+export function releaseHealthBenchmarkRows(
+  summary?: ReleaseHealthBenchmarkSummary | null
+): ReleaseHealthBenchmarkRow[] {
+  if (!summary || summary.status !== "ok") return [];
+  const metrics = summary.metrics_summary ?? {};
+  const rows: ReleaseHealthBenchmarkRow[] = [];
+  const anchorImprovement = finiteMetric(metrics.flow_anchor_share_improvement);
+  if (anchorImprovement !== null) {
+    const off = finiteMetric(metrics.flow_anchor_share_off);
+    const on = finiteMetric(metrics.flow_anchor_share_on);
+    rows.push({
+      id: "flow_anchor_share_improvement",
+      label: "첫 발언 앵커 완화",
+      value: formatSignedPercentPoint(anchorImprovement),
+      detail:
+        off !== null && on !== null
+          ? `${formatShare(off)} → ${formatShare(on)}`
+          : "scheduler on/off comparison",
+      ok: benchmarkSignalOk(summary, "flow_anchor_share_improvement"),
+    });
+  }
+  const predicateP99 = finiteMetric(metrics.flow_scheduler_predicate_p99_ms);
+  if (predicateP99 !== null) {
+    const signal = benchmarkSignal(summary, "flow_scheduler_predicate_p99_ms");
+    const ceiling = finiteMetric(signal?.ceiling_ms);
+    rows.push({
+      id: "flow_scheduler_predicate_p99_ms",
+      label: "스케줄러 판정 p99",
+      value: `${predicateP99.toFixed(1)}ms`,
+      detail: ceiling !== null ? `ceiling ${ceiling.toFixed(0)}ms` : "local predicate latency",
+      ok: signal?.ok ?? null,
+    });
+  }
+  return rows;
+}
+
+function benchmarkSignal(summary: ReleaseHealthBenchmarkSummary, name: string) {
+  return (summary.regression_signals ?? []).find((signal) => signal.name === name);
+}
+
+function benchmarkSignalOk(summary: ReleaseHealthBenchmarkSummary, name: string) {
+  return benchmarkSignal(summary, name)?.ok ?? null;
+}
+
+function finiteMetric(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatShare(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatSignedPercentPoint(value: number) {
+  const percentPoint = Math.round(value * 100);
+  return `${percentPoint > 0 ? "+" : ""}${percentPoint}pp`;
 }

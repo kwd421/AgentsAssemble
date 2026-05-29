@@ -108,10 +108,98 @@ class FrontendReleaseHealthQueueTests(unittest.TestCase):
               labels.releaseHealthLatestById({
                 checks: [
                   { id: "early_default", latest_status: "passed", latest_duration_seconds: 0.2 },
-                  { id: "benchmark", latest_status: "not_run" },
+                  {
+                    id: "benchmark",
+                    latest_status: "passed",
+                    benchmark_summary: {
+                      status: "ok",
+                      metrics_summary: {
+                        flow_anchor_share_off: 0.65,
+                        flow_anchor_share_on: 0.25,
+                        flow_anchor_share_improvement: 0.4,
+                        flow_scheduler_predicate_p99_ms: 12.5,
+                      },
+                      regression_signals: [
+                        {
+                          name: "flow_anchor_share_improvement",
+                          value: 0.4,
+                          floor: 0.25,
+                          ok: true,
+                        },
+                        {
+                          name: "flow_scheduler_predicate_p99_ms",
+                          value_ms: 12.5,
+                          ceiling_ms: 75,
+                          ok: true,
+                        },
+                      ],
+                    },
+                  },
                 ],
               }).get("early_default"),
               { id: "early_default", latest_status: "passed", latest_duration_seconds: 0.2 }
+            );
+            assert.deepEqual(
+              labels.releaseHealthBenchmarkRows({
+                status: "ok",
+                metrics_summary: {
+                  flow_anchor_share_off: 0.65,
+                  flow_anchor_share_on: 0.25,
+                  flow_anchor_share_improvement: 0.4,
+                  flow_scheduler_predicate_p99_ms: 12.5,
+                },
+                regression_signals: [
+                  {
+                    name: "flow_anchor_share_improvement",
+                    value: 0.4,
+                    floor: 0.25,
+                    ok: true,
+                  },
+                  {
+                    name: "flow_scheduler_predicate_p99_ms",
+                    value_ms: 12.5,
+                    ceiling_ms: 75,
+                    ok: true,
+                  },
+                ],
+              }).map((row) => ({
+                id: row.id,
+                value: row.value,
+                detail: row.detail,
+                ok: row.ok,
+              })),
+              [
+                {
+                  id: "flow_anchor_share_improvement",
+                  value: "+40pp",
+                  detail: "65% → 25%",
+                  ok: true,
+                },
+                {
+                  id: "flow_scheduler_predicate_p99_ms",
+                  value: "12.5ms",
+                  detail: "ceiling 75ms",
+                  ok: true,
+                },
+              ]
+            );
+            assert.deepEqual(labels.releaseHealthBenchmarkRows({ status: "unparsed" }), []);
+            assert.equal(
+              labels.releaseHealthBenchmarkRows({
+                status: "ok",
+                metrics_summary: {
+                  flow_anchor_share_improvement: -0.1,
+                },
+                regression_signals: [
+                  {
+                    name: "flow_anchor_share_improvement",
+                    value: -0.1,
+                    floor: 0.25,
+                    ok: false,
+                  },
+                ],
+              })[0].value,
+              "-10pp"
             );
             assert.equal(
               labels.releaseHealthSelector(partitioned.optInChecks[0]),

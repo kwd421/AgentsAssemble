@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import subprocess
 import time
@@ -27,6 +28,24 @@ ROOM_BENCHMARK_PARAM_KEYS = (
     "agent_count",
     "sse_samples",
 )
+ROOM_BENCHMARK_SUMMARY_METRIC_KEYS = (
+    "lobby_append_p99_ms",
+    "live_append_p99_ms",
+    "lobby_read_after_cursor_p99_ms",
+    "live_read_after_cursor_p99_ms",
+    "lobby_tail_read_ms",
+    "live_tail_read_ms",
+    "lobby_sse_append_to_frame_p99_ms",
+    "flow_normalized_improvement",
+    "flow_anchor_share_off",
+    "flow_anchor_share_on",
+    "flow_anchor_share_improvement",
+    "flow_scheduler_predicate_p99_ms",
+)
+ROOM_BENCHMARK_SIGNAL_NAMES = {
+    "flow_scheduler_predicate_p99_ms",
+    "flow_anchor_share_improvement",
+}
 
 
 class ReleaseHealthSelectionError(ValueError):
@@ -279,7 +298,46 @@ def _release_health_queue_check(
             "skipped_reason": _safe_skip_reason(latest_result.get("skipped_reason")),
         }
     )
+    benchmark_summary = _safe_queue_benchmark_summary(latest_result.get("benchmark_summary"))
+    if projected["id"] == "room_event_benchmark" and projected["latest_status"] == "passed" and benchmark_summary is not None:
+        projected["benchmark_summary"] = benchmark_summary
     return projected
+
+
+def _safe_queue_benchmark_summary(value: object) -> dict[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    status = str(value.get("status") or "").strip()
+    if status not in {"ok", "unparsed"}:
+        status = "unknown"
+    result: dict[str, object] = {"status": status}
+    if status != "ok":
+        return result
+    metrics_source = _mapping_value(value, "metrics_summary")
+    result["metrics_summary"] = {
+        key: _safe_float(metrics_source.get(key))
+        for key in ROOM_BENCHMARK_SUMMARY_METRIC_KEYS
+    }
+    signals = []
+    source_signals = value.get("regression_signals")
+    if isinstance(source_signals, list):
+        for signal in source_signals:
+            if not isinstance(signal, Mapping):
+                continue
+            name = str(signal.get("name") or "").strip()
+            if name not in ROOM_BENCHMARK_SIGNAL_NAMES:
+                continue
+            safe_signal: dict[str, object] = {
+                "name": name,
+                "ok": signal.get("ok") is True,
+            }
+            for number_key in ("value_ms", "ceiling_ms", "value", "floor"):
+                number = _safe_float(signal.get(number_key))
+                if number is not None:
+                    safe_signal[number_key] = number
+            signals.append(safe_signal)
+    result["regression_signals"] = signals
+    return result
 
 
 def _safe_release_health_status(value: object, *, fallback: str) -> str:
@@ -684,7 +742,7 @@ def _safe_int(value: object) -> int:
     if isinstance(value, int):
         return value
     if isinstance(value, float):
-        return int(value)
+        return int(value) if math.isfinite(value) else 0
     return 0
 
 
@@ -692,7 +750,11 @@ def _safe_float(value: object) -> float | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
+        try:
+            number = float(value)
+        except (OverflowError, TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
     return None
 
 

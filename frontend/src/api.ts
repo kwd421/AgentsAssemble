@@ -288,6 +288,35 @@ export interface ReleaseHealthQueueCheck extends ReleaseHealthCheck {
   latest_status: "passed" | "failed" | "skipped" | "not_run" | "unknown";
   latest_duration_seconds?: number | null;
   skipped_reason?: string;
+  benchmark_summary?: ReleaseHealthBenchmarkSummary;
+}
+
+export interface ReleaseHealthBenchmarkSignal {
+  name: string;
+  ok: boolean;
+  value_ms?: number;
+  ceiling_ms?: number;
+  value?: number;
+  floor?: number;
+}
+
+export interface ReleaseHealthBenchmarkSummary {
+  status: string;
+  metrics_summary?: {
+    lobby_append_p99_ms?: number | null;
+    live_append_p99_ms?: number | null;
+    lobby_read_after_cursor_p99_ms?: number | null;
+    live_read_after_cursor_p99_ms?: number | null;
+    lobby_tail_read_ms?: number | null;
+    live_tail_read_ms?: number | null;
+    lobby_sse_append_to_frame_p99_ms?: number | null;
+    flow_normalized_improvement?: number | null;
+    flow_anchor_share_off?: number | null;
+    flow_anchor_share_on?: number | null;
+    flow_anchor_share_improvement?: number | null;
+    flow_scheduler_predicate_p99_ms?: number | null;
+  };
+  regression_signals?: ReleaseHealthBenchmarkSignal[];
 }
 
 export interface ReleaseHealthCatalog {
