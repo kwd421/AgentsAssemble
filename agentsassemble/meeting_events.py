@@ -27,6 +27,7 @@ LiveEventKind = Literal[
     "message",
     "room_chat",
     "synthesis",
+    "promoted_context",
     "artifact",
     "live_agent_turn_request",
     "live_agent_turn_cancelled",
@@ -35,7 +36,7 @@ LiveEventKind = Literal[
 LOBBY_SIDES: set[str] = {"mine", "my-agent", "other", "other-agent"}
 LOBBY_KINDS: set[str] = {"message", "ready", "deploy"}
 LOBBY_CHANNELS: set[str] = {"lobby", "side_chat"}
-OFFICIAL_LIVE_KINDS: set[str] = {"message", "synthesis"}
+OFFICIAL_LIVE_KINDS: set[str] = {"message", "synthesis", "promoted_context"}
 JSONL_TAIL_BLOCK_BYTES = 8192
 LOBBY_MESSAGE_LIMIT = 2000
 
@@ -332,6 +333,9 @@ def append_live_event(meeting_dir: Path, payload: dict[str, object]) -> dict[str
         "target_agent_id": clean_lobby_text(payload.get("target_agent_id", ""), limit=64),
         "source_event_id": clean_lobby_text(payload.get("source_event_id", ""), limit=128),
         "review_checkpoint_id": clean_lobby_text(payload.get("review_checkpoint_id", ""), limit=128),
+        "promoted_from": clean_lobby_text(payload.get("promoted_from", ""), limit=64),
+        "promoted_from_actor_id": clean_lobby_text(payload.get("promoted_from_actor_id", ""), limit=64),
+        "promoted_reason": clean_lobby_text(payload.get("promoted_reason", ""), limit=240),
         "role_id": payload.get("role_id"),
         "display_name": payload.get("display_name"),
         "artifact_kind": clean_lobby_text(payload.get("artifact_kind", ""), limit=64),

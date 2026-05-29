@@ -51,6 +51,7 @@ from agentsassemble.live_agent_runner import load_group_configs
 from agentsassemble.live_agent_roster import filter_live_agent_roster, safe_live_agent_roster_payload
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents, update_live_agent_engagement
 from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operation_history
+from agentsassemble.lobby_promotion import LOBBY_PROMOTION_OPERATION, promote_lobby_events_to_official
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_finalization import finalize_live_agent_meeting
 from agentsassemble.live_agent_processes import (
@@ -7310,6 +7311,33 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self._send_json({"attachment": attachment})
+                return
+            if parsed.path == "/api/lobby/promote":
+                payload = self._operation_json_payload(operation=LOBBY_PROMOTION_OPERATION)
+                if payload is None:
+                    return
+                raw_event_ids = payload.get("lobby_event_ids") or payload.get("lobby_event_id") or []
+                event_ids = raw_event_ids if isinstance(raw_event_ids, list) else [raw_event_ids]
+                meeting_id = clean_lobby_text(payload.get("meeting_id"), limit=128)
+                try:
+                    result = promote_lobby_events_to_official(
+                        output_root,
+                        meeting_id,
+                        event_ids,
+                        reason=clean_lobby_text(payload.get("reason"), limit=240),
+                    )
+                except ValueError as error:
+                    record_live_agent_operation(
+                        output_root,
+                        operation=LOBBY_PROMOTION_OPERATION,
+                        status="failed",
+                        target_id=meeting_id,
+                        error=str(error),
+                        details={"source_event_count": len(event_ids)},
+                    )
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(result)
                 return
             if parsed.path == "/api/lobby":
                 length = int(self.headers.get("Content-Length", "0") or "0")

@@ -6,7 +6,7 @@ from typing import Any
 from agentsassemble.meeting_events import read_live_events
 
 
-OFFICIAL_TRANSCRIPT_KINDS = {"message", "synthesis"}
+OFFICIAL_TRANSCRIPT_KINDS = {"message", "synthesis", "promoted_context"}
 
 
 def official_live_transcript_events(events: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -67,6 +67,8 @@ def _event_heading(event: dict[str, object]) -> str:
         return display_name
     if kind == "synthesis":
         return "Moderator Synthesis"
+    if kind == "promoted_context":
+        return "Promoted Lobby Context"
     return (
         str(event.get("role_id") or "").strip()
         or str(event.get("actor_id") or "").strip()
@@ -83,6 +85,8 @@ def _event_metadata_lines(event: dict[str, object]) -> list[str]:
         ("Turn id", "turn_id"),
         ("Turn index", "turn_index"),
         ("Source event id", "source_event_id"),
+        ("Promoted from", "promoted_from"),
+        ("Promoted reason", "promoted_reason"),
     ]
     lines = []
     for label, key in fields:

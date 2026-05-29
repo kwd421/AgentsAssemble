@@ -130,6 +130,7 @@ def build_finalized_live_meeting_record(
     meeting.setdefault("memory_input", {"research_summaries": []})
     meeting.setdefault("follow_up", {"parent_meeting_id": None, "note": None})
     meeting["debate_rounds"] = debate_rounds
+    meeting["promoted_context"] = _promoted_context_summary(official_events)
     meeting["moderator_synthesis"] = synthesis
     meeting["evidence_gate"] = evidence_gate
     meeting["decision_gate"] = decision_gate
@@ -174,6 +175,24 @@ def build_finalized_live_meeting_record(
         "decision_policy": "user_decision_required",
     }
     return meeting
+
+
+def _promoted_context_summary(official_events: list[dict[str, object]]) -> list[dict[str, object]]:
+    summary: list[dict[str, object]] = []
+    for event in official_events:
+        if str(event.get("kind") or "") != "promoted_context":
+            continue
+        summary.append(
+            {
+                "event_id": clean_lobby_text(event.get("id"), limit=128),
+                "source_event_id": clean_lobby_text(event.get("source_event_id"), limit=128),
+                "display_name": clean_lobby_text(event.get("display_name"), limit=128),
+                "promoted_from": clean_lobby_text(event.get("promoted_from"), limit=64),
+                "promoted_reason": clean_lobby_text(event.get("promoted_reason"), limit=240),
+                "content": clean_lobby_text(event.get("content"), limit=4000),
+            }
+        )
+    return summary
 
 
 def live_events_to_debate_rounds(

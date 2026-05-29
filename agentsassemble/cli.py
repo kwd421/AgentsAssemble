@@ -52,6 +52,7 @@ from agentsassemble.live_agent_continuity_proof import (
 )
 from agentsassemble.live_agent_preflight import preflight_live_agent_config, resident_config_setup_error
 from agentsassemble.live_agent_processes import clean_live_agent_group_id
+from agentsassemble.lobby_promotion import promote_lobby_events_to_official
 from agentsassemble.live_agent_roster import (
     safe_live_agent_roster_agent,
     safe_live_agent_roster_number,
@@ -268,6 +269,25 @@ def build_parser() -> argparse.ArgumentParser:
     frontend_info.add_argument("--backend", default="http://127.0.0.1:8765", help="Backend GUI URL used by the Vite proxy.")
     frontend_info.add_argument("--port", type=parse_positive_int, default=5173, help="React/Vite dev server port.")
     frontend_info.add_argument("--json", action="store_true", dest="as_json", help="Print machine-readable launch guidance.")
+
+    lobby = subparsers.add_parser("lobby", help="Work with lobby records without starting providers.")
+    lobby_subparsers = lobby.add_subparsers(dest="lobby_command", required=True)
+    lobby_promote = lobby_subparsers.add_parser(
+        "promote",
+        help="Promote explicit lobby event text into official meeting context.",
+    )
+    lobby_promote.add_argument("--output-root", default=".agentsassemble")
+    lobby_promote.add_argument("--meeting-id", required=True)
+    lobby_promote.add_argument(
+        "--lobby-event-id",
+        action="append",
+        default=[],
+        dest="lobby_event_ids",
+        required=True,
+        help="Lobby event id to promote; repeat for multiple events.",
+    )
+    lobby_promote.add_argument("--reason", default="", help="Optional short operator reason.")
+    lobby_promote.add_argument("--json", action="store_true", dest="as_json")
 
     release_health = subparsers.add_parser(
         "release-health",
@@ -1530,6 +1550,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "frontend-info":
         return run_frontend_info_command(args)
+    if args.command == "lobby":
+        return run_lobby_command(args)
     if args.command == "release-health":
         return run_release_health_command(args)
     if args.command == "claude-bridge":
@@ -1618,6 +1640,31 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
         print(f"  {command}")
     print("- Note: React/Vite is not the default entry point yet.")
     return 0
+
+
+def run_lobby_command(args: argparse.Namespace) -> int:
+    if args.lobby_command == "promote":
+        try:
+            payload = promote_lobby_events_to_official(
+                Path(args.output_root),
+                args.meeting_id,
+                list(args.lobby_event_ids),
+                reason=args.reason,
+            )
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        if args.as_json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(
+                "Promoted "
+                f"{len(payload.get('promoted_event_ids') or [])} lobby event(s) into meeting {payload['meeting_id']}."
+            )
+        return 0
+    return 1
+
+
 def run_release_health_command(args: argparse.Namespace) -> int:
     if getattr(args, "release_health_command", None) in {None, "list"}:
         payload = release_health_catalog_payload()

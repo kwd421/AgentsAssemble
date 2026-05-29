@@ -62,8 +62,28 @@ flag, preview URL, and download URL. Raw bytes, base64 bodies, absolute paths,
 and user-supplied forged filenames are not copied into the lobby event. Images
 render as small thumbnails in the chat and can be clicked for a local preview;
 all attachments keep a download URL. These attachments are still lobby/play
-history, not official transcript or decision evidence unless a future explicit
-promote path is added.
+history, not official transcript or decision evidence. The explicit lobby
+promotion path copies only redacted lobby text: attachments are not promoted.
+
+Promote selected lobby text into the official Work Mode context only when the
+operator deliberately chooses the source event id:
+
+```bash
+python3 -m agentsassemble.cli lobby promote \
+  --output-root .agentsassemble \
+  --meeting-id resident-m1 \
+  --lobby-event-id <lobby-event-id> \
+  --reason "operator selected" \
+  --json
+```
+
+This writes a `promoted_context` official live event and records a sanitized
+`lobby.promote_to_official` operation. Play Mode chatter is not official until
+explicitly promoted; side chat cannot be promoted; attachments are not promoted;
+flow metadata, target-agent fields, auto-chain depth, local paths, and URLs are
+not copied into the official event. The GUI API equivalent is
+`POST /api/lobby/promote` with `meeting_id`, `lobby_event_ids`, and optional
+`reason`; it does not start providers or resume residents.
 
 The React frontend track can start a Play Mode Mafia Night room through
 `/api/play/mafia/start`. Mafia state is stored separately under `play/mafia/`

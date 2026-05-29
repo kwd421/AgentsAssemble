@@ -107,6 +107,37 @@ class LiveTranscriptTests(unittest.TestCase):
             self.assertEqual(transcript, "")
             self.assertFalse((meeting_dir / "transcript.md").exists())
 
+    def test_promoted_context_events_render_in_official_transcript(self):
+        events = [
+            {
+                "id": "lobby-raw",
+                "kind": "message",
+                "channel": "lobby",
+                "official_record": False,
+                "content": "unpromoted lobby chatter",
+            },
+            {
+                "id": "promoted-1",
+                "created_at": "2026-05-29T00:00:00+00:00",
+                "kind": "promoted_context",
+                "channel": "official",
+                "official_record": True,
+                "actor_id": "moderator",
+                "source_event_id": "lobby-1",
+                "promoted_from": "lobby",
+                "promoted_reason": "operator selected",
+                "content": "Promoted lobby context.",
+            },
+        ]
+
+        transcript = render_live_transcript(events, meeting={"meeting_id": "m1"})
+
+        self.assertIn("Promoted lobby context.", transcript)
+        self.assertIn("- Promoted from: lobby", transcript)
+        self.assertIn("- Promoted reason: operator selected", transcript)
+        self.assertIn("- Source event id: lobby-1", transcript)
+        self.assertNotIn("unpromoted lobby chatter", transcript)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -31,6 +31,7 @@ Play Mode:
 
 Play Mode can feed Work Mode only through an explicit promote action. Lobby banter,
 games, and informal chatter must not silently become an official record.
+Play Mode chatter is not official until explicitly promoted.
 Play Mode presets may enqueue official-turn requests for an already approved
 meeting, but they must not start provider CLIs, grant admission, or promote play
 context into Work Mode by themselves.
@@ -160,12 +161,20 @@ official turn         -> transcript and decision evidence
 explicit promote      -> selected informal context becomes official input
 ```
 
+The current explicit path is `assemble lobby promote`, which appends a
+`promoted_context` official live event for selected lobby event ids and records
+the sanitized `lobby.promote_to_official` operation. The promoted event copies
+only redacted lobby text and safe source metadata; side chat cannot be promoted,
+attachments are not promoted, and the command/API must not start providers,
+resume residents, or turn Play Mode flow metadata into official Work Mode
+evidence.
+
 Lobby chat attachments follow the same boundary as lobby text. They are stored
 as local room files under the GUI output root and lobby events keep only safe
 metadata plus room download/preview URLs. Raw file bytes, base64 payloads, and
 local absolute paths must not be written into lobby events, shared memory,
 transcripts, or decisions. An attachment becomes official evidence only through
-a future explicit promote path or a separate official artifact action.
+a separate official artifact action.
 
 Pending official turn requests are control state, not evidence. A meeting with
 unanswered official requests must not be finalized by inventing agent replies.

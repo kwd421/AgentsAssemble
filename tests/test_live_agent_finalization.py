@@ -189,6 +189,39 @@ class LiveAgentFinalizationTests(unittest.TestCase):
             self.assertNotIn("private architect prompt", json.dumps(return_packet_events, ensure_ascii=False))
             self.assertNotIn("private critic prompt", json.dumps(return_packet_events, ensure_ascii=False))
 
+    def test_finalize_live_agent_meeting_keeps_promoted_context_out_of_debate_rounds(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            meeting_dir = Path(temp_dir) / "meetings" / "resident-m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, _resident_live_meeting())
+            append_live_event(
+                meeting_dir,
+                {
+                    "kind": "promoted_context",
+                    "meeting_id": "resident-m1",
+                    "channel": "official",
+                    "official_record": True,
+                    "actor_id": "moderator",
+                    "source_event_id": "lobby-1",
+                    "display_name": "owner (promoted from lobby)",
+                    "promoted_from": "lobby",
+                    "promoted_reason": "operator selected",
+                    "content": "This lobby note is now official context.",
+                },
+            )
+
+            result = finalize_live_agent_meeting(meeting_dir)
+
+            self.assertEqual(result["status"], "finalized")
+            self.assertEqual(result["official_event_count"], 1)
+            transcript = (meeting_dir / "transcript.md").read_text(encoding="utf-8")
+            self.assertIn("This lobby note is now official context.", transcript)
+            self.assertIn("Promoted from: lobby", transcript)
+            meeting = json.loads((meeting_dir / "meeting.json").read_text(encoding="utf-8"))
+            self.assertEqual(meeting["debate_rounds"], [])
+            self.assertEqual(meeting["promoted_context"][0]["source_event_id"], "lobby-1")
+            self.assertEqual(meeting["promoted_context"][0]["content"], "This lobby note is now official context.")
+
     def test_finalize_live_agent_meeting_records_safe_persona_artifact_contract_report(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_root = Path(temp_dir)

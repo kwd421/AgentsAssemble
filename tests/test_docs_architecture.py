@@ -106,6 +106,20 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("last_observed_live_event_id", combined)
         self.assertIn("moderator does not sit between every room event and every agent reply", combined)
 
+    def test_docs_record_explicit_lobby_promotion_boundary(self):
+        operating_model = (ROOT / "docs" / "product" / "OPERATING_MODEL.md").read_text(encoding="utf-8")
+        live_session_model = (ROOT / "docs" / "live-session-room-model.md").read_text(encoding="utf-8")
+        live_agent_ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
+        roadmap = (ROOT / "docs" / "roadmap.md").read_text(encoding="utf-8")
+        combined = "\n".join([operating_model, live_session_model, live_agent_ops, roadmap])
+
+        self.assertIn("promoted_context", combined)
+        self.assertIn("assemble lobby promote", combined)
+        self.assertIn("lobby.promote_to_official", combined)
+        self.assertIn("attachments are not promoted", combined)
+        self.assertIn("side chat cannot be promoted", combined)
+        self.assertIn("Play Mode chatter is not official until explicitly promoted", combined)
+
     def test_live_session_room_model_documents_shared_room_semantics(self):
         doc = (ROOT / "docs" / "live-session-room-model.md").read_text(encoding="utf-8")
 

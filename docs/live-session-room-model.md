@@ -101,6 +101,11 @@ Live room infrastructure handles presence, share links, real-time delivery, CLI 
 Council workflow handles agenda, moderator-controlled official turns, evidence, Decision Gate status, `decision.md`, assigned tasks, return packets, and memory. This is the product boundary that should keep AgentsAssemble distinct.
 
 Free chat is part of the room, but it is informal by default. Official meeting turns must be typed separately so a side comment cannot silently become evidence or a decision.
+Selected lobby text can enter the official record only through
+`assemble lobby promote`, which writes a `promoted_context` official event and
+the sanitized `lobby.promote_to_official` operation. Play Mode chatter is not
+official until explicitly promoted, side chat cannot be promoted, and
+attachments are not promoted by this first narrow path.
 
 ## Participant Classes
 
@@ -170,6 +175,8 @@ Official turns and informal chat must stay separate.
 - Official turns feed transcript, Decision Gate, and decision artifacts.
 - Side chat is visible in the room but does not become evidence by default.
 - Lobby banter can help social presence, but deploy/promote actions must decide what enters the formal meeting.
+- `promoted_context` records selected lobby text as official background without
+  creating answered debate-round messages.
 - A participant may read the public event stream but should not receive private memory, raw files, or secrets unless explicitly allowed.
 
 ## Engagement Modes

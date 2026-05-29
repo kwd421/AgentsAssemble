@@ -92,6 +92,10 @@ HEALTH_OPERATION_SENSITIVE_LABEL_MARKERS = (
 REDACTED_ERROR = "Live-agent operation error details redacted."
 
 
+def redact_sensitive_operation_text(text: str) -> str:
+    return _replace_sensitive_text(text)
+
+
 def append_live_agent_operation(
     output_root: Path,
     *,

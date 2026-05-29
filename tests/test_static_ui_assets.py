@@ -179,6 +179,13 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("pendingAttachments", composer_source)
         self.assertIn("removePendingAttachment", composer_source)
 
+    def test_react_frontend_does_not_expose_lobby_promotion_button_yet(self):
+        source = frontend_source()
+
+        self.assertNotIn("/api/lobby/promote", source)
+        self.assertNotIn("promoteLobby", source)
+        self.assertNotIn("lobby.promote_to_official", source)
+
     def test_react_lobby_composer_restores_draft_on_submit_failure(self):
         composer_source = frontend_file("views/components/LobbyComposer.tsx")
         model_source = frontend_file("lib/lobbyComposerModel.ts")

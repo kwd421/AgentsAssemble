@@ -55,7 +55,7 @@ from agentsassemble.meeting_events import append_live_event, read_live_events, w
 from agentsassemble.meeting_events import read_live_events_after, read_lobby_events_after, read_side_chat_events_after
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.live_agents import connect_live_agent, heartbeat_live_agent, read_live_agents
-from agentsassemble.live_agent_operations import append_live_agent_operation
+from agentsassemble.live_agent_operations import append_live_agent_operation, read_live_agent_operations
 from agentsassemble.live_agent_meetings import start_live_agent_meeting
 from agentsassemble.live_agent_processes import LiveAgentProcessSupervisor
 from agentsassemble.live_agent_session_runs import LiveAgentSessionRunController
@@ -18838,6 +18838,53 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(message_event["turn_index"], 0)
             self.assertEqual(message_event["engagement_mode"], "official_turn")
             self.assertTrue(synthesis_event["official_record"])
+
+    def test_lobby_promote_api_creates_explicit_official_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            write_live_state(meeting_dir, {"meeting_id": "m1", "topic": "promotion", "roles": [], "agent_bindings": []})
+            lobby_event = append_lobby_event(
+                root,
+                {
+                    "name": "owner",
+                    "actor_id": "owner",
+                    "message": "Promote this lobby note. https://secret.example/path",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/lobby/promote",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "lobby_event_ids": [lobby_event["id"]],
+                            "reason": "operator selected",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(payload["status"], "promoted")
+            event = read_live_events(meeting_dir, limit=None)[0]
+            self.assertEqual(event["kind"], "promoted_context")
+            self.assertEqual(event["channel"], "official")
+            self.assertEqual(event["source_event_id"], lobby_event["id"])
+            self.assertIn("Promote this lobby note.", event["content"])
+            self.assertNotIn("secret.example", event["content"])
+            operation = read_live_agent_operations(root, operation="lobby.promote_to_official")[0]
+            self.assertEqual(operation["status"], "success")
+            self.assertEqual(operation["target_id"], "m1")
 
     def test_room_event_readers_can_resume_after_event_id(self):
         with tempfile.TemporaryDirectory() as temp_dir:
