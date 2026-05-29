@@ -319,13 +319,20 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("startProvider", surface)
         self.assertNotIn("launchProvider", surface)
 
-    def test_react_lobby_external_participation_renders_cli_only_cards_without_interactive_controls(self):
+    def test_react_lobby_external_participation_collapses_cli_only_cards_by_default(self):
         section = react_lobby_external_participation_section()
 
         self.assertIn("외부 참여", section)
+        self.assertIn("CLI 선택 사항", section)
+        self.assertIn("<details", section)
+        self.assertIn("<summary", section)
+        self.assertIn("CLI 초대 명령 보기", section)
+        self.assertNotIn("<details open", section)
         self.assertIn("CLI 전용", section)
         self.assertIn("Join Brief", section)
         self.assertIn("LAN Invite (PoC)", section)
+        self.assertLess(section.index("<summary"), section.index("Join Brief"))
+        self.assertLess(section.index("<summary"), section.index("JOIN_BRIEF_COMMAND"))
         self.assertNotIn("<button", section)
         self.assertNotIn("onClick=", section)
         self.assertNotIn('role="button"', section)

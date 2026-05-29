@@ -120,6 +120,10 @@ Completed evidence:
 - React Live timeline state now has a focused delta-refresh proof for active
   meeting/flow filtering, stable identical-event refreshes, and pinned-to-latest
   intent; browser-rendered smoothness remains separate.
+- React Lobby now keeps external Join Brief/LAN Invite command details collapsed
+  behind a CLI-only disclosure by default, so the first read stays focused on
+  participant readiness and the basic start path while preserving the same safe
+  command skeletons.
 
 1. Clarify the room surfaces:
    - Lobby means pre-meeting staging and agent admission.

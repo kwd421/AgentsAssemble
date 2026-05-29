@@ -405,9 +405,31 @@ export default function LobbyView({
         </section>
 
         <section className="ops-panel ops-cut p-4">
-          <h2 className="mb-4 text-[17px] font-black">외부 참여</h2>
-          <div className="space-y-3 text-[12px] text-text-secondary">
-            <article className="ops-inner rounded-lg p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-[17px] font-black">외부 참여</h2>
+            <span className="rounded border border-line/60 bg-panel/45 px-2 py-1 text-[10px] font-black text-text-muted">
+              CLI 선택 사항
+            </span>
+          </div>
+          <details className="overflow-hidden rounded-lg border border-line/70 bg-panel/40 text-[12px] text-text-secondary">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 outline-none transition hover:border-accent/45 focus-visible:ring-2 focus-visible:ring-accent/60">
+              <span className="flex min-w-0 items-start gap-3">
+                <FilePlus2 size={18} className="mt-0.5 shrink-0 text-accent" />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-black text-text-primary">
+                    CLI 초대 명령 보기
+                  </span>
+                  <span className="mt-1 block preserve-words">
+                    Join Brief와 LAN Invite는 필요할 때만 열어 확인합니다.
+                  </span>
+                </span>
+              </span>
+              <span className="shrink-0 rounded border border-accent/25 bg-accent/10 px-2 py-1 text-[10px] font-black text-accent">
+                열기
+              </span>
+            </summary>
+            <div className="divide-y divide-line/60 border-t border-line/60">
+              <article className="p-4">
               <div className="mb-3 flex items-start gap-3">
                 <FilePlus2 size={19} className="mt-0.5 shrink-0 text-accent" />
                 <div className="min-w-0">
@@ -433,7 +455,7 @@ export default function LobbyView({
               </pre>
             </article>
 
-            <article className="ops-inner rounded-lg p-4">
+              <article className="p-4">
               <div className="mb-3 flex items-start gap-3">
                 <Globe2 size={19} className="mt-0.5 shrink-0 text-accent" />
                 <div className="min-w-0">
@@ -467,7 +489,8 @@ export default function LobbyView({
                 URL·로그·roster·artifact에 토큰 비표시. 자세한 경계는 docs/no-tailscale-multi-host.md 참고.
               </p>
             </article>
-          </div>
+            </div>
+          </details>
         </section>
       </aside>
 
