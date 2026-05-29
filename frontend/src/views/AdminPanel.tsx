@@ -10,6 +10,12 @@ import {
   type ReleaseHealthCatalog,
 } from "../api";
 import { usePoll } from "../hooks";
+import {
+  formatLoadAverageTriple,
+  formatResourceMemory,
+  resourceAttentionLabel,
+  resourceRoleLabel,
+} from "../lib/localResourceLabels";
 
 const RELEASE_HEALTH_SAFETY_LABELS: Record<string, string> = {
   frontend_static_syntax: "정적 JS 문법",
@@ -20,26 +26,12 @@ const RELEASE_HEALTH_SAFETY_LABELS: Record<string, string> = {
   local_room_benchmark: "로컬 룸 벤치",
 };
 
-const RESOURCE_ROLE_LABELS: Record<string, string> = {
-  supervised_resident: "감독 중",
-  agentsassemble: "AA 자식",
-  other: "기타",
-};
-
 function releaseHealthSafetyLabel(safetyClass?: string) {
   return RELEASE_HEALTH_SAFETY_LABELS[safetyClass || ""] || "검증";
 }
 
 function releaseHealthSelector(check: ReleaseHealthCheck) {
   return `assemble release-health run --check ${check.id}`;
-}
-
-function formatResourceMemory(rssKb?: number) {
-  const mb = Math.max(0, Number(rssKb || 0) / 1024);
-  if (mb >= 1024) {
-    return `${(mb / 1024).toFixed(1)} GB`;
-  }
-  return `${mb >= 100 ? mb.toFixed(0) : mb.toFixed(1)} MB`;
 }
 
 function formatSnapshotAge(generatedAt?: string) {
@@ -141,7 +133,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
               )}
               {agents?.attention && agents.attention.length > 0 && (
                 <p className="rounded-lg border border-idle/25 bg-idle/10 px-4 py-3 text-[13px] font-semibold text-idle preserve-words">
-                  주의: {agents.attention.slice(0, 3).join(", ")}
+                  주의: {agents.attention.slice(0, 3).map(resourceAttentionLabel).join(", ")}
                   {agents.attention.length > 3 &&
                     ` 외 ${agents.attention.length - 3}건`}
                 </p>
@@ -157,6 +149,14 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
             <Cpu size={17} className={resourceOk ? "text-online" : "text-idle"} />
             <h2 className="text-[15px] font-black">로컬 리소스</h2>
           </div>
+          <div className="mb-4 space-y-2 rounded-lg border border-line/60 bg-panel/35 px-4 py-3 text-[12px] text-text-secondary">
+            <p className="font-semibold text-text-primary preserve-words">
+              조회 전용 · 프로세스 기본명만 표시 · 인자/경로/세션 비표시
+            </p>
+            <p className="preserve-words">
+              감독 중 = 감독 그룹 PID · AA 자식 = 본 프로세스/자식 · 기타 = 화이트리스트 매칭
+            </p>
+          </div>
           {resources ? (
             <div className="space-y-4">
               <div className="grid gap-3 text-[13px] text-text-secondary sm:grid-cols-2 lg:grid-cols-4">
@@ -168,9 +168,10 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="ops-inner rounded-lg px-4 py-3">
                   Load{" "}
-                  <span className="font-black text-text-primary">
-                    {resources.load_average.one}/{resources.load_average.five}
+                  <span className="block font-black text-text-primary">
+                    {formatLoadAverageTriple(resources.load_average)}
                   </span>
+                  <span className="text-[11px] text-text-muted">1분 · 5분 · 15분</span>
                 </div>
                 <div className="ops-inner rounded-lg px-4 py-3">
                   CPU{" "}
@@ -183,13 +184,13 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                   </span>
                 </div>
                 <div className="ops-inner rounded-lg px-4 py-3">
-                  추적 CPU{" "}
+                  표시 CPU 합계{" "}
                   <span className="font-black text-text-primary">
                     {resources.summary.total_cpu_pct.toFixed(1)}%
                   </span>
                 </div>
                 <div className="ops-inner rounded-lg px-4 py-3">
-                  추적 메모리{" "}
+                  표시 RSS 합계{" "}
                   <span className="font-black text-text-primary">
                     {formatResourceMemory(resources.summary.total_rss_kb)}
                   </span>
@@ -209,7 +210,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
               </div>
               {resources.summary.attention.length > 0 && (
                 <p className="rounded-lg border border-idle/25 bg-idle/10 px-4 py-3 text-[13px] font-semibold text-idle preserve-words">
-                  주의: {resources.summary.attention.slice(0, 3).join(", ")}
+                  주의: {resources.summary.attention.slice(0, 3).map(resourceAttentionLabel).join(", ")}
                   {resources.summary.attention.length > 3 &&
                     ` 외 ${resources.summary.attention.length - 3}건`}
                 </p>
@@ -219,7 +220,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                   {resourceRoleRows.map(([role, row]) => (
                     <span key={role} className="rounded-lg border border-line/60 bg-panel/35 px-3 py-2 preserve-words">
                       <span className="font-black text-text-primary">
-                        {RESOURCE_ROLE_LABELS[role] || role}
+                        {resourceRoleLabel(role)}
                       </span>{" "}
                       {row.count}개 · {row.cpu_pct.toFixed(1)}% · {formatResourceMemory(row.rss_kb)}
                     </span>
@@ -227,8 +228,9 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                 </div>
               )}
               <div className="overflow-hidden rounded-lg border border-line/60">
-                <div className="grid grid-cols-[80px_1fr_96px_96px] gap-2 border-b border-line/60 bg-panel/45 px-3 py-2 text-[11px] font-black uppercase text-text-muted">
+                <div className="grid grid-cols-[64px_64px_minmax(0,1fr)_88px_96px] gap-2 border-b border-line/60 bg-panel/45 px-3 py-2 text-[11px] font-black uppercase text-text-muted">
                   <span>PID</span>
+                  <span>PPID</span>
                   <span>프로세스</span>
                   <span>CPU</span>
                   <span>RSS</span>
@@ -236,12 +238,13 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
                 {resources.processes.slice(0, 8).map((process) => (
                   <div
                     key={`${process.pid}-${process.comm}`}
-                    className="grid grid-cols-[80px_1fr_96px_96px] gap-2 border-b border-line/35 px-3 py-2 text-[12px] text-text-secondary last:border-b-0"
+                    className="grid grid-cols-[64px_64px_minmax(0,1fr)_88px_96px] gap-2 border-b border-line/35 px-3 py-2 text-[12px] text-text-secondary last:border-b-0"
                   >
                     <span className="font-mono text-text-muted">{process.pid}</span>
+                    <span className="font-mono text-text-muted">{process.ppid}</span>
                     <span className="min-w-0">
                       <span className="font-bold text-text-primary preserve-words">{process.comm}</span>
-                      <span className="ml-2 text-text-muted">{process.role}</span>
+                      <span className="ml-2 text-text-muted">{resourceRoleLabel(process.role)}</span>
                     </span>
                     <span>{process.cpu_pct.toFixed(1)}%</span>
                     <span>{formatResourceMemory(process.rss_kb)}</span>

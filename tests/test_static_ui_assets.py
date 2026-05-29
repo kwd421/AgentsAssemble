@@ -271,6 +271,90 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("file://", admin_source)
         self.assertNotIn("/Users/", admin_source)
 
+    def test_react_admin_local_resources_renders_safe_process_observability(self):
+        admin_source = frontend_file("views/AdminPanel.tsx")
+        label_source = frontend_file("lib/localResourceLabels.ts")
+
+        self.assertIn("RESOURCE_ATTENTION_LABELS", label_source)
+        self.assertIn("RESOURCE_ROLE_LABELS", label_source)
+        self.assertIn("resourceAttentionLabel", label_source)
+        self.assertIn("formatLoadAverageTriple", label_source)
+        self.assertIn("formatResourceMemory", label_source)
+        for code in ["load_average_high", "process_cpu_high", "ps_unavailable", "ps_failed"]:
+            self.assertIn(code, label_source)
+        self.assertIn("RESOURCE_ATTENTION_LABELS[code] || code", label_source)
+        self.assertIn("loadAverage.fifteen", label_source)
+
+        self.assertIn("formatLoadAverageTriple(resources.load_average)", admin_source)
+        self.assertIn("process.ppid", admin_source)
+        self.assertIn("PPID", admin_source)
+        self.assertIn("조회 전용", admin_source)
+        self.assertIn("인자/경로/세션 비표시", admin_source)
+        self.assertIn("감독 그룹 PID", admin_source)
+        self.assertIn("본 프로세스/자식", admin_source)
+        self.assertIn("화이트리스트 매칭", admin_source)
+        self.assertIn("표시 CPU 합계", admin_source)
+        self.assertIn("표시 RSS 합계", admin_source)
+        self.assertIn("resourceAttentionLabel", admin_source)
+
+    def test_react_admin_local_resources_has_no_unsafe_fields_or_actions(self):
+        admin_source = frontend_file("views/AdminPanel.tsx")
+        label_source = frontend_file("lib/localResourceLabels.ts")
+        api_source = frontend_file("api.ts")
+        resource_ui_source = admin_source + "\n" + label_source
+
+        for forbidden in [
+            "argv",
+            "env=",
+            "process.env",
+            "cwd",
+            "/Users/",
+            "file://",
+            "provider_output",
+            "prompt_body",
+            "system_prompt",
+            "raw_prompt",
+            "session_id",
+            "log_tail",
+            "auth_token",
+            "bearer",
+            "api_key",
+            "account_state",
+            'method: "POST"',
+            'method: "DELETE"',
+            "EventSource(",
+            "kill(",
+            "signal:",
+            "startProcess",
+            "stopProcess",
+            "restartProcess",
+            "probeProcess",
+            "mutateProcess",
+            "recoverProcess",
+            "assemble live-agent stop",
+            "assemble live-agent restart",
+            "console.log(resources",
+            "console.log(process",
+            '"/api/local-resources"',
+            "fetch(",
+        ]:
+            self.assertNotIn(forbidden, resource_ui_source)
+
+        self.assertIn('"/api/local-resources"', api_source)
+        for forbidden in [
+            "startResources",
+            "stopResources",
+            "restartResources",
+            "probeResources",
+            "mutateResources",
+            "startLocalResources",
+            "stopLocalResources",
+            "restartLocalResources",
+            "probeLocalResources",
+            "mutateLocalResources",
+        ]:
+            self.assertNotIn(forbidden, api_source)
+
     def test_react_live_tab_surfaces_meeting_lifecycle_projection(self):
         source = frontend_source()
 
