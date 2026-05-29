@@ -278,6 +278,65 @@ class LiveAgentFlowFairnessTests(unittest.TestCase):
 
         self.assertEqual(set(decisions), {(False, True, True)})
 
+    def test_start_order_ties_use_least_recent_speaker_after_history_exists(self):
+        events = [
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-b"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-c"},
+        ]
+        participants = ["agent-c", "agent-a", "agent-b"]
+
+        self.assertFalse(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-a",
+                participant_agent_ids=participants,
+                min_gap=0,
+                start_order=True,
+            )
+        )
+        self.assertTrue(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-c",
+                participant_agent_ids=participants,
+                min_gap=0,
+                start_order=True,
+            )
+        )
+
+    def test_start_order_ties_rotate_by_least_recent_eligible_speaker(self):
+        events = [
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-b"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-c"},
+            {"flow_id": "flow-1", "flow_action": "speak", "actor_id": "agent-a"},
+        ]
+        participants = ["agent-c", "agent-a", "agent-b"]
+
+        self.assertFalse(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-b",
+                participant_agent_ids=participants,
+                min_gap=0,
+                start_order=True,
+            )
+        )
+        self.assertTrue(
+            flow_should_yield_for_fairness(
+                events,
+                flow_id="flow-1",
+                agent_id="agent-c",
+                participant_agent_ids=participants,
+                min_gap=0,
+                start_order=True,
+            )
+        )
+
 
 class LiveAgentFlowCliTests(unittest.TestCase):
     def test_flow_parser_has_timebox_defaults(self):

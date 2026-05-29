@@ -65,8 +65,10 @@ Play Mode flow fairness is a runner-side silent yield. Before a resident calls
 its provider, it compares its own speaking count against the current active
 `flow` participants in the same meeting. The default guard looks at the last 24
 speaking events, blocks an immediate repeat with a one-speaking-turn `min_gap`,
-uses `max_lead=0`, and breaks empty-history/tie cases by the active participant
-order supplied by the room. A resident can set `flow_fairness_recent_window`,
+uses `max_lead=0`, and uses active participant order only for empty-history
+starts and final tie-breaks. Once speaking history exists, count-eligible ties
+prefer the least-recently-spoken participant. A resident can set
+`flow_fairness_recent_window`,
 `flow_fairness_min_gap`, `flow_fairness_max_lead`, or
 `flow_fairness_start_order` in its live-agent config to tune that policy. If the
 resident should yield, it skips that tick without advancing the visible room,

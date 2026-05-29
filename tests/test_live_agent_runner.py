@@ -504,6 +504,54 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(lobby_payloads[0]["actor_id"], "agent-b")
         self.assertEqual(lobby_payloads[0]["message"], "좋아, 내 차례면 이 지점을 짚을게.")
 
+    def test_flow_runner_uses_lru_fairness_tie_break_before_provider_call(self):
+        clock = FakeClock()
+        room = {
+            "meeting_id": "m1",
+            "agent": {"agent_id": "agent-a", "engagement_mode": "flow", "meeting_id": "m1"},
+            "agents": [
+                {"agent_id": "agent-c", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+                {"agent_id": "agent-a", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+                {"agent_id": "agent-b", "status": "online", "engagement_mode": "flow", "meeting_id": "m1"},
+            ],
+            "lobby_events": [
+                {
+                    "id": "flow-start",
+                    "name": "Play Mode",
+                    "message": "자유토론 시작",
+                    "flow_id": "flow-1",
+                    "flow_meeting_id": "m1",
+                    "flow_event_type": "started",
+                    "flow_topic": "고죠 vs 스쿠나",
+                },
+                {"id": "agent-a-1", "actor_id": "agent-a", "name": "Agent A", "message": "첫 발언", "flow_id": "flow-1", "flow_action": "speak"},
+                {"id": "agent-b-1", "actor_id": "agent-b", "name": "Agent B", "message": "응답", "flow_id": "flow-1", "flow_action": "speak"},
+                {"id": "agent-c-1", "actor_id": "agent-c", "name": "Agent C", "message": "세 번째 발언", "flow_id": "flow-1", "flow_action": "speak"},
+            ],
+        }
+        client = FakeRoomClient([room])
+
+        runner = LiveAgentRunner(
+            config(
+                agent_id="agent-a",
+                display_name="Agent A",
+                engagement_mode="flow",
+                meeting_id="m1",
+                flow_fairness_min_gap=0,
+                flow_fairness_start_order=True,
+            ),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: '{"action":"speak","message":"LRU tie-break gives me this turn."}',
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+        runner.last_observed_event_id = "agent-c-1"
+
+        self.assertEqual(runner.run(), 1)
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["actor_id"], "agent-a")
+        self.assertEqual(lobby_payloads[0]["message"], "LRU tie-break gives me this turn.")
+
     def test_flow_runner_does_not_wait_for_stale_flow_participants(self):
         clock = FakeClock()
         room = {

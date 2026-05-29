@@ -261,16 +261,67 @@ def _next_fair_flow_speaker(
         gap_candidates = [agent_id for agent_id in participant_ids if agent_id not in gap_blocked]
         if gap_candidates:
             minimum_gap_count = min(counts[agent_id] for agent_id in gap_candidates)
-            for agent_id in gap_candidates:
-                if counts[agent_id] == minimum_gap_count:
-                    return agent_id
+            least_active_gap_candidates = [
+                agent_id for agent_id in gap_candidates if counts[agent_id] == minimum_gap_count
+            ]
+            return _select_start_order_flow_candidate(
+                least_active_gap_candidates,
+                speaking_events=speaking_events,
+                participant_ids=participant_ids,
+                start_order=start_order,
+            )
     minimum_count = min(counts.values())
     eligible = [agent_id for agent_id in participant_ids if counts[agent_id] <= minimum_count + max(0, int(max_lead))]
     if not eligible:
         return ""
     if start_order:
-        return eligible[0]
+        return _select_start_order_flow_candidate(
+            eligible,
+            speaking_events=speaking_events,
+            participant_ids=participant_ids,
+            start_order=start_order,
+        )
     return ""
+
+
+def _select_start_order_flow_candidate(
+    candidates: list[str],
+    *,
+    speaking_events: list[dict[str, object]],
+    participant_ids: list[str],
+    start_order: bool,
+) -> str:
+    if not candidates:
+        return ""
+    if not start_order or not speaking_events:
+        return candidates[0]
+    return _least_recent_flow_candidate(
+        candidates,
+        speaking_events=speaking_events,
+        participant_ids=participant_ids,
+    )
+
+
+def _least_recent_flow_candidate(
+    candidates: list[str],
+    *,
+    speaking_events: list[dict[str, object]],
+    participant_ids: list[str],
+) -> str:
+    participant_order = {agent_id: index for index, agent_id in enumerate(participant_ids)}
+    candidate_set = set(candidates)
+    last_seen_index = {agent_id: -1 for agent_id in candidates}
+    for index, event in enumerate(speaking_events):
+        actor_id = str(event.get("actor_id") or "").strip()
+        if actor_id in candidate_set:
+            last_seen_index[actor_id] = index
+    return min(
+        candidates,
+        key=lambda agent_id: (
+            last_seen_index[agent_id],
+            participant_order.get(agent_id, len(participant_order)),
+        ),
+    )
 
 
 def _gap_blocked_agent_ids(
