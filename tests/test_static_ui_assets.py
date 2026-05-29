@@ -147,6 +147,25 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("postSideChatMessage", live_source)
         self.assertNotIn("promote", live_source)
 
+    def test_react_lobby_sse_uses_shared_parser_and_merge_helpers(self):
+        api_source = frontend_file("api.ts")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertIn("export function parseLobbyStreamData", api_source)
+        self.assertIn("export function mergeLobbyEvents", api_source)
+        self.assertIn("export function mergeLobbyEventsByCreatedAt", api_source)
+        self.assertIn('new EventSource("/api/events/lobby")', api_source)
+        self.assertIn('source.addEventListener("lobby"', api_source)
+        self.assertIn('data.stream !== "lobby"', api_source)
+        self.assertIn('event.channel !== "lobby"', api_source)
+        self.assertIn("const events = parseLobbyStreamData(raw);", api_source)
+
+        self.assertIn("mergeLobbyEvents", lobby_source)
+        self.assertNotIn("function mergeLobbyEvents", lobby_source)
+        self.assertIn("mergeLobbyEventsByCreatedAt", live_source)
+        self.assertNotIn("function mergeEvents", live_source)
+
     def test_react_lobby_and_live_render_attachment_metadata(self):
         lobby_source = frontend_file("views/LobbyView.tsx")
         live_source = frontend_file("views/LiveView.tsx")

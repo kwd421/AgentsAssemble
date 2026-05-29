@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import {
   fetchLobby,
+  mergeLobbyEvents,
   startMafiaGame,
   startFlow,
   stopFlow,
@@ -83,25 +84,6 @@ function timeLabel(iso: string): string {
   } catch {
     return "--:--";
   }
-}
-
-function mergeLobbyEvents(existing: LobbyEvent[], incoming: LobbyEvent[]) {
-  const byId = new Map<string, LobbyEvent>();
-  const order: string[] = [];
-
-  for (const event of existing) {
-    if (!event.id) continue;
-    byId.set(event.id, event);
-    order.push(event.id);
-  }
-
-  for (const event of incoming) {
-    if (!event.id) continue;
-    if (!byId.has(event.id)) order.push(event.id);
-    byId.set(event.id, event);
-  }
-
-  return order.map((id) => byId.get(id)).filter(Boolean) as LobbyEvent[];
 }
 
 function agentName(agent: LiveAgent) {

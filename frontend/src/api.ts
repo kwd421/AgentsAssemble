@@ -26,6 +26,7 @@ export interface LobbyEvent {
   flow_action?: string;
   flow_reason?: string;
   target_agent_id?: string;
+  channel?: string;
   attachments?: LobbyAttachmentRef[];
 }
 
@@ -471,6 +472,45 @@ export function mergeMeetingLiveEvents(
   return order.map((eventId) => byId.get(eventId)).filter(Boolean) as MeetingLiveEvent[];
 }
 
+export function lobbyEventId(event: LobbyEvent): string {
+  return String(
+    event.id ||
+      [event.name, event.kind, event.created_at, event.message]
+        .filter(Boolean)
+        .join(":")
+  ).trim();
+}
+
+export function mergeLobbyEvents(
+  existing: LobbyEvent[],
+  incoming: LobbyEvent[]
+): LobbyEvent[] {
+  const byId = new Map<string, LobbyEvent>();
+  const order: string[] = [];
+  for (const event of existing) {
+    const eventId = lobbyEventId(event);
+    if (!eventId) continue;
+    byId.set(eventId, event);
+    order.push(eventId);
+  }
+  for (const event of incoming) {
+    const eventId = lobbyEventId(event);
+    if (!eventId) continue;
+    if (!byId.has(eventId)) order.push(eventId);
+    byId.set(eventId, event);
+  }
+  return order.map((eventId) => byId.get(eventId)).filter(Boolean) as LobbyEvent[];
+}
+
+export function mergeLobbyEventsByCreatedAt(
+  existing: LobbyEvent[],
+  incoming: LobbyEvent[]
+): LobbyEvent[] {
+  return mergeLobbyEvents(existing, incoming)
+    .slice()
+    .sort((left, right) => left.created_at.localeCompare(right.created_at));
+}
+
 export function sideChatEventId(event: SideChatEvent): string {
   return String(
     event.id ||
@@ -566,6 +606,27 @@ export function meetingLiveEventsToTimelineEvents(events: MeetingLiveEvent[]): L
       } satisfies LobbyEvent;
     })
     .filter(Boolean) as LobbyEvent[];
+}
+
+export function parseLobbyStreamData(raw: string): LobbyEvent[] {
+  try {
+    const data = JSON.parse(raw) as { stream?: string; events?: unknown[] } | LobbyEvent | null;
+    if (!data || typeof data !== "object") return [];
+    if ("stream" in data && data.stream && data.stream !== "lobby") return [];
+    if ("events" in data && Array.isArray(data.events)) {
+      return data.events.filter(isLobbyEvent) as LobbyEvent[];
+    }
+    return isLobbyEvent(data) ? [data] : [];
+  } catch {
+    return [];
+  }
+}
+
+function isLobbyEvent(value: unknown): value is LobbyEvent {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Partial<LobbyEvent> & { channel?: unknown };
+  if (typeof event.channel === "string" && event.channel !== "lobby") return false;
+  return typeof event.id === "string" && typeof event.name === "string";
 }
 
 export function parseSideChatStreamData(raw: string): SideChatEvent[] {
@@ -670,25 +731,8 @@ export function subscribeLobby(
   const source = new EventSource("/api/events/lobby");
 
   function handleData(raw: string) {
-    try {
-      const data = JSON.parse(raw);
-      if (!data) return;
-      // Snapshot payload: {stream, events: [...]}
-      if (Array.isArray(data.events)) {
-        const valid = data.events.filter(
-          (e: unknown) =>
-            e && typeof e === "object" && "id" in (e as object) && "name" in (e as object)
-        );
-        if (valid.length > 0) onEvents(valid);
-        return;
-      }
-      // Single event with id and name
-      if (data.id && data.name) {
-        onEvents([data as LobbyEvent]);
-      }
-    } catch {
-      // ignore parse errors
-    }
+    const events = parseLobbyStreamData(raw);
+    if (events.length) onEvents(events);
   }
 
   source.addEventListener("lobby", (e) => handleData((e as MessageEvent).data));

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import {
   castMafiaVote,
+  mergeLobbyEventsByCreatedAt,
   postSideChatMessage,
   resolveMafiaPhase,
   sendMafiaChat,
@@ -62,14 +63,6 @@ function sortEvents(events: LobbyEvent[]) {
   return events
     .slice()
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
-}
-
-function mergeEvents(existing: LobbyEvent[], incoming: LobbyEvent[]) {
-  const byId = new Map(existing.map((event) => [event.id, event]));
-  for (const event of incoming) {
-    if (event.id) byId.set(event.id, event);
-  }
-  return sortEvents(Array.from(byId.values()));
 }
 
 function liveTimelineIsNearBottom(element: HTMLDivElement) {
@@ -806,7 +799,7 @@ export default function LiveView({
       setEvents(sortEvents(flowEvents));
       return;
     }
-    setEvents((previous) => mergeEvents(previous, flowEvents));
+    setEvents((previous) => mergeLobbyEventsByCreatedAt(previous, flowEvents));
   }, [activeFlowId, activeMeetingId, flowEvents, timelineSource, updatePinnedToLatest]);
 
   const mergeFlowEvents = useCallback(
@@ -824,7 +817,7 @@ export default function LiveView({
         setEvents(sortEvents(matching));
         return;
       }
-      setEvents((previous) => mergeEvents(previous, matching));
+      setEvents((previous) => mergeLobbyEventsByCreatedAt(previous, matching));
     },
     [activeFlowId, activeMeetingId, updatePinnedToLatest]
   );
