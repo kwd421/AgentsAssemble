@@ -330,6 +330,12 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('aria-label="최신 메시지로 이동"', live_source)
         self.assertIn("최신으로", live_source)
 
+    def test_react_side_chat_keeps_full_history_visible(self):
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertNotIn("events.slice(-12)", live_source)
+        self.assertIn("const visibleEvents = events;", live_source)
+
     def test_react_live_flow_switch_keeps_state_updates_outside_event_updater(self):
         live_source = frontend_file("views/LiveView.tsx")
         helper_source = frontend_file("lib/liveTimelineState.ts")

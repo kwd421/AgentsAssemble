@@ -284,7 +284,7 @@ function SideChatPanel({
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
-  const visibleEvents = events.slice(-12);
+  const visibleEvents = events;
 
   async function handleSend() {
     const trimmed = message.trim();
