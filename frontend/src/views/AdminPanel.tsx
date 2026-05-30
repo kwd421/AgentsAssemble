@@ -153,7 +153,13 @@ function ReleaseHealthCard({
   );
 }
 
-export default function AdminPanel({ onClose }: { onClose: () => void }) {
+export default function AdminPanel({
+  onClose,
+  activeMeetingId,
+}: {
+  onClose: () => void;
+  activeMeetingId?: string;
+}) {
   const healthFetcher = useCallback(() => fetchHealth(), []);
   const resourcesFetcher = useCallback(() => fetchLocalResources(), []);
   const releaseHealthFetcher = useCallback(() => fetchReleaseHealth(), []);
@@ -177,7 +183,9 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
   } = partitionReleaseHealthChecks(releaseHealth);
   const latestStatusById = releaseHealthLatestById(releaseHealthQueue);
 
-  const [joinBriefMeetingId, setJoinBriefMeetingId] = useState("resident-m1");
+  const [joinBriefMeetingId, setJoinBriefMeetingId] = useState(
+    activeMeetingId?.trim() || "resident-m1"
+  );
   const [joinBriefAgentId, setJoinBriefAgentId] = useState("external-agent");
   const [joinBriefDisplayName, setJoinBriefDisplayName] = useState("External Agent");
   const [joinBrief, setJoinBrief] = useState<LiveAgentJoinBrief | null>(null);
