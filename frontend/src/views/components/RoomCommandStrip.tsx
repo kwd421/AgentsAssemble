@@ -1,5 +1,4 @@
-import type { LucideIcon } from "lucide-react";
-import { Archive, LayoutDashboard, Radio, ShieldCheck, Users } from "lucide-react";
+import { Activity, AlertTriangle, Users } from "lucide-react";
 import type { FlowResponse, LifecycleProjection, LiveAgent } from "../../api";
 import {
   lifecycleStateLabel,
@@ -8,20 +7,6 @@ import {
 
 type RoomSurface = "lobby" | "live" | "board" | "records" | "admin";
 type CoreRoomSurface = Exclude<RoomSurface, "admin">;
-
-type SurfaceCommand = {
-  id: CoreRoomSurface;
-  label: string;
-  detail: string;
-  icon: LucideIcon;
-};
-
-const SURFACE_COMMANDS: SurfaceCommand[] = [
-  { id: "lobby", label: "로비", detail: "준비/초대", icon: Users },
-  { id: "live", label: "실황", detail: "대화 흐름", icon: Radio },
-  { id: "board", label: "작전판", detail: "작업 상태", icon: LayoutDashboard },
-  { id: "records", label: "아카이브", detail: "결정/회의록", icon: Archive },
-];
 
 function activeAgentCount(agents: LiveAgent[]) {
   return agents.filter((agent) => agent.status === "online" || agent.status === "working").length;
@@ -38,47 +23,48 @@ export default function RoomCommandStrip({
   activeSurface,
   agents,
   flow,
-  lifecycle,
-  onSelectSurface,
-}: {
-  activeSurface: RoomSurface;
-  agents: LiveAgent[];
-  flow: FlowResponse["flow"];
-  lifecycle: LifecycleProjection | null;
-  onSelectSurface: (surface: CoreRoomSurface) => void;
-}) {
+	  lifecycle,
+	}: {
+	  activeSurface: RoomSurface;
+	  agents: LiveAgent[];
+	  flow: FlowResponse["flow"];
+	  lifecycle: LifecycleProjection | null;
+	  onSelectSurface: (surface: CoreRoomSurface) => void;
+	}) {
   const summary = summarizeCompactLifecycle(lifecycle);
   const stateLabel = lifecycleStateLabel(summary.state === "none" ? "" : summary.state);
   const liveAgents = activeAgentCount(agents);
-  const details = [
-    `입장 ${liveAgents}/${agents.length || 0}`,
-    summary.hasLifecycle ? `역할 ${summary.boundRoles}/${summary.rolesTotal}` : "회의 선택",
-    summary.pendingTurns ? `대기 턴 ${summary.pendingTurns}` : "",
-    summary.unsafePermissionViolations ? `권한 검토 ${summary.unsafePermissionViolations}` : "",
-  ].filter(Boolean);
+	  const details = [
+	    agents.length ? `참가 ${liveAgents}/${agents.length}` : "참가 대기",
+	    summary.hasLifecycle ? `역할 ${summary.boundRoles}/${summary.rolesTotal}` : "",
+	    summary.pendingTurns ? `턴 ${summary.pendingTurns}` : "",
+	  ].filter(Boolean);
+	  const hasAttention =
+	    summary.pendingTurns > 0 || summary.unsafePermissionViolations > 0 || flow.status === "stopped";
 
-  return (
-    <section
-      aria-label="룸 커맨드 센터"
-      className="relative z-[1] border-b border-accent/10 bg-black/18 px-3 py-2 lg:px-5"
-    >
-      <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
-        <div className="ops-inner rounded-lg px-3 py-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`rounded-md border px-2 py-1 text-[10px] font-black ${
-                stateLabel.tone === "online"
-                  ? "border-online/35 bg-online/10 text-online"
-                  : stateLabel.tone === "idle"
+	  return (
+	    <section
+	      aria-label="룸 상태 요약"
+	      className="relative z-[1] border-b border-accent/10 bg-black/18 px-3 py-2 lg:px-5"
+	    >
+	      <div className="ops-inner flex flex-col gap-2 rounded-lg px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
+	        <div className="min-w-0">
+	          <div className="flex flex-wrap items-center gap-1.5">
+	            <span
+	              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-black ${
+	                stateLabel.tone === "online"
+	                  ? "border-online/35 bg-online/10 text-online"
+	                  : stateLabel.tone === "idle"
                     ? "border-idle/35 bg-idle/10 text-idle"
                     : stateLabel.tone === "danger"
                       ? "border-danger/35 bg-danger/10 text-danger"
                       : "border-accent/30 bg-accent/8 text-accent"
-              }`}
-            >
-              {summary.stepLabel}
-            </span>
-            <span className="rounded-md border border-line/60 bg-black/18 px-2 py-1 text-[10px] font-bold text-text-muted preserve-words">
+	              }`}
+	            >
+	              <Activity size={12} />
+	              {summary.stepLabel}
+	            </span>
+	            <span className="rounded-md border border-line/60 bg-black/18 px-2 py-1 text-[10px] font-bold text-text-muted preserve-words">
               {roomStatusLabel(flow.status)}
             </span>
             {details.map((detail) => (
@@ -88,43 +74,33 @@ export default function RoomCommandStrip({
               >
                 {detail}
               </span>
-            ))}
-          </div>
-          <div className="mt-2 flex flex-wrap items-baseline gap-2">
-            <span className="text-[10px] font-black uppercase tracking-wide text-text-muted">
-              다음 행동
-            </span>
-            <p className="min-w-0 flex-1 text-[13px] font-bold leading-relaxed text-text-primary preserve-words">
-              {summary.nextAction}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex gap-2 overflow-x-auto pb-1 xl:pb-0">
-          {SURFACE_COMMANDS.map(({ id, label, detail, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              data-active={activeSurface === id}
-              onClick={() => onSelectSurface(id)}
-              className="ops-button flex min-w-[132px] shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-left transition data-[active=true]:border-accent/70 data-[active=true]:bg-accent/10 data-[active=true]:text-text-primary"
-            >
-              <Icon size={15} className="shrink-0" />
-              <span className="min-w-0">
-                <span className="block truncate text-[12px] font-black preserve-words">{label}</span>
-                <span className="block truncate text-[10px] text-text-muted preserve-words">{detail}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-1.5 text-[10px] font-bold text-text-muted xl:col-span-2">
-          <ShieldCheck size={12} />
-          <span className="preserve-words">
-            provider 실행 없이 safe projection만 표시
-          </span>
-        </div>
-      </div>
-    </section>
-  );
-}
+	            ))}
+	          </div>
+	        </div>
+	        <div className="flex min-w-0 items-center gap-2">
+	          {hasAttention ? (
+	            <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-idle/35 bg-idle/10 px-2 py-1 text-[10px] font-black text-idle">
+	              <AlertTriangle size={12} />
+	              확인 필요
+	            </span>
+	          ) : null}
+	          <span className="hidden shrink-0 items-center gap-1.5 text-[10px] font-bold text-text-muted sm:inline-flex">
+	            <Users size={12} />
+	            {activeSurface === "lobby"
+	              ? "로비"
+	              : activeSurface === "live"
+	                ? "실황"
+	                : activeSurface === "board"
+	                  ? "작전판"
+	                  : activeSurface === "records"
+	                    ? "아카이브"
+	                    : "관리"}
+	          </span>
+	          <p className="min-w-0 truncate text-[13px] font-bold text-text-primary preserve-words">
+	            {summary.nextAction}
+	          </p>
+	        </div>
+	      </div>
+	    </section>
+	  );
+	}

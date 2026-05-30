@@ -36,7 +36,7 @@ class FrontendRosterTruthTests(unittest.TestCase):
             with self.subTest(surface=name):
                 self.assertIn("ProviderTruthChips", source)
                 self.assertIn("agentTruthBadges(agent)", source)
-                self.assertIn("limit={6}", source)
+                self.assertIn("limit={4}" if name == "lobby" else "limit={6}", source)
                 self.assertNotIn("limit={5}", source)
                 self.assertIn("lastObservedSummary(agent)", source)
                 self.assertIn("preserve-words", source)
@@ -68,12 +68,12 @@ class FrontendRosterTruthTests(unittest.TestCase):
         self.assertIn("roomContextSummaryBadges(agents)", component)
         self.assertIn("ProviderTruthChips", component)
         self.assertIn('aria-label="참가자 맥락 요약"', component)
-        self.assertIn('import ParticipantContextSummary from "./components/ParticipantContextSummary";', lobby)
         self.assertIn('import ParticipantContextSummary from "./components/ParticipantContextSummary";', live)
-        self.assertIn("<ParticipantContextSummary agents={agents} />", lobby)
+        self.assertNotIn('import ParticipantContextSummary from "./components/ParticipantContextSummary";', lobby)
+        self.assertNotIn("<ParticipantContextSummary agents={agents} />", lobby)
         self.assertIn("<ParticipantContextSummary agents={agents} />", live)
         self.assertIn("characterBadge(agent)", frontend_file("lib/agentLabels.ts"))
-        self.assertIn("Character ·", frontend_file("lib/agentLabels.ts"))
+        self.assertIn("캐릭터 ·", frontend_file("lib/agentLabels.ts"))
 
         for unsafe in ("session_id", "argv", "command", "provider_output", "last_error", "source_path"):
             with self.subTest(unsafe=unsafe):

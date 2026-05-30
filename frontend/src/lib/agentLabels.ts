@@ -18,17 +18,17 @@ export type RoomContextSummary = {
 };
 
 const PROVIDER_EXECUTION_LABELS: Record<string, string> = {
-  "codex_live_session/live_session": "Codex resident",
-  "kiro_live_session/live_session": "Kiro resident",
-  "cursor_live_session/live_session": "Cursor resident",
-  "grok_live_session/live_session": "Grok resident",
-  "antigravity_live_session/live_session": "Antigravity resident",
-  "hermes_live_session/live_session": "Hermes resident",
-  "remote_http_bridge/remote_bridge": "Remote bridge endpoint",
-  "local_cli/local_cli": "Local CLI prompt",
-  "local_cli/terminal_session": "Local PTY terminal",
-  "local_cli/self_service": "Self-service loop",
-  "manual/manual": "Manual participant",
+  "codex_live_session/live_session": "Codex",
+  "kiro_live_session/live_session": "Kiro",
+  "cursor_live_session/live_session": "Cursor",
+  "grok_live_session/live_session": "Grok",
+  "antigravity_live_session/live_session": "Antigravity",
+  "hermes_live_session/live_session": "Hermes",
+  "remote_http_bridge/remote_bridge": "Remote",
+  "local_cli/local_cli": "CLI",
+  "local_cli/terminal_session": "Terminal",
+  "local_cli/self_service": "Self-service",
+  "manual/manual": "Guest",
 };
 
 const JOIN_SEMANTICS_LABELS: Record<string, string> = {
@@ -68,11 +68,11 @@ const CHARACTER_MODE_LABELS: Record<string, string> = {
 };
 
 const CONTEXT_DURABILITY_KIND_LABELS: Record<string, string> = {
-  stateless: "Stateless",
-  process_lifetime: "Process-lifetime",
-  provider_owned: "Provider-owned",
-  external_owned: "External-owned",
-  unknown: "Unknown",
+  stateless: "이번만",
+  process_lifetime: "세션 중",
+  provider_owned: "기억 유지",
+  external_owned: "외부",
+  unknown: "알 수 없음",
 };
 
 export function humanizeToken(value?: string): string {
@@ -134,10 +134,10 @@ export function providerExecutionLabel(
   const connection = String(agent.connection_kind || "").trim();
   const pair = `${provider}/${connection}`;
   if (PROVIDER_EXECUTION_LABELS[pair]) return PROVIDER_EXECUTION_LABELS[pair];
-  if (agent.engagement_mode === "self_service" && provider) return "Self-service loop";
-  if (connection === "local_cli") return "Local CLI prompt";
-  if (connection === "terminal_session") return "Local PTY terminal";
-  if (connection === "self_service") return "Self-service loop";
+  if (agent.engagement_mode === "self_service" && provider) return "Self-service";
+  if (connection === "local_cli") return "CLI";
+  if (connection === "terminal_session") return "Terminal";
+  if (connection === "self_service") return "Self-service";
   return humanizeToken(provider || connection || agent.engagement_mode || "resident");
 }
 
@@ -148,11 +148,11 @@ export function admissionBadge(
   if (conflictCount > 0) {
     const prefix =
       agent.host_approved_binding === true
-        ? "Host-approved"
+        ? "승인됨"
         : agent.host_approved_binding === false
-          ? "Not host-approved"
-          : "Admission unknown";
-    const label = `${prefix} · ${Math.min(conflictCount, 2)} ${conflictCount === 1 ? "conflict" : "conflicts"}`;
+          ? "승인 대기"
+          : "확인 필요";
+    const label = `${prefix} · 충돌 ${Math.min(conflictCount, 2)}`;
     return {
       label,
       tone: "idle",
@@ -160,10 +160,10 @@ export function admissionBadge(
     };
   }
   if (agent.host_approved_binding === true) {
-    return { label: "Host-approved", tone: "online" };
+    return { label: "승인됨", tone: "online" };
   }
   if (agent.host_approved_binding === false) {
-    return { label: "Not host-approved", tone: "idle" };
+    return { label: "승인 대기", tone: "idle" };
   }
   const status = String(agent.admission_status || "").trim();
   if (!status) return null;
@@ -194,7 +194,7 @@ export function contextBadge(agent: LiveAgent): AgentTruthBadge | null {
           ? "idle"
           : "muted";
   const kindLabel = CONTEXT_DURABILITY_KIND_LABELS[kind] || CONTEXT_DURABILITY_KIND_LABELS.unknown;
-  return { label: `맥락 · ${kindLabel}`, tone, title: label };
+  return { label: kindLabel, tone, title: label };
 }
 
 export function joinBadge(agent: LiveAgent): AgentTruthBadge | null {
@@ -221,7 +221,7 @@ export function characterBadge(agent: LiveAgent): AgentTruthBadge | null {
   const label = characterModeLabel(agent.character_mode);
   const card = String(agent.persona_card_id || "").trim();
   return {
-    label: `Character · ${label}`,
+    label: `캐릭터 · ${label}`,
     tone: kind === "work_speech" ? "accent" : "online",
     title: card ? `Persona ${card}` : "Character mode active",
   };
@@ -277,35 +277,35 @@ export function roomContextSummaryBadges(agents: LiveAgent[]): AgentTruthBadge[]
   const badges: AgentTruthBadge[] = [];
   if (summary.resident_session > 0) {
     badges.push({
-      label: `Resident ${summary.resident_session}`,
+      label: `상주 ${summary.resident_session}`,
       tone: "online",
       title: "Provider-owned resume or process-lifetime resident sessions.",
     });
   }
   if (summary.stateless > 0) {
     badges.push({
-      label: `Stateless ${summary.stateless}`,
+      label: `단발 ${summary.stateless}`,
       tone: "idle",
       title: "One-shot local CLI prompt calls; not durable live teammates.",
     });
   }
   if (summary.external_owned > 0) {
     badges.push({
-      label: `External ${summary.external_owned}`,
+      label: `외부 ${summary.external_owned}`,
       tone: "muted",
       title: "Manual, remote-owner, or external-owner room loops.",
     });
   }
   if (summary.advisory_sandbox > 0) {
     badges.push({
-      label: `Advisory ${summary.advisory_sandbox}`,
+      label: `주의 ${summary.advisory_sandbox}`,
       tone: "idle",
       title: "Launch safety is advisory for these participants.",
     });
   }
   if (summary.pending_admission > 0) {
     badges.push({
-      label: `미승인/충돌 ${summary.pending_admission}`,
+      label: `확인 ${summary.pending_admission}`,
       tone: "idle",
       title: "Host approval is missing or binding conflicts are present.",
     });

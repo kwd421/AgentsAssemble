@@ -84,8 +84,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("binding_conflicts?: string[];", source)
         self.assertIn("export function lastObservedSummary", source)
         self.assertIn('agent.last_reply_at ? `reply ${shortDateTime(agent.last_reply_at)}` : ""', source)
-        self.assertIn('return { label: "Host-approved", tone: "online" };', source)
-        self.assertIn('return { label: "Not host-approved", tone: "idle" };', source)
+        self.assertIn('return { label: "승인됨", tone: "online" };', source)
+        self.assertIn('return { label: "승인 대기", tone: "idle" };', source)
         lobby_source = frontend_file("views/LobbyView.tsx")
         self.assertIn("providerExecutionLabel(agent)", lobby_source)
         self.assertNotIn('agent.provider_kind || "resident"', lobby_source)
@@ -360,7 +360,7 @@ class StaticUiAssetTests(unittest.TestCase):
         section = react_lobby_external_participation_section()
 
         self.assertIn("외부 참여", section)
-        self.assertIn("CLI 선택 사항", section)
+        self.assertIn("고급", section)
         self.assertIn("<details", section)
         self.assertIn("<summary", section)
         self.assertIn("CLI 초대 명령 보기", section)
@@ -375,6 +375,20 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn('role="button"', section)
         self.assertNotIn("ops-button", section)
         self.assertNotIn("ops-cta", section)
+
+    def test_react_lobby_prioritizes_chat_over_operator_cards(self):
+        lobby_source = frontend_file("views/LobbyView.tsx")
+
+        self.assertIn('className="flex min-h-[calc(100dvh-178px)] flex-col gap-3"', lobby_source)
+        self.assertIn('className="ops-panel ops-cut flex min-h-[520px] flex-1 flex-col overflow-hidden"', lobby_source)
+        self.assertIn("const visibleEvents = useMemo(() => events, [events]);", lobby_source)
+        self.assertIn("visibleEvents.map((event) => <EventRow key={event.id} event={event} />)", lobby_source)
+        self.assertIn("<LobbyComposer onPosted={handleLobbyPosted} />", lobby_source)
+        self.assertIn("<details className=\"ops-panel ops-cut overflow-hidden\">", lobby_source)
+        self.assertNotIn("events.slice(-6)", lobby_source)
+        self.assertNotIn("latestEvents", lobby_source)
+        self.assertNotIn("ops-hero", lobby_source)
+        self.assertNotIn("룸 이벤트", lobby_source)
 
     def test_react_lobby_external_participation_wraps_safe_join_brief_endpoint(self):
         api_source = frontend_file("api.ts")
@@ -712,7 +726,7 @@ class StaticUiAssetTests(unittest.TestCase):
         ]:
             self.assertNotIn(forbidden, surface)
 
-    def test_react_app_surfaces_room_command_center_without_provider_actions(self):
+    def test_react_app_surfaces_compact_room_status_without_duplicate_navigation(self):
         app_source = frontend_file("App.tsx")
         strip_source = frontend_file("views/components/RoomCommandStrip.tsx")
         surface = f"{app_source}\n{strip_source}"
@@ -723,18 +737,16 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("function handleCommandSurface", app_source)
         self.assertIn("setAdminOpen(true)", app_source)
         self.assertIn("setChannel(surface)", app_source)
-        self.assertIn("aria-label=\"룸 커맨드 센터\"", strip_source)
-        self.assertIn("SURFACE_COMMANDS", strip_source)
-        self.assertIn('label: "로비"', strip_source)
-        self.assertIn('label: "실황"', strip_source)
-        self.assertIn("작전판", strip_source)
-        self.assertIn("아카이브", strip_source)
+        self.assertIn("aria-label=\"룸 상태 요약\"", strip_source)
+        self.assertNotIn("SURFACE_COMMANDS", strip_source)
+        self.assertNotIn('label: "로비"', strip_source)
+        self.assertNotIn('label: "실황"', strip_source)
         self.assertNotIn("검증", strip_source)
         self.assertNotIn('label: "기록"', strip_source)
-        self.assertIn("다음 행동", strip_source)
         self.assertIn("summarizeCompactLifecycle", strip_source)
         self.assertIn("summary.nextAction", strip_source)
-        self.assertIn("provider 실행 없이 safe projection만 표시", strip_source)
+        self.assertIn("확인 필요", strip_source)
+        self.assertNotIn("provider 실행 없이 safe projection만 표시", strip_source)
 
         for forbidden in [
             "startProvider",

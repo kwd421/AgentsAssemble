@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
@@ -35,7 +34,6 @@ import {
 import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
 import LifecycleBanner from "./components/LifecycleBanner";
-import ParticipantContextSummary from "./components/ParticipantContextSummary";
 import ProviderTruthChips from "./components/ProviderTruthChips";
 
 const MODE_CARDS = [
@@ -152,8 +150,8 @@ function AgentCard({ agent, owner = false }: { agent: LiveAgent; owner?: boolean
           : "";
 
   return (
-    <div className="ops-inner flex items-center gap-3 rounded-lg p-3">
-      <span className={`hex-badge ${badgeClass}`}>
+    <div className="ops-inner flex items-center gap-3 rounded-lg p-2.5">
+      <span className={`hex-badge h-9 w-9 ${badgeClass}`}>
         {owner ? <ShieldCheck size={17} /> : <Bot size={17} />}
       </span>
       <div className="min-w-0 flex-1">
@@ -170,7 +168,12 @@ function AgentCard({ agent, owner = false }: { agent: LiveAgent; owner?: boolean
         <p className="truncate text-[11px] text-text-muted preserve-words">
           {providerExecutionLabel(agent)}
         </p>
-        <ProviderTruthChips badges={agentTruthBadges(agent)} compact limit={6} />
+        <details className="group mt-1">
+          <summary className="cursor-pointer list-none text-[10px] font-bold text-text-muted transition hover:text-text-secondary">
+            세부 정보
+          </summary>
+          <ProviderTruthChips badges={agentTruthBadges(agent)} compact limit={4} />
+        </details>
         {observation && (
           <p className="mt-1 text-[10px] text-text-muted preserve-words">
             {observation}
@@ -297,7 +300,7 @@ export default function LobbyView({
   const readyAgents = agents.filter(
     (agent) => agent.status === "online" || agent.status === "working"
   );
-  const latestEvents = useMemo(() => events.slice(-6).reverse(), [events]);
+  const visibleEvents = useMemo(() => events, [events]);
   const renderedJoinBrief = useMemo(() => joinBriefPreview(joinBrief), [joinBrief]);
 
   useEffect(() => {
@@ -423,11 +426,11 @@ export default function LobbyView({
   }
 
   return (
-    <div className="grid min-h-full gap-4 xl:grid-cols-[390px_minmax(0,1fr)_390px]">
-      <aside className="space-y-4">
-        <section className="ops-panel ops-cut p-4">
+    <div className="grid min-h-full gap-3 xl:grid-cols-[300px_minmax(0,1fr)_320px]">
+      <aside className="space-y-3">
+        <section className="ops-panel ops-cut p-3">
           <div className="mb-4 flex items-center justify-between border-b border-accent/14 pb-3">
-            <h2 className="flex items-center gap-2 text-[17px] font-black">
+            <h2 className="flex items-center gap-2 text-[15px] font-black">
               <Users size={18} className="text-accent" />
               참가자
             </h2>
@@ -435,26 +438,24 @@ export default function LobbyView({
               {readyAgents.length} / {agents.length || 0}
             </span>
           </div>
-          <ParticipantContextSummary agents={agents} />
-
-          <div className="space-y-3">
+          <div className="max-h-[calc(100dvh-230px)] space-y-2 overflow-y-auto pr-1 chat-scroll">
             {agents.length === 0 ? (
               <div className="ops-inner rounded-lg p-4 text-[13px] text-text-muted">
                 resident agent가 입장하면 여기에 표시됩니다.
               </div>
             ) : (
-              agents.slice(0, 8).map((agent, index) => (
+              agents.map((agent, index) => (
                 <AgentCard key={agent.agent_id} agent={agent} owner={index === 0} />
               ))
             )}
           </div>
         </section>
 
-        <section className="ops-panel ops-cut p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-[17px] font-black">외부 참여</h2>
+        <section className="ops-panel ops-cut p-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 className="text-[14px] font-black">외부 참여</h2>
             <span className="rounded border border-line/60 bg-panel/45 px-2 py-1 text-[10px] font-black text-text-muted">
-              CLI 선택 사항
+              고급
             </span>
           </div>
           <details className="overflow-hidden rounded-lg border border-line/70 bg-panel/40 text-[12px] text-text-secondary">
@@ -592,135 +593,54 @@ export default function LobbyView({
         </section>
       </aside>
 
-      <section className="space-y-4">
-        <div className="ops-panel ops-cut ops-hero soft-scan p-5 md:p-6">
-          <div className="relative z-[1] flex max-w-2xl items-center gap-5">
-            <span className="ops-logo-mark h-14 w-14 shrink-0" aria-hidden />
-            <div>
-              <h1 className="text-[31px] font-black leading-tight tracking-tight md:text-[40px]">
-                작전 회의실
-              </h1>
-              <p className="mt-2 text-[15px] text-text-secondary preserve-words">
-                논의 시작 전, 룸 상태와 참여자를 준비합니다.
-              </p>
-            </div>
-          </div>
-        </div>
-
+      <section className="flex min-h-[calc(100dvh-178px)] flex-col gap-3">
         <LifecycleBanner lifecycle={lifecycle} surface="lobby" />
 
-        <div className="ops-panel ops-cut overflow-hidden">
-          <div className="border-b border-accent/14 px-4 py-3">
-            <h2 className="text-[15px] font-black">룸 이벤트</h2>
+        <div className="ops-panel ops-cut flex min-h-[520px] flex-1 flex-col overflow-hidden">
+          <div className="flex items-center justify-between gap-3 border-b border-accent/14 px-4 py-3">
+            <div>
+              <h2 className="text-[16px] font-black">로비 채팅</h2>
+              <p className="mt-0.5 text-[12px] text-text-muted preserve-words">
+                준비, 초대, 짧은 잡담을 여기에 모읍니다.
+              </p>
+            </div>
+            <span className="rounded border border-line/60 bg-panel/45 px-2 py-1 text-[11px] font-bold text-text-muted">
+              {events.length} messages
+            </span>
           </div>
-          <div className="max-h-[250px] overflow-y-auto chat-scroll">
+          <div className="min-h-0 flex-1 overflow-y-auto chat-scroll">
             {!loaded ? (
               <div className="p-5 text-[13px] text-text-muted">불러오는 중...</div>
-            ) : latestEvents.length === 0 ? (
+            ) : visibleEvents.length === 0 ? (
               <div className="p-5 text-[13px] text-text-muted preserve-words">
-                아직 준비 로그가 없습니다.
+                아직 로비 메시지가 없습니다.
               </div>
             ) : (
-              latestEvents.map((event) => <EventRow key={event.id} event={event} />)
+              visibleEvents.map((event) => <EventRow key={event.id} event={event} />)
             )}
           </div>
-        </div>
-
-        <LobbyComposer onPosted={handleLobbyPosted} />
-
-        <div className="ops-panel ops-cut p-4">
-          <h2 className="mb-4 text-[15px] font-black">룸 모드 선택</h2>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {MODE_CARDS.map((mode) => (
-              <ModeCard
-                key={mode.id}
-                mode={mode}
-                selected={selectedMode === mode.id}
-                onSelect={() => setSelectedMode(mode.id)}
-              />
-            ))}
+          <div className="border-t border-accent/14 bg-black/16 p-3">
+            <LobbyComposer onPosted={handleLobbyPosted} />
           </div>
         </div>
       </section>
 
-      <aside className="space-y-4">
-        <section className="ops-panel ops-cut p-4">
-          <h2 className="mb-4 text-[17px] font-black">룸 정보</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="ops-inner rounded-lg p-3">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                룸 이름
-              </p>
-              <p className="mt-2 truncate text-[20px] font-black preserve-words">
+      <aside className="space-y-3">
+        <section className="ops-panel ops-cut p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-[14px] font-black">룸 상태</h2>
+              <p className="mt-1 truncate text-[12px] text-text-muted preserve-words">
                 {flow.meeting_id || meetingId || "resident-m1"}
               </p>
             </div>
-            <div className="ops-inner rounded-lg p-3">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                모드
-              </p>
-              <p className="mt-2 text-[18px] font-black text-online">Local-first</p>
-            </div>
-            <div className="ops-inner rounded-lg p-3">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                참가자
-              </p>
-              <p className="mt-2 text-[18px] font-black">{readyAgents.length}</p>
-            </div>
-            <div className="ops-inner rounded-lg p-3">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                네트워크
-              </p>
-              <p className="mt-2 text-[18px] font-black text-accent">LAN</p>
-            </div>
+            <span className="rounded-md border border-online/30 bg-online/10 px-2 py-1 text-[11px] font-black text-online">
+              {readyAgents.length}/{agents.length || 0}
+            </span>
           </div>
         </section>
 
-        <section className="ops-panel ops-cut p-4">
-          <h2 className="mb-4 text-[17px] font-black">준비 상태</h2>
-          <div className="flex items-center gap-5">
-            <div
-              className="ops-meter grid h-28 w-28 shrink-0 place-items-center rounded-full"
-              style={
-                {
-                  "--meter": `${agents.length ? Math.round((readyAgents.length / agents.length) * 100) : 0}%`,
-                } as CSSProperties
-              }
-            >
-              <div className="grid h-20 w-20 place-items-center rounded-full bg-[#03101d] text-center">
-                <span className="text-[26px] font-black">
-                  {readyAgents.length}/{agents.length || 0}
-                </span>
-                <span className="-mt-4 text-[11px] font-bold text-online">Ready</span>
-              </div>
-            </div>
-            <div className="min-w-0 flex-1 space-y-2 text-[13px] text-text-secondary">
-              <div className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-online" />
-                  Ready
-                </span>
-                <b>{readyAgents.length}</b>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-idle" />
-                  Syncing
-                </span>
-                <b>{agents.filter((agent) => agent.status === "idle").length}</b>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-offline" />
-                  Offline
-                </span>
-                <b>{agents.filter((agent) => agent.status === "offline").length}</b>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="ops-panel ops-cut p-4">
+        <section className="ops-panel ops-cut p-3">
           <h2 className="mb-4 text-[17px] font-black">회의 시작</h2>
           {error && (
             <p className="mb-3 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger preserve-words">
@@ -802,6 +722,22 @@ export default function LobbyView({
             </div>
           )}
         </section>
+
+        <details className="ops-panel ops-cut overflow-hidden">
+          <summary className="cursor-pointer list-none px-4 py-3 text-[14px] font-black text-text-primary transition hover:text-accent">
+            모드 선택
+          </summary>
+          <div className="grid gap-3 border-t border-accent/14 p-3">
+            {MODE_CARDS.map((mode) => (
+              <ModeCard
+                key={mode.id}
+                mode={mode}
+                selected={selectedMode === mode.id}
+                onSelect={() => setSelectedMode(mode.id)}
+              />
+            ))}
+          </div>
+        </details>
       </aside>
     </div>
   );

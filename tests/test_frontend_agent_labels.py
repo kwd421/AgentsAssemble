@@ -171,31 +171,31 @@ class FrontendAgentLabelTests(unittest.TestCase):
             msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
         payload = json.loads(completed.stdout)
-        self.assertEqual(payload["codexExecution"], "Codex resident")
+        self.assertEqual(payload["codexExecution"], "Codex")
         self.assertEqual(payload["codexContext"], "Provider-owned context")
         self.assertEqual(payload["codexContextKind"], "provider_owned")
-        self.assertEqual(payload["codexContextBadge"]["label"], "맥락 · Provider-owned")
+        self.assertEqual(payload["codexContextBadge"]["label"], "기억 유지")
         self.assertEqual(payload["codexContextBadge"]["tone"], "online")
         self.assertEqual(payload["codexCharacterMode"], "Work speech")
         self.assertEqual(payload["codexCharacterModeKind"], "work_speech")
-        self.assertEqual(payload["codexCharacterBadge"]["label"], "Character · Work speech")
+        self.assertEqual(payload["codexCharacterBadge"]["label"], "캐릭터 · Work speech")
         self.assertEqual(payload["codexCharacterBadge"]["tone"], "accent")
         self.assertEqual(payload["codexCharacterBadge"]["title"], "Persona yanagi")
         self.assertEqual(payload["codexJoin"], "Codex exec/resume")
         self.assertEqual(payload["codexExecutionDiffersFromJoin"], True)
         self.assertEqual(payload["codexSandbox"], "Codex read-only")
-        self.assertEqual(payload["codexAdmission"], "Host-approved")
-        self.assertEqual(payload["statelessExecution"], "Local CLI prompt")
+        self.assertEqual(payload["codexAdmission"], "승인됨")
+        self.assertEqual(payload["statelessExecution"], "CLI")
         self.assertEqual(payload["statelessContext"], "Stateless prompt")
         self.assertEqual(payload["statelessContextKind"], "stateless")
-        self.assertEqual(payload["statelessContextBadge"]["label"], "맥락 · Stateless")
+        self.assertEqual(payload["statelessContextBadge"]["label"], "이번만")
         self.assertEqual(payload["statelessContextBadge"]["tone"], "idle")
         self.assertEqual(payload["statelessExecutionDiffersFromJoin"], True)
-        self.assertEqual(payload["statelessAdmission"], "Not host-approved · 2 conflicts")
-        self.assertEqual(payload["bridgeExecution"], "Remote bridge endpoint")
+        self.assertEqual(payload["statelessAdmission"], "승인 대기 · 충돌 2")
+        self.assertEqual(payload["bridgeExecution"], "Remote")
         self.assertEqual(payload["bridgeJoin"], "Remote bridge")
         self.assertEqual(payload["bridgeExecutionDiffersFromJoin"], True)
-        self.assertEqual(payload["manualExecution"], "Manual participant")
+        self.assertEqual(payload["manualExecution"], "Guest")
         self.assertEqual(payload["manualJoin"], "Manual room loop")
         self.assertEqual(payload["manualExecutionDiffersFromJoin"], True)
         self.assertEqual(payload["roomLoopKind"], "provider_owned")
@@ -204,8 +204,8 @@ class FrontendAgentLabelTests(unittest.TestCase):
         self.assertEqual(payload["externalKind"], "external_owned")
         self.assertEqual(payload["unknownKind"], "unknown")
         self.assertEqual(payload["sparseExecution"], "Custom provider")
-        self.assertEqual(payload["genericStatelessExecution"], "Local CLI prompt")
-        self.assertEqual(payload["genericUnknownAdmission"], "Admission unknown · 1 conflict")
+        self.assertEqual(payload["genericStatelessExecution"], "CLI")
+        self.assertEqual(payload["genericUnknownAdmission"], "확인 필요 · 충돌 1")
         self.assertTrue(all(payload["residentNonDuplicates"].values()))
         self.assertIn("lobby 4fd560dd...", payload["observed"])
         self.assertIn("official live_eve...", payload["observed"])
@@ -223,11 +223,11 @@ class FrontendAgentLabelTests(unittest.TestCase):
         self.assertEqual(
             payload["roomSummaryBadges"],
             [
-                {"label": "Resident 1", "tone": "online"},
-                {"label": "Stateless 1", "tone": "idle"},
-                {"label": "External 2", "tone": "muted"},
-                {"label": "Advisory 2", "tone": "idle"},
-                {"label": "미승인/충돌 1", "tone": "idle"},
+                {"label": "상주 1", "tone": "online"},
+                {"label": "단발 1", "tone": "idle"},
+                {"label": "외부 2", "tone": "muted"},
+                {"label": "주의 2", "tone": "idle"},
+                {"label": "확인 1", "tone": "idle"},
             ],
         )
         self.assertEqual(payload["emptyRoomSummaryBadges"], 0)
