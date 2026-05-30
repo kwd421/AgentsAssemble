@@ -76,17 +76,25 @@ Default URL:
 http://127.0.0.1:8765
 ```
 
-This is the default dependency-light vanilla backend/operator console. The
-React/Vite frontend under `frontend/` is an opt-in development surface, not the
-default entry point yet. To see the current launch commands and proxy target:
+`/` serves the React operator console once the frontend is built; until then it
+falls back to the dependency-light vanilla console. The vanilla console always
+stays reachable at `/legacy/`, and the React app is also aliased at `/app/`.
+Build the React default with:
+
+```bash
+npm --prefix frontend run build
+```
+
+The `frontend/` React/Vite frontend is the default operator surface and the
+default entry point at `/`; the vanilla console is the dependency-light
+fallback. To see the current launch commands, proxy target, and build status:
 
 ```bash
 python3 -m agentsassemble.cli frontend-info
 ```
 
-The default-route decision is tracked in
-`docs/product/legacy-react-parity-matrix.md`; filling that matrix is required
-before React can replace the vanilla `/` entry point.
+The completed default-route flip and its operator-verified browser-parity caveat
+are recorded in `docs/product/legacy-react-parity-matrix.md`.
 
 The GUI has four tabs:
 

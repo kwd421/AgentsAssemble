@@ -170,11 +170,13 @@ Completed evidence:
    - use `docs/roadmap.md` and this checklist as source-of-truth documents.
    - build a Trello/Jira-like roadmap page only when the React/Vite frontend
      track starts.
-6. Keep the React default-route gate explicit:
-   - use `docs/product/legacy-react-parity-matrix.md` to track API/SSE parity,
-     room-event contracts, and legacy fallback evidence.
-   - keep React defaulting separate from v0.1 hardening until that matrix and
-     a later product decision say otherwise.
+6. Record the React default-route flip:
+   - use `docs/product/legacy-react-parity-matrix.md` for the API/SSE parity,
+     room-event contracts, and legacy fallback evidence behind the flip.
+   - `/` now serves the React operator console when built and falls back to the
+     vanilla console otherwise; `/legacy/` stays the tested fallback.
+   - browser-rendered parity for the four React surfaces stays operator-verified
+     after each build.
 
 ## Next Slice Queue
 
@@ -201,7 +203,7 @@ The next implementation slice should be chosen from this queue:
 
 - Public hosted MCP.
 - Authenticated remote room APIs.
-- React/Vite/Tailwind migration.
+- React/Vite/Tailwind visual redesign beyond the shipped default-route flip.
 - Trello/Jira roadmap board UI.
 - Provider billing, login, or subscription management.
 - Automatic startup of real provider CLIs without current explicit approval.

@@ -1602,24 +1602,30 @@ def frontend_info_payload(
     backend_host = backend_parts.hostname or "127.0.0.1"
     backend_port = backend_parts.port or 8765
     dist_status = frontend_dist_status(frontend_dist_root)
-    recommended_ui_kind = "react_preview" if dist_status.static_available else "legacy_fallback"
-    recommended_ui_url = react_app_url if dist_status.static_available else backend_url + "/"
-    recommended_ui_label = "React preview" if dist_status.static_available else "Legacy fallback"
+    recommended_ui_kind = "react" if dist_status.static_available else "legacy_fallback"
+    recommended_ui_url = backend_url + "/"
+    recommended_ui_label = "React operator console" if dist_status.static_available else "Legacy vanilla console"
+    default_console_kind = "react" if dist_status.static_available else "legacy_vanilla"
+    default_console_label = (
+        "React operator console (default entry point)"
+        if dist_status.static_available
+        else "Legacy vanilla console (default until React build exists)"
+    )
     return {
         "frontend_dir": "frontend",
         "frontend_url": frontend_url,
         "frontend_dev_port": frontend_port,
         "frontend_dev_proxy_target": backend_url,
         "backend_url": backend_url,
-        "legacy_console_url": backend_url,
+        "legacy_console_url": legacy_console_url,
         "legacy_console_path": legacy_console_path,
         "legacy_console_namespace_url": legacy_console_url,
-        "default_console_kind": "legacy_vanilla",
-        "default_console_label": "Legacy vanilla console (default entry point)",
+        "default_console_kind": default_console_kind,
+        "default_console_label": default_console_label,
         "react_app_path": react_app_path,
         "react_app_url": react_app_url,
-        "react_app_kind": "react_preview_opt_in",
-        "react_app_label": "React preview (opt-in, not the default entry point)",
+        "react_app_kind": "react_default",
+        "react_app_label": "React operator console (default at /, alias at /app/)",
         "recommended_ui_kind": recommended_ui_kind,
         "recommended_ui_url": recommended_ui_url,
         "recommended_ui_label": recommended_ui_label,
@@ -1630,17 +1636,19 @@ def frontend_info_payload(
         "app_referenced_assets_present": dist_status.referenced_assets_present,
         "app_build_status": dist_status.build_status,
         "parity_matrix_doc": parity_matrix_doc,
-        "is_default_entry_point": False,
+        "is_default_entry_point": True,
         "launch_commands": [
             f"python3 -m agentsassemble.cli gui --host {backend_host} --port {backend_port} --output-root .agentsassemble",
+            "npm --prefix frontend run build",
             "cd frontend && AGENTSASSEMBLE_API_TARGET=" + backend_url + " npm run dev",
         ],
         "notes": [
-            "assemble gui remains the default dependency-light vanilla backend/operator console.",
-            "The built React preview is available from the same GUI at /app/ after npm --prefix frontend run build.",
-            "The React/Vite frontend is an opt-in development surface and does not start provider CLIs.",
+            "assemble gui serves the React operator console at / once npm --prefix frontend run build exists.",
+            "Until that build exists, / falls back to the dependency-light vanilla console.",
+            "The vanilla console stays reachable at /legacy/ as the tested fallback.",
+            "The React/Vite frontend reads existing HTTP/SSE state and does not start provider CLIs.",
             "The Vite proxy should target the same backend URL shown here unless AGENTSASSEMBLE_API_TARGET overrides it.",
-            f"Review {parity_matrix_doc} before any future default flip to React.",
+            f"Browser parity for the default React surface is operator-verified; see {parity_matrix_doc}.",
         ],
     }
 
@@ -1651,8 +1659,8 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
     print("AgentsAssemble frontend launch info")
-    print(f"- {payload['default_console_label']}: {payload['legacy_console_url']}")
-    print(f"- Legacy vanilla console (alias): {payload['legacy_console_namespace_url']}")
+    print(f"- {payload['default_console_label']}: {payload['recommended_ui_url']}")
+    print(f"- Legacy vanilla console: {payload['legacy_console_namespace_url']}")
     print(f"- {payload['react_app_label']}: {payload['react_app_url']}")
     print(f"- Recommended current UI: {payload['recommended_ui_url']} ({payload['recommended_ui_label']})")
     print(f"- React/Vite opt-in UI: {payload['frontend_url']}")
@@ -1660,11 +1668,11 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
     print(f"- Built React static available: {payload['app_static_available']} ({payload['app_dist_path']})")
     print(f"- React build status: {payload['app_build_status']}")
     print(f"- Parity matrix: {payload['parity_matrix_doc']}")
-    print(f"- Default surface kind: {payload['default_console_kind']} (React is opt-in only)")
+    print(f"- Default surface kind: {payload['default_console_kind']} (vanilla fallback at /legacy/)")
     print("- Commands:")
     for command in payload["launch_commands"]:
         print(f"  {command}")
-    print("- Note: React/Vite is not the default entry point yet.")
+    print("- Note: React/Vite is the default entry point at / once built; /legacy/ stays vanilla.")
     return 0
 
 

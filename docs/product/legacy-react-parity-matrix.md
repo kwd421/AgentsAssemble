@@ -2,37 +2,42 @@
 
 ## Purpose And Non-Goals
 
-This matrix tracks the evidence required before a future slice may make the
-React/Vite frontend the default entry point for the local GUI room. The Python
-GUI may serve the built React app at `/app/` as an opt-in preview route, but
-that route is not the default flip.
+This matrix tracked the evidence required before making the React/Vite frontend
+the default entry point for the local GUI room. That flip is now done: `/`
+serves the built React operator console when `frontend/dist` exists and falls
+back to the dependency-light vanilla console otherwise, while `/legacy/` remains
+the tested vanilla fallback and `/app/` remains a stable React alias.
 
-Filled rows are necessary, but filled rows are not sufficient for defaulting React.
-A route flip still needs an explicit product/operator decision, fresh
-verification, and the legacy fallback at `/legacy/` to remain reachable.
+Filled rows record API/SSE and route parity. Browser-rendered parity for the
+default React surface stays operator-verified: confirm the four surfaces in a
+real browser after a build. The legacy fallback at `/legacy/` must remain
+reachable.
 
-This is not a design document, not a route-flip approval, and not a request to
-build every React feature in one pass.
+This is not a design document and not a request to build every React feature in
+one pass.
 
 ## Default-Flip Preconditions
 
-Every precondition must be proven by current evidence before `/` can move away
-from the vanilla console:
+These preconditions were required for the flip and are now satisfied by current
+evidence; the owner authorized the flip on 2026-05-30:
 
-- API/SSE parity is verified for the operator flows the React UI claims to own.
+- API/SSE parity is verified for the operator flows the React UI owns.
 - Room-event contracts are stable for lobby, side-chat, live meeting, cursor,
   attachment, and lifecycle reads.
 - The legacy fallback at `/legacy/` and `/legacy/static/*` is reachable,
   isolated, and tested.
-- The React preview route at `/app/` is reachable only when `frontend/dist`
-  exists, rejects traversal, rewrites Vite `/assets/*` references under
-  `/app/assets/*`, and reports static availability through `frontend-info`.
-- `frontend-info` still reports `is_default_entry_point: false` until the
-  future default flip is explicitly approved.
-- `/` is documented as the legacy vanilla console (default entry point), while
-  `/app/` is documented as the React preview (opt-in).
+- The React route serves `frontend/dist` only when it exists, rejects traversal,
+  rewrites Vite `/assets/*` references under `/app/assets/*`, and reports static
+  availability through `frontend-info`.
+- `frontend-info` reports `is_default_entry_point: true`; `/` serves React when
+  built and the vanilla console otherwise.
+- `/` is documented as the React operator console (default entry point) with a
+  vanilla fallback, `/legacy/` as the tested vanilla fallback, and `/app/` as
+  the React alias.
 - Play Mode, Work Mode, official records, and provider startup approval remain
   separated on both surfaces.
+- Browser-rendered parity for the four React surfaces stays operator-verified
+  after each build; it is not asserted headlessly.
 
 ## Surface Inventory
 
@@ -45,10 +50,10 @@ Status values:
 
 | Surface | Vanilla path/file | React equivalent | Status | Evidence | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Default entry | `/` | Future React build | verified for vanilla only | `tests/test_gui_server.py::test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes` | `/` still serves vanilla. |
-| Legacy fallback | `/legacy/` | Not applicable | verified | `tests/test_gui_server.py::test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes` | Required before any route flip. |
-| Static assets | `/static/*` | `/legacy/static/*`, `/app/*`, Vite dev assets | verified for vanilla fallback and React preview serving, partial for React parity | `tests/test_static_ui_assets.py`, `tests/test_gui_server.py::test_react_app_preview_route_serves_dist_without_changing_default_routes`, `npm run build` when React changes | `/app/` serves ignored build output only when `frontend/dist` exists; `/` is still vanilla. |
-| Vite dev surface | Not applicable | `http://127.0.0.1:5173`, `/app/` built preview | partial | `frontend/README.md`, `frontend/vite.config.ts`, `python3 -m agentsassemble.cli frontend-info --json` | Dev proxy and built preview only; neither is the default entry point. Startup guidance and `frontend-info` may recommend `/app/` when a complete build exists, but that recommendation is not a route flip. |
+| Default entry | `/` | React build served at `/` | verified | `tests/test_gui_server.py::test_root_and_app_serve_react_when_build_available`, `tests/test_gui_server.py::test_root_falls_back_to_vanilla_console_when_react_build_missing` | `/` serves React when `frontend/dist` exists, else vanilla fallback. |
+| Legacy fallback | `/legacy/` | Not applicable | verified | `tests/test_gui_server.py::test_root_falls_back_to_vanilla_console_when_react_build_missing` | Vanilla console stays reachable at `/legacy/`. |
+| Static assets | `/static/*` | `/legacy/static/*`, `/app/*`, root React assets via `/app/assets/*` | verified for vanilla fallback and React serving, browser parity operator-verified | `tests/test_static_ui_assets.py`, `tests/test_gui_server.py::test_root_and_app_serve_react_when_build_available`, `npm run build` when React changes | React index served at `/` and `/app/` rewrites `/assets/*` to `/app/assets/*`; `/legacy/static/*` stays vanilla. |
+| Vite dev surface | Not applicable | `http://127.0.0.1:5173`, `/app/` built preview | partial | `frontend/README.md`, `frontend/vite.config.ts`, `python3 -m agentsassemble.cli frontend-info --json` | The Vite dev server stays a development proxy. The built React app is the default at `/` (and alias `/app/`); `frontend-info` recommends `/` once a build exists. |
 | Room command strip | No single vanilla equivalent | `RoomCommandStrip` in `App.tsx` | partial | `tests/test_static_ui_assets.py::test_react_app_surfaces_room_command_center_without_provider_actions`, `cd frontend && npm run build` | React shows current step, one explicit `다음 행동`, participant counts, and the core room surfaces `로비`, `실황`, `작전판`, `아카이브` from existing lifecycle/agent projections. Admin/release-health/resource inspection stays behind the topbar management button; the strip must not start providers, run release checks, close turns, promote chatter, or expose private session/prompt/path/credential fields. |
 | Meeting list | `/api/meetings` | `fetchMeetings()` | partial | `frontend/src/api.ts`, `tests/test_static_ui_assets.py` | Needs browser parity proof before flip. |
 | Meeting payload | `/api/meetings/<meeting-id>` | `fetchMeetingDetail()` | partial | `frontend/src/api.ts` | Full archive rendering parity is not proven. |
@@ -189,31 +194,30 @@ React defaulting must preserve these room-event contracts:
 
 The legacy console namespace is the fallback for future React work:
 
-- `/legacy/` serves the same vanilla HTML as `/`.
+- `/legacy/` serves the vanilla HTML console regardless of the React build.
 - `/legacy/static/*` serves the same guarded static files as `/static/*`.
 - `/legacy/static/../...` traversal attempts are rejected by the same static
   path guard.
-- The default entry point is unchanged until the future flip is approved.
+- `/` falls back to this vanilla console when `frontend/dist` is absent.
 
-The React preview namespace is the same-backend opt-in route:
+The React surface is served by the same backend at `/` and `/app/`:
 
-- `/app/` serves `frontend/dist/index.html` when the ignored build output
-  exists.
+- `/` serves `frontend/dist/index.html` when the build exists, else the vanilla
+  console.
+- `/app/` serves `frontend/dist/index.html` when the build exists and returns a
+  clear build hint when it is absent.
 - `/app/assets/*` serves files from `frontend/dist/assets/*` through the same
   root-resolution guard.
-- `/app/` returns a clear build hint instead of crashing when `frontend/dist`
-  is absent.
-- `/app/` rewrites Vite `/assets/*` references to `/app/assets/*`, so the
-  backend route does not need to expose root-level `/assets/*`.
+- The React index served at `/` and `/app/` rewrites Vite `/assets/*` references
+  to `/app/assets/*`, so the backend serves React assets from one guarded path.
 - `frontend-info` reports `react_app_url`, `app_static_available`,
-  `app_build_status`, the individual index/assets/reference checks, and a
-  `recommended_ui_url` that points to `/app/` only when a complete React build
-  exists. This is launch guidance, not default-entry approval.
+  `app_build_status`, the individual index/assets/reference checks, a
+  `recommended_ui_url` that points to `/`, and `is_default_entry_point: true`.
 
 Evidence:
 
-- `tests/test_gui_server.py::test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes`
-- `tests/test_gui_server.py::test_react_app_preview_route_serves_dist_without_changing_default_routes`
+- `tests/test_gui_server.py::test_root_and_app_serve_react_when_build_available`
+- `tests/test_gui_server.py::test_root_falls_back_to_vanilla_console_when_react_build_missing`
 - `tests/test_gui_server.py::test_react_app_preview_route_reports_missing_dist_without_crashing`
 - `python3 -m agentsassemble.cli frontend-info --json`
 
@@ -238,10 +242,10 @@ Use these checks to support parity rows:
 
 ## Explicit Non-Goals
 
-- No route flip in this slice.
-- No default-serving React from `/`.
-- No React component, Tailwind, Vite, or build pipeline change.
-- No additional route flip, provider execution endpoint, or browser-side
-  mutation endpoint from React parity work.
-- No default-entry-point change.
-- No claim that current partial rows prove enough to default React.
+- No removal of the vanilla console; `/legacy/` stays the tested fallback.
+- No provider execution endpoint or browser-side mutation endpoint added through
+  React parity work.
+- No claim that headless API/SSE parity replaces operator browser verification
+  of the four React surfaces.
+- No Tailwind/Vite build-pipeline redesign bundled into the route flip.
+- No committed `frontend/dist`; the build stays gitignored and operator-run.

@@ -1,35 +1,33 @@
 # AgentsAssemble Frontend
 
 React + Vite + Tailwind v4 frontend for AgentsAssemble.
-Discord-inspired live room UI. Separate from the default vanilla backend/operator console.
+This is the default operator console for the local GUI room.
 
-The default entry point is still:
+Start the backend:
 
 ```bash
 python3 -m agentsassemble.cli gui --port 8765
 ```
 
-This React/Vite surface is opt-in until API/SSE parity and fallback behavior are verified.
-The vanilla legacy console namespace is now explicit: the same dependency-light
-operator console is available at `/` and `/legacy/`; the default entry point is unchanged.
-The parity gate for any future default-route change lives in
-`docs/product/legacy-react-parity-matrix.md`.
+`/` serves this React operator console once a production build exists; until
+then it falls back to the dependency-light vanilla console. The vanilla
+legacy console namespace stays explicit: the same vanilla console is always
+reachable at `/legacy/`, and the React app is also aliased at `/app/`. The
+completed default-route flip and its operator-verified browser-parity caveat
+live in `docs/product/legacy-react-parity-matrix.md`.
 
-When a production build exists, the Python GUI can also serve the React preview
-from the same backend at `/app/`:
+Build the React default and serve it from the same backend:
 
 ```bash
 npm run build
 python3 -m agentsassemble.cli gui --port 8765
 ```
 
-Open http://127.0.0.1:8765/app/
+Open http://127.0.0.1:8765/ (or the `/app/` alias).
 
-This preview route is still opt-in. `/` remains the vanilla console and
-`/legacy/` remains the fallback until the parity matrix supports a deliberate
-default flip. The GUI startup banner prints the `/app/` preview URL when the
-build is present; otherwise it prints the build command instead of implying that
-the React preview is ready.
+The GUI startup banner prints the React default URL when the build is present;
+otherwise it prints the build command and serves the vanilla console at `/`
+until the build exists.
 
 ## Prerequisites
 

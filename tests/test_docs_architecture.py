@@ -33,7 +33,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("docs/product/OPERATING_MODEL.md", agents)
         self.assertIn("docs/product/OPERATING_MODEL.md", roadmap)
 
-    def test_frontend_launch_docs_distinguish_default_console_from_react_opt_in(self):
+    def test_frontend_launch_docs_distinguish_react_default_from_legacy_fallback(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         live_agent_ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
         frontend_readme = (ROOT / "frontend" / "README.md").read_text(encoding="utf-8")
@@ -42,14 +42,14 @@ class DocsArchitectureTests(unittest.TestCase):
         combined = "\n".join([readme, live_agent_ops, frontend_readme, frontend_design])
         normalized_ops = " ".join(live_agent_ops.split())
 
-        self.assertIn("default dependency-light vanilla backend/operator console", combined)
+        self.assertIn("React operator console", combined)
         self.assertIn("React/Vite frontend", combined)
-        self.assertIn("opt-in development surface", combined)
+        self.assertIn("vanilla fallback", combined)
         self.assertIn("python3 -m agentsassemble.cli frontend-info", combined)
         self.assertIn("http://127.0.0.1:8765", frontend_readme)
         self.assertIn("/legacy/", frontend_readme)
         self.assertIn("legacy console namespace", combined)
-        self.assertIn("default entry point is unchanged", combined)
+        self.assertIn("default entry point", combined)
         self.assertIn("http://127.0.0.1:8765", vite_config)
         self.assertIn("does not start a dev server, GUI backend, or provider CLI", normalized_ops)
         self.assertIn("aspirational React/Vite direction", frontend_design)
@@ -82,15 +82,15 @@ class DocsArchitectureTests(unittest.TestCase):
             "API/SSE parity",
             "room-event contracts",
             "legacy fallback",
-            "filled rows are not sufficient for defaulting React",
+            "operator-verified",
             "tests/test_legacy_react_parity_inventory.py",
             "| Full REST/SSE inventory | `agentsassemble/gui.py` | `frontend/src/api.ts` | verified |",
-            "tests/test_gui_server.py::test_legacy_console_namespace_serves_vanilla_console_without_changing_default_routes",
+            "tests/test_gui_server.py::test_root_falls_back_to_vanilla_console_when_react_build_missing",
         ):
             self.assertIn(required, matrix)
         for doc in (readme, live_agent_ops, frontend_readme, operating_model, release_checklist):
             self.assertIn(matrix_path, doc)
-        self.assertIn("- React/Vite/Tailwind migration.", release_checklist)
+        self.assertIn("React/Vite/Tailwind visual redesign", release_checklist)
 
     def test_operating_model_records_room_first_agent_owned_context(self):
         operating_model = (ROOT / "docs" / "product" / "OPERATING_MODEL.md").read_text(encoding="utf-8")

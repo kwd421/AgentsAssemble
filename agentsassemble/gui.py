@@ -7377,15 +7377,12 @@ def _print_gui_startup_banner(server_url: str, *, frontend_dist_root: Path | Non
     dist_status = frontend_dist_status(frontend_dist_root)
     print(f"AgentsAssemble GUI: {base_url}")
     if dist_status.static_available:
-        print(f"- Recommended current UI: {base_url}/app/ (React preview)")
+        print(f"- Operator console (default): {base_url}/ (React)")
+        print(f"- React console alias: {base_url}/app/")
     else:
-        print(f"- Recommended current UI: {base_url}/ (legacy fallback)")
-    print(f"- Legacy vanilla console (default entry point): {base_url}/")
-    print(f"- Legacy vanilla console (alias): {base_url}/legacy/")
-    if dist_status.static_available:
-        print(f"- React preview (opt-in, not the default entry point): {base_url}/app/")
-    else:
-        print(f"- React preview (opt-in) build missing: run {REACT_APP_BUILD_COMMAND}")
+        print(f"- Operator console (default): {base_url}/ (legacy vanilla fallback)")
+        print(f"- Build React for the default console: {REACT_APP_BUILD_COMMAND}")
+    print(f"- Legacy vanilla console: {base_url}/legacy/")
 
 
 def _make_handler(
@@ -7409,7 +7406,10 @@ def _make_handler(
             path = parsed.path
             query = parse_qs(parsed.query)
             if path == "/":
-                self._send_file(static_root / "index.html", "text/html; charset=utf-8")
+                if frontend_dist_status(react_app_root).static_available:
+                    self._send_react_app_index(react_app_root)
+                else:
+                    self._send_file(static_root / "index.html", "text/html; charset=utf-8")
                 return
             if path in {"/legacy", "/legacy/"}:
                 self._send_file(static_root / "index.html", "text/html; charset=utf-8")

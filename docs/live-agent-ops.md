@@ -16,15 +16,17 @@ Open:
 http://127.0.0.1:8765
 ```
 
-This is the default dependency-light vanilla backend/operator console. The
-React/Vite frontend in `frontend/` is an opt-in development surface on port
-5173 and proxies API calls to this backend by default. Use
+`/` serves the React operator console once `npm --prefix frontend run build`
+exists; until then it falls back to this dependency-light vanilla console. The
+vanilla console stays reachable at `/legacy/`, and the React app is also aliased
+at `/app/`. The React/Vite dev server in `frontend/` runs on port 5173 and
+proxies API calls to this backend by default. Use
 `python3 -m agentsassemble.cli frontend-info` for read-only launch guidance;
 that command prints a recommended current UI URL based on whether the built
-React preview is available. Its JSON also includes `app_build_status` and
+React app is available. Its JSON also includes `app_build_status` and
 `app_referenced_assets_present` so partial or stale builds explain why the
-legacy fallback is recommended. It does not start a dev server, GUI backend, or
-provider CLI. The default-route parity gate is tracked in
+vanilla fallback is recommended. It does not start a dev server, GUI backend, or
+provider CLI. The completed default-route flip is tracked in
 `docs/product/legacy-react-parity-matrix.md`.
 
 The lobby is the public room surface and should read first as a staging room,

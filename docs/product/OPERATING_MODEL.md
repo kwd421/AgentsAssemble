@@ -84,21 +84,18 @@ report.
   loop, remote bridge, or stateless prompt call.
 - frontend polish is deferred until the backend state and data contracts are
   stable enough for another AI or human designer to refine.
-- The current GUI remains a dependency-light vanilla HTML/CSS/JS operator
-  console until that contract is stable; React, Vite, and Tailwind are a later
-  frontend track, not part of live-room stabilization.
-- A React/Vite frontend may be developed and served as an opt-in operator
-  surface while those contracts settle, but it must not become the default
-  entry point until API/SSE parity, room-event contracts, and legacy fallback
-  behavior are verified.
-- Legacy console namespace isolation is step 1 of that migration path: the
-  vanilla console is reachable at both `/` and `/legacy/`, the default entry
-  point is unchanged, and React defaulting still requires the documented parity
-  evidence instead of a route flip alone.
-- The built React/Vite frontend may be served by the Python GUI at `/app/` as
-  an opt-in preview when `frontend/dist` exists. This does not make React the
-  default entry point; `/` remains the vanilla console and `/legacy/` remains
-  the fallback.
+- The React/Vite operator console is now the default GUI surface at `/`, served
+  by the Python GUI from `frontend/dist` when that build exists.
+- The dependency-light vanilla HTML/CSS/JS console is the fallback: `/` serves
+  it when no React build exists, and it stays reachable at `/legacy/`.
+- The default-route flip required and now has API/SSE parity, stable room-event
+  contracts, and a tested legacy fallback; browser-rendered parity for the four
+  React surfaces stays operator-verified after each build, not asserted
+  headlessly.
+- `frontend-info` reports `is_default_entry_point: true`; the React index served
+  at `/` and the `/app/` alias rewrites `/assets/*` to the guarded
+  `/app/assets/*` path. Provider startup approval, official records, and
+  Work/Play separation are unchanged by the route flip.
 - The detailed roadmap board is a later product-UI feature, not another panel
   to bolt onto the current vanilla console. When the React/Vite frontend track
   starts, add a dedicated roadmap view that can show long-term epics and
