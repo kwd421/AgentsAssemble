@@ -48,7 +48,7 @@ export default function WorkroomQueuePanel({
             작업 큐 / 승인 게이트
           </h2>
           <p className="mt-1 text-[12px] text-text-muted preserve-words">
-            lifecycle과 공식 산출물 상태만 읽어 지금 막힌 일과 검토 대상을 요약합니다.
+            회의 진행과 공식 산출물 상태만 읽어 지금 막힌 일과 검토 대상을 요약합니다.
           </p>
         </div>
         <span className="rounded-md border border-accent/20 bg-black/20 px-3 py-2 text-[11px] font-black text-text-muted">

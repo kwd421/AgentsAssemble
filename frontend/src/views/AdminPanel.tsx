@@ -214,7 +214,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="ops-panel ops-cut mx-auto flex min-h-full max-w-5xl flex-col overflow-hidden">
+    <div className="ops-panel ops-cut mx-auto flex h-full min-h-0 max-w-5xl flex-col overflow-hidden">
       <div className="flex shrink-0 items-center justify-between border-b border-accent/14 px-5 py-4">
         <div className="flex items-center gap-3">
           <span className="hex-badge">

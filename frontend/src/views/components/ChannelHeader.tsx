@@ -41,7 +41,7 @@ export default function ChannelHeader({
             onClick={onToggleMembers}
             aria-label="멤버 목록 토글"
             aria-pressed={membersOpen}
-            className={`grid h-8 w-8 place-items-center rounded hover:bg-sidebar-hover ${
+            className={`hidden h-8 w-8 place-items-center rounded hover:bg-sidebar-hover xl:grid ${
               membersOpen ? "text-text-primary" : "text-text-muted"
             }`}
           >

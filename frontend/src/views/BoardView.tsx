@@ -44,7 +44,7 @@ export default function BoardView({
       <ChannelHeader
         icon={<LayoutDashboard size={20} />}
         title="작전판"
-        subtitle={flow.topic || flow.meeting_id || "회의 lifecycle 기반 읽기 전용 종합"}
+        subtitle={flow.topic || flow.meeting_id || "회의 진행 상태 · 읽기 전용"}
         membersOpen={membersOpen}
         onToggleMembers={onToggleMembers}
       >
