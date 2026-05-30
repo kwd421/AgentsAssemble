@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Archive, LayoutDashboard, Radio, Settings, ShieldCheck, Users } from "lucide-react";
+import { Archive, LayoutDashboard, Radio, ShieldCheck, Users } from "lucide-react";
 import type { FlowResponse, LifecycleProjection, LiveAgent } from "../../api";
 import {
   lifecycleStateLabel,
@@ -7,20 +7,20 @@ import {
 } from "../../lib/lifecycleLabels";
 
 type RoomSurface = "lobby" | "live" | "board" | "records" | "admin";
+type CoreRoomSurface = Exclude<RoomSurface, "admin">;
 
 type SurfaceCommand = {
-  id: RoomSurface;
+  id: CoreRoomSurface;
   label: string;
   detail: string;
   icon: LucideIcon;
 };
 
 const SURFACE_COMMANDS: SurfaceCommand[] = [
-  { id: "lobby", label: "로비 준비", detail: "참가자/초대", icon: Users },
-  { id: "live", label: "실황 보기", detail: "대화 흐름", icon: Radio },
+  { id: "lobby", label: "로비", detail: "준비/초대", icon: Users },
+  { id: "live", label: "실황", detail: "대화 흐름", icon: Radio },
   { id: "board", label: "작전판", detail: "작업 상태", icon: LayoutDashboard },
-  { id: "admin", label: "검증", detail: "헬스/리소스", icon: Settings },
-  { id: "records", label: "기록", detail: "결정/회의록", icon: Archive },
+  { id: "records", label: "아카이브", detail: "결정/회의록", icon: Archive },
 ];
 
 function activeAgentCount(agents: LiveAgent[]) {
@@ -45,7 +45,7 @@ export default function RoomCommandStrip({
   agents: LiveAgent[];
   flow: FlowResponse["flow"];
   lifecycle: LifecycleProjection | null;
-  onSelectSurface: (surface: RoomSurface) => void;
+  onSelectSurface: (surface: CoreRoomSurface) => void;
 }) {
   const summary = summarizeCompactLifecycle(lifecycle);
   const stateLabel = lifecycleStateLabel(summary.state === "none" ? "" : summary.state);
@@ -90,9 +90,14 @@ export default function RoomCommandStrip({
               </span>
             ))}
           </div>
-          <p className="mt-2 text-[13px] font-bold leading-relaxed text-text-primary preserve-words">
-            {summary.nextAction}
-          </p>
+          <div className="mt-2 flex flex-wrap items-baseline gap-2">
+            <span className="text-[10px] font-black uppercase tracking-wide text-text-muted">
+              다음 행동
+            </span>
+            <p className="min-w-0 flex-1 text-[13px] font-bold leading-relaxed text-text-primary preserve-words">
+              {summary.nextAction}
+            </p>
+          </div>
         </div>
 
         <div className="flex gap-2 overflow-x-auto pb-1 xl:pb-0">

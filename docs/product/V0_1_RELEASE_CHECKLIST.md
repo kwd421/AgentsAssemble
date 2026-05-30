@@ -180,8 +180,9 @@ Completed evidence:
 
 The next implementation slice should be chosen from this queue:
 
-- Make the GUI label the core flow as Lobby, Live, Board, Archive with one clear
-  next action per state.
+- Keep the React command strip focused on the core flow as Lobby, Live, Board,
+  Archive with one clear next action per state; management, release-health, and
+  resource inspection stay in the separate admin surface.
 - Add or improve tests that verify the GUI does not replace live-event rows
   unnecessarily during refresh.
   - Evidence: `node --test tests/static_app_runtime_smoke.mjs` covers a full
