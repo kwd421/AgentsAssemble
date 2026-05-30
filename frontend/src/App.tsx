@@ -355,7 +355,7 @@ export default function App() {
           onSelectSurface={handleCommandSurface}
         />
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-16 pt-3 chat-scroll lg:px-4 lg:pb-3">
+        <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-16 pt-3 chat-scroll lg:px-4 lg:pb-3 xl:overflow-hidden">
           {adminOpen ? (
             <AdminPanel onClose={() => setAdminOpen(false)} />
           ) : channel === "lobby" ? (

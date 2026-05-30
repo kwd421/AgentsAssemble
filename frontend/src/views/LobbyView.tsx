@@ -426,8 +426,8 @@ export default function LobbyView({
   }
 
   return (
-    <div className="grid min-h-full gap-3 xl:grid-cols-[300px_minmax(0,1fr)_320px]">
-      <aside className="space-y-3">
+    <div className="grid min-h-full gap-3 overflow-y-auto xl:h-full xl:min-h-0 xl:overflow-hidden xl:grid-cols-[300px_minmax(0,1fr)_320px]">
+      <aside className="flex min-h-0 flex-col gap-3 overflow-visible chat-scroll xl:overflow-y-auto xl:pr-1">
         <section className="ops-panel ops-cut p-3">
           <div className="mb-4 flex items-center justify-between border-b border-accent/14 pb-3">
             <h2 className="flex items-center gap-2 text-[15px] font-black">
@@ -593,10 +593,10 @@ export default function LobbyView({
         </section>
       </aside>
 
-      <section className="flex min-h-[calc(100dvh-178px)] flex-col gap-3">
+      <section className="flex min-h-[520px] flex-col gap-3 xl:h-full xl:min-h-0 xl:overflow-hidden">
         <LifecycleBanner lifecycle={lifecycle} surface="lobby" />
 
-        <div className="ops-panel ops-cut flex min-h-[520px] flex-1 flex-col overflow-hidden">
+        <div className="ops-panel ops-cut flex min-h-[420px] flex-1 flex-col overflow-hidden xl:min-h-0">
           <div className="flex items-center justify-between gap-3 border-b border-accent/14 px-4 py-3">
             <div>
               <h2 className="text-[16px] font-black">로비 채팅</h2>
@@ -625,7 +625,7 @@ export default function LobbyView({
         </div>
       </section>
 
-      <aside className="space-y-3">
+      <aside className="flex min-h-0 flex-col gap-3 overflow-visible chat-scroll xl:overflow-y-auto xl:pr-1">
         <section className="ops-panel ops-cut p-3">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">

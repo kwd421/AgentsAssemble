@@ -377,10 +377,14 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("ops-cta", section)
 
     def test_react_lobby_prioritizes_chat_over_operator_cards(self):
+        app_source = frontend_file("App.tsx")
         lobby_source = frontend_file("views/LobbyView.tsx")
 
-        self.assertIn('className="flex min-h-[calc(100dvh-178px)] flex-col gap-3"', lobby_source)
-        self.assertIn('className="ops-panel ops-cut flex min-h-[520px] flex-1 flex-col overflow-hidden"', lobby_source)
+        self.assertIn("xl:overflow-hidden", app_source)
+        self.assertIn('className="grid min-h-full gap-3 overflow-y-auto xl:h-full xl:min-h-0 xl:overflow-hidden xl:grid-cols-[300px_minmax(0,1fr)_320px]"', lobby_source)
+        self.assertIn('className="flex min-h-[520px] flex-col gap-3 xl:h-full xl:min-h-0 xl:overflow-hidden"', lobby_source)
+        self.assertIn('className="ops-panel ops-cut flex min-h-[420px] flex-1 flex-col overflow-hidden xl:min-h-0"', lobby_source)
+        self.assertIn('className="min-h-0 flex-1 overflow-y-auto chat-scroll"', lobby_source)
         self.assertIn("const visibleEvents = useMemo(() => events, [events]);", lobby_source)
         self.assertIn("visibleEvents.map((event) => <EventRow key={event.id} event={event} />)", lobby_source)
         self.assertIn("<LobbyComposer onPosted={handleLobbyPosted} />", lobby_source)
@@ -389,6 +393,16 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("latestEvents", lobby_source)
         self.assertNotIn("ops-hero", lobby_source)
         self.assertNotIn("룸 이벤트", lobby_source)
+
+    def test_react_live_uses_fixed_shell_with_internal_timeline_scroll(self):
+        app_source = frontend_file("App.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertIn("xl:overflow-hidden", app_source)
+        self.assertIn('className="grid min-h-full gap-4 overflow-y-auto xl:h-full xl:min-h-0 xl:overflow-hidden xl:grid-cols-[390px_minmax(0,1fr)_390px]"', live_source)
+        self.assertIn('className="flex min-h-0 flex-col gap-4 overflow-visible chat-scroll xl:overflow-y-auto xl:pr-1"', live_source)
+        self.assertIn('className="ops-panel ops-cut flex min-h-[620px] flex-col overflow-hidden xl:h-full xl:min-h-0"', live_source)
+        self.assertIn('className="relative flex-1 overflow-y-auto px-4 py-5 chat-scroll"', live_source)
 
     def test_react_lobby_external_participation_wraps_safe_join_brief_endpoint(self):
         api_source = frontend_file("api.ts")

@@ -827,8 +827,8 @@ export default function LiveView({
   useEffect(() => subscribeLobby(mergeFlowEvents), [mergeFlowEvents]);
 
   return (
-    <div className="grid min-h-full gap-4 xl:grid-cols-[390px_minmax(0,1fr)_390px]">
-      <aside className="space-y-4">
+    <div className="grid min-h-full gap-4 overflow-y-auto xl:h-full xl:min-h-0 xl:overflow-hidden xl:grid-cols-[390px_minmax(0,1fr)_390px]">
+      <aside className="flex min-h-0 flex-col gap-4 overflow-visible chat-scroll xl:overflow-y-auto xl:pr-1">
         <section className="ops-panel ops-cut p-4">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-[17px] font-black">세션 요약</h2>
@@ -911,7 +911,7 @@ export default function LiveView({
       {mafiaGame ? (
         <MafiaPanel game={mafiaGame} refreshMafia={refreshMafia} />
       ) : (
-        <section className="ops-panel ops-cut flex min-h-[620px] flex-col overflow-hidden">
+        <section className="ops-panel ops-cut flex min-h-[620px] flex-col overflow-hidden xl:h-full xl:min-h-0">
           <div className="flex shrink-0 items-center justify-between border-b border-accent/14 px-5 py-4">
             <div>
               <div className="flex items-center gap-2">
@@ -980,7 +980,7 @@ export default function LiveView({
         </section>
       )}
 
-      <aside className="space-y-4">
+      <aside className="flex min-h-0 flex-col gap-4 overflow-visible chat-scroll xl:overflow-y-auto xl:pr-1">
         <LifecyclePanel lifecycle={lifecycle} loading={lifecycleLoading} error={lifecycleError} />
 
         <SideChatPanel
