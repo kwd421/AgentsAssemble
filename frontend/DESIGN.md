@@ -77,6 +77,23 @@ Channels:
   effects are removed.
 - Motion is limited to a small presence pulse, disabled under reduced motion.
 
+## Known Gaps (out of scope for this pass)
+
+The participant/invite surfaces are intentionally honest about what exists today:
+
+- **Join Brief** (admin → 외부 참여) generates a host-approved entry packet for a
+  manually-run resident via `/api/live-agent-join-brief`. It does **not** start a
+  provider, perform remote admission, or authenticate a remote client. The UI
+  labels this (`provider 시작 아님`, `not_started_by_join_brief`, host-approval).
+- **LAN Invite** is a CLI-only PoC (HMAC entry proof) shown as command skeletons
+  with env secret refs. There is no in-app token issuance, no relay/WebRTC, no
+  internet exposure.
+- The affordance is labeled **로컬·신뢰 네트워크 전용** and notes that remote
+  admission and authentication do not exist yet.
+
+Real backend auth, remote admission, and provider execution are not implemented
+here and are not claimed complete. The UI stays honest rather than implying them.
+
 ## Acceptance Checks
 
 - `npm run build` passes (`tsc && vite build`).

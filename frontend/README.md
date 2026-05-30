@@ -94,7 +94,8 @@ Discord-inspired shell (see `DESIGN.md`):
 - 작전판: read-only meeting lifecycle synthesis (view only)
 - 아카이브: meeting list + final artifact viewer (readable prose, not raw pre)
 
-Admin (read-only health, release-health, resources) is reachable from the rail
-gear. Play Mode start/stop does not start real provider CLIs.
+Admin (read-only health, release-health, resources, and the CLI-only external-agent
+invite: join brief / LAN invite) is reachable from the rail gear. Play Mode
+start/stop does not start real provider CLIs.
 
 Play Mode start/stop does not start real provider CLIs.

@@ -25,15 +25,17 @@ def frontend_file(relative_path: str) -> str:
 
 
 def react_lobby_external_participation_section() -> str:
-    source = frontend_file("views/LobbyView.tsx")
+    # The join/invite affordance now lives in the admin surface, not the
+    # default lobby. Helper name kept stable for the focused invite tests.
+    source = frontend_file("views/AdminPanel.tsx")
     start = source.index("외부 참여")
     return source[start : source.index("</section>", start)]
 
 
 def react_lobby_external_participation_surface() -> str:
-    source = frontend_file("views/LobbyView.tsx")
+    source = frontend_file("views/AdminPanel.tsx")
     commands_start = source.index("const JOIN_BRIEF_COMMAND")
-    commands = source[commands_start : source.index("function timeLabel", commands_start)]
+    commands = source[commands_start : source.index("function formatSnapshotAge", commands_start)]
     return f"{commands}\n{react_lobby_external_participation_section()}"
 
 
@@ -417,7 +419,7 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_react_lobby_external_participation_wraps_safe_join_brief_endpoint(self):
         api_source = frontend_file("api.ts")
-        lobby_source = frontend_file("views/LobbyView.tsx")
+        admin_source = frontend_file("views/AdminPanel.tsx")
         section = react_lobby_external_participation_section()
 
         self.assertIn("export interface LiveAgentJoinBriefRequest", api_source)
@@ -428,17 +430,17 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("execution_contract?:", api_source)
         self.assertIn("safety?:", api_source)
 
-        self.assertIn("createLiveAgentJoinBrief", lobby_source)
-        self.assertIn("handleCreateJoinBrief", lobby_source)
-        self.assertIn("joinBriefAgentId", lobby_source)
+        self.assertIn("createLiveAgentJoinBrief", admin_source)
+        self.assertIn("handleCreateJoinBrief", admin_source)
+        self.assertIn("joinBriefAgentId", admin_source)
         self.assertIn("joinBrief?.safety?.provider_executed", section)
         self.assertIn("joinBrief?.safety?.room_contacted", section)
-        self.assertIn("joinBriefPreview", lobby_source)
+        self.assertIn("joinBriefPreview", admin_source)
         self.assertIn("not_started_by_join_brief", section)
         self.assertIn("Provider 실행 없음", section)
 
     def test_react_lobby_external_participation_uses_safe_command_skeletons_with_env_secret_refs(self):
-        source = frontend_file("views/LobbyView.tsx")
+        source = frontend_file("views/AdminPanel.tsx")
         section = react_lobby_external_participation_section()
         surface = react_lobby_external_participation_surface()
 
@@ -478,7 +480,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("remote registration 아님", section)
 
     def test_react_lobby_external_participation_has_no_unsafe_actions_or_token_io(self):
-        source = frontend_file("views/LobbyView.tsx")
+        source = frontend_file("views/AdminPanel.tsx")
         surface = react_lobby_external_participation_surface()
 
         for forbidden in [
@@ -730,6 +732,12 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("<LobbyComposer onPosted={handleLobbyPosted} />", lobby_source)
         # lifecycle is still polled at the shell level for the board channel.
         self.assertIn("lifecycle", app_source)
+        # The join/invite affordance moved out of the default lobby surface to
+        # the admin panel; the lobby has no invite controls or jargon.
+        self.assertNotIn("외부 참여", lobby_source)
+        self.assertNotIn("JOIN_BRIEF_COMMAND", lobby_source)
+        self.assertNotIn("createLiveAgentJoinBrief", lobby_source)
+        self.assertNotIn("handleCreateJoinBrief", lobby_source)
 
         for forbidden in [
             "startProvider",
@@ -745,6 +753,58 @@ class StaticUiAssetTests(unittest.TestCase):
             "prompt:",
         ]:
             self.assertNotIn(forbidden, lobby_source)
+
+    def test_react_discord_shell_internal_scroll_and_no_default_clutter(self):
+        app_source = frontend_file("App.tsx")
+        css = (FRONTEND_DIR / "index.css").read_text()
+        admin_source = frontend_file("views/AdminPanel.tsx")
+        channels = {
+            "lobby": frontend_file("views/LobbyView.tsx"),
+            "live": frontend_file("views/LiveView.tsx"),
+            "board": frontend_file("views/BoardView.tsx"),
+            "records": frontend_file("views/RecordsView.tsx"),
+        }
+
+        # Fixed full-height shell: the page/body is not the desktop scroll surface.
+        self.assertIn("h-screen max-h-screen overflow-hidden", app_source)
+        # Discord shell regions exist in the theme.
+        for cls in (".dc-rail", ".dc-sidebar", ".dc-channel", ".dc-members", ".dc-chat-head"):
+            self.assertIn(cls, css)
+        # The shell renders one channel nav + a collapsible member list.
+        self.assertIn("dc-channel", app_source)
+        self.assertIn("MemberList", app_source)
+        self.assertIn("membersOpen", app_source)
+
+        # Every channel has a header and scrolls inside its own region.
+        for name, source in channels.items():
+            with self.subTest(channel=name):
+                self.assertIn("ChannelHeader", source)
+                self.assertIn("min-h-0", source)
+                self.assertIn("flex-1", source)
+                self.assertIn("overflow-y-auto", source)
+                self.assertIn("chat-scroll", source)
+
+        # No operator-dashboard clutter on the default (non-admin) surfaces.
+        default_surface = "\n".join([app_source, *channels.values()])
+        for token in (
+            "핵심 포인트",
+            "빠른 작업",
+            "라이브 상태",
+            "호스트 컨트롤",
+            "세션 요약",
+            "보드 인사이트",
+            "결정 준비도",
+            "LifecyclePanel",
+            "RoomCommandStrip",
+            "ops-hero",
+            "ops-meter",
+        ):
+            self.assertNotIn(token, default_surface)
+
+        # The invite/join affordance is admin-only and collapsed there.
+        self.assertIn("외부 참여", admin_source)
+        self.assertIn("로컬·신뢰 네트워크 전용", admin_source)
+        self.assertNotIn("외부 참여", default_surface)
 
     def test_react_app_surfaces_single_channel_navigation_without_duplicate_strip(self):
         app_source = frontend_file("App.tsx")
