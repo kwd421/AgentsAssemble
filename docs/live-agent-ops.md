@@ -763,7 +763,10 @@ the latest flow event as the source for one invisible tick candidate, but the
 room does not post "continue talking" nudges on behalf of a moderator. The
 default loop is bounded by time and cooldown only: `--max-agent-turns 0` and
 `--max-total-turns 0` mean unlimited speaking turns. Operators can still set
-non-zero turn budgets for demos, quota-limited providers, or tests.
+non-zero turn budgets for demos, quota-limited providers, or tests. The flow
+topic follows the lobby message-sized text limit instead of the old 240-character
+UI guard, so longer debate prompts remain visible in the control event,
+restored flow status, and resident decision prompt.
 
 The flow status endpoint is read-only:
 

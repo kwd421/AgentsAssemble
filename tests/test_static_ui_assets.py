@@ -1567,6 +1567,8 @@ class StaticUiAssetTests(unittest.TestCase):
 
         self.assertIn("Play Mode 자유토론", script)
         self.assertIn('id="live-agent-flow-topic"', script)
+        self.assertIn('id="live-agent-flow-topic" maxlength="2000"', script)
+        self.assertNotIn('id="live-agent-flow-topic" maxlength="240"', script)
         self.assertIn('id="live-agent-flow-duration"', script)
         self.assertIn('id="live-agent-flow-start"', script)
         self.assertIn('id="live-agent-flow-stop"', script)

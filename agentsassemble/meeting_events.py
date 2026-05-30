@@ -39,6 +39,7 @@ LOBBY_CHANNELS: set[str] = {"lobby", "side_chat"}
 OFFICIAL_LIVE_KINDS: set[str] = {"message", "synthesis", "promoted_context"}
 JSONL_TAIL_BLOCK_BYTES = 8192
 LOBBY_MESSAGE_LIMIT = 2000
+ROOM_TOPIC_LIMIT = LOBBY_MESSAGE_LIMIT
 
 
 @dataclass(frozen=True)
@@ -106,7 +107,7 @@ class LobbyEvent:
             flow_meeting_id=clean_lobby_text(payload.get("flow_meeting_id", ""), limit=128),
             flow_event_type=clean_lobby_text(payload.get("flow_event_type", ""), limit=64),
             flow_status=clean_lobby_text(payload.get("flow_status", ""), limit=64),
-            flow_topic=clean_lobby_text(payload.get("flow_topic", ""), limit=240),
+            flow_topic=clean_lobby_text(payload.get("flow_topic", ""), limit=ROOM_TOPIC_LIMIT),
             flow_action=clean_lobby_text(payload.get("flow_action", ""), limit=64),
             flow_reason=clean_lobby_text(payload.get("flow_reason", ""), limit=400),
             flow_duration_seconds=normalize_flow_int(payload.get("flow_duration_seconds")),
@@ -149,7 +150,7 @@ class LobbyEvent:
             flow_meeting_id=clean_lobby_text(payload.get("flow_meeting_id", ""), limit=128),
             flow_event_type=clean_lobby_text(payload.get("flow_event_type", ""), limit=64),
             flow_status=clean_lobby_text(payload.get("flow_status", ""), limit=64),
-            flow_topic=clean_lobby_text(payload.get("flow_topic", ""), limit=240),
+            flow_topic=clean_lobby_text(payload.get("flow_topic", ""), limit=ROOM_TOPIC_LIMIT),
             flow_action=clean_lobby_text(payload.get("flow_action", ""), limit=64),
             flow_reason=clean_lobby_text(payload.get("flow_reason", ""), limit=400),
             flow_duration_seconds=normalize_flow_int(payload.get("flow_duration_seconds")),

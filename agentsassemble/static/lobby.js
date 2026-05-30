@@ -865,7 +865,7 @@ function renderLiveAgentProcessControls() {
             <div class="live-agent-flow-panel">
               <strong>Play Mode 자유토론</strong>
               <span class="live-agent-flow-status" aria-live="polite">${escapeHtml(liveAgentFlowStatusLabel(state.liveAgentFlow))}</span>
-              <input id="live-agent-flow-topic" maxlength="240" value="${escapeHtml(defaultFlowTopic)}" aria-label="play mode flow topic" />
+              <input id="live-agent-flow-topic" maxlength="2000" value="${escapeHtml(defaultFlowTopic)}" aria-label="play mode flow topic" />
               <input id="live-agent-flow-duration" type="number" min="1" max="3600" step="1" value="180" aria-label="play mode flow duration seconds" />
               <button type="button" id="live-agent-flow-start" ${processActionsDisabled ? "disabled" : ""}>자유토론</button>
               <button type="button" id="live-agent-flow-stop" ${processActionsDisabled ? "disabled" : ""}>토론중지</button>

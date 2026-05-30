@@ -117,6 +117,7 @@ from agentsassemble.frontend_runtime import (
 )
 from agentsassemble.release_health import release_health_catalog_payload, release_health_queue_payload
 from agentsassemble.meeting_events import (
+    ROOM_TOPIC_LIMIT,
     append_live_event,
     append_lobby_event_to_file,
     append_side_chat_event_to_file,
@@ -175,8 +176,11 @@ class LiveAgentFlowSupervisor:
             raise _meeting_not_found_error(meeting_id)
         meeting = _read_meeting_record(meeting_dir)
         topic = (
-            clean_lobby_text(payload.get("topic"), limit=240)
-            or clean_lobby_text(meeting.get("display_topic") or meeting.get("topic") or meeting.get("question"), limit=240)
+            clean_lobby_text(payload.get("topic"), limit=ROOM_TOPIC_LIMIT)
+            or clean_lobby_text(
+                meeting.get("display_topic") or meeting.get("topic") or meeting.get("question"),
+                limit=ROOM_TOPIC_LIMIT,
+            )
             or "자유토론"
         )
         options = FlowOptions.from_payload(payload)
@@ -450,7 +454,7 @@ def _restored_flow_state(events: list[dict[str, object]], *, meeting_id: str = "
     state: dict[str, object] = {
         "flow_id": flow_id,
         "meeting_id": clean_lobby_text(context.get("flow_meeting_id"), limit=128),
-        "topic": clean_lobby_text(context.get("flow_topic"), limit=240),
+        "topic": clean_lobby_text(context.get("flow_topic"), limit=ROOM_TOPIC_LIMIT),
         "status": status,
         "started_at": clean_lobby_text(context.get("flow_started_at"), limit=64),
         "deadline_at": clean_lobby_text(context.get("flow_deadline_at"), limit=64),
@@ -967,8 +971,8 @@ def build_meeting_stream_payload(
     return {
         "meeting": {
             "meeting_id": meeting_id,
-            "topic": clean_lobby_text(meeting.get("topic"), limit=240),
-            "question": clean_lobby_text(meeting.get("question"), limit=240),
+            "topic": clean_lobby_text(meeting.get("topic"), limit=ROOM_TOPIC_LIMIT),
+            "question": clean_lobby_text(meeting.get("question"), limit=ROOM_TOPIC_LIMIT),
             "live_status": clean_lobby_text(meeting.get("live_status"), limit=64),
         },
         "lifecycle": project_meeting_lifecycle(
@@ -7851,7 +7855,7 @@ def _make_handler(
                         error=str(error),
                         details={
                             "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
-                            "topic": clean_lobby_text(payload.get("topic"), limit=240),
+                            "topic": clean_lobby_text(payload.get("topic"), limit=ROOM_TOPIC_LIMIT),
                         },
                     )
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))

@@ -874,6 +874,31 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertIn('"action"', prompt)
         self.assertIn('"message"', prompt)
 
+    def test_flow_decision_prompt_preserves_long_topic_context(self):
+        long_topic = ("고죠 vs 스쿠나 전투 조건 정리 " + "무량공처와 마허라 적응 변수까지 포함한 긴 토론 주제. " * 8).strip()
+        self.assertGreater(len(long_topic), 240)
+
+        prompt = flow_decision_prompt(
+            config(engagement_mode="flow", meeting_id="m1"),
+            {
+                "meeting_id": "m1",
+                "lobby_events": [
+                    {
+                        "id": "flow-start",
+                        "name": "Play Mode",
+                        "message": "자유토론 시작",
+                        "flow_id": "flow-1",
+                        "flow_meeting_id": "m1",
+                        "flow_event_type": "started",
+                        "flow_topic": long_topic,
+                    }
+                ],
+            },
+            {"id": "flow-start", "name": "Play Mode", "message": "자유토론 시작"},
+        )
+
+        self.assertIn(long_topic, prompt)
+
     def test_flow_decision_prompt_includes_configured_persona_card_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             card_path = Path(temp_dir) / "card.json"

@@ -18502,12 +18502,14 @@ class GuiServerTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
+                long_topic = ("고죠 vs 스쿠나 전투 조건 정리 " + "무량공처와 마허라 적응 변수까지 포함한 긴 토론 주제. " * 8).strip()
+                self.assertGreater(len(long_topic), 240)
                 start_request = Request(
                     f"http://127.0.0.1:{server.server_port}/api/live-agent-flow/start",
                     data=json.dumps(
                         {
                             "meeting_id": "m1",
-                            "topic": "고죠 vs 스쿠나",
+                            "topic": long_topic,
                             "duration_seconds": 30,
                             "tick_interval": 0.01,
                         }
@@ -18531,10 +18533,11 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(payload["flow"]["status"], "running")
             self.assertEqual(payload["flow"]["meeting_id"], "m1")
+            self.assertEqual(payload["flow"]["topic"], long_topic)
             self.assertEqual(payload["flow"]["agent_count"], 1)
             start_event = next(event for event in read_lobby(root) if event.get("flow_event_type") == "started")
             stop_event = next(event for event in read_lobby(root) if event.get("flow_event_type") == "stopped")
-            self.assertEqual(start_event["flow_topic"], "고죠 vs 스쿠나")
+            self.assertEqual(start_event["flow_topic"], long_topic)
             self.assertEqual(stop_event["flow_status"], "stopped")
             self.assertEqual(stop_payload["flow"]["status"], "stopped")
             persisted_agent = json.loads((root / "live_agents.json").read_text(encoding="utf-8"))["agents"][0]

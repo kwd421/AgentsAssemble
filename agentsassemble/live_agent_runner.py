@@ -37,6 +37,7 @@ from agentsassemble.live_agent_flow import (
     parse_flow_decision,
 )
 from agentsassemble.character_mode import clean_first_message_index, clean_persona_card_id, normalize_character_mode
+from agentsassemble.meeting_events import ROOM_TOPIC_LIMIT
 from agentsassemble.models import ENGAGEMENT_MODES, ProviderConfig, Role
 from agentsassemble.persona_cards import load_persona_card, persona_prompt_lines, render_persona_prompt
 from agentsassemble.remote_bridge_config import (
@@ -1067,10 +1068,10 @@ def flow_decision_prompt(config: ResidentAgentConfig, room: dict[str, object], s
     flow_context = active_flow_context(events, meeting_id=_flow_room_meeting_id(config, room)) or {}
     flow_id = _prompt_text(flow_context.get("flow_id"), limit=128)
     topic = (
-        _prompt_text(flow_context.get("flow_topic"), limit=240)
-        or _prompt_text(room.get("display_topic"), limit=240)
-        or _prompt_text(room.get("topic"), limit=240)
-        or _prompt_text(room.get("question"), limit=240)
+        _prompt_text(flow_context.get("flow_topic"), limit=ROOM_TOPIC_LIMIT)
+        or _prompt_text(room.get("display_topic"), limit=ROOM_TOPIC_LIMIT)
+        or _prompt_text(room.get("topic"), limit=ROOM_TOPIC_LIMIT)
+        or _prompt_text(room.get("question"), limit=ROOM_TOPIC_LIMIT)
         or "(free conversation)"
     )
     recent_events = _recent_flow_prompt_events(events, flow_id=flow_id)
