@@ -73,7 +73,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("async function responseErrorMessage", script)
         self.assertIn("payload?.error || payload?.message || fallback", script)
 
-    def test_react_lobby_preserves_agent_owned_room_evidence(self):
+    def test_react_member_list_preserves_agent_owned_room_evidence(self):
         source = frontend_source()
 
         self.assertIn("join_semantics?: string;", source)
@@ -86,26 +86,29 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('agent.last_reply_at ? `reply ${shortDateTime(agent.last_reply_at)}` : ""', source)
         self.assertIn('return { label: "승인됨", tone: "online" };', source)
         self.assertIn('return { label: "승인 대기", tone: "idle" };', source)
-        lobby_source = frontend_file("views/LobbyView.tsx")
-        self.assertIn("providerExecutionLabel(agent)", lobby_source)
-        self.assertNotIn('agent.provider_kind || "resident"', lobby_source)
-        self.assertNotIn("agent.connection_kind || agent.engagement_mode", lobby_source)
+        member_source = frontend_file("views/components/MemberList.tsx")
+        self.assertIn("providerExecutionLabel(agent)", member_source)
+        self.assertIn("agentTruthBadges(agent)", member_source)
+        self.assertIn("lastObservedSummary(agent)", member_source)
+        self.assertNotIn('agent.provider_kind || "resident"', member_source)
+        self.assertNotIn("agent.connection_kind || agent.engagement_mode", member_source)
 
     def test_react_room_messages_wrap_natural_language_without_truncating_body(self):
         lobby_source = frontend_file("views/LobbyView.tsx")
         live_source = frontend_file("views/LiveView.tsx")
-        lobby_body_class = lobby_source.split("{event.message}")[0].rsplit('<p className="', 1)[1].split('">', 1)[0]
-        lobby_speaker_class = lobby_source.split('{event.name || "Room"}')[0].rsplit('<p className="', 1)[1].split('">', 1)[0]
 
-        self.assertIn("truncate", lobby_speaker_class)
-        self.assertIn("preserve-words", lobby_speaker_class)
-        self.assertIn("leading-relaxed", lobby_body_class)
-        self.assertIn("preserve-words", lobby_body_class)
-        self.assertNotIn("truncate", lobby_body_class)
-        self.assertNotIn("line-clamp", lobby_body_class)
-
-        self.assertIn('<p className="text-[14px] leading-relaxed text-text-secondary preserve-words">', live_source)
+        # Message body wraps Korean/tokens without truncation, in both channels.
+        body_class = '<p className="text-[14px] leading-relaxed text-text-secondary preserve-words">'
+        self.assertIn(body_class, lobby_source)
+        self.assertIn(body_class, live_source)
+        self.assertIn("{event.message}", lobby_source)
         self.assertIn("{event.message}", live_source)
+        # Speaker names may truncate but still keep word boundaries.
+        speaker_class = "truncate text-[15px] font-semibold text-text-primary preserve-words"
+        self.assertIn(speaker_class, lobby_source)
+        self.assertIn(speaker_class, live_source)
+        self.assertNotIn("line-clamp", lobby_source)
+        self.assertNotIn("line-clamp", live_source)
 
     def test_react_lobby_event_type_includes_attachment_metadata_contract(self):
         api_source = frontend_file("api.ts")
@@ -147,7 +150,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("sideChatEvents={sideChatEvents}", app_source)
 
         self.assertIn("sideChatEvents", live_source)
-        self.assertIn("SideChatPanel", live_source)
+        self.assertIn("SideChatComposer", live_source)
         self.assertIn("비공식 사이드챗", live_source)
         self.assertIn("공식 기록 제외", live_source)
         self.assertIn("postSideChatMessage", live_source)
@@ -334,7 +337,10 @@ class StaticUiAssetTests(unittest.TestCase):
         live_source = frontend_file("views/LiveView.tsx")
 
         self.assertNotIn("events.slice(-12)", live_source)
-        self.assertIn("const visibleEvents = events;", live_source)
+        self.assertNotIn("sideChatEvents.slice(-", live_source)
+        # All side-chat events are interleaved into the feed without truncation.
+        self.assertIn("sideChatEvents.map", live_source)
+        self.assertIn("feedItems", live_source)
 
     def test_react_live_flow_switch_keeps_state_updates_outside_event_updater(self):
         live_source = frontend_file("views/LiveView.tsx")
@@ -380,29 +386,34 @@ class StaticUiAssetTests(unittest.TestCase):
         app_source = frontend_file("App.tsx")
         lobby_source = frontend_file("views/LobbyView.tsx")
 
-        self.assertIn("xl:overflow-hidden", app_source)
-        self.assertIn('className="grid min-h-full gap-3 overflow-y-auto xl:h-full xl:min-h-0 xl:overflow-hidden xl:grid-cols-[300px_minmax(0,1fr)_320px]"', lobby_source)
-        self.assertIn('className="flex min-h-[520px] flex-col gap-3 xl:h-full xl:min-h-0 xl:overflow-hidden"', lobby_source)
-        self.assertIn('className="ops-panel ops-cut flex min-h-[420px] flex-1 flex-col overflow-hidden xl:min-h-0"', lobby_source)
-        self.assertIn('className="min-h-0 flex-1 overflow-y-auto chat-scroll"', lobby_source)
+        self.assertIn("h-screen max-h-screen overflow-hidden", app_source)
+        self.assertIn('className="flex h-full min-h-0 flex-col"', lobby_source)
+        self.assertIn("min-h-0 flex-1 overflow-y-auto", lobby_source)
+        self.assertIn("chat-scroll", lobby_source)
         self.assertIn("const visibleEvents = useMemo(() => events, [events]);", lobby_source)
-        self.assertIn("visibleEvents.map((event) => <EventRow key={event.id} event={event} />)", lobby_source)
+        self.assertIn(
+            "visibleEvents.map((event) => <MessageRow key={event.id} event={event} />)",
+            lobby_source,
+        )
         self.assertIn("<LobbyComposer onPosted={handleLobbyPosted} />", lobby_source)
-        self.assertIn("<details className=\"ops-panel ops-cut overflow-hidden\">", lobby_source)
-        self.assertNotIn("events.slice(-6)", lobby_source)
-        self.assertNotIn("latestEvents", lobby_source)
+        # Operator-dashboard clutter is gone from the lobby.
         self.assertNotIn("ops-hero", lobby_source)
+        self.assertNotIn("MODE_CARDS", lobby_source)
+        self.assertNotIn("AgentCard", lobby_source)
         self.assertNotIn("룸 이벤트", lobby_source)
+        self.assertNotIn("events.slice(-6)", lobby_source)
 
     def test_react_live_uses_fixed_shell_with_internal_timeline_scroll(self):
         app_source = frontend_file("App.tsx")
         live_source = frontend_file("views/LiveView.tsx")
 
-        self.assertIn("xl:overflow-hidden", app_source)
-        self.assertIn('className="grid min-h-full gap-4 overflow-y-auto xl:h-full xl:min-h-0 xl:overflow-hidden xl:grid-cols-[390px_minmax(0,1fr)_390px]"', live_source)
-        self.assertIn('className="flex min-h-0 flex-col gap-4 overflow-visible chat-scroll xl:overflow-y-auto xl:pr-1"', live_source)
-        self.assertIn('className="ops-panel ops-cut flex min-h-[620px] flex-col overflow-hidden xl:h-full xl:min-h-0"', live_source)
-        self.assertIn('className="relative flex-1 overflow-y-auto px-4 py-5 chat-scroll"', live_source)
+        # Fixed full-height shell; the page/body is not the desktop scroll surface.
+        self.assertIn("h-screen max-h-screen overflow-hidden", app_source)
+        # Live channel column fills the shell and scrolls internally.
+        self.assertIn('className="flex h-full min-h-0 flex-col"', live_source)
+        self.assertIn("min-h-0 flex-1 overflow-y-auto", live_source)
+        self.assertIn("chat-scroll", live_source)
+        self.assertIn("ChannelHeader", live_source)
 
     def test_react_lobby_external_participation_wraps_safe_join_brief_endpoint(self):
         api_source = frontend_file("api.ts")
@@ -682,48 +693,43 @@ class StaticUiAssetTests(unittest.TestCase):
         ]:
             self.assertNotIn(forbidden, api_source)
 
-    def test_react_live_tab_surfaces_meeting_lifecycle_projection(self):
+    def test_react_live_drops_lifecycle_panel_but_keeps_projection_plumbing(self):
         source = frontend_source()
+        live_source = frontend_file("views/LiveView.tsx")
+        board_source = frontend_file("views/BoardView.tsx")
 
+        # Live channel is decluttered: no lifecycle-exposition panel.
+        self.assertNotIn("LifecyclePanel", live_source)
+        self.assertNotIn("라이프사이클", live_source)
+        # But the safe lifecycle projection plumbing still exists and is
+        # surfaced on the board channel as honest synthesis.
         self.assertIn("export interface LifecycleProjection", source)
         self.assertIn("export function fetchMeetingLifecycle", source)
         self.assertIn('`/api/meetings/${encodeURIComponent(meetingId)}/lifecycle`', source)
-        self.assertIn("lifecycleStateLabel", source)
-        self.assertIn("LifecyclePanel", source)
-        self.assertIn("라이프사이클", source)
-        self.assertIn("라이프사이클 확인 중", source)
-        self.assertIn("라이프사이클 응답 없음", source)
-        self.assertIn("권한 검토 필요", source)
-        self.assertIn("미입실", source)
+        self.assertIn("summarizeBoardLifecycle", board_source)
+        self.assertIn("권한 검토 필요", board_source)
+        self.assertIn("미입실", board_source)
         self.assertIn("unsafe_permission_violations", source)
         self.assertNotIn("permission_profile_id}</", source)
         self.assertNotIn("session_id}</", source)
 
-    def test_react_lobby_surfaces_compact_meeting_lifecycle_banner(self):
+    def test_react_lobby_is_clean_chat_without_lifecycle_exposition(self):
         app_source = frontend_file("App.tsx")
         lobby_source = frontend_file("views/LobbyView.tsx")
-        label_source = frontend_file("lib/lifecycleLabels.ts")
-        banner_source = frontend_file("views/components/LifecycleBanner.tsx")
-        surface = "\n".join([app_source, lobby_source, label_source, banner_source])
 
-        self.assertIn("import LifecycleBanner", lobby_source)
-        self.assertIn("type LifecycleProjection", lobby_source)
-        self.assertIn("lifecycle: LifecycleProjection | null;", lobby_source)
-        self.assertIn("<LifecycleBanner lifecycle={lifecycle} surface=\"lobby\" />", lobby_source)
-        self.assertIn("lifecycle={lifecycle}", app_source)
-        self.assertIn("export function summarizeCompactLifecycle", label_source)
-        self.assertIn("회의 목표와 역할 바인딩을 확인하세요.", label_source)
-        self.assertIn("회의 없음", label_source)
-        self.assertIn("로비에서 새 회의를 시작하거나 기존 회의를 선택하세요.", label_source)
-        self.assertIn("data-lifecycle-surface={surface}", banner_source)
-        self.assertIn("summary.nextAction", banner_source)
-        self.assertIn('emptyHint?: "noMeeting" | "selectMeeting";', banner_source)
-        self.assertIn("역할 ${summary.boundRoles}/${summary.rolesTotal}", banner_source)
-        self.assertIn("summary.missingRoles ? `미입실 ${summary.missingRoles}`", banner_source)
-        self.assertIn("summary.pendingTurns ? `대기 턴 ${summary.pendingTurns}`", banner_source)
-        self.assertIn("summary.officialMessages ? `공식 ${summary.officialMessages}`", banner_source)
-        self.assertIn("권한 검토 ${summary.unsafePermissionViolations}", banner_source)
-        self.assertIn("provider 실행 없음", banner_source)
+        # Lobby is a chat channel: messages + composer + a minimal start bar.
+        # Lifecycle-exposition banner is removed.
+        self.assertNotIn("LifecycleBanner", lobby_source)
+        self.assertNotIn("summarizeCompactLifecycle", lobby_source)
+        self.assertNotIn("기록용 안전 projection", lobby_source)
+        self.assertFalse(
+            (FRONTEND_DIR / "views" / "components" / "LifecycleBanner.tsx").exists()
+        )
+        self.assertIn("ChannelHeader", lobby_source)
+        self.assertIn("MessageRow", lobby_source)
+        self.assertIn("<LobbyComposer onPosted={handleLobbyPosted} />", lobby_source)
+        # lifecycle is still polled at the shell level for the board channel.
+        self.assertIn("lifecycle", app_source)
 
         for forbidden in [
             "startProvider",
@@ -738,29 +744,20 @@ class StaticUiAssetTests(unittest.TestCase):
             "api_key",
             "prompt:",
         ]:
-            self.assertNotIn(forbidden, surface)
+            self.assertNotIn(forbidden, lobby_source)
 
-    def test_react_app_surfaces_compact_room_status_without_duplicate_navigation(self):
+    def test_react_app_surfaces_single_channel_navigation_without_duplicate_strip(self):
         app_source = frontend_file("App.tsx")
-        strip_source = frontend_file("views/components/RoomCommandStrip.tsx")
-        surface = f"{app_source}\n{strip_source}"
 
-        self.assertIn("import RoomCommandStrip", app_source)
-        self.assertIn("<RoomCommandStrip", app_source)
-        self.assertIn("type RoomSurface = Channel | \"admin\";", app_source)
-        self.assertIn("function handleCommandSurface", app_source)
-        self.assertIn("setAdminOpen(true)", app_source)
-        self.assertIn("setChannel(surface)", app_source)
-        self.assertIn("aria-label=\"룸 상태 요약\"", strip_source)
-        self.assertNotIn("SURFACE_COMMANDS", strip_source)
-        self.assertNotIn('label: "로비"', strip_source)
-        self.assertNotIn('label: "실황"', strip_source)
-        self.assertNotIn("검증", strip_source)
-        self.assertNotIn('label: "기록"', strip_source)
-        self.assertIn("summarizeCompactLifecycle", strip_source)
-        self.assertIn("summary.nextAction", strip_source)
-        self.assertIn("확인 필요", strip_source)
-        self.assertNotIn("provider 실행 없이 safe projection만 표시", strip_source)
+        # Discord shell: one channel nav in the sidebar. The old second
+        # RoomCommandStrip navigation row is removed (no repeated navigation).
+        self.assertNotIn("RoomCommandStrip", app_source)
+        self.assertFalse((FRONTEND_DIR / "views" / "components" / "RoomCommandStrip.tsx").exists())
+        self.assertIn("dc-rail", app_source)
+        self.assertIn("dc-sidebar", app_source)
+        self.assertIn("dc-channel", app_source)
+        self.assertIn("function goToChannel", app_source)
+        self.assertIn("setAdminOpen", app_source)
 
         for forbidden in [
             "startProvider",
@@ -775,16 +772,19 @@ class StaticUiAssetTests(unittest.TestCase):
             "api_key",
             "prompt:",
         ]:
-            self.assertNotIn(forbidden, surface)
+            self.assertNotIn(forbidden, app_source)
 
-    def test_react_archive_surfaces_compact_meeting_lifecycle_banner(self):
+    def test_react_archive_surfaces_final_artifacts_without_lifecycle_jargon(self):
         records_source = frontend_file("views/RecordsView.tsx")
-        label_source = frontend_file("lib/lifecycleLabels.ts")
-        banner_source = frontend_file("views/components/LifecycleBanner.tsx")
-        surface = "\n".join([records_source, label_source, banner_source])
 
-        self.assertIn("import LifecycleBanner", records_source)
-        self.assertIn("summarizeCompactLifecycle", records_source)
+        # Lifecycle-exposition banner is removed from the archive channel; the
+        # surface is the meeting list plus canonical final artifacts.
+        self.assertNotIn("LifecycleBanner", records_source)
+        self.assertNotIn("summarizeCompactLifecycle", records_source)
+        self.assertNotIn("기록용 안전 projection", records_source)
+        self.assertFalse(
+            (FRONTEND_DIR / "views" / "components" / "LifecycleBanner.tsx").exists()
+        )
         self.assertIn("canonicalArchiveArtifactRows", records_source)
         self.assertIn("defaultArchiveArtifactSelection", records_source)
         self.assertIn("otherArchiveArtifactNames", records_source)
@@ -798,20 +798,11 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('"shared_memory/open-questions.md"', records_source)
         self.assertIn("최종 산출물 / Final artifacts", records_source)
         self.assertIn("기타 산출물 / Other artifacts", records_source)
-        self.assertIn("{artifact.available ? \"생성됨\" : \"미생성\"}", records_source)
-        self.assertLess(records_source.index("최종 산출물 / Final artifacts"), records_source.index("기타 산출물 / Other artifacts"))
-        self.assertIn("const detailLifecycle = detail?.lifecycle ?? null;", records_source)
-        self.assertIn("const lifecycleSummary = summarizeCompactLifecycle(detailLifecycle);", records_source)
-        self.assertIn("<LifecycleBanner lifecycle={detailLifecycle} surface=\"archive\" emptyHint=\"selectMeeting\" />", records_source)
-        self.assertIn("<LifecycleBanner lifecycle={null} surface=\"archive\" emptyHint=\"selectMeeting\" />", records_source)
-        self.assertIn("lifecycleSummary.nextAction", records_source)
-        self.assertIn("lifecycleSummary.stepLabel", records_source)
-        self.assertIn("회의 선택", banner_source)
-        self.assertIn("왼쪽에서 세션을 선택하면 transcript, decision, shared memory를 확인할 수 있습니다.", banner_source)
-        self.assertIn("아카이브에서 transcript, decision, shared memory를 확인하세요.", label_source)
-        self.assertIn("아카이브에서 최종 산출물과 리뷰 기록을 확인하세요.", label_source)
-        self.assertIn("summary.attentionItems.length > 0", banner_source)
-        self.assertIn("summary.unsafePermissionViolations", banner_source)
+        self.assertIn('{artifact.available ? "생성됨" : "미생성"}', records_source)
+        self.assertLess(
+            records_source.index("최종 산출물 / Final artifacts"),
+            records_source.index("기타 산출물 / Other artifacts"),
+        )
         self.assertIn("ArtifactContent", records_source)
         self.assertIn("artifactNames.map", records_source)
         self.assertIn("회의가 없다면 로비에서 새 회의를 시작하세요.", records_source)
@@ -830,7 +821,7 @@ class StaticUiAssetTests(unittest.TestCase):
             "api_key",
             "prompt:",
         ]:
-            self.assertNotIn(forbidden, surface)
+            self.assertNotIn(forbidden, records_source)
 
     def test_react_live_tab_subscribes_to_meeting_sse_without_route_flip_or_provider_start(self):
         source = frontend_source()

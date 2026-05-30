@@ -2,115 +2,91 @@
 
 ## Goal
 
-Build a neon operations console for AgentsAssemble. The app should feel like a
-local-first agent room preparing, running, reviewing, and archiving live
-sessions. It should look special without making backend behavior look more
-powerful than it is.
+Make the room feel like a chat client a person can just *use* — not an operator
+dashboard. Borrow the calm, dense, friendly layout of Discord: a narrow server
+rail, a channel sidebar, a central message column, and a compact member list.
+Show only what a participant or watcher needs; keep technical/operator truth in
+details, tooltips, and the admin surface.
+
+This is an experiment branch (`codex/kiro-discord-ui`). It is inspired by
+Discord, not branded as Discord.
 
 ## Accepted Direction
 
-The reference direction is a sci-fi operations room:
+- Discord-style dark theme: near-black server rail, dark gray sidebar/member
+  list, slightly lighter chat column, blurple accent, green/yellow/red presence.
+- Fixed full-height app shell. The page/body is never the desktop scroll
+  surface; every long list scrolls inside its own region.
+- Four text channels: `로비`, `실황`, `작전판`, `아카이브`.
+- One navigation surface (the channel sidebar). No duplicate command strips,
+  no top tab bar.
+- Honest, quiet presentation: no neon HUD, no hero banners, no big meters, no
+  decorative card grids, no provider jargon on default surfaces.
 
-- dark navy/black shell.
-- cyan glass panel borders with angular corners.
-- gold quick-start and next-step actions.
-- compact left/center/right command-console layout.
-- four first-class tabs: `로비`, `실황`, `작전판`, `아카이브`.
-- visible participant readiness and room status.
-- visible provider execution, context durability, sandbox, and admission truth
-  without raw underscore-heavy contract strings.
-- Play Mode remains informal and separate from official records.
+## Product Boundaries (unchanged)
 
-This is not a Discord clone anymore. Borrow only the useful density and
-real-time readability; the visual language is now "neon mission control."
-
-This document remains the aspirational React/Vite direction. The current
-checked-in app may advance in smaller launch-clarity slices before every visual
-surface is fully aligned with this design.
-
-## Product Boundaries
-
-- Do not invent provider execution, admission, or official-record behavior.
-- The React frontend reads existing HTTP/SSE state and calls only existing flow
-  start/stop APIs.
-- Provider/context chips must be derived from existing safe roster fields. If a
-  provider contract is unknown, show a humanized fallback rather than guessing a
-  stronger capability.
-- Lobby/Play Mode chatter must not look like transcript or decision evidence.
-- Operator diagnostics stay secondary.
-- Buttons that are not wired to backend behavior should be framed as visual
-  navigation, read-only summaries, or future affordances rather than fake work.
-
-## Visual System
-
-Theme: "local-first holographic operations console."
-
-- Shell background: near-black blue with subtle grid/radar glow.
-- Panels: translucent midnight blue, 1px cyan border, clipped corners.
-- Primary accent: electric cyan.
-- Action accent: amber/gold.
-- Status accents: green ready, blue online, amber syncing, red offline, violet
-  analysis.
-- Typography: system UI stack, dense UI chrome, readable Korean body copy.
-- Icons: lucide icons plus simple CSS hex badges; no external image dependency.
-- Motion: small pulse/scan effects only, disabled for reduced motion.
+- The frontend reads existing HTTP/SSE state and calls only existing APIs. It
+  does not invent provider execution, admission, or official-record behavior.
+- Real human inputs are the lobby composer (`/api/lobby`), the unofficial
+  side-chat composer (`/api/side-chat`), and the mafia controls. Unfinished
+  controls are hidden rather than shown as fake disabled buttons.
+- Play Mode / side-chat chatter stays visually distinct from official record:
+  agent turns render as the official timeline; human side-chat is muted and
+  tagged `사이드챗`, never promoted to official.
+- Attachments use public metadata only (`is_image`/`url`/`download_url`); raw
+  bytes never reach event UI.
+- Provider/context/admission truth is derived from safe roster fields and shown
+  behind a per-member `<details>` in the member list, not as inline jargon.
+- Work Mode and Play Mode record boundaries are preserved; there is no promote
+  action.
 
 ## Layout
 
-Desktop:
+Shell (`App.tsx`):
 
-- 72px top command bar with logo, tabs, local-first status, meeting selector,
-  quick-start CTA, and compact avatar.
-- Each main tab owns its own three-column layout.
-- Center column is the primary canvas.
-- Left column carries context and participant state.
-- Right column carries status, summary, or next actions.
+- **Server rail** (72px): room/home mark → lobby, the room button, and a
+  settings gear (admin) pinned to the bottom.
+- **Channel sidebar** (240px): room name + live status header; the `#` channel
+  list; a footer user area with local presence, backend status, the
+  `신형 React room client` marker, and the `구형 콘솔` (`/legacy/`) link.
+- **Central column**: each channel renders a `ChannelHeader` (name, topic,
+  member-list toggle) + an internally scrolling body + a sticky composer where
+  the channel is writable.
+- **Member list** (240px, right): grouped 온라인/오프라인 roster with presence
+  dots; collapses below `xl` and via the header toggle.
 
-Mobile:
+Channels:
 
-- Top command bar wraps without horizontal overflow.
-- Tabs remain reachable.
-- Panels stack in task order.
-- Primary action remains visible near the relevant tab content.
+- **로비**: lobby chat + composer, a compact meeting/topic/mode start-stop bar,
+  and a collapsed CLI invite (Join Brief / LAN Invite) disclosure.
+- **실황**: official agent timeline interleaved with unofficial side-chat, a
+  side-chat composer, the latest-jump control, and the mafia panel when a game
+  is active.
+- **작전판**: read-only lifecycle synthesis (current step, next action, role
+  admission/permission summary, attention) plus the workroom queue panel.
+- **아카이브**: meeting list + selected meeting's canonical final artifacts and
+  rendered content.
 
-Lobby:
+## Visual System
 
-- Acts like a pick room before the session.
-- Shows participant readiness, join-brief/external participation affordances,
-  a room hero, recent room events, mode cards, room information, and a start
-  panel.
-
-Live:
-
-- Acts like the live client.
-- Shows session summary, participant state, a central timeline, live status,
-  shared memory hints, and small quick actions.
-- Play Mode events are visually informal.
-
-Board:
-
-- Acts like a decision board.
-- Shows operation info, progress, role filters, claim/risk/summary/intent
-  cards, open questions, and readiness.
-- It is a read-only synthesis surface for now.
-
-Archive:
-
-- Acts like a record room.
-- Shows meeting list/search-style navigation, selected meeting details,
-  artifacts, participants, tags, export affordances, and highlights.
+- Tokens drive everything: `server-rail`, `sidebar`, `chat-bg`, `accent`
+  (blurple), `online`/`idle`/`danger`, `text-primary/secondary/muted`, `line`.
+- `.dc-*` classes own the shell (rail/sidebar/channel/members/user-area).
+- The legacy `.ops-*` class names are kept but flattened to calm dark surfaces
+  so views render without per-element churn; neon grid/scanline/radar/hero/meter
+  effects are removed.
+- Motion is limited to a small presence pulse, disabled under reduced motion.
 
 ## Acceptance Checks
 
-- At 1280px desktop, the top command bar and three-panel views fit without
-  horizontal overflow.
-- Lobby, Live, Board, and Archive look meaningfully different.
-- Play Mode does not look like official transcript evidence.
-- Participant cards name provider execution and context honestly, including
-  stateless prompt calls, provider-owned resume sessions, advisory sandboxing,
-  and host-admission state.
-- Text preserves readable tokens such as `Kiro Opus 4.7`, `0.5`, `80kg`, and
-  ellipses.
-- `npm run build` passes.
+- `npm run build` passes (`tsc && vite build`).
 - `git diff --check` passes.
-- Browser screenshots are inspected for desktop and mobile.
+- At 1440px the rail + sidebar + chat + member list fit without horizontal
+  overflow; at narrow widths the member list collapses and nothing overflows.
+- Lobby and Live scroll internally; the body is not the scroll surface.
+- No dashboard clutter strings on default surfaces (live status, 핵심 포인트,
+  빠른 작업, lifecycle exposition, room insights, status meters).
+- Side-chat reads as unofficial; attachments expose public metadata only.
+- Tests in `tests/test_static_ui_assets.py` and `tests/test_frontend_*.py` lock
+  these invariants; the vanilla console (`/legacy/`) is unchanged.
+- Browser screenshots inspected for desktop and narrow widths.

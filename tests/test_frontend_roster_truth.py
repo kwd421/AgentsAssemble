@@ -21,30 +21,31 @@ class FrontendRosterTruthTests(unittest.TestCase):
 
     def test_used_participant_surfaces_render_provider_context_and_cursor_evidence(self):
         app = frontend_file("App.tsx")
+        member = frontend_file("views/components/MemberList.tsx")
         surfaces = {
             "lobby": frontend_file("views/LobbyView.tsx"),
             "live": frontend_file("views/LiveView.tsx"),
             "board": frontend_file("views/BoardView.tsx"),
             "records": frontend_file("views/RecordsView.tsx"),
+            "member": member,
         }
 
-        for component_name in ("LobbyView", "LiveView", "BoardView", "RecordsView"):
+        for component_name in ("LobbyView", "LiveView", "BoardView", "RecordsView", "MemberList"):
             self.assertIn(f"import {component_name}", app)
             self.assertIn(f"<{component_name}", app)
 
-        for name, source in surfaces.items():
-            with self.subTest(surface=name):
-                self.assertIn("ProviderTruthChips", source)
-                self.assertIn("agentTruthBadges(agent)", source)
-                self.assertIn("limit={4}" if name == "lobby" else "limit={6}", source)
-                self.assertNotIn("limit={5}", source)
-                self.assertIn("lastObservedSummary(agent)", source)
-                self.assertIn("preserve-words", source)
-
-        lobby = surfaces["lobby"]
-        self.assertIn("providerExecutionLabel(agent)", lobby)
-        self.assertNotIn('agent.provider_kind || "resident"', lobby)
-        self.assertNotIn("agent.connection_kind ||", lobby)
+        # The Discord-style shell renders the roster once, in the member list,
+        # with provider/admission truth tucked behind a per-member details
+        # instead of duplicated as dashboard clutter in every view.
+        self.assertIn("ProviderTruthChips", member)
+        self.assertIn("agentTruthBadges(agent)", member)
+        self.assertIn("limit={6}", member)
+        self.assertNotIn("limit={5}", member)
+        self.assertIn("lastObservedSummary(agent)", member)
+        self.assertIn("providerExecutionLabel(agent)", member)
+        self.assertIn("preserve-words", member)
+        self.assertNotIn('agent.provider_kind || "resident"', member)
+        self.assertNotIn("agent.connection_kind ||", member)
 
         for unsafe in (
             "argv",
@@ -61,20 +62,23 @@ class FrontendRosterTruthTests(unittest.TestCase):
                     self.assertNotIn(unsafe, source, msg=f"{unsafe} leaked through {name}")
 
     def test_lobby_and_live_participant_panels_surface_context_summary(self):
-        component = frontend_file("views/components/ParticipantContextSummary.tsx")
+        member = frontend_file("views/components/MemberList.tsx")
         lobby = frontend_file("views/LobbyView.tsx")
         live = frontend_file("views/LiveView.tsx")
 
-        self.assertIn("roomContextSummaryBadges(agents)", component)
-        self.assertIn("ProviderTruthChips", component)
-        self.assertIn('aria-label="참가자 맥락 요약"', component)
-        self.assertIn('import ParticipantContextSummary from "./components/ParticipantContextSummary";', live)
-        self.assertNotIn('import ParticipantContextSummary from "./components/ParticipantContextSummary";', lobby)
-        self.assertNotIn("<ParticipantContextSummary agents={agents} />", lobby)
-        self.assertIn("<ParticipantContextSummary agents={agents} />", live)
+        self.assertIn("roomContextSummaryBadges(agents)", member)
+        self.assertIn("ProviderTruthChips", member)
+        self.assertIn('aria-label="참가자 맥락 요약"', member)
+        # The per-view dashboards no longer duplicate the roster context summary;
+        # the dedicated ParticipantContextSummary component was folded in.
+        self.assertNotIn("ParticipantContextSummary", lobby)
+        self.assertNotIn("ParticipantContextSummary", live)
+        self.assertFalse(
+            (FRONTEND / "views" / "components" / "ParticipantContextSummary.tsx").exists()
+        )
         self.assertIn("characterBadge(agent)", frontend_file("lib/agentLabels.ts"))
         self.assertIn("캐릭터 ·", frontend_file("lib/agentLabels.ts"))
 
         for unsafe in ("session_id", "argv", "command", "provider_output", "last_error", "source_path"):
             with self.subTest(unsafe=unsafe):
-                self.assertNotIn(unsafe, component)
+                self.assertNotIn(unsafe, member)

@@ -76,16 +76,25 @@ Output: `frontend/dist/`
 
 ## Layout
 
-- Left rail: dark sidebar with channel navigation (대기실, 실황, 기록, 관리)
-- Center: active channel view (chat feed, conversation, records)
-- Right sidebar: participant roster with status dots (desktop only)
-- Mobile: top tab bar replaces left rail, roster hidden
+Discord-inspired shell (see `DESIGN.md`):
+
+- Server/room rail: narrow far-left column with the room mark and a settings
+  (admin) gear.
+- Channel sidebar: room name + status, the `#` channel list, and a footer user
+  area with the latest-client marker and the `구형 콘솔` (`/legacy/`) link.
+- Central column: channel header + internally scrolling messages/content + a
+  sticky composer where the channel is writable.
+- Member list: compact roster with presence dots, collapsible on narrow
+  screens.
 
 ## Channels
 
-- 대기실: lobby chat + Play Mode start/stop controls
-- 실황: live Play Mode conversation feed (flow_events)
-- 기록: meeting list + artifact viewer (readable prose, not raw pre)
-- 관리: read-only health status
+- 로비: lobby chat + composer, with a compact meeting/topic/mode start-stop bar
+- 실황: official agent timeline + unofficial side-chat composer (and mafia)
+- 작전판: read-only meeting lifecycle synthesis (view only)
+- 아카이브: meeting list + final artifact viewer (readable prose, not raw pre)
+
+Admin (read-only health, release-health, resources) is reachable from the rail
+gear. Play Mode start/stop does not start real provider CLIs.
 
 Play Mode start/stop does not start real provider CLIs.
