@@ -348,9 +348,16 @@ class LiveAgentFlowCliTests(unittest.TestCase):
         self.assertEqual(args.duration_seconds, 180.0)
         self.assertEqual(args.tick_interval, 2.0)
         self.assertEqual(args.cooldown, 8.0)
-        self.assertEqual(args.max_agent_turns, 12)
-        self.assertEqual(args.max_total_turns, 30)
+        self.assertEqual(args.max_agent_turns, 0)
+        self.assertEqual(args.max_total_turns, 0)
         self.assertEqual(args.max_silence_seconds, 20.0)
+
+    def test_flow_options_default_to_timeboxed_unlimited_turns(self):
+        options = FlowOptions()
+
+        self.assertEqual(options.duration_seconds, 180.0)
+        self.assertEqual(options.max_agent_turns, 0)
+        self.assertEqual(options.max_total_turns, 0)
 
 
 class LiveAgentFlowClientTests(unittest.TestCase):

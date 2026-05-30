@@ -735,7 +735,7 @@ python3 -m agentsassemble.cli live-agent wait-next \
 
 `wait-next` reads one room snapshot per poll, prefers a targeted unanswered official turn request, then a targeted return-packet event, and then falls back to engagement-aware lobby observation. The JSON payload includes `action: "official_turn"` with an `official-reply` `reply_command`, `action: "return_packet"` with `artifact_path`, `artifact_json_path`, an agent-scoped `read_command`, and a heartbeat `ack_command`, `action: "lobby"` with a `say` `reply_command`, `action: "observe_lobby"` with a heartbeat `ack_command` and no reply command, or `action: "persona_blocks_official_turn"` when a stateful Character Mode agent is intentionally blocked from answering official Work Mode turns with full persona context. That persona-block payload is non-official, includes `reason: "persona_context_blocked_official_turn"`, has no reply command, and its `ack_command` advances the official cursor while recording the safe `last_attention` code. `observe_lobby` is returned for visible lobby events that should advance the cursor but should not be answered under the agent's current engagement mode or chain-depth guard. The `reply_command` arrays include the `--` option boundary before `<reply>`, so terminal/self-service loops can safely replace `<reply>` even when the reply text starts with `-` or `--`. Timeout payloads include both `last_observed_event_id` and `last_observed_live_event_id`, advanced to the latest visible event ids in that room snapshot, so a terminal loop can keep lobby and official cursors separate and optionally heartbeat cursor-only observation without replying.
 
-For Play Mode free conversation, start a bounded flow instead of scheduling
+For Play Mode free conversation, start a timeboxed flow instead of scheduling
 fixed official turns:
 
 ```bash
@@ -760,9 +760,10 @@ source event, chain depth, and flow id stay as lobby metadata. `wait` advances
 the lobby cursor without posting. Silence checks are internal idle ticks rather
 than visible moderator messages; when the room is caught up, a runner may use
 the latest flow event as the source for one invisible tick candidate, but the
-room does not post "continue talking" nudges on behalf of a moderator. Cooldown
-and optional per-agent or total turn budgets bound automated loops when the
-operator chooses to use those limits.
+room does not post "continue talking" nudges on behalf of a moderator. The
+default loop is bounded by time and cooldown only: `--max-agent-turns 0` and
+`--max-total-turns 0` mean unlimited speaking turns. Operators can still set
+non-zero turn budgets for demos, quota-limited providers, or tests.
 
 The flow status endpoint is read-only:
 

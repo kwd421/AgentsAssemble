@@ -582,8 +582,8 @@ def build_parser() -> argparse.ArgumentParser:
     live_flow.add_argument("--duration-seconds", type=parse_nonnegative_float, default=180.0)
     live_flow.add_argument("--tick-interval", type=parse_nonnegative_float, default=2.0)
     live_flow.add_argument("--cooldown", type=parse_nonnegative_float, default=8.0)
-    live_flow.add_argument("--max-agent-turns", type=parse_nonnegative_int, default=12)
-    live_flow.add_argument("--max-total-turns", type=parse_nonnegative_int, default=30)
+    live_flow.add_argument("--max-agent-turns", type=parse_nonnegative_int, default=0, help="Maximum speaking turns per agent; 0 means unlimited.")
+    live_flow.add_argument("--max-total-turns", type=parse_nonnegative_int, default=0, help="Maximum total speaking turns; 0 means unlimited.")
     live_flow.add_argument("--max-silence-seconds", type=parse_nonnegative_float, default=20.0)
     live_flow.add_argument("--json", action="store_true", dest="as_json", help="Print the raw flow result payload.")
 

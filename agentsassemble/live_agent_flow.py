@@ -39,8 +39,8 @@ class FlowOptions:
     duration_seconds: float = 180.0
     tick_interval: float = 2.0
     cooldown: float = 8.0
-    max_agent_turns: int = 12
-    max_total_turns: int = 30
+    max_agent_turns: int = 0
+    max_total_turns: int = 0
     max_silence_seconds: float = 20.0
 
     def to_payload(self) -> dict[str, object]:
