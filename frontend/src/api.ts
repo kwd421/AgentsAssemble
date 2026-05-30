@@ -864,6 +864,8 @@ export function startFlow(params: {
   meeting_id: string;
   topic?: string;
   duration_seconds?: number;
+  max_agent_turns?: number;
+  max_total_turns?: number;
 }) {
   return postJson<FlowResponse>("/api/live-agent-flow/start", params);
 }

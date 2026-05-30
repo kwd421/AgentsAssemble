@@ -361,6 +361,8 @@ export default function LobbyView({
           meeting_id: meetingId.trim(),
           topic: topic.trim() || undefined,
           duration_seconds: parseInt(duration, 10) || 180,
+          max_agent_turns: 0,
+          max_total_turns: 0,
         });
         onFlowStarted();
       }

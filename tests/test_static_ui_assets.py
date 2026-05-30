@@ -412,6 +412,15 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("0.0.0.0", surface)
         self.assertNotIn("AGENTSASSEMBLE_LAN_INVITE_SECRET=", surface)
 
+    def test_react_lobby_flow_start_requests_unlimited_turn_budget(self):
+        api_source = frontend_file("api.ts")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+
+        self.assertIn("max_agent_turns?: number;", api_source)
+        self.assertIn("max_total_turns?: number;", api_source)
+        self.assertIn("max_agent_turns: 0", lobby_source)
+        self.assertIn("max_total_turns: 0", lobby_source)
+
     def test_react_lobby_external_participation_states_provider_startup_and_token_boundaries(self):
         section = react_lobby_external_participation_section()
 
