@@ -519,6 +519,22 @@ class StaticUiAssetTests(unittest.TestCase):
         ]:
             self.assertNotIn(forbidden, source)
 
+    def test_react_admin_invite_prefills_meeting_id_from_active_meeting(self):
+        app_source = frontend_file("App.tsx")
+        admin_source = frontend_file("views/AdminPanel.tsx")
+
+        # App passes the active meeting id (prefer flow.meeting_id, then roomName).
+        self.assertIn("activeMeetingId={flow.meeting_id || roomName(flow)}", app_source)
+        # AdminPanel accepts the prop and prefills from it, with resident-m1 only
+        # as the fallback when no active id exists.
+        self.assertIn("activeMeetingId?: string", admin_source)
+        self.assertIn('activeMeetingId?.trim() || "resident-m1"', admin_source)
+        # The field syncs from the active meeting until edited, then preserves edits.
+        self.assertIn("meetingIdEdited", admin_source)
+        self.assertIn("setMeetingIdEdited(true)", admin_source)
+        self.assertIn("if (!meetingIdEdited) setJoinBriefMeetingId(prefillMeetingId);", admin_source)
+        self.assertNotIn('useState("resident-m1")', admin_source)
+
     def test_react_admin_surfaces_release_health_catalog_as_cli_only(self):
         source = frontend_source()
 

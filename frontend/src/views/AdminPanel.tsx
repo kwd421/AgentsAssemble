@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Activity, ClipboardCheck, Cpu, FilePlus2, Globe2, Shield, Terminal, X } from "lucide-react";
 import {
   createLiveAgentJoinBrief,
@@ -183,9 +183,14 @@ export default function AdminPanel({
   } = partitionReleaseHealthChecks(releaseHealth);
   const latestStatusById = releaseHealthLatestById(releaseHealthQueue);
 
-  const [joinBriefMeetingId, setJoinBriefMeetingId] = useState(
-    activeMeetingId?.trim() || "resident-m1"
-  );
+  const prefillMeetingId = activeMeetingId?.trim() || "resident-m1";
+  const [joinBriefMeetingId, setJoinBriefMeetingId] = useState(prefillMeetingId);
+  const [meetingIdEdited, setMeetingIdEdited] = useState(false);
+  // Keep the invite meeting id in sync with the active meeting until the
+  // operator edits it; manual edits are then preserved.
+  useEffect(() => {
+    if (!meetingIdEdited) setJoinBriefMeetingId(prefillMeetingId);
+  }, [prefillMeetingId, meetingIdEdited]);
   const [joinBriefAgentId, setJoinBriefAgentId] = useState("external-agent");
   const [joinBriefDisplayName, setJoinBriefDisplayName] = useState("External Agent");
   const [joinBrief, setJoinBrief] = useState<LiveAgentJoinBrief | null>(null);
@@ -383,7 +388,10 @@ export default function AdminPanel({
                     <input
                       className="min-w-0 rounded border border-line bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30"
                       value={joinBriefMeetingId}
-                      onChange={(event) => setJoinBriefMeetingId(event.target.value)}
+                      onChange={(event) => {
+                        setMeetingIdEdited(true);
+                        setJoinBriefMeetingId(event.target.value);
+                      }}
                       spellCheck={false}
                     />
                   </label>

@@ -340,7 +340,7 @@ export default function App() {
       {/* Central channel column */}
       <main className="dc-chat flex min-w-0 flex-1 flex-col" aria-label="채널 내용">
         {adminOpen ? (
-          <AdminPanel onClose={() => setAdminOpen(false)} activeMeetingId={flow.meeting_id || ""} />
+          <AdminPanel onClose={() => setAdminOpen(false)} activeMeetingId={flow.meeting_id || roomName(flow)} />
         ) : channel === "lobby" ? (
           <LobbyView
             flow={flow}
