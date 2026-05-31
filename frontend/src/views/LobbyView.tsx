@@ -35,6 +35,7 @@ import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
 import LifecycleBanner from "./components/LifecycleBanner";
 import ProviderTruthChips from "./components/ProviderTruthChips";
+import RoomInvitePanel from "./components/RoomInvitePanel";
 
 const MODE_CARDS = [
   {
@@ -588,6 +589,10 @@ export default function LobbyView({
                 URL·로그·roster·artifact에 토큰 비표시. 자세한 경계는 docs/no-tailscale-multi-host.md 참고.
               </p>
             </article>
+
+              <article className="p-4">
+                <RoomInvitePanel meetingId={joinBriefMeetingId} />
+              </article>
             </div>
           </details>
         </section>
