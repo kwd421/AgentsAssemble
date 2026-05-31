@@ -123,6 +123,37 @@ class GuiServerTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
 
+    def test_attachment_svg_is_not_served_inline(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                upload = Request(
+                    f"{server_url}/api/attachments",
+                    data=json.dumps(
+                        {
+                            "filename": "x.svg",
+                            "content_type": "image/svg+xml",
+                            "data_base64": base64.b64encode(b"<svg xmlns='http://www.w3.org/2000/svg'></svg>").decode("ascii"),
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(upload, timeout=4) as response:
+                    attachment = json.loads(response.read().decode("utf-8"))["attachment"]
+                with urlopen(f"{server_url}{attachment['url']}", timeout=4) as response:
+                    disposition = response.headers.get("Content-Disposition", "")
+                    self.assertIn("attachment", disposition)
+                    self.assertNotIn("inline", disposition)
+                    self.assertEqual(response.headers.get("Content-Security-Policy"), "default-src 'none'; sandbox")
+            finally:
+                server.shutdown()
+                server.server_close()
+
     def test_lobby_post_preserves_attachment_metadata_without_raw_payload(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
