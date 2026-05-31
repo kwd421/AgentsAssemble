@@ -56,6 +56,24 @@ Then run:
 assemble demo --adapter mock
 ```
 
+## Running Tests
+
+Tests use the standard-library `unittest` runner. Run the whole suite:
+
+```bash
+make test            # or: python3 -m unittest discover -s tests -t .
+```
+
+Run a single module:
+
+```bash
+make test-module M=tests.test_gui_server
+```
+
+Node.js is required for the frontend/static UI smoke tests; install frontend
+dependencies once with `make frontend-deps`. CI runs the same suite via
+`.github/workflows/tests.yml`.
+
 ## Local GUI
 
 Run the local browser UI:
