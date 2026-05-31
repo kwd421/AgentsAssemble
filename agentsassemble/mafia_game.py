@@ -11,8 +11,11 @@ from agentsassemble.meeting_events import clean_lobby_text
 
 
 MAFIA_GAME_LOCK = threading.RLock()
-MAFIA_CHANNELS = {"all", "mafia_team"}
+MAFIA_CHAT_CHANNELS = {"all", "mafia_team"}
+MAFIA_EVENT_CHANNELS = {"all", "mafia_team", "private"}
 MAFIA_PHASES = {"day", "night", "ended"}
+MAFIA_ROLES = {"mafia", "town", "doctor", "detective"}
+MAFIA_NIGHT_ACTIONS = {"mafia_kill", "doctor_save", "detective_check"}
 
 
 def start_mafia_game(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
@@ -28,8 +31,9 @@ def start_mafia_game(output_root: Path, payload: dict[str, object]) -> dict[str,
         "created_at": now,
         "updated_at": now,
         "winner": "",
-        "players": _assign_roles(game_id, players, mafia_count),
+        "players": _assign_roles(game_id, players, mafia_count, ruleset=_ruleset(payload.get("ruleset"))),
         "events": [],
+        "night_actions": {},
         "votes": {},
     }
     _append_event(game, "system", "all", "system", "마피아 게임이 시작되었습니다.")
@@ -61,6 +65,67 @@ def post_mafia_chat(output_root: Path, payload: dict[str, object]) -> dict[str, 
             speaker_id,
             clean_lobby_text(payload.get("message", ""), limit=1000),
         )
+        game["updated_at"] = _now()
+        _save_game(output_root, game)
+        return event
+
+
+def submit_mafia_action(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
+    with MAFIA_GAME_LOCK:
+        game = _read_game(output_root, _game_id(payload.get("game_id")))
+        if game.get("phase") == "ended":
+            raise ValueError("Mafia game has ended.")
+        if str(game.get("phase") or "day") != "night":
+            raise ValueError("Mafia night actions require the night phase.")
+        actor_id = _agent_id(payload.get("actor_id"))
+        target_id = _agent_id(payload.get("target_id"))
+        action = clean_lobby_text(payload.get("action"), limit=48)
+        if action not in MAFIA_NIGHT_ACTIONS:
+            raise ValueError("Invalid mafia night action.")
+        actor = _player(game, actor_id)
+        target = _player(game, target_id)
+        if not actor.get("alive") or not target.get("alive"):
+            raise ValueError("Mafia night actions require living players.")
+        if action == "mafia_kill":
+            if actor.get("team") != "mafia":
+                raise ValueError("Only mafia players can kill at night.")
+            if target.get("team") == "mafia":
+                raise ValueError("Mafia players cannot target mafia at night.")
+        if action == "doctor_save" and actor.get("role") != "doctor":
+            raise ValueError("Only the doctor can save a player at night.")
+        if action == "detective_check":
+            if actor.get("role") != "detective":
+                raise ValueError("Only the detective can check a player at night.")
+            if actor_id == target_id:
+                raise ValueError("The detective cannot check themself.")
+        _record_night_action(game, actor_id, action, target_id)
+        if action == "detective_check":
+            result = "마피아입니다" if target.get("team") == "mafia" else "마피아가 아닙니다"
+            event = _append_event(
+                game,
+                "action",
+                "private",
+                actor_id,
+                f"조사 결과: {_display_name(target)}은/는 {result}.",
+                target_agent_id=actor_id,
+            )
+        elif action == "mafia_kill":
+            event = _append_event(
+                game,
+                "action",
+                "mafia_team",
+                actor_id,
+                f"{_display_name(target)}을/를 밤 대상으로 선택했습니다.",
+            )
+        else:
+            event = _append_event(
+                game,
+                "action",
+                "private",
+                actor_id,
+                f"{_display_name(target)}을/를 보호 대상으로 선택했습니다.",
+                target_agent_id=actor_id,
+            )
         game["updated_at"] = _now()
         _save_game(output_root, game)
         return event
@@ -104,13 +169,16 @@ def resolve_mafia_phase(output_root: Path, payload: dict[str, object]) -> dict[s
         phase = str(game.get("phase") or "day")
         if phase not in MAFIA_PHASES:
             raise ValueError("Unknown mafia phase.")
-        target_id = _vote_target(game, phase)
+        target_id = _night_kill_target(game) if phase == "night" else _vote_target(game, phase)
         if target_id:
             target = _player(game, target_id)
-            target["alive"] = False
-            if phase == "night":
+            if phase == "night" and target_id in _night_saved_targets(game):
+                message = "밤이 끝났습니다. 아무도 사망하지 않았습니다."
+            elif phase == "night":
+                target["alive"] = False
                 message = f"밤이 끝났습니다. {_display_name(target)}가 사망했습니다."
             else:
+                target["alive"] = False
                 message = f"투표 결과 {_display_name(target)}가 추방되었습니다."
             _append_event(game, "system", "all", "system", message)
         else:
@@ -153,7 +221,7 @@ def _visible_game(game: dict[str, object], *, viewer_agent_id: str) -> dict[str,
             "display_name": player.get("display_name", ""),
             "alive": player.get("alive") is True,
         }
-        if host_view or player.get("agent_id") == viewer:
+        if host_view or player.get("agent_id") == viewer or (viewer_team == "mafia" and player.get("team") == "mafia"):
             item["role"] = player.get("role", "")
             item["team"] = player.get("team", "")
         visible_players.append(item)
@@ -167,6 +235,7 @@ def _visible_game(game: dict[str, object], *, viewer_agent_id: str) -> dict[str,
     payload["events"] = visible_events
     if not host_view:
         payload.pop("votes", None)
+        payload.pop("night_actions", None)
     if viewer and not host_view:
         payload["viewer"] = {"agent_id": viewer, "role": viewer_role, "team": viewer_team}
     return payload
@@ -178,20 +247,37 @@ def _event_visible(event: dict[str, object], *, viewer: str, viewer_team: str, h
         return True
     if channel == "mafia_team":
         return host_view or viewer_team == "mafia"
+    if channel == "private":
+        return host_view or bool(viewer and viewer in {str(event.get("actor_id") or ""), str(event.get("target_agent_id") or "")})
     return host_view
 
 
-def _assign_roles(game_id: str, players: list[dict[str, object]], mafia_count: int) -> list[dict[str, object]]:
+def _assign_roles(game_id: str, players: list[dict[str, object]], mafia_count: int, *, ruleset: str) -> list[dict[str, object]]:
+    if any(player.get("role") for player in players):
+        return [_assign_player_role(player, str(player.get("role") or "town")) for player in players]
     ranked = sorted(
         players,
         key=lambda player: hashlib.sha256(f"{game_id}:{player['agent_id']}".encode("utf-8")).hexdigest(),
     )
     mafia_ids = {str(player["agent_id"]) for player in ranked[:mafia_count]}
+    special_roles: dict[str, str] = {}
+    if ruleset == "classic":
+        non_mafia = [player for player in ranked if str(player["agent_id"]) not in mafia_ids]
+        if non_mafia:
+            special_roles[str(non_mafia[0]["agent_id"])] = "detective"
+        if len(non_mafia) > 1:
+            special_roles[str(non_mafia[1]["agent_id"])] = "doctor"
     assigned = []
     for player in players:
-        role = "mafia" if player["agent_id"] in mafia_ids else "town"
-        assigned.append({**player, "role": role, "team": "mafia" if role == "mafia" else "town", "alive": True})
+        role = "mafia" if player["agent_id"] in mafia_ids else special_roles.get(str(player["agent_id"]), "town")
+        assigned.append(_assign_player_role(player, role))
     return assigned
+
+
+def _assign_player_role(player: dict[str, object], role: str) -> dict[str, object]:
+    if role not in MAFIA_ROLES:
+        role = "town"
+    return {**player, "role": role, "team": "mafia" if role == "mafia" else "town", "alive": True}
 
 
 def _players(value: object) -> list[dict[str, object]]:
@@ -210,6 +296,7 @@ def _players(value: object) -> list[dict[str, object]]:
             {
                 "agent_id": agent_id,
                 "display_name": clean_lobby_text(item.get("display_name") or item.get("name") or agent_id, limit=80) or agent_id,
+                "role": clean_lobby_text(item.get("role"), limit=32) if item.get("role") else "",
             }
         )
     if len(players) < 3:
@@ -241,6 +328,60 @@ def _vote_target(game: dict[str, object], phase: str) -> str:
     return winner
 
 
+def _record_night_action(game: dict[str, object], actor_id: str, action: str, target_id: str) -> None:
+    actions = game.setdefault("night_actions", {})
+    if not isinstance(actions, dict):
+        actions = {}
+        game["night_actions"] = actions
+    day_key = str(game.get("day_number") or 1)
+    day_actions = actions.setdefault(day_key, {})
+    if not isinstance(day_actions, dict):
+        day_actions = {}
+        actions[day_key] = day_actions
+    day_actions[actor_id] = {"action": action, "target_id": target_id}
+
+
+def _night_actions_for_day(game: dict[str, object]) -> dict[str, dict[str, object]]:
+    actions = game.get("night_actions")
+    day_key = str(game.get("day_number") or 1)
+    if not isinstance(actions, dict):
+        return {}
+    day_actions = actions.get(day_key)
+    return {str(actor_id): action for actor_id, action in day_actions.items() if isinstance(action, dict)} if isinstance(day_actions, dict) else {}
+
+
+def _night_saved_targets(game: dict[str, object]) -> set[str]:
+    return {
+        str(action.get("target_id") or "")
+        for action in _night_actions_for_day(game).values()
+        if action.get("action") == "doctor_save" and action.get("target_id")
+    }
+
+
+def _night_kill_target(game: dict[str, object]) -> str:
+    action_targets = [
+        str(action.get("target_id") or "")
+        for action in _night_actions_for_day(game).values()
+        if action.get("action") == "mafia_kill" and action.get("target_id")
+    ]
+    if action_targets:
+        return _majority_target(action_targets)
+    return _vote_target(game, "night")
+
+
+def _majority_target(target_ids: list[str]) -> str:
+    counts: dict[str, int] = {}
+    for target_id in target_ids:
+        if target_id:
+            counts[target_id] = counts.get(target_id, 0) + 1
+    if not counts:
+        return ""
+    winner, count = max(counts.items(), key=lambda item: (item[1], item[0]))
+    if list(counts.values()).count(count) > 1:
+        return ""
+    return winner
+
+
 def _winner(game: dict[str, object]) -> str:
     alive = [player for player in _player_list(game) if player.get("alive") is True]
     mafia = [player for player in alive if player.get("team") == "mafia"]
@@ -252,13 +393,24 @@ def _winner(game: dict[str, object]) -> str:
     return ""
 
 
-def _append_event(game: dict[str, object], kind: str, channel: str, actor_id: str, message: str) -> dict[str, object]:
+def _append_event(
+    game: dict[str, object],
+    kind: str,
+    channel: str,
+    actor_id: str,
+    message: str,
+    *,
+    target_agent_id: str = "",
+) -> dict[str, object]:
+    if channel not in MAFIA_EVENT_CHANNELS:
+        channel = "all"
     event = {
         "id": uuid4().hex[:12],
         "created_at": _now(),
         "kind": kind,
         "channel": channel,
         "actor_id": actor_id,
+        "target_agent_id": target_agent_id,
         "name": _actor_name(game, actor_id),
         "message": clean_lobby_text(message, limit=1000),
         "day_number": game.get("day_number") or 1,
@@ -311,9 +463,14 @@ def _agent_id(value: object) -> str:
 
 def _channel(value: object) -> str:
     channel = clean_lobby_text(value or "all", limit=32)
-    if channel not in MAFIA_CHANNELS:
+    if channel not in MAFIA_CHAT_CHANNELS:
         raise ValueError("Invalid mafia chat channel.")
     return channel
+
+
+def _ruleset(value: object) -> str:
+    ruleset = clean_lobby_text(value or "basic", limit=32)
+    return "classic" if ruleset == "classic" else "basic"
 
 
 def _player(game: dict[str, object], agent_id: str) -> dict[str, object]:

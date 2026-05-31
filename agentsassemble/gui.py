@@ -106,6 +106,7 @@ from agentsassemble.mafia_game import (
     post_mafia_chat,
     resolve_mafia_phase,
     start_mafia_game,
+    submit_mafia_action,
 )
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_lifecycle import infer_live_status, project_meeting_lifecycle
@@ -7896,6 +7897,22 @@ def _make_handler(
                         output_root,
                         str(payload.get("game_id") or ""),
                         viewer_agent_id=str(payload.get("viewer_agent_id") or payload.get("voter_id") or ""),
+                    )
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json({"event": event, "game": game})
+                return
+            if parsed.path == "/api/play/mafia/action":
+                payload = self._operation_json_payload(operation="mafia.action", target_id="")
+                if payload is None:
+                    return
+                try:
+                    event = submit_mafia_action(output_root, payload)
+                    game = mafia_game_payload(
+                        output_root,
+                        str(payload.get("game_id") or ""),
+                        viewer_agent_id=str(payload.get("viewer_agent_id") or payload.get("actor_id") or ""),
                     )
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))

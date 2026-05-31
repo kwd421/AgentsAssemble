@@ -14,6 +14,7 @@ from agentsassemble.mafia_game import (
     post_mafia_chat,
     resolve_mafia_phase,
     start_mafia_game,
+    submit_mafia_action,
 )
 
 
@@ -22,6 +23,14 @@ PLAYERS = [
     {"agent_id": "spark-b", "display_name": "Codex Spark B"},
     {"agent_id": "spark-c", "display_name": "Codex Spark C"},
     {"agent_id": "spark-d", "display_name": "Codex Spark D"},
+]
+
+CLASSIC_PLAYERS = [
+    {"agent_id": "mafia-a", "display_name": "Mafia A", "role": "mafia"},
+    {"agent_id": "doctor-a", "display_name": "Doctor A", "role": "doctor"},
+    {"agent_id": "detective-a", "display_name": "Detective A", "role": "detective"},
+    {"agent_id": "town-a", "display_name": "Town A", "role": "town"},
+    {"agent_id": "town-b", "display_name": "Town B", "role": "town"},
 ]
 
 
@@ -135,6 +144,64 @@ class MafiaGameTests(unittest.TestCase):
             self.assertNotIn("votes", town_view)
             self.assertEqual(host_view["votes"]["night"], {mafia_id: town_id})
 
+    def test_classic_rules_can_assign_doctor_and_detective(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            game = start_mafia_game(root, {"game_id": "mafia-room", "players": PLAYERS + [{"agent_id": "spark-e", "display_name": "Codex Spark E"}], "ruleset": "classic"})
+
+            roles = {player["role"] for player in game["players"]}
+
+            self.assertIn("mafia", roles)
+            self.assertIn("doctor", roles)
+            self.assertIn("detective", roles)
+
+    def test_doctor_can_save_night_kill_target(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            game = start_mafia_game(root, {"game_id": "mafia-room", "players": CLASSIC_PLAYERS})
+            resolve_mafia_phase(root, {"game_id": "mafia-room"})
+
+            cast_mafia_vote(root, {"game_id": "mafia-room", "voter_id": "mafia-a", "target_id": "town-a"})
+            submit_mafia_action(root, {"game_id": "mafia-room", "actor_id": "doctor-a", "action": "doctor_save", "target_id": "town-a"})
+            resolved = resolve_mafia_phase(root, {"game_id": "mafia-room"})
+
+            self.assertEqual(resolved["phase"], "day")
+            self.assertTrue(next(player["alive"] for player in resolved["players"] if player["agent_id"] == "town-a"))
+            self.assertIn("아무도 사망하지 않았습니다.", " ".join(_event_messages(resolved)))
+
+    def test_detective_result_is_private_to_detective_and_host(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            start_mafia_game(root, {"game_id": "mafia-room", "players": CLASSIC_PLAYERS})
+            resolve_mafia_phase(root, {"game_id": "mafia-room"})
+
+            submit_mafia_action(root, {"game_id": "mafia-room", "actor_id": "detective-a", "action": "detective_check", "target_id": "mafia-a"})
+
+            detective_view = mafia_game_payload(root, "mafia-room", viewer_agent_id="detective-a")
+            town_view = mafia_game_payload(root, "mafia-room", viewer_agent_id="town-a")
+            host_view = mafia_game_payload(root, "mafia-room", viewer_agent_id="host")
+
+            self.assertIn("조사 결과", " ".join(_event_messages(detective_view)))
+            self.assertNotIn("조사 결과", " ".join(_event_messages(town_view)))
+            self.assertIn("조사 결과", " ".join(_event_messages(host_view)))
+
+    def test_mafia_players_can_see_mafia_teammates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            players = [
+                {"agent_id": "mafia-a", "display_name": "Mafia A", "role": "mafia"},
+                {"agent_id": "mafia-b", "display_name": "Mafia B", "role": "mafia"},
+                {"agent_id": "town-a", "display_name": "Town A", "role": "town"},
+                {"agent_id": "town-b", "display_name": "Town B", "role": "town"},
+            ]
+            start_mafia_game(root, {"game_id": "mafia-room", "players": players})
+
+            mafia_view = mafia_game_payload(root, "mafia-room", viewer_agent_id="mafia-a")
+            town_view = mafia_game_payload(root, "mafia-room", viewer_agent_id="town-a")
+
+            self.assertEqual(_own_role(mafia_view, "mafia-b"), "mafia")
+            self.assertIsNone(_own_role(town_view, "mafia-b"))
+
     def test_api_start_chat_vote_and_filtered_read(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -188,6 +255,29 @@ class MafiaGameTests(unittest.TestCase):
             self.assertNotIn("비밀 팀챗", _event_messages(filtered["game"]))
             self.assertNotIn("votes", filtered["game"])
             self.assertNotIn("role", next(player for player in filtered["game"]["players"] if player["agent_id"] == mafia_id))
+
+    def test_api_doctor_action_can_save_target(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base_url = f"http://127.0.0.1:{server.server_port}"
+                _post(base_url, "/api/play/mafia/start", {"game_id": "mafia-room", "players": CLASSIC_PLAYERS})
+                _post(base_url, "/api/play/mafia/resolve", {"game_id": "mafia-room"})
+                _post(base_url, "/api/play/mafia/vote", {"game_id": "mafia-room", "voter_id": "mafia-a", "target_id": "town-a"})
+                _post(
+                    base_url,
+                    "/api/play/mafia/action",
+                    {"game_id": "mafia-room", "actor_id": "doctor-a", "action": "doctor_save", "target_id": "town-a"},
+                )
+                resolved = _post(base_url, "/api/play/mafia/resolve", {"game_id": "mafia-room", "viewer_agent_id": "host"})
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertTrue(next(player["alive"] for player in resolved["game"]["players"] if player["agent_id"] == "town-a"))
 
 
 def _mafia_ids(game):
