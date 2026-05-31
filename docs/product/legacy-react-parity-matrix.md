@@ -172,6 +172,14 @@ surface rather than silently counted as React parity.
 | `/api/release-health/queue` | GET | exact | `fetchReleaseHealthQueue()` | yes | React read-only release-health latest status projection. |
 | `/api/side-chat` | GET | exact | `fetchSideChat()` | yes | React side-chat read/write. |
 | `/api/side-chat` | POST | exact | `postSideChatMessage()` | yes | React side-chat read/write. |
+| `/api/room-invite/create` | POST | exact | `createRoomInvite()` | yes | Host creates invite token for remote client. |
+| `/api/room-invite/join` | POST | exact | `joinRoomWithInvite()` | yes | Remote client joins room with invite token. |
+| `/api/room-invite/leave` | POST | exact | `leaveRoom()` | yes | Remote client leaves room and revokes session. |
+| `/api/room-invite/sessions` | GET | exact | `fetchRoomInviteSessions()` | yes | Host views active remote sessions. |
+| `/api/room/events` | GET | exact | `subscribeRoomEvents()` | yes | Authenticated SSE stream for remote clients. |
+| `/api/room/lobby` | GET | exact | `fetchRoomLobby()` | yes | Authenticated lobby read for remote clients. |
+| `/api/room/say` | POST | exact | `postRoomMessage()` | yes | Authenticated lobby write for remote clients. |
+| `/api/play/mafia/action` | POST | exact | `-` | no | Mafia night action endpoint. |
 
 ## Room-Event Contract Signals
 

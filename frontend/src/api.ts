@@ -441,10 +441,10 @@ async function fetchJson<T>(url: string): Promise<T> {
   return res.json();
 }
 
-async function postJson<T>(url: string, body: object): Promise<T> {
+async function postJson<T>(url: string, body: object, extraHeaders?: Record<string, string>): Promise<T> {
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...extraHeaders },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -933,4 +933,117 @@ export function subscribeMeetingEvents(
   source.onmessage = (event) => handleData(event.data);
   if (onError) source.onerror = onError;
   return () => source.close();
+}
+
+// --- Room Invite (Web Multi) ---
+
+export interface RoomInvite {
+  invite_token: string;
+  meeting_id: string;
+  agent_id: string;
+  display_name: string;
+  expires_at: string;
+  room_url: string;
+}
+
+export interface RoomJoinResult {
+  status: string;
+  session_token?: string;
+  agent_id?: string;
+  display_name?: string;
+  meeting_id?: string;
+  connection_kind?: string;
+  expires_at?: string;
+  reason?: string;
+}
+
+export interface RoomSession {
+  agent_id: string;
+  display_name: string;
+  meeting_id: string;
+  joined_at: string;
+  expires_at: string;
+}
+
+export function createRoomInvite(params: {
+  meeting_id: string;
+  agent_id?: string;
+  display_name?: string;
+  ttl_seconds?: number;
+}): Promise<RoomInvite> {
+  return postJson<RoomInvite>("/api/room-invite/create", params);
+}
+
+export function joinRoomWithInvite(params: {
+  invite_token: string;
+  meeting_id?: string;
+  display_name?: string;
+}): Promise<RoomJoinResult> {
+  return postJson<RoomJoinResult>("/api/room-invite/join", params);
+}
+
+export function leaveRoom(sessionToken: string): Promise<{ status: string }> {
+  return postJson<{ status: string }>("/api/room-invite/leave", {}, { Authorization: `Bearer ${sessionToken}` });
+}
+
+export function fetchRoomInviteSessions(): Promise<{ sessions: RoomSession[] }> {
+  return fetch("/api/room-invite/sessions").then((r) => r.json());
+}
+
+export function fetchRoomLobby(sessionToken: string): Promise<{ events: LobbyEvent[]; session: { agent_id: string; display_name: string } }> {
+  return fetch("/api/room/lobby", {
+    headers: { Authorization: `Bearer ${sessionToken}` },
+  }).then((r) => r.json());
+}
+
+export function postRoomMessage(
+  sessionToken: string,
+  params: { message: string }
+): Promise<{ event: LobbyEvent }> {
+  return postJson<{ event: LobbyEvent }>("/api/room/say", params, { Authorization: `Bearer ${sessionToken}` });
+}
+
+export function subscribeRoomEvents(
+  sessionToken: string,
+  onEvents: (events: LobbyEvent[]) => void,
+  onError?: (err: Event) => void
+): () => void {
+  // EventSource doesn't support custom headers, so we use fetch + ReadableStream
+  const controller = new AbortController();
+  const url = "/api/room/events";
+
+  fetch(url, {
+    headers: { Authorization: `Bearer ${sessionToken}` },
+    signal: controller.signal,
+  })
+    .then((response) => {
+      if (!response.ok || !response.body) {
+        onError?.(new Event("error"));
+        return;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      function pump(): Promise<void> {
+        return reader.read().then(({ done, value }) => {
+          if (done) return;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const events = parseLobbyStreamData(line.slice(6));
+              if (events.length) onEvents(events);
+            }
+          }
+          return pump();
+        });
+      }
+
+      pump().catch(() => onError?.(new Event("error")));
+    })
+    .catch(() => onError?.(new Event("error")));
+
+  return () => controller.abort();
 }

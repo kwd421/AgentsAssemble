@@ -118,6 +118,14 @@ from agentsassemble.frontend_runtime import (
     frontend_dist_status,
 )
 from agentsassemble.release_health import release_health_catalog_payload, release_health_queue_payload
+from agentsassemble.room_invite import (
+    NATIVE_REMOTE_ROOM_CLIENT_KIND,
+    active_sessions_summary,
+    create_room_invite,
+    join_room_with_invite,
+    revoke_session,
+    verify_session_token,
+)
 from agentsassemble.meeting_events import (
     ROOM_TOPIC_LIMIT,
     append_live_event,
@@ -7543,6 +7551,31 @@ def _make_handler(
             if path == "/api/events/lobby":
                 self._send_sse_stream("lobby", "lobby", last_event_id=self._last_event_id(query))
                 return
+            if path == "/api/room/events":
+                session_token = self._extract_session_token()
+                if not session_token:
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+                    return
+                session = verify_session_token(session_token)
+                if not session:
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
+                    return
+                self._send_sse_stream("lobby", "lobby", last_event_id=self._last_event_id(query))
+                return
+            if path == "/api/room/lobby":
+                session_token = self._extract_session_token()
+                if not session_token:
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+                    return
+                session = verify_session_token(session_token)
+                if not session:
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
+                    return
+                self._send_json({"events": read_lobby(output_root), "session": {"agent_id": session["agent_id"], "display_name": session["display_name"]}})
+                return
+            if path == "/api/room-invite/sessions":
+                self._send_json({"sessions": active_sessions_summary()})
+                return
             if path == "/api/side-chat":
                 self._send_json({"events": read_side_chat(output_root)})
                 return
@@ -7826,6 +7859,30 @@ def _make_handler(
                     return
                 event = append_lobby_event(output_root, payload)
                 self._send_json({"event": event, "events": read_lobby(output_root)})
+                return
+            if parsed.path == "/api/room/say":
+                session_token = self._extract_session_token()
+                if not session_token:
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+                    return
+                session = verify_session_token(session_token)
+                if not session:
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
+                    return
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                # Inject authenticated identity into the lobby event
+                payload["speaker"] = session["display_name"]
+                payload["agent_id"] = session["agent_id"]
+                event = append_lobby_event(output_root, payload)
+                self._send_json({"event": event})
                 return
             if parsed.path == "/api/side-chat":
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -8479,6 +8536,91 @@ def _make_handler(
                     ),
                 )
                 self._send_json(live_agent)
+                return
+            if parsed.path == "/api/room-invite/create":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    invite = create_room_invite(
+                        room_url=str(payload.get("room_url") or self._request_server_url()),
+                        meeting_id=str(payload.get("meeting_id") or ""),
+                        agent_id=str(payload.get("agent_id") or ""),
+                        display_name=str(payload.get("display_name") or ""),
+                        ttl_seconds=int(payload.get("ttl_seconds") or 600),
+                    )
+                except (ValueError, TypeError) as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(invite)
+                return
+            if parsed.path == "/api/room-invite/join":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                token = str(payload.get("invite_token") or "").strip()
+                if not token:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "invite_token is required")
+                    return
+                result = join_room_with_invite(
+                    token,
+                    meeting_id=str(payload.get("meeting_id") or ""),
+                    display_name=str(payload.get("display_name") or ""),
+                )
+                if result.get("status") != "admitted":
+                    self._send_error(HTTPStatus.FORBIDDEN, str(result.get("reason", "rejected")))
+                    return
+                # Register the admitted agent in the live-agent roster
+                try:
+                    connect_live_agent(output_root, {
+                        "agent_id": result["agent_id"],
+                        "display_name": result["display_name"],
+                        "provider_kind": "manual",
+                        "connection_kind": NATIVE_REMOTE_ROOM_CLIENT_KIND,
+                        "meeting_id": result["meeting_id"],
+                        "status": "online",
+                    })
+                except ValueError:
+                    pass  # non-fatal: roster update best-effort
+                self._send_json(result)
+                return
+            if parsed.path == "/api/room-invite/leave":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                session_token = self._extract_session_token()
+                if not session_token:
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "session token required")
+                    return
+                session = verify_session_token(session_token)
+                if not session:
+                    self._send_error(HTTPStatus.UNAUTHORIZED, "invalid or expired session")
+                    return
+                # Mark agent offline in roster
+                try:
+                    connect_live_agent(output_root, {
+                        "agent_id": session["agent_id"],
+                        "status": "offline",
+                    })
+                except ValueError:
+                    pass
+                revoke_session(session_token)
+                self._send_json({"status": "left", "agent_id": session["agent_id"]})
                 return
             if parsed.path == "/api/live-agent-join-brief":
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -9666,6 +9808,13 @@ def _make_handler(
                 return f"http://{host}"
             address = self.server.server_address
             return f"http://{address[0]}:{address[1]}"
+
+        def _extract_session_token(self) -> str:
+            """Extract bearer session token from Authorization header."""
+            auth = self.headers.get("Authorization") or ""
+            if auth.startswith("Bearer "):
+                return auth.removeprefix("Bearer ").strip()
+            return ""
 
         def _local_server_url(self) -> str:
             return _local_server_url(self.server.server_address)
