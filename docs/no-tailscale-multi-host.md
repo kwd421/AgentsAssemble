@@ -95,8 +95,9 @@ and authenticated room endpoints are implemented.
 
 ## Relay And WebRTC Candidates
 
-LAN-only mode is the first step. It does not solve NAT traversal, public
-discovery, mobile networks, TLS trust, or internet identity.
+LAN-only mode was the first step; public tunnel v1 now exists (see
+`docs/public-internet-invite-tunnel.md`) but it does not solve NAT traversal,
+relay, WebRTC, mobile networks, or durable auth beyond server-memory tokens.
 
 Relay mode:
 
