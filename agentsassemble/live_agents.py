@@ -22,6 +22,7 @@ LIVE_AGENT_CONNECTION_KINDS = {
     "live_session",
     "terminal_session",
     "remote_bridge",
+    "native_remote_room_client",
     "self_service",
     "manual",
 }

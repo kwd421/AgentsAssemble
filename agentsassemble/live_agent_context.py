@@ -66,6 +66,12 @@ def live_agent_context_contract(provider_kind: object, connection_kind: object) 
             "context_durability": "provider_managed_room_loop",
             "sandbox_enforcement": sandbox_enforcement,
         }
+    if connection == "native_remote_room_client":
+        return {
+            "join_semantics": "native_remote_room_loop",
+            "context_durability": "remote_owner_managed",
+            "sandbox_enforcement": sandbox_enforcement,
+        }
     if connection == "codex_resume":
         return {
             "join_semantics": "codex_exec_resume",
