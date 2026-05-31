@@ -8,14 +8,17 @@ from unittest.mock import patch
 
 from agentsassemble.room_invite import (
     create_room_invite,
+    generate_runtime_host_token,
     get_host_token,
     get_public_url,
     host_gate_required,
     join_room_with_invite,
+    normalize_public_room_url,
     pending_invites_summary,
     reset_state,
     revoke_invite,
     revoke_session,
+    set_runtime_public_url,
     verify_host_token,
     verify_session_token,
 )
@@ -79,6 +82,19 @@ class TestHostTokenGate(unittest.TestCase):
             os.environ.pop("AGENTSASSEMBLE_HOST_TOKEN", None)
             self.assertEqual(get_host_token(), "")
 
+    def test_runtime_host_token_enables_public_url_gate(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("AGENTSASSEMBLE_HOST_TOKEN", None)
+            os.environ.pop("AGENTSASSEMBLE_PUBLIC_URL", None)
+            token = generate_runtime_host_token()
+            set_runtime_public_url("https://runtime-room.example.com")
+
+            self.assertEqual(get_host_token(), token)
+            self.assertEqual(get_public_url(), "https://runtime-room.example.com")
+            self.assertTrue(host_gate_required())
+            self.assertTrue(verify_host_token(token))
+            self.assertFalse(verify_host_token("wrong"))
+
 
 class TestJoinUrl(unittest.TestCase):
     def setUp(self):
@@ -111,6 +127,31 @@ class TestJoinUrl(unittest.TestCase):
     def test_public_url_trailing_slash_stripped(self):
         with patch.dict(os.environ, {"AGENTSASSEMBLE_PUBLIC_URL": "https://example.com/"}):
             self.assertEqual(get_public_url(), "https://example.com")
+
+    def test_runtime_public_url_allows_internet_tunnel_hosts(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("AGENTSASSEMBLE_PUBLIC_URL", None)
+            self.assertEqual(
+                set_runtime_public_url("https://random-words.trycloudflare.com/"),
+                "https://random-words.trycloudflare.com",
+            )
+            invite = create_room_invite(
+                room_url="http://127.0.0.1:8765",
+                meeting_id="test",
+            )
+
+        self.assertTrue(str(invite["join_url"]).startswith("https://random-words.trycloudflare.com/join?token="))
+
+    def test_public_url_rejects_userinfo_query_and_fragment(self):
+        for bad_url in (
+            "https://user:pass@example.com",
+            "https://example.com?x=1",
+            "https://example.com#frag",
+            "ftp://example.com",
+        ):
+            with self.subTest(bad_url=bad_url):
+                with self.assertRaises(ValueError):
+                    normalize_public_room_url(bad_url)
 
 
 class TestInviteRevocation(unittest.TestCase):

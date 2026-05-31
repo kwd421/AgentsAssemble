@@ -20065,6 +20065,44 @@ class GuiServerTests(unittest.TestCase):
         self.assertFalse(_request_trusted("127.0.0.1", "127.0.0.1:8765", "http://evil.example.com"))
         self.assertTrue(_request_trusted("127.0.0.1", "localhost:1", "http://127.0.0.1:8765"))
         self.assertTrue(_request_trusted("127.0.0.1", "127.0.0.1:8765", None))
+        with patch.dict(os.environ, {"AGENTSASSEMBLE_PUBLIC_URL": "https://room.example.com"}):
+            self.assertTrue(
+                _request_trusted(
+                    "127.0.0.1",
+                    "room.example.com",
+                    "https://room.example.com",
+                    path="/join",
+                    method="GET",
+                )
+            )
+            self.assertTrue(
+                _request_trusted(
+                    "127.0.0.1",
+                    "room.example.com",
+                    "https://room.example.com",
+                    path="/api/room-invite/join",
+                    method="POST",
+                )
+            )
+            self.assertFalse(
+                _request_trusted(
+                    "127.0.0.1",
+                    "room.example.com",
+                    "https://room.example.com",
+                    path="/api/lobby",
+                    method="GET",
+                )
+            )
+            self.assertFalse(
+                _request_trusted(
+                    "127.0.0.1",
+                    "room.example.com",
+                    "https://evil.example.com",
+                    path="/join",
+                    method="GET",
+                )
+            )
+            self.assertFalse(_request_trusted("127.0.0.1", "other.example.com", "https://room.example.com", path="/join"))
         # Non-loopback bind (operator-exposed): LAN/Tailscale Host/Origin allowed.
         self.assertTrue(_request_trusted("0.0.0.0", "192.168.0.2:8765", "http://192.168.0.2:8765"))
         self.assertTrue(_request_trusted("192.168.0.2", "192.168.0.2:8765", "http://192.168.0.2:8765"))

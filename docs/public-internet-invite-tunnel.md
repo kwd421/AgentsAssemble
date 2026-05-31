@@ -7,17 +7,21 @@ the public internet so a friend can join via invite link.
 
 AgentsAssemble runs a local HTTP server (default `127.0.0.1:8765`). To allow
 internet access, you need a tunnel service that gives your local server a public
-URL. The server itself does NOT automatically open any public tunnel.
+URL. The React invite panel can prepare the host token, remember a public URL,
+and start a Cloudflare quick tunnel when `cloudflared` is already installed.
+It does not install tunnel software, start provider CLIs, or grant filesystem
+access.
 
 ## Requirements
 
-1. Set `AGENTSASSEMBLE_HOST_TOKEN` — a secret string that gates invite
-   creation, session listing, and invite revocation. Without this, anyone who
-   discovers your public URL can create invites.
+1. Configure a host token. In the React GUI, use **호스트 토큰 생성** before
+   exposing the room. Operators can still pre-set `AGENTSASSEMBLE_HOST_TOKEN`
+   when they want the token to come from the shell/environment.
 
-2. Set `AGENTSASSEMBLE_PUBLIC_URL` — the public base URL of your tunnel (e.g.,
-   `https://my-room.trycloudflare.com`). This is used to generate join links
-   that guests can open directly.
+2. Configure a public URL. In the GUI, use **공개 링크 열기** to start a
+   Cloudflare quick tunnel when `cloudflared` is installed, or paste an existing
+   public URL manually. Operators can still pre-set `AGENTSASSEMBLE_PUBLIC_URL`
+   for fixed tunnel deployments.
 
 ## Cloudflare Tunnel (Recommended)
 
@@ -39,6 +43,15 @@ export AGENTSASSEMBLE_HOST_TOKEN="$(python3 -c 'import secrets; print(secrets.to
 
 python3 -m agentsassemble.cli gui --host 127.0.0.1 --port 8765
 ```
+
+GUI-only path:
+
+1. Start the GUI on loopback: `python3 -m agentsassemble.cli gui --host 127.0.0.1 --port 8765`
+2. Open the React lobby invite panel.
+3. Click **호스트 토큰 생성**.
+4. Click **공개 링크 열기**. If `cloudflared` is missing, install it or paste a
+   tunnel URL into **공개 주소 직접 입력**.
+5. Click **초대 링크 생성** and send the generated `/join?token=...` link.
 
 ## ngrok
 
@@ -64,7 +77,9 @@ tailscale funnel 8765
 - **AGENTSASSEMBLE_HOST_TOKEN is required** for public exposure. Without it,
   host-gated endpoints (create invite, list sessions, revoke) reject all
   requests when `AGENTSASSEMBLE_PUBLIC_URL` is set. Host token may be omitted
-  only for local/LAN dev mode where no public URL is configured.
+  only for local/LAN dev mode where no public URL is configured. The GUI can
+  bootstrap a server-lifetime host token before a public URL is configured; it
+  does not reveal an existing environment token.
 - Invite tokens are single-use, time-limited (default 10 minutes), and revocable.
 - Session tokens expire after 1 hour.
 - The server does NOT start provider CLIs, expose secrets, or grant filesystem
@@ -77,19 +92,14 @@ tailscale funnel 8765
 ## Quick Start
 
 ```bash
-# Terminal 1: Start tunnel
-cloudflared tunnel --url http://127.0.0.1:8765
-
-# Terminal 2: Start server with auth
-export AGENTSASSEMBLE_HOST_TOKEN="my-secret-host-token"
-export AGENTSASSEMBLE_PUBLIC_URL="https://your-tunnel-url.trycloudflare.com"
 python3 -m agentsassemble.cli gui --host 127.0.0.1 --port 8765
 
 # In the React UI:
-# 1. Go to the invite panel, enter your host token
-# 2. Create an invite — a public join link is generated
-# 3. Send the link to your friend
-# 4. Friend opens the link, enters a display name, and joins
+# 1. Go to the invite panel
+# 2. Generate or enter the host token
+# 3. Start a Cloudflare tunnel or paste a public tunnel URL
+# 4. Create an invite — a public join link is generated
+# 5. Friend opens the link, enters a display name, and joins
 ```
 
 ## Limitations (v1)

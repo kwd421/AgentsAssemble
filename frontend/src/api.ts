@@ -977,6 +977,43 @@ export interface PendingInvite {
   revoked: boolean;
 }
 
+export interface PublicInviteTunnelStatus {
+  available: boolean;
+  running: boolean;
+  phase: string;
+  public_url: string;
+  local_url: string;
+  started_at: number;
+  last_error: string;
+  recent_log: string[];
+}
+
+export interface PublicInviteStatus {
+  host_token_configured: boolean;
+  host_gate_required: boolean;
+  public_url: string;
+  tunnel: PublicInviteTunnelStatus;
+  can_generate_host_token: boolean;
+}
+
+export interface GenerateHostTokenResponse {
+  status: string;
+  host_token?: string;
+  host_token_configured: boolean;
+  public_invite?: PublicInviteStatus;
+}
+
+export interface SetPublicInviteUrlResponse {
+  status: string;
+  public_url: string;
+  public_invite: PublicInviteStatus;
+}
+
+export interface PublicInviteMutationResponse {
+  status: string;
+  public_invite: PublicInviteStatus;
+}
+
 /** Get/set the host token for gated endpoints. Stored in sessionStorage. */
 export function getHostToken(): string {
   if (typeof sessionStorage === "undefined") return "";
@@ -1028,6 +1065,29 @@ export function fetchPendingInvites(): Promise<{ invites: PendingInvite[] }> {
 
 export function revokeRoomInvite(inviteId: string): Promise<{ status: string }> {
   return postJson<{ status: string }>("/api/room-invite/revoke", { invite_id: inviteId }, hostHeaders());
+}
+
+export function fetchPublicInviteStatus(): Promise<PublicInviteStatus> {
+  return fetch("/api/public-invite/status").then((r) => {
+    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+    return r.json();
+  });
+}
+
+export function generateHostToken(): Promise<GenerateHostTokenResponse> {
+  return postJson<GenerateHostTokenResponse>("/api/public-invite/host-token", {}, hostHeaders());
+}
+
+export function setPublicInviteUrl(publicUrl: string): Promise<SetPublicInviteUrlResponse> {
+  return postJson<SetPublicInviteUrlResponse>("/api/public-invite/public-url", { public_url: publicUrl }, hostHeaders());
+}
+
+export function startPublicInviteTunnel(): Promise<PublicInviteMutationResponse> {
+  return postJson<PublicInviteMutationResponse>("/api/public-invite/tunnel/start", {}, hostHeaders());
+}
+
+export function stopPublicInviteTunnel(): Promise<PublicInviteMutationResponse> {
+  return postJson<PublicInviteMutationResponse>("/api/public-invite/tunnel/stop", {}, hostHeaders());
 }
 
 export function fetchRoomLobby(sessionToken: string): Promise<{ events: LobbyEvent[]; session: { agent_id: string; display_name: string } }> {

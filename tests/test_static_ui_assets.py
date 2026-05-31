@@ -426,6 +426,17 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("not_started_by_join_brief", section)
         self.assertIn("Provider 실행 없음", section)
 
+    def test_react_public_join_route_renders_guest_only_invite_panel(self):
+        app_source = frontend_file("App.tsx")
+        invite_source = frontend_file("views/components/RoomInvitePanel.tsx")
+
+        self.assertIn('window.location.pathname === "/join"', app_source)
+        self.assertIn("function PublicJoinApp", app_source)
+        self.assertIn('<RoomInvitePanel meetingId="" guestOnly />', app_source)
+        self.assertIn("guestOnly?: boolean;", invite_source)
+        self.assertIn("guestOnly || params.get(\"token\")", invite_source)
+        self.assertIn("{!guestOnly && (", invite_source)
+
     def test_react_lobby_external_participation_uses_safe_command_skeletons_with_env_secret_refs(self):
         source = frontend_file("views/LobbyView.tsx")
         section = react_lobby_external_participation_section()

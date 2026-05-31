@@ -441,12 +441,16 @@ agent id, display name, current meeting id, and conservative room-loop defaults
 to `/api/live-agent-join-brief`, then renders the returned packet for the host to
 hand to another agent. That control is not a provider launcher, discovery scan,
 LAN invite token generator, clipboard writer, or storage-backed approval grant;
-LAN invite token creation is available through both CLI (`live-agent lan-invite
-create`) and the web API (`/api/room-invite/create`). The web API also supports
-join, authenticated say, and leave. Session tokens are in-memory only with no
-durable revocation beyond server-memory leave/expiry. Host-only invite creation
-is not enforceable without server-side auth—any LAN client that can reach the
-server can call the create endpoint.
+LAN invite token creation is available through CLI (`live-agent lan-invite
+create`) for same-network admission evidence, while the React room invite panel
+uses the web API (`/api/public-invite/*`, `/api/room-invite/create`, `/join`,
+authenticated say, and leave) for host-gated browser participation. A host token
+now gates invite creation, session listing, and revocation when public URL mode
+is configured; the GUI can bootstrap a server-lifetime token before public
+exposure and does not reveal an existing environment token. Session tokens are
+still in-memory only with no durable revocation beyond server-memory
+leave/expiry, and public reachability still depends on an operator-supplied
+tunnel rather than relay/WebRTC.
 
 The leave command is also available directly:
 

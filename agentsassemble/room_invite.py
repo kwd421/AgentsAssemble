@@ -22,13 +22,12 @@ import os
 import secrets
 import threading
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.multi_host_invites import (
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
     create_lan_invite_packet,
-    normalize_lan_room_url,
     resolve_lan_invite_secret_ref,
     verify_lan_invite_token,
 )
@@ -43,6 +42,8 @@ _active_sessions: dict[str, dict] = {}  # session_token -> session info
 _used_nonces: set[str] = set()  # consumed invite nonces (replay protection)
 _invite_secret: str = ""  # server-lifetime secret for invite generation
 _pending_invites: dict[str, dict] = {}  # nonce -> invite metadata (for revocation)
+_runtime_host_token: str = ""
+_runtime_public_url: str = ""
 
 # --- Host token gate ---
 # Set AGENTSASSEMBLE_HOST_TOKEN to require auth for invite creation/management.
@@ -56,7 +57,22 @@ PUBLIC_URL_ENV = "AGENTSASSEMBLE_PUBLIC_URL"
 
 def get_host_token() -> str:
     """Return configured host token, or empty string if not set."""
-    return os.environ.get(HOST_TOKEN_ENV, "")
+    return _runtime_host_token or os.environ.get(HOST_TOKEN_ENV, "")
+
+
+def set_runtime_host_token(token: str) -> str:
+    """Set the server-lifetime host token used by GUI bootstrap flows."""
+    global _runtime_host_token
+    clean_token = str(token or "").strip()
+    if not clean_token:
+        raise ValueError("host token is required")
+    _runtime_host_token = clean_token
+    return _runtime_host_token
+
+
+def generate_runtime_host_token() -> str:
+    """Generate and store a server-lifetime host token."""
+    return set_runtime_host_token(secrets.token_urlsafe(32))
 
 
 def host_gate_required() -> bool:
@@ -88,7 +104,52 @@ def verify_host_token(provided: str) -> bool:
 
 def get_public_url() -> str:
     """Return configured public base URL for join links, or empty string."""
-    return (os.environ.get(PUBLIC_URL_ENV) or "").rstrip("/")
+    return (_runtime_public_url or os.environ.get(PUBLIC_URL_ENV) or "").rstrip("/")
+
+
+def set_runtime_public_url(url: str) -> str:
+    """Set the server-lifetime public URL used for invite join links."""
+    global _runtime_public_url
+    parsed_url = normalize_public_room_url(str(url or "").strip())
+    _runtime_public_url = parsed_url.rstrip("/")
+    return _runtime_public_url
+
+
+def normalize_public_room_url(room_url: str) -> str:
+    """Normalize an operator-supplied public room URL for join links.
+
+    Unlike LAN invite room URLs, public invite URLs intentionally allow
+    internet tunnel hosts such as ``*.trycloudflare.com``. They still reject
+    userinfo, query strings, and fragments so generated join links own the
+    query parameters.
+    """
+    value = str(room_url or "").strip().rstrip("/")
+    if not value:
+        raise ValueError("public invite URL is required.")
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        raise ValueError("public invite URL must be an HTTP(S) URL.") from None
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("public invite URL must be an HTTP(S) URL.")
+    try:
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError:
+        raise ValueError("public invite URL must be an HTTP(S) URL with a valid host and port.") from None
+    if not hostname:
+        raise ValueError("public invite URL must be an HTTP(S) URL with a valid host and port.")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("public invite URL must be HTTP(S) without userinfo, query, or fragment.")
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+
+
+def clear_runtime_public_url(expected_url: str = "") -> None:
+    """Clear the runtime public URL, optionally only when it matches a value."""
+    global _runtime_public_url
+    if expected_url and _runtime_public_url != expected_url.rstrip("/"):
+        return
+    _runtime_public_url = ""
 
 
 def _get_invite_secret() -> str:
@@ -339,9 +400,11 @@ def _issue_session_token(
 
 def reset_state() -> None:
     """Reset all in-memory state. For testing only."""
-    global _invite_secret
+    global _invite_secret, _runtime_host_token, _runtime_public_url
     with _state_lock:
         _active_sessions.clear()
         _used_nonces.clear()
         _pending_invites.clear()
         _invite_secret = ""
+        _runtime_host_token = ""
+        _runtime_public_url = ""

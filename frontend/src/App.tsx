@@ -41,6 +41,7 @@ import LiveView from "./views/LiveView";
 import LobbyView from "./views/LobbyView";
 import RecordsView from "./views/RecordsView";
 import RoomCommandStrip from "./views/components/RoomCommandStrip";
+import RoomInvitePanel from "./views/components/RoomInvitePanel";
 
 type Channel = "lobby" | "live" | "board" | "records";
 type RoomSurface = Channel | "admin";
@@ -69,7 +70,41 @@ function roomName(flow: FlowResponse["flow"]) {
   return flow.meeting_id || flow.flow_id || "resident-room";
 }
 
+function isPublicJoinRoute() {
+  try {
+    return window.location.pathname === "/join" || window.location.pathname === "/join/";
+  } catch {
+    return false;
+  }
+}
+
+function PublicJoinApp() {
+  return (
+    <div className="ops-shell min-h-screen text-text-primary">
+      <main className="mx-auto flex min-h-screen w-full max-w-[520px] flex-col justify-center px-4 py-8">
+        <div className="ops-panel ops-cut space-y-4 p-4">
+          <div className="flex items-center gap-3">
+            <span className="ops-logo-mark shrink-0" aria-hidden />
+            <div className="min-w-0">
+              <h1 className="text-[18px] font-black text-text-primary">AgentsAssemble 입장</h1>
+              <p className="text-[12px] text-text-muted">초대받은 방에 참가합니다.</p>
+            </div>
+          </div>
+          <RoomInvitePanel meetingId="" guestOnly />
+        </div>
+      </main>
+    </div>
+  );
+}
+
 export default function App() {
+  if (isPublicJoinRoute()) {
+    return <PublicJoinApp />;
+  }
+  return <OperatorApp />;
+}
+
+function OperatorApp() {
   const [channel, setChannel] = useState<Channel>("lobby");
   const [adminOpen, setAdminOpen] = useState(false);
   const [mafiaGameId, setMafiaGameId] = useState(() => {

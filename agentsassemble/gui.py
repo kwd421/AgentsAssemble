@@ -111,6 +111,7 @@ from agentsassemble.mafia_game import (
 from agentsassemble.meeting import run_demo_meeting
 from agentsassemble.meeting_lifecycle import infer_live_status, project_meeting_lifecycle
 from agentsassemble.provider_health import provider_health_report
+from agentsassemble.public_tunnel import PublicTunnelManager
 from agentsassemble.frontend_runtime import (
     REACT_APP_BUILD_COMMAND,
     REACT_APP_MISSING_BUILD_MESSAGE,
@@ -122,10 +123,15 @@ from agentsassemble.room_invite import (
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
     active_sessions_summary,
     create_room_invite,
+    generate_runtime_host_token,
+    get_host_token,
+    get_public_url,
+    host_gate_required,
     join_room_with_invite,
     pending_invites_summary,
     revoke_invite,
     revoke_session,
+    set_runtime_public_url,
     verify_host_token,
     verify_session_token,
 )
@@ -1098,6 +1104,7 @@ def serve_gui(
     process_supervisor = LiveAgentProcessSupervisor(root)
     session_run_controller = LiveAgentSessionRunController(root)
     flow_supervisor = LiveAgentFlowSupervisor(root)
+    public_tunnel_manager = PublicTunnelManager()
     session_run_monitor = LiveAgentSessionRunMonitor(
         root,
         process_supervisor,
@@ -1111,6 +1118,7 @@ def serve_gui(
         session_run_monitor=session_run_monitor,
         flow_supervisor=flow_supervisor,
         frontend_dist_root=frontend_dist_root,
+        public_tunnel_manager=public_tunnel_manager,
     )
     server = ThreadingHTTPServer((host, port), handler)
     if not _is_loopback_host(host):
@@ -1121,6 +1129,7 @@ def serve_gui(
     try:
         process_supervisor.start_monitor()
         server_url = _local_server_url(server.server_address)
+        public_tunnel_manager.set_local_url(server_url)
         session_run_monitor.default_server = server_url
         if live_agent_config is not None:
             _autostart_live_agent_group(
@@ -1141,6 +1150,7 @@ def serve_gui(
         print("\nStopping AgentsAssemble GUI")
     finally:
         session_run_monitor.stop()
+        public_tunnel_manager.stop()
         process_supervisor.close()
         server.server_close()
 
@@ -7441,25 +7451,70 @@ def _split_authority_host_port(authority: str) -> tuple[str, str]:
 
 def _host_header_is_trusted(host_header: object) -> bool:
     hostname, _ = _split_authority_host_port(str(host_header or ""))
-    return hostname in _LOOPBACK_HOSTNAMES
+    if hostname in _LOOPBACK_HOSTNAMES:
+        return True
+    public_url = get_public_url()
+    if not public_url:
+        return False
+    return hostname == (urlparse(public_url).hostname or "").lower()
 
 
 def _origin_is_trusted(origin: str) -> bool:
     parsed = urlparse(origin)
-    return parsed.scheme in {"http", "https"} and (parsed.hostname or "").lower() in _LOOPBACK_HOSTNAMES
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    hostname = (parsed.hostname or "").lower()
+    return hostname in _LOOPBACK_HOSTNAMES
 
 
-def _request_trusted(bound_host: object, host_header: object, origin: object) -> bool:
+def _origin_matches_public_url(origin: str) -> bool:
+    parsed = urlparse(origin)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    hostname = (parsed.hostname or "").lower()
+    public_url = get_public_url()
+    return bool(public_url) and hostname == (urlparse(public_url).hostname or "").lower()
+
+
+def _public_invite_route_allowed(path: str, method: str) -> bool:
+    if method == "GET":
+        return (
+            path in {"/join", "/join/", "/api/room/events", "/api/room/lobby"}
+            or path.startswith("/app/assets/")
+        )
+    if method == "POST":
+        return path in {"/api/room-invite/join", "/api/room-invite/leave", "/api/room/say"}
+    return False
+
+
+def _request_trusted(
+    bound_host: object,
+    host_header: object,
+    origin: object,
+    *,
+    path: str = "",
+    method: str = "GET",
+) -> bool:
     # A non-loopback bind is an explicit operator choice to expose the
     # unauthenticated control plane (see the startup warning), so the loopback
     # allowlist is only enforced for the default loopback bind, where it blocks
     # DNS-rebinding/CSRF driven by a browser.
     if not _is_loopback_host(bound_host):
         return True
-    if not _host_header_is_trusted(host_header):
+    host_trusted = _host_header_is_trusted(host_header)
+    host_name, _ = _split_authority_host_port(str(host_header or ""))
+    host_is_loopback = host_name in _LOOPBACK_HOSTNAMES
+    host_is_public = host_trusted and not host_is_loopback
+    if not host_trusted:
+        return False
+    if host_is_public and not _public_invite_route_allowed(path, method):
         return False
     origin_text = str(origin or "").strip()
-    return _origin_is_trusted(origin_text) if origin_text else True
+    if not origin_text:
+        return True
+    if host_is_loopback:
+        return _origin_is_trusted(origin_text)
+    return _origin_matches_public_url(origin_text)
 
 
 def _make_handler(
@@ -7470,28 +7525,32 @@ def _make_handler(
     session_run_monitor: LiveAgentSessionRunMonitor | None = None,
     flow_supervisor: LiveAgentFlowSupervisor | None = None,
     frontend_dist_root: Path | None = None,
+    public_tunnel_manager: PublicTunnelManager | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     static_root = Path(__file__).parent / "static"
     react_app_root = (frontend_dist_root or default_frontend_dist_root()).resolve()
     live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
     live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
     live_agent_flow_supervisor = flow_supervisor or LiveAgentFlowSupervisor(output_root)
+    invite_tunnel_manager = public_tunnel_manager or PublicTunnelManager()
 
     class AgentsAssembleHandler(BaseHTTPRequestHandler):
-        def _request_is_trusted(self) -> bool:
+        def _request_is_trusted(self, *, path: str, method: str) -> bool:
             return _request_trusted(
                 self.server.server_address[0],
                 self.headers.get("Host"),
                 self.headers.get("Origin"),
+                path=path,
+                method=method,
             )
 
         def do_GET(self) -> None:
-            if not self._request_is_trusted():
-                self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
-                return
             parsed = urlparse(self.path)
             path = parsed.path
             query = parse_qs(parsed.query)
+            if not self._request_is_trusted(path=path, method="GET"):
+                self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
+                return
             if path == "/":
                 if frontend_dist_status(react_app_root).static_available:
                     self._send_react_app_index(react_app_root)
@@ -7502,6 +7561,9 @@ def _make_handler(
                 self._send_file(static_root / "index.html", "text/html; charset=utf-8")
                 return
             if path in {"/app", "/app/"}:
+                self._send_react_app_index(react_app_root)
+                return
+            if path in {"/join", "/join/"}:
                 self._send_react_app_index(react_app_root)
                 return
             if path.startswith("/app/"):
@@ -7585,6 +7647,9 @@ def _make_handler(
                 if not self._verify_host_token():
                     return
                 self._send_json({"invites": pending_invites_summary()})
+                return
+            if path == "/api/public-invite/status":
+                self._send_json(self._public_invite_status())
                 return
             if path == "/api/side-chat":
                 self._send_json({"events": read_side_chat(output_root)})
@@ -7800,10 +7865,10 @@ def _make_handler(
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 
         def do_POST(self) -> None:
-            if not self._request_is_trusted():
+            parsed = urlparse(self.path)
+            if not self._request_is_trusted(path=parsed.path, method="POST"):
                 self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
                 return
-            parsed = urlparse(self.path)
             if parsed.path == "/api/demo":
                 result = run_demo_meeting(adapter_name="mock", output_root=output_root)
                 self._send_json({"meeting_id": result.meeting_id, "path": str(result.meeting_dir)})
@@ -8564,7 +8629,7 @@ def _make_handler(
                     return
                 try:
                     invite = create_room_invite(
-                        room_url=str(payload.get("room_url") or self._request_server_url()),
+                        room_url=str(payload.get("room_url") or self._local_server_url()),
                         meeting_id=str(payload.get("meeting_id") or ""),
                         agent_id=str(payload.get("agent_id") or ""),
                         display_name=str(payload.get("display_name") or ""),
@@ -8663,6 +8728,59 @@ def _make_handler(
                         self._send_error(HTTPStatus.NOT_FOUND, "session not found")
                 else:
                     self._send_error(HTTPStatus.BAD_REQUEST, "invite_id or session_token required")
+                return
+            if parsed.path == "/api/public-invite/host-token":
+                if get_host_token():
+                    if not self._verify_host_token():
+                        return
+                    self._send_json({"status": "already_configured", "host_token_configured": True})
+                    return
+                if get_public_url():
+                    self._send_error(HTTPStatus.FORBIDDEN, "host token must be configured before public URL mode")
+                    return
+                token = generate_runtime_host_token()
+                self._send_json({
+                    "status": "generated",
+                    "host_token": token,
+                    "host_token_configured": True,
+                    "public_invite": self._public_invite_status(),
+                })
+                return
+            if parsed.path == "/api/public-invite/public-url":
+                if not get_host_token():
+                    self._send_error(HTTPStatus.FORBIDDEN, "host token must be configured before public URL")
+                    return
+                if not self._verify_host_token():
+                    return
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    public_url = set_runtime_public_url(str(payload.get("public_url") or ""))
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json({"status": "configured", "public_url": public_url, "public_invite": self._public_invite_status()})
+                return
+            if parsed.path == "/api/public-invite/tunnel/start":
+                if not get_host_token():
+                    self._send_error(HTTPStatus.FORBIDDEN, "host token must be configured before starting a public tunnel")
+                    return
+                if not self._verify_host_token():
+                    return
+                invite_tunnel_manager.set_local_url(self._local_server_url())
+                self._send_json({"status": "ok", "public_invite": self._public_invite_status(invite_tunnel_manager.start())})
+                return
+            if parsed.path == "/api/public-invite/tunnel/stop":
+                if not self._verify_host_token():
+                    return
+                self._send_json({"status": "ok", "public_invite": self._public_invite_status(invite_tunnel_manager.stop())})
                 return
             if parsed.path == "/api/live-agent-join-brief":
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -9874,6 +9992,16 @@ def _make_handler(
                 self._send_error(HTTPStatus.FORBIDDEN, "host token required")
                 return False
             return True
+
+        def _public_invite_status(self, tunnel_status: dict[str, object] | None = None) -> dict[str, object]:
+            tunnel = tunnel_status or invite_tunnel_manager.status()
+            return {
+                "host_token_configured": bool(get_host_token()),
+                "host_gate_required": host_gate_required(),
+                "public_url": get_public_url(),
+                "tunnel": tunnel,
+                "can_generate_host_token": not bool(get_host_token()) and not bool(get_public_url()),
+            }
 
         def _local_server_url(self) -> str:
             return _local_server_url(self.server.server_address)
