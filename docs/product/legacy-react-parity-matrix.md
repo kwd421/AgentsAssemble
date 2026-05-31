@@ -176,6 +176,8 @@ surface rather than silently counted as React parity.
 | `/api/room-invite/join` | POST | exact | `joinRoomWithInvite()` | yes | Remote client joins room with invite token. |
 | `/api/room-invite/leave` | POST | exact | `leaveRoom()` | yes | Remote client leaves room and revokes session. |
 | `/api/room-invite/sessions` | GET | exact | `fetchRoomInviteSessions()` | yes | Host views active remote sessions. |
+| `/api/room-invite/invites` | GET | exact | `fetchPendingInvites()` | yes | Host views pending invites (host-gated). |
+| `/api/room-invite/revoke` | POST | exact | `revokeRoomInvite()` | yes | Host revokes a pending invite (host-gated). |
 | `/api/room/events` | GET | exact | `subscribeRoomEvents()` | yes | Authenticated SSE stream for remote clients. |
 | `/api/room/lobby` | GET | exact | `fetchRoomLobby()` | yes | Authenticated lobby read for remote clients. |
 | `/api/room/say` | POST | exact | `postRoomMessage()` | yes | Authenticated lobby write for remote clients. |

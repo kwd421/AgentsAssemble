@@ -938,12 +938,14 @@ export function subscribeMeetingEvents(
 // --- Room Invite (Web Multi) ---
 
 export interface RoomInvite {
+  invite_id: string;
   invite_token: string;
   meeting_id: string;
   agent_id: string;
   display_name: string;
   expires_at: string;
   room_url: string;
+  join_url?: string;
 }
 
 export interface RoomJoinResult {
@@ -965,13 +967,43 @@ export interface RoomSession {
   expires_at: string;
 }
 
+export interface PendingInvite {
+  invite_id: string;
+  agent_id: string;
+  display_name: string;
+  meeting_id: string;
+  expires_at: string;
+  created_at: string;
+  revoked: boolean;
+}
+
+/** Get/set the host token for gated endpoints. Stored in sessionStorage. */
+export function getHostToken(): string {
+  if (typeof sessionStorage === "undefined") return "";
+  return sessionStorage.getItem("agentsassemble_host_token") || "";
+}
+
+export function setHostToken(token: string): void {
+  if (typeof sessionStorage === "undefined") return;
+  if (token) {
+    sessionStorage.setItem("agentsassemble_host_token", token);
+  } else {
+    sessionStorage.removeItem("agentsassemble_host_token");
+  }
+}
+
+function hostHeaders(): Record<string, string> {
+  const token = getHostToken();
+  return token ? { "X-Host-Token": token } : {};
+}
+
 export function createRoomInvite(params: {
   meeting_id: string;
   agent_id?: string;
   display_name?: string;
   ttl_seconds?: number;
 }): Promise<RoomInvite> {
-  return postJson<RoomInvite>("/api/room-invite/create", params);
+  return postJson<RoomInvite>("/api/room-invite/create", params, hostHeaders());
 }
 
 export function joinRoomWithInvite(params: {
@@ -987,7 +1019,15 @@ export function leaveRoom(sessionToken: string): Promise<{ status: string }> {
 }
 
 export function fetchRoomInviteSessions(): Promise<{ sessions: RoomSession[] }> {
-  return fetch("/api/room-invite/sessions").then((r) => r.json());
+  return fetch("/api/room-invite/sessions", { headers: hostHeaders() }).then((r) => r.json());
+}
+
+export function fetchPendingInvites(): Promise<{ invites: PendingInvite[] }> {
+  return fetch("/api/room-invite/invites", { headers: hostHeaders() }).then((r) => r.json());
+}
+
+export function revokeRoomInvite(inviteId: string): Promise<{ status: string }> {
+  return postJson<{ status: string }>("/api/room-invite/revoke", { invite_id: inviteId }, hostHeaders());
 }
 
 export function fetchRoomLobby(sessionToken: string): Promise<{ events: LobbyEvent[]; session: { agent_id: string; display_name: string } }> {

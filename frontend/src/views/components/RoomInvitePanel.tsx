@@ -1,22 +1,88 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Copy, LogIn, LogOut, Send, UserPlus, Users } from "lucide-react";
+import { Copy, Link, LogIn, LogOut, Send, Shield, UserPlus, Users, X } from "lucide-react";
 import {
   createRoomInvite,
+  fetchPendingInvites,
   fetchRoomLobby,
+  getHostToken,
   joinRoomWithInvite,
   leaveRoom,
   postRoomMessage,
+  revokeRoomInvite,
+  setHostToken,
   subscribeRoomEvents,
   type LobbyEvent,
+  type PendingInvite,
   type RoomInvite,
 } from "../../api";
+
+// --- Host Token Setup ---
+
+function HostTokenGate({ children }: { children: React.ReactNode }) {
+  const [token, setToken] = useState(getHostToken());
+  const [input, setInput] = useState("");
+
+  if (token) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-[11px] text-online">
+          <Shield size={12} />
+          <span className="font-bold">호스트 인증됨</span>
+          <button
+            type="button"
+            onClick={() => { setHostToken(""); setToken(""); }}
+            className="ml-auto text-[10px] text-text-muted hover:text-danger"
+          >
+            로그아웃
+          </button>
+        </div>
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Shield size={16} className="text-accent" />
+        <h3 className="text-[13px] font-black text-text-primary">호스트 인증</h3>
+      </div>
+      <p className="text-[11px] text-text-muted">
+        초대를 생성하려면 호스트 토큰이 필요합니다.
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          className="min-w-0 flex-1 rounded border border-line/70 bg-black/20 px-3 py-2 font-mono text-[11px] text-text-primary outline-none transition focus:border-accent focus:ring-1 focus:ring-accent/30"
+          type="password"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="AGENTSASSEMBLE_HOST_TOKEN"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && input.trim()) {
+              setHostToken(input.trim());
+              setToken(input.trim());
+            }
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => { if (input.trim()) { setHostToken(input.trim()); setToken(input.trim()); } }}
+          disabled={!input.trim()}
+          className="rounded border border-accent/40 bg-accent/10 px-3 py-2 text-[11px] font-bold text-accent transition hover:bg-accent/20 disabled:opacity-50"
+        >
+          확인
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // --- Host: Create Invite ---
 
 function InviteCreator({ meetingId }: { meetingId: string }) {
   const [invite, setInvite] = useState<RoomInvite | null>(null);
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"token" | "url" | "">("");
   const [error, setError] = useState("");
 
   async function handleCreate() {
@@ -32,11 +98,10 @@ function InviteCreator({ meetingId }: { meetingId: string }) {
     }
   }
 
-  function handleCopy() {
-    if (!invite) return;
-    navigator.clipboard.writeText(invite.invite_token).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  function handleCopy(text: string, kind: "token" | "url") {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(kind);
+      setTimeout(() => setCopied(""), 2000);
     });
   }
 
@@ -46,16 +111,13 @@ function InviteCreator({ meetingId }: { meetingId: string }) {
         <UserPlus size={16} className="text-accent" />
         <h3 className="text-[13px] font-black text-text-primary">초대 생성</h3>
       </div>
-      <p className="text-[11px] text-text-muted">
-        이 방에 참여할 수 있는 일회용 초대 토큰을 생성합니다.
-      </p>
       <button
         type="button"
         onClick={handleCreate}
         disabled={busy || !meetingId}
         className="w-full rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-[12px] font-bold text-accent transition hover:bg-accent/20 disabled:opacity-50"
       >
-        {busy ? "생성 중..." : "초대 토큰 생성"}
+        {busy ? "생성 중..." : "초대 링크 생성"}
       </button>
       {error && (
         <p className="rounded border border-danger/30 bg-danger/10 px-2 py-1.5 text-[11px] text-danger">
@@ -65,32 +127,104 @@ function InviteCreator({ meetingId }: { meetingId: string }) {
       {invite && (
         <div className="space-y-2 rounded-lg border border-online/30 bg-online/5 p-3">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold text-online">토큰 생성됨</span>
-            <span className="text-[10px] text-text-muted">
-              {invite.agent_id}
-            </span>
+            <span className="text-[11px] font-bold text-online">초대 생성됨</span>
+            <span className="text-[10px] text-text-muted">{invite.agent_id}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded bg-black/30 px-2 py-1.5 font-mono text-[10px] text-text-secondary">
-              {invite.invite_token}
-            </code>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="shrink-0 rounded border border-line/60 bg-panel/50 p-1.5 text-text-muted transition hover:text-accent"
-              title="복사"
-            >
-              <Copy size={13} />
-            </button>
-          </div>
-          {copied && (
-            <p className="text-[10px] font-bold text-online">클립보드에 복사됨</p>
+          {invite.join_url && (
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold text-text-muted">공개 링크</span>
+              <div className="flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded bg-black/30 px-2 py-1.5 font-mono text-[10px] text-text-secondary">
+                  {invite.join_url}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => handleCopy(invite.join_url!, "url")}
+                  className="shrink-0 rounded border border-line/60 bg-panel/50 p-1.5 text-text-muted transition hover:text-accent"
+                  title="링크 복사"
+                >
+                  <Link size={13} />
+                </button>
+              </div>
+              {copied === "url" && (
+                <p className="text-[10px] font-bold text-online">링크 복사됨</p>
+              )}
+            </div>
           )}
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold text-text-muted">토큰</span>
+            <div className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded bg-black/30 px-2 py-1.5 font-mono text-[10px] text-text-secondary">
+                {invite.invite_token}
+              </code>
+              <button
+                type="button"
+                onClick={() => handleCopy(invite.invite_token, "token")}
+                className="shrink-0 rounded border border-line/60 bg-panel/50 p-1.5 text-text-muted transition hover:text-accent"
+                title="토큰 복사"
+              >
+                <Copy size={13} />
+              </button>
+            </div>
+            {copied === "token" && (
+              <p className="text-[10px] font-bold text-online">토큰 복사됨</p>
+            )}
+          </div>
           <p className="text-[10px] text-text-muted">
-            이 토큰을 참여자에게 전달하세요. 일회용이며 만료됩니다.
+            이 링크를 친구에게 전달하세요. 일회용이며 만료됩니다.
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// --- Host: Pending Invites List ---
+
+function PendingInvitesList() {
+  const [invites, setInvites] = useState<PendingInvite[]>([]);
+
+  useEffect(() => {
+    fetchPendingInvites()
+      .then((data) => setInvites(data.invites || []))
+      .catch(() => {});
+    const interval = setInterval(() => {
+      fetchPendingInvites()
+        .then((data) => setInvites(data.invites || []))
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function handleRevoke(inviteId: string) {
+    try {
+      await revokeRoomInvite(inviteId);
+      setInvites((prev) => prev.map((i) => i.invite_id === inviteId ? { ...i, revoked: true } : i));
+    } catch {}
+  }
+
+  const active = invites.filter((i) => !i.revoked);
+  if (!active.length) return null;
+
+  return (
+    <div className="space-y-2">
+      <span className="text-[11px] font-bold text-text-muted">대기 중인 초대</span>
+      {active.map((inv) => (
+        <div key={inv.invite_id} className="flex items-center justify-between rounded border border-line/40 bg-black/10 px-2 py-1.5">
+          <div className="min-w-0">
+            <span className="text-[11px] font-bold text-text-primary">{inv.display_name}</span>
+            <span className="ml-2 text-[10px] text-text-muted">{inv.agent_id}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleRevoke(inv.invite_id)}
+            className="shrink-0 rounded p-1 text-text-muted transition hover:text-danger"
+            title="취소"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -106,6 +240,13 @@ function GuestJoinForm({
   const [displayName, setDisplayName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // Parse token from URL if present
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("token");
+    if (urlToken) setToken(urlToken);
+  }, []);
 
   async function handleJoin() {
     if (!token.trim()) return;
@@ -298,6 +439,12 @@ export default function RoomInvitePanel({ meetingId }: { meetingId: string }) {
     meetingId: string;
   } | null>(null);
 
+  // Auto-switch to guest mode if URL has ?token=
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("token")) setMode("guest");
+  }, []);
+
   const handleJoined = useCallback(
     (s: { token: string; agentId: string; displayName: string; meetingId: string }) => {
       setSession(s);
@@ -343,7 +490,10 @@ export default function RoomInvitePanel({ meetingId }: { meetingId: string }) {
         </button>
       </div>
       {mode === "host" ? (
-        <InviteCreator meetingId={meetingId} />
+        <HostTokenGate>
+          <InviteCreator meetingId={meetingId} />
+          <PendingInvitesList />
+        </HostTokenGate>
       ) : (
         <GuestJoinForm onJoined={handleJoined} />
       )}

@@ -123,7 +123,10 @@ from agentsassemble.room_invite import (
     active_sessions_summary,
     create_room_invite,
     join_room_with_invite,
+    pending_invites_summary,
+    revoke_invite,
     revoke_session,
+    verify_host_token,
     verify_session_token,
 )
 from agentsassemble.meeting_events import (
@@ -7574,7 +7577,14 @@ def _make_handler(
                 self._send_json({"events": read_lobby(output_root), "session": {"agent_id": session["agent_id"], "display_name": session["display_name"]}})
                 return
             if path == "/api/room-invite/sessions":
+                if not self._verify_host_token():
+                    return
                 self._send_json({"sessions": active_sessions_summary()})
+                return
+            if path == "/api/room-invite/invites":
+                if not self._verify_host_token():
+                    return
+                self._send_json({"invites": pending_invites_summary()})
                 return
             if path == "/api/side-chat":
                 self._send_json({"events": read_side_chat(output_root)})
@@ -8540,6 +8550,9 @@ def _make_handler(
                 self._send_json(live_agent)
                 return
             if parsed.path == "/api/room-invite/create":
+                # Host token gate: only the host can create invites
+                if not self._verify_host_token():
+                    return
                 length = int(self.headers.get("Content-Length", "0") or "0")
                 try:
                     payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
@@ -8623,6 +8636,33 @@ def _make_handler(
                     pass
                 revoke_session(session_token)
                 self._send_json({"status": "left", "agent_id": session["agent_id"]})
+                return
+            if parsed.path == "/api/room-invite/revoke":
+                if not self._verify_host_token():
+                    return
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                invite_id = str(payload.get("invite_id") or "").strip()
+                session_token_to_revoke = str(payload.get("session_token") or "").strip()
+                if invite_id:
+                    if revoke_invite(invite_id):
+                        self._send_json({"status": "revoked", "invite_id": invite_id})
+                    else:
+                        self._send_error(HTTPStatus.NOT_FOUND, "invite not found")
+                elif session_token_to_revoke:
+                    if revoke_session(session_token_to_revoke):
+                        self._send_json({"status": "revoked"})
+                    else:
+                        self._send_error(HTTPStatus.NOT_FOUND, "session not found")
+                else:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "invite_id or session_token required")
                 return
             if parsed.path == "/api/live-agent-join-brief":
                 length = int(self.headers.get("Content-Length", "0") or "0")
@@ -9817,6 +9857,23 @@ def _make_handler(
             if auth.startswith("Bearer "):
                 return auth.removeprefix("Bearer ").strip()
             return ""
+
+        def _verify_host_token(self) -> bool:
+            """Check host token from X-Host-Token header or Authorization Bearer.
+
+            Sends 403 and returns False if verification fails.
+            Returns True if allowed (either token matches or no gate configured).
+            """
+            token = (self.headers.get("X-Host-Token") or "").strip()
+            if not token:
+                # Fall back to Authorization header for host endpoints
+                auth = self.headers.get("Authorization") or ""
+                if auth.startswith("Bearer "):
+                    token = auth.removeprefix("Bearer ").strip()
+            if not verify_host_token(token):
+                self._send_error(HTTPStatus.FORBIDDEN, "host token required")
+                return False
+            return True
 
         def _local_server_url(self) -> str:
             return _local_server_url(self.server.server_address)

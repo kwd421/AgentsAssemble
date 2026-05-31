@@ -132,11 +132,15 @@ Recommended order:
   availability, context quality, or sandbox enforcement.
 - Do not claim relay or WebRTC readiness from the LAN token PoC.
 - Do not treat `remote_http_bridge` as the bridge-free native room client path.
-- Web invite v1 (`/api/room-invite/create`, `/join`, `/say`, `/leave`) is now
-  implemented for local/trusted LAN use. Session tokens are in-memory only;
-  there is no durable auth store, no persistent revocation beyond server-memory
-  leave/expiry, no relay/WebRTC/NAT traversal, and no provider CLI start.
-  Host-only invite creation is not enforceable without server-side auth—any
-  client that can reach the server can call `/api/room-invite/create`.
-  `/api/room/say` enforces session identity (name, actor_id, side, kind) from
-  the authenticated session, not from client-supplied fields.
+- Web invite v1 (`/api/room-invite/create`, `/join`, `/say`, `/leave`,
+  `/revoke`, `/invites`) is now implemented for both LAN and public internet
+  use via tunnel. Host-gated endpoints require `AGENTSASSEMBLE_HOST_TOKEN`
+  (env) and `X-Host-Token` header. When `AGENTSASSEMBLE_PUBLIC_URL` is set,
+  invite creation returns a full `join_url` guests can open directly.
+  Invites are single-use, time-limited, and revocable by the host.
+  Session tokens are in-memory only; there is no durable auth store, no
+  persistent revocation beyond server-memory leave/expiry, no relay/WebRTC/NAT
+  traversal, and no provider CLI start. `/api/room/say` enforces session
+  identity (name, actor_id, side, kind) from the authenticated session, not
+  from client-supplied fields. See `docs/public-internet-invite-tunnel.md` for
+  tunnel setup instructions.

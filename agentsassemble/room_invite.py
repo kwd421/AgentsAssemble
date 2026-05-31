@@ -9,6 +9,8 @@ surface. Security boundaries:
   execution grant, not a permanent approval).
 - No provider CLIs are started. No secrets/endpoints/paths are exposed.
 - Invite tokens are consumed on join (single-use nonce tracking).
+- Host token gates invite creation, session listing, and invite revocation.
+- Public base URL support for internet-accessible join links.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import hmac as hmac_mod
 import json
+import os
 import secrets
 import threading
 from datetime import UTC, datetime, timedelta
@@ -39,6 +42,37 @@ _state_lock = threading.Lock()
 _active_sessions: dict[str, dict] = {}  # session_token -> session info
 _used_nonces: set[str] = set()  # consumed invite nonces (replay protection)
 _invite_secret: str = ""  # server-lifetime secret for invite generation
+_pending_invites: dict[str, dict] = {}  # nonce -> invite metadata (for revocation)
+
+# --- Host token gate ---
+# Set AGENTSASSEMBLE_HOST_TOKEN to require auth for invite creation/management.
+# If unset, host-gated endpoints are open (backward-compatible local use).
+
+HOST_TOKEN_ENV = "AGENTSASSEMBLE_HOST_TOKEN"
+PUBLIC_URL_ENV = "AGENTSASSEMBLE_PUBLIC_URL"
+
+
+def get_host_token() -> str:
+    """Return configured host token, or empty string if not set."""
+    return os.environ.get(HOST_TOKEN_ENV, "")
+
+
+def verify_host_token(provided: str) -> bool:
+    """Check if provided token matches the configured host token.
+
+    If no host token is configured, all requests are allowed (local mode).
+    """
+    expected = get_host_token()
+    if not expected:
+        return True  # no gate configured
+    if not provided:
+        return False
+    return hmac_mod.compare_digest(expected, provided)
+
+
+def get_public_url() -> str:
+    """Return configured public base URL for join links, or empty string."""
+    return (os.environ.get(PUBLIC_URL_ENV) or "").rstrip("/")
 
 
 def _get_invite_secret() -> str:
@@ -61,6 +95,8 @@ def create_room_invite(
 
     Called by the host from the web UI. Uses the server-lifetime secret
     so the host doesn't need to manage secrets manually.
+
+    Returns invite info including join_url when a public base URL is configured.
     """
     secret = _get_invite_secret()
     clean_agent_id = clean_lobby_text(agent_id, limit=64) or f"guest-{secrets.token_hex(4)}"
@@ -75,14 +111,46 @@ def create_room_invite(
         secret=secret,
         ttl_seconds=ttl_seconds,
     )
-    return {
-        "invite_token": packet["token"],
+
+    nonce = str(packet.get("nonce") or "")
+    invite_token = packet["token"]
+
+    # Track pending invite for revocation (key by token fingerprint)
+    invite_id = _invite_fingerprint(str(invite_token))
+    with _state_lock:
+        _pending_invites[invite_id] = {
+            "invite_id": invite_id,
+            "agent_id": clean_agent_id,
+            "display_name": clean_display_name,
+            "meeting_id": meeting_id,
+            "expires_at": packet["expires_at"],
+            "created_at": datetime.now(UTC).isoformat(),
+            "revoked": False,
+        }
+
+    # Build join_url from public base URL if configured
+    public_url = get_public_url()
+    join_url = ""
+    if public_url:
+        join_url = f"{public_url}/join?token={invite_token}"
+
+    result: dict[str, object] = {
+        "invite_id": invite_id,
+        "invite_token": invite_token,
         "meeting_id": packet["meeting_id"],
         "agent_id": clean_agent_id,
         "display_name": clean_display_name,
         "expires_at": packet["expires_at"],
         "room_url": packet["room_url"],
     }
+    if join_url:
+        result["join_url"] = join_url
+    return result
+
+
+def _invite_fingerprint(token: str) -> str:
+    """Short non-reversible fingerprint of an invite token for tracking."""
+    return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
 def join_room_with_invite(
@@ -95,8 +163,17 @@ def join_room_with_invite(
 
     Returns session info on success, error dict on failure.
     Single-use: the invite nonce is consumed on successful join.
+    Revoked invites are rejected.
     """
     secret = _get_invite_secret()
+
+    # Check if this invite has been revoked
+    invite_id = _invite_fingerprint(token)
+    with _state_lock:
+        invite_info = _pending_invites.get(invite_id)
+        if invite_info and invite_info.get("revoked"):
+            return {"status": "rejected", "reason": "invite_revoked"}
+
     verification = verify_lan_invite_token(
         token,
         secret=secret,
@@ -190,6 +267,37 @@ def active_sessions_summary() -> list[dict[str, object]]:
         return result
 
 
+def revoke_invite(invite_id: str) -> bool:
+    """Revoke a pending invite by its invite_id. Returns True if found."""
+    with _state_lock:
+        invite = _pending_invites.get(invite_id)
+        if invite is None:
+            return False
+        invite["revoked"] = True
+        return True
+
+
+def pending_invites_summary() -> list[dict[str, object]]:
+    """Return summary of pending (non-consumed, non-expired) invites."""
+    now = datetime.now(UTC)
+    with _state_lock:
+        result = []
+        for invite_id, info in _pending_invites.items():
+            expires = datetime.fromisoformat(info["expires_at"])
+            if expires <= now:
+                continue
+            result.append({
+                "invite_id": info["invite_id"],
+                "agent_id": info["agent_id"],
+                "display_name": info["display_name"],
+                "meeting_id": info["meeting_id"],
+                "expires_at": info["expires_at"],
+                "created_at": info["created_at"],
+                "revoked": info["revoked"],
+            })
+        return result
+
+
 def _issue_session_token(
     *,
     agent_id: str,
@@ -219,4 +327,5 @@ def reset_state() -> None:
     with _state_lock:
         _active_sessions.clear()
         _used_nonces.clear()
+        _pending_invites.clear()
         _invite_secret = ""
