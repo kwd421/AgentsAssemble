@@ -132,5 +132,11 @@ Recommended order:
   availability, context quality, or sandbox enforcement.
 - Do not claim relay or WebRTC readiness from the LAN token PoC.
 - Do not treat `remote_http_bridge` as the bridge-free native room client path.
-- Do not surface invite generation or invite verification as a React/browser action;
-  lobby cards are read-only safe command skeletons only.
+- Web invite v1 (`/api/room-invite/create`, `/join`, `/say`, `/leave`) is now
+  implemented for local/trusted LAN use. Session tokens are in-memory only;
+  there is no durable auth store, no persistent revocation beyond server-memory
+  leave/expiry, no relay/WebRTC/NAT traversal, and no provider CLI start.
+  Host-only invite creation is not enforceable without server-side auth—any
+  client that can reach the server can call `/api/room-invite/create`.
+  `/api/room/say` enforces session identity (name, actor_id, side, kind) from
+  the authenticated session, not from client-supplied fields.

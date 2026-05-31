@@ -441,8 +441,12 @@ agent id, display name, current meeting id, and conservative room-loop defaults
 to `/api/live-agent-join-brief`, then renders the returned packet for the host to
 hand to another agent. That control is not a provider launcher, discovery scan,
 LAN invite token generator, clipboard writer, or storage-backed approval grant;
-LAN invite token creation remains CLI-only until authenticated remote room APIs
-are designed.
+LAN invite token creation is available through both CLI (`live-agent lan-invite
+create`) and the web API (`/api/room-invite/create`). The web API also supports
+join, authenticated say, and leave. Session tokens are in-memory only with no
+durable revocation beyond server-memory leave/expiry. Host-only invite creation
+is not enforceable without server-side auth—any LAN client that can reach the
+server can call the create endpoint.
 
 The leave command is also available directly:
 
@@ -563,8 +567,10 @@ The packet names `client_kind: "native_remote_room_client"` and
 `admission.provider_execution: "not_started_by_invite"` so it stays distinct
 from `remote_http_bridge`, where the host calls a remote `/agentsassemble/run`
 bridge. Treat this as remote agent admission and identity proof only; actual
-remote registration, token revocation, authenticated room endpoints, relay, and
-WebRTC are later work documented in `docs/no-tailscale-multi-host.md`.
+token revocation beyond in-memory leave/expiry, relay, and WebRTC are later work
+documented in `docs/no-tailscale-multi-host.md`. Authenticated room endpoints
+(`/api/room/say`, `/api/room/events`, `/api/room-invite/leave`) now exist with
+in-memory session tokens and server-enforced identity.
 
 ## Codex Live Session Quickstart
 

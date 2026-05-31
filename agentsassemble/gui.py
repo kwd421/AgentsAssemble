@@ -7878,9 +7878,11 @@ def _make_handler(
                 if not isinstance(payload, dict):
                     self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
                     return
-                # Inject authenticated identity into the lobby event
-                payload["speaker"] = session["display_name"]
-                payload["agent_id"] = session["agent_id"]
+                # Inject authenticated identity; never trust client-supplied identity
+                payload["name"] = session["display_name"]
+                payload["actor_id"] = session["agent_id"]
+                payload["side"] = "other"
+                payload["kind"] = "message"
                 event = append_lobby_event(output_root, payload)
                 self._send_json({"event": event})
                 return

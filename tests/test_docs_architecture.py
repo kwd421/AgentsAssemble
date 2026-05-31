@@ -1013,8 +1013,8 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("relay", design)
         self.assertIn("WebRTC", design)
         self.assertIn("not start provider CLIs", design)
-        self.assertIn("React/browser action", design)
-        self.assertIn("read-only safe command skeletons only", design)
+        self.assertIn("Web invite v1", design)
+        self.assertIn("Host-only invite creation is not enforceable", design)
 
     def test_live_agent_ops_and_audit_note_record_report_continuation_slice(self):
         ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
