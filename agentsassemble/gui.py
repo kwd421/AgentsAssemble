@@ -1082,6 +1082,11 @@ def serve_gui(
         frontend_dist_root=frontend_dist_root,
     )
     server = ThreadingHTTPServer((host, port), handler)
+    if not _is_loopback_host(host):
+        print(
+            f"WARNING: AgentsAssemble GUI bound to non-loopback host {host!r}; the control "
+            "plane is unauthenticated and can launch local processes. Expose it only on trusted networks."
+        )
     try:
         process_supervisor.start_monitor()
         server_url = _local_server_url(server.server_address)
@@ -7385,6 +7390,34 @@ def _print_gui_startup_banner(server_url: str, *, frontend_dist_root: Path | Non
     print(f"- Legacy vanilla console: {base_url}/legacy/")
 
 
+_LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
+
+
+def _is_loopback_host(host: object) -> bool:
+    return str(host or "").strip().strip("[]").lower() in _LOOPBACK_HOSTNAMES
+
+
+def _split_authority_host_port(authority: str) -> tuple[str, str]:
+    authority = authority.strip()
+    if authority.startswith("["):
+        host, _, rest = authority[1:].partition("]")
+        return host.strip().lower(), (rest[1:].strip() if rest.startswith(":") else "")
+    if authority.count(":") == 1:
+        host, _, port = authority.partition(":")
+        return host.strip().lower(), port.strip()
+    return authority.lower(), ""
+
+
+def _host_header_is_trusted(host_header: object) -> bool:
+    hostname, _ = _split_authority_host_port(str(host_header or ""))
+    return hostname in _LOOPBACK_HOSTNAMES
+
+
+def _origin_is_trusted(origin: str) -> bool:
+    parsed = urlparse(origin)
+    return parsed.scheme in {"http", "https"} and (parsed.hostname or "").lower() in _LOOPBACK_HOSTNAMES
+
+
 def _make_handler(
     output_root: Path,
     *,
@@ -7401,7 +7434,16 @@ def _make_handler(
     live_agent_flow_supervisor = flow_supervisor or LiveAgentFlowSupervisor(output_root)
 
     class AgentsAssembleHandler(BaseHTTPRequestHandler):
+        def _request_is_trusted(self) -> bool:
+            if _is_loopback_host(self.server.server_address[0]) and not _host_header_is_trusted(self.headers.get("Host")):
+                return False
+            origin = (self.headers.get("Origin") or "").strip()
+            return _origin_is_trusted(origin) if origin else True
+
         def do_GET(self) -> None:
+            if not self._request_is_trusted():
+                self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
+                return
             parsed = urlparse(self.path)
             path = parsed.path
             query = parse_qs(parsed.query)
@@ -7681,6 +7723,9 @@ def _make_handler(
             self._send_error(HTTPStatus.NOT_FOUND, "Not found")
 
         def do_POST(self) -> None:
+            if not self._request_is_trusted():
+                self._send_error(HTTPStatus.FORBIDDEN, "Untrusted request host or origin")
+                return
             parsed = urlparse(self.path)
             if parsed.path == "/api/demo":
                 result = run_demo_meeting(adapter_name="mock", output_root=output_root)

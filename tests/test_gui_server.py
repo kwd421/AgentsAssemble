@@ -19960,6 +19960,27 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(payload["meeting"]["live_status"], "stalled")
             self.assertIn("stalled_reason", payload["meeting"])
 
+    def test_control_plane_rejects_untrusted_host_and_origin(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                base = f"http://127.0.0.1:{server.server_port}"
+                with self.assertRaises(HTTPError) as rebind:
+                    urlopen(Request(f"{base}/api/lobby", headers={"Host": "evil.example.com"}), timeout=4)
+                self.assertEqual(rebind.exception.code, 403)
+                with self.assertRaises(HTTPError) as csrf:
+                    urlopen(Request(f"{base}/api/lobby", headers={"Origin": "http://evil.example.com"}), timeout=4)
+                self.assertEqual(csrf.exception.code, 403)
+                # Loopback host with a non-matching port and loopback origin remain allowed.
+                ok = urlopen(Request(f"{base}/api/lobby", headers={"Host": "localhost:1", "Origin": base}), timeout=4)
+                self.assertEqual(ok.status, 200)
+            finally:
+                server.shutdown()
+                server.server_close()
+
     def test_static_paths_cannot_escape_static_root(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
