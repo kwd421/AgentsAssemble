@@ -13,6 +13,10 @@ from uuid import uuid4
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENTS_PER_EVENT = 8
 ATTACHMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+# Only safe raster types count as renderable images. svg/html and other active
+# types must never be classified as is_image so the UI does not preview them and
+# the server does not serve them inline.
+INLINE_SAFE_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
 
 class AttachmentError(ValueError):
@@ -36,7 +40,7 @@ def store_uploaded_attachment(output_root: Path, payload: dict[str, object]) -> 
         "storage_filename": filename,
         "content_type": content_type,
         "size": len(raw),
-        "is_image": content_type.startswith("image/"),
+        "is_image": content_type in INLINE_SAFE_IMAGE_TYPES,
         "created_at": datetime.now(UTC).isoformat(),
     }
     (directory / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, sort_keys=True), encoding="utf-8")
@@ -97,7 +101,7 @@ def public_attachment_metadata(metadata: dict[str, object]) -> dict[str, object]
     filename = sanitize_attachment_filename(metadata.get("filename"))
     content_type = normalize_content_type(metadata.get("content_type"), filename)
     size = normalize_size(metadata.get("size"))
-    is_image = bool(metadata.get("is_image")) and content_type.startswith("image/")
+    is_image = content_type in INLINE_SAFE_IMAGE_TYPES
     return {
         "id": attachment_id,
         "filename": filename,

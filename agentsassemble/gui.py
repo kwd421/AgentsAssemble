@@ -18,6 +18,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from agentsassemble.adapters.remote_bridge import RemoteBridgeAdapter
 from agentsassemble.attachments import (
     AttachmentError,
+    INLINE_SAFE_IMAGE_TYPES,
     attachment_content_disposition,
     normalize_attachment_references,
     read_attachment_file,
@@ -7409,9 +7410,6 @@ def _print_gui_startup_banner(server_url: str, *, frontend_dist_root: Path | Non
 
 
 _LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}
-# Only raster images are rendered inline; svg/html and other active types are
-# forced to download to avoid stored XSS in the operator console.
-_INLINE_SAFE_ATTACHMENT_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
 
 def _is_loopback_host(host: object) -> bool:
@@ -9751,7 +9749,7 @@ def _make_handler(
                 return
             filename = str(metadata.get("filename") or path.name)
             content_type = str(metadata.get("content_type") or mimetypes.guess_type(path.name)[0] or "application/octet-stream")
-            safe_inline = inline and content_type in _INLINE_SAFE_ATTACHMENT_TYPES
+            safe_inline = inline and content_type in INLINE_SAFE_IMAGE_TYPES
             data = path.read_bytes()
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", content_type)

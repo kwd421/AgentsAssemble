@@ -12,6 +12,7 @@ from agentsassemble.attachments import (
     normalize_attachment_id,
     normalize_attachment_references,
     normalize_content_type,
+    public_attachment_metadata,
     read_attachment_file,
     sanitize_attachment_filename,
     store_uploaded_attachment,
@@ -205,6 +206,30 @@ class TestPathTraversalContainment(unittest.TestCase):
             meta_path.write_text(json.dumps(stored))
             with self.assertRaises(AttachmentError):
                 read_attachment_file(root, aid)
+
+
+class TestIsImageClassification(unittest.TestCase):
+    def test_svg_upload_is_not_image(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            encoded = base64.b64encode(b"<svg xmlns='http://www.w3.org/2000/svg'></svg>").decode()
+            meta = store_uploaded_attachment(
+                Path(tmp), {"filename": "x.svg", "content_type": "image/svg+xml", "data_base64": encoded}
+            )
+            self.assertFalse(meta["is_image"])
+
+    def test_png_upload_is_image(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            encoded = base64.b64encode(b"png-bytes").decode()
+            meta = store_uploaded_attachment(
+                Path(tmp), {"filename": "x.png", "content_type": "image/png", "data_base64": encoded}
+            )
+            self.assertTrue(meta["is_image"])
+
+    def test_public_metadata_reclassifies_svg_even_if_stored_true(self):
+        meta = public_attachment_metadata(
+            {"id": "abcdef12", "filename": "x.svg", "content_type": "image/svg+xml", "size": 10, "is_image": True}
+        )
+        self.assertFalse(meta["is_image"])
 
 
 if __name__ == "__main__":
