@@ -2262,6 +2262,48 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertGreaterEqual(len(working_heartbeats), 2)
         self.assertEqual({payload["last_observed_event_id"] for payload in working_heartbeats}, {"evt1"})
 
+    def test_runner_survives_transient_working_heartbeat_failure(self):
+        room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "천천히 답해"}]}
+        clock = FakeClock()
+        working_attempts = 0
+        attempts_lock = threading.Lock()
+
+        def request_json(url, *, method="GET", payload=None):
+            nonlocal working_attempts
+            if url.endswith("/room"):
+                return room
+            if url.endswith("/live-agents") and method == "POST":
+                return {"agent": {"agent_id": "agent-a", "status": "online"}}
+            if url.endswith("/heartbeat"):
+                status = str((payload or {}).get("status") or "")
+                if status == "working":
+                    with attempts_lock:
+                        working_attempts += 1
+                        first = working_attempts == 1
+                    if first:
+                        raise RuntimeError("transient heartbeat failure")
+                return {"agent": {"agent_id": "agent-a", "status": status}}
+            if url.endswith("/lobby"):
+                return {"event": {"id": "reply-id"}}
+            return {}
+
+        def slow_command(command, prompt, *, timeout_seconds):
+            del command, prompt, timeout_seconds
+            time.sleep(0.1)
+            return "slow reply"
+
+        runner = LiveAgentRunner(
+            config(heartbeat_interval=0.01),
+            request_json=request_json,
+            command_runner=slow_command,
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+        with attempts_lock:
+            self.assertGreaterEqual(working_attempts, 2)
+
     def test_runner_waits_for_in_flight_working_heartbeat_before_final_status(self):
         clock = FakeClock()
         room = {"lobby_events": [{"id": "evt1", "name": "나", "message": "순서 지켜"}]}

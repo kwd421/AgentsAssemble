@@ -742,7 +742,7 @@ class LiveAgentRunner:
                 try:
                     self._heartbeat("working", **self._cursor_metadata(cursor_field, source_event_id))
                 except Exception:
-                    return
+                    continue
 
         thread = threading.Thread(
             target=keep_working_fresh,
