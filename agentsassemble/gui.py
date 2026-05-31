@@ -7439,6 +7439,19 @@ def _origin_is_trusted(origin: str) -> bool:
     return parsed.scheme in {"http", "https"} and (parsed.hostname or "").lower() in _LOOPBACK_HOSTNAMES
 
 
+def _request_trusted(bound_host: object, host_header: object, origin: object) -> bool:
+    # A non-loopback bind is an explicit operator choice to expose the
+    # unauthenticated control plane (see the startup warning), so the loopback
+    # allowlist is only enforced for the default loopback bind, where it blocks
+    # DNS-rebinding/CSRF driven by a browser.
+    if not _is_loopback_host(bound_host):
+        return True
+    if not _host_header_is_trusted(host_header):
+        return False
+    origin_text = str(origin or "").strip()
+    return _origin_is_trusted(origin_text) if origin_text else True
+
+
 def _make_handler(
     output_root: Path,
     *,
@@ -7456,10 +7469,11 @@ def _make_handler(
 
     class AgentsAssembleHandler(BaseHTTPRequestHandler):
         def _request_is_trusted(self) -> bool:
-            if _is_loopback_host(self.server.server_address[0]) and not _host_header_is_trusted(self.headers.get("Host")):
-                return False
-            origin = (self.headers.get("Origin") or "").strip()
-            return _origin_is_trusted(origin) if origin else True
+            return _request_trusted(
+                self.server.server_address[0],
+                self.headers.get("Host"),
+                self.headers.get("Origin"),
+            )
 
         def do_GET(self) -> None:
             if not self._request_is_trusted():

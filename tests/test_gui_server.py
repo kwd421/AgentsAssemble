@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 
 from agentsassemble.gui import (
     _make_handler,
+    _request_trusted,
     _safe_static_path,
     _sse_event,
     _sse_stream_error_payload,
@@ -20057,6 +20058,17 @@ class GuiServerTests(unittest.TestCase):
             finally:
                 server.shutdown()
                 server.server_close()
+
+    def test_request_trusted_decision_matrix(self):
+        # Loopback bind: strict loopback-only Host/Origin allowlist.
+        self.assertFalse(_request_trusted("127.0.0.1", "evil.example.com", None))
+        self.assertFalse(_request_trusted("127.0.0.1", "127.0.0.1:8765", "http://evil.example.com"))
+        self.assertTrue(_request_trusted("127.0.0.1", "localhost:1", "http://127.0.0.1:8765"))
+        self.assertTrue(_request_trusted("127.0.0.1", "127.0.0.1:8765", None))
+        # Non-loopback bind (operator-exposed): LAN/Tailscale Host/Origin allowed.
+        self.assertTrue(_request_trusted("0.0.0.0", "192.168.0.2:8765", "http://192.168.0.2:8765"))
+        self.assertTrue(_request_trusted("192.168.0.2", "192.168.0.2:8765", "http://192.168.0.2:8765"))
+        self.assertTrue(_request_trusted("100.64.0.1", "host.tailnet.ts.net", "http://host.tailnet.ts.net"))
 
     def test_static_paths_cannot_escape_static_root(self):
         with tempfile.TemporaryDirectory() as temp_dir:
