@@ -286,26 +286,41 @@ class LiveAgentFlowSupervisor:
             }
 
     def _run_flow(self, meeting_id: str) -> None:
-        while True:
+        try:
+            while True:
+                with self._lock:
+                    run = self._runs.get(meeting_id)
+                    if run is None:
+                        return
+                    state = run["state"] if isinstance(run.get("state"), dict) else {}
+                    options = run["options"] if isinstance(run.get("options"), FlowOptions) else FlowOptions()
+                    stop_event = run.get("stop_event")
+                    if not isinstance(stop_event, threading.Event):
+                        return
+                    if stop_event.is_set():
+                        self._finish_locked(run, "stopped")
+                        return
+                    self._refresh_counts_locked(run)
+                    if self._flow_time_expired(state) or self._flow_turn_budget_exhausted(state):
+                        self._finish_locked(run, "finished")
+                        return
+                    self._mark_silence_check_locked(run)
+                if stop_event.wait(max(0.01, options.tick_interval)):
+                    continue
+        except Exception:
+            # A tick must never leave the flow stuck "running" with agents pinned
+            # to flow engagement mode; finish and restore modes on any failure.
             with self._lock:
                 run = self._runs.get(meeting_id)
                 if run is None:
                     return
-                state = run["state"] if isinstance(run.get("state"), dict) else {}
-                options = run["options"] if isinstance(run.get("options"), FlowOptions) else FlowOptions()
-                stop_event = run.get("stop_event")
-                if not isinstance(stop_event, threading.Event):
-                    return
-                if stop_event.is_set():
+                try:
                     self._finish_locked(run, "stopped")
-                    return
-                self._refresh_counts_locked(run)
-                if self._flow_time_expired(state) or self._flow_turn_budget_exhausted(state):
-                    self._finish_locked(run, "finished")
-                    return
-                self._mark_silence_check_locked(run)
-            if stop_event.wait(max(0.01, options.tick_interval)):
-                continue
+                except Exception:
+                    state = run.get("state")
+                    if isinstance(state, dict):
+                        state["status"] = "stopped"
+                    self._restore_previous_modes(run)
 
     def _selected_run(self, meeting_id: str) -> dict[str, object] | None:
         clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
@@ -345,7 +360,10 @@ class LiveAgentFlowSupervisor:
         flow_id = clean_lobby_text(state.get("flow_id"), limit=128)
         if not flow_id:
             return
-        events = read_lobby(self.output_root, limit=None)
+        try:
+            events = read_lobby(self.output_root, limit=None)
+        except OSError:
+            return
         total_turns = flow_turn_count(events, flow_id=flow_id)
         state["total_turns"] = total_turns
         last_activity = _latest_flow_activity_at(events, flow_id=flow_id) or clean_lobby_text(state.get("started_at"), limit=64)

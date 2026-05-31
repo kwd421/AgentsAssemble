@@ -18816,6 +18816,52 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual([event["flow_event_type"] for event in flow_events], ["started", "stopped"])
             self.assertNotIn("열린 쟁점", json.dumps(flow_events, ensure_ascii=False))
 
+    def test_live_agent_flow_tick_failure_finishes_and_restores_modes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            meeting_dir = root / "meetings" / "m1"
+            meeting_dir.mkdir(parents=True)
+            (meeting_dir / "live_state.json").write_text(
+                json.dumps(
+                    {
+                        "meeting_id": "m1",
+                        "topic": "JJK debate",
+                        "live_status": "running",
+                        "provider_configs": {"p1": {"kind": "local_cli"}},
+                        "agent_bindings": [{"agent_id": "agent-a", "provider_id": "p1"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "agent-a",
+                    "display_name": "Agent A",
+                    "meeting_id": "m1",
+                    "provider_kind": "local_cli",
+                    "engagement_mode": "moderator_called",
+                    "status": "online",
+                },
+            )
+            supervisor = LiveAgentFlowSupervisor(root)
+
+            def boom(run):
+                raise RuntimeError("tick failed")
+
+            supervisor._mark_silence_check_locked = boom
+            supervisor.start(
+                {"meeting_id": "m1", "topic": "t", "duration_seconds": 5, "tick_interval": 0.01}
+            )
+            for _ in range(200):
+                if supervisor.status(meeting_id="m1")["flow"]["status"] != "running":
+                    break
+                time.sleep(0.01)
+
+            self.assertEqual(supervisor.status(meeting_id="m1")["flow"]["status"], "stopped")
+            restored = {agent["agent_id"]: agent.get("engagement_mode") for agent in read_live_agents(root)}
+            self.assertEqual(restored.get("agent-a"), "moderator_called")
+
     def test_live_agent_flow_start_skips_binding_provider_conflicts(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
