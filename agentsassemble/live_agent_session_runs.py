@@ -470,7 +470,9 @@ class LiveAgentSessionRunController:
         path = _session_runs_path(self.output_root)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"runs": list(self._records.values())}
-        path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        temp_path = path.with_suffix(".json.tmp")
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        temp_path.replace(path)
 
 
 def _session_runs_path(output_root: Path) -> Path:
