@@ -46,7 +46,9 @@ _pending_invites: dict[str, dict] = {}  # nonce -> invite metadata (for revocati
 
 # --- Host token gate ---
 # Set AGENTSASSEMBLE_HOST_TOKEN to require auth for invite creation/management.
-# If unset, host-gated endpoints are open (backward-compatible local use).
+# Host token may be omitted only for local/LAN dev mode (no public URL).
+# When AGENTSASSEMBLE_PUBLIC_URL is set, host token is required; public URL
+# mode refuses host operations until a token is configured.
 
 HOST_TOKEN_ENV = "AGENTSASSEMBLE_HOST_TOKEN"
 PUBLIC_URL_ENV = "AGENTSASSEMBLE_PUBLIC_URL"
@@ -57,14 +59,28 @@ def get_host_token() -> str:
     return os.environ.get(HOST_TOKEN_ENV, "")
 
 
+def host_gate_required() -> bool:
+    """Return True if host token enforcement is required.
+
+    Host token is required when AGENTSASSEMBLE_PUBLIC_URL is set, since the
+    room is reachable from the internet and must not allow unauthenticated
+    host operations.
+    """
+    return bool(get_public_url())
+
+
 def verify_host_token(provided: str) -> bool:
     """Check if provided token matches the configured host token.
 
-    If no host token is configured, all requests are allowed (local mode).
+    If no host token is configured and no public URL is set, all requests
+    are allowed (local/LAN backward-compatible mode). If a public URL is
+    set but no host token is configured, all requests are rejected.
     """
     expected = get_host_token()
     if not expected:
-        return True  # no gate configured
+        if host_gate_required():
+            return False  # public URL mode requires a host token
+        return True  # local mode, no gate configured
     if not provided:
         return False
     return hmac_mod.compare_digest(expected, provided)

@@ -62,7 +62,9 @@ tailscale funnel 8765
 ## Security Notes
 
 - **AGENTSASSEMBLE_HOST_TOKEN is required** for public exposure. Without it,
-  any visitor can create invites and list sessions.
+  host-gated endpoints (create invite, list sessions, revoke) reject all
+  requests when `AGENTSASSEMBLE_PUBLIC_URL` is set. Host token may be omitted
+  only for local/LAN dev mode where no public URL is configured.
 - Invite tokens are single-use, time-limited (default 10 minutes), and revocable.
 - Session tokens expire after 1 hour.
 - The server does NOT start provider CLIs, expose secrets, or grant filesystem

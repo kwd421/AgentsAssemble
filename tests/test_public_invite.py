@@ -10,6 +10,7 @@ from agentsassemble.room_invite import (
     create_room_invite,
     get_host_token,
     get_public_url,
+    host_gate_required,
     join_room_with_invite,
     pending_invites_summary,
     reset_state,
@@ -30,8 +31,32 @@ class TestHostTokenGate(unittest.TestCase):
     def test_no_host_token_configured_allows_all(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("AGENTSASSEMBLE_HOST_TOKEN", None)
+            os.environ.pop("AGENTSASSEMBLE_PUBLIC_URL", None)
             self.assertTrue(verify_host_token(""))
             self.assertTrue(verify_host_token("anything"))
+
+    def test_public_url_set_no_host_token_rejects(self):
+        with patch.dict(os.environ, {"AGENTSASSEMBLE_PUBLIC_URL": "https://tunnel.example.com"}, clear=False):
+            os.environ.pop("AGENTSASSEMBLE_HOST_TOKEN", None)
+            self.assertFalse(verify_host_token(""))
+            self.assertFalse(verify_host_token("anything"))
+
+    def test_host_gate_required_when_public_url_set(self):
+        with patch.dict(os.environ, {"AGENTSASSEMBLE_PUBLIC_URL": "https://tunnel.example.com"}, clear=False):
+            self.assertTrue(host_gate_required())
+
+    def test_host_gate_not_required_when_no_public_url(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("AGENTSASSEMBLE_PUBLIC_URL", None)
+            self.assertFalse(host_gate_required())
+
+    def test_public_url_with_host_token_accepts_correct(self):
+        with patch.dict(os.environ, {
+            "AGENTSASSEMBLE_PUBLIC_URL": "https://tunnel.example.com",
+            "AGENTSASSEMBLE_HOST_TOKEN": "secret123",
+        }):
+            self.assertTrue(verify_host_token("secret123"))
+            self.assertFalse(verify_host_token("wrong"))
 
     def test_host_token_configured_rejects_empty(self):
         with patch.dict(os.environ, {"AGENTSASSEMBLE_HOST_TOKEN": "secret123"}):
