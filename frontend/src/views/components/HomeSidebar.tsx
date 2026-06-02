@@ -1,4 +1,5 @@
 import { Bot, Cloud, Compass, Cpu, MessageCircle, Search, User, Users, Wifi } from "lucide-react";
+import type { RoomFriend } from "../../api";
 import UserPanel from "./UserPanel";
 
 const HOME_ITEMS = [
@@ -19,6 +20,8 @@ export default function HomeSidebar({
   onlineCount,
   agentCount,
   hasBackendError,
+  friends = [],
+  onFriendSelect,
 }: {
   activeFilter: HomeFilter;
   onFilterChange: (filter: HomeFilter) => void;
@@ -26,7 +29,10 @@ export default function HomeSidebar({
   onlineCount: number;
   agentCount: number;
   hasBackendError: boolean;
+  friends?: RoomFriend[];
+  onFriendSelect?: (friend: RoomFriend) => void;
 }) {
+  const directMessages = friends.slice(0, 12);
   return (
     <aside className="dc-sidebar dc-home-sidebar flex shrink-0 flex-col" aria-label="친구와 DM">
       <header className="dc-home-search">
@@ -57,10 +63,38 @@ export default function HomeSidebar({
             <span>다이렉트 메시지</span>
             <MessageCircle size={14} />
           </div>
-          <button type="button" className="dc-dm-row">
-            <Compass size={18} />
-            <span>이전 세션에서 친구 추가</span>
-          </button>
+          {directMessages.length ? (
+            directMessages.map((friend) => {
+              const meta = HOME_ITEMS.find((item) => item.id === friend.participant_type);
+              const Icon = meta?.icon || Compass;
+              return (
+                <button
+                  key={friend.friend_id}
+                  type="button"
+                  className="dc-dm-row"
+                  data-status={friend.status || "offline"}
+                  onClick={() => onFriendSelect?.(friend)}
+                  title={`${friend.display_name} · ${meta?.label || "미분류"}`}
+                >
+                  <span className="dc-dm-avatar">
+                    <Icon size={16} />
+                    <span className="dc-dm-status-dot" aria-hidden />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate preserve-words">{friend.display_name}</span>
+                    <span className="block truncate text-[11px] font-semibold text-text-muted preserve-words">
+                      {meta?.label || "미분류"}
+                    </span>
+                  </span>
+                </button>
+              );
+            })
+          ) : (
+            <button type="button" className="dc-dm-row" onClick={() => onFilterChange("friends")}>
+              <Compass size={18} />
+              <span>이전 세션에서 친구 추가</span>
+            </button>
+          )}
         </div>
       </nav>
       <footer className="dc-user-area shrink-0 px-2 py-2">

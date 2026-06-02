@@ -551,6 +551,42 @@ textarea {
   padding-top: 12px;
 }
 
+.dc-dm-avatar {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 50%;
+  background: #1e1f22;
+  color: var(--color-text-secondary);
+}
+
+.dc-dm-status-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--color-sidebar);
+  border-radius: 50%;
+  background: var(--color-offline);
+}
+
+.dc-dm-row[data-status="online"] .dc-dm-status-dot,
+.dc-dm-row[data-status="working"] .dc-dm-status-dot {
+  background: var(--color-online);
+}
+
+.dc-dm-row[data-status="idle"] .dc-dm-status-dot {
+  background: var(--color-idle);
+}
+
+.dc-dm-row[data-status="error"] .dc-dm-status-dot {
+  background: var(--color-danger);
+}
+
 .dc-dm-title {
   display: flex;
   align-items: center;

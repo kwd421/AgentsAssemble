@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import {
   fetchLiveAgentFlow,
+  fetchRoomFriends,
   fetchRoomSettings,
   fetchRoomMembers,
   fetchMafiaGame,
@@ -48,6 +49,7 @@ import {
   type ChannelNotificationSetting,
   type ChannelSettings,
   type RoomFriend,
+  type RoomFriendsResponse,
   type RoomMember,
 } from "./api";
 import { usePoll } from "./hooks";
@@ -353,6 +355,10 @@ export default function App() {
   const [roomAppearances, setRoomAppearances] = useState<Record<string, RoomAppearance>>(() =>
     loadRoomAppearances()
   );
+  const [homeFriendsPayload, setHomeFriendsPayload] = useState<RoomFriendsResponse>({
+    friends: [],
+    candidates: [],
+  });
   const [roomMemberRoles, setRoomMemberRoles] = useState<Record<string, Record<string, string>>>({});
   const [roomMembersByRoom, setRoomMembersByRoom] = useState<Record<string, RoomMember[]>>({});
   const [roomChannelSettings, setRoomChannelSettings] = useState<
@@ -592,6 +598,33 @@ export default function App() {
     setChannel("lobby");
     setRoomMenu(null);
     setChannelMenu(null);
+  }
+
+  useEffect(() => {
+    if (guestLocked) return;
+    let cancelled = false;
+    fetchRoomFriends()
+      .then((payload) => {
+        if (!cancelled) setHomeFriendsPayload(payload);
+      })
+      .catch(() => {
+        // The central friends view will surface load errors when opened.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [guestLocked]);
+
+  function selectHomeFriend(friend: RoomFriend) {
+    setChannel("friends");
+    setAdminOpen(false);
+    setChannelMenu(null);
+    if (friend.participant_type === "human") setHomeFilter("human");
+    else if (friend.participant_type === "subscription_ai") setHomeFilter("subscription_ai");
+    else if (friend.participant_type === "api") setHomeFilter("api");
+    else if (friend.participant_type === "local") setHomeFilter("local");
+    else if (friend.participant_type === "remote") setHomeFilter("remote");
+    else setHomeFilter("friends");
   }
 
   function addFreshRoom() {
@@ -1120,6 +1153,8 @@ export default function App() {
           onlineCount={scopedOnlineCount}
           agentCount={scopedAgents.length || 0}
           hasBackendError={Boolean(flowError)}
+          friends={homeFriendsPayload.friends}
+          onFriendSelect={selectHomeFriend}
         />
       ) : (
       <aside className="dc-sidebar flex shrink-0 flex-col" aria-label="채널 목록">
@@ -1230,6 +1265,7 @@ export default function App() {
             typeFilter={homeFilter === "friends" ? null : homeFilter}
             activeRoomName={activeRoom.label}
             onInviteFriendToRoom={inviteFriendToActiveRoom}
+            onFriendsChanged={setHomeFriendsPayload}
           />
         ) : adminOpen ? (
           <AdminPanel onClose={() => setAdminOpen(false)} activeMeetingId={activeRoom.meetingId} />

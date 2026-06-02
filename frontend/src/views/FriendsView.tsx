@@ -86,10 +86,12 @@ export default function FriendsView({
   typeFilter,
   activeRoomName = "",
   onInviteFriendToRoom,
+  onFriendsChanged,
 }: {
   typeFilter: ParticipantType | null;
   activeRoomName?: string;
   onInviteFriendToRoom?: (friend: RoomFriend) => Promise<void>;
+  onFriendsChanged?: (payload: RoomFriendsResponse) => void;
 }) {
   const [payload, setPayload] = useState<RoomFriendsResponse>({ friends: [], candidates: [] });
   const [filter, setFilter] = useState<"online" | "all" | "add">("online");
@@ -106,6 +108,7 @@ export default function FriendsView({
     fetchRoomFriends()
       .then((next) => {
         setPayload(next);
+        onFriendsChanged?.(next);
         setStatus("");
       })
       .catch((error) => {
@@ -138,10 +141,12 @@ export default function FriendsView({
     setStatus("");
     try {
       const result = await addRoomFriend(friend);
-      setPayload((previous) => ({
+      const nextPayload = {
         friends: result.friends,
-        candidates: previous.candidates.filter((candidate) => candidate.friend_id !== friend.friend_id),
-      }));
+        candidates: payload.candidates.filter((candidate) => candidate.friend_id !== friend.friend_id),
+      };
+      setPayload(nextPayload);
+      onFriendsChanged?.(nextPayload);
       setStatus(`${friend.display_name} 추가됨`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "친구 추가 실패");
@@ -166,7 +171,9 @@ export default function FriendsView({
         status: "offline",
         source: "manual",
       });
-      setPayload((previous) => ({ ...previous, friends: result.friends }));
+      const nextPayload = { ...payload, friends: result.friends };
+      setPayload(nextPayload);
+      onFriendsChanged?.(nextPayload);
       setDisplayName("");
       setProviderKind("");
       setStatus(`${name} 추가됨`);

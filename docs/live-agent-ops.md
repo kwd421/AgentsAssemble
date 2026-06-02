@@ -60,7 +60,10 @@ decision evidence.
 The Discord home/friends surface is local room state, not an external Discord
 integration. Operators can save people, subscription AI, API, Local, remote, or
 unknown participants as room friends from previous sessions or active resident
-suggestions. Inviting a saved friend into the selected room writes a
+suggestions. Saved friends also appear in the home sidebar's direct-message
+list, grouped with their participant type and status, so old sessions and
+agents can be found from the Discord home icon without opening a separate
+operator panel. Inviting a saved friend into the selected room writes a
 `friend_invite` member record through `/api/room-members`, and that persisted
 member appears in the right member panel beside live residents. This does not
 send a Discord message, create an internet invite, start a provider CLI, or
