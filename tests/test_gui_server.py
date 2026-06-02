@@ -19300,6 +19300,75 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(saved_payload["friend"]["participant_type"], "human")
             self.assertEqual(saved_payload["friends"][0]["display_name"], "SeiNel")
 
+    def test_room_members_api_saves_roles_and_suggests_live_agents(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "codex-critic",
+                    "display_name": "Codex Critic",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                    "meeting_id": "m1",
+                    "status": "online",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/room-members?meeting_id=m1",
+                    timeout=4,
+                ) as response:
+                    initial_payload = json.loads(response.read().decode("utf-8"))
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/room-members",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "participant_id": "codex-critic",
+                            "display_name": "Codex Critic",
+                            "role": "director",
+                            "participant_type": "subscription_ai",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    saved_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/room-members?meeting_id=m2",
+                    timeout=4,
+                ) as response:
+                    other_room_payload = json.loads(response.read().decode("utf-8"))
+                bad_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/room-members",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "participant_id": "codex-critic",
+                            "role": "wizard",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as error_context:
+                    urlopen(bad_request, timeout=4)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(initial_payload["members"][0]["participant_id"], "codex-critic")
+            self.assertEqual(initial_payload["members"][0]["role"], "reviewer")
+            self.assertEqual(saved_payload["member"]["role"], "director")
+            self.assertEqual(saved_payload["members"][0]["role"], "director")
+            self.assertEqual(other_room_payload["members"], [])
+            self.assertEqual(error_context.exception.code, 400)
+
     def test_legacy_side_chat_lines_are_read_as_side_chat_channel(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

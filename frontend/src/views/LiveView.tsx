@@ -48,6 +48,7 @@ import {
   type LifecycleTone,
 } from "../lib/lifecycleLabels";
 import LobbyAttachments from "./components/LobbyAttachments";
+import DiscordMemberPanel from "./components/DiscordMemberPanel";
 import ParticipantContextSummary from "./components/ParticipantContextSummary";
 import ProviderTruthChips from "./components/ProviderTruthChips";
 
@@ -1028,6 +1029,12 @@ export default function LiveView({
               className="flex-1 overflow-y-auto p-4 chat-scroll"
             >
               <div className="space-y-4">
+                <DiscordMemberPanel
+                  meetingId={sideChatMeetingId || activeMeetingId || ""}
+                  agents={agents}
+                  lifecycle={lifecycle}
+                />
+
                 <LifecyclePanel lifecycle={lifecycle} loading={lifecycleLoading} error={lifecycleError} embedded />
 
                 <section className="rounded-xl border border-accent/14 bg-black/12 p-4">

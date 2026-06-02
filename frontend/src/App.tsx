@@ -65,8 +65,17 @@ function statusText(status?: string) {
   return "대기";
 }
 
-function roomName(flow: FlowResponse["flow"]) {
-  return flow.meeting_id || flow.flow_id || "resident-room";
+function roomName(flow: FlowResponse["flow"], fallbackRoomId = "") {
+  return flow.meeting_id || flow.flow_id || fallbackRoomId || "resident-room";
+}
+
+function roomIdFromLocation() {
+  try {
+    const query = new URLSearchParams(window.location.search);
+    return query.get("meeting") || query.get("room") || "";
+  } catch {
+    return "";
+  }
 }
 
 function isPublicJoinRoute() {
@@ -106,6 +115,7 @@ export default function App() {
 function OperatorApp() {
   const [channel, setChannel] = useState<Channel>("lobby");
   const [adminOpen, setAdminOpen] = useState(false);
+  const [requestedRoomId] = useState(roomIdFromLocation);
   const [mafiaGameId, setMafiaGameId] = useState(() => {
     try {
       const query = new URLSearchParams(window.location.search);
@@ -120,7 +130,7 @@ function OperatorApp() {
     }
   });
   const [meetingStreamState, setMeetingStreamState] = useState<MeetingStreamState>(() =>
-    initialMeetingStreamState("")
+    initialMeetingStreamState(requestedRoomId)
   );
   const [meetingStreamError, setMeetingStreamError] = useState<Error | null>(null);
   const [sideChatEvents, setSideChatEvents] = useState<SideChatEvent[]>([]);
@@ -129,16 +139,17 @@ function OperatorApp() {
   const flowFetcher = useCallback(() => fetchLiveAgentFlow(), []);
   const [flowData, flowLoading, flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
   const flow = flowData?.flow ?? { status: "idle" };
+  const activeRoomId = flow.meeting_id || requestedRoomId;
   const lifecycleFetcher = useCallback((): Promise<MeetingLifecycleResponse> => {
-    if (!flow.meeting_id) return Promise.resolve({ meeting_id: "", lifecycle: null });
-    return fetchMeetingLifecycle(flow.meeting_id);
-  }, [flow.meeting_id]);
+    if (!activeRoomId) return Promise.resolve({ meeting_id: "", lifecycle: null });
+    return fetchMeetingLifecycle(activeRoomId);
+  }, [activeRoomId]);
   const [lifecycleData, lifecycleLoading, lifecycleError] =
     usePoll<MeetingLifecycleResponse>(lifecycleFetcher, 5000);
   const workroomQueueFetcher = useCallback((): Promise<WorkroomQueueEvidence | null> => {
-    if (!flow.meeting_id || adminOpen || channel !== "board") return Promise.resolve(null);
-    return fetchWorkroomQueueEvidence(flow.meeting_id);
-  }, [adminOpen, channel, flow.meeting_id]);
+    if (!activeRoomId || adminOpen || channel !== "board") return Promise.resolve(null);
+    return fetchWorkroomQueueEvidence(activeRoomId);
+  }, [activeRoomId, adminOpen, channel]);
   const [workroomQueueEvidence] = usePoll<WorkroomQueueEvidence | null>(
     workroomQueueFetcher,
     8000
@@ -152,9 +163,9 @@ function OperatorApp() {
   const agents: LiveAgent[] = Array.isArray(flowData?.agents)
     ? flowData.agents
     : [];
-  const sideChatMeetingId = flow.meeting_id || "";
+  const sideChatMeetingId = activeRoomId || "";
   useEffect(() => {
-    const meetingId = flow.meeting_id || "";
+    const meetingId = activeRoomId || "";
     setMeetingStreamState(initialMeetingStreamState(meetingId));
     setMeetingStreamError(null);
     if (!meetingId || adminOpen || channel !== "live") return;
@@ -177,7 +188,7 @@ function OperatorApp() {
       cancelled = true;
       unsubscribe();
     };
-  }, [adminOpen, channel, flow.meeting_id]);
+  }, [activeRoomId, adminOpen, channel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,13 +229,13 @@ function OperatorApp() {
 
   const activeMeetingStreamState = meetingStreamStateForActiveMeeting(
     meetingStreamState,
-    flow.meeting_id || ""
+    activeRoomId || ""
   );
   const lifecycle: LifecycleProjection | null =
     activeMeetingStreamState.lifecycle ??
-    (lifecycleData?.meeting_id === flow.meeting_id ? lifecycleData?.lifecycle ?? null : null);
+    (lifecycleData?.meeting_id === activeRoomId ? lifecycleData?.lifecycle ?? null : null);
   const scopedWorkroomQueueEvidence =
-    workroomQueueEvidence?.meeting_id === flow.meeting_id ? workroomQueueEvidence : null;
+    workroomQueueEvidence?.meeting_id === activeRoomId ? workroomQueueEvidence : null;
   const flowEvents = Array.isArray(flowData?.flow_events)
     ? flowData.flow_events
     : Array.isArray(flowData?.events)
@@ -344,7 +355,7 @@ function OperatorApp() {
 
               <div className="hidden max-w-[230px] items-center gap-2 rounded-lg border border-accent/18 bg-black/22 px-3 py-2 text-[12px] text-text-secondary md:flex">
                 <span className="truncate preserve-words">
-                  Meeting: {roomName(flow)}
+                  Meeting: {roomName(flow, activeRoomId)}
                 </span>
                 <ChevronDown size={14} className="shrink-0 text-text-muted" />
               </div>
@@ -382,8 +393,8 @@ function OperatorApp() {
             channels={CHANNELS}
             activeChannel={channel}
             adminOpen={adminOpen}
-            meetingId={flow.meeting_id || ""}
-            roomName={roomName(flow)}
+            meetingId={activeRoomId || ""}
+            roomName={roomName(flow, activeRoomId)}
             onlineCount={onlineCount}
             totalAgents={agents.length || 0}
             onSelectHome={() => {
@@ -416,7 +427,7 @@ function OperatorApp() {
               {adminOpen ? (
                 <AdminPanel onClose={() => setAdminOpen(false)} />
               ) : channel === "home" ? (
-                <HomeFriendsView meetingId={flow.meeting_id || ""} />
+                <HomeFriendsView meetingId={activeRoomId || ""} />
               ) : channel === "lobby" ? (
                 <LobbyView
                   flow={flow}
@@ -435,8 +446,8 @@ function OperatorApp() {
                   mafiaGame={mafiaGame}
                   refreshMafia={refreshMafia}
                   lifecycle={lifecycle}
-                  lifecycleLoading={Boolean(flow.meeting_id) && lifecycleLoading}
-                  lifecycleError={Boolean(flow.meeting_id) ? lifecycleError || meetingStreamError : null}
+                  lifecycleLoading={Boolean(activeRoomId) && lifecycleLoading}
+                  lifecycleError={Boolean(activeRoomId) ? lifecycleError || meetingStreamError : null}
                   sideChatEvents={sideChatEvents}
                   sideChatError={sideChatError}
                   onSideChatPosted={handleSideChatPosted}

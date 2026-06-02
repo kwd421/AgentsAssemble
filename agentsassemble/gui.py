@@ -120,6 +120,7 @@ from agentsassemble.frontend_runtime import (
 )
 from agentsassemble.release_health import release_health_catalog_payload, release_health_queue_payload
 from agentsassemble.room_friends import room_friends_payload, upsert_room_friend
+from agentsassemble.room_members import room_members_payload, upsert_room_member
 from agentsassemble.room_invite import (
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
     active_sessions_summary,
@@ -7699,6 +7700,15 @@ def _make_handler(
             if path == "/api/room-friends":
                 self._send_json(room_friends_payload(output_root, read_live_agents(output_root)))
                 return
+            if path == "/api/room-members":
+                self._send_json(
+                    room_members_payload(
+                        output_root,
+                        read_live_agents(output_root),
+                        meeting_id=str(query.get("meeting_id", [""])[0] or ""),
+                    )
+                )
+                return
             if path == "/api/live-agents":
                 self._send_json(
                     live_agents_payload(
@@ -8033,6 +8043,32 @@ def _make_handler(
                     {
                         "friend": friend,
                         **room_friends_payload(output_root, read_live_agents(output_root)),
+                    }
+                )
+                return
+            if parsed.path == "/api/room-members":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    member = upsert_room_member(output_root, payload)
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self._send_json(
+                    {
+                        "member": member,
+                        **room_members_payload(
+                            output_root,
+                            read_live_agents(output_root),
+                            meeting_id=str(member.get("meeting_id") or ""),
+                        ),
                     }
                 )
                 return

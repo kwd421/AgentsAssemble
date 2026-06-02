@@ -117,6 +117,36 @@ export interface RoomFriendsResponse {
   friend?: RoomFriend;
 }
 
+export type RoomMemberRole = "human" | "director" | "implementer" | "reviewer" | "observer";
+
+export interface RoomMemberRoleOption {
+  id: RoomMemberRole;
+  label: string;
+  description?: string;
+}
+
+export interface RoomMember {
+  meeting_id?: string;
+  participant_id: string;
+  display_name: string;
+  role: RoomMemberRole;
+  participant_type: RoomFriendType;
+  provider_kind?: string;
+  connection_kind?: string;
+  status?: string;
+  source?: string;
+  created_at?: string;
+  updated_at?: string;
+  last_seen_at?: string;
+}
+
+export interface RoomMembersResponse {
+  meeting_id: string;
+  members: RoomMember[];
+  roles: RoomMemberRoleOption[];
+  member?: RoomMember;
+}
+
 export interface LiveAgentJoinBriefRequest {
   agent_id: string;
   display_name?: string;
@@ -561,6 +591,14 @@ export function fetchRoomFriends() {
 
 export function saveRoomFriend(friend: Partial<RoomFriend>) {
   return postJson<RoomFriendsResponse>("/api/room-friends", friend);
+}
+
+export function fetchRoomMembers(meetingId = "") {
+  return fetchJson<RoomMembersResponse>(`/api/room-members${queryString({ meeting_id: meetingId })}`);
+}
+
+export function saveRoomMemberRole(member: Partial<RoomMember>) {
+  return postJson<RoomMembersResponse>("/api/room-members", member);
 }
 
 export function postSideChatMessage({

@@ -168,8 +168,37 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("공식 기록 제외", live_source)
         self.assertIn("postSideChatMessage", live_source)
         self.assertIn("meetingId={sideChatMeetingId}", live_source)
+        self.assertIn('rightPanelTab === "room-info" ? (', live_source)
+        self.assertIn('className="flex min-h-0 flex-1 flex-col overflow-hidden p-4"', live_source)
         self.assertNotIn("빠른 작업", live_source)
         self.assertNotIn("promote", live_source)
+
+    def test_react_discord_member_panel_uses_persisted_room_roles(self):
+        api_source = frontend_file("api.ts")
+        live_source = frontend_file("views/LiveView.tsx")
+        member_source = frontend_file("views/components/DiscordMemberPanel.tsx")
+
+        self.assertIn('export type RoomMemberRole = "human" | "director" | "implementer" | "reviewer" | "observer";', api_source)
+        self.assertIn("export interface RoomMember", api_source)
+        self.assertIn("export function fetchRoomMembers", api_source)
+        self.assertIn("export function saveRoomMemberRole", api_source)
+        self.assertIn('"/api/room-members"', api_source)
+
+        self.assertIn("import DiscordMemberPanel", live_source)
+        self.assertIn("<DiscordMemberPanel", live_source)
+        self.assertIn("agents={agents}", live_source)
+        self.assertIn("lifecycle={lifecycle}", live_source)
+
+        self.assertIn("fetchRoomMembers(meetingId)", member_source)
+        self.assertIn("saveRoomMemberRole", member_source)
+        self.assertIn("디렉터", member_source)
+        self.assertIn("구현", member_source)
+        self.assertIn("리뷰어", member_source)
+        self.assertIn("사람", member_source)
+        self.assertIn("관찰자", member_source)
+        self.assertIn("구독형 AI", member_source)
+        self.assertIn("lifecycle_role", member_source)
+        self.assertIn("역할 저장", member_source)
 
     def test_react_discord_home_friends_uses_persisted_room_friends(self):
         api_source = frontend_file("api.ts")
@@ -188,7 +217,9 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('aria-label="AgentsAssemble Discord 홈으로 이동"', app_source)
         self.assertIn('setChannel("home")', app_source)
         self.assertIn("import HomeFriendsView", app_source)
-        self.assertIn("<HomeFriendsView meetingId={flow.meeting_id || \"\"} />", app_source)
+        self.assertIn("function roomIdFromLocation()", app_source)
+        self.assertIn("const activeRoomId = flow.meeting_id || requestedRoomId;", app_source)
+        self.assertIn("<HomeFriendsView meetingId={activeRoomId || \"\"} />", app_source)
 
         self.assertIn("fetchRoomFriends", home_source)
         self.assertIn("saveRoomFriend", home_source)
@@ -212,7 +243,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("md:hidden", app_source)
         self.assertIn("<DiscordRoomSidebar", app_source)
         self.assertIn("activeChannel={channel}", app_source)
-        self.assertIn("meetingId={flow.meeting_id || \"\"}", app_source)
+        self.assertIn("meetingId={activeRoomId || \"\"}", app_source)
         self.assertIn("onSelectHome={() =>", app_source)
         self.assertIn("onSelectChannel={(nextChannel) =>", app_source)
         self.assertIn("onLeaveRoom={() =>", app_source)
