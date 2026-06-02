@@ -26,6 +26,7 @@ export type ParticipantType = "human" | "subscription_ai" | "api" | "local" | "r
 export interface RoomFriend {
   friend_id: string;
   display_name: string;
+  handle: string;
   participant_type: ParticipantType;
   provider_kind: string;
   connection_kind: string;
@@ -37,9 +38,30 @@ export interface RoomFriend {
   updated_at: string;
 }
 
+export interface RoomMember {
+  meeting_id: string;
+  participant_id: string;
+  display_name: string;
+  role: "human" | "director" | "implementer" | "reviewer" | "agent";
+  participant_type: ParticipantType;
+  provider_kind: string;
+  connection_kind: string;
+  status: string;
+  source: string;
+  created_at: string;
+  updated_at: string;
+  last_seen_at?: string;
+}
+
 export interface RoomFriendsResponse {
   friends: RoomFriend[];
   candidates: RoomFriend[];
+}
+
+export interface RoomMembersResponse {
+  meeting_id: string;
+  members: RoomMember[];
+  roles: Array<{ id: string; label: string; description: string }>;
 }
 
 export type ChannelNotificationSetting = "default" | "all" | "mentions" | "mute";
@@ -721,6 +743,14 @@ export function fetchRoomFriends() {
 
 export function addRoomFriend(friend: Partial<RoomFriend>) {
   return postJson<{ friend: RoomFriend; friends: RoomFriend[] }>("/api/room-friends", friend);
+}
+
+export function fetchRoomMembers(meetingId: string) {
+  return fetchJson<RoomMembersResponse>(`/api/room-members${queryString({ meeting_id: meetingId })}`);
+}
+
+export function upsertRoomMember(member: Partial<RoomMember>) {
+  return postJson<RoomMembersResponse & { member: RoomMember }>("/api/room-members", member);
 }
 
 export function fetchUserProfile(): Promise<UserProfile> {

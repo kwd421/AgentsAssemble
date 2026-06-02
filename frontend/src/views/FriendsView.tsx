@@ -22,13 +22,30 @@ function FriendRow({
   friend,
   actionLabel,
   onAction,
+  inviteLabel,
+  onInvite,
 }: {
   friend: RoomFriend;
   actionLabel?: string;
   onAction?: (friend: RoomFriend) => void;
+  inviteLabel?: string;
+  onInvite?: (friend: RoomFriend) => void;
 }) {
   const meta = participantTypeMeta(friend.participant_type);
   const Icon = meta.icon;
+  const detail = [
+    meta.label,
+    friend.last_meeting_id ? `최근 방 ${friend.last_meeting_id}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const fullDetail = [
+    meta.label,
+    friend.provider_kind,
+    friend.last_meeting_id,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <div className="dc-friend-row" data-type={meta.tone}>
       <span className="dc-friend-avatar">
@@ -36,18 +53,26 @@ function FriendRow({
       </span>
       <div className="min-w-0 flex-1">
         <p className="dc-friend-name preserve-words">{friend.display_name}</p>
-        <p className="dc-friend-detail preserve-words">
-          {meta.label}
-          {friend.provider_kind ? ` · ${friend.provider_kind}` : ""}
-          {friend.last_meeting_id ? ` · ${friend.last_meeting_id}` : ""}
+        <p className="dc-friend-detail preserve-words" title={fullDetail || detail}>
+          {detail}
         </p>
       </div>
       <span className="dc-friend-status">{statusLabel(friend.status)}</span>
-      {onAction ? (
-        <button type="button" className="dc-friend-action" onClick={() => onAction(friend)}>
-          <UserPlus size={15} />
-          {actionLabel || "추가"}
-        </button>
+      {onAction || onInvite ? (
+        <div className="dc-friend-actions">
+          {onInvite && (
+            <button type="button" className="dc-friend-action" onClick={() => onInvite(friend)}>
+              <UserPlus size={15} />
+              {inviteLabel || "방에 초대"}
+            </button>
+          )}
+          {onAction && (
+            <button type="button" className="dc-friend-action" onClick={() => onAction(friend)}>
+              <UserPlus size={15} />
+              {actionLabel || "추가"}
+            </button>
+          )}
+        </div>
       ) : (
         <button type="button" className="dc-friend-icon-action" aria-label={`${friend.display_name} 더 보기`}>
           <MoreVertical size={18} />
@@ -57,7 +82,15 @@ function FriendRow({
   );
 }
 
-export default function FriendsView({ typeFilter }: { typeFilter: ParticipantType | null }) {
+export default function FriendsView({
+  typeFilter,
+  activeRoomName = "",
+  onInviteFriendToRoom,
+}: {
+  typeFilter: ParticipantType | null;
+  activeRoomName?: string;
+  onInviteFriendToRoom?: (friend: RoomFriend) => Promise<void>;
+}) {
   const [payload, setPayload] = useState<RoomFriendsResponse>({ friends: [], candidates: [] });
   const [filter, setFilter] = useState<"online" | "all" | "add">("online");
   const [query, setQuery] = useState("");
@@ -144,6 +177,21 @@ export default function FriendsView({ typeFilter }: { typeFilter: ParticipantTyp
     }
   }
 
+  async function handleInvite(friend: RoomFriend) {
+    if (!onInviteFriendToRoom) return;
+    const busyKey = `invite:${friend.friend_id}`;
+    setBusyId(busyKey);
+    setStatus("");
+    try {
+      await onInviteFriendToRoom(friend);
+      setStatus(`${friend.display_name} ${activeRoomName ? `${activeRoomName}에 ` : ""}초대됨`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "방 초대 실패");
+    } finally {
+      setBusyId("");
+    }
+  }
+
   return (
     <div className="dc-friends-page">
       <header className="dc-friends-head">
@@ -223,7 +271,14 @@ export default function FriendsView({ typeFilter }: { typeFilter: ParticipantTyp
             {loading ? (
               <p className="dc-friend-empty">불러오는 중...</p>
             ) : visibleFriends.length ? (
-              visibleFriends.map((friend) => <FriendRow key={friend.friend_id} friend={friend} />)
+              visibleFriends.map((friend) => (
+                <FriendRow
+                  key={friend.friend_id}
+                  friend={friend}
+                  inviteLabel={busyId === `invite:${friend.friend_id}` ? "초대 중" : "방에 초대"}
+                  onInvite={onInviteFriendToRoom ? handleInvite : undefined}
+                />
+              ))
             ) : (
               <p className="dc-friend-empty">아직 친구가 없습니다. 이전 세션 후보를 추가해 보세요.</p>
             )}

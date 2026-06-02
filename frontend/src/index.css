@@ -1932,6 +1932,13 @@ textarea {
   font-weight: 800;
 }
 
+.dc-friend-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .dc-friend-status-line,
 .dc-friend-empty {
   color: var(--color-text-muted);

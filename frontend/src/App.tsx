@@ -22,11 +22,13 @@ import {
 import {
   fetchLiveAgentFlow,
   fetchRoomSettings,
+  fetchRoomMembers,
   fetchMafiaGame,
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
   fetchSideChat,
   saveRoomSettings,
+  upsertRoomMember,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
   mergeSideChatEvents,
@@ -45,6 +47,8 @@ import {
   type SideChatEvent,
   type ChannelNotificationSetting,
   type ChannelSettings,
+  type RoomFriend,
+  type RoomMember,
 } from "./api";
 import { usePoll } from "./hooks";
 import AdminPanel from "./views/AdminPanel";
@@ -68,6 +72,11 @@ import {
   roomAppearanceStyle,
   type RoomAppearance,
 } from "./lib/roomAppearance";
+import {
+  loadRoomDockItems,
+  persistRoomDockItems,
+  type PersistedRoomDockItem,
+} from "./lib/roomDockPersistence";
 
 type Channel = "friends" | "lobby" | "live" | "board" | "records";
 
@@ -181,6 +190,41 @@ function createFreshRoom(now = new Date()): RoomDockItem {
     createdAt: now.toISOString(),
     tone: "fresh",
   };
+}
+
+function iconForRoomTone(tone: RoomDockItem["tone"]): LucideIcon {
+  if (tone === "mafia") return Gamepad2;
+  if (tone === "work") return LayoutDashboard;
+  if (tone === "resident") return Bot;
+  return Sparkles;
+}
+
+function persistableRoom(room: RoomDockItem): PersistedRoomDockItem {
+  return {
+    id: room.id,
+    label: room.label,
+    meetingId: room.meetingId,
+    topic: room.topic,
+    shortLabel: room.shortLabel,
+    createdAt: room.createdAt,
+    tone: room.tone,
+  };
+}
+
+function hydrateRoom(room: PersistedRoomDockItem): RoomDockItem {
+  return {
+    ...room,
+    icon: iconForRoomTone(room.tone),
+  };
+}
+
+function initialOperatorRooms() {
+  const persisted = loadRoomDockItems().map(hydrateRoom);
+  if (!persisted.length) return [createFreshRoom(), ...PINNED_ROOMS];
+  const missingPinnedRooms = PINNED_ROOMS.filter(
+    (pinned) => !persisted.some((room) => room.id === pinned.id || room.meetingId === pinned.meetingId)
+  );
+  return [...persisted, ...missingPinnedRooms];
 }
 
 function cleanInviteValue(value: string | null, fallback: string, limit: number) {
@@ -298,7 +342,7 @@ export default function App() {
   const [membersOpen, setMembersOpen] = useState(true);
   const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("room-info");
   const [rooms, setRooms] = useState<RoomDockItem[]>(() =>
-    guestInvite ? [guestInvite] : [createFreshRoom(), ...PINNED_ROOMS]
+    guestInvite ? [guestInvite] : initialOperatorRooms()
   );
   const [activeRoomId, setActiveRoomId] = useState(() => guestInvite?.id || "");
   const [roomMenu, setRoomMenu] = useState<RoomMenuState>(null);
@@ -310,6 +354,7 @@ export default function App() {
     loadRoomAppearances()
   );
   const [roomMemberRoles, setRoomMemberRoles] = useState<Record<string, Record<string, string>>>({});
+  const [roomMembersByRoom, setRoomMembersByRoom] = useState<Record<string, RoomMember[]>>({});
   const [roomChannelSettings, setRoomChannelSettings] = useState<
     Record<string, Record<string, ChannelSettings>>
   >({});
@@ -362,6 +407,11 @@ export default function App() {
     : [];
   const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? createFreshRoom();
   const activeSideChatMeetingId = activeRoom.meetingId || "";
+
+  useEffect(() => {
+    if (guestLocked) return;
+    persistRoomDockItems(rooms.map(persistableRoom));
+  }, [guestLocked, rooms]);
 
   useEffect(() => {
     if (guestLocked) return;
@@ -665,6 +715,7 @@ export default function App() {
   );
   const activeRoomStyle = useMemo(() => roomAppearanceStyle(activeAppearance), [activeAppearance]);
   const activeMemberRoles = roomMemberRoles[activeRoomKey] || {};
+  const activeRoomMembers = roomMembersByRoom[activeRoomKey] || [];
 
   useEffect(() => {
     if (!activeRoom.meetingId) return;
@@ -701,6 +752,25 @@ export default function App() {
       })
       .catch(() => {
         // Room settings are a UI enhancement; an unavailable endpoint should not blank the room.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRoom.meetingId]);
+
+  useEffect(() => {
+    if (!activeRoom.meetingId) return;
+    let cancelled = false;
+    fetchRoomMembers(activeRoom.meetingId)
+      .then((payload) => {
+        if (cancelled) return;
+        setRoomMembersByRoom((previous) => ({
+          ...previous,
+          [activeRoom.meetingId]: payload.members || [],
+        }));
+      })
+      .catch(() => {
+        // Members are refreshed again after explicit invites; do not blank the room on a transient miss.
       });
     return () => {
       cancelled = true;
@@ -780,6 +850,36 @@ export default function App() {
   ) {
     updateChannelSetting(channelId, { notifications });
     setChannelMenu(null);
+  }
+
+  async function inviteFriendToActiveRoom(friend: RoomFriend) {
+    if (guestLocked) throw new Error("게스트 화면에서는 초대할 수 없습니다.");
+    if (!activeRoom.meetingId) throw new Error("초대할 방이 선택되지 않았습니다.");
+    const participantId =
+      friend.source_agent_id || friend.handle || friend.friend_id || friend.display_name;
+    const role: RoleId = friend.participant_type === "human" ? "human" : "agent";
+    const payload = await upsertRoomMember({
+      meeting_id: activeRoom.meetingId,
+      participant_id: participantId,
+      display_name: friend.display_name,
+      role,
+      participant_type: friend.participant_type || "unknown",
+      provider_kind: friend.provider_kind,
+      connection_kind: friend.connection_kind,
+      status: friend.status || "offline",
+      source: "friend_invite",
+    });
+    setRoomMembersByRoom((previous) => ({
+      ...previous,
+      [activeRoom.meetingId]: payload.members || [],
+    }));
+    setRoomMemberRoles((previous) => ({
+      ...previous,
+      [activeRoomKey]: {
+        ...(previous[activeRoomKey] || {}),
+        [participantId]: role,
+      },
+    }));
   }
 
   return (
@@ -1113,7 +1213,11 @@ export default function App() {
       {/* Central channel column */}
       <main className="dc-chat flex min-w-0 flex-1 flex-col" aria-label="채널 내용">
         {channel === "friends" && !guestLocked ? (
-          <FriendsView typeFilter={homeFilter === "friends" ? null : homeFilter} />
+          <FriendsView
+            typeFilter={homeFilter === "friends" ? null : homeFilter}
+            activeRoomName={activeRoom.label}
+            onInviteFriendToRoom={inviteFriendToActiveRoom}
+          />
         ) : adminOpen ? (
           <AdminPanel onClose={() => setAdminOpen(false)} activeMeetingId={activeRoom.meetingId} />
         ) : channel === "lobby" ? (
@@ -1199,6 +1303,7 @@ export default function App() {
             >
               <MemberList
                 agents={scopedAgents}
+                members={activeRoomMembers}
                 roomId={activeRoom.id}
                 roomName={activeRoom.label}
                 roleOverrides={activeMemberRoles}

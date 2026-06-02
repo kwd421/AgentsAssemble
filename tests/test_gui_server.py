@@ -19394,6 +19394,23 @@ class GuiServerTests(unittest.TestCase):
                 )
                 with urlopen(request, timeout=4) as response:
                     saved_payload = json.loads(response.read().decode("utf-8"))
+                remote_request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/room-members",
+                    data=json.dumps(
+                        {
+                            "meeting_id": "m1",
+                            "participant_id": "remote-friend",
+                            "display_name": "Remote Friend",
+                            "role": "agent",
+                            "participant_type": "remote",
+                            "connection_kind": "native_remote_room_client",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(remote_request, timeout=4) as response:
+                    remote_payload = json.loads(response.read().decode("utf-8"))
                 with urlopen(
                     f"http://127.0.0.1:{server.server_port}/api/room-members?meeting_id=m2",
                     timeout=4,
@@ -19419,8 +19436,14 @@ class GuiServerTests(unittest.TestCase):
 
             self.assertEqual(initial_payload["members"][0]["participant_id"], "codex-critic")
             self.assertEqual(initial_payload["members"][0]["role"], "reviewer")
+            self.assertTrue(any(role["id"] == "agent" for role in initial_payload["roles"]))
             self.assertEqual(saved_payload["member"]["role"], "director")
             self.assertEqual(saved_payload["members"][0]["role"], "director")
+            remote_member = next(
+                member for member in remote_payload["members"] if member["participant_id"] == "remote-friend"
+            )
+            self.assertEqual(remote_member["role"], "agent")
+            self.assertEqual(remote_member["participant_type"], "remote")
             self.assertEqual(other_room_payload["members"], [])
             self.assertEqual(error_context.exception.code, 400)
 

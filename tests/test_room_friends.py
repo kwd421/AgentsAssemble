@@ -48,6 +48,7 @@ class RoomFriendsTests(unittest.TestCase):
             {"agent_id": "deepseek-api", "display_name": "DeepSeek", "provider_kind": "deepseek_api"},
             {"agent_id": "llama-local", "display_name": "Llama", "provider_kind": "lmstudio_llama"},
             {"agent_id": "guest-human", "display_name": "Guest", "provider_kind": "manual"},
+            {"agent_id": "remote-user", "display_name": "Remote", "connection_kind": "native_remote_room_client"},
         ]
         saved = [{"agent_id": "codex-a"}]
 
@@ -59,6 +60,7 @@ class RoomFriendsTests(unittest.TestCase):
                 "deepseek-api": "api",
                 "llama-local": "local",
                 "guest-human": "human",
+                "remote-user": "remote",
             },
         )
         self.assertEqual(room_friend_type_for_agent(agents[0]), "subscription_ai")

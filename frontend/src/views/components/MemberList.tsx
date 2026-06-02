@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bot, Code2, Crown, MoreHorizontal, Search, ShieldCheck, User, UserCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { LiveAgent } from "../../api";
+import type { LiveAgent, RoomMember } from "../../api";
 import {
   agentMemberSignals,
   agentQuotaWindowSignals,
@@ -10,6 +10,7 @@ import {
   providerExecutionLabel,
   roomContextSummaryBadges,
 } from "../../lib/agentLabels";
+import { participantTypeMeta } from "../../lib/participantTypes";
 import ProviderTruthChips from "./ProviderTruthChips";
 
 export type RoleId = "human" | "director" | "implementer" | "reviewer" | "agent";
@@ -17,8 +18,10 @@ export type RoleId = "human" | "director" | "implementer" | "reviewer" | "agent"
 type MemberEntry = {
   id: string;
   agent?: LiveAgent;
+  member?: RoomMember;
   displayName: string;
   detail: string;
+  fullDetail?: string;
   role: RoleId;
   owner: boolean;
   active: boolean;
@@ -37,11 +40,11 @@ function isActive(agent: LiveAgent) {
   return agent.status === "online" || agent.status === "working";
 }
 
-function statusDotClass(agent: LiveAgent) {
-  if (agent.status === "working") return "bg-online live-pulse";
-  if (agent.status === "online") return "bg-online";
-  if (agent.status === "idle") return "bg-idle";
-  if (agent.status === "error") return "bg-danger";
+function statusDotClass(status: string) {
+  if (status === "working") return "bg-online live-pulse";
+  if (status === "online") return "bg-online";
+  if (status === "idle") return "bg-idle";
+  if (status === "error") return "bg-danger";
   return "bg-offline";
 }
 
@@ -79,6 +82,16 @@ function inferAgentRole(agent: LiveAgent): RoleId {
   return "agent";
 }
 
+function memberActive(member: RoomMember) {
+  return member.status === "online" || member.status === "working";
+}
+
+function memberRole(member: RoomMember): RoleId {
+  return ["human", "director", "implementer", "reviewer", "agent"].includes(member.role)
+    ? member.role
+    : "agent";
+}
+
 function MemberRow({
   entry,
   onRoleChange,
@@ -96,7 +109,7 @@ function MemberRow({
         </span>
         <span
           className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-sidebar ${
-            entry.agent ? statusDotClass(entry.agent) : "bg-online"
+            statusDotClass(entry.agent?.status || entry.member?.status || "online")
           }`}
           aria-hidden
         />
@@ -113,7 +126,7 @@ function MemberRow({
           )}
         </div>
         <div className="dc-member-detail-row">
-          <p className="min-w-0 flex-1 truncate preserve-words">
+          <p className="min-w-0 flex-1 truncate preserve-words" title={entry.fullDetail || entry.detail}>
             {entry.detail}
           </p>
           <select
@@ -191,12 +204,14 @@ function MemberRow({
 
 export default function MemberList({
   agents,
+  members = [],
   roomId,
   roomName,
   roleOverrides,
   onRoleChange,
 }: {
   agents: LiveAgent[];
+  members?: RoomMember[];
   roomId: string;
   roomName: string;
   roleOverrides?: Record<string, string>;
@@ -230,8 +245,41 @@ export default function MemberList({
         icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || Bot,
       } satisfies MemberEntry;
     });
-    return [human, ...agentEntries];
-  }, [agents, effectiveRoleOverrides]);
+    const agentIds = new Set(agentEntries.map((entry) => entry.id));
+    const invitedEntries = members
+      .filter((member) => member.participant_id && !agentIds.has(member.participant_id))
+      .map((member) => {
+        const fallbackRole = memberRole(member);
+        const role = effectiveRoleOverrides[member.participant_id] || fallbackRole;
+        const typeMeta = participantTypeMeta(member.participant_type);
+        const fullDetail = [
+          typeMeta.label,
+          member.provider_kind,
+          member.connection_kind,
+          member.source === "friend_invite" ? "친구 초대" : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        const detail = [
+          typeMeta.label,
+          member.source === "friend_invite" ? "친구 초대" : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        return {
+          id: member.participant_id,
+          member,
+          displayName: member.display_name || member.participant_id,
+          detail,
+          fullDetail,
+          role,
+          owner: false,
+          active: memberActive(member),
+          icon: ROLE_OPTIONS.find((option) => option.id === role)?.icon || typeMeta.icon,
+        } satisfies MemberEntry;
+      });
+    return [human, ...agentEntries, ...invitedEntries];
+  }, [agents, effectiveRoleOverrides, members]);
   const visibleEntries = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return entries;
@@ -290,9 +338,9 @@ export default function MemberList({
             <ProviderTruthChips badges={contextBadges} compact />
           </details>
         )}
-        {agents.length === 0 && (
+        {agents.length === 0 && members.length === 0 && (
           <p className="mb-2 px-2 text-[13px] text-text-muted preserve-words">
-            {roomName}에는 아직 AI 멤버가 없습니다.
+            {roomName}에는 아직 멤버가 없습니다.
           </p>
         )}
         {ROLE_OPTIONS.map(({ id, label, icon: Icon }) => {

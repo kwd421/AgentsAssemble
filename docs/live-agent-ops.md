@@ -57,6 +57,16 @@ flow with running/finished state, remaining time, participant status, and
 flow-scoped events; it should not present Play Mode chatter as transcript or
 decision evidence.
 
+The Discord home/friends surface is local room state, not an external Discord
+integration. Operators can save people, subscription AI, API, Local, remote, or
+unknown participants as room friends from previous sessions or active resident
+suggestions. Inviting a saved friend into the selected room writes a
+`friend_invite` member record through `/api/room-members`, and that persisted
+member appears in the right member panel beside live residents. This does not
+send a Discord message, create an internet invite, start a provider CLI, or
+resume a stopped provider session; it only records who should be admitted or
+expected in the local AgentsAssemble room.
+
 Lobby chat can attach local files through the `첨부` control. The browser reads
 the selected file and sends a JSON/base64 upload to `/api/attachments`; the GUI
 server stores the bytes under `<output-root>/attachments/<attachment-id>/` and

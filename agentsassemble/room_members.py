@@ -10,7 +10,7 @@ from agentsassemble.meeting_events import clean_lobby_text
 from agentsassemble.room_friends import room_friend_type_for_agent
 
 ROOM_MEMBERS_FILE = "room_members.json"
-ROOM_MEMBER_ROLES = ("human", "director", "implementer", "reviewer", "observer")
+ROOM_MEMBER_ROLES = ("human", "director", "implementer", "reviewer", "agent")
 
 ROOM_MEMBER_ROLE_OPTIONS = [
     {
@@ -34,16 +34,16 @@ ROOM_MEMBER_ROLE_OPTIONS = [
         "description": "검토, 반박, 승인 전 확인",
     },
     {
-        "id": "observer",
-        "label": "관찰자",
-        "description": "읽기와 보조 의견",
+        "id": "agent",
+        "label": "에이전트",
+        "description": "AI 세션, API, 로컬 모델, 또는 원격 룸 클라이언트",
     },
 ]
 
 
 def normalize_room_member_role(value: object) -> str:
     normalized = _canonical_room_member_role(value)
-    return normalized if normalized in ROOM_MEMBER_ROLES else "observer"
+    return normalized if normalized in ROOM_MEMBER_ROLES else "agent"
 
 
 def _canonical_room_member_role(value: object) -> str:
@@ -66,9 +66,10 @@ def _canonical_room_member_role(value: object) -> str:
         "review": "reviewer",
         "qa": "reviewer",
         "auditor": "reviewer",
-        "viewer": "observer",
-        "watcher": "observer",
-        "guest": "observer",
+        "viewer": "agent",
+        "watcher": "agent",
+        "guest": "agent",
+        "observer": "agent",
     }
     normalized = aliases.get(normalized, normalized)
     return normalized
@@ -151,8 +152,8 @@ def room_members_payload(
     members = sorted(
         by_key.values(),
         key=lambda item: (
-            ROOM_MEMBER_ROLES.index(str(item.get("role") or "observer"))
-            if str(item.get("role") or "observer") in ROOM_MEMBER_ROLES
+            ROOM_MEMBER_ROLES.index(str(item.get("role") or "agent"))
+            if str(item.get("role") or "agent") in ROOM_MEMBER_ROLES
             else len(ROOM_MEMBER_ROLES),
             str(item.get("display_name") or item.get("participant_id") or "").lower(),
         ),
@@ -201,7 +202,7 @@ def _default_role_for_agent(agent: dict[str, object], participant_type: str) -> 
         return "reviewer"
     if any(token in text for token in ("impl", "implement", "coder", "engineer", "builder", "dev", "구현", "개발")):
         return "implementer"
-    return "observer"
+    return "agent"
 
 
 def _normalize_member_record(payload: dict[str, Any]) -> dict[str, object]:
@@ -212,7 +213,7 @@ def _normalize_member_record(payload: dict[str, Any]) -> dict[str, object]:
         limit=128,
     )
     participant_type = clean_lobby_text(payload.get("participant_type") or payload.get("type"), limit=32).lower()
-    if participant_type not in {"human", "subscription_ai", "api", "local", "unknown"}:
+    if participant_type not in {"human", "subscription_ai", "api", "local", "remote", "unknown"}:
         participant_type = "unknown"
     return {
         "meeting_id": clean_lobby_text(payload.get("meeting_id"), limit=128),
