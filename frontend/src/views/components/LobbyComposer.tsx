@@ -26,10 +26,12 @@ export default function LobbyComposer({
   meetingId,
   onPosted,
   mentionables = [],
+  disabledReason,
 }: {
   meetingId: string;
   onPosted: (events: LobbyEvent[]) => void;
   mentionables?: string[];
+  disabledReason?: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -38,7 +40,8 @@ export default function LobbyComposer({
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
-  const canSubmit = Boolean(message.trim() || pendingAttachments.length) && !busy && !uploading;
+  const disabled = Boolean(disabledReason);
+  const canSubmit = Boolean(message.trim() || pendingAttachments.length) && !busy && !uploading && !disabled;
   const mentionMatch = useMemo(() => {
     const selectionStart = inputRef.current?.selectionStart ?? message.length;
     const beforeCursor = message.slice(0, selectionStart);
@@ -86,6 +89,7 @@ export default function LobbyComposer({
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    if (disabled) return;
     const selected = Array.from(event.currentTarget.files || []);
     event.currentTarget.value = "";
     if (!selected.length) return;
@@ -117,14 +121,14 @@ export default function LobbyComposer({
   }
 
   function removePendingAttachment(attachmentId: string) {
-    if (busy || uploading) return;
+    if (disabled || busy || uploading) return;
     setPendingAttachments((current) =>
       current.filter((attachment) => attachment.id !== attachmentId)
     );
   }
 
   async function handleSubmit() {
-    if (busy || uploading) return;
+    if (disabled || busy || uploading) return;
     const draftMessage = message;
     const draftAttachments = pendingAttachments;
     const trimmed = draftMessage.trim();
@@ -172,6 +176,11 @@ export default function LobbyComposer({
           {error}
         </p>
       )}
+      {disabledReason && (
+        <p className="dc-composer-readonly preserve-words">
+          {disabledReason}
+        </p>
+      )}
 
       {pendingAttachments.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2">
@@ -212,8 +221,8 @@ export default function LobbyComposer({
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={handleKeyDown}
           className="dc-composer-input"
-          placeholder={uploading ? "첨부 업로드 중..." : "이 방에 메시지 남기기..."}
-          disabled={busy}
+          placeholder={disabledReason || (uploading ? "첨부 업로드 중..." : "이 방에 메시지 남기기...")}
+          disabled={busy || disabled}
         />
         <input
           ref={fileInputRef}
@@ -226,7 +235,7 @@ export default function LobbyComposer({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          disabled={busy || uploading || pendingAttachments.length >= MAX_ATTACHMENTS_PER_EVENT}
+          disabled={disabled || busy || uploading || pendingAttachments.length >= MAX_ATTACHMENTS_PER_EVENT}
           className="dc-composer-button"
           aria-label="첨부 추가"
           title={`첨부 ${pendingAttachments.length}/${MAX_ATTACHMENTS_PER_EVENT}`}
@@ -236,7 +245,7 @@ export default function LobbyComposer({
         <button
           type="button"
           onClick={() => insertText("@")}
-          disabled={busy}
+          disabled={busy || disabled}
           className="dc-composer-button"
           aria-label="멘션 삽입"
           title="@멘션"
@@ -246,7 +255,7 @@ export default function LobbyComposer({
         <button
           type="button"
           onClick={() => insertText("🙂")}
-          disabled={busy}
+          disabled={busy || disabled}
           className="dc-composer-button"
           aria-label="이모지 삽입"
           title="이모지"

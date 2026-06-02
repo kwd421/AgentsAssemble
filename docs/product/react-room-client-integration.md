@@ -168,8 +168,8 @@ surfaces rather than silently counted as React client coverage.
 | `/api/release-health/queue` | GET | exact | `fetchReleaseHealthQueue()` | yes | React read-only release-health latest status projection. |
 | `/api/room-friends` | GET | exact | `fetchRoomFriends()` | yes | React Discord home/friends view lists saved friends and previous-session candidates. |
 | `/api/room-friends` | POST | exact | `addRoomFriend()` | yes | React Discord home/friends view stores a friend/session entry without starting providers. |
-| `/api/room-settings` | GET | exact | `fetchRoomSettings()` | yes | React room shell reads persisted room labels, topic, icon/banner appearance, invite scope, and member roles. |
-| `/api/room-settings` | POST | exact | `saveRoomSettings()` | yes | React room settings saves labels, topic, icon/banner appearance, invite scope, and member roles. |
+| `/api/room-settings` | GET | exact | `fetchRoomSettings()` | yes | React room shell reads persisted room labels, topic, icon/banner appearance, invite scope, and member roles. `read_only` invite scope is carried into generated browser guest URLs. |
+| `/api/room-settings` | POST | exact | `saveRoomSettings()` | yes | React room settings saves labels, topic, icon/banner appearance, invite scope, and member roles. Browser guests entering with `scope=read_only` see the same room but the lobby composer is disabled. |
 | `/api/side-chat` | GET | exact | `fetchSideChat()` | yes | React side-chat read/write. |
 | `/api/side-chat` | POST | exact | `postSideChatMessage()` | yes | React side-chat read/write. |
 
@@ -187,6 +187,12 @@ React defaulting must preserve these room-event contracts:
   promote action is implemented.
 - Provider startup approval remains explicit; UI parity does not grant provider
   execution permission.
+- Browser guest links are room-scoped. When a saved room setting marks the invite
+  scope `read_only`, the generated guest URL carries that scope and the React
+  lobby disables posting controls for that guest session instead of pretending
+  the link is writable. This is a browser-client constraint, not an authenticated
+  server-side write permission; authenticated remote room APIs remain separate
+  future work.
 - Release-health and room-benchmark catalog visibility is read-only; React may
   show opt-in benchmark evidence but must not start checks or benchmarks.
 

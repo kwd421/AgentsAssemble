@@ -94,6 +94,7 @@ export type RoomDockItem = {
   meetingId: string;
   topic: string;
   shortLabel: string;
+  inviteScope?: RoomAppearance["inviteScope"];
   icon: LucideIcon;
   createdAt: string;
   tone: "fresh" | "resident" | "mafia" | "work";
@@ -191,12 +192,14 @@ function roomFromInviteParams(): RoomDockItem | null {
     if (!guestMode || !meetingId) return null;
     const label = cleanInviteValue(query.get("roomName") || query.get("name"), meetingId, 80);
     const topic = cleanInviteValue(query.get("topic"), "초대받은 방", 160);
+    const inviteScope = query.get("scope") || query.get("inviteScope") || "room";
     return {
       id: `guest-${meetingId}`,
       label: label || meetingId,
       meetingId,
       topic,
       shortLabel: (label || meetingId).slice(0, 1).toUpperCase() || "G",
+      inviteScope: inviteScope === "read_only" ? "read_only" : "room",
       icon: Users,
       createdAt: "",
       tone: "resident",
@@ -228,14 +231,16 @@ function roomSettingsKey(room: RoomDockItem) {
   return room.meetingId || room.id;
 }
 
-function inviteUrlForRoom(room: RoomDockItem) {
+function inviteUrlForRoom(room: RoomDockItem, appearance?: RoomAppearance) {
   const url = new URL(window.location.href);
+  const inviteScope = appearance?.inviteScope || room.inviteScope || "room";
   url.search = "";
   url.hash = "";
   url.searchParams.set("guest", "1");
   url.searchParams.set("room", room.meetingId);
   url.searchParams.set("roomName", room.label);
   if (room.topic) url.searchParams.set("topic", room.topic);
+  url.searchParams.set("scope", inviteScope);
   return url.toString();
 }
 
@@ -313,6 +318,7 @@ export default function App() {
   const [sideChatError, setSideChatError] = useState<Error | null>(null);
 
   const guestMeetingId = guestInvite?.meetingId || "";
+  const guestReadOnly = guestInvite?.inviteScope === "read_only";
   const flowFetcher = useCallback(() => fetchLiveAgentFlow(guestMeetingId), [guestMeetingId]);
   const [flowData, flowLoading, flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
   const flow = flowData?.flow ?? { status: "idle" };
@@ -586,9 +592,9 @@ export default function App() {
     setAdminOpen(false);
   }
 
-  async function copyInviteLink(room: RoomDockItem) {
+  async function copyInviteLink(room: RoomDockItem, appearance?: RoomAppearance) {
     setInviteCopyStatus("");
-    const copied = await copyText(inviteUrlForRoom(room));
+    const copied = await copyText(inviteUrlForRoom(room, appearance));
     setInviteCopyStatus(copied ? "복사됨" : "복사 실패");
   }
 
@@ -598,7 +604,12 @@ export default function App() {
   const settingsModalRoom = settingsModal
     ? rooms.find((room) => room.id === settingsModal.roomId)
     : undefined;
-  const inviteUrl = inviteModalRoom ? inviteUrlForRoom(inviteModalRoom) : "";
+  const inviteModalAppearance = inviteModalRoom
+    ? completeRoomAppearance(
+        roomAppearances[roomSettingsKey(inviteModalRoom)] || roomAppearances[inviteModalRoom.id]
+      )
+    : undefined;
+  const inviteUrl = inviteModalRoom ? inviteUrlForRoom(inviteModalRoom, inviteModalAppearance) : "";
   const activeAppearance = completeRoomAppearance(
     roomAppearances[activeRoomKey] || roomAppearances[activeRoom.id]
   );
@@ -836,7 +847,7 @@ export default function App() {
                 <button
                   type="button"
                   className="ops-cta inline-flex items-center justify-center gap-2 px-3 py-2.5 text-[13px]"
-                  onClick={() => void copyInviteLink(inviteModalRoom)}
+                  onClick={() => void copyInviteLink(inviteModalRoom, inviteModalAppearance)}
                 >
                   <Copy size={15} />
                   링크 복사
@@ -1007,6 +1018,7 @@ export default function App() {
             onMafiaStarted={handleMafiaStarted}
             onFlowStarted={handleFlowStarted}
             canManageRoom={!guestLocked}
+            canPostMessages={!guestReadOnly}
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
             appearance={activeAppearance}

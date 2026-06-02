@@ -80,6 +80,7 @@ export default function LobbyView({
   onMafiaStarted,
   onFlowStarted,
   canManageRoom = true,
+  canPostMessages = true,
   membersOpen,
   onToggleMembers,
   appearance,
@@ -91,6 +92,7 @@ export default function LobbyView({
   onMafiaStarted: (game: MafiaGame) => void;
   onFlowStarted: () => void;
   canManageRoom?: boolean;
+  canPostMessages?: boolean;
   membersOpen?: boolean;
   onToggleMembers?: () => void;
   appearance?: RoomAppearance;
@@ -246,10 +248,14 @@ export default function LobbyView({
           <div className="dc-room-status-chip">
             <span className="flex items-center gap-1.5">
               <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-online live-pulse" : "bg-idle"}`} />
-              초대받은 방
+              {canPostMessages ? "초대받은 방" : "읽기 전용 초대"}
             </span>
             <span className="min-w-0 truncate text-text-muted preserve-words">
-              {isRunning ? flow.topic || flow.meeting_id || "진행 중" : "채팅과 읽기만 가능합니다"}
+              {canPostMessages
+                ? isRunning
+                  ? flow.topic || flow.meeting_id || "진행 중"
+                  : "채팅과 읽기만 가능합니다"
+                : "이 링크에서는 메시지를 보낼 수 없습니다"}
             </span>
           </div>
         ) : isRunning ? (
@@ -360,6 +366,7 @@ export default function LobbyView({
           meetingId={activeRoom.meetingId}
           onPosted={handleLobbyPosted}
           mentionables={mentionables}
+          disabledReason={!canPostMessages ? "읽기 전용 초대입니다. 이 방은 보기만 가능합니다." : undefined}
         />
       </div>
     </div>

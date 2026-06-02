@@ -425,6 +425,38 @@ class ReactUiContractTests(unittest.TestCase):
         self.assertIn("max_agent_turns: 0", lobby_source)
         self.assertIn("max_total_turns: 0", lobby_source)
 
+    def test_react_read_only_invite_scope_locks_guest_composer(self):
+        app_source = frontend_file("App.tsx")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        composer_source = frontend_file("views/components/LobbyComposer.tsx")
+
+        self.assertIn('query.get("scope") || query.get("inviteScope") || "room"', app_source)
+        self.assertIn('inviteScope: inviteScope === "read_only" ? "read_only" : "room"', app_source)
+        self.assertIn('const inviteScope = appearance?.inviteScope || room.inviteScope || "room";', app_source)
+        self.assertIn('url.searchParams.set("scope", inviteScope);', app_source)
+        self.assertIn('const guestReadOnly = guestInvite?.inviteScope === "read_only";', app_source)
+        self.assertIn("canPostMessages={!guestReadOnly}", app_source)
+        self.assertIn("inviteUrlForRoom(inviteModalRoom, inviteModalAppearance)", app_source)
+        self.assertIn("copyInviteLink(inviteModalRoom, inviteModalAppearance)", app_source)
+
+        self.assertIn("canPostMessages = true", lobby_source)
+        self.assertIn("canPostMessages?: boolean;", lobby_source)
+        self.assertIn("읽기 전용 초대", lobby_source)
+        self.assertIn("이 링크에서는 메시지를 보낼 수 없습니다", lobby_source)
+        self.assertIn(
+            'disabledReason={!canPostMessages ? "읽기 전용 초대입니다. 이 방은 보기만 가능합니다." : undefined}',
+            lobby_source,
+        )
+
+        self.assertIn("disabledReason?: string;", composer_source)
+        self.assertIn("const disabled = Boolean(disabledReason);", composer_source)
+        self.assertIn("&& !disabled", composer_source)
+        self.assertIn("if (disabled) return;", composer_source)
+        self.assertIn("if (disabled || busy || uploading) return;", composer_source)
+        self.assertIn("dc-composer-readonly", composer_source)
+        self.assertIn("placeholder={disabledReason ||", composer_source)
+        self.assertIn("disabled={busy || disabled}", composer_source)
+
     def test_react_lobby_external_participation_states_provider_startup_and_token_boundaries(self):
         section = react_lobby_external_participation_section()
 
