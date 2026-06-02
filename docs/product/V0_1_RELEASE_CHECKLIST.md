@@ -51,7 +51,7 @@ reading chat history:
 The release candidate should have current evidence for these surfaces:
 
 - GUI loads `/` and static assets from a temporary output root.
-- `node --check agentsassemble/static/*.js` passes.
+- `npm --prefix frontend run build` passes for the React room client.
 - `python3 -m unittest tests.test_static_ui_assets -v` passes.
 - `python3 -m unittest tests.test_mcp_server -v` passes for the checked-in MCP
   participant/archive tool boundary.
@@ -71,7 +71,7 @@ raw local paths/config metadata kept out of archive outputs. Host-control MCP re
 Use these as the ordinary v0.1 hardening proof set:
 
 ```bash
-node --check agentsassemble/static/*.js
+npm --prefix frontend run build
 python3 -m unittest tests.test_static_ui_assets -v
 python3 -m unittest tests.test_docs_architecture -v
 python3 -m unittest tests.test_mcp_server -v
@@ -187,10 +187,6 @@ The next implementation slice should be chosen from this queue:
   resource inspection stay in the separate admin surface.
 - Add or improve tests that verify the GUI does not replace live-event rows
   unnecessarily during refresh.
-  - Evidence: `node --test tests/static_app_runtime_smoke.mjs` covers a full
-    meeting payload where only `live_events` changed and verifies the vanilla
-    Live panel shell, stable live-event rows, and transcript scroll position are
-    preserved while the new row is appended.
   - Evidence: `python3 -m unittest tests.test_frontend_live_timeline_state -v`
     covers React Live timeline delta state, active meeting/flow filtering, stable
     identical-event refreshes, and pinned-to-latest intent without claiming

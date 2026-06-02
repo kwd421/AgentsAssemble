@@ -1593,8 +1593,6 @@ def frontend_info_payload(
     backend_url = str(backend or "http://127.0.0.1:8765").rstrip("/") or "http://127.0.0.1:8765"
     frontend_port = int(port)
     frontend_url = f"http://127.0.0.1:{frontend_port}"
-    legacy_console_path = "/legacy/"
-    legacy_console_url = backend_url + legacy_console_path
     react_app_path = "/app/"
     react_app_url = backend_url + react_app_path
     parity_matrix_doc = "docs/product/legacy-react-parity-matrix.md"
@@ -1621,9 +1619,6 @@ def frontend_info_payload(
         "frontend_dev_port": frontend_port,
         "frontend_dev_proxy_target": backend_url,
         "backend_url": backend_url,
-        "legacy_console_url": legacy_console_url,
-        "legacy_console_path": legacy_console_path,
-        "legacy_console_namespace_url": legacy_console_url,
         "legacy_console_status": "retired",
         "default_console_kind": default_console_kind,
         "default_console_label": default_console_label,
@@ -1650,7 +1645,7 @@ def frontend_info_payload(
         "notes": [
             "assemble gui serves the Discord-style React room client at / once npm --prefix frontend run build exists.",
             "Until that build exists, / and /app/ return a build-required response instead of serving the retired vanilla console.",
-            "Legacy static routes are retired; rebuild the React client instead of using a fallback UI.",
+            "The /legacy/ namespace and legacy static routes are retired; rebuild the React client instead of using a fallback UI.",
             "The React/Vite frontend reads existing HTTP/SSE state and does not start provider CLIs.",
             "The Vite proxy should target the same backend URL shown here unless AGENTSASSEMBLE_API_TARGET overrides it.",
             f"Browser parity for the default React surface is operator-verified; see {parity_matrix_doc}.",

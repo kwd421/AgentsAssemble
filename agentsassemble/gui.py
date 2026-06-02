@@ -7581,7 +7581,6 @@ def _make_handler(
     frontend_dist_root: Path | None = None,
     public_tunnel_manager: PublicTunnelManager | None = None,
 ) -> type[BaseHTTPRequestHandler]:
-    static_root = Path(__file__).parent / "static"
     react_app_root = (frontend_dist_root or default_frontend_dist_root()).resolve()
     live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
     live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
@@ -7609,10 +7608,7 @@ def _make_handler(
                 self._send_react_app_index(react_app_root)
                 return
             if path in {"/legacy", "/legacy/"}:
-                if frontend_dist_status(react_app_root).static_available:
-                    self._send_react_app_index(react_app_root)
-                else:
-                    self._send_error(HTTPStatus.NOT_FOUND, "Legacy console is retired until the React build is unavailable.")
+                self._send_error(HTTPStatus.NOT_FOUND, "Legacy console is retired. Use the Discord-style React room client at /.")
                 return
             if path in {"/app", "/app/"}:
                 self._send_react_app_index(react_app_root)

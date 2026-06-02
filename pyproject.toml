@@ -16,6 +16,3 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["agentsassemble*"]
-
-[tool.setuptools.package-data]
-agentsassemble = ["static/*.html", "static/*.css", "static/*.js", "static/*.svg"]

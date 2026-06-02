@@ -20419,10 +20419,11 @@ class GuiServerTests(unittest.TestCase):
                 base = f"http://127.0.0.1:{server.server_port}"
                 root_response = urlopen(f"{base}/", timeout=4)
                 root_html = root_response.read().decode("utf-8")
-                legacy_html = urlopen(f"{base}/legacy/", timeout=4).read().decode("utf-8")
                 app_html = urlopen(f"{base}/app/", timeout=4).read().decode("utf-8")
                 asset_response = urlopen(f"{base}/app/assets/app.js", timeout=4)
                 asset_body = asset_response.read().decode("utf-8")
+                with self.assertRaises(HTTPError) as legacy_raised:
+                    urlopen(f"{base}/legacy/", timeout=4)
                 with self.assertRaises(HTTPError) as escaped:
                     urlopen(f"{base}/app/assets/%2e%2e/%2e%2e/secret.txt", timeout=4)
             finally:
@@ -20432,15 +20433,16 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(root_html, app_html)
         self.assertIn('src="/app/assets/app.js"', root_html)
         self.assertIn('href="/app/assets/app.css"', root_html)
-        self.assertEqual(root_html, legacy_html)
         self.assertEqual(root_response.headers.get("Content-Type"), "text/html; charset=utf-8")
         self.assertEqual(root_response.headers.get("Cache-Control"), "no-cache")
         self.assertIn("javascript", asset_response.headers.get("Content-Type", ""))
         self.assertEqual(asset_response.headers.get("Cache-Control"), "public, max-age=31536000, immutable")
         self.assertEqual(asset_body, "console.log('react preview');")
         try:
+            self.assertEqual(legacy_raised.exception.code, 404)
             self.assertEqual(escaped.exception.code, 404)
         finally:
+            legacy_raised.exception.close()
             escaped.exception.close()
 
     def test_react_app_preview_route_reports_missing_dist_without_crashing(self):

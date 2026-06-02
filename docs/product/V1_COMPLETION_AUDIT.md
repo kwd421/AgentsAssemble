@@ -41,7 +41,7 @@ Run the broad proof set with `python3 -m agentsassemble.cli release-health run`
 $ python3 -m agentsassemble.cli gui --port 8902 ...   # then curl:
 /        -> 200  react (id="root")
 /app/    -> 200  react (/app/assets/ refs)
-/legacy/ -> 200  react alias when built; 404 when React build is missing
+/legacy/ -> 404  retired legacy namespace
 /static/base.css -> 404
 /app/assets/index-DHpFvw0x.js -> 200
 ```
