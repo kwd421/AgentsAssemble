@@ -37,17 +37,19 @@ import {
 import { usePoll } from "./hooks";
 import AdminPanel from "./views/AdminPanel";
 import BoardView from "./views/BoardView";
+import HomeFriendsView from "./views/HomeFriendsView";
 import LiveView from "./views/LiveView";
 import LobbyView from "./views/LobbyView";
 import RecordsView from "./views/RecordsView";
 import RoomCommandStrip from "./views/components/RoomCommandStrip";
 import RoomInvitePanel from "./views/components/RoomInvitePanel";
 
-type Channel = "lobby" | "live" | "board" | "records";
-type RoomSurface = Channel | "admin";
+type Channel = "home" | "lobby" | "live" | "board" | "records";
+type CoreChannel = Exclude<Channel, "home">;
+type RoomSurface = CoreChannel | "admin";
 
 type ChannelConfig = {
-  id: Channel;
+  id: CoreChannel;
   label: string;
   icon: LucideIcon;
 };
@@ -233,7 +235,7 @@ function OperatorApp() {
       : [];
   const officialTimelineEvents = meetingLiveEventsToTimelineEvents(activeMeetingStreamState.events);
   const liveTimelineEvents = flowEvents.length ? flowEvents : officialTimelineEvents;
-  const activeSurface: RoomSurface = adminOpen ? "admin" : channel;
+  const activeSurface: RoomSurface = adminOpen || channel === "home" ? "admin" : channel;
 
   const onlineCount = agents.filter(
     (agent) => agent.status === "online" || agent.status === "working"
@@ -286,11 +288,11 @@ function OperatorApp() {
             <button
               type="button"
               onClick={() => {
-                setChannel("lobby");
+                setChannel("home");
                 setAdminOpen(false);
               }}
               className="flex min-w-0 items-center gap-3 pr-2"
-              aria-label="AgentsAssemble 로비로 이동"
+              aria-label="AgentsAssemble Discord 홈으로 이동"
             >
               <span className="ops-logo-mark shrink-0" aria-hidden />
               <span className="hidden text-[18px] font-black uppercase tracking-tight text-text-primary drop-shadow-[0_0_10px_rgba(34,211,238,0.25)] sm:block">
@@ -385,17 +387,21 @@ function OperatorApp() {
           </div>
         </header>
 
-        <RoomCommandStrip
-          activeSurface={activeSurface}
-          agents={agents}
-          flow={flow}
-          lifecycle={lifecycle}
-          onSelectSurface={handleCommandSurface}
-        />
+        {channel !== "home" && (
+          <RoomCommandStrip
+            activeSurface={activeSurface}
+            agents={agents}
+            flow={flow}
+            lifecycle={lifecycle}
+            onSelectSurface={handleCommandSurface}
+          />
+        )}
 
         <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-16 pt-3 chat-scroll lg:px-4 lg:pb-3 xl:overflow-hidden">
           {adminOpen ? (
             <AdminPanel onClose={() => setAdminOpen(false)} />
+          ) : channel === "home" ? (
+            <HomeFriendsView meetingId={flow.meeting_id || ""} />
           ) : channel === "lobby" ? (
             <LobbyView
               flow={flow}

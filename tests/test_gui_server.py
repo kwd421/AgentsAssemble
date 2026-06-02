@@ -19257,6 +19257,48 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual([event["message"] for event in room_a_payload["events"]], ["room-a only"])
             self.assertEqual([event["message"] for event in room_b_payload["events"]], ["room-b only"])
 
+    def test_room_friends_api_saves_friends_and_suggests_live_agents(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "codex-lead",
+                    "display_name": "Codex Lead",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                    "status": "online",
+                },
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/room-friends", timeout=4) as response:
+                    initial_payload = json.loads(response.read().decode("utf-8"))
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/room-friends",
+                    data=json.dumps(
+                        {
+                            "display_name": "SeiNel",
+                            "handle": "seinel",
+                            "participant_type": "human",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    saved_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(initial_payload["suggestions"][0]["agent_id"], "codex-lead")
+            self.assertEqual(initial_payload["suggestions"][0]["participant_type"], "subscription_ai")
+            self.assertEqual(saved_payload["friend"]["participant_type"], "human")
+            self.assertEqual(saved_payload["friends"][0]["display_name"], "SeiNel")
+
     def test_legacy_side_chat_lines_are_read_as_side_chat_channel(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

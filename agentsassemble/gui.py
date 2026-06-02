@@ -119,6 +119,7 @@ from agentsassemble.frontend_runtime import (
     frontend_dist_status,
 )
 from agentsassemble.release_health import release_health_catalog_payload, release_health_queue_payload
+from agentsassemble.room_friends import room_friends_payload, upsert_room_friend
 from agentsassemble.room_invite import (
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
     active_sessions_summary,
@@ -7695,6 +7696,9 @@ def _make_handler(
             if path == "/api/providers":
                 self._send_json(provider_catalog_payload())
                 return
+            if path == "/api/room-friends":
+                self._send_json(room_friends_payload(output_root, read_live_agents(output_root)))
+                return
             if path == "/api/live-agents":
                 self._send_json(
                     live_agents_payload(
@@ -8011,6 +8015,24 @@ def _make_handler(
                             output_root,
                             meeting_id=_side_chat_scope_id(event.get("flow_meeting_id")),
                         ),
+                    }
+                )
+                return
+            if parsed.path == "/api/room-friends":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                friend = upsert_room_friend(output_root, payload)
+                self._send_json(
+                    {
+                        "friend": friend,
+                        **room_friends_payload(output_root, read_live_agents(output_root)),
                     }
                 )
                 return

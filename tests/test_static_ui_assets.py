@@ -163,6 +163,33 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("meetingId={sideChatMeetingId}", live_source)
         self.assertNotIn("promote", live_source)
 
+    def test_react_discord_home_friends_uses_persisted_room_friends(self):
+        api_source = frontend_file("api.ts")
+        app_source = frontend_file("App.tsx")
+        home_source = frontend_file("views/HomeFriendsView.tsx")
+
+        self.assertIn("export interface RoomFriend", api_source)
+        self.assertIn('export type RoomFriendType = "human" | "subscription_ai" | "api" | "local" | "unknown";', api_source)
+        self.assertIn("export function fetchRoomFriends", api_source)
+        self.assertIn("export function saveRoomFriend", api_source)
+        self.assertIn('"/api/room-friends"', api_source)
+
+        self.assertIn('type Channel = "home" | "lobby" | "live" | "board" | "records";', app_source)
+        self.assertIn('aria-label="AgentsAssemble Discord 홈으로 이동"', app_source)
+        self.assertIn('setChannel("home")', app_source)
+        self.assertIn("import HomeFriendsView", app_source)
+        self.assertIn("<HomeFriendsView meetingId={flow.meeting_id || \"\"} />", app_source)
+
+        self.assertIn("fetchRoomFriends", home_source)
+        self.assertIn("saveRoomFriend", home_source)
+        self.assertIn("createLiveAgentJoinBrief", home_source)
+        self.assertIn("FRIEND_TYPE_LABELS", home_source)
+        self.assertIn("구독형 AI", home_source)
+        self.assertIn("Local", home_source)
+        self.assertIn("친구 추가", home_source)
+        self.assertIn("활동 중인 세션", home_source)
+        self.assertIn("초대 패킷", home_source)
+
     def test_react_lobby_sse_uses_shared_parser_and_merge_helpers(self):
         api_source = frontend_file("api.ts")
         lobby_source = frontend_file("views/LobbyView.tsx")
@@ -768,7 +795,9 @@ class StaticUiAssetTests(unittest.TestCase):
 
         self.assertIn("import RoomCommandStrip", app_source)
         self.assertIn("<RoomCommandStrip", app_source)
-        self.assertIn("type RoomSurface = Channel | \"admin\";", app_source)
+        self.assertIn('type CoreChannel = Exclude<Channel, "home">;', app_source)
+        self.assertIn('type RoomSurface = CoreChannel | "admin";', app_source)
+        self.assertIn('channel !== "home"', app_source)
         self.assertIn("function handleCommandSurface", app_source)
         self.assertIn("setAdminOpen(true)", app_source)
         self.assertIn("setChannel(surface)", app_source)
