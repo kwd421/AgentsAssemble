@@ -67,6 +67,13 @@ send a Discord message, create an internet invite, start a provider CLI, or
 resume a stopped provider session; it only records who should be admitted or
 expected in the local AgentsAssemble room.
 
+The main room composer and side-chat composer share the same mention model.
+Their `@` suggestions should include the local user, scoped live residents, and
+persisted room members such as friends invited through `/api/room-members`.
+Mention rendering is display-only; typing `@Codex` or selecting
+`<@Codex Friend>` does not start that provider, grant permissions, or promote
+the message into official Work Mode records.
+
 Lobby chat can attach local files through the `첨부` control. The browser reads
 the selected file and sends a JSON/base64 upload to `/api/attachments`; the GUI
 server stores the bytes under `<output-root>/attachments/<attachment-id>/` and

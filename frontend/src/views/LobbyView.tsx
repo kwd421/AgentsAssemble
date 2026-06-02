@@ -76,6 +76,7 @@ export default function LobbyView({
   activeRoom,
   flow,
   agents,
+  mentionables: roomMentionables,
   refreshFlow,
   onMafiaStarted,
   onFlowStarted,
@@ -88,6 +89,7 @@ export default function LobbyView({
   activeRoom: RoomDockItem;
   flow: FlowState;
   agents: LiveAgent[];
+  mentionables?: string[];
   refreshFlow: () => void;
   onMafiaStarted: (game: MafiaGame) => void;
   onFlowStarted: () => void;
@@ -110,8 +112,11 @@ export default function LobbyView({
     (agent) => agent.status === "online" || agent.status === "working"
   );
   const mentionables = useMemo(
-    () => ["나", ...agents.map((agent) => agent.display_name || agent.agent_id).filter(Boolean)],
-    [agents]
+    () =>
+      roomMentionables?.length
+        ? roomMentionables
+        : ["나", ...agents.map((agent) => agent.display_name || agent.agent_id).filter(Boolean)],
+    [agents, roomMentionables]
   );
   const visibleEvents = useMemo(() => {
     if (!activeRoom.createdAt) return events;

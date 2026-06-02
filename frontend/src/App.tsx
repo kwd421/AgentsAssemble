@@ -550,14 +550,28 @@ export default function App() {
       : "official"
     : "flow";
   const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
+  const activeRoomKey = roomSettingsKey(activeRoom);
+  const activeRoomMembers = roomMembersByRoom[activeRoomKey] || [];
   const scopedMentionables = useMemo(
-    () => ["나", ...scopedAgents.map((agent) => agent.display_name || agent.agent_id).filter(Boolean)],
-    [scopedAgents]
+    () => {
+      const seen = new Set<string>();
+      return [
+        "나",
+        ...scopedAgents.map((agent) => agent.display_name || agent.agent_id),
+        ...activeRoomMembers.map((member) => member.display_name || member.participant_id),
+      ].filter((name) => {
+        const cleanName = String(name || "").trim();
+        const key = cleanName.toLowerCase();
+        if (!cleanName || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    },
+    [activeRoomMembers, scopedAgents]
   );
   const scopedOnlineCount = scopedAgents.filter(
     (agent) => agent.status === "online" || agent.status === "working"
   ).length;
-  const activeRoomKey = roomSettingsKey(activeRoom);
   const activeChannelSettings = roomChannelSettings[activeRoomKey] || {};
   const menuRoom = roomMenu ? rooms.find((room) => room.id === roomMenu.roomId) : undefined;
   const menuChannel = channelMenu
@@ -715,7 +729,6 @@ export default function App() {
   );
   const activeRoomStyle = useMemo(() => roomAppearanceStyle(activeAppearance), [activeAppearance]);
   const activeMemberRoles = roomMemberRoles[activeRoomKey] || {};
-  const activeRoomMembers = roomMembersByRoom[activeRoomKey] || [];
 
   useEffect(() => {
     if (!activeRoom.meetingId) return;
@@ -1225,6 +1238,7 @@ export default function App() {
             activeRoom={activeRoom}
             flow={scopedFlow}
             agents={scopedAgents}
+            mentionables={scopedMentionables}
             refreshFlow={refreshFlow}
             onMafiaStarted={handleMafiaStarted}
             onFlowStarted={handleFlowStarted}

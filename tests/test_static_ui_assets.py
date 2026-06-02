@@ -210,6 +210,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("roomFromInviteParams", app_source)
         self.assertIn("roomMembersByRoom", app_source)
         self.assertIn("activeRoomMembers", app_source)
+        self.assertIn("...activeRoomMembers.map((member) => member.display_name || member.participant_id)", app_source)
+        self.assertIn("mentionables={scopedMentionables}", app_source)
         self.assertIn("inviteFriendToActiveRoom", app_source)
         self.assertIn("onInviteFriendToRoom={inviteFriendToActiveRoom}", app_source)
         self.assertIn("members={activeRoomMembers}", app_source)
