@@ -268,6 +268,9 @@ class StaticUiAssetTests(unittest.TestCase):
 
     def test_react_discord_room_sidebar_uses_real_invite_and_context_actions(self):
         app_source = frontend_file("App.tsx")
+        api_source = frontend_file("api.ts")
+        channel_menu_source = frontend_file("views/components/ChannelContextMenu.tsx")
+        settings_source = frontend_file("views/components/RoomSettingsModal.tsx")
 
         self.assertIn('type Channel = "friends" | "lobby" | "live" | "board" | "records";', app_source)
         self.assertIn("const CHANNELS", app_source)
@@ -290,6 +293,30 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("초대 링크", app_source)
         self.assertIn("링크 복사", app_source)
         self.assertIn("RoomSettingsModal", app_source)
+        self.assertIn("ChannelContextMenu", app_source)
+        self.assertIn("type ChannelSettings", api_source)
+        self.assertIn("channelSettings: Record<string, ChannelSettings>;", api_source)
+        self.assertIn("channel_settings", api_source)
+        self.assertIn("roomChannelSettings", app_source)
+        self.assertIn("openChannelMenu", app_source)
+        self.assertIn("markChannelRead", app_source)
+        self.assertIn("setChannelNotifications", app_source)
+        self.assertIn("channelSettings={roomChannelSettings[roomSettingsKey(settingsModalRoom)] || {}}", app_source)
+        self.assertIn("onChannelSettingChange", app_source)
+        self.assertIn("data-muted", app_source)
+
+        self.assertIn("읽음으로 표시하기", channel_menu_source)
+        self.assertIn("채널 알림", channel_menu_source)
+        self.assertIn("@멘션만", channel_menu_source)
+        self.assertIn("채널 설정", channel_menu_source)
+        self.assertIn('role="menu"', channel_menu_source)
+        self.assertIn('role="menuitemradio"', channel_menu_source)
+
+        self.assertIn("settings-channels", settings_source)
+        self.assertIn("채널 설정", settings_source)
+        self.assertIn("ROOM_CHANNEL_OPTIONS", settings_source)
+        self.assertIn("onChannelSettingChange", settings_source)
+        self.assertIn("channelSettings[channel.id]", settings_source)
 
     def test_react_lobby_sse_uses_shared_parser_and_merge_helpers(self):
         api_source = frontend_file("api.ts")

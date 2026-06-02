@@ -43,6 +43,8 @@ import {
   type MafiaGame,
   type MafiaGameResponse,
   type SideChatEvent,
+  type ChannelNotificationSetting,
+  type ChannelSettings,
 } from "./api";
 import { usePoll } from "./hooks";
 import AdminPanel from "./views/AdminPanel";
@@ -51,6 +53,7 @@ import FriendsView from "./views/FriendsView";
 import LiveView from "./views/LiveView";
 import LobbyView from "./views/LobbyView";
 import RecordsView from "./views/RecordsView";
+import ChannelContextMenu from "./views/components/ChannelContextMenu";
 import HomeSidebar from "./views/components/HomeSidebar";
 import type { HomeFilter } from "./views/components/HomeSidebar";
 import MemberList from "./views/components/MemberList";
@@ -76,6 +79,12 @@ type ChannelConfig = {
 
 type RoomMenuState = {
   roomId: string;
+  x: number;
+  y: number;
+} | null;
+
+type ChannelMenuState = {
+  channelId: Channel;
   x: number;
   y: number;
 } | null;
@@ -293,6 +302,7 @@ export default function App() {
   );
   const [activeRoomId, setActiveRoomId] = useState(() => guestInvite?.id || "");
   const [roomMenu, setRoomMenu] = useState<RoomMenuState>(null);
+  const [channelMenu, setChannelMenu] = useState<ChannelMenuState>(null);
   const [inviteModal, setInviteModal] = useState<InviteModalState>(null);
   const [settingsModal, setSettingsModal] = useState<RoomSettingsState>(null);
   const [inviteCopyStatus, setInviteCopyStatus] = useState("");
@@ -300,6 +310,9 @@ export default function App() {
     loadRoomAppearances()
   );
   const [roomMemberRoles, setRoomMemberRoles] = useState<Record<string, Record<string, string>>>({});
+  const [roomChannelSettings, setRoomChannelSettings] = useState<
+    Record<string, Record<string, ChannelSettings>>
+  >({});
   const [mafiaGameId, setMafiaGameId] = useState(() => {
     try {
       const query = new URLSearchParams(window.location.search);
@@ -371,9 +384,10 @@ export default function App() {
   }, [flow.meeting_id, flow.topic, guestLocked]);
 
   useEffect(() => {
-    if (!roomMenu) return;
+    if (!roomMenu && !channelMenu) return;
     function closeMenu() {
       setRoomMenu(null);
+      setChannelMenu(null);
     }
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") closeMenu();
@@ -386,7 +400,7 @@ export default function App() {
       window.removeEventListener("resize", closeMenu);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [roomMenu]);
+  }, [roomMenu, channelMenu]);
 
   useEffect(() => {
     const meetingId = flow.meeting_id || "";
@@ -494,7 +508,11 @@ export default function App() {
     (agent) => agent.status === "online" || agent.status === "working"
   ).length;
   const activeRoomKey = roomSettingsKey(activeRoom);
+  const activeChannelSettings = roomChannelSettings[activeRoomKey] || {};
   const menuRoom = roomMenu ? rooms.find((room) => room.id === roomMenu.roomId) : undefined;
+  const menuChannel = channelMenu
+    ? CHANNELS.find((item) => item.id === channelMenu.channelId)
+    : undefined;
   const visibleChannels = guestLocked
     ? CHANNELS.filter((item) => item.id !== "records")
     : CHANNELS;
@@ -509,6 +527,7 @@ export default function App() {
     setAdminOpen(false);
     setChannel("lobby");
     setRoomMenu(null);
+    setChannelMenu(null);
   }
 
   function addFreshRoom() {
@@ -519,6 +538,7 @@ export default function App() {
     setAdminOpen(false);
     setChannel("lobby");
     setRoomMenu(null);
+    setChannelMenu(null);
   }
 
   function openRoomMenu(event: ReactMouseEvent, room: RoomDockItem) {
@@ -530,6 +550,17 @@ export default function App() {
       x: Math.min(event.clientX, window.innerWidth - 220),
       y: Math.min(event.clientY, window.innerHeight - 160),
     });
+    setChannelMenu(null);
+  }
+
+  function openChannelMenu(event: ReactMouseEvent, channelId: Channel) {
+    event.preventDefault();
+    setRoomMenu(null);
+    setChannelMenu({
+      channelId,
+      x: Math.min(event.clientX, window.innerWidth - 232),
+      y: Math.min(event.clientY, window.innerHeight - 240),
+    });
   }
 
   function markRoomRead(roomId: string) {
@@ -538,6 +569,7 @@ export default function App() {
       previous.map((room) => (room.id === roomId ? { ...room, createdAt: readAt } : room))
     );
     setRoomMenu(null);
+    setChannelMenu(null);
   }
 
   function inviteRoom(roomId: string) {
@@ -547,6 +579,7 @@ export default function App() {
     setInviteModal({ roomId });
     setInviteCopyStatus("");
     setRoomMenu(null);
+    setChannelMenu(null);
   }
 
   function openRoomSettings(roomId: string) {
@@ -555,6 +588,7 @@ export default function App() {
     setAdminOpen(false);
     setSettingsModal({ roomId });
     setRoomMenu(null);
+    setChannelMenu(null);
   }
 
   function leaveRoom(roomId: string) {
@@ -574,6 +608,7 @@ export default function App() {
       setAdminOpen(false);
     }
     setRoomMenu(null);
+    setChannelMenu(null);
   }
 
   function handleMafiaStarted(game: MafiaGame) {
@@ -585,6 +620,7 @@ export default function App() {
     setMafiaGameId(game.game_id);
     setChannel("live");
     setAdminOpen(false);
+    setChannelMenu(null);
   }
 
   function handleFlowStarted() {
@@ -597,11 +633,13 @@ export default function App() {
     refreshFlow();
     setChannel("live");
     setAdminOpen(false);
+    setChannelMenu(null);
   }
 
   function goToChannel(next: Channel) {
     setChannel(next);
     setAdminOpen(false);
+    setChannelMenu(null);
   }
 
   async function copyInviteLink(room: RoomDockItem, appearance?: RoomAppearance) {
@@ -656,6 +694,10 @@ export default function App() {
           ...previous,
           [activeRoom.meetingId]: settings.memberRoles,
         }));
+        setRoomChannelSettings((previous) => ({
+          ...previous,
+          [activeRoom.meetingId]: settings.channelSettings,
+        }));
       })
       .catch(() => {
         // Room settings are a UI enhancement; an unavailable endpoint should not blank the room.
@@ -671,7 +713,12 @@ export default function App() {
     );
   }
 
-  function persistRoomSettings(room: RoomDockItem, nextAppearance: RoomAppearance, nextRoles?: Record<string, string>) {
+  function persistRoomSettings(
+    room: RoomDockItem,
+    nextAppearance: RoomAppearance,
+    nextRoles?: Record<string, string>,
+    nextChannels?: Record<string, ChannelSettings>
+  ) {
     void saveRoomSettings({
       roomId: room.meetingId,
       label: room.label,
@@ -679,6 +726,7 @@ export default function App() {
       shortLabel: room.shortLabel,
       appearance: nextAppearance,
       memberRoles: nextRoles ?? roomMemberRoles[roomSettingsKey(room)] ?? {},
+      channelSettings: nextChannels ?? roomChannelSettings[roomSettingsKey(room)] ?? {},
     }).catch(() => {
       // Saving is reflected again by the next explicit settings read; keep the optimistic UI state.
     });
@@ -704,6 +752,34 @@ export default function App() {
     const nextRoles = { ...activeMemberRoles, [memberId]: role };
     setRoomMemberRoles((previous) => ({ ...previous, [key]: nextRoles }));
     persistRoomSettings(activeRoom, activeAppearance, nextRoles);
+  }
+
+  function updateChannelSetting(channelId: Channel, updates: Partial<ChannelSettings>) {
+    const key = roomSettingsKey(activeRoom);
+    const currentSetting = activeChannelSettings[channelId];
+    const nextSetting: ChannelSettings = {
+      notifications: updates.notifications ?? currentSetting?.notifications ?? "default",
+      lastReadAt: updates.lastReadAt ?? currentSetting?.lastReadAt,
+    };
+    const nextChannelSettings = {
+      ...activeChannelSettings,
+      [channelId]: nextSetting,
+    };
+    setRoomChannelSettings((previous) => ({ ...previous, [key]: nextChannelSettings }));
+    persistRoomSettings(activeRoom, activeAppearance, activeMemberRoles, nextChannelSettings);
+  }
+
+  function markChannelRead(channelId: Channel) {
+    updateChannelSetting(channelId, { lastReadAt: new Date().toISOString() });
+    setChannelMenu(null);
+  }
+
+  function setChannelNotifications(
+    channelId: Channel,
+    notifications: ChannelNotificationSetting
+  ) {
+    updateChannelSetting(channelId, { notifications });
+    setChannelMenu(null);
   }
 
   return (
@@ -873,12 +949,13 @@ export default function App() {
         </div>
       )}
 
-      {settingsModalRoom && (
+          {settingsModalRoom && (
         <RoomSettingsModal
           room={settingsModalRoom}
           appearance={completeRoomAppearance(
             roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
           )}
+          channelSettings={roomChannelSettings[roomSettingsKey(settingsModalRoom)] || {}}
           canInvite={!guestLocked}
           onClose={() => setSettingsModal(null)}
           onInvite={() => {
@@ -896,6 +973,28 @@ export default function App() {
             );
           }}
           onAppearanceChange={(updates) => updateRoomAppearance(settingsModalRoom, updates)}
+          onChannelSettingChange={(channelId, updates) => {
+            const key = roomSettingsKey(settingsModalRoom);
+            const previousSettings = roomChannelSettings[key] || {};
+            const currentSetting = previousSettings[channelId];
+            const nextSetting: ChannelSettings = {
+              notifications: updates.notifications ?? currentSetting?.notifications ?? "default",
+              lastReadAt: updates.lastReadAt ?? currentSetting?.lastReadAt,
+            };
+            const nextSettings = {
+              ...previousSettings,
+              [channelId]: nextSetting,
+            };
+            setRoomChannelSettings((previous) => ({ ...previous, [key]: nextSettings }));
+            persistRoomSettings(
+              settingsModalRoom,
+              completeRoomAppearance(
+                roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
+              ),
+              roomMemberRoles[key] || {},
+              nextSettings
+            );
+          }}
         />
       )}
 
@@ -968,7 +1067,10 @@ export default function App() {
                     <button
                       type="button"
                       data-active={!adminOpen && channel === id}
+                      data-muted={activeChannelSettings[id]?.notifications === "mute"}
+                      data-read-at={activeChannelSettings[id]?.lastReadAt || undefined}
                       onClick={() => goToChannel(id)}
+                      onContextMenu={(event) => openChannelMenu(event, id)}
                       className="dc-channel"
                     >
                       <Icon size={18} className="shrink-0 opacity-70" />
@@ -982,6 +1084,19 @@ export default function App() {
               </section>
             );
           })}
+          {menuChannel && channelMenu && (
+            <ChannelContextMenu
+              channelLabel={menuChannel.label}
+              settings={activeChannelSettings[channelMenu.channelId]}
+              x={channelMenu.x}
+              y={channelMenu.y}
+              onMarkRead={() => markChannelRead(channelMenu.channelId)}
+              onSetNotifications={(notifications) =>
+                setChannelNotifications(channelMenu.channelId, notifications)
+              }
+              onOpenSettings={() => openRoomSettings(activeRoom.id)}
+            />
+          )}
         </nav>
 
         <footer className="dc-user-area shrink-0 px-2 py-2">

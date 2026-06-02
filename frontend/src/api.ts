@@ -18,6 +18,7 @@ export interface RoomSettings {
   shortLabel: string;
   appearance: RoomAppearance;
   memberRoles: Record<string, string>;
+  channelSettings: Record<string, ChannelSettings>;
 }
 
 export type ParticipantType = "human" | "subscription_ai" | "api" | "local" | "remote" | "unknown";
@@ -40,6 +41,13 @@ export interface RoomFriendsResponse {
   friends: RoomFriend[];
   candidates: RoomFriend[];
 }
+
+export type ChannelNotificationSetting = "default" | "all" | "mentions" | "mute";
+
+export type ChannelSettings = {
+  notifications: ChannelNotificationSetting;
+  lastReadAt?: string;
+};
 
 export interface UserProfile {
   displayName: string;
@@ -71,6 +79,12 @@ type ApiRoomSettings = {
   short_label?: string;
   appearance?: ApiRoomAppearance;
   member_roles?: Record<string, string>;
+  channel_settings?: Record<string, ApiChannelSettings>;
+};
+
+type ApiChannelSettings = {
+  notifications?: ChannelNotificationSetting;
+  last_read_at?: string;
 };
 
 type ApiUserProfile = {
@@ -596,6 +610,7 @@ function normalizeRoomSettings(payload: ApiRoomSettings | undefined, fallbackRoo
       inviteScope: appearance.invite_scope || "room",
     },
     memberRoles: payload?.member_roles && typeof payload.member_roles === "object" ? payload.member_roles : {},
+    channelSettings: normalizeChannelSettings(payload?.channel_settings),
   };
 }
 
@@ -608,6 +623,36 @@ function roomAppearanceToApi(appearance: Partial<RoomAppearance> | undefined): A
     notifications: appearance?.notifications,
     invite_scope: appearance?.inviteScope,
   };
+}
+
+function normalizeChannelSettings(
+  payload: Record<string, ApiChannelSettings> | undefined
+): Record<string, ChannelSettings> {
+  if (!payload || typeof payload !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(payload).map(([channelId, settings]) => [
+      channelId,
+      {
+        notifications: settings?.notifications || "default",
+        lastReadAt: settings?.last_read_at || undefined,
+      },
+    ])
+  );
+}
+
+function channelSettingsToApi(
+  settings: Record<string, ChannelSettings> | undefined
+): Record<string, ApiChannelSettings> | undefined {
+  if (!settings) return undefined;
+  return Object.fromEntries(
+    Object.entries(settings).map(([channelId, value]) => [
+      channelId,
+      {
+        notifications: value.notifications || "default",
+        last_read_at: value.lastReadAt,
+      },
+    ])
+  );
 }
 
 function normalizeUserProfile(payload: ApiUserProfile | undefined): UserProfile {
@@ -657,6 +702,7 @@ export function saveRoomSettings({
   shortLabel,
   appearance,
   memberRoles,
+  channelSettings,
 }: Partial<Omit<RoomSettings, "roomId">> & { roomId: string }): Promise<RoomSettings> {
   return postJson<{ room_id: string; settings: ApiRoomSettings }>("/api/room-settings", {
     room_id: roomId,
@@ -665,6 +711,7 @@ export function saveRoomSettings({
     short_label: shortLabel,
     appearance: roomAppearanceToApi(appearance),
     member_roles: memberRoles,
+    channel_settings: channelSettingsToApi(channelSettings),
   }).then((payload) => normalizeRoomSettings(payload.settings, payload.room_id || roomId));
 }
 

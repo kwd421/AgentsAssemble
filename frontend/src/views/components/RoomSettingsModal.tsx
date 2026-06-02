@@ -1,28 +1,49 @@
 import { useState, type ChangeEvent } from "react";
 import { Image as ImageIcon, UserPlus, X } from "lucide-react";
-import { uploadLobbyAttachment } from "../../api";
+import { type ChannelNotificationSetting, type ChannelSettings, uploadLobbyAttachment } from "../../api";
 import type { RoomDockItem } from "../../App";
 import {
   roomAppearanceStyle,
   type RoomAppearance,
 } from "../../lib/roomAppearance";
 
+const ROOM_CHANNEL_OPTIONS = [
+  { id: "lobby", label: "채팅" },
+  { id: "live", label: "진행 로그" },
+  { id: "board", label: "작전판" },
+  { id: "records", label: "아카이브" },
+];
+
+const CHANNEL_NOTIFICATION_LABELS: Array<{
+  value: ChannelNotificationSetting;
+  label: string;
+}> = [
+  { value: "default", label: "서버 기본값" },
+  { value: "all", label: "모든 메시지" },
+  { value: "mentions", label: "@멘션만" },
+  { value: "mute", label: "알림 끔" },
+];
+
 export default function RoomSettingsModal({
   room,
   appearance,
+  channelSettings,
   canInvite,
   onClose,
   onInvite,
   onRoomChange,
   onAppearanceChange,
+  onChannelSettingChange,
 }: {
   room: RoomDockItem;
   appearance: RoomAppearance;
+  channelSettings: Record<string, ChannelSettings>;
   canInvite: boolean;
   onClose: () => void;
   onInvite: () => void;
   onRoomChange: (updates: Partial<Pick<RoomDockItem, "label" | "topic" | "shortLabel">>) => void;
   onAppearanceChange: (updates: Partial<RoomAppearance>) => void;
+  onChannelSettingChange: (channelId: string, updates: Partial<ChannelSettings>) => void;
 }) {
   const [uploadStatus, setUploadStatus] = useState("");
 
@@ -67,6 +88,7 @@ export default function RoomSettingsModal({
           <p className="dc-settings-nav-label preserve-words">{room.label}</p>
           <a href="#settings-overview">개요</a>
           <a href="#settings-appearance">외형</a>
+          <a href="#settings-channels">채널</a>
           <a href="#settings-notify">알림</a>
           <a href="#settings-invite">초대</a>
         </aside>
@@ -162,6 +184,39 @@ export default function RoomSettingsModal({
               </label>
             </div>
             {uploadStatus && <p className="dc-upload-status preserve-words">{uploadStatus}</p>}
+          </section>
+
+          <section id="settings-channels" className="dc-settings-section">
+            <h3>채널 설정</h3>
+            <div className="dc-channel-settings-list">
+              {ROOM_CHANNEL_OPTIONS.map((channel) => {
+                const setting = channelSettings[channel.id] || { notifications: "default" };
+                return (
+                  <label key={channel.id} className="dc-channel-settings-row">
+                    <span>
+                      <strong className="preserve-words">#{channel.label}</strong>
+                      <small className="preserve-words">
+                        {setting.lastReadAt ? `마지막 읽음 ${setting.lastReadAt}` : "읽음 기록 없음"}
+                      </small>
+                    </span>
+                    <select
+                      value={setting.notifications}
+                      onChange={(event) =>
+                        onChannelSettingChange(channel.id, {
+                          notifications: event.target.value as ChannelNotificationSetting,
+                        })
+                      }
+                    >
+                      {CHANNEL_NOTIFICATION_LABELS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                );
+              })}
+            </div>
           </section>
 
           <section id="settings-notify" className="dc-settings-section">

@@ -15,6 +15,8 @@ VALID_BANNER_PRESETS = {"default", "forest", "midnight", "ember", "custom"}
 VALID_NOTIFICATIONS = {"all", "mentions", "mute"}
 VALID_INVITE_SCOPES = {"room", "read_only"}
 VALID_MEMBER_ROLES = {"human", "director", "implementer", "reviewer", "agent"}
+VALID_CHANNEL_IDS = {"lobby", "live", "board", "records"}
+VALID_CHANNEL_NOTIFICATIONS = {"default", "all", "mentions", "mute"}
 
 
 def room_settings_payload(output_root: Path, *, room_id: str = "") -> dict[str, object]:
@@ -44,18 +46,23 @@ def update_room_settings(output_root: Path, payload: dict[str, object]) -> dict[
         rooms = {}
         state["rooms"] = rooms
     current = rooms.get(room_id) if isinstance(rooms.get(room_id), dict) else {}
-    settings = dict(current)
-    settings.update(
-        {
-            "room_id": room_id,
-            "label": clean_room_text(payload.get("label"), limit=80),
-            "topic": clean_room_text(payload.get("topic"), limit=ROOM_TEXT_LIMIT),
-            "short_label": clean_short_label(payload.get("short_label")),
-            "appearance": clean_appearance(payload.get("appearance")),
-            "member_roles": clean_member_roles(payload.get("member_roles")),
-            "updated_at": datetime.now(UTC).isoformat(),
-        }
-    )
+    settings = public_room_settings(current, room_id=room_id)
+    settings["room_id"] = room_id
+    if "label" in payload:
+        settings["label"] = clean_room_text(payload.get("label"), limit=80)
+    if "topic" in payload:
+        settings["topic"] = clean_room_text(payload.get("topic"), limit=ROOM_TEXT_LIMIT)
+    if "short_label" in payload:
+        settings["short_label"] = clean_short_label(payload.get("short_label"))
+    if "appearance" in payload:
+        settings["appearance"] = clean_appearance(payload.get("appearance"))
+    if "member_roles" in payload:
+        settings["member_roles"] = clean_member_roles(payload.get("member_roles"))
+    if "channel_settings" in payload or "channelSettings" in payload:
+        settings["channel_settings"] = clean_channel_settings(
+            payload.get("channel_settings") or payload.get("channelSettings")
+        )
+    settings["updated_at"] = datetime.now(UTC).isoformat()
     if not settings.get("created_at"):
         settings["created_at"] = settings["updated_at"]
     rooms[room_id] = public_room_settings(settings, room_id=room_id)
@@ -73,6 +80,9 @@ def public_room_settings(value: object, *, room_id: str) -> dict[str, object]:
         "short_label": clean_short_label(source.get("short_label")),
         "appearance": clean_appearance(source.get("appearance")),
         "member_roles": clean_member_roles(source.get("member_roles")),
+        "channel_settings": clean_channel_settings(
+            source.get("channel_settings") or source.get("channelSettings")
+        ),
         "created_at": clean_room_text(source.get("created_at"), limit=64),
         "updated_at": clean_room_text(source.get("updated_at"), limit=64),
     }
@@ -135,6 +145,29 @@ def clean_member_roles(value: object) -> dict[str, str]:
         if member_id and role in VALID_MEMBER_ROLES:
             roles[member_id] = role
     return roles
+
+
+def clean_channel_settings(value: object) -> dict[str, dict[str, str]]:
+    if not isinstance(value, dict):
+        return {}
+    settings: dict[str, dict[str, str]] = {}
+    for raw_channel_id, raw_setting in value.items():
+        channel_id = clean_room_text(raw_channel_id, limit=32)
+        if channel_id not in VALID_CHANNEL_IDS:
+            continue
+        source = raw_setting if isinstance(raw_setting, dict) else {}
+        notifications = clean_room_text(source.get("notifications"), limit=24)
+        if notifications not in VALID_CHANNEL_NOTIFICATIONS:
+            notifications = "default"
+        last_read_at = clean_room_text(
+            source.get("last_read_at") or source.get("lastReadAt"),
+            limit=64,
+        )
+        settings[channel_id] = {
+            "notifications": notifications,
+            "last_read_at": last_read_at,
+        }
+    return settings
 
 
 def _state_path(output_root: Path) -> Path:
