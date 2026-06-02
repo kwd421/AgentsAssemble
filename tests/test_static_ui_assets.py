@@ -126,12 +126,14 @@ class StaticUiAssetTests(unittest.TestCase):
         live_source = frontend_file("views/LiveView.tsx")
 
         self.assertIn("export interface SideChatEvent", api_source)
+        self.assertIn("flow_meeting_id?: string;", api_source)
         self.assertIn("export interface SideChatPostResponse", api_source)
-        self.assertIn("export function fetchSideChat", api_source)
+        self.assertIn("export function fetchSideChat(meetingId = \"\")", api_source)
         self.assertIn('"/api/side-chat"', api_source)
         self.assertIn("export function postSideChatMessage", api_source)
+        self.assertIn("flow_meeting_id: meetingId", api_source)
         self.assertIn("export function subscribeSideChat", api_source)
-        self.assertIn('new EventSource("/api/events/side-chat")', api_source)
+        self.assertIn('`/api/events/side-chat${queryString({ meeting_id: meetingId })}`', api_source)
         self.assertIn('source.addEventListener("side_chat"', api_source)
 
         side_chat_api = api_source[
@@ -142,15 +144,23 @@ class StaticUiAssetTests(unittest.TestCase):
 
         self.assertIn("sideChatEvents", app_source)
         self.assertIn("subscribeSideChat", app_source)
-        self.assertIn("fetchSideChat", app_source)
+        self.assertIn("fetchSideChat(sideChatMeetingId)", app_source)
+        self.assertIn("subscribeSideChat(\n      sideChatMeetingId,", app_source)
         self.assertIn("mergeSideChatEvents(previous, payload.events)", app_source)
         self.assertIn("sideChatEvents={sideChatEvents}", app_source)
+        self.assertIn("sideChatMeetingId={sideChatMeetingId}", app_source)
 
         self.assertIn("sideChatEvents", live_source)
+        self.assertIn('const [rightPanelTab, setRightPanelTab] = useState<"room-info" | "side-chat">("room-info");', live_source)
+        self.assertIn("role=\"tablist\"", live_source)
+        self.assertIn("방 연결 정보", live_source)
+        self.assertIn("rightPanelTab === \"room-info\"", live_source)
+        self.assertIn("rightPanelTab === \"side-chat\"", live_source)
         self.assertIn("SideChatPanel", live_source)
         self.assertIn("비공식 사이드챗", live_source)
         self.assertIn("공식 기록 제외", live_source)
         self.assertIn("postSideChatMessage", live_source)
+        self.assertIn("meetingId={sideChatMeetingId}", live_source)
         self.assertNotIn("promote", live_source)
 
     def test_react_lobby_sse_uses_shared_parser_and_merge_helpers(self):

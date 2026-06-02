@@ -19189,6 +19189,74 @@ class GuiServerTests(unittest.TestCase):
             self.assertTrue((root / "side_chat.jsonl").exists())
             self.assertFalse((root / "meetings" / "side_chat.jsonl").exists())
 
+    def test_side_chat_can_be_scoped_to_a_meeting_room(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            append_side_chat_event(
+                root,
+                {"name": "나", "side": "mine", "message": "room-a only", "flow_meeting_id": "room-a"},
+            )
+            append_side_chat_event(
+                root,
+                {"name": "친구", "side": "other", "message": "room-b only", "flow_meeting_id": "room-b"},
+            )
+            append_side_chat_event(root, {"name": "legacy", "side": "other", "message": "global legacy"})
+
+            all_events = read_side_chat(root)
+            room_a_events = read_side_chat(root, meeting_id="room-a")
+            room_b_events = read_side_chat(root, meeting_id="room-b")
+            side_payload = _stream_snapshot_payload(root, "side_chat", meeting_id="room-a")
+
+            self.assertEqual(
+                [event["message"] for event in all_events],
+                ["room-a only", "room-b only", "global legacy"],
+            )
+            self.assertEqual([event["message"] for event in room_a_events], ["room-a only"])
+            self.assertEqual([event["message"] for event in room_b_events], ["room-b only"])
+            self.assertEqual([event["message"] for event in side_payload["events"]], ["room-a only"])
+
+    def test_side_chat_api_filters_by_meeting_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                for meeting_id, message in (("room-a", "room-a only"), ("room-b", "room-b only")):
+                    request = Request(
+                        f"http://127.0.0.1:{server.server_port}/api/side-chat",
+                        data=json.dumps(
+                            {
+                                "name": "나",
+                                "side": "mine",
+                                "message": message,
+                                "flow_meeting_id": meeting_id,
+                            }
+                        ).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(request, timeout=4):
+                        pass
+
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/side-chat?meeting_id=room-a",
+                    timeout=4,
+                ) as response:
+                    room_a_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_port}/api/side-chat?meeting_id=room-b",
+                    timeout=4,
+                ) as response:
+                    room_b_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual([event["message"] for event in room_a_payload["events"]], ["room-a only"])
+            self.assertEqual([event["message"] for event in room_b_payload["events"]], ["room-b only"])
+
     def test_legacy_side_chat_lines_are_read_as_side_chat_channel(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

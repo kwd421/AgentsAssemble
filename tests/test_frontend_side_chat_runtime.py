@@ -97,10 +97,10 @@ class FrontendSideChatRuntimeTests(unittest.TestCase):
               }
             }
             globalThis.EventSource = FakeEventSource;
-            const unsubscribe = api.subscribeSideChat((events) => {
+            const unsubscribe = api.subscribeSideChat("room-a", (events) => {
               seen.push({ type: "update", count: events.length, message: events[0].message });
             });
-            assert.equal(seen[0].url, "/api/events/side-chat");
+            assert.equal(seen[0].url, "/api/events/side-chat?meeting_id=room-a");
             lastSource.listeners.get("side_chat")({
               data: JSON.stringify({ stream: "side_chat", events: [{ id: "side-z", name: "Z", message: "z" }] }),
             });

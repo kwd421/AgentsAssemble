@@ -153,6 +153,7 @@ function OperatorApp() {
   const agents: LiveAgent[] = Array.isArray(flowData?.agents)
     ? flowData.agents
     : [];
+  const sideChatMeetingId = flow.meeting_id || "";
   useEffect(() => {
     const meetingId = flow.meeting_id || "";
     setMeetingStreamState(initialMeetingStreamState(meetingId));
@@ -181,7 +182,8 @@ function OperatorApp() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchSideChat()
+    setSideChatEvents([]);
+    fetchSideChat(sideChatMeetingId)
       .then((payload) => {
         if (cancelled) return;
         if (Array.isArray(payload.events)) {
@@ -195,6 +197,7 @@ function OperatorApp() {
         }
       });
     const unsubscribe = subscribeSideChat(
+      sideChatMeetingId,
       (incoming) => {
         if (cancelled) return;
         setSideChatError(null);
@@ -208,7 +211,7 @@ function OperatorApp() {
       cancelled = true;
       unsubscribe();
     };
-  }, []);
+  }, [sideChatMeetingId]);
 
   const handleSideChatPosted = useCallback((events: SideChatEvent[]) => {
     setSideChatEvents((previous) => mergeSideChatEvents(previous, events));
@@ -416,6 +419,7 @@ function OperatorApp() {
               sideChatEvents={sideChatEvents}
               sideChatError={sideChatError}
               onSideChatPosted={handleSideChatPosted}
+              sideChatMeetingId={sideChatMeetingId}
             />
           ) : channel === "board" ? (
             <BoardView

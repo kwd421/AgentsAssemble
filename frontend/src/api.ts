@@ -42,6 +42,7 @@ export interface SideChatEvent {
   message: string;
   side: string;
   created_at: string;
+  flow_meeting_id?: string;
   channel?: string;
   audience?: string;
   official_record?: boolean;
@@ -478,6 +479,15 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+function queryString(params: Record<string, string | undefined>) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) query.set(key, value);
+  }
+  const serialized = query.toString();
+  return serialized ? `?${serialized}` : "";
+}
+
 export function fetchLobby() {
   return fetchJson<{ events: LobbyEvent[] }>("/api/lobby");
 }
@@ -516,8 +526,10 @@ export function postLobbyMessage({
   });
 }
 
-export function fetchSideChat() {
-  return fetchJson<{ events: SideChatEvent[] }>("/api/side-chat");
+export function fetchSideChat(meetingId = "") {
+  return fetchJson<{ events: SideChatEvent[] }>(
+    `/api/side-chat${queryString({ meeting_id: meetingId })}`
+  );
 }
 
 export function postSideChatMessage({
@@ -525,17 +537,20 @@ export function postSideChatMessage({
   side = "mine",
   kind = "message",
   message,
+  meetingId = "",
 }: {
   name: string;
   side?: string;
   kind?: "message";
   message: string;
+  meetingId?: string;
 }) {
   return postJson<SideChatPostResponse>("/api/side-chat", {
     name,
     side,
     kind,
     message,
+    flow_meeting_id: meetingId,
   });
 }
 
@@ -900,10 +915,13 @@ export function subscribeLobby(
 }
 
 export function subscribeSideChat(
+  meetingId: string,
   onEvents: (events: SideChatEvent[]) => void,
   onError?: (err: Event) => void
 ): () => void {
-  const source = new EventSource("/api/events/side-chat");
+  const source = new EventSource(
+    `/api/events/side-chat${queryString({ meeting_id: meetingId })}`
+  );
 
   function handleData(raw: string) {
     const events = parseSideChatStreamData(raw);

@@ -276,10 +276,12 @@ function SideChatPanel({
   events,
   error,
   onPosted,
+  meetingId,
 }: {
   events: SideChatEvent[];
   error: Error | null;
   onPosted: (events: SideChatEvent[]) => void;
+  meetingId: string;
 }) {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -298,6 +300,7 @@ function SideChatPanel({
         name: "나",
         side: "mine",
         message: trimmed,
+        meetingId,
       });
       onPosted(payload.events?.length ? payload.events : payload.event ? [payload.event] : []);
     } catch (errorValue) {
@@ -701,6 +704,7 @@ export default function LiveView({
   sideChatEvents,
   sideChatError,
   onSideChatPosted,
+  sideChatMeetingId,
 }: {
   flow: FlowState;
   flowEvents: LobbyEvent[];
@@ -714,6 +718,7 @@ export default function LiveView({
   sideChatEvents: SideChatEvent[];
   sideChatError: Error | null;
   onSideChatPosted: (events: SideChatEvent[]) => void;
+  sideChatMeetingId: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToLatestRef = useRef(true);
@@ -722,6 +727,7 @@ export default function LiveView({
   const lastMeetingIdRef = useRef<string | undefined>(flow.meeting_id);
   const [events, setEvents] = useState<LobbyEvent[]>(flowEvents);
   const [pinnedToLatest, setPinnedToLatest] = useState(true);
+  const [rightPanelTab, setRightPanelTab] = useState<"room-info" | "side-chat">("room-info");
   const isRunning = flow.status === "running";
   const isFinished = flow.status === "finished" || flow.status === "stopped";
   const activeFlowId = flow.flow_id;
@@ -981,62 +987,98 @@ export default function LiveView({
       )}
 
       <aside className="flex min-h-0 flex-col gap-4 overflow-visible chat-scroll xl:overflow-y-auto xl:pr-1">
-        <LifecyclePanel lifecycle={lifecycle} loading={lifecycleLoading} error={lifecycleError} />
+        <section className="ops-panel ops-cut p-2" aria-label="우측 패널 전환">
+          <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="실황 우측 패널">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={rightPanelTab === "room-info"}
+              onClick={() => setRightPanelTab("room-info")}
+              className={`rounded-lg px-3 py-2.5 text-[12px] font-black transition-colors ${
+                rightPanelTab === "room-info"
+                  ? "border border-accent/55 bg-accent/12 text-accent"
+                  : "border border-accent/10 bg-black/16 text-text-muted hover:text-text-primary"
+              }`}
+            >
+              방 연결 정보
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={rightPanelTab === "side-chat"}
+              onClick={() => setRightPanelTab("side-chat")}
+              className={`rounded-lg px-3 py-2.5 text-[12px] font-black transition-colors ${
+                rightPanelTab === "side-chat"
+                  ? "border border-accent/55 bg-accent/12 text-accent"
+                  : "border border-accent/10 bg-black/16 text-text-muted hover:text-text-primary"
+              }`}
+            >
+              사이드챗
+            </button>
+          </div>
+        </section>
 
-        <SideChatPanel
-          events={sideChatEvents}
-          error={sideChatError}
-          onPosted={onSideChatPosted}
-        />
+        {rightPanelTab === "room-info" ? (
+          <>
+            <LifecyclePanel lifecycle={lifecycle} loading={lifecycleLoading} error={lifecycleError} />
 
-        <section className="ops-panel ops-cut p-4">
-          <h2 className="mb-4 text-[17px] font-black">라이브 상태</h2>
-          <div className="grid gap-3">
-            {statusCards.map(({ label, value, icon: Icon, tone }) => (
-              <div key={label} className="ops-inner flex items-center gap-3 rounded-lg p-4">
-                <Icon size={18} className={tone} />
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                    {label}
-                  </p>
-                  <p className={`text-[18px] font-black ${tone}`}>{value}</p>
-                </div>
+            <section className="ops-panel ops-cut p-4">
+              <h2 className="mb-4 text-[17px] font-black">라이브 상태</h2>
+              <div className="grid gap-3">
+                {statusCards.map(({ label, value, icon: Icon, tone }) => (
+                  <div key={label} className="ops-inner flex items-center gap-3 rounded-lg p-4">
+                    <Icon size={18} className={tone} />
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                        {label}
+                      </p>
+                      <p className={`text-[18px] font-black ${tone}`}>{value}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </section>
+            </section>
 
-        <section className="ops-panel ops-cut p-4">
-          <h2 className="mb-4 text-[17px] font-black">공유 메모리 / 핵심 포인트</h2>
-          <ul className="space-y-3 text-[13px] leading-relaxed text-text-secondary">
-            <li className="flex gap-2">
-              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-online" />
-              방은 agent-private context를 대신 소유하지 않습니다.
-            </li>
-            <li className="flex gap-2">
-              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-online" />
-              Play Mode 발언은 공식 기록으로 자동 승격되지 않습니다.
-            </li>
-            <li className="flex gap-2">
-              <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-online" />
-              resident agent는 승인된 세션만 참여합니다.
-            </li>
-          </ul>
-        </section>
+            <section className="ops-panel ops-cut p-4">
+              <h2 className="mb-4 text-[17px] font-black">공유 메모리 / 핵심 포인트</h2>
+              <ul className="space-y-3 text-[13px] leading-relaxed text-text-secondary">
+                <li className="flex gap-2">
+                  <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-online" />
+                  방은 agent-private context를 대신 소유하지 않습니다.
+                </li>
+                <li className="flex gap-2">
+                  <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-online" />
+                  Play Mode 발언은 공식 기록으로 자동 승격되지 않습니다.
+                </li>
+                <li className="flex gap-2">
+                  <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-online" />
+                  resident agent는 승인된 세션만 참여합니다.
+                </li>
+              </ul>
+            </section>
 
-        <section className="ops-panel ops-cut p-4">
-          <h2 className="mb-4 text-[17px] font-black">빠른 작업</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <button type="button" disabled className="ops-button rounded-lg px-3 py-4 text-[13px] font-bold">
-              <FileText className="mx-auto mb-2 text-accent" size={20} />
-              요약 생성
-            </button>
-            <button type="button" disabled className="ops-button rounded-lg px-3 py-4 text-[13px] font-bold">
-              <Clock3 className="mx-auto mb-2 text-text-muted" size={20} />
-              로그 보기
-            </button>
-          </div>
-        </section>
+            <section className="ops-panel ops-cut p-4">
+              <h2 className="mb-4 text-[17px] font-black">빠른 작업</h2>
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" disabled className="ops-button rounded-lg px-3 py-4 text-[13px] font-bold">
+                  <FileText className="mx-auto mb-2 text-accent" size={20} />
+                  요약 생성
+                </button>
+                <button type="button" disabled className="ops-button rounded-lg px-3 py-4 text-[13px] font-bold">
+                  <Clock3 className="mx-auto mb-2 text-text-muted" size={20} />
+                  로그 보기
+                </button>
+              </div>
+            </section>
+          </>
+        ) : (
+          <SideChatPanel
+            events={sideChatEvents}
+            error={sideChatError}
+            onPosted={onSideChatPosted}
+            meetingId={sideChatMeetingId}
+          />
+        )}
       </aside>
     </div>
   );

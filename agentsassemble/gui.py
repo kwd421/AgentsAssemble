@@ -1542,8 +1542,35 @@ def lobby_payload_with_attachments(output_root: Path, payload: dict[str, object]
     return event
 
 
-def read_side_chat(output_root: Path, limit: int = 120) -> list[dict[str, object]]:
-    return read_side_chat_events(output_root / "side_chat.jsonl", limit=limit)
+def _side_chat_scope_id(value: object) -> str:
+    return clean_lobby_text(value, limit=128)
+
+
+def _side_chat_event_matches_meeting(event: dict[str, object], meeting_id: str) -> bool:
+    if not meeting_id:
+        return True
+    return _side_chat_scope_id(event.get("flow_meeting_id")) == meeting_id
+
+
+def _filter_side_chat_events_for_meeting(
+    events: list[dict[str, object]],
+    meeting_id: str | None,
+) -> list[dict[str, object]]:
+    scoped_meeting_id = _side_chat_scope_id(meeting_id)
+    if not scoped_meeting_id:
+        return events
+    return [event for event in events if _side_chat_event_matches_meeting(event, scoped_meeting_id)]
+
+
+def read_side_chat(
+    output_root: Path,
+    limit: int = 120,
+    meeting_id: str | None = None,
+) -> list[dict[str, object]]:
+    return _filter_side_chat_events_for_meeting(
+        read_side_chat_events(output_root / "side_chat.jsonl", limit=limit),
+        meeting_id,
+    )
 
 
 def append_side_chat_event(output_root: Path, event: dict[str, object]) -> dict[str, object]:
@@ -1585,6 +1612,7 @@ def _stream_snapshot_payload(
         return {"stream": "lobby", "events": events}
     if stream == "side_chat":
         events = read_side_chat_events_after(output_root / "side_chat.jsonl", last_event_id)
+        events = _filter_side_chat_events_for_meeting(events, meeting_id)
         return {"stream": "side_chat", "events": events}
     if stream == "meeting":
         if not meeting_id:
@@ -7652,10 +7680,17 @@ def _make_handler(
                 self._send_json(self._public_invite_status())
                 return
             if path == "/api/side-chat":
-                self._send_json({"events": read_side_chat(output_root)})
+                self._send_json(
+                    {"events": read_side_chat(output_root, meeting_id=str(query.get("meeting_id", [""])[0] or ""))}
+                )
                 return
             if path == "/api/events/side-chat":
-                self._send_sse_stream("side_chat", "side_chat", last_event_id=self._last_event_id(query))
+                self._send_sse_stream(
+                    "side_chat",
+                    "side_chat",
+                    meeting_id=str(query.get("meeting_id", [""])[0] or ""),
+                    last_event_id=self._last_event_id(query),
+                )
                 return
             if path == "/api/providers":
                 self._send_json(provider_catalog_payload())
@@ -7969,7 +8004,15 @@ def _make_handler(
                     self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
                     return
                 event = append_side_chat_event(output_root, payload if isinstance(payload, dict) else {})
-                self._send_json({"event": event, "events": read_side_chat(output_root)})
+                self._send_json(
+                    {
+                        "event": event,
+                        "events": read_side_chat(
+                            output_root,
+                            meeting_id=_side_chat_scope_id(event.get("flow_meeting_id")),
+                        ),
+                    }
+                )
                 return
             if parsed.path == "/api/lobby/remote":
                 length = int(self.headers.get("Content-Length", "0") or "0")
