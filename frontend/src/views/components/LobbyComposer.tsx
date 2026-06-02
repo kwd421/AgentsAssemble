@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { AtSign, Paperclip, Send, Smile, X } from "lucide-react";
 import {
   postLobbyMessage,
@@ -13,6 +13,7 @@ import {
   lobbySubmitSuccessDraft,
   selectLobbyAttachmentFiles,
 } from "../../lib/lobbyComposerModel";
+import MentionInput from "./MentionInput";
 
 function currentLobbyName() {
   try {
@@ -42,23 +43,6 @@ export default function LobbyComposer({
   const [error, setError] = useState("");
   const disabled = Boolean(disabledReason);
   const canSubmit = Boolean(message.trim() || pendingAttachments.length) && !busy && !uploading && !disabled;
-  const mentionMatch = useMemo(() => {
-    const selectionStart = inputRef.current?.selectionStart ?? message.length;
-    const beforeCursor = message.slice(0, selectionStart);
-    const match = /(^|\s)@([^\s@#]{0,32})$/.exec(beforeCursor);
-    if (!match) return null;
-    return {
-      start: beforeCursor.length - match[2].length - 1,
-      query: match[2].toLowerCase(),
-    };
-  }, [message]);
-  const mentionOptions = useMemo(() => {
-    if (!mentionMatch) return [];
-    const unique = Array.from(new Set(mentionables.filter(Boolean)));
-    return unique
-      .filter((name) => name.toLowerCase().includes(mentionMatch.query))
-      .slice(0, 6);
-  }, [mentionMatch, mentionables]);
 
   function insertText(text: string) {
     const input = inputRef.current;
@@ -69,22 +53,6 @@ export default function LobbyComposer({
     window.setTimeout(() => {
       inputRef.current?.focus();
       inputRef.current?.setSelectionRange(start + text.length, start + text.length);
-    }, 0);
-  }
-
-  function chooseMention(name: string) {
-    if (!mentionMatch) return;
-    const input = inputRef.current;
-    const end = input?.selectionStart ?? message.length;
-    const replacement = `@${name} `;
-    const next = `${message.slice(0, mentionMatch.start)}${replacement}${message.slice(end)}`;
-    setMessage(next);
-    window.setTimeout(() => {
-      inputRef.current?.focus();
-      inputRef.current?.setSelectionRange(
-        mentionMatch.start + replacement.length,
-        mentionMatch.start + replacement.length
-      );
     }, 0);
   }
 
@@ -205,24 +173,16 @@ export default function LobbyComposer({
       )}
 
       <div className="dc-composer-bar">
-        {mentionOptions.length > 0 && (
-          <div className="dc-mention-popover" role="listbox" aria-label="멘션 후보">
-            {mentionOptions.map((name) => (
-              <button key={name} type="button" onClick={() => chooseMention(name)} role="option">
-                <span className="dc-mention-avatar">@</span>
-                <span>{name}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        <input
-          ref={inputRef}
+        <MentionInput
+          inputRef={inputRef}
           value={message}
-          onChange={(event) => setMessage(event.target.value)}
+          onChange={setMessage}
           onKeyDown={handleKeyDown}
           className="dc-composer-input"
           placeholder={disabledReason || (uploading ? "첨부 업로드 중..." : "이 방에 메시지 남기기...")}
           disabled={busy || disabled}
+          mentionables={mentionables}
+          ariaLabel="채팅 입력"
         />
         <input
           ref={fileInputRef}

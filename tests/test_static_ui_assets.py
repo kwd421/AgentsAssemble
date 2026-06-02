@@ -454,6 +454,34 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("events.slice(", side_chat_source)
         self.assertIn("events.map((event) => <SideChatMessage key={event.id} event={event} />)", side_chat_source)
 
+    def test_react_side_chat_uses_shared_discord_mention_composer(self):
+        app_source = frontend_file("App.tsx")
+        lobby_source = frontend_file("views/components/LobbyComposer.tsx")
+        side_chat_source = frontend_file("views/components/SideChatDock.tsx")
+        mention_input_source = frontend_file("views/components/MentionInput.tsx")
+        mention_model_source = frontend_file("lib/mentionComposerModel.ts")
+        css = (FRONTEND_DIR / "index.css").read_text()
+
+        self.assertIn("export function mentionQueryAtCursor", mention_model_source)
+        self.assertIn("export function insertMentionText", mention_model_source)
+        self.assertIn("export default function MentionInput", mention_input_source)
+        self.assertIn('aria-label="멘션 후보"', mention_input_source)
+        self.assertIn("formatMentionToken", mention_model_source)
+
+        self.assertIn('import MentionInput from "./MentionInput";', lobby_source)
+        self.assertIn("<MentionInput", lobby_source)
+        self.assertIn("mentionables={mentionables}", lobby_source)
+        self.assertIn("insertText", lobby_source)
+
+        self.assertIn('import MentionInput from "./MentionInput";', side_chat_source)
+        self.assertIn("mentionables?: string[];", side_chat_source)
+        self.assertIn("<MentionInput", side_chat_source)
+        self.assertIn("mentionables={mentionables}", side_chat_source)
+
+        self.assertIn("const scopedMentionables", app_source)
+        self.assertIn("mentionables={scopedMentionables}", app_source)
+        self.assertIn(".dc-side-composer .dc-mention-popover", css)
+
     def test_react_live_flow_switch_keeps_state_updates_outside_event_updater(self):
         live_source = frontend_file("views/LiveView.tsx")
         helper_source = frontend_file("lib/liveTimelineState.ts")

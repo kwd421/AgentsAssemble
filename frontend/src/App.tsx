@@ -486,6 +486,10 @@ export default function App() {
       : "official"
     : "flow";
   const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
+  const scopedMentionables = useMemo(
+    () => ["나", ...scopedAgents.map((agent) => agent.display_name || agent.agent_id).filter(Boolean)],
+    [scopedAgents]
+  );
   const scopedOnlineCount = scopedAgents.filter(
     (agent) => agent.status === "online" || agent.status === "working"
   ).length;
@@ -1099,6 +1103,7 @@ export default function App() {
                 events={sideChatEvents}
                 error={sideChatError}
                 onPosted={handleSideChatPosted}
+                mentionables={scopedMentionables}
               />
             </section>
           )}

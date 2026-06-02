@@ -8,13 +8,16 @@ type Token = {
 };
 
 const INLINE_PATTERN =
-  /(`[^`]+`|\*\*[^*]+\*\*|~~[^~]+~~|\*[^*]+\*|@[^\s@#:`*~]+|#[^\s@#:`*~]+)/gu;
+  /(<@[^>\r\n]{1,80}>|`[^`]+`|\*\*[^*]+\*\*|~~[^~]+~~|\*[^*]+\*|@[^\s@#:`*~<>]+|#[^\s@#:`*~<>]+)/gu;
 
 function trimWrapper(value: string, wrapper: string) {
   return value.slice(wrapper.length, value.length - wrapper.length);
 }
 
 function classifyInline(value: string): Token {
+  if (value.startsWith("<@") && value.endsWith(">")) {
+    return { kind: "mention", value: `@${value.slice(2, -1)}` };
+  }
   if (value.startsWith("@")) return { kind: "mention", value };
   if (value.startsWith("#")) return { kind: "channel", value };
   if (value.startsWith("`") && value.endsWith("`")) {

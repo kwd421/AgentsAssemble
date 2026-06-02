@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { MessageSquare, Send } from "lucide-react";
+import { useRef, useState } from "react";
+import { AtSign, MessageSquare, Send, Smile } from "lucide-react";
 import { postSideChatMessage, type SideChatEvent } from "../../api";
 import DiscordText from "./DiscordText";
+import MentionInput from "./MentionInput";
 
 function formatTime(iso: string): string {
   try {
@@ -35,15 +36,30 @@ export default function SideChatDock({
   events,
   error,
   onPosted,
+  mentionables = [],
 }: {
   meetingId: string;
   events: SideChatEvent[];
   error: Error | null;
   onPosted: (events: SideChatEvent[]) => void;
+  mentionables?: string[];
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState("");
+
+  function insertText(text: string) {
+    const input = inputRef.current;
+    const start = input?.selectionStart ?? message.length;
+    const end = input?.selectionEnd ?? message.length;
+    const next = `${message.slice(0, start)}${text}${message.slice(end)}`;
+    setMessage(next);
+    window.setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(start + text.length, start + text.length);
+    }, 0);
+  }
 
   async function handleSend() {
     const trimmed = message.trim();
@@ -85,16 +101,34 @@ export default function SideChatDock({
         </p>
       )}
       <div className="dc-side-composer">
-        <input
+        <MentionInput
+          inputRef={inputRef}
           value={message}
+          onChange={setMessage}
           maxLength={2000}
-          onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.nativeEvent.isComposing) void handleSend();
           }}
           placeholder="사이드챗 메시지"
-          aria-label="비공식 사이드챗 입력"
+          ariaLabel="비공식 사이드챗 입력"
+          mentionables={mentionables}
         />
+        <button
+          type="button"
+          onClick={() => insertText("@")}
+          disabled={busy}
+          aria-label="사이드챗 멘션 삽입"
+        >
+          <AtSign size={15} />
+        </button>
+        <button
+          type="button"
+          onClick={() => insertText("🙂")}
+          disabled={busy}
+          aria-label="사이드챗 이모지 삽입"
+        >
+          <Smile size={15} />
+        </button>
         <button
           type="button"
           onClick={handleSend}

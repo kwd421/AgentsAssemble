@@ -1129,10 +1129,16 @@ textarea {
 }
 
 .dc-side-composer {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 0 8px 9px;
+}
+
+.dc-side-composer .dc-mention-popover {
+  right: 8px;
+  bottom: 47px;
 }
 
 .dc-side-composer input {
