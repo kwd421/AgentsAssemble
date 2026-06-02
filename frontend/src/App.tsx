@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import type { LucideIcon } from "lucide-react";
 import {
   Archive,
   ChevronDown,
@@ -37,6 +36,10 @@ import {
 import { usePoll } from "./hooks";
 import AdminPanel from "./views/AdminPanel";
 import BoardView from "./views/BoardView";
+import DiscordRoomSidebar, {
+  type DiscordRoomChannel,
+  type DiscordRoomChannelId,
+} from "./views/components/DiscordRoomSidebar";
 import HomeFriendsView from "./views/HomeFriendsView";
 import LiveView from "./views/LiveView";
 import LobbyView from "./views/LobbyView";
@@ -44,21 +47,15 @@ import RecordsView from "./views/RecordsView";
 import RoomCommandStrip from "./views/components/RoomCommandStrip";
 import RoomInvitePanel from "./views/components/RoomInvitePanel";
 
-type Channel = "home" | "lobby" | "live" | "board" | "records";
+type Channel = "home" | DiscordRoomChannelId;
 type CoreChannel = Exclude<Channel, "home">;
 type RoomSurface = CoreChannel | "admin";
 
-type ChannelConfig = {
-  id: CoreChannel;
-  label: string;
-  icon: LucideIcon;
-};
-
-const CHANNELS: ChannelConfig[] = [
-  { id: "lobby", label: "로비", icon: Users },
-  { id: "live", label: "실황", icon: Radio },
-  { id: "board", label: "작전판", icon: LayoutDashboard },
-  { id: "records", label: "아카이브", icon: Archive },
+const CHANNELS: DiscordRoomChannel[] = [
+  { id: "lobby", label: "로비", icon: Users, description: "준비, 초대, 시작 전 대화" },
+  { id: "live", label: "실황", icon: Radio, description: "회의 흐름과 사이드챗" },
+  { id: "board", label: "작전판", icon: LayoutDashboard, description: "작업 상태와 결정 후보" },
+  { id: "records", label: "아카이브", icon: Archive, description: "기록, 결정, 산출물" },
 ];
 
 function statusText(status?: string) {
@@ -305,7 +302,7 @@ function OperatorApp() {
               <span className="text-text-muted">room client</span>
             </div>
 
-            <nav className="ops-nav-scroll order-3 flex min-w-full flex-1 items-center justify-start gap-1 overflow-x-auto rounded-xl border border-accent/10 bg-black/18 px-1 py-1 sm:order-none sm:min-w-0 sm:justify-center lg:mx-6">
+            <nav className="ops-nav-scroll order-3 flex min-w-full flex-1 items-center justify-start gap-1 overflow-x-auto rounded-xl border border-accent/10 bg-black/18 px-1 py-1 sm:order-none sm:min-w-0 sm:justify-center md:hidden">
               {CHANNELS.map(({ id, label, icon: Icon }) => {
                 const active = !adminOpen && channel === id;
                 return (
@@ -380,58 +377,85 @@ function OperatorApp() {
           </div>
         </header>
 
-        {channel !== "home" && (
-          <RoomCommandStrip
-            activeSurface={activeSurface}
-            agents={agents}
-            flow={flow}
-            lifecycle={lifecycle}
-            onSelectSurface={handleCommandSurface}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <DiscordRoomSidebar
+            channels={CHANNELS}
+            activeChannel={channel}
+            adminOpen={adminOpen}
+            meetingId={flow.meeting_id || ""}
+            roomName={roomName(flow)}
+            onlineCount={onlineCount}
+            totalAgents={agents.length || 0}
+            onSelectHome={() => {
+              setChannel("home");
+              setAdminOpen(false);
+            }}
+            onSelectChannel={(nextChannel) => {
+              setChannel(nextChannel);
+              setAdminOpen(false);
+            }}
+            onSelectAdmin={() => setAdminOpen(true)}
+            onLeaveRoom={() => {
+              setChannel("home");
+              setAdminOpen(false);
+            }}
           />
-        )}
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-16 pt-3 chat-scroll lg:px-4 lg:pb-3 xl:overflow-hidden">
-          {adminOpen ? (
-            <AdminPanel onClose={() => setAdminOpen(false)} />
-          ) : channel === "home" ? (
-            <HomeFriendsView meetingId={flow.meeting_id || ""} />
-          ) : channel === "lobby" ? (
-            <LobbyView
-              flow={flow}
-              agents={agents}
-              lifecycle={lifecycle}
-              refreshFlow={refreshFlow}
-              onMafiaStarted={handleMafiaStarted}
-              onFlowStarted={handleFlowStarted}
-            />
-          ) : channel === "live" ? (
-            <LiveView
-              flow={flow}
-              flowEvents={liveTimelineEvents}
-              timelineSource={flowEvents.length ? "flow" : "official"}
-              agents={agents}
-              mafiaGame={mafiaGame}
-              refreshMafia={refreshMafia}
-              lifecycle={lifecycle}
-              lifecycleLoading={Boolean(flow.meeting_id) && lifecycleLoading}
-              lifecycleError={Boolean(flow.meeting_id) ? lifecycleError || meetingStreamError : null}
-              sideChatEvents={sideChatEvents}
-              sideChatError={sideChatError}
-              onSideChatPosted={handleSideChatPosted}
-              sideChatMeetingId={sideChatMeetingId}
-            />
-          ) : channel === "board" ? (
-            <BoardView
-              flow={flow}
-              agents={agents}
-              events={flowEvents}
-              lifecycle={lifecycle}
-              workroomQueueEvidence={scopedWorkroomQueueEvidence}
-            />
-          ) : (
-            <RecordsView agents={agents} />
-          )}
-        </main>
+          <div className="flex min-h-0 flex-1 flex-col">
+            {channel !== "home" && (
+              <RoomCommandStrip
+                activeSurface={activeSurface}
+                agents={agents}
+                flow={flow}
+                lifecycle={lifecycle}
+                onSelectSurface={handleCommandSurface}
+              />
+            )}
+
+            <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-16 pt-3 chat-scroll lg:px-4 lg:pb-3 xl:overflow-hidden">
+              {adminOpen ? (
+                <AdminPanel onClose={() => setAdminOpen(false)} />
+              ) : channel === "home" ? (
+                <HomeFriendsView meetingId={flow.meeting_id || ""} />
+              ) : channel === "lobby" ? (
+                <LobbyView
+                  flow={flow}
+                  agents={agents}
+                  lifecycle={lifecycle}
+                  refreshFlow={refreshFlow}
+                  onMafiaStarted={handleMafiaStarted}
+                  onFlowStarted={handleFlowStarted}
+                />
+              ) : channel === "live" ? (
+                <LiveView
+                  flow={flow}
+                  flowEvents={liveTimelineEvents}
+                  timelineSource={flowEvents.length ? "flow" : "official"}
+                  agents={agents}
+                  mafiaGame={mafiaGame}
+                  refreshMafia={refreshMafia}
+                  lifecycle={lifecycle}
+                  lifecycleLoading={Boolean(flow.meeting_id) && lifecycleLoading}
+                  lifecycleError={Boolean(flow.meeting_id) ? lifecycleError || meetingStreamError : null}
+                  sideChatEvents={sideChatEvents}
+                  sideChatError={sideChatError}
+                  onSideChatPosted={handleSideChatPosted}
+                  sideChatMeetingId={sideChatMeetingId}
+                />
+              ) : channel === "board" ? (
+                <BoardView
+                  flow={flow}
+                  agents={agents}
+                  events={flowEvents}
+                  lifecycle={lifecycle}
+                  workroomQueueEvidence={scopedWorkroomQueueEvidence}
+                />
+              ) : (
+                <RecordsView agents={agents} />
+              )}
+            </main>
+          </div>
+        </div>
 
         <footer className="relative z-[1] flex shrink-0 items-center justify-between border-t border-accent/10 bg-black/25 px-4 py-2 text-[11px] text-text-muted lg:hidden">
           <span className="flex items-center gap-1.5">
