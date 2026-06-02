@@ -1486,6 +1486,14 @@ textarea {
   padding: 0 8px 8px;
 }
 
+.dc-side-thread-source {
+  margin: 0 8px 8px;
+  border-left: 3px solid var(--color-accent);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 8px 9px;
+}
+
 .dc-side-message {
   border-radius: 4px;
   padding: 5px 6px;
@@ -1866,11 +1874,49 @@ textarea {
 
 /* Message row hover, like a chat client. */
 .dc-message {
+  position: relative;
   transition: background-color 80ms ease;
 }
 
 .dc-message:hover {
   background: var(--color-chat-hover);
+}
+
+.dc-message-actions {
+  position: absolute;
+  z-index: 3;
+  top: -8px;
+  right: 18px;
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  background: #1e1f22;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  opacity: 0.12;
+  transition: opacity 80ms ease, transform 80ms ease;
+  transform: translateY(2px);
+}
+
+.dc-message:hover .dc-message-actions,
+.dc-message:focus-within .dc-message-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.dc-message-action-button {
+  display: grid;
+  width: 32px;
+  height: 28px;
+  place-items: center;
+  color: var(--color-text-muted);
+}
+
+.dc-message-action-button:hover,
+.dc-message-action-button:focus-visible {
+  background: var(--color-sidebar-hover);
+  color: var(--color-text-primary);
+  outline: none;
 }
 
 .dc-message-avatar {

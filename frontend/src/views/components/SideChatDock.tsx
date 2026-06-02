@@ -4,6 +4,13 @@ import { postSideChatMessage, type SideChatEvent } from "../../api";
 import DiscordText from "./DiscordText";
 import MentionInput from "./MentionInput";
 
+export type SideChatThreadContext = {
+  sourceEventId: string;
+  sourceName: string;
+  sourceMessage: string;
+  channelLabel: string;
+};
+
 function formatTime(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString("ko-KR", {
@@ -37,12 +44,14 @@ export default function SideChatDock({
   error,
   onPosted,
   mentionables = [],
+  threadContext = null,
 }: {
   meetingId: string;
   events: SideChatEvent[];
   error: Error | null;
   onPosted: (events: SideChatEvent[]) => void;
   mentionables?: string[];
+  threadContext?: SideChatThreadContext | null;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState("");
@@ -84,13 +93,30 @@ export default function SideChatDock({
       <header className="dc-side-chat-head">
         <span className="flex items-center gap-2">
           <MessageSquare size={15} />
-          사이드챗
+          {threadContext ? "스레드" : "사이드챗"}
         </span>
         <span className="text-[10px] font-bold text-text-muted">공식 기록 제외</span>
       </header>
+      {threadContext && (
+        <article
+          className="dc-side-thread-source"
+          aria-label={`${threadContext.sourceName} 메시지에서 열린 스레드`}
+        >
+          <p className="truncate text-[11px] font-black text-text-secondary preserve-words">
+            #{threadContext.channelLabel} · {threadContext.sourceName}
+          </p>
+          <p className="mt-1 line-clamp-3 text-[12px] leading-relaxed text-text-muted preserve-words">
+            <DiscordText text={threadContext.sourceMessage || "메시지 본문 없음"} />
+          </p>
+        </article>
+      )}
       <div className="dc-side-chat-feed chat-scroll">
         {events.length === 0 ? (
-          <p className="dc-side-empty preserve-words">오른쪽에 붙어 있는 비공식 대화입니다.</p>
+          <p className="dc-side-empty preserve-words">
+            {threadContext
+              ? "이 메시지에 대한 비공식 스레드를 시작하세요."
+              : "오른쪽에 붙어 있는 비공식 대화입니다."}
+          </p>
         ) : (
           events.map((event) => <SideChatMessage key={event.id} event={event} />)
         )}
@@ -109,7 +135,7 @@ export default function SideChatDock({
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.nativeEvent.isComposing) void handleSend();
           }}
-          placeholder="사이드챗 메시지"
+          placeholder={threadContext ? "스레드에 답장" : "사이드챗 메시지"}
           ariaLabel="비공식 사이드챗 입력"
           mentionables={mentionables}
         />

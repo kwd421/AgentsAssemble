@@ -603,6 +603,38 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("mentionables={scopedMentionables}", app_source)
         self.assertIn(".dc-side-composer .dc-mention-popover", css)
 
+    def test_react_lobby_message_actions_open_side_chat_thread_context(self):
+        app_source = frontend_file("App.tsx")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        side_chat_source = frontend_file("views/components/SideChatDock.tsx")
+        css = (FRONTEND_DIR / "index.css").read_text()
+
+        self.assertIn("type SideChatThreadContext", app_source)
+        self.assertIn("const [sideChatThread, setSideChatThread]", app_source)
+        self.assertIn("function openSideChatThread(event: LobbyEvent)", app_source)
+        self.assertIn('setRightPanelMode("side-chat")', app_source)
+        self.assertIn("sourceEventId: event.id", app_source)
+        self.assertIn("threadContext={sideChatThread}", app_source)
+        self.assertIn("onOpenSideThread={openSideChatThread}", app_source)
+
+        self.assertIn("MessageCircle", lobby_source)
+        self.assertIn("onOpenSideThread?: (event: LobbyEvent) => void;", lobby_source)
+        self.assertIn("function MessageRow({ event, onOpenSideThread }", lobby_source)
+        self.assertIn('className="dc-message-actions"', lobby_source)
+        self.assertIn('aria-label="스레드로 열기"', lobby_source)
+        self.assertIn("visibleEvents.map((event) => <MessageRow key={event.id} event={event} onOpenSideThread={onOpenSideThread} />)", lobby_source)
+
+        self.assertIn("export type SideChatThreadContext", side_chat_source)
+        self.assertIn("threadContext?: SideChatThreadContext | null;", side_chat_source)
+        self.assertIn("dc-side-thread-source", side_chat_source)
+        self.assertIn("스레드", side_chat_source)
+        self.assertIn("이 메시지에 대한 비공식 스레드를 시작하세요.", side_chat_source)
+        self.assertIn('placeholder={threadContext ? "스레드에 답장" : "사이드챗 메시지"}', side_chat_source)
+
+        self.assertIn(".dc-message-actions", css)
+        self.assertIn(".dc-message-action-button", css)
+        self.assertIn(".dc-side-thread-source", css)
+
     def test_react_live_flow_switch_keeps_state_updates_outside_event_updater(self):
         live_source = frontend_file("views/LiveView.tsx")
         helper_source = frontend_file("lib/liveTimelineState.ts")
@@ -654,7 +686,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('className="min-h-0 flex-1 overflow-y-auto py-4 chat-scroll"', lobby_source)
         self.assertIn("const visibleEvents = useMemo(() => {", lobby_source)
         self.assertIn("event.flow_meeting_id && event.flow_meeting_id !== activeRoom.meetingId", lobby_source)
-        self.assertIn("visibleEvents.map((event) => <MessageRow key={event.id} event={event} />)", lobby_source)
+        self.assertIn("visibleEvents.map((event) => <MessageRow key={event.id} event={event} onOpenSideThread={onOpenSideThread} />)", lobby_source)
         self.assertIn("meetingId={activeRoom.meetingId}", lobby_source)
         self.assertIn("onPosted={handleLobbyPosted}", lobby_source)
         self.assertNotIn("events.slice(-6)", lobby_source)

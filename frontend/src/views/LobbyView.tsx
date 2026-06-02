@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Hash, Square, Zap } from "lucide-react";
+import { Bot, Hash, MessageCircle, MoreHorizontal, Square, Zap } from "lucide-react";
 import {
   fetchLobby,
   mergeLobbyEvents,
@@ -49,13 +49,37 @@ function mafiaPlayersFromAgents(agents: LiveAgent[]) {
   }));
 }
 
-function MessageRow({ event }: { event: LobbyEvent }) {
+function MessageRow({ event, onOpenSideThread }: {
+  event: LobbyEvent;
+  onOpenSideThread?: (event: LobbyEvent) => void;
+}) {
   const systemLike = event.kind === "system" || event.kind === "flow_event";
   return (
     <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5">
       <span className={`dc-message-avatar mt-0.5 ${systemLike ? "system" : "agent"}`}>
         {systemLike ? <Zap size={16} /> : <Bot size={16} />}
       </span>
+      <div className="dc-message-actions" aria-label="메시지 작업">
+        {onOpenSideThread && (
+          <button
+            type="button"
+            className="dc-message-action-button"
+            onClick={() => onOpenSideThread(event)}
+            aria-label="스레드로 열기"
+            title="스레드"
+          >
+            <MessageCircle size={15} />
+          </button>
+        )}
+        <button
+          type="button"
+          className="dc-message-action-button"
+          aria-label="더 보기"
+          title="더 보기"
+        >
+          <MoreHorizontal size={15} />
+        </button>
+      </div>
       <div className="min-w-0">
         <p className="flex items-baseline gap-2">
           <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
@@ -85,6 +109,7 @@ export default function LobbyView({
   membersOpen,
   onToggleMembers,
   appearance,
+  onOpenSideThread,
 }: {
   activeRoom: RoomDockItem;
   flow: FlowState;
@@ -98,6 +123,7 @@ export default function LobbyView({
   membersOpen?: boolean;
   onToggleMembers?: () => void;
   appearance?: RoomAppearance;
+  onOpenSideThread?: (event: LobbyEvent) => void;
 }) {
   const [events, setEvents] = useState<LobbyEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -361,7 +387,7 @@ export default function LobbyView({
             아직 채팅 메시지가 없습니다. 첫 메시지를 남겨 보세요.
           </p>
         ) : (
-          visibleEvents.map((event) => <MessageRow key={event.id} event={event} />)
+          visibleEvents.map((event) => <MessageRow key={event.id} event={event} onOpenSideThread={onOpenSideThread} />)
         )}
       </div>
 

@@ -45,6 +45,7 @@ import {
   type WorkroomQueueEvidence,
   type MafiaGame,
   type MafiaGameResponse,
+  type LobbyEvent,
   type SideChatEvent,
   type ChannelNotificationSetting,
   type ChannelSettings,
@@ -65,7 +66,7 @@ import type { HomeFilter } from "./views/components/HomeSidebar";
 import MemberList from "./views/components/MemberList";
 import type { RoleId } from "./views/components/MemberList";
 import RoomSettingsModal from "./views/components/RoomSettingsModal";
-import SideChatDock from "./views/components/SideChatDock";
+import SideChatDock, { type SideChatThreadContext } from "./views/components/SideChatDock";
 import UserPanel from "./views/components/UserPanel";
 import {
   completeRoomAppearance,
@@ -384,6 +385,7 @@ export default function App() {
   const [meetingStreamError, setMeetingStreamError] = useState<Error | null>(null);
   const [sideChatEvents, setSideChatEvents] = useState<SideChatEvent[]>([]);
   const [sideChatError, setSideChatError] = useState<Error | null>(null);
+  const [sideChatThread, setSideChatThread] = useState<SideChatThreadContext | null>(null);
 
   const guestMeetingId = guestInvite?.meetingId || "";
   const guestReadOnly = guestInvite?.inviteScope === "read_only";
@@ -523,6 +525,17 @@ export default function App() {
     setSideChatEvents((previous) => mergeSideChatEvents(previous, events));
   }, []);
 
+  function openSideChatThread(event: LobbyEvent) {
+    setSideChatThread({
+      sourceEventId: event.id,
+      sourceName: event.name || "Room",
+      sourceMessage: event.message || "",
+      channelLabel: activeRoom.label || activeRoom.meetingId || "채팅",
+    });
+    setMembersOpen(true);
+    setRightPanelMode("side-chat");
+  }
+
   const activeMeetingStreamState = meetingStreamStateForActiveMeeting(
     meetingStreamState,
     flow.meeting_id || ""
@@ -597,6 +610,8 @@ export default function App() {
     setActiveRoomId(roomId);
     setAdminOpen(false);
     setChannel("lobby");
+    setRightPanelMode("room-info");
+    setSideChatThread(null);
     setRoomMenu(null);
     setChannelMenu(null);
   }
@@ -1293,6 +1308,7 @@ export default function App() {
             membersOpen={membersOpen}
             onToggleMembers={toggleMembers}
             appearance={activeAppearance}
+            onOpenSideThread={openSideChatThread}
           />
         ) : channel === "live" ? (
           <LiveView
@@ -1384,6 +1400,7 @@ export default function App() {
                 error={sideChatError}
                 onPosted={handleSideChatPosted}
                 mentionables={scopedMentionables}
+                threadContext={sideChatThread}
               />
             </section>
           )}
