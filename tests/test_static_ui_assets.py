@@ -61,8 +61,8 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn('/static/responsive.css', html)
         self.assertIn('id="react-preview-link"', html)
         self.assertIn('href="/app/"', html)
-        self.assertIn('aria-label="신형 React UI 열기"', html)
-        self.assertIn(">새 UI</a>", html)
+        self.assertIn('aria-label="Discord room client 열기"', html)
+        self.assertIn(">Room Client</a>", html)
         self.assertNotIn('/legacy/static/', html)
         self.assertIn("function showAppStatus", script)
         self.assertIn('showAppStatus("Mock Demo 실행 중"', script)
@@ -153,6 +153,13 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("sideChatEvents", live_source)
         self.assertIn('const [rightPanelTab, setRightPanelTab] = useState<"room-info" | "side-chat">("room-info");', live_source)
         self.assertIn("role=\"tablist\"", live_source)
+        self.assertIn('id="live-room-info-tab"', live_source)
+        self.assertIn('aria-controls="live-room-info-panel"', live_source)
+        self.assertIn('id="live-side-chat-tab"', live_source)
+        self.assertIn('aria-controls="live-side-chat-panel"', live_source)
+        self.assertIn('role="tabpanel"', live_source)
+        self.assertIn('aria-labelledby="live-room-info-tab"', live_source)
+        self.assertIn('aria-labelledby="live-side-chat-tab"', live_source)
         self.assertIn("방 연결 정보", live_source)
         self.assertIn("rightPanelTab === \"room-info\"", live_source)
         self.assertIn("rightPanelTab === \"side-chat\"", live_source)
@@ -161,6 +168,7 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("공식 기록 제외", live_source)
         self.assertIn("postSideChatMessage", live_source)
         self.assertIn("meetingId={sideChatMeetingId}", live_source)
+        self.assertNotIn("빠른 작업", live_source)
         self.assertNotIn("promote", live_source)
 
     def test_react_discord_home_friends_uses_persisted_room_friends(self):
@@ -295,17 +303,17 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertNotIn("promoteLobby", source)
         self.assertNotIn("lobby.promote_to_official", source)
 
-    def test_react_shell_identifies_latest_client_and_legacy_boundary(self):
+    def test_react_shell_identifies_discord_room_client_without_legacy_link(self):
         app_source = frontend_file("App.tsx")
         css = (FRONTEND_DIR / "index.css").read_text()
 
         self.assertIn("ops-client-marker", app_source)
-        self.assertIn("신형 React", app_source)
+        self.assertIn("Discord", app_source)
         self.assertIn("room client", app_source)
-        self.assertIn('href="/legacy/"', app_source)
-        self.assertIn("구형 콘솔", app_source)
+        self.assertNotIn('href="/legacy/"', app_source)
+        self.assertNotIn("구형 콘솔", app_source)
         self.assertIn(".ops-client-marker", css)
-        self.assertIn(".ops-legacy-link", css)
+        self.assertNotIn(".ops-legacy-link", css)
 
     def test_react_lobby_composer_restores_draft_on_submit_failure(self):
         composer_source = frontend_file("views/components/LobbyComposer.tsx")

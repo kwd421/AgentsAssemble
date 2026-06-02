@@ -2,9 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import {
   Activity,
   Bot,
-  CheckCircle2,
-  Clock3,
-  FileText,
   Flag,
   MessageSquare,
   Moon,
@@ -106,10 +103,12 @@ function LifecyclePanel({
   lifecycle,
   loading,
   error,
+  embedded = false,
 }: {
   lifecycle: LifecycleProjection | null;
   loading: boolean;
   error: Error | null;
+  embedded?: boolean;
 }) {
   const state = lifecycle
     ? lifecycleStateLabel(lifecycle.state)
@@ -124,7 +123,7 @@ function LifecyclePanel({
 
   // Lifecycle is the meeting-record state projection, not the Play Mode flow status.
   return (
-    <section className="ops-panel ops-cut p-4">
+    <section className={embedded ? "rounded-xl border border-accent/14 bg-black/12 p-4" : "ops-panel ops-cut p-4"}>
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-[17px] font-black">라이프사이클</h2>
         <span className={`rounded-md border px-2 py-1 text-[11px] font-black ${lifecycleToneClass(state.tone)}`}>
@@ -312,7 +311,7 @@ function SideChatPanel({
   }
 
   return (
-    <section className="ops-panel ops-cut p-4" aria-label="비공식 사이드챗">
+    <section className="flex min-h-0 flex-1 flex-col" aria-label="비공식 사이드챗">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-[17px] font-black">비공식 사이드챗</h2>
@@ -331,7 +330,7 @@ function SideChatPanel({
         </p>
       )}
 
-      <div className="ops-inner mb-3 max-h-[260px] min-h-[150px] overflow-y-auto rounded-lg p-3 chat-scroll">
+      <div className="ops-inner mb-3 min-h-[220px] flex-1 overflow-y-auto rounded-lg p-3 chat-scroll">
         {visibleEvents.length === 0 ? (
           <div className="flex h-[120px] items-center justify-center text-center text-[13px] text-text-muted preserve-words">
             아직 비공식 사이드챗이 없습니다.
@@ -364,7 +363,7 @@ function SideChatPanel({
         )}
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_40px]">
+      <div className="grid shrink-0 gap-2 sm:grid-cols-[minmax(0,1fr)_40px]">
         <input
           value={message}
           maxLength={2000}
@@ -986,13 +985,15 @@ export default function LiveView({
         </section>
       )}
 
-      <aside className="flex min-h-0 flex-col gap-4 overflow-visible chat-scroll xl:overflow-y-auto xl:pr-1">
-        <section className="ops-panel ops-cut p-2" aria-label="우측 패널 전환">
-          <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="실황 우측 패널">
+      <aside className="flex min-h-0 flex-col overflow-visible xl:overflow-hidden">
+        <section className="ops-panel ops-cut flex min-h-[560px] flex-col overflow-hidden xl:h-full xl:min-h-0" aria-label="실황 우측 패널">
+          <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-accent/14 p-2" role="tablist" aria-label="실황 우측 패널">
             <button
               type="button"
               role="tab"
+              id="live-room-info-tab"
               aria-selected={rightPanelTab === "room-info"}
+              aria-controls="live-room-info-panel"
               onClick={() => setRightPanelTab("room-info")}
               className={`rounded-lg px-3 py-2.5 text-[12px] font-black transition-colors ${
                 rightPanelTab === "room-info"
@@ -1005,7 +1006,9 @@ export default function LiveView({
             <button
               type="button"
               role="tab"
+              id="live-side-chat-tab"
               aria-selected={rightPanelTab === "side-chat"}
+              aria-controls="live-side-chat-panel"
               onClick={() => setRightPanelTab("side-chat")}
               className={`rounded-lg px-3 py-2.5 text-[12px] font-black transition-colors ${
                 rightPanelTab === "side-chat"
@@ -1016,69 +1019,51 @@ export default function LiveView({
               사이드챗
             </button>
           </div>
-        </section>
 
-        {rightPanelTab === "room-info" ? (
-          <>
-            <LifecyclePanel lifecycle={lifecycle} loading={lifecycleLoading} error={lifecycleError} />
+          {rightPanelTab === "room-info" ? (
+            <div
+              id="live-room-info-panel"
+              role="tabpanel"
+              aria-labelledby="live-room-info-tab"
+              className="flex-1 overflow-y-auto p-4 chat-scroll"
+            >
+              <div className="space-y-4">
+                <LifecyclePanel lifecycle={lifecycle} loading={lifecycleLoading} error={lifecycleError} embedded />
 
-            <section className="ops-panel ops-cut p-4">
-              <h2 className="mb-4 text-[17px] font-black">라이브 상태</h2>
-              <div className="grid gap-3">
-                {statusCards.map(({ label, value, icon: Icon, tone }) => (
-                  <div key={label} className="ops-inner flex items-center gap-3 rounded-lg p-4">
-                    <Icon size={18} className={tone} />
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                        {label}
-                      </p>
-                      <p className={`text-[18px] font-black ${tone}`}>{value}</p>
-                    </div>
+                <section className="rounded-xl border border-accent/14 bg-black/12 p-4">
+                  <h2 className="mb-4 text-[17px] font-black">방 연결 정보</h2>
+                  <div className="grid gap-3">
+                    {statusCards.map(({ label, value, icon: Icon, tone }) => (
+                      <div key={label} className="ops-inner flex items-center gap-3 rounded-lg p-4">
+                        <Icon size={18} className={tone} />
+                        <div>
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
+                            {label}
+                          </p>
+                          <p className={`text-[18px] font-black ${tone}`}>{value}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </section>
               </div>
-            </section>
-
-            <section className="ops-panel ops-cut p-4">
-              <h2 className="mb-4 text-[17px] font-black">공유 메모리 / 핵심 포인트</h2>
-              <ul className="space-y-3 text-[13px] leading-relaxed text-text-secondary">
-                <li className="flex gap-2">
-                  <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-online" />
-                  방은 agent-private context를 대신 소유하지 않습니다.
-                </li>
-                <li className="flex gap-2">
-                  <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-online" />
-                  Play Mode 발언은 공식 기록으로 자동 승격되지 않습니다.
-                </li>
-                <li className="flex gap-2">
-                  <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-online" />
-                  resident agent는 승인된 세션만 참여합니다.
-                </li>
-              </ul>
-            </section>
-
-            <section className="ops-panel ops-cut p-4">
-              <h2 className="mb-4 text-[17px] font-black">빠른 작업</h2>
-              <div className="grid grid-cols-2 gap-3">
-                <button type="button" disabled className="ops-button rounded-lg px-3 py-4 text-[13px] font-bold">
-                  <FileText className="mx-auto mb-2 text-accent" size={20} />
-                  요약 생성
-                </button>
-                <button type="button" disabled className="ops-button rounded-lg px-3 py-4 text-[13px] font-bold">
-                  <Clock3 className="mx-auto mb-2 text-text-muted" size={20} />
-                  로그 보기
-                </button>
-              </div>
-            </section>
-          </>
-        ) : (
-          <SideChatPanel
-            events={sideChatEvents}
-            error={sideChatError}
-            onPosted={onSideChatPosted}
-            meetingId={sideChatMeetingId}
-          />
-        )}
+            </div>
+          ) : (
+            <div
+              id="live-side-chat-panel"
+              role="tabpanel"
+              aria-labelledby="live-side-chat-tab"
+              className="flex min-h-0 flex-1 flex-col overflow-hidden p-4"
+            >
+              <SideChatPanel
+                events={sideChatEvents}
+                error={sideChatError}
+                onPosted={onSideChatPosted}
+                meetingId={sideChatMeetingId}
+              />
+            </div>
+          )}
+        </section>
       </aside>
     </div>
   );

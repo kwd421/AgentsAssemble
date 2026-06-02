@@ -16,10 +16,9 @@ Open:
 http://127.0.0.1:8765
 ```
 
-`/` serves the React operator console once `npm --prefix frontend run build`
+`/` serves the Discord-style React room client once `npm --prefix frontend run build`
 exists; until then it falls back to this dependency-light vanilla console. The
-vanilla console stays reachable at `/legacy/`, and the React app is also aliased
-at `/app/`. The React/Vite dev server in `frontend/` runs on port 5173 and
+React app is also aliased at `/app/`. The React/Vite dev server in `frontend/` runs on port 5173 and
 proxies API calls to this backend by default. Use
 `python3 -m agentsassemble.cli frontend-info` for read-only launch guidance;
 that command prints a recommended current UI URL based on whether the built

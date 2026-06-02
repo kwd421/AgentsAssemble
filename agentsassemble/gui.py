@@ -7457,7 +7457,7 @@ def _print_gui_startup_banner(server_url: str, *, frontend_dist_root: Path | Non
     else:
         print(f"- Operator console (default): {base_url}/ (legacy vanilla fallback)")
         print(f"- Build React for the default console: {REACT_APP_BUILD_COMMAND}")
-    print(f"- Legacy vanilla console: {base_url}/legacy/")
+        print(f"- Legacy fallback while React is unavailable: {base_url}/legacy/")
 
 
 _LOOPBACK_HOSTNAMES = {"127.0.0.1", "localhost", "::1"}

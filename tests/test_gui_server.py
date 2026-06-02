@@ -7785,7 +7785,8 @@ class GuiServerTests(unittest.TestCase):
         self.assertIn("AgentsAssemble GUI:", output)
         self.assertIn("Operator console (default): http://127.0.0.1:48765/ (React)", output)
         self.assertIn("React console alias: http://127.0.0.1:48765/app/", output)
-        self.assertIn("Legacy vanilla console: http://127.0.0.1:48765/legacy/", output)
+        self.assertNotIn("Legacy vanilla console", output)
+        self.assertNotIn("/legacy/", output)
         self.assertNotIn("legacy vanilla fallback", output)
 
     def test_serve_gui_startup_banner_keeps_react_preview_as_build_hint_when_dist_is_missing(self):
@@ -7822,7 +7823,7 @@ class GuiServerTests(unittest.TestCase):
         output = stdout.getvalue()
         self.assertIn("Operator console (default): http://127.0.0.1:48766/ (legacy vanilla fallback)", output)
         self.assertIn("Build React for the default console: npm --prefix frontend run build", output)
-        self.assertIn("Legacy vanilla console: http://127.0.0.1:48766/legacy/", output)
+        self.assertIn("Legacy fallback while React is unavailable: http://127.0.0.1:48766/legacy/", output)
         self.assertNotIn("(React)", output)
 
     def test_serve_gui_startup_banner_treats_partial_react_dist_as_missing(self):

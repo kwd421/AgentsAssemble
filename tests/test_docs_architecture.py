@@ -33,7 +33,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("docs/product/OPERATING_MODEL.md", agents)
         self.assertIn("docs/product/OPERATING_MODEL.md", roadmap)
 
-    def test_frontend_launch_docs_distinguish_react_default_from_legacy_fallback(self):
+    def test_frontend_launch_docs_present_discord_client_as_default_surface(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         live_agent_ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
         frontend_readme = (ROOT / "frontend" / "README.md").read_text(encoding="utf-8")
@@ -42,13 +42,13 @@ class DocsArchitectureTests(unittest.TestCase):
         combined = "\n".join([readme, live_agent_ops, frontend_readme, frontend_design])
         normalized_ops = " ".join(live_agent_ops.split())
 
-        self.assertIn("React operator console", combined)
+        self.assertIn("Discord-style React room client", combined)
         self.assertIn("React/Vite frontend", combined)
         self.assertIn("vanilla fallback", combined)
         self.assertIn("python3 -m agentsassemble.cli frontend-info", combined)
         self.assertIn("http://127.0.0.1:8765", frontend_readme)
-        self.assertIn("/legacy/", frontend_readme)
-        self.assertIn("legacy console namespace", combined)
+        self.assertNotIn("/legacy/", frontend_readme)
+        self.assertNotIn("legacy console namespace", combined)
         self.assertIn("default entry point", combined)
         self.assertIn("http://127.0.0.1:8765", vite_config)
         self.assertIn("does not start a dev server, GUI backend, or provider CLI", normalized_ops)

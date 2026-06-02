@@ -1,7 +1,7 @@
 # AgentsAssemble Frontend
 
 React + Vite + Tailwind v4 frontend for AgentsAssemble.
-This is the default operator console for the local GUI room.
+This is the default Discord-style room client for the local GUI room.
 
 Start the backend:
 
@@ -9,10 +9,9 @@ Start the backend:
 python3 -m agentsassemble.cli gui --port 8765
 ```
 
-`/` serves this React operator console once a production build exists; until
-then it falls back to the dependency-light vanilla console. The vanilla
-legacy console namespace stays explicit: the same vanilla console is always
-reachable at `/legacy/`, and the React app is also aliased at `/app/`. The
+`/` serves this Discord-style React room client once a production build exists;
+until then it falls back to the dependency-light vanilla console. The React app
+is also aliased at `/app/`. The
 completed default-route flip and its operator-verified browser-parity caveat
 live in `docs/product/legacy-react-parity-matrix.md`.
 

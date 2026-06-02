@@ -950,9 +950,7 @@ export function subscribeSideChat(
   onEvents: (events: SideChatEvent[]) => void,
   onError?: (err: Event) => void
 ): () => void {
-  const source = new EventSource(
-    `/api/events/side-chat${queryString({ meeting_id: meetingId })}`
-  );
+  const source = new EventSource(`/api/events/side-chat${queryString({ meeting_id: meetingId })}`);
 
   function handleData(raw: string) {
     const events = parseSideChatStreamData(raw);

@@ -130,7 +130,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["react_app_path"], "/app/")
         self.assertEqual(payload["react_app_url"], "http://127.0.0.1:9999/app/")
         self.assertEqual(payload["react_app_kind"], "react_default")
-        self.assertEqual(payload["react_app_label"], "React operator console (default at /, alias at /app/)")
+        self.assertEqual(payload["react_app_label"], "Discord-style React room client (default at /, alias at /app/)")
         self.assertEqual(payload["app_dist_path"], "frontend/dist")
         self.assertIn("app_static_available", payload)
         self.assertIn("app_index_present", payload)
@@ -140,9 +140,9 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(payload["recommended_ui_url"], "http://127.0.0.1:9999/")
         if payload["app_static_available"]:
             self.assertEqual(payload["recommended_ui_kind"], "react")
-            self.assertEqual(payload["recommended_ui_label"], "React operator console")
+            self.assertEqual(payload["recommended_ui_label"], "Discord-style room client")
             self.assertEqual(payload["default_console_kind"], "react")
-            self.assertEqual(payload["default_console_label"], "React operator console (default entry point)")
+            self.assertEqual(payload["default_console_label"], "Discord-style room client (default entry point)")
             self.assertEqual(payload["app_build_status"], "available")
         else:
             self.assertEqual(payload["recommended_ui_kind"], "legacy_fallback")
@@ -163,14 +163,14 @@ class CliTimeoutTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         output = stdout.getvalue()
-        self.assertIn("Legacy vanilla console: http://127.0.0.1:8765/legacy/", output)
-        self.assertIn("React operator console (default at /, alias at /app/): http://127.0.0.1:8765/app/", output)
+        self.assertIn("Discord-style React room client (default at /, alias at /app/): http://127.0.0.1:8765/app/", output)
         self.assertIn("React/Vite opt-in UI: http://127.0.0.1:5173", output)
         self.assertIn("Parity matrix: docs/product/legacy-react-parity-matrix.md", output)
-        self.assertIn("vanilla fallback at /legacy/", output)
+        self.assertNotIn("Legacy vanilla console:", output)
+        self.assertNotIn("vanilla fallback at /legacy/", output)
         self.assertIn("Recommended current UI:", output)
         self.assertIn("React build status:", output)
-        self.assertIn("default entry point at /", output)
+        self.assertIn("default room client at /", output)
 
     def test_frontend_info_reports_react_app_static_availability_from_dist(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -230,7 +230,7 @@ class CliTimeoutTests(unittest.TestCase):
         self.assertEqual(present_payload["app_build_status"], "available")
         self.assertEqual(present_payload["recommended_ui_kind"], "react")
         self.assertEqual(present_payload["recommended_ui_url"], "http://127.0.0.1:9876/")
-        self.assertEqual(present_payload["recommended_ui_label"], "React operator console")
+        self.assertEqual(present_payload["recommended_ui_label"], "Discord-style room client")
         self.assertTrue(present_payload["app_index_present"])
         self.assertTrue(present_payload["app_assets_dir_present"])
 

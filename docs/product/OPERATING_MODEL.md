@@ -86,16 +86,20 @@ report.
   stable enough for another AI or human designer to refine.
 - The React/Vite operator console is now the default GUI surface at `/`, served
   by the Python GUI from `frontend/dist` when that build exists.
-- The dependency-light vanilla HTML/CSS/JS console is the fallback: `/` serves
-  it when no React build exists, and it stays reachable at `/legacy/`.
+- The dependency-light vanilla HTML/CSS/JS console is now a maintenance
+  fallback: `/` serves it only when no React build exists. It is not advertised
+  from the React room client because the Discord-style client is the intended
+  operator surface.
 - The default-route flip required and now has API/SSE parity, stable room-event
   contracts, and a tested legacy fallback; browser-rendered parity for the four
   React surfaces stays operator-verified after each build, not asserted
   headlessly.
 - `frontend-info` reports `is_default_entry_point: true`; the React index served
   at `/` and the `/app/` alias rewrites `/assets/*` to the guarded
-  `/app/assets/*` path. Provider startup approval, official records, and
-  Work/Play separation are unchanged by the route flip.
+  `/app/assets/*` path. Human-facing launch guidance should point at the
+  Discord-style React room client when that build exists. Provider startup
+  approval, official records, and Work/Play separation are unchanged by the
+  route flip.
 - The detailed roadmap board is a later product-UI feature, not another panel
   to bolt onto the current vanilla console. When the React/Vite frontend track
   starts, add a dedicated roadmap view that can show long-term epics and

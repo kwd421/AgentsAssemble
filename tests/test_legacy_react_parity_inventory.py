@@ -75,7 +75,7 @@ class LegacyReactParityInventoryTests(unittest.TestCase):
     def test_default_and_react_surface_labels_are_documented(self):
         matrix_text = (ROOT / "docs" / "product" / "legacy-react-parity-matrix.md").read_text(encoding="utf-8")
 
-        self.assertIn("React operator console (default entry point)", matrix_text)
+        self.assertIn("Discord-style room client (default entry point)", matrix_text)
         self.assertIn("vanilla fallback", matrix_text)
         self.assertIn("/legacy/", matrix_text)
 
@@ -217,6 +217,7 @@ def _api_ts_route_refs(text: str) -> list[tuple[str, str, str]]:
 
 def _normalize_api_ts_path(path: str) -> str:
     path = path.split("?", 1)[0]
+    path = re.sub(r"\$\{queryString\(.*\)\}", "", path)
     path = re.sub(r"\$\{encodeURIComponent\(meetingId\)\}", "{meeting_id}", path)
     return path
 

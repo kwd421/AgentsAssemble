@@ -4,7 +4,7 @@
 
 This matrix tracked the evidence required before making the React/Vite frontend
 the default entry point for the local GUI room. That flip is now done: `/`
-serves the built React operator console when `frontend/dist` exists and falls
+serves the built Discord-style React room client when `frontend/dist` exists and falls
 back to the dependency-light vanilla console otherwise, while `/legacy/` remains
 the tested vanilla fallback and `/app/` remains a stable React alias.
 
@@ -31,7 +31,7 @@ evidence; the owner authorized the flip on 2026-05-30:
   availability through `frontend-info`.
 - `frontend-info` reports `is_default_entry_point: true`; `/` serves React when
   built and the vanilla console otherwise.
-- `/` is documented as the React operator console (default entry point) with a
+- `/` is documented as the Discord-style room client (default entry point) with a
   vanilla fallback, `/legacy/` as the tested vanilla fallback, and `/app/` as
   the React alias.
 - Play Mode, Work Mode, official records, and provider startup approval remain
@@ -65,6 +65,7 @@ Status values:
 | Lobby events | `/api/lobby` | `fetchLobby()`, `postLobbyMessage()` | partial | `frontend/src/api.ts`, `tests/test_static_ui_assets.py::test_react_lobby_composer_uploads_attachments_then_posts_lobby` | Includes informal room history only. |
 | Lobby composer | Vanilla lobby composer | `LobbyComposer` | partial | `tests/test_static_ui_assets.py::test_react_lobby_composer_uploads_attachments_then_posts_lobby` | React can post text and attachment refs; browser parity proof remains separate. |
 | Lobby external participation | Join brief, host-gated web invite, and public tunnel setup | `LobbyView` collapsed join-brief generator plus `RoomInvitePanel` using `fetchPublicInviteStatus()`, `generateHostToken()`, `setPublicInviteUrl()`, `startPublicInviteTunnel()`, `stopPublicInviteTunnel()`, and room invite wrappers | partial | `tests/test_public_invite_http.py`, `tests/test_public_invite.py`, `tests/test_public_tunnel.py`, `tests/test_static_ui_assets.py::test_react_lobby_external_participation_collapses_cli_only_cards_by_default`, `tests/test_static_ui_assets.py::test_react_lobby_external_participation_wraps_safe_join_brief_endpoint`, `tests/test_static_ui_assets.py::test_react_lobby_external_participation_uses_safe_command_skeletons_with_env_secret_refs`, `tests/test_static_ui_assets.py::test_react_lobby_external_participation_states_provider_startup_and_token_boundaries`, `tests/test_static_ui_assets.py::test_react_lobby_external_participation_has_no_unsafe_actions_or_token_io` | React can request the read-only `/api/live-agent-join-brief` entry packet for a manual external resident without starting providers. React can also bootstrap a server-lifetime host token, set or detect a public tunnel URL, create a browser join link, and let guests join/read/say/leave through session tokens. This does not install tunnel software, start provider CLIs, or create durable auth. |
+| Discord home friends | No vanilla equivalent | `HomeFriendsView` using `fetchRoomFriends()`, `saveRoomFriend()`, and `createLiveAgentJoinBrief()` | partial | `tests/test_room_friends.py`, `tests/test_gui_server.py::test_room_friends_api_saves_friends_and_suggests_live_agents`, `tests/test_static_ui_assets.py::test_react_discord_home_friends_uses_persisted_room_friends`, browser check | React can persist people, subscription AI, API, Local, and unknown participants as room friends, suggest active live agents, and create a Join Brief for a saved friend without starting providers or exposing secrets. |
 | Side chat | `/api/side-chat` | `fetchSideChat()`, `postSideChatMessage()`, `SideChatPanel` | partial | `tests/test_frontend_side_chat_runtime.py`, `tests/test_static_ui_assets.py::test_react_side_chat_uses_separate_room_contract`, `cd frontend && npm run build` | React surfaces a separate unofficial side-chat panel; browser parity proof remains separate before defaulting. |
 | Live agents | `/api/live-agents` | `FlowResponse.agents` via `fetchLiveAgentFlow()` | partial | `tests/test_frontend_roster_truth.py`, `tests/test_frontend_agent_labels.py`, `tests/test_static_ui_assets.py::test_react_lobby_preserves_agent_owned_room_evidence`, `frontend/src/api.ts` | Host approval, context durability, join semantics, sandbox truth, character-mode badge state, and cursor/reply evidence are rendered on the active Lobby, Live, Board, and Records participant surfaces. The old standalone React `Roster.tsx` side panel was removed because it had no `App.tsx` consumer; direct `/api/live-agents` parity remains vanilla-only. |
 | Flow status | `/api/live-agent-flow` | `fetchLiveAgentFlow()` | partial | `frontend/src/api.ts` | Play Mode only. |
@@ -175,6 +176,8 @@ surface rather than silently counted as React parity.
 | `/api/public-invite/tunnel/stop` | POST | exact | `stopPublicInviteTunnel()` | yes | React invite panel can stop the server-owned quick tunnel. |
 | `/api/release-health` | GET | exact | `fetchReleaseHealth()` | yes | React read-only release health catalog. |
 | `/api/release-health/queue` | GET | exact | `fetchReleaseHealthQueue()` | yes | React read-only release-health latest status projection. |
+| `/api/room-friends` | GET | exact | `fetchRoomFriends()` | yes | React home/friends screen reads persisted friends and active-session suggestions. |
+| `/api/room-friends` | POST | exact | `saveRoomFriend()` | yes | React home/friends screen persists people, subscription AI, API, Local, and unknown participants. |
 | `/api/side-chat` | GET | exact | `fetchSideChat()` | yes | React side-chat read/write. |
 | `/api/side-chat` | POST | exact | `postSideChatMessage()` | yes | React side-chat read/write. |
 | `/api/room-invite/create` | POST | exact | `createRoomInvite()` | yes | Host creates invite token for remote client. |
