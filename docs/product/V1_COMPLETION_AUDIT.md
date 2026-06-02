@@ -22,7 +22,7 @@ Run the broad proof set with `python3 -m agentsassemble.cli release-health run`
 
 | # | Requirement | Status | Primary evidence |
 | --- | --- | --- | --- |
-| 1 | React is the default operator surface; `/legacy/` stays fallback | pass + operator-verified | route curl + tests below; browser console errors operator/Codex-verified |
+| 1 | React is the only served room-client frontend; retired legacy paths do not expose vanilla UI | pass + operator-verified | route curl + tests below; browser console errors operator/Codex-verified |
 | 2 | UI polish is clean, not intimidating, no external font/network dependency | pass | `index.css` external-ref grep + `npm run build` |
 | 3 | Scheduler fairness prevents first-speaker anchoring / unfair dominance | pass | `room-benchmark` off-vs-on numbers + fairness tests |
 | 4 | Agent-owned room model; honest persistent-vs-stateless labels | pass | roster-truth/agent-label/live-agent tests + docs test |
@@ -35,26 +35,28 @@ Run the broad proof set with `python3 -m agentsassemble.cli release-health run`
 
 ## Evidence
 
-### 1. React default surface, `/legacy/` fallback
+### 1. React-only room client
 
 ```text
 $ python3 -m agentsassemble.cli gui --port 8902 ...   # then curl:
 /        -> 200  react (id="root")
 /app/    -> 200  react (/app/assets/ refs)
-/legacy/ -> 200  vanilla (<title>AgentsAssemble</title>)
+/legacy/ -> 200  react (id="root")
+/static/base.css -> 404 retired frontend path
 /app/assets/index-DHpFvw0x.js -> 200
 ```
 
-- `agentsassemble/gui.py` `do_GET` `/` serves the React index when
-  `frontend_dist_status(react_app_root).static_available`, else the vanilla
-  console; `/legacy/` always serves vanilla.
+- `agentsassemble/gui.py` `do_GET` `/` and `/legacy/` serve the React index when
+  `frontend_dist_status(react_app_root).static_available`; when the build is
+  missing they report the missing React build instead of serving the old
+  console. `/static/*` and `/legacy/static/*` are retired frontend paths.
 - Tests: `tests/test_gui_server.py::GuiServerTests::test_root_and_app_serve_react_when_build_available`,
-  `::test_root_falls_back_to_vanilla_console_when_react_build_missing`,
+  `::test_root_reports_missing_react_build_without_vanilla_fallback`,
   `::test_react_app_preview_route_reports_missing_dist_without_crashing`.
 - `frontend-info` reports `is_default_entry_point: true`.
 - Independent check: Codex verified the current-code server on port 8899 — `/`
-  and `/app/` serve React root/assets, `/legacy/` serves vanilla, and browser
-  console errors were 0.
+  and `/app/` serve React root/assets, `/legacy/` serves the same React client,
+  old static paths are not served, and browser console errors were 0.
 
 ### 2. UI polish, no external font/network dependency
 
@@ -71,7 +73,8 @@ $ cd frontend && npm run build  # PASS
 - Refinements (`874e6af`): local type stack, calmer grid/scanline, CSS-only
   entrance reveal (`prefers-reduced-motion` guarded), micro-interactions, and an
   accessible `:focus-visible` ring. Component `.tsx` source and backend/API were
-  not touched. Tests: `tests/test_static_ui_assets.py` (44 pass).
+  not touched. Tests: `tests/test_react_ui_contracts.py` covers the current
+  React room-client source contracts.
 
 ### 3. Scheduler fairness / no first-speaker anchoring
 
@@ -167,10 +170,10 @@ $ git ls-files frontend/dist | wc -l     -> 0
 ### 9. Docs
 
 - The default-route flip is documented in `README.md`, `frontend/README.md`,
-  `docs/product/OPERATING_MODEL.md`, `docs/product/legacy-react-parity-matrix.md`,
+  `docs/product/OPERATING_MODEL.md`, `docs/product/react-room-client-integration.md`,
   `docs/product/V0_1_RELEASE_CHECKLIST.md`, and `docs/live-agent-ops.md`.
 - Tests: `tests/test_docs_architecture.py`,
-  `tests/test_legacy_react_parity_inventory.py` (cross-reference + label + route
+  `tests/test_react_room_client_inventory.py` (cross-reference + label + route
   evidence).
 
 ### 10. Verification / commit / push discipline
@@ -178,7 +181,7 @@ $ git ls-files frontend/dist | wc -l     -> 0
 ```text
 $ python3 -m agentsassemble.cli release-health run
 summary: passed 7, failed 0, skipped 0, total 7
-  node_check_static, unittest_static_ui_assets, unittest_docs_architecture,
+  npm_frontend_build, unittest_react_ui_contracts, unittest_docs_architecture,
   unittest_mcp_server, unittest_gui_and_live_agent_smoke (~167s),
   compileall_package, git_diff_check
 $ git status --short   -> clean
@@ -194,7 +197,7 @@ $ git status --short   -> clean
   surfaces (`로비`, `실황`, `작전판`, `아카이브`) are operator-verified, not
   asserted headlessly here. Codex independently confirmed 0 browser console
   errors on the current code (port 8899).
-- A fresh clone serves the vanilla console at `/` until
+- A fresh clone reports the missing React build at `/` until
   `npm --prefix frontend run build` produces `frontend/dist` (gitignored by
   design); after a build, `/` serves React.
 - Benchmark numbers are same-machine regression tripwires, not portable SLAs.

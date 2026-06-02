@@ -77,7 +77,7 @@ class ReleaseHealthCheck:
 
 
 RELEASE_HEALTH_SAFETY_CLASSES = {
-    "frontend_static_syntax",
+    "frontend_react_build",
     "python_unit",
     "python_integration",
     "python_compile",
@@ -88,18 +88,18 @@ RELEASE_HEALTH_SAFETY_CLASSES = {
 
 RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
     ReleaseHealthCheck(
-        id="node_check_static",
-        label="Node syntax check for vanilla static JavaScript",
-        kind="syntax",
-        category="frontend_static",
-        requires=("node",),
-        safety_class="frontend_static_syntax",
+        id="npm_frontend_build",
+        label="React room client build",
+        kind="build",
+        category="frontend_react",
+        requires=("npm",),
+        safety_class="frontend_react_build",
     ),
     ReleaseHealthCheck(
-        id="unittest_static_ui_assets",
-        label="Static UI asset contract tests",
+        id="unittest_react_ui_contracts",
+        label="React room client source contract tests",
         kind="unit",
-        category="frontend_static",
+        category="frontend_react",
         requires=("python3",),
         safety_class="python_unit",
     ),
@@ -530,10 +530,10 @@ def _run_release_health_check(
 
 
 def _commands_for_check(check: ReleaseHealthCheck, *, repo_root: Path) -> list[list[str]]:
-    if check.id == "node_check_static":
-        return [["node", "--check", str(path.relative_to(repo_root))] for path in sorted((repo_root / "agentsassemble" / "static").glob("*.js"))]
-    if check.id == "unittest_static_ui_assets":
-        return [["python3", "-m", "unittest", "tests.test_static_ui_assets", "-v"]]
+    if check.id == "npm_frontend_build":
+        return [["npm", "--prefix", "frontend", "run", "build"]]
+    if check.id == "unittest_react_ui_contracts":
+        return [["python3", "-m", "unittest", "tests.test_react_ui_contracts", "-v"]]
     if check.id == "unittest_docs_architecture":
         return [["python3", "-m", "unittest", "tests.test_docs_architecture", "-v"]]
     if check.id == "unittest_mcp_server":

@@ -76,25 +76,25 @@ Default URL:
 http://127.0.0.1:8765
 ```
 
-`/` serves the React operator console once the frontend is built; until then it
-falls back to the dependency-light vanilla console. The vanilla console always
-stays reachable at `/legacy/`, and the React app is also aliased at `/app/`.
-Build the React default with:
+`/` serves the React Discord-style room client once the frontend is built.
+There is no vanilla fallback; `/legacy/`, `/legacy/static/*`, and `/static/*`
+are retired frontend paths. The same React app is also aliased at `/app/`.
+Build the React client with:
 
 ```bash
 npm --prefix frontend run build
 ```
 
-The `frontend/` React/Vite frontend is the default operator surface and the
-default entry point at `/`; the vanilla console is the dependency-light
-fallback. To see the current launch commands, proxy target, and build status:
+The `frontend/` React/Vite frontend is the default entry point and only room
+client at `/`.
+To see the current launch commands, proxy target, and build status:
 
 ```bash
 python3 -m agentsassemble.cli frontend-info
 ```
 
-The completed default-route flip and its operator-verified browser-parity caveat
-are recorded in `docs/product/legacy-react-parity-matrix.md`.
+The React-only integration and its operator-verified browser-parity caveat are
+recorded in `docs/product/react-room-client-integration.md`.
 
 The GUI has four tabs:
 

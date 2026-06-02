@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { PanelRight } from "lucide-react";
+import { Bell, Pin, Search, Users, PanelRight } from "lucide-react";
 
 /**
  * Discord-style channel header: a fixed bar at the top of the central column
@@ -35,17 +35,28 @@ export default function ChannelHeader({
       )}
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
         {children}
+        <button type="button" className="dc-head-icon" aria-label="알림 설정">
+          <Bell size={17} />
+        </button>
+        <button type="button" className="dc-head-icon" aria-label="고정 메시지">
+          <Pin size={17} />
+        </button>
+        <label className="dc-head-search hidden md:flex">
+          <span className="sr-only">{title} 검색</span>
+          <input type="search" placeholder={`${title} 검색`} />
+          <Search size={14} aria-hidden />
+        </label>
         {onToggleMembers && (
           <button
             type="button"
             onClick={onToggleMembers}
             aria-label="멤버 목록 토글"
             aria-pressed={membersOpen}
-            className={`hidden h-8 w-8 place-items-center rounded hover:bg-sidebar-hover xl:grid ${
+            className={`dc-head-icon hidden xl:grid ${
               membersOpen ? "text-text-primary" : "text-text-muted"
             }`}
           >
-            <PanelRight size={18} />
+            {membersOpen ? <Users size={18} /> : <PanelRight size={18} />}
           </button>
         )}
       </div>

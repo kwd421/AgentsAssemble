@@ -38,10 +38,10 @@ class FrontendRosterTruthTests(unittest.TestCase):
         # with provider/admission truth tucked behind a per-member details
         # instead of duplicated as dashboard clutter in every view.
         self.assertIn("ProviderTruthChips", member)
-        self.assertIn("agentTruthBadges(agent)", member)
-        self.assertIn("limit={6}", member)
+        self.assertIn("agentTruthBadges(entry.agent)", member)
+        self.assertIn("limit={4}", member)
         self.assertNotIn("limit={5}", member)
-        self.assertIn("lastObservedSummary(agent)", member)
+        self.assertIn("lastObservedSummary(entry.agent)", member)
         self.assertIn("providerExecutionLabel(agent)", member)
         self.assertIn("preserve-words", member)
         self.assertNotIn('agent.provider_kind || "resident"', member)

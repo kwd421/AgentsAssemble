@@ -22,15 +22,15 @@ class MatrixRoute:
     react_wired: str
 
 
-class LegacyReactParityInventoryTests(unittest.TestCase):
+class ReactRoomClientInventoryTests(unittest.TestCase):
     def test_gui_routes_match_matrix_appendix(self):
         gui_routes = _parse_gui_routes(ROOT / "agentsassemble" / "gui.py")
-        matrix_routes = {entry.route for entry in _parse_matrix_appendix(ROOT / "docs" / "product" / "legacy-react-parity-matrix.md")}
+        matrix_routes = {entry.route for entry in _parse_matrix_appendix(ROOT / "docs" / "product" / "react-room-client-integration.md")}
 
         self.assertEqual(gui_routes, matrix_routes)
 
     def test_appendix_react_wrappers_resolve_in_api_ts(self):
-        entries = _parse_matrix_appendix(ROOT / "docs" / "product" / "legacy-react-parity-matrix.md")
+        entries = _parse_matrix_appendix(ROOT / "docs" / "product" / "react-room-client-integration.md")
         api_wrappers_by_route = _parse_api_ts_wrappers_by_route(ROOT / "frontend" / "src" / "api.ts")
 
         mismatched_wrappers: list[str] = []
@@ -58,26 +58,27 @@ class LegacyReactParityInventoryTests(unittest.TestCase):
         api_routes = _parse_api_ts_routes(ROOT / "frontend" / "src" / "api.ts")
         react_wired_matrix_routes = {
             entry.route
-            for entry in _parse_matrix_appendix(ROOT / "docs" / "product" / "legacy-react-parity-matrix.md")
+            for entry in _parse_matrix_appendix(ROOT / "docs" / "product" / "react-room-client-integration.md")
             if entry.react_wired.casefold() == "yes"
         }
 
         self.assertEqual(api_routes, react_wired_matrix_routes)
 
     def test_surface_inventory_api_wrapper_names_exist(self):
-        matrix_path = ROOT / "docs" / "product" / "legacy-react-parity-matrix.md"
+        matrix_path = ROOT / "docs" / "product" / "react-room-client-integration.md"
         surface_wrappers = _parse_surface_inventory_api_wrapper_names(matrix_path)
         api_wrappers = _parse_api_ts_exported_functions(ROOT / "frontend" / "src" / "api.ts")
 
         missing = sorted(name for name in surface_wrappers if name not in api_wrappers)
         self.assertEqual([], missing)
 
-    def test_default_and_react_surface_labels_are_documented(self):
-        matrix_text = (ROOT / "docs" / "product" / "legacy-react-parity-matrix.md").read_text(encoding="utf-8")
+    def test_default_and_retired_legacy_surface_labels_are_documented(self):
+        matrix_text = (ROOT / "docs" / "product" / "react-room-client-integration.md").read_text(encoding="utf-8")
 
-        self.assertIn("React operator console (default entry point)", matrix_text)
-        self.assertIn("vanilla fallback", matrix_text)
+        self.assertIn("React build served at `/`", matrix_text)
+        self.assertIn("retired legacy", matrix_text)
         self.assertIn("/legacy/", matrix_text)
+        self.assertIn("/static/*", matrix_text)
 
 
 def _parse_gui_routes(path: Path) -> set[Route]:
@@ -216,6 +217,7 @@ def _api_ts_route_refs(text: str) -> list[tuple[str, str, str]]:
 
 
 def _normalize_api_ts_path(path: str) -> str:
+    path = re.sub(r"\$\{queryString\([^`\"]*\)\}", "", path)
     path = path.split("?", 1)[0]
     path = re.sub(r"\$\{encodeURIComponent\(meetingId\)\}", "{meeting_id}", path)
     return path

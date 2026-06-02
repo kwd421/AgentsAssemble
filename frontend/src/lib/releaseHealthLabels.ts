@@ -7,7 +7,7 @@ import type {
 } from "../api";
 
 export const RELEASE_HEALTH_SAFETY_LABELS: Record<string, string> = {
-  frontend_static_syntax: "정적 JS 문법",
+  frontend_react_build: "React 빌드",
   python_unit: "Python 단위검증",
   python_integration: "통합 검증",
   python_compile: "패키지 컴파일",

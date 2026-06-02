@@ -207,6 +207,8 @@ class LiveAgentRunner:
             self.last_observed_event_id,
             max_chain_depth=self.config.max_chain_depth,
             engagement_mode=engagement_mode,
+            meeting_id=self.config.meeting_id,
+            allow_unscoped_meeting_events=_allow_unscoped_meeting_events(events, self.config.meeting_id),
         )
         if candidate is None:
             self._advance_cursor(events)
@@ -814,8 +816,16 @@ def event_reply_candidate(
     *,
     max_chain_depth: int,
     engagement_mode: str = "always",
+    meeting_id: str = "",
+    allow_unscoped_meeting_events: bool = True,
 ) -> dict[str, object] | None:
     for event in _events_after(events, last_observed_event_id):
+        if not _event_matches_meeting_scope(
+            event,
+            meeting_id,
+            allow_unscoped_meeting_events=allow_unscoped_meeting_events,
+        ):
+            continue
         if _is_self_event(event, agent_id, display_name):
             continue
         if _chain_depth(event) > max_chain_depth:
@@ -826,6 +836,27 @@ def event_reply_candidate(
             continue
         return event
     return None
+
+
+def _allow_unscoped_meeting_events(events: list[dict[str, object]], meeting_id: str) -> bool:
+    if not str(meeting_id or "").strip():
+        return True
+    return not any(str(event.get("flow_meeting_id") or "").strip() for event in events)
+
+
+def _event_matches_meeting_scope(
+    event: dict[str, object],
+    meeting_id: str,
+    *,
+    allow_unscoped_meeting_events: bool = True,
+) -> bool:
+    clean_meeting_id = str(meeting_id or "").strip()
+    if not clean_meeting_id:
+        return True
+    event_meeting_id = str(event.get("flow_meeting_id") or "").strip()
+    if not event_meeting_id:
+        return allow_unscoped_meeting_events
+    return event_meeting_id == clean_meeting_id
 
 
 def flow_event_candidate(

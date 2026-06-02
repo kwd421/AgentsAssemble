@@ -8,8 +8,10 @@ rail, a channel sidebar, a central message column, and a compact member list.
 Show only what a participant or watcher needs; keep technical/operator truth in
 details, tooltips, and the admin surface.
 
-This is an experiment branch (`codex/kiro-discord-ui`). It is inspired by
-Discord, not branded as Discord.
+This React Discord-style room client is the canonical room-client frontend. It
+is inspired by Discord, not branded as Discord. It replaces the earlier
+operator-console and retired vanilla GUI surfaces with one concrete React/Vite
+room-client surface.
 
 ## Accepted Direction
 
@@ -47,8 +49,8 @@ Shell (`App.tsx`):
 - **Server rail** (72px): room/home mark → lobby, the room button, and a
   settings gear (admin) pinned to the bottom.
 - **Channel sidebar** (240px): room name + live status header; the `#` channel
-  list; a footer user area with local presence, backend status, the
-  `신형 React room client` marker, and the `구형 콘솔` (`/legacy/`) link.
+  list; a footer user area with local presence, backend status, and profile
+  controls. No legacy badge, fallback link, or second operator console is shown.
 - **Central column**: each channel renders a `ChannelHeader` (name, topic,
   member-list toggle) + an internally scrolling body + a sticky composer where
   the channel is writable.
@@ -104,6 +106,7 @@ here and are not claimed complete. The UI stays honest rather than implying them
 - No dashboard clutter strings on default surfaces (live status, 핵심 포인트,
   빠른 작업, lifecycle exposition, room insights, status meters).
 - Side-chat reads as unofficial; attachments expose public metadata only.
-- Tests in `tests/test_static_ui_assets.py` and `tests/test_frontend_*.py` lock
-  these invariants; the vanilla console (`/legacy/`) is unchanged.
+- Tests in `tests/test_react_ui_contracts.py` and `tests/test_frontend_*.py` lock
+  these invariants; server route tests ensure retired legacy paths no longer
+  serve the old console.
 - Browser screenshots inspected for desktop and narrow widths.

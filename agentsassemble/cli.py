@@ -1593,23 +1593,21 @@ def frontend_info_payload(
     backend_url = str(backend or "http://127.0.0.1:8765").rstrip("/") or "http://127.0.0.1:8765"
     frontend_port = int(port)
     frontend_url = f"http://127.0.0.1:{frontend_port}"
-    legacy_console_path = "/legacy/"
-    legacy_console_url = backend_url + legacy_console_path
     react_app_path = "/app/"
     react_app_url = backend_url + react_app_path
-    parity_matrix_doc = "docs/product/legacy-react-parity-matrix.md"
+    integration_doc = "docs/product/react-room-client-integration.md"
     backend_parts = urllib.parse.urlparse(backend_url)
     backend_host = backend_parts.hostname or "127.0.0.1"
     backend_port = backend_parts.port or 8765
     dist_status = frontend_dist_status(frontend_dist_root)
-    recommended_ui_kind = "react" if dist_status.static_available else "legacy_fallback"
+    recommended_ui_kind = "react" if dist_status.static_available else "react_build_missing"
     recommended_ui_url = backend_url + "/"
-    recommended_ui_label = "React operator console" if dist_status.static_available else "Legacy vanilla console"
-    default_console_kind = "react" if dist_status.static_available else "legacy_vanilla"
+    recommended_ui_label = "React room client" if dist_status.static_available else "React room client build missing"
+    default_console_kind = "react" if dist_status.static_available else "react_build_missing"
     default_console_label = (
-        "React operator console (default entry point)"
+        "React room client (default entry point at /)"
         if dist_status.static_available
-        else "Legacy vanilla console (default until React build exists)"
+        else "React room client (build required)"
     )
     return {
         "frontend_dir": "frontend",
@@ -1617,15 +1615,13 @@ def frontend_info_payload(
         "frontend_dev_port": frontend_port,
         "frontend_dev_proxy_target": backend_url,
         "backend_url": backend_url,
-        "legacy_console_url": legacy_console_url,
-        "legacy_console_path": legacy_console_path,
-        "legacy_console_namespace_url": legacy_console_url,
+        "retired_legacy_paths": ["/legacy/", "/legacy/static/*", "/static/*"],
         "default_console_kind": default_console_kind,
         "default_console_label": default_console_label,
         "react_app_path": react_app_path,
         "react_app_url": react_app_url,
         "react_app_kind": "react_default",
-        "react_app_label": "React operator console (default at /, alias at /app/)",
+        "react_app_label": "React room client (default at /, alias at /app/)",
         "recommended_ui_kind": recommended_ui_kind,
         "recommended_ui_url": recommended_ui_url,
         "recommended_ui_label": recommended_ui_label,
@@ -1635,7 +1631,7 @@ def frontend_info_payload(
         "app_assets_dir_present": dist_status.assets_dir_present,
         "app_referenced_assets_present": dist_status.referenced_assets_present,
         "app_build_status": dist_status.build_status,
-        "parity_matrix_doc": parity_matrix_doc,
+        "integration_doc": integration_doc,
         "is_default_entry_point": True,
         "launch_commands": [
             f"python3 -m agentsassemble.cli gui --host {backend_host} --port {backend_port} --output-root .agentsassemble",
@@ -1643,12 +1639,12 @@ def frontend_info_payload(
             "cd frontend && AGENTSASSEMBLE_API_TARGET=" + backend_url + " npm run dev",
         ],
         "notes": [
-            "assemble gui serves the React operator console at / once npm --prefix frontend run build exists.",
-            "Until that build exists, / falls back to the dependency-light vanilla console.",
-            "The vanilla console stays reachable at /legacy/ as the tested fallback.",
+            "assemble gui serves only the React room client at / once npm --prefix frontend run build exists.",
+            "Until that build exists, /, /app/, and retired legacy UI routes report that the React build is missing.",
+            "The retired vanilla console is not served as a fallback.",
             "The React/Vite frontend reads existing HTTP/SSE state and does not start provider CLIs.",
             "The Vite proxy should target the same backend URL shown here unless AGENTSASSEMBLE_API_TARGET overrides it.",
-            f"Browser parity for the default React surface is operator-verified; see {parity_matrix_doc}.",
+            f"Browser parity for the default React surface is operator-verified; see {integration_doc}.",
         ],
     }
 
@@ -1660,19 +1656,19 @@ def run_frontend_info_command(args: argparse.Namespace) -> int:
         return 0
     print("AgentsAssemble frontend launch info")
     print(f"- {payload['default_console_label']}: {payload['recommended_ui_url']}")
-    print(f"- Legacy vanilla console: {payload['legacy_console_namespace_url']}")
     print(f"- {payload['react_app_label']}: {payload['react_app_url']}")
     print(f"- Recommended current UI: {payload['recommended_ui_url']} ({payload['recommended_ui_label']})")
     print(f"- React/Vite opt-in UI: {payload['frontend_url']}")
     print(f"- Vite API proxy target: {payload['frontend_dev_proxy_target']}")
     print(f"- Built React static available: {payload['app_static_available']} ({payload['app_dist_path']})")
     print(f"- React build status: {payload['app_build_status']}")
-    print(f"- Parity matrix: {payload['parity_matrix_doc']}")
-    print(f"- Default surface kind: {payload['default_console_kind']} (vanilla fallback at /legacy/)")
+    print(f"- Integration doc: {payload['integration_doc']}")
+    print(f"- Default surface kind: {payload['default_console_kind']} (React-only)")
+    print(f"- Retired legacy paths: {', '.join(payload['retired_legacy_paths'])}")
     print("- Commands:")
     for command in payload["launch_commands"]:
         print(f"  {command}")
-    print("- Note: React/Vite is the default entry point at / once built; /legacy/ stays vanilla.")
+    print("- Note: React/Vite is the only room frontend at / once built; no vanilla fallback is served.")
     return 0
 
 

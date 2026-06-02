@@ -33,7 +33,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("docs/product/OPERATING_MODEL.md", agents)
         self.assertIn("docs/product/OPERATING_MODEL.md", roadmap)
 
-    def test_frontend_launch_docs_distinguish_react_default_from_legacy_fallback(self):
+    def test_frontend_launch_docs_record_react_only_room_client(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         live_agent_ops = (ROOT / "docs" / "live-agent-ops.md").read_text(encoding="utf-8")
         frontend_readme = (ROOT / "frontend" / "README.md").read_text(encoding="utf-8")
@@ -41,21 +41,25 @@ class DocsArchitectureTests(unittest.TestCase):
         vite_config = (ROOT / "frontend" / "vite.config.ts").read_text(encoding="utf-8")
         combined = "\n".join([readme, live_agent_ops, frontend_readme, frontend_design])
         normalized_ops = " ".join(live_agent_ops.split())
+        normalized_frontend_design = " ".join(frontend_design.split())
 
-        self.assertIn("React operator console", combined)
+        self.assertIn("React Discord-style room client", combined)
+        self.assertIn("React room client", combined)
         self.assertIn("React/Vite frontend", combined)
-        self.assertIn("vanilla fallback", combined)
         self.assertIn("python3 -m agentsassemble.cli frontend-info", combined)
         self.assertIn("http://127.0.0.1:8765", frontend_readme)
         self.assertIn("/legacy/", frontend_readme)
-        self.assertIn("legacy console namespace", combined)
+        self.assertIn("retired frontend paths", combined)
+        self.assertNotIn("Legacy vanilla console", combined)
+        self.assertNotIn("legacy console namespace", combined)
         self.assertIn("default entry point", combined)
         self.assertIn("http://127.0.0.1:8765", vite_config)
         self.assertIn("does not start a dev server, GUI backend, or provider CLI", normalized_ops)
-        self.assertIn("aspirational React/Vite direction", frontend_design)
+        self.assertIn("canonical room-client frontend", normalized_frontend_design)
+        self.assertIn("React Discord-style room client", normalized_frontend_design)
 
-    def test_legacy_react_parity_matrix_records_default_flip_gate(self):
-        matrix_path = "docs/product/legacy-react-parity-matrix.md"
+    def test_react_room_client_integration_matrix_records_retired_legacy_gate(self):
+        matrix_path = "docs/product/react-room-client-integration.md"
         matrix_file = ROOT / matrix_path
         matrix = matrix_file.read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -67,11 +71,11 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertTrue(matrix_file.exists())
         for heading in (
             "## Purpose And Non-Goals",
-            "## Default-Flip Preconditions",
+            "## React-Only Preconditions",
             "## Surface Inventory",
             "## API/SSE Inventory Appendix",
             "## Room-Event Contract Signals",
-            "## Legacy Fallback Status",
+            "## React-Only Route Status",
             "## Verification Index",
             "## Explicit Non-Goals",
         ):
@@ -81,16 +85,19 @@ class DocsArchitectureTests(unittest.TestCase):
             "is_default_entry_point",
             "API/SSE parity",
             "room-event contracts",
-            "legacy fallback",
+            "retired legacy",
+            "React-Only",
             "operator-verified",
-            "tests/test_legacy_react_parity_inventory.py",
+            "tests/test_react_room_client_inventory.py",
             "| Full REST/SSE inventory | `agentsassemble/gui.py` | `frontend/src/api.ts` | verified |",
-            "tests/test_gui_server.py::test_root_falls_back_to_vanilla_console_when_react_build_missing",
+            "tests/test_gui_server.py::test_root_reports_missing_react_build_without_vanilla_fallback",
         ):
             self.assertIn(required, matrix)
+        self.assertNotIn("tests/test_legacy_react_parity_inventory.py", matrix)
+        self.assertNotIn("Legacy Fallback Status", matrix)
         for doc in (readme, live_agent_ops, frontend_readme, operating_model, release_checklist):
             self.assertIn(matrix_path, doc)
-        self.assertIn("React/Vite/Tailwind visual redesign", release_checklist)
+        self.assertIn("React/Vite/Tailwind redesigns outside the canonical room client", release_checklist)
 
     def test_operating_model_records_room_first_agent_owned_context(self):
         operating_model = (ROOT / "docs" / "product" / "OPERATING_MODEL.md").read_text(encoding="utf-8")
@@ -200,7 +207,7 @@ class DocsArchitectureTests(unittest.TestCase):
         self.assertIn("finalize without invented replies", doc)
         self.assertIn("read transcript, decision, shared memory, and return packet artifacts", doc)
         self.assertIn("Do not treat provider discovery as execution", doc)
-        self.assertIn("Do not add the Trello/Jira roadmap board to the vanilla GUI", doc)
+        self.assertIn("Do not add the Trello/Jira roadmap board as clutter in the current room client", normalized)
         self.assertIn("local stdio MCP room tooling", normalized)
         self.assertIn("local MCP participant tools", normalized)
         self.assertIn("The local MCP participant profile exposes only register, heartbeat, wait_next", normalized)

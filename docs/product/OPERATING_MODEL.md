@@ -84,23 +84,25 @@ report.
   loop, remote bridge, or stateless prompt call.
 - frontend polish is deferred until the backend state and data contracts are
   stable enough for another AI or human designer to refine.
-- The React/Vite operator console is now the default GUI surface at `/`, served
-  by the Python GUI from `frontend/dist` when that build exists.
-- The dependency-light vanilla HTML/CSS/JS console is the fallback: `/` serves
-  it when no React build exists, and it stays reachable at `/legacy/`.
-- The default-route flip required and now has API/SSE parity, stable room-event
-  contracts, and a tested legacy fallback; browser-rendered parity for the four
-  React surfaces stays operator-verified after each build, not asserted
+- The React/Vite Discord-style room client is the only GUI frontend surface:
+  `/` serves it from `frontend/dist` when that build exists, and `/app/` is the
+  same React client alias.
+- The dependency-light vanilla HTML/CSS/JS console is retired from the served
+  GUI. `/legacy/`, `/legacy/static/*`, and `/static/*` must not expose the old
+  console as a fallback.
+- The React-only route required and now has API/SSE parity, stable room-event
+  contracts, and a tested retired-legacy boundary; browser-rendered parity for
+  the React surfaces stays operator-verified after each build, not asserted
   headlessly.
 - `frontend-info` reports `is_default_entry_point: true`; the React index served
   at `/` and the `/app/` alias rewrites `/assets/*` to the guarded
   `/app/assets/*` path. Provider startup approval, official records, and
   Work/Play separation are unchanged by the route flip.
 - The detailed roadmap board is a later product-UI feature, not another panel
-  to bolt onto the current vanilla console. When the React/Vite frontend track
-  starts, add a dedicated roadmap view that can show long-term epics and
-  version/milestone cards in a Trello/Jira-like board with clear planned,
-  in-progress, review, and completed states.
+  to bolt onto legacy GUI code. When that frontend track starts, add a dedicated
+  roadmap view that can show long-term epics and version/milestone cards in a
+  Trello/Jira-like board with clear planned, in-progress, review, and completed
+  states.
 
 ## Context Model
 
@@ -226,7 +228,7 @@ controls that start checks from the browser.
 
 ## GUI Text And Refresh Policy
 
-The vanilla GUI should optimize for trustworthy operations before polish:
+The React room client should optimize for trustworthy operations before polish:
 
 - The Lobby should act like a staging or pick room: participant readiness,
   admission state, the current meeting id, and the basic Play Mode start/stop
@@ -322,7 +324,7 @@ with a Trello/Jira-like shape:
 - completed work visible but de-emphasized.
 - current and next work easy to find without opening raw markdown.
 
-Until then, do not add this as more vanilla GUI clutter. Keep roadmap source of
+Until then, do not add this as more room-client clutter. Keep roadmap source of
 truth in `docs/roadmap.md` and product memory in this file.
 
 ## What To Build Next
@@ -351,8 +353,8 @@ Near-term work should favor backend contracts over visual polish:
 - `docs/roadmap.md` tracks status and priority.
 - `docs/product/V0_1_RELEASE_CHECKLIST.md` owns the current release-hardening
   bar for the core usable flow.
-- `docs/product/legacy-react-parity-matrix.md` owns the React default-route
-  parity evidence and fallback gate.
+- `docs/product/react-room-client-integration.md` owns the React-only room
+  client integration evidence and retired-legacy gate.
 - `docs/live-session-room-model.md` owns room semantics.
 - `docs/provider-architecture.md` owns provider and adapter boundaries.
 - `docs/live-agent-ops.md` owns operator commands, readiness, and verification.

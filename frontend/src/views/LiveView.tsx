@@ -31,6 +31,7 @@ import {
 } from "../lib/liveTimelineState";
 import LobbyAttachments from "./components/LobbyAttachments";
 import ChannelHeader from "./components/ChannelHeader";
+import DiscordText from "./components/DiscordText";
 
 function formatTime(iso: string): string {
   try {
@@ -77,7 +78,7 @@ function FlowMessage({ event }: { event: LobbyEvent }) {
         </p>
         {event.message && (
           <p className="text-[14px] leading-relaxed text-text-secondary preserve-words">
-            {event.message}
+            <DiscordText text={event.message} />
           </p>
         )}
         <LobbyAttachments attachments={event.attachments} />
@@ -100,7 +101,9 @@ function SideChatMessage({ event }: { event: SideChatEvent }) {
           <span className="rounded bg-idle/15 px-1 py-0.5 text-[9px] font-black text-idle">사이드챗</span>
           <span className="text-[10px] text-text-muted">{formatTime(event.created_at)}</span>
         </p>
-        <p className="text-[13px] leading-relaxed text-text-secondary preserve-words">{event.message}</p>
+        <p className="text-[13px] leading-relaxed text-text-secondary preserve-words">
+          <DiscordText text={event.message || ""} />
+        </p>
       </div>
     </div>
   );

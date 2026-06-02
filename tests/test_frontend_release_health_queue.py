@@ -37,7 +37,7 @@ class FrontendReleaseHealthQueueTests(unittest.TestCase):
             const labels = await import(pathToFileURL(modulePath).href);
 
             const expectedSafetyClasses = [
-              "frontend_static_syntax",
+              "frontend_react_build",
               "python_unit",
               "python_integration",
               "python_compile",
@@ -85,7 +85,7 @@ class FrontendReleaseHealthQueueTests(unittest.TestCase):
                   optional: false,
                   default_run: true,
                   order: 1,
-                  safety_class: "frontend_static_syntax",
+                  safety_class: "frontend_react_build",
                 },
               ],
             };

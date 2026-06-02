@@ -12,9 +12,12 @@ import {
   type LobbyEvent,
   type MafiaGame,
 } from "../api";
+import type { RoomDockItem } from "../App";
 import LobbyAttachments from "./components/LobbyAttachments";
 import LobbyComposer from "./components/LobbyComposer";
 import ChannelHeader from "./components/ChannelHeader";
+import DiscordText from "./components/DiscordText";
+import type { RoomAppearance } from "../lib/roomAppearance";
 
 const ROOM_MODES = [
   { id: "council", label: "Council · 의사결정" },
@@ -49,8 +52,8 @@ function mafiaPlayersFromAgents(agents: LiveAgent[]) {
 function MessageRow({ event }: { event: LobbyEvent }) {
   const systemLike = event.kind === "system" || event.kind === "flow_event";
   return (
-    <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-3 py-1.5 lg:px-4">
-      <span className={`hex-badge mt-0.5 h-10 w-10 ${systemLike ? "" : "gold"}`}>
+    <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-4 py-1.5">
+      <span className={`dc-message-avatar mt-0.5 ${systemLike ? "system" : "agent"}`}>
         {systemLike ? <Zap size={16} /> : <Bot size={16} />}
       </span>
       <div className="min-w-0">
@@ -61,7 +64,7 @@ function MessageRow({ event }: { event: LobbyEvent }) {
           <span className="shrink-0 text-[11px] text-text-muted">{timeLabel(event.created_at)}</span>
         </p>
         <p className="text-[14px] leading-relaxed text-text-secondary preserve-words">
-          {event.message}
+          <DiscordText text={event.message || ""} />
         </p>
         <LobbyAttachments attachments={event.attachments} />
       </div>
@@ -70,26 +73,32 @@ function MessageRow({ event }: { event: LobbyEvent }) {
 }
 
 export default function LobbyView({
+  activeRoom,
   flow,
   agents,
   refreshFlow,
   onMafiaStarted,
   onFlowStarted,
+  canManageRoom = true,
   membersOpen,
   onToggleMembers,
+  appearance,
 }: {
+  activeRoom: RoomDockItem;
   flow: FlowState;
   agents: LiveAgent[];
   refreshFlow: () => void;
   onMafiaStarted: (game: MafiaGame) => void;
   onFlowStarted: () => void;
+  canManageRoom?: boolean;
   membersOpen?: boolean;
   onToggleMembers?: () => void;
+  appearance?: RoomAppearance;
 }) {
   const [events, setEvents] = useState<LobbyEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [meetingId, setMeetingId] = useState(flow.meeting_id || "resident-m1");
-  const [topic, setTopic] = useState(flow.topic || "");
+  const [meetingId, setMeetingId] = useState(activeRoom.meetingId);
+  const [topic, setTopic] = useState(activeRoom.topic || "");
   const [selectedMode, setSelectedMode] = useState("council");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -98,12 +107,37 @@ export default function LobbyView({
   const readyAgents = agents.filter(
     (agent) => agent.status === "online" || agent.status === "working"
   );
-  const visibleEvents = useMemo(() => events, [events]);
+  const mentionables = useMemo(
+    () => ["나", ...agents.map((agent) => agent.display_name || agent.agent_id).filter(Boolean)],
+    [agents]
+  );
+  const visibleEvents = useMemo(() => {
+    if (!activeRoom.createdAt) return events;
+    const roomStartedAt = Date.parse(activeRoom.createdAt);
+    if (!Number.isFinite(roomStartedAt)) return events;
+    return events.filter((event) => {
+      if (event.flow_meeting_id && event.flow_meeting_id !== activeRoom.meetingId) {
+        return false;
+      }
+      if (event.flow_meeting_id === activeRoom.meetingId) {
+        return true;
+      }
+      const eventTime = Date.parse(event.created_at || "");
+      return Number.isFinite(eventTime) && eventTime >= roomStartedAt;
+    });
+  }, [activeRoom.createdAt, activeRoom.meetingId, events]);
+
+  useEffect(() => {
+    setMeetingId(activeRoom.meetingId);
+    setTopic(activeRoom.topic || "");
+  }, [activeRoom.id, activeRoom.meetingId, activeRoom.topic]);
 
   useEffect(() => {
     let cancelled = false;
+    setEvents([]);
+    setLoaded(false);
     function refreshLobby() {
-      fetchLobby()
+      fetchLobby(activeRoom.meetingId)
         .then((data) => {
           if (cancelled) return;
           const nextEvents = Array.isArray(data.events) ? data.events : [];
@@ -120,7 +154,7 @@ export default function LobbyView({
       cancelled = true;
       window.clearInterval(refreshId);
     };
-  }, []);
+  }, [activeRoom.meetingId]);
 
   const handleSSE = useCallback((incoming: LobbyEvent[]) => {
     setEvents((previous) => {
@@ -133,7 +167,7 @@ export default function LobbyView({
     });
   }, []);
 
-  useEffect(() => subscribeLobby(handleSSE), [handleSSE]);
+  useEffect(() => subscribeLobby(handleSSE, undefined, activeRoom.meetingId), [activeRoom.meetingId, handleSSE]);
 
   const handleLobbyPosted = useCallback((postedEvents: LobbyEvent[]) => {
     setEvents((previous) => mergeLobbyEvents(previous, postedEvents));
@@ -202,80 +236,113 @@ export default function LobbyView({
         onToggleMembers={onToggleMembers}
       />
 
-      {/* Minimal meeting/status selector + start/stop. */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2 lg:px-4">
+      <div className="dc-room-status-line">
         {error && (
-          <p className="w-full rounded border border-danger/40 bg-danger/10 px-2.5 py-1.5 text-[12px] font-semibold text-danger preserve-words">
+          <p className="dc-room-error preserve-words">
             {error}
           </p>
         )}
-        {isRunning ? (
-          <>
-            <span className="flex items-center gap-1.5 text-[13px] font-bold text-online">
+        {!canManageRoom ? (
+          <div className="dc-room-status-chip">
+            <span className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${isRunning ? "bg-online live-pulse" : "bg-idle"}`} />
+              초대받은 방
+            </span>
+            <span className="min-w-0 truncate text-text-muted preserve-words">
+              {isRunning ? flow.topic || flow.meeting_id || "진행 중" : "채팅과 읽기만 가능합니다"}
+            </span>
+          </div>
+        ) : isRunning ? (
+          <div className="dc-room-status-chip">
+            <span className="flex items-center gap-1.5 font-bold text-online">
               <span className="h-2 w-2 rounded-full bg-online live-pulse" />
               진행 중
             </span>
-            <span className="min-w-0 truncate text-[13px] text-text-secondary preserve-words">
+            <span className="min-w-0 truncate text-text-secondary preserve-words">
               {flow.topic || flow.meeting_id || "Play Mode"}
             </span>
             {flow.remaining_seconds != null && (
-              <span className="text-[12px] text-text-muted">{Math.ceil(flow.remaining_seconds)}초</span>
+              <span className="text-text-muted">{Math.ceil(flow.remaining_seconds)}초</span>
             )}
             <button
               type="button"
               onClick={handleStop}
               disabled={busy}
-              className="ops-button ml-auto flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-bold disabled:opacity-50"
+              className="dc-room-mini-button ml-auto"
             >
               <Square size={14} />
               중지
             </button>
-          </>
+          </div>
         ) : (
-          <>
-            <input
-              type="text"
-              value={meetingId}
-              onChange={(event) => setMeetingId(event.target.value)}
-              className="ops-input w-36 rounded px-2.5 py-1.5 text-[13px]"
-              placeholder="회의 ID"
-              aria-label="회의 ID"
-            />
-            <input
-              type="text"
-              value={topic}
-              onChange={(event) => setTopic(event.target.value)}
-              className="ops-input min-w-0 flex-1 rounded px-2.5 py-1.5 text-[13px]"
-              placeholder="주제 (선택)"
-              aria-label="주제"
-            />
-            <select
-              value={selectedMode}
-              onChange={(event) => setSelectedMode(event.target.value)}
-              className="ops-input rounded px-2 py-1.5 text-[13px]"
-              aria-label="모드 선택"
-            >
-              {ROOM_MODES.map((mode) => (
-                <option key={mode.id} value={mode.id}>
-                  {mode.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={handleStart}
-              disabled={busy}
-              className="ops-cta flex items-center gap-1.5 px-3.5 py-1.5 text-[13px] disabled:opacity-50"
-            >
-              <Zap size={15} />
-              {selectedMode === "mafia" ? "마피아 시작" : "회의 시작"}
-            </button>
-          </>
+          <details className="dc-room-controls">
+            <summary>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-idle" />
+                방 설정
+              </span>
+              <span className="truncate text-text-muted preserve-words">
+                {activeRoom.topic || "준비 중"}
+              </span>
+            </summary>
+            <div className="dc-room-controls-body">
+              <input
+                type="text"
+                value={meetingId}
+                onChange={(event) => setMeetingId(event.target.value)}
+                className="ops-input dc-room-control-input short"
+                placeholder="회의 ID"
+                aria-label="회의 ID"
+              />
+              <input
+                type="text"
+                value={topic}
+                onChange={(event) => setTopic(event.target.value)}
+                className="ops-input dc-room-control-input"
+                placeholder="주제 (선택)"
+                aria-label="주제"
+              />
+              <select
+                value={selectedMode}
+                onChange={(event) => setSelectedMode(event.target.value)}
+                className="ops-input dc-room-control-select"
+                aria-label="모드 선택"
+              >
+                {ROOM_MODES.map((mode) => (
+                  <option key={mode.id} value={mode.id}>
+                    {mode.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleStart}
+                disabled={busy}
+                className="ops-cta dc-room-start-button"
+              >
+                <Zap size={15} />
+                {selectedMode === "mafia" ? "마피아 시작" : "회의 시작"}
+              </button>
+            </div>
+          </details>
         )}
       </div>
 
-      {/* Messages */}
-      <div className="min-h-0 flex-1 overflow-y-auto py-3 chat-scroll">
+      <div className="min-h-0 flex-1 overflow-y-auto py-4 chat-scroll">
+        <section className="dc-channel-intro px-4 pb-5 pt-2">
+          <span className="dc-channel-intro-icon" data-has-image={Boolean(appearance?.iconImage)}>
+            {appearance?.iconImage ? "" : <Hash size={26} />}
+          </span>
+          <h2 className="mt-3 text-[28px] font-black leading-tight text-text-primary preserve-words">
+            {activeRoom.label}
+          </h2>
+          <p className="mt-1 max-w-2xl text-[14px] leading-relaxed text-text-muted preserve-words">
+            {activeRoom.topic || "이 방의 첫 메시지를 남겨 보세요."}
+          </p>
+        </section>
+        <div className="dc-date-divider px-4" aria-hidden>
+          <span>오늘</span>
+        </div>
         {!loaded ? (
           <p className="px-4 text-[13px] text-text-muted">불러오는 중...</p>
         ) : visibleEvents.length === 0 ? (
@@ -288,8 +355,12 @@ export default function LobbyView({
       </div>
 
       {/* Composer */}
-      <div className="shrink-0 px-3 pb-3 lg:px-4">
-        <LobbyComposer onPosted={handleLobbyPosted} />
+      <div className="shrink-0 px-4 pb-5">
+        <LobbyComposer
+          meetingId={activeRoom.meetingId}
+          onPosted={handleLobbyPosted}
+          mentionables={mentionables}
+        />
       </div>
     </div>
   );

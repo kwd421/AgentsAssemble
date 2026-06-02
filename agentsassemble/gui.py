@@ -116,7 +116,10 @@ from agentsassemble.frontend_runtime import (
     frontend_dist_status,
 )
 from agentsassemble.release_health import release_health_catalog_payload, release_health_queue_payload
+from agentsassemble.room_friends import room_friends_payload, upsert_room_friend
+from agentsassemble.room_settings import room_settings_payload, update_room_settings
 from agentsassemble.meeting_events import (
+    FLOW_METADATA_KEYS,
     ROOM_TOPIC_LIMIT,
     append_live_event,
     append_lobby_event_to_file,
@@ -151,14 +154,24 @@ REAL_SESSION_SMOKE_CONFIG_REQUIRED_MESSAGE = (
 REAL_SESSION_SMOKE_PROBE_REDACTION = "[redacted real session smoke probe]"
 
 
-def _safe_live_agent_flow_agents(output_root: Path) -> list[dict[str, object]]:
+def _safe_live_agent_flow_agents(output_root: Path, *, meeting_id: str = "") -> list[dict[str, object]]:
     payload = _live_agent_roster_with_admission_evidence(
         output_root,
         {"agents": read_live_agents(output_root)},
     )
     safe_payload = safe_live_agent_roster_payload(payload)
     agents = safe_payload.get("agents")
-    return agents if isinstance(agents, list) else []
+    if not isinstance(agents, list):
+        return []
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    if not clean_meeting_id:
+        return agents
+    return [
+        agent
+        for agent in agents
+        if isinstance(agent, dict)
+        and clean_lobby_text(agent.get("meeting_id"), limit=128) == clean_meeting_id
+    ]
 
 
 class LiveAgentFlowSupervisor:
@@ -241,14 +254,15 @@ class LiveAgentFlowSupervisor:
             return self.status(meeting_id=meeting_id)
 
     def status(self, *, meeting_id: str = "") -> dict[str, object]:
-        events = read_lobby(self.output_root)
+        clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+        events = read_lobby(self.output_root, meeting_id=clean_meeting_id)
         with self._lock:
-            run = self._selected_run(meeting_id)
+            run = self._selected_run(clean_meeting_id)
             if run is None:
-                flow = _restored_flow_state(events, meeting_id=meeting_id)
+                flow = _restored_flow_state(events, meeting_id=clean_meeting_id)
                 return {
                     "flow": flow or {"status": "idle"},
-                    "agents": _safe_live_agent_flow_agents(self.output_root),
+                    "agents": _safe_live_agent_flow_agents(self.output_root, meeting_id=clean_meeting_id),
                     "events": events,
                     "flow_events": _flow_events_for_state(events, flow),
                 }
@@ -256,7 +270,7 @@ class LiveAgentFlowSupervisor:
             flow = self._public_state(run)
             return {
                 "flow": flow,
-                "agents": _safe_live_agent_flow_agents(self.output_root),
+                "agents": _safe_live_agent_flow_agents(self.output_root, meeting_id=clean_meeting_id),
                 "events": events,
                 "flow_events": _flow_events_for_state(events, flow),
             }
@@ -276,11 +290,11 @@ class LiveAgentFlowSupervisor:
         with self._lock:
             if self._public_state(run).get("status") == "running":
                 self._finish_locked(run, "stopped")
-            events = read_lobby(self.output_root)
+            events = read_lobby(self.output_root, meeting_id=meeting_id)
             flow = self._public_state(run)
             return {
                 "flow": flow,
-                "agents": _safe_live_agent_flow_agents(self.output_root),
+                "agents": _safe_live_agent_flow_agents(self.output_root, meeting_id=meeting_id),
                 "events": events,
                 "flow_events": _flow_events_for_state(events, flow),
             }
@@ -1468,8 +1482,22 @@ def _read_optional(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
-def read_lobby(output_root: Path, limit: int | None = 80) -> list[dict[str, object]]:
-    return read_lobby_events(output_root / "lobby.jsonl", limit=limit)
+def read_lobby(output_root: Path, limit: int | None = 80, *, meeting_id: str = "") -> list[dict[str, object]]:
+    events = read_lobby_events(output_root / "lobby.jsonl", limit=limit)
+    return _filter_lobby_events_for_meeting(events, meeting_id=meeting_id)
+
+
+def _filter_lobby_events_for_meeting(
+    events: list[dict[str, object]], *, meeting_id: str = ""
+) -> list[dict[str, object]]:
+    clean_meeting_id = clean_lobby_text(meeting_id, limit=128)
+    if not clean_meeting_id:
+        return events
+    return [
+        event
+        for event in events
+        if clean_lobby_text(event.get("flow_meeting_id"), limit=128) == clean_meeting_id
+    ]
 
 
 def append_lobby_event(
@@ -1489,11 +1517,19 @@ def append_lobby_event(
 
 
 def lobby_payload_with_attachments(output_root: Path, payload: dict[str, object]) -> dict[str, object]:
-    if "attachments" not in payload:
-        return payload
     event = dict(payload)
-    event["attachments"] = normalize_attachment_references(output_root, event.get("attachments"))
+    if "flow_meeting_id" in event:
+        event["flow_meeting_id"] = clean_lobby_text(event.get("flow_meeting_id"), limit=128)
+    if "attachments" in event:
+        event["attachments"] = normalize_attachment_references(output_root, event.get("attachments"))
     return event
+
+
+def _public_lobby_allows_room_scope(payload: dict[str, object]) -> bool:
+    if not clean_lobby_text(payload.get("flow_meeting_id"), limit=128):
+        return False
+    control_keys = FLOW_METADATA_KEYS - {"flow_meeting_id"}
+    return not any(clean_lobby_text(payload.get(key), limit=128) for key in control_keys)
 
 
 def read_side_chat(output_root: Path, limit: int = 120) -> list[dict[str, object]]:
@@ -1536,6 +1572,7 @@ def _stream_snapshot_payload(
 ) -> dict[str, object]:
     if stream == "lobby":
         events = read_lobby_events_after(output_root / "lobby.jsonl", last_event_id)
+        events = _filter_lobby_events_for_meeting(events, meeting_id=meeting_id or "")
         return {"stream": "lobby", "events": events}
     if stream == "side_chat":
         events = read_side_chat_events_after(output_root / "side_chat.jsonl", last_event_id)
@@ -2863,8 +2900,9 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
             )
             return {"agent": updated_agent, "event": existing_event, "events": read_lobby(output_root)}
         flow_metadata = _live_agent_lobby_flow_metadata(payload)
-        if flow_metadata.get("flow_id"):
-            flow_metadata["flow_meeting_id"] = clean_lobby_text(agent.get("meeting_id"), limit=128)
+        agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
+        if agent_meeting_id and not clean_lobby_text(flow_metadata.get("flow_meeting_id"), limit=128):
+            flow_metadata["flow_meeting_id"] = agent_meeting_id
         event = append_lobby_event(
             output_root,
             {
@@ -7377,12 +7415,11 @@ def _print_gui_startup_banner(server_url: str, *, frontend_dist_root: Path | Non
     dist_status = frontend_dist_status(frontend_dist_root)
     print(f"AgentsAssemble GUI: {base_url}")
     if dist_status.static_available:
-        print(f"- Operator console (default): {base_url}/ (React)")
-        print(f"- React console alias: {base_url}/app/")
+        print(f"- Room client (default): {base_url}/ (React Discord UI)")
+        print(f"- Room client alias: {base_url}/app/")
     else:
-        print(f"- Operator console (default): {base_url}/ (legacy vanilla fallback)")
-        print(f"- Build React for the default console: {REACT_APP_BUILD_COMMAND}")
-    print(f"- Legacy vanilla console: {base_url}/legacy/")
+        print(f"- Room client unavailable until React is built: {REACT_APP_BUILD_COMMAND}")
+    print(f"- Retired legacy UI routes now resolve to the React room client.")
 
 
 def _make_handler(
@@ -7394,7 +7431,6 @@ def _make_handler(
     flow_supervisor: LiveAgentFlowSupervisor | None = None,
     frontend_dist_root: Path | None = None,
 ) -> type[BaseHTTPRequestHandler]:
-    static_root = Path(__file__).parent / "static"
     react_app_root = (frontend_dist_root or default_frontend_dist_root()).resolve()
     live_agent_process_supervisor = process_supervisor or LiveAgentProcessSupervisor(output_root)
     live_agent_session_run_controller = session_run_controller or LiveAgentSessionRunController(output_root)
@@ -7406,13 +7442,10 @@ def _make_handler(
             path = parsed.path
             query = parse_qs(parsed.query)
             if path == "/":
-                if frontend_dist_status(react_app_root).static_available:
-                    self._send_react_app_index(react_app_root)
-                else:
-                    self._send_file(static_root / "index.html", "text/html; charset=utf-8")
+                self._send_react_app_index(react_app_root)
                 return
             if path in {"/legacy", "/legacy/"}:
-                self._send_file(static_root / "index.html", "text/html; charset=utf-8")
+                self._send_react_app_index(react_app_root)
                 return
             if path in {"/app", "/app/"}:
                 self._send_react_app_index(react_app_root)
@@ -7432,21 +7465,8 @@ def _make_handler(
                     cache_control=_react_app_cache_control(app_path),
                 )
                 return
-            if path.startswith("/legacy/static/"):
-                rel = path.removeprefix("/legacy/static/")
-                static_path = _safe_static_path(static_root, rel)
-                if static_path is None:
-                    self._send_error(HTTPStatus.NOT_FOUND, "File not found")
-                    return
-                self._send_file(static_path)
-                return
-            if path.startswith("/static/"):
-                rel = path.removeprefix("/static/")
-                static_path = _safe_static_path(static_root, rel)
-                if static_path is None:
-                    self._send_error(HTTPStatus.NOT_FOUND, "File not found")
-                    return
-                self._send_file(static_path)
+            if path.startswith("/legacy/static/") or path.startswith("/static/"):
+                self._send_error(HTTPStatus.NOT_FOUND, "The retired vanilla frontend is not served.")
                 return
             if path.startswith("/api/attachments/"):
                 attachment_id = unquote(path.removeprefix("/api/attachments/"))
@@ -7462,10 +7482,34 @@ def _make_handler(
                 self._send_json({"meetings": list_meetings(output_root)})
                 return
             if path == "/api/lobby":
-                self._send_json({"events": read_lobby(output_root)})
+                self._send_json(
+                    {
+                        "events": read_lobby(
+                            output_root,
+                            meeting_id=str(query.get("meeting_id", [""])[0] or ""),
+                        )
+                    }
+                )
+                return
+            if path == "/api/room-settings":
+                self._send_json(room_settings_payload(output_root, room_id=str(query.get("room_id", [""])[0] or "")))
+                return
+            if path == "/api/room-friends":
+                self._send_json(
+                    room_friends_payload(
+                        output_root,
+                        agents=read_live_agents(output_root),
+                        meetings=list_meetings(output_root),
+                    )
+                )
                 return
             if path == "/api/events/lobby":
-                self._send_sse_stream("lobby", "lobby", last_event_id=self._last_event_id(query))
+                self._send_sse_stream(
+                    "lobby",
+                    "lobby",
+                    meeting_id=str(query.get("meeting_id", [""])[0] or ""),
+                    last_event_id=self._last_event_id(query),
+                )
                 return
             if path == "/api/side-chat":
                 self._send_json({"events": read_side_chat(output_root)})
@@ -7703,6 +7747,33 @@ def _make_handler(
                     return
                 self._send_json({"attachment": attachment})
                 return
+            if parsed.path == "/api/room-settings":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    self._send_json(update_room_settings(output_root, payload))
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                return
+            if parsed.path == "/api/room-friends":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                self._send_json(upsert_room_friend(output_root, payload))
+                return
             if parsed.path == "/api/lobby/promote":
                 payload = self._operation_json_payload(operation=LOBBY_PROMOTION_OPERATION)
                 if payload is None:
@@ -7745,8 +7816,20 @@ def _make_handler(
                 except AttachmentError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
-                event = append_lobby_event(output_root, payload)
-                self._send_json({"event": event, "events": read_lobby(output_root)})
+                event = append_lobby_event(
+                    output_root,
+                    payload,
+                    allow_flow_metadata=_public_lobby_allows_room_scope(payload),
+                )
+                self._send_json(
+                    {
+                        "event": event,
+                        "events": read_lobby(
+                            output_root,
+                            meeting_id=clean_lobby_text(event.get("flow_meeting_id"), limit=128),
+                        ),
+                    }
+                )
                 return
             if parsed.path == "/api/side-chat":
                 length = int(self.headers.get("Content-Length", "0") or "0")

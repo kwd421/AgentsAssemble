@@ -40,8 +40,8 @@ reading chat history:
 - Do not expose prompts, provider output, auth refs, config paths, command
   arguments, endpoint URLs, or raw local paths in health, operation, roster, or
   archive convenience surfaces.
-- Do not add the Trello/Jira roadmap board to the vanilla GUI. That belongs to
-  the later React/Vite responsive frontend track.
+- Do not add the Trello/Jira roadmap board as clutter in the current room
+  client. That belongs to a dedicated later React/Vite responsive frontend view.
 - Do not blur meeting progress with product roadmap progress. Meeting progress
   answers where one room is; the roadmap board answers where the product is
   going across versions.
@@ -50,9 +50,10 @@ reading chat history:
 
 The release candidate should have current evidence for these surfaces:
 
-- GUI loads `/` and static assets from a temporary output root.
-- `node --check agentsassemble/static/*.js` passes.
-- `python3 -m unittest tests.test_static_ui_assets -v` passes.
+- GUI loads `/` and React built assets from a temporary output root.
+- `npm --prefix frontend run build` passes.
+- `python3 -m unittest tests.test_react_ui_contracts -v` passes for React source
+  contracts.
 - `python3 -m unittest tests.test_mcp_server -v` passes for the checked-in MCP
   participant/archive tool boundary.
 - `python3 -m unittest tests.test_gui_server tests.test_live_agent_smoke -v`
@@ -71,8 +72,8 @@ raw local paths/config metadata kept out of archive outputs. Host-control MCP re
 Use these as the ordinary v0.1 hardening proof set:
 
 ```bash
-node --check agentsassemble/static/*.js
-python3 -m unittest tests.test_static_ui_assets -v
+npm --prefix frontend run build
+python3 -m unittest tests.test_react_ui_contracts -v
 python3 -m unittest tests.test_docs_architecture -v
 python3 -m unittest tests.test_mcp_server -v
 python3 -m unittest tests.test_gui_server tests.test_live_agent_smoke -v
@@ -127,12 +128,12 @@ verified, and separate from broad frontend redesign.
 
 Completed evidence:
 
-- Vanilla Lobby, Live, Board, and Archive render compact lifecycle step,
-  next-action, safe counts, and attention labels through the shared static GUI
-  banner.
+- The React Lobby, Live, Board, and Archive channels render compact lifecycle
+  step, next-action, safe counts, and attention labels through the canonical
+  room client.
 - React Lobby and Archive now surface compact lifecycle next-action evidence,
   complementing the existing React Live lifecycle panel and Board current-step
-  summary while keeping browser parity and default-route flip separate.
+  summary while keeping browser parity and route integration evidence separate.
 - React Live timeline state now has a focused delta-refresh proof for active
   meeting/flow filtering, stable identical-event refreshes, and pinned-to-latest
   intent; browser-rendered smoothness remains separate.
@@ -160,9 +161,9 @@ Completed evidence:
    - expose the same state through the selected meeting payload and compact
      `/api/meetings/<meeting-id>/lifecycle` projection without leaking prompt,
      provider, command, session, event-body, or raw path data.
-   - the vanilla Lobby, Live, Board, and Archive tabs render the compact
-     lifecycle step, next action, safe counts, and attention labels through the
-     shared static GUI lifecycle banner.
+   - the React Lobby, Live, Board, and Archive channels render the compact
+     lifecycle step, next action, safe counts, and attention labels through
+     focused room-client surfaces.
 4. Tighten empty and post-run states:
    - make the next action clear when no meeting exists.
    - make final artifacts easy to find after finalization.
@@ -170,12 +171,13 @@ Completed evidence:
    - use `docs/roadmap.md` and this checklist as source-of-truth documents.
    - build a Trello/Jira-like roadmap page only when the React/Vite frontend
      track starts.
-6. Record the React default-route flip:
-   - use `docs/product/legacy-react-parity-matrix.md` for the API/SSE parity,
-     room-event contracts, and legacy fallback evidence behind the flip.
-   - `/` now serves the React operator console when built and falls back to the
-     vanilla console otherwise; `/legacy/` stays the tested fallback.
-   - browser-rendered parity for the four React surfaces stays operator-verified
+6. Record the React-only room-client integration:
+   - use `docs/product/react-room-client-integration.md` for the API/SSE parity,
+     room-event contracts, and retired-legacy route evidence.
+   - `/` now serves the React room client when built and reports a missing React
+     build otherwise; `/legacy/`, `/legacy/static/*`, and `/static/*` no longer
+     expose the old vanilla console.
+   - browser-rendered parity for the React surfaces stays operator-verified
      after each build.
 
 ## Next Slice Queue
@@ -185,12 +187,11 @@ The next implementation slice should be chosen from this queue:
 - Keep the React command strip focused on the core flow as Lobby, Live, Board,
   Archive with one clear next action per state; management, release-health, and
   resource inspection stay in the separate admin surface.
-- Add or improve tests that verify the GUI does not replace live-event rows
-  unnecessarily during refresh.
-  - Evidence: `node --test tests/static_app_runtime_smoke.mjs` covers a full
-    meeting payload where only `live_events` changed and verifies the vanilla
-    Live panel shell, stable live-event rows, and transcript scroll position are
-    preserved while the new row is appended.
+- Add or improve tests that verify the React Live channel does not replace
+  live-event rows unnecessarily during refresh.
+  - Evidence: `tests/test_frontend_live_timeline_state.py` covers meeting
+    payload updates where only `live_events` changed and verifies stable
+    timeline rows and pinned-to-latest state while the new row is appended.
   - Evidence: `python3 -m unittest tests.test_frontend_live_timeline_state -v`
     covers React Live timeline delta state, active meeting/flow filtering, stable
     identical-event refreshes, and pinned-to-latest intent without claiming
@@ -203,7 +204,7 @@ The next implementation slice should be chosen from this queue:
 
 - Public hosted MCP.
 - Authenticated remote room APIs.
-- React/Vite/Tailwind visual redesign beyond the shipped default-route flip.
+- React/Vite/Tailwind redesigns outside the canonical room client.
 - Trello/Jira roadmap board UI.
 - Provider billing, login, or subscription management.
 - Automatic startup of real provider CLIs without current explicit approval.

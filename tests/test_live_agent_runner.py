@@ -110,6 +110,64 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertIn("AgentsAssemble", prompts[0][1])
         self.assertIn("상태 어때?", prompts[0][1])
 
+    def test_meeting_scoped_always_runner_replies_only_to_matching_room_events(self):
+        clock = FakeClock()
+        room = {
+            "lobby_events": [
+                {"id": "global", "name": "나", "message": "전역 말"},
+                {"id": "other-room", "name": "나", "message": "다른 방 말", "flow_meeting_id": "m2"},
+                {"id": "target-room", "name": "나", "message": "이 방 말", "flow_meeting_id": "m1"},
+            ]
+        }
+        client = FakeRoomClient([room])
+        runner = LiveAgentRunner(
+            config(meeting_id="m1"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "scoped reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "target-room")
+
+    def test_meeting_scoped_always_candidate_skips_global_and_other_room_events(self):
+        events = [
+            {"id": "global", "name": "나", "message": "전역 말"},
+            {"id": "other-room", "name": "나", "message": "다른 방 말", "flow_meeting_id": "m2"},
+            {"id": "target-room", "name": "나", "message": "이 방 말", "flow_meeting_id": "m1"},
+        ]
+
+        candidate = event_reply_candidate(
+            events,
+            "agent-a",
+            "Agent A",
+            "",
+            max_chain_depth=1,
+            meeting_id="m1",
+            allow_unscoped_meeting_events=False,
+        )
+
+        self.assertEqual(candidate, events[2])
+
+    def test_meeting_scoped_always_candidate_keeps_legacy_unscoped_room_events(self):
+        events = [
+            {"id": "legacy-room-event", "name": "나", "message": "예전 형식의 같은 방 말"},
+        ]
+
+        candidate = event_reply_candidate(
+            events,
+            "agent-a",
+            "Agent A",
+            "",
+            max_chain_depth=1,
+            meeting_id="m1",
+        )
+
+        self.assertEqual(candidate, events[0])
+
     def test_runner_does_not_reply_to_the_same_event_twice(self):
         clock = FakeClock()
         repeated = {"lobby_events": [{"id": "evt1", "name": "나", "message": "한 번만"}]}

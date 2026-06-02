@@ -1,0 +1,936 @@
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+FRONTEND_DIR = ROOT / "frontend" / "src"
+PYPROJECT = ROOT / "pyproject.toml"
+
+
+def frontend_source() -> str:
+    return "\n".join(path.read_text() for path in sorted(FRONTEND_DIR.rglob("*")) if path.suffix in {".ts", ".tsx"})
+
+
+def frontend_file(relative_path: str) -> str:
+    return (FRONTEND_DIR / relative_path).read_text()
+
+
+def react_lobby_external_participation_section() -> str:
+    # The join/invite affordance now lives in the admin surface, not the
+    # default lobby. Helper name kept stable for the focused invite tests.
+    source = frontend_file("views/AdminPanel.tsx")
+    start = source.index("외부 참여")
+    return source[start : source.index("</section>", start)]
+
+
+def react_lobby_external_participation_surface() -> str:
+    source = frontend_file("views/AdminPanel.tsx")
+    commands_start = source.index("const JOIN_BRIEF_COMMAND")
+    commands = source[commands_start : source.index("function formatSnapshotAge", commands_start)]
+    return f"{commands}\n{react_lobby_external_participation_section()}"
+
+
+class ReactUiContractTests(unittest.TestCase):
+    def test_react_member_list_preserves_agent_owned_room_evidence(self):
+        source = frontend_source()
+
+        self.assertIn("join_semantics?: string;", source)
+        self.assertIn("context_durability?: string;", source)
+        self.assertIn("last_observed_event_id?: string;", source)
+        self.assertIn("last_observed_live_event_id?: string;", source)
+        self.assertIn("host_approved_binding?: boolean;", source)
+        self.assertIn("binding_conflicts?: string[];", source)
+        self.assertIn("export function lastObservedSummary", source)
+        self.assertIn('agent.last_reply_at ? `reply ${shortDateTime(agent.last_reply_at)}` : ""', source)
+        self.assertIn('return { label: "승인됨", tone: "online" };', source)
+        self.assertIn('return { label: "승인 대기", tone: "idle" };', source)
+        member_source = frontend_file("views/components/MemberList.tsx")
+        self.assertIn("providerExecutionLabel(agent)", member_source)
+        self.assertIn("agentTruthBadges(entry.agent)", member_source)
+        self.assertIn("lastObservedSummary(entry.agent)", member_source)
+        self.assertNotIn('agent.provider_kind || "resident"', member_source)
+        self.assertNotIn("agent.connection_kind || agent.engagement_mode", member_source)
+
+    def test_react_room_messages_wrap_natural_language_without_truncating_body(self):
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+
+        # Message body wraps Korean/tokens without truncation, in both channels.
+        body_class = '<p className="text-[14px] leading-relaxed text-text-secondary preserve-words">'
+        self.assertIn(body_class, lobby_source)
+        self.assertIn(body_class, live_source)
+        self.assertIn('DiscordText text={event.message || ""}', lobby_source)
+        self.assertIn("{event.message}", live_source)
+        # Speaker names may truncate but still keep word boundaries.
+        speaker_class = "truncate text-[15px] font-semibold text-text-primary preserve-words"
+        self.assertIn(speaker_class, lobby_source)
+        self.assertIn(speaker_class, live_source)
+        self.assertNotIn("line-clamp", lobby_source)
+        self.assertNotIn("line-clamp", live_source)
+
+    def test_react_lobby_event_type_includes_attachment_metadata_contract(self):
+        api_source = frontend_file("api.ts")
+
+        self.assertIn("export interface LobbyAttachmentRef", api_source)
+        self.assertIn("id: string;", api_source)
+        self.assertIn("filename: string;", api_source)
+        self.assertIn("content_type: string;", api_source)
+        self.assertIn("size: number;", api_source)
+        self.assertIn("is_image: boolean;", api_source)
+        self.assertIn("url: string;", api_source)
+        self.assertIn("download_url: string;", api_source)
+        self.assertIn("attachments?: LobbyAttachmentRef[];", api_source)
+
+    def test_react_side_chat_uses_separate_room_contract(self):
+        api_source = frontend_file("api.ts")
+        app_source = frontend_file("App.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertIn("export interface SideChatEvent", api_source)
+        self.assertIn("export interface SideChatPostResponse", api_source)
+        self.assertIn("export function fetchSideChat", api_source)
+        self.assertIn('"/api/side-chat"', api_source)
+        self.assertIn("export function postSideChatMessage", api_source)
+        self.assertIn("export function subscribeSideChat", api_source)
+        self.assertIn('new EventSource("/api/events/side-chat")', api_source)
+        self.assertIn('source.addEventListener("side_chat"', api_source)
+
+        side_chat_api = api_source[
+            api_source.index("export function fetchSideChat") : api_source.index("export function fetchLiveAgentFlow")
+        ]
+        self.assertNotIn('"/api/lobby"', side_chat_api)
+        self.assertNotIn("/api/lobby/promote", api_source)
+
+        self.assertIn("sideChatEvents", app_source)
+        self.assertIn("subscribeSideChat", app_source)
+        self.assertIn("fetchSideChat", app_source)
+        self.assertIn("mergeSideChatEvents(previous, payload.events)", app_source)
+        self.assertIn("sideChatEvents={activeRoomFlowVisible ? sideChatEvents : []}", app_source)
+
+        self.assertIn("sideChatEvents", live_source)
+        self.assertIn("SideChatComposer", live_source)
+        self.assertIn("비공식 사이드챗", live_source)
+        self.assertIn("공식 기록 제외", live_source)
+        self.assertIn("postSideChatMessage", live_source)
+        self.assertNotIn("promote", live_source)
+
+    def test_react_lobby_sse_uses_shared_parser_and_merge_helpers(self):
+        api_source = frontend_file("api.ts")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertIn("export function parseLobbyStreamData", api_source)
+        self.assertIn("export function mergeLobbyEvents", api_source)
+        self.assertIn("export function mergeLobbyEventsByCreatedAt", api_source)
+        self.assertIn("new EventSource(`/api/events/lobby${queryString({ meeting_id: meetingId })}`)", api_source)
+        self.assertIn('source.addEventListener("lobby"', api_source)
+        self.assertIn('data.stream !== "lobby"', api_source)
+        self.assertIn('event.channel !== "lobby"', api_source)
+        self.assertIn("const events = parseLobbyStreamData(raw);", api_source)
+
+        self.assertIn("mergeLobbyEvents", lobby_source)
+        self.assertNotIn("function mergeLobbyEvents", lobby_source)
+        self.assertIn("mergeLiveTimelineEvents", live_source)
+        self.assertIn("filterFlowTimelineEvents", live_source)
+        self.assertNotIn("function mergeEvents", live_source)
+
+    def test_react_lobby_and_live_render_attachment_metadata(self):
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+        attachment_source = frontend_file("views/components/LobbyAttachments.tsx")
+
+        self.assertIn("LobbyAttachments", lobby_source)
+        self.assertIn("attachments={event.attachments}", lobby_source)
+        self.assertIn("LobbyAttachments", live_source)
+        self.assertIn("attachments={event.attachments}", live_source)
+        self.assertIn("attachment.is_image && attachment.url", attachment_source)
+        self.assertIn("<img", attachment_source)
+        self.assertIn('loading="lazy"', attachment_source)
+        self.assertIn("attachment.download_url || attachment.url", attachment_source)
+        self.assertIn("download={attachment.filename}", attachment_source)
+        self.assertIn("useState<LobbyAttachmentRef | null>", attachment_source)
+        self.assertIn("useRef<HTMLElement | null>", attachment_source)
+        self.assertIn("previewDialogRef", attachment_source)
+        self.assertIn("openImagePreview(attachment)", attachment_source)
+        self.assertIn("closeImagePreview", attachment_source)
+        self.assertIn("setSelectedImage(attachment)", attachment_source)
+        self.assertIn("setSelectedImage(null)", attachment_source)
+        self.assertIn('event.key === "Escape"', attachment_source)
+        self.assertIn('event.key !== "Tab"', attachment_source)
+        self.assertIn("focusableElements", attachment_source)
+        self.assertIn('role="dialog"', attachment_source)
+        self.assertIn('aria-modal="true"', attachment_source)
+        self.assertIn("selectedImage.download_url || selectedImage.url", attachment_source)
+        self.assertIn("formatAttachmentSize", attachment_source)
+        self.assertIn("KB", attachment_source)
+        self.assertIn("MB", attachment_source)
+
+    def test_react_attachment_renderer_uses_public_metadata_only(self):
+        sources = "\n".join(
+            [
+                frontend_file("views/LobbyView.tsx"),
+                frontend_file("views/LiveView.tsx"),
+                frontend_file("views/components/LobbyAttachments.tsx"),
+            ]
+        )
+
+        self.assertNotIn("data_base64", sources)
+        self.assertNotIn("data:application/", sources)
+        self.assertNotIn("file://", sources)
+        self.assertNotIn("/Users/", sources)
+        self.assertNotIn("/var/", sources)
+        self.assertNotIn("/tmp/", sources)
+
+    def test_react_lobby_composer_uploads_attachments_then_posts_lobby(self):
+        api_source = frontend_file("api.ts")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        composer_source = frontend_file("views/components/LobbyComposer.tsx")
+
+        self.assertIn("export function uploadLobbyAttachment", api_source)
+        self.assertIn('"/api/attachments"', api_source)
+        self.assertIn("FileReader", api_source)
+        self.assertIn("readAsDataURL", api_source)
+        self.assertIn('split(",", 2)', api_source)
+        self.assertIn("data_base64", api_source)
+        self.assertIn("export function postLobbyMessage", api_source)
+        self.assertIn('"/api/lobby"', api_source)
+        self.assertIn("name,", api_source)
+        self.assertIn("side,", api_source)
+        self.assertIn("kind,", api_source)
+        self.assertIn("message,", api_source)
+        self.assertIn("attachments,", api_source)
+
+        self.assertIn("import LobbyComposer", lobby_source)
+        self.assertIn("<LobbyComposer", lobby_source)
+        self.assertIn("handleLobbyPosted", lobby_source)
+        self.assertIn("mergeLobbyEvents(previous, postedEvents)", lobby_source)
+
+        self.assertIn("uploadLobbyAttachment(file)", composer_source)
+        self.assertIn("postLobbyMessage", composer_source)
+        self.assertIn('type="file"', composer_source)
+        self.assertIn("multiple", composer_source)
+        self.assertIn("pendingAttachments", composer_source)
+        self.assertIn("removePendingAttachment", composer_source)
+
+    def test_react_frontend_does_not_expose_lobby_promotion_button_yet(self):
+        source = frontend_source()
+
+        self.assertNotIn("/api/lobby/promote", source)
+        self.assertNotIn("promoteLobby", source)
+        self.assertNotIn("lobby.promote_to_official", source)
+
+    def test_react_shell_identifies_latest_client_and_legacy_boundary(self):
+        app_source = frontend_file("App.tsx")
+        css = (FRONTEND_DIR / "index.css").read_text()
+
+        self.assertNotIn("ops-client-marker", app_source)
+        self.assertNotIn("신형 React", app_source)
+        self.assertNotIn("구형 콘솔", app_source)
+        self.assertNotIn('href="/legacy/"', app_source)
+        self.assertNotIn(".ops-client-marker", css)
+        self.assertNotIn(".ops-legacy-link", css)
+
+    def test_react_lobby_composer_restores_draft_on_submit_failure(self):
+        composer_source = frontend_file("views/components/LobbyComposer.tsx")
+        model_source = frontend_file("lib/lobbyComposerModel.ts")
+
+        self.assertIn("const draftMessage = message;", composer_source)
+        self.assertIn("const draftAttachments = pendingAttachments;", composer_source)
+        self.assertIn("lobbySubmitSuccessDraft", composer_source)
+        self.assertIn("lobbySubmitFailureDraft", composer_source)
+        self.assertIn("setMessage(cleared.message);", composer_source)
+        self.assertIn("setPendingAttachments(cleared.pendingAttachments);", composer_source)
+        self.assertIn("setMessage(restored.message);", composer_source)
+        self.assertIn("setPendingAttachments(restored.pendingAttachments);", composer_source)
+        self.assertIn("setError(restored.error);", composer_source)
+        self.assertIn("message: draftMessage", model_source)
+        self.assertIn("pendingAttachments: draftAttachments", model_source)
+        self.assertLess(composer_source.index("await postLobbyMessage"), composer_source.rindex("lobbySubmitSuccessDraft"))
+        self.assertLess(composer_source.index("catch (errorValue)"), composer_source.rindex("lobbySubmitFailureDraft"))
+
+    def test_react_lobby_composer_caps_pending_attachments_at_eight(self):
+        composer_source = frontend_file("views/components/LobbyComposer.tsx")
+        model_source = frontend_file("lib/lobbyComposerModel.ts")
+
+        self.assertIn("MAX_ATTACHMENTS_PER_EVENT", composer_source)
+        self.assertIn("export const MAX_ATTACHMENTS_PER_EVENT = 8;", model_source)
+        self.assertIn("remainingSlots", model_source)
+        self.assertIn("selectedItems.slice(0, remainingSlots)", model_source)
+        self.assertIn("첨부는 한 메시지에 8개까지", model_source)
+
+    def test_react_lobby_composer_does_not_leak_raw_bytes_into_event_ui(self):
+        api_source = frontend_file("api.ts")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+        composer_source = frontend_file("views/components/LobbyComposer.tsx")
+        event_ui_source = lobby_source + "\n" + frontend_file("views/components/LobbyAttachments.tsx")
+
+        self.assertIn("data_base64", api_source)
+        self.assertNotIn("data_base64", event_ui_source)
+        self.assertNotIn("data_base64", composer_source)
+        for forbidden in ["data:application/", "data:image/", "file://", "/Users/", "/var/", "/tmp/"]:
+            self.assertNotIn(forbidden, api_source)
+            self.assertNotIn(forbidden, lobby_source)
+            self.assertNotIn(forbidden, composer_source)
+
+    def test_react_live_timeline_keeps_reader_scroll_until_latest_jump(self):
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertNotIn(
+            "if (element) element.scrollTop = element.scrollHeight;\n  }, [events.length]);",
+            live_source,
+        )
+        self.assertIn("useLayoutEffect", live_source)
+        self.assertIn("pinnedToLatest", live_source)
+        self.assertIn("setPinnedToLatest", live_source)
+        self.assertIn("pinnedToLatestRef", live_source)
+        self.assertIn("scrollHeight - scrollTop - clientHeight", live_source)
+        self.assertIn("<= 64", live_source)
+        self.assertIn("onScroll={handleTimelineScroll}", live_source)
+        self.assertIn("scrollToLatest", live_source)
+        self.assertIn('aria-label="최신 메시지로 이동"', live_source)
+        self.assertIn("최신으로", live_source)
+
+    def test_react_side_chat_keeps_full_history_visible(self):
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertNotIn("events.slice(-12)", live_source)
+        self.assertNotIn("sideChatEvents.slice(-", live_source)
+        # All side-chat events are interleaved into the feed without truncation.
+        self.assertIn("sideChatEvents.map", live_source)
+        self.assertIn("feedItems", live_source)
+
+    def test_react_live_flow_switch_keeps_state_updates_outside_event_updater(self):
+        live_source = frontend_file("views/LiveView.tsx")
+        helper_source = frontend_file("lib/liveTimelineState.ts")
+        surface = f"{live_source}\n{helper_source}"
+
+        self.assertIn("liveTimelineResetReason", live_source)
+        self.assertIn("mergeLiveTimelineEvents", live_source)
+        self.assertIn("nextTimelinePinnedToLatest", live_source)
+        self.assertIn("filterFlowTimelineEvents", live_source)
+        self.assertIn("export function mergeLiveTimelineEvents", helper_source)
+        self.assertIn("return sameTimelineArray(previousEvents, sorted) ? previousEvents : sorted;", helper_source)
+        self.assertIn("export function nextTimelinePinnedToLatest", helper_source)
+        self.assertIn("export function filterFlowTimelineEvents", helper_source)
+        self.assertNotIn("const flowChanged = lastFlowIdRef.current !== activeFlowId;", live_source)
+        self.assertNotIn("mergeLobbyEventsByCreatedAt", live_source)
+        self.assertNotIn("setEvents((previous) => {\n      if (lastFlowIdRef.current !== activeFlowId)", live_source)
+        self.assertNotIn("window.scrollTo", surface)
+        self.assertNotIn("startProvider", surface)
+        self.assertNotIn("launchProvider", surface)
+
+    def test_react_lobby_external_participation_collapses_cli_only_cards_by_default(self):
+        section = react_lobby_external_participation_section()
+
+        self.assertIn("외부 참여", section)
+        self.assertIn("고급", section)
+        self.assertIn("<details", section)
+        self.assertIn("<summary", section)
+        self.assertIn("CLI 초대 명령 보기", section)
+        self.assertNotIn("<details open", section)
+        self.assertIn("CLI 전용", section)
+        self.assertIn("Join Brief", section)
+        self.assertIn("LAN Invite (PoC)", section)
+        self.assertLess(section.index("<summary"), section.index("Join Brief"))
+        self.assertLess(section.index("<summary"), section.index("JOIN_BRIEF_COMMAND"))
+        self.assertIn("입장 패킷 생성", section)
+        self.assertIn("onClick={handleCreateJoinBrief}", section)
+        self.assertNotIn('role="button"', section)
+        self.assertNotIn("ops-button", section)
+        self.assertNotIn("ops-cta", section)
+
+    def test_react_lobby_prioritizes_chat_over_operator_cards(self):
+        app_source = frontend_file("App.tsx")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+
+        self.assertIn("h-screen max-h-screen overflow-hidden", app_source)
+        self.assertIn('className="flex h-full min-h-0 flex-col"', lobby_source)
+        self.assertIn("min-h-0 flex-1 overflow-y-auto", lobby_source)
+        self.assertIn("chat-scroll", lobby_source)
+        self.assertIn("const visibleEvents = useMemo(() => {", lobby_source)
+        self.assertIn("event.flow_meeting_id && event.flow_meeting_id !== activeRoom.meetingId", lobby_source)
+        self.assertIn(
+            "visibleEvents.map((event) => <MessageRow key={event.id} event={event} />)",
+            lobby_source,
+        )
+        self.assertIn("meetingId={activeRoom.meetingId}", lobby_source)
+        self.assertIn("onPosted={handleLobbyPosted}", lobby_source)
+        # Operator-dashboard clutter is gone from the lobby.
+        self.assertNotIn("ops-hero", lobby_source)
+        self.assertNotIn("MODE_CARDS", lobby_source)
+        self.assertNotIn("AgentCard", lobby_source)
+        self.assertNotIn("룸 이벤트", lobby_source)
+        self.assertNotIn("events.slice(-6)", lobby_source)
+
+    def test_react_live_uses_fixed_shell_with_internal_timeline_scroll(self):
+        app_source = frontend_file("App.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+
+        # Fixed full-height shell; the page/body is not the desktop scroll surface.
+        self.assertIn("h-screen max-h-screen overflow-hidden", app_source)
+        # Live channel column fills the shell and scrolls internally.
+        self.assertIn('className="flex h-full min-h-0 flex-col"', live_source)
+        self.assertIn("min-h-0 flex-1 overflow-y-auto", live_source)
+        self.assertIn("chat-scroll", live_source)
+        self.assertIn("ChannelHeader", live_source)
+
+    def test_react_lobby_external_participation_wraps_safe_join_brief_endpoint(self):
+        api_source = frontend_file("api.ts")
+        admin_source = frontend_file("views/AdminPanel.tsx")
+        section = react_lobby_external_participation_section()
+
+        self.assertIn("export interface LiveAgentJoinBriefRequest", api_source)
+        self.assertIn("export interface LiveAgentJoinBrief", api_source)
+        self.assertIn("export function createLiveAgentJoinBrief", api_source)
+        self.assertIn('"/api/live-agent-join-brief"', api_source)
+        self.assertIn("packet_kind?: string;", api_source)
+        self.assertIn("execution_contract?:", api_source)
+        self.assertIn("safety?:", api_source)
+
+        self.assertIn("createLiveAgentJoinBrief", admin_source)
+        self.assertIn("handleCreateJoinBrief", admin_source)
+        self.assertIn("joinBriefAgentId", admin_source)
+        self.assertIn("joinBrief?.safety?.provider_executed", section)
+        self.assertIn("joinBrief?.safety?.room_contacted", section)
+        self.assertIn("joinBriefPreview", admin_source)
+        self.assertIn("not_started_by_join_brief", section)
+        self.assertIn("Provider 실행 없음", section)
+
+    def test_react_lobby_external_participation_uses_safe_command_skeletons_with_env_secret_refs(self):
+        source = frontend_file("views/AdminPanel.tsx")
+        section = react_lobby_external_participation_section()
+        surface = react_lobby_external_participation_surface()
+
+        self.assertIn("JOIN_BRIEF_COMMAND", section)
+        self.assertIn("LAN_INVITE_CREATE_COMMAND", section)
+        self.assertIn("LAN_INVITE_VERIFY_COMMAND", section)
+        self.assertIn("assemble live-agent join-brief", source)
+        self.assertIn("assemble live-agent lan-invite create", source)
+        self.assertIn("assemble live-agent lan-invite verify", source)
+        self.assertIn("--secret-ref env:AGENTSASSEMBLE_LAN_INVITE_SECRET", source)
+        self.assertIn("<host-lan-ip>", source)
+        self.assertIn("<meeting-id>", source)
+        self.assertIn("<agent-id>", source)
+        self.assertNotIn("192.168.", surface)
+        self.assertNotIn("127.0.0.1", surface)
+        self.assertNotIn("0.0.0.0", surface)
+        self.assertNotIn("AGENTSASSEMBLE_LAN_INVITE_SECRET=", surface)
+
+    def test_react_lobby_flow_start_requests_unlimited_turn_budget(self):
+        api_source = frontend_file("api.ts")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+
+        self.assertIn("max_agent_turns?: number;", api_source)
+        self.assertIn("max_total_turns?: number;", api_source)
+        self.assertIn("max_agent_turns: 0", lobby_source)
+        self.assertIn("max_total_turns: 0", lobby_source)
+
+    def test_react_lobby_external_participation_states_provider_startup_and_token_boundaries(self):
+        section = react_lobby_external_participation_section()
+
+        self.assertIn("호스트 승인 필요", section)
+        self.assertIn("provider 시작 아님", section)
+        self.assertIn("LAN 한정", section)
+        self.assertIn("URL·로그·roster·artifact에 토큰 비표시", section)
+        self.assertIn("relay/WebRTC 아님", section)
+        self.assertIn("HMAC 입장 증명만", section)
+        self.assertIn("remote registration 아님", section)
+
+    def test_react_lobby_external_participation_has_no_unsafe_actions_or_token_io(self):
+        source = frontend_file("views/AdminPanel.tsx")
+        surface = react_lobby_external_participation_surface()
+
+        for forbidden in [
+            'method: "DELETE"',
+            "EventSource(",
+            "fetch(",
+            "navigator.clipboard",
+            "localStorage",
+            "sessionStorage",
+            "window.location",
+            "process.env",
+            "data:application/",
+            "data:image/",
+            "file://",
+            "/Users/",
+            "/var/",
+            "/tmp/",
+            "lan_invite_token",
+            "AGENTSASSEMBLE_LAN_INVITE_TOKEN=ey",
+            "eyJ",
+            "flow.meeting_id",
+        ]:
+            self.assertNotIn(forbidden, surface)
+
+        self.assertEqual(surface.count("handleCreateJoinBrief"), 1)
+        self.assertIn("createLiveAgentJoinBrief", source)
+
+        for forbidden in [
+            "generateInvite",
+            "createInvite",
+            "startInvite",
+            "generateJoinBrief",
+            "submitInvite",
+            "postInvite",
+            "runInvite",
+        ]:
+            self.assertNotIn(forbidden, source)
+
+    def test_react_admin_invite_prefills_meeting_id_from_active_meeting(self):
+        app_source = frontend_file("App.tsx")
+        admin_source = frontend_file("views/AdminPanel.tsx")
+
+        # App passes the active meeting id (prefer flow.meeting_id, then roomName).
+        self.assertIn("activeMeetingId={activeRoom.meetingId}", app_source)
+        # AdminPanel accepts the prop and prefills from it, with resident-m1 only
+        # as the fallback when no active id exists.
+        self.assertIn("activeMeetingId?: string", admin_source)
+        self.assertIn('activeMeetingId?.trim() || "resident-m1"', admin_source)
+        # The field syncs from the active meeting until edited, then preserves edits.
+        self.assertIn("meetingIdEdited", admin_source)
+        self.assertIn("setMeetingIdEdited(true)", admin_source)
+        self.assertIn("if (!meetingIdEdited) setJoinBriefMeetingId(prefillMeetingId);", admin_source)
+        self.assertNotIn('useState("resident-m1")', admin_source)
+
+    def test_react_admin_surfaces_release_health_catalog_as_cli_only(self):
+        source = frontend_source()
+
+        self.assertIn("export interface ReleaseHealthCheck", source)
+        self.assertIn("optional?: boolean;", source)
+        self.assertIn("order?: number | null;", source)
+        self.assertIn("default_run?: boolean;", source)
+        self.assertIn("safety_class?: string;", source)
+        self.assertIn("export function fetchReleaseHealth", source)
+        self.assertIn('"/api/release-health"', source)
+        self.assertIn("export interface ReleaseHealthQueue", source)
+        self.assertIn("export function fetchReleaseHealthQueue", source)
+        self.assertIn('"/api/release-health/queue"', source)
+        self.assertIn("릴리스 헬스", source)
+        self.assertIn("releaseHealthQueueBadge", source)
+        self.assertIn("releaseHealthStatusLabel", source)
+        self.assertIn("assemble release-health run", source)
+        self.assertIn("CLI-only", source)
+        self.assertNotIn("startReleaseHealthRun", source)
+        self.assertNotIn("startRoomBenchmark", source)
+
+    def test_react_admin_release_health_groups_default_queue_and_opt_in_with_safe_selectors(self):
+        admin_source = frontend_file("views/AdminPanel.tsx")
+
+        self.assertIn("기본 프루프 큐", admin_source)
+        self.assertIn("선택 검사", admin_source)
+        self.assertEqual(admin_source.count("선택 검사"), 1)
+        opt_in_heading_start = admin_source.index("선택 검사")
+        opt_in_heading = admin_source[opt_in_heading_start : admin_source.index("</div>", opt_in_heading_start)]
+        self.assertNotIn("수동 선택", opt_in_heading)
+        self.assertIn("check.order", admin_source)
+        self.assertIn("releaseHealthSelector(check)", admin_source)
+        self.assertIn("releaseHealthLatestById", admin_source)
+        self.assertIn("latestStatusById.get(check.id)", admin_source)
+        self.assertIn("releaseHealthStatusLabel", admin_source)
+        self.assertIn("fetchReleaseHealthQueue", admin_source)
+        self.assertIn("releaseHealthSafetyLabel(check.safety_class)", admin_source)
+        self.assertIn("releaseHealthQueueBadge(check)", admin_source)
+        self.assertIn("partitionReleaseHealthChecks", admin_source)
+        self.assertNotIn("const RELEASE_HEALTH_SAFETY_LABELS", admin_source)
+        self.assertNotIn('check.optional ? "opt-in" : "default"', admin_source)
+        self.assertIn("safety_class", admin_source)
+        self.assertIn("CLI-only", admin_source)
+        self.assertIn("assemble release-health run", admin_source)
+        self.assertNotIn("startReleaseHealthRun", admin_source)
+        self.assertNotIn("startRoomBenchmark", admin_source)
+        self.assertNotIn('method: "POST"', admin_source)
+        self.assertNotIn("EventSource", admin_source)
+        self.assertNotIn("python3", admin_source)
+        self.assertNotIn("--warmup-events", admin_source)
+        self.assertNotIn("file://", admin_source)
+        self.assertNotIn("/Users/", admin_source)
+
+    def test_react_admin_surfaces_shared_memory_health_without_raw_context(self):
+        api_source = frontend_file("api.ts")
+        admin_source = frontend_file("views/AdminPanel.tsx")
+        self.assertIn("export interface LiveAgentSharedMemoryHealth", api_source)
+        self.assertIn("shared_memory?: LiveAgentSharedMemoryHealth;", api_source)
+        self.assertIn("ready_sessions: number;", api_source)
+        self.assertIn("with_memory: number;", api_source)
+        self.assertIn("official_event_count: number;", api_source)
+        self.assertIn("open_question_count: number;", api_source)
+        self.assertIn("action_item_count: number;", api_source)
+
+        self.assertIn("const sharedMemory = health?.shared_memory;", admin_source)
+        self.assertIn("공유 메모리", admin_source)
+        self.assertIn("sharedMemory.with_memory", admin_source)
+        self.assertIn("sharedMemory.ready_sessions", admin_source)
+        self.assertIn("sharedMemory.official_event_count", admin_source)
+        self.assertIn("sharedMemory.open_question_count", admin_source)
+        self.assertIn("sharedMemory.action_item_count", admin_source)
+        self.assertIn("공식 메모리 카운트만 표시", admin_source)
+        self.assertIn("본문 비표시", admin_source)
+
+        for forbidden in [
+            "rolling_summary",
+            "open_questions",
+            "action_items",
+            "decisions",
+            "official_reply_text",
+            "transcript_body",
+            "raw_memory",
+            "provider_output",
+            "prompt_body",
+            "session_id",
+            "config_path",
+            "auth_ref",
+            'method: "POST"',
+            "EventSource(",
+        ]:
+            self.assertNotIn(forbidden, admin_source)
+
+    def test_react_admin_local_resources_renders_safe_process_observability(self):
+        admin_source = frontend_file("views/AdminPanel.tsx")
+        label_source = frontend_file("lib/localResourceLabels.ts")
+
+        self.assertIn("RESOURCE_ATTENTION_LABELS", label_source)
+        self.assertIn("RESOURCE_ROLE_LABELS", label_source)
+        self.assertIn("resourceAttentionLabel", label_source)
+        self.assertIn("formatLoadAverageTriple", label_source)
+        self.assertIn("formatResourceMemory", label_source)
+        for code in ["load_average_high", "process_cpu_high", "ps_unavailable", "ps_failed"]:
+            self.assertIn(code, label_source)
+        self.assertIn("RESOURCE_ATTENTION_LABELS[code] || code", label_source)
+        self.assertIn("loadAverage.fifteen", label_source)
+
+        self.assertIn("formatLoadAverageTriple(resources.load_average)", admin_source)
+        self.assertIn("process.ppid", admin_source)
+        self.assertIn("PPID", admin_source)
+        self.assertIn("조회 전용", admin_source)
+        self.assertIn("인자/경로/세션 비표시", admin_source)
+        self.assertIn("감독 그룹 PID", admin_source)
+        self.assertIn("본 프로세스/자식", admin_source)
+        self.assertIn("화이트리스트 매칭", admin_source)
+        self.assertIn("표시 CPU 합계", admin_source)
+        self.assertIn("표시 RSS 합계", admin_source)
+        self.assertIn("resourceAttentionLabel", admin_source)
+
+    def test_react_admin_local_resources_has_no_unsafe_fields_or_actions(self):
+        admin_source = frontend_file("views/AdminPanel.tsx")
+        label_source = frontend_file("lib/localResourceLabels.ts")
+        api_source = frontend_file("api.ts")
+        resource_ui_source = admin_source + "\n" + label_source
+
+        for forbidden in [
+            "argv",
+            "env=",
+            "process.env",
+            "cwd",
+            "/Users/",
+            "file://",
+            "provider_output",
+            "prompt_body",
+            "system_prompt",
+            "raw_prompt",
+            "session_id",
+            "log_tail",
+            "auth_token",
+            "bearer",
+            "api_key",
+            "account_state",
+            'method: "POST"',
+            'method: "DELETE"',
+            "EventSource(",
+            "kill(",
+            "signal:",
+            "startProcess",
+            "stopProcess",
+            "restartProcess",
+            "probeProcess",
+            "mutateProcess",
+            "recoverProcess",
+            "assemble live-agent stop",
+            "assemble live-agent restart",
+            "console.log(resources",
+            "console.log(process",
+            '"/api/local-resources"',
+            "fetch(",
+        ]:
+            self.assertNotIn(forbidden, resource_ui_source)
+
+        self.assertIn('"/api/local-resources"', api_source)
+        for forbidden in [
+            "startResources",
+            "stopResources",
+            "restartResources",
+            "probeResources",
+            "mutateResources",
+            "startLocalResources",
+            "stopLocalResources",
+            "restartLocalResources",
+            "probeLocalResources",
+            "mutateLocalResources",
+        ]:
+            self.assertNotIn(forbidden, api_source)
+
+    def test_react_live_drops_lifecycle_panel_but_keeps_projection_plumbing(self):
+        source = frontend_source()
+        live_source = frontend_file("views/LiveView.tsx")
+        board_source = frontend_file("views/BoardView.tsx")
+
+        # Live channel is decluttered: no lifecycle-exposition panel.
+        self.assertNotIn("LifecyclePanel", live_source)
+        self.assertNotIn("라이프사이클", live_source)
+        # But the safe lifecycle projection plumbing still exists and is
+        # surfaced on the board channel as honest synthesis.
+        self.assertIn("export interface LifecycleProjection", source)
+        self.assertIn("export function fetchMeetingLifecycle", source)
+        self.assertIn('`/api/meetings/${encodeURIComponent(meetingId)}/lifecycle`', source)
+        self.assertIn("summarizeBoardLifecycle", board_source)
+        self.assertIn("권한 검토 필요", board_source)
+        self.assertIn("미입실", board_source)
+        self.assertIn("unsafe_permission_violations", source)
+        self.assertNotIn("permission_profile_id}</", source)
+        self.assertNotIn("session_id}</", source)
+
+    def test_react_lobby_is_clean_chat_without_lifecycle_exposition(self):
+        app_source = frontend_file("App.tsx")
+        lobby_source = frontend_file("views/LobbyView.tsx")
+
+        # Lobby is a chat channel: messages + composer + a minimal start bar.
+        # Lifecycle-exposition banner is removed.
+        self.assertNotIn("LifecycleBanner", lobby_source)
+        self.assertNotIn("summarizeCompactLifecycle", lobby_source)
+        self.assertNotIn("기록용 안전 projection", lobby_source)
+        self.assertFalse(
+            (FRONTEND_DIR / "views" / "components" / "LifecycleBanner.tsx").exists()
+        )
+        self.assertIn("ChannelHeader", lobby_source)
+        self.assertIn("MessageRow", lobby_source)
+        self.assertIn("meetingId={activeRoom.meetingId}", lobby_source)
+        self.assertIn("onPosted={handleLobbyPosted}", lobby_source)
+        # lifecycle is still polled at the shell level for the board channel.
+        self.assertIn("lifecycle", app_source)
+        # The join/invite affordance moved out of the default lobby surface to
+        # the admin panel; the lobby has no invite controls or jargon.
+        self.assertNotIn("외부 참여", lobby_source)
+        self.assertNotIn("JOIN_BRIEF_COMMAND", lobby_source)
+        self.assertNotIn("createLiveAgentJoinBrief", lobby_source)
+        self.assertNotIn("handleCreateJoinBrief", lobby_source)
+
+        for forbidden in [
+            "startProvider",
+            "launchProvider",
+            "startRealProvider",
+            "runReleaseHealth",
+            "room-benchmark",
+            "is_default_entry_point: true",
+            "permission_profile_id}</",
+            "session_id}</",
+            "provider_config",
+            "api_key",
+            "prompt:",
+        ]:
+            self.assertNotIn(forbidden, lobby_source)
+
+    def test_react_discord_shell_internal_scroll_and_no_default_clutter(self):
+        app_source = frontend_file("App.tsx")
+        css = (FRONTEND_DIR / "index.css").read_text()
+        admin_source = frontend_file("views/AdminPanel.tsx")
+        channels = {
+            "lobby": frontend_file("views/LobbyView.tsx"),
+            "live": frontend_file("views/LiveView.tsx"),
+            "board": frontend_file("views/BoardView.tsx"),
+            "records": frontend_file("views/RecordsView.tsx"),
+        }
+
+        # Fixed full-height shell: the page/body is not the desktop scroll surface.
+        self.assertIn("h-screen max-h-screen overflow-hidden", app_source)
+        # Discord shell regions exist in the theme.
+        for cls in (".dc-rail", ".dc-sidebar", ".dc-channel", ".dc-members", ".dc-chat-head"):
+            self.assertIn(cls, css)
+        # The shell renders one channel nav + a collapsible member list.
+        self.assertIn("dc-channel", app_source)
+        self.assertIn("MemberList", app_source)
+        self.assertIn("membersOpen", app_source)
+
+        # Every channel has a header and scrolls inside its own region.
+        for name, source in channels.items():
+            with self.subTest(channel=name):
+                self.assertIn("ChannelHeader", source)
+                self.assertIn("min-h-0", source)
+                self.assertIn("flex-1", source)
+                self.assertIn("overflow-y-auto", source)
+                self.assertIn("chat-scroll", source)
+
+        # No operator-dashboard clutter on the default (non-admin) surfaces.
+        default_surface = "\n".join([app_source, *channels.values()])
+        for token in (
+            "핵심 포인트",
+            "빠른 작업",
+            "라이브 상태",
+            "호스트 컨트롤",
+            "세션 요약",
+            "보드 인사이트",
+            "결정 준비도",
+            "LifecyclePanel",
+            "RoomCommandStrip",
+            "ops-hero",
+            "ops-meter",
+        ):
+            self.assertNotIn(token, default_surface)
+
+        # The invite/join affordance is admin-only and collapsed there.
+        self.assertIn("외부 참여", admin_source)
+        self.assertIn("로컬·신뢰 네트워크 전용", admin_source)
+        self.assertNotIn("외부 참여", default_surface)
+
+    def test_react_app_surfaces_single_channel_navigation_without_duplicate_strip(self):
+        app_source = frontend_file("App.tsx")
+
+        # Discord shell: one channel nav in the sidebar. The old second
+        # RoomCommandStrip navigation row is removed (no repeated navigation).
+        self.assertNotIn("RoomCommandStrip", app_source)
+        self.assertFalse((FRONTEND_DIR / "views" / "components" / "RoomCommandStrip.tsx").exists())
+        self.assertIn("dc-rail", app_source)
+        self.assertIn("dc-sidebar", app_source)
+        self.assertIn("dc-channel", app_source)
+        self.assertIn("function goToChannel", app_source)
+        self.assertIn("setAdminOpen", app_source)
+
+        for forbidden in [
+            "startProvider",
+            "launchProvider",
+            "startRealProvider",
+            "runReleaseHealth",
+            "room-benchmark",
+            '"/api/release-health"',
+            "permission_profile_id}</",
+            "session_id}</",
+            "provider_config",
+            "api_key",
+            "prompt:",
+        ]:
+            self.assertNotIn(forbidden, app_source)
+
+    def test_react_archive_surfaces_final_artifacts_without_lifecycle_jargon(self):
+        records_source = frontend_file("views/RecordsView.tsx")
+
+        # Lifecycle-exposition banner is removed from the archive channel; the
+        # surface is the meeting list plus canonical final artifacts.
+        self.assertNotIn("LifecycleBanner", records_source)
+        self.assertNotIn("summarizeCompactLifecycle", records_source)
+        self.assertNotIn("기록용 안전 projection", records_source)
+        self.assertFalse(
+            (FRONTEND_DIR / "views" / "components" / "LifecycleBanner.tsx").exists()
+        )
+        self.assertIn("canonicalArchiveArtifactRows", records_source)
+        self.assertIn("defaultArchiveArtifactSelection", records_source)
+        self.assertIn("otherArchiveArtifactNames", records_source)
+        self.assertIn("previousMeetingIdRef", records_source)
+        self.assertIn("sameMeeting ? activeArtifact : null", records_source)
+        self.assertIn("CANONICAL_FINAL_ARTIFACTS", records_source)
+        self.assertIn('"transcript.md"', records_source)
+        self.assertIn('"decision.md"', records_source)
+        self.assertIn('"shared_memory/rolling-summary.md"', records_source)
+        self.assertIn('"shared_memory/action-items.md"', records_source)
+        self.assertIn('"shared_memory/open-questions.md"', records_source)
+        self.assertIn("최종 산출물 / Final artifacts", records_source)
+        self.assertIn("기타 산출물 / Other artifacts", records_source)
+        self.assertIn('{artifact.available ? "생성됨" : "미생성"}', records_source)
+        self.assertLess(
+            records_source.index("최종 산출물 / Final artifacts"),
+            records_source.index("기타 산출물 / Other artifacts"),
+        )
+        self.assertIn("ArtifactContent", records_source)
+        self.assertIn("artifactNames.map", records_source)
+        self.assertIn("회의가 없다면 로비에서 새 회의를 시작하세요.", records_source)
+        self.assertIn("일반적으로 회의 최종화 후 transcript", records_source)
+
+        for forbidden in [
+            "startProvider",
+            "launchProvider",
+            "startRealProvider",
+            "runReleaseHealth",
+            "room-benchmark",
+            "is_default_entry_point: true",
+            "permission_profile_id}</",
+            "session_id}</",
+            "provider_config",
+            "api_key",
+            "prompt:",
+        ]:
+            self.assertNotIn(forbidden, records_source)
+
+    def test_react_live_tab_subscribes_to_meeting_sse_without_route_flip_or_provider_start(self):
+        source = frontend_source()
+        api_source = frontend_file("api.ts")
+        app_source = frontend_file("App.tsx")
+        live_source = frontend_file("views/LiveView.tsx")
+
+        self.assertIn("export interface MeetingLiveEvent", api_source)
+        self.assertIn("export interface MeetingStreamPayload", api_source)
+        self.assertIn("export function parseMeetingStreamData", api_source)
+        self.assertIn("export function initialMeetingStreamState", api_source)
+        self.assertIn("export function applyMeetingStreamUpdate", api_source)
+        self.assertIn("export function meetingStreamStateForActiveMeeting", api_source)
+        self.assertIn("export function mergeMeetingLiveEvents", api_source)
+        self.assertIn("export function meetingLiveEventsToTimelineEvents", api_source)
+        self.assertIn("export function subscribeMeetingEvents", api_source)
+        self.assertIn("new EventSource(`/api/meetings/${encodeURIComponent(meetingId)}/events`)", api_source)
+        self.assertIn("meeting_stream_snapshot?: MeetingStreamSnapshot", api_source)
+        self.assertIn("meeting_stream_snapshot_pending?: boolean", api_source)
+        self.assertIn("payload.meeting_stream_snapshot || payload.meeting_payload", api_source)
+        self.assertIn("meetingPayload?.live_events", api_source)
+        self.assertIn("meetingPayload?.lifecycle", api_source)
+        self.assertIn("meeting_payload?: MeetingStreamSnapshot", api_source)
+        self.assertIn("subscribeMeetingEvents", app_source)
+        self.assertIn("meetingLiveEventsToTimelineEvents", app_source)
+        self.assertIn("setMeetingStreamState", app_source)
+        self.assertIn("applyMeetingStreamUpdate", app_source)
+        self.assertIn("meetingStreamStateForActiveMeeting", app_source)
+        self.assertIn("let cancelled = false;", app_source)
+        self.assertIn("if (cancelled) return;", app_source)
+        self.assertIn('channel !== "live"', app_source)
+        self.assertIn("update.meetingId && update.meetingId !== meetingId", app_source)
+        self.assertIn("flowEvents.length ? flowEvents : officialTimelineEvents", app_source)
+        self.assertIn("timelineSource={scopedTimelineSource}", app_source)
+        self.assertIn('flowEvents.length\n      ? "flow"\n      : "official"', app_source)
+        self.assertIn("flow_id", live_source)
+        self.assertIn("official_record", live_source)
+        self.assertIn('timelineSource: "flow" | "official";', live_source)
+        self.assertIn('displayedTimelineSourceRef.current !== "flow"', live_source)
+        self.assertNotIn("is_default_entry_point: true", source)
+        for forbidden in [
+            "startProvider",
+            "launchProvider",
+            "startRealProvider",
+            "runReleaseHealth",
+            "room-benchmark",
+        ]:
+            self.assertNotIn(forbidden, app_source)
+
+    def test_react_board_uses_lifecycle_current_step_instead_of_artificial_rounds(self):
+        app_source = frontend_file("App.tsx")
+        board_source = frontend_file("views/BoardView.tsx")
+
+        self.assertIn("summarizeBoardLifecycle", board_source)
+        self.assertIn("LifecycleProjection", board_source)
+        self.assertIn("lifecycle: LifecycleProjection | null;", board_source)
+        self.assertIn("lifecycle={lifecycle}", app_source)
+        self.assertIn("현재 단계", board_source)
+        self.assertIn("다음 행동", board_source)
+        self.assertIn("역할 입장", board_source)
+        self.assertIn("권한 요약", board_source)
+        self.assertIn("unsafePermissionViolations", board_source)
+        self.assertIn("boundRoles", board_source)
+        self.assertIn("attentionItems.length > 0", board_source)
+        self.assertIn("주의", board_source)
+        self.assertIn("역할 상세", board_source)
+        self.assertIn("admissionLabel", board_source)
+        self.assertIn("권한 검토 필요", board_source)
+        self.assertIn("meeting_read", board_source)
+        self.assertIn("lobby_chat", board_source)
+        self.assertNotIn('["조사", "주장", "반박", "결정"]', board_source)
+        self.assertNotIn('index === 2 && flow.status === "running"', board_source)
+        self.assertNotIn("FlaskConical", board_source)
+        self.assertNotIn("배포 보류", board_source)
+        self.assertNotIn("실험 진행", board_source)
+
+if __name__ == "__main__":
+    unittest.main()

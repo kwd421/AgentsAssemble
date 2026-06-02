@@ -9,14 +9,14 @@ Start the backend:
 python3 -m agentsassemble.cli gui --port 8765
 ```
 
-`/` serves this React operator console once a production build exists; until
-then it falls back to the dependency-light vanilla console. The vanilla
-legacy console namespace stays explicit: the same vanilla console is always
-reachable at `/legacy/`, and the React app is also aliased at `/app/`. The
-completed default-route flip and its operator-verified browser-parity caveat
-live in `docs/product/legacy-react-parity-matrix.md`.
+`/` serves this React Discord-style room client once a production build exists.
+There is no dependency-light vanilla fallback anymore: `/legacy/`,
+`/legacy/static/*`, and `/static/*` are retired frontend paths. The same React
+app is also aliased at `/app/`. The React-only integration and its
+operator-verified browser-parity caveat live in
+`docs/product/react-room-client-integration.md`.
 
-Build the React default and serve it from the same backend:
+Build the React room client and serve it from the same backend:
 
 ```bash
 npm run build
@@ -25,9 +25,9 @@ python3 -m agentsassemble.cli gui --port 8765
 
 Open http://127.0.0.1:8765/ (or the `/app/` alias).
 
-The GUI startup banner prints the React default URL when the build is present;
-otherwise it prints the build command and serves the vanilla console at `/`
-until the build exists.
+The GUI startup banner prints the React room-client URL when the build is
+present; otherwise it prints the build command and the server reports the
+missing React build instead of serving an old console.
 
 ## Prerequisites
 
@@ -81,7 +81,8 @@ Discord-inspired shell (see `DESIGN.md`):
 - Server/room rail: narrow far-left column with the room mark and a settings
   (admin) gear.
 - Channel sidebar: room name + status, the `#` channel list, and a footer user
-  area with the latest-client marker and the `구형 콘솔` (`/legacy/`) link.
+  area with the local user profile controls. There is no legacy UI badge or
+  fallback link in the room client.
 - Central column: channel header + internally scrolling messages/content + a
   sticky composer where the channel is writable.
 - Member list: compact roster with presence dots, collapsible on narrow

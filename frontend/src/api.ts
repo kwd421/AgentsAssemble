@@ -1,4 +1,5 @@
 // API client for the AgentsAssemble GUI backend.
+import type { RoomAppearance } from "./lib/roomAppearance";
 
 export interface LobbyAttachmentRef {
   id: string;
@@ -9,6 +10,54 @@ export interface LobbyAttachmentRef {
   url: string;
   download_url: string;
 }
+
+export interface RoomSettings {
+  roomId: string;
+  label: string;
+  topic: string;
+  shortLabel: string;
+  appearance: RoomAppearance;
+  memberRoles: Record<string, string>;
+}
+
+export type ParticipantType = "human" | "subscription_ai" | "api" | "local" | "remote" | "unknown";
+
+export interface RoomFriend {
+  friend_id: string;
+  display_name: string;
+  participant_type: ParticipantType;
+  provider_kind: string;
+  connection_kind: string;
+  source_agent_id: string;
+  last_meeting_id: string;
+  status: string;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoomFriendsResponse {
+  friends: RoomFriend[];
+  candidates: RoomFriend[];
+}
+
+type ApiRoomAppearance = {
+  banner_preset?: RoomAppearance["bannerPreset"];
+  banner_image_url?: string;
+  icon_image_url?: string;
+  icon_label?: string;
+  notifications?: RoomAppearance["notifications"];
+  invite_scope?: RoomAppearance["inviteScope"];
+};
+
+type ApiRoomSettings = {
+  room_id?: string;
+  label?: string;
+  topic?: string;
+  short_label?: string;
+  appearance?: ApiRoomAppearance;
+  member_roles?: Record<string, string>;
+};
 
 export interface LobbyEvent {
   id: string;
@@ -89,6 +138,9 @@ export interface LiveAgent {
   sandbox_enforcement: string;
   admission_status?: string;
   host_approved_binding?: boolean;
+  binding_role_id?: string;
+  binding_permission_profile_id?: string;
+  binding_join_mode?: string;
   binding_conflicts?: string[];
   capabilities: string[];
 }
@@ -478,8 +530,79 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-export function fetchLobby() {
-  return fetchJson<{ events: LobbyEvent[] }>("/api/lobby");
+function queryString(params: Record<string, string | undefined>) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) query.set(key, value);
+  });
+  const text = query.toString();
+  return text ? `?${text}` : "";
+}
+
+function normalizeRoomSettings(payload: ApiRoomSettings | undefined, fallbackRoomId: string): RoomSettings {
+  const appearance = payload?.appearance || {};
+  return {
+    roomId: String(payload?.room_id || fallbackRoomId || ""),
+    label: String(payload?.label || ""),
+    topic: String(payload?.topic || ""),
+    shortLabel: String(payload?.short_label || ""),
+    appearance: {
+      bannerPreset: appearance.banner_preset || "default",
+      bannerImage: appearance.banner_image_url || undefined,
+      iconImage: appearance.icon_image_url || undefined,
+      iconLabel: appearance.icon_label || undefined,
+      notifications: appearance.notifications || "mentions",
+      inviteScope: appearance.invite_scope || "room",
+    },
+    memberRoles: payload?.member_roles && typeof payload.member_roles === "object" ? payload.member_roles : {},
+  };
+}
+
+function roomAppearanceToApi(appearance: Partial<RoomAppearance> | undefined): ApiRoomAppearance {
+  return {
+    banner_preset: appearance?.bannerPreset,
+    banner_image_url: appearance?.bannerImage,
+    icon_image_url: appearance?.iconImage,
+    icon_label: appearance?.iconLabel,
+    notifications: appearance?.notifications,
+    invite_scope: appearance?.inviteScope,
+  };
+}
+
+export function fetchLobby(meetingId = "") {
+  return fetchJson<{ events: LobbyEvent[] }>(`/api/lobby${queryString({ meeting_id: meetingId })}`);
+}
+
+export function fetchRoomSettings(roomId: string): Promise<RoomSettings> {
+  return fetchJson<{ room_id: string; settings: ApiRoomSettings }>(
+    `/api/room-settings${queryString({ room_id: roomId })}`
+  ).then((payload) => normalizeRoomSettings(payload.settings, payload.room_id || roomId));
+}
+
+export function saveRoomSettings({
+  roomId,
+  label,
+  topic,
+  shortLabel,
+  appearance,
+  memberRoles,
+}: Partial<Omit<RoomSettings, "roomId">> & { roomId: string }): Promise<RoomSettings> {
+  return postJson<{ room_id: string; settings: ApiRoomSettings }>("/api/room-settings", {
+    room_id: roomId,
+    label,
+    topic,
+    short_label: shortLabel,
+    appearance: roomAppearanceToApi(appearance),
+    member_roles: memberRoles,
+  }).then((payload) => normalizeRoomSettings(payload.settings, payload.room_id || roomId));
+}
+
+export function fetchRoomFriends() {
+  return fetchJson<RoomFriendsResponse>("/api/room-friends");
+}
+
+export function addRoomFriend(friend: Partial<RoomFriend>) {
+  return postJson<{ friend: RoomFriend; friends: RoomFriend[] }>("/api/room-friends", friend);
 }
 
 export function uploadLobbyAttachment(file: File): Promise<LobbyAttachmentRef> {
@@ -500,12 +623,14 @@ export function postLobbyMessage({
   kind = "message",
   message,
   attachments = [],
+  meetingId = "",
 }: {
   name: string;
   side?: string;
   kind?: "message" | "ready" | "deploy";
   message: string;
   attachments?: LobbyAttachmentRef[];
+  meetingId?: string;
 }) {
   return postJson<LobbyPostResponse>("/api/lobby", {
     name,
@@ -513,6 +638,7 @@ export function postLobbyMessage({
     kind,
     message,
     attachments,
+    flow_meeting_id: meetingId,
   });
 }
 
@@ -543,8 +669,8 @@ export function createLiveAgentJoinBrief(params: LiveAgentJoinBriefRequest) {
   return postJson<LiveAgentJoinBrief>("/api/live-agent-join-brief", params);
 }
 
-export function fetchLiveAgentFlow() {
-  return fetchJson<FlowResponse>("/api/live-agent-flow");
+export function fetchLiveAgentFlow(meetingId = "") {
+  return fetchJson<FlowResponse>(`/api/live-agent-flow${queryString({ meeting_id: meetingId })}`);
 }
 
 export function fetchMeetings() {
@@ -884,9 +1010,10 @@ export function stopFlow(meetingId: string) {
  */
 export function subscribeLobby(
   onEvents: (events: LobbyEvent[]) => void,
-  onError?: (err: Event) => void
+  onError?: (err: Event) => void,
+  meetingId = ""
 ): () => void {
-  const source = new EventSource("/api/events/lobby");
+  const source = new EventSource(`/api/events/lobby${queryString({ meeting_id: meetingId })}`);
 
   function handleData(raw: string) {
     const events = parseLobbyStreamData(raw);
