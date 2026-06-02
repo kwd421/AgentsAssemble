@@ -359,6 +359,7 @@ export default function App() {
     friends: [],
     candidates: [],
   });
+  const [selectedHomeFriendId, setSelectedHomeFriendId] = useState("");
   const [roomMemberRoles, setRoomMemberRoles] = useState<Record<string, Record<string, string>>>({});
   const [roomMembersByRoom, setRoomMembersByRoom] = useState<Record<string, RoomMember[]>>({});
   const [roomChannelSettings, setRoomChannelSettings] = useState<
@@ -605,7 +606,10 @@ export default function App() {
     let cancelled = false;
     fetchRoomFriends()
       .then((payload) => {
-        if (!cancelled) setHomeFriendsPayload(payload);
+        if (!cancelled) {
+          setHomeFriendsPayload(payload);
+          setSelectedHomeFriendId((previous) => previous || payload.friends[0]?.friend_id || "");
+        }
       })
       .catch(() => {
         // The central friends view will surface load errors when opened.
@@ -616,6 +620,7 @@ export default function App() {
   }, [guestLocked]);
 
   function selectHomeFriend(friend: RoomFriend) {
+    setSelectedHomeFriendId(friend.friend_id);
     setChannel("friends");
     setAdminOpen(false);
     setChannelMenu(null);
@@ -1265,7 +1270,12 @@ export default function App() {
             typeFilter={homeFilter === "friends" ? null : homeFilter}
             activeRoomName={activeRoom.label}
             onInviteFriendToRoom={inviteFriendToActiveRoom}
-            onFriendsChanged={setHomeFriendsPayload}
+            onFriendsChanged={(payload) => {
+              setHomeFriendsPayload(payload);
+              setSelectedHomeFriendId((previous) => previous || payload.friends[0]?.friend_id || "");
+            }}
+            selectedFriendId={selectedHomeFriendId}
+            onSelectFriend={(friend) => setSelectedHomeFriendId(friend.friend_id)}
           />
         ) : adminOpen ? (
           <AdminPanel onClose={() => setAdminOpen(false)} activeMeetingId={activeRoom.meetingId} />

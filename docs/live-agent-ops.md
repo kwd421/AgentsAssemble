@@ -63,12 +63,14 @@ unknown participants as room friends from previous sessions or active resident
 suggestions. Saved friends also appear in the home sidebar's direct-message
 list, grouped with their participant type and status, so old sessions and
 agents can be found from the Discord home icon without opening a separate
-operator panel. Inviting a saved friend into the selected room writes a
-`friend_invite` member record through `/api/room-members`, and that persisted
-member appears in the right member panel beside live residents. This does not
-send a Discord message, create an internet invite, start a provider CLI, or
-resume a stopped provider session; it only records who should be admitted or
-expected in the local AgentsAssemble room.
+operator panel. Selecting a saved friend or direct-message row shows a local
+Discord-style profile card in the right panel with participant type, provider,
+connection kind, status, and recent-room evidence. Inviting a saved friend into
+the selected room writes a `friend_invite` member record through
+`/api/room-members`, and that persisted member appears in the right member panel
+beside live residents. This does not send a Discord message, create an internet
+invite, start a provider CLI, or resume a stopped provider session; it only
+records who should be admitted or expected in the local AgentsAssemble room.
 
 The main room composer and side-chat composer share the same mention model.
 Their `@` suggestions should include the local user, scoped live residents, and

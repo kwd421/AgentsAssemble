@@ -1998,6 +1998,27 @@ textarea {
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.025), transparent);
 }
 
+.dc-friend-row[data-selected="true"] {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.dc-friend-main-button {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  border-radius: 5px;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.dc-friend-main-button:hover,
+.dc-friend-main-button:focus-visible {
+  background: rgba(255, 255, 255, 0.04);
+  outline: none;
+}
+
 .dc-friend-avatar {
   display: grid;
   width: 40px;
@@ -2033,6 +2054,7 @@ textarea {
 }
 
 .dc-friend-name {
+  display: block;
   color: var(--color-text-primary);
   font-size: 15px;
   font-weight: 800;
@@ -2040,6 +2062,7 @@ textarea {
 
 .dc-friend-detail,
 .dc-friend-status {
+  display: block;
   color: var(--color-text-muted);
   font-size: 12px;
 }
@@ -2078,6 +2101,157 @@ textarea {
   margin-top: 8px;
   color: var(--color-text-muted);
   font-size: 13px;
+}
+
+.dc-friend-profile-card {
+  margin-top: 18px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #232428;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 16px 40px rgba(0, 0, 0, 0.22);
+}
+
+.dc-friend-profile-banner {
+  height: 92px;
+  background:
+    radial-gradient(circle at 78% 16%, rgba(255, 255, 255, 0.18), transparent 24%),
+    linear-gradient(135deg, #5865f2, #232428 78%);
+}
+
+.dc-friend-profile-card[data-type="human"] .dc-friend-profile-banner {
+  background:
+    radial-gradient(circle at 78% 16%, rgba(255, 255, 255, 0.18), transparent 24%),
+    linear-gradient(135deg, #f23f42, #232428 78%);
+}
+
+.dc-friend-profile-card[data-type="api"] .dc-friend-profile-banner {
+  background:
+    radial-gradient(circle at 78% 16%, rgba(255, 255, 255, 0.18), transparent 24%),
+    linear-gradient(135deg, #3b82f6, #232428 78%);
+}
+
+.dc-friend-profile-card[data-type="local"] .dc-friend-profile-banner {
+  background:
+    radial-gradient(circle at 78% 16%, rgba(255, 255, 255, 0.18), transparent 24%),
+    linear-gradient(135deg, #23a55a, #232428 78%);
+}
+
+.dc-friend-profile-card[data-type="remote"] .dc-friend-profile-banner {
+  background:
+    radial-gradient(circle at 78% 16%, rgba(255, 255, 255, 0.18), transparent 24%),
+    linear-gradient(135deg, #06b6d4, #232428 78%);
+}
+
+.dc-friend-profile-body {
+  position: relative;
+  padding: 50px 16px 16px;
+}
+
+.dc-friend-profile-avatar {
+  position: absolute;
+  top: -44px;
+  left: 16px;
+  display: grid;
+  width: 82px;
+  height: 82px;
+  place-items: center;
+  border: 7px solid #232428;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.dc-friend-profile-avatar svg {
+  position: absolute;
+  opacity: 0.22;
+}
+
+.dc-friend-profile-avatar span {
+  position: relative;
+}
+
+.dc-friend-profile-body h2 {
+  color: var(--color-text-primary);
+  font-size: 24px;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.dc-friend-profile-handle,
+.dc-friend-profile-type,
+.dc-friend-profile-note {
+  margin-top: 2px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dc-friend-profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.dc-friend-profile-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 5px;
+  background: var(--color-accent);
+  padding: 8px 10px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dc-friend-profile-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.dc-friend-profile-actions .dc-friend-profile-secondary {
+  background: #2b2d31;
+  color: var(--color-text-secondary);
+}
+
+.dc-friend-profile-facts {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dc-friend-profile-facts div {
+  display: grid;
+  gap: 2px;
+  border-radius: 6px;
+  background: #1e1f22;
+  padding: 9px 10px;
+}
+
+.dc-friend-profile-facts dt {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dc-friend-profile-facts dd {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.dc-friend-profile-note {
+  margin-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 12px;
 }
 
 /* Room settings modal. */

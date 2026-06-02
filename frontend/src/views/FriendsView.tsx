@@ -8,6 +8,7 @@ import {
   type RoomFriendsResponse,
 } from "../api";
 import { PARTICIPANT_TYPE_OPTIONS, participantTypeMeta } from "../lib/participantTypes";
+import FriendProfileCard from "./components/FriendProfileCard";
 
 function statusLabel(status: string) {
   if (status === "online") return "온라인";
@@ -24,12 +25,16 @@ function FriendRow({
   onAction,
   inviteLabel,
   onInvite,
+  selected,
+  onSelect,
 }: {
   friend: RoomFriend;
   actionLabel?: string;
   onAction?: (friend: RoomFriend) => void;
   inviteLabel?: string;
   onInvite?: (friend: RoomFriend) => void;
+  selected?: boolean;
+  onSelect?: (friend: RoomFriend) => void;
 }) {
   const meta = participantTypeMeta(friend.participant_type);
   const Icon = meta.icon;
@@ -46,18 +51,36 @@ function FriendRow({
   ]
     .filter(Boolean)
     .join(" · ");
-  return (
-    <div className="dc-friend-row" data-type={meta.tone}>
+  const rowContent = (
+    <>
       <span className="dc-friend-avatar">
         <Icon size={18} />
       </span>
-      <div className="min-w-0 flex-1">
-        <p className="dc-friend-name preserve-words">{friend.display_name}</p>
-        <p className="dc-friend-detail preserve-words" title={fullDetail || detail}>
+      <span className="min-w-0 flex-1 text-left">
+        <span className="dc-friend-name preserve-words">{friend.display_name}</span>
+        <span className="dc-friend-detail preserve-words" title={fullDetail || detail}>
           {detail}
-        </p>
-      </div>
+        </span>
+      </span>
       <span className="dc-friend-status">{statusLabel(friend.status)}</span>
+    </>
+  );
+  return (
+    <div className="dc-friend-row" data-type={meta.tone} data-selected={selected ? "true" : "false"}>
+      {onSelect ? (
+        <button
+          type="button"
+          className="dc-friend-main-button"
+          onClick={() => onSelect(friend)}
+          aria-pressed={selected}
+        >
+          {rowContent}
+        </button>
+      ) : (
+        <span className="dc-friend-main-button" aria-current={selected ? "true" : undefined}>
+          {rowContent}
+        </span>
+      )}
       {onAction || onInvite ? (
         <div className="dc-friend-actions">
           {onInvite && (
@@ -87,11 +110,15 @@ export default function FriendsView({
   activeRoomName = "",
   onInviteFriendToRoom,
   onFriendsChanged,
+  selectedFriendId,
+  onSelectFriend,
 }: {
   typeFilter: ParticipantType | null;
   activeRoomName?: string;
   onInviteFriendToRoom?: (friend: RoomFriend) => Promise<void>;
   onFriendsChanged?: (payload: RoomFriendsResponse) => void;
+  selectedFriendId?: string;
+  onSelectFriend?: (friend: RoomFriend) => void;
 }) {
   const [payload, setPayload] = useState<RoomFriendsResponse>({ friends: [], candidates: [] });
   const [filter, setFilter] = useState<"online" | "all" | "add">("online");
@@ -135,6 +162,14 @@ export default function FriendsView({
     if (!typeFilter) return payload.candidates;
     return payload.candidates.filter((friend) => friend.participant_type === typeFilter);
   }, [payload.candidates, typeFilter]);
+  const selectedFriend = useMemo(
+    () =>
+      payload.friends.find((friend) => friend.friend_id === selectedFriendId) ||
+      visibleFriends[0] ||
+      payload.friends[0] ||
+      null,
+    [payload.friends, selectedFriendId, visibleFriends]
+  );
 
   async function handleAddCandidate(friend: RoomFriend) {
     setBusyId(friend.friend_id);
@@ -284,6 +319,8 @@ export default function FriendsView({
                   friend={friend}
                   inviteLabel={busyId === `invite:${friend.friend_id}` ? "초대 중" : "방에 초대"}
                   onInvite={onInviteFriendToRoom ? handleInvite : undefined}
+                  selected={selectedFriend?.friend_id === friend.friend_id}
+                  onSelect={onSelectFriend}
                 />
               ))
             ) : (
@@ -309,11 +346,15 @@ export default function FriendsView({
         </main>
 
         <aside className="dc-friends-activity">
-          <h2>현재 활동 중</h2>
-          <div className="dc-activity-card">
-            <p>지금은 조용하네요...</p>
-            <span>친구가 방에 참여하거나 에이전트 세션이 켜지면 여기에 표시됩니다.</span>
-          </div>
+          <h2>{selectedFriend ? "프로필" : "현재 활동 중"}</h2>
+          <FriendProfileCard
+            friend={selectedFriend}
+            activeRoomName={activeRoomName}
+            inviteLabel={
+              selectedFriend && busyId === `invite:${selectedFriend.friend_id}` ? "초대 중" : "방에 초대"
+            }
+            onInvite={onInviteFriendToRoom ? handleInvite : undefined}
+          />
         </aside>
       </div>
     </div>
