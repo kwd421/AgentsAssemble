@@ -37,7 +37,7 @@ class FrontendReleaseHealthQueueTests(unittest.TestCase):
             const labels = await import(pathToFileURL(modulePath).href);
 
             const expectedSafetyClasses = [
-              "frontend_static_syntax",
+              "frontend_react_build",
               "python_unit",
               "python_integration",
               "python_compile",
@@ -48,6 +48,7 @@ class FrontendReleaseHealthQueueTests(unittest.TestCase):
               Object.keys(labels.RELEASE_HEALTH_SAFETY_LABELS).sort(),
               expectedSafetyClasses.sort()
             );
+            assert.equal(labels.releaseHealthSafetyLabel("frontend_react_build"), "React 빌드");
             assert.equal(labels.releaseHealthSafetyLabel("python_unit"), "Python 단위검증");
             assert.equal(labels.releaseHealthSafetyLabel("local_room_benchmark"), "로컬 룸 벤치");
             assert.equal(labels.releaseHealthSafetyLabel("future_class"), "검증");
@@ -85,7 +86,7 @@ class FrontendReleaseHealthQueueTests(unittest.TestCase):
                   optional: false,
                   default_run: true,
                   order: 1,
-                  safety_class: "frontend_static_syntax",
+                  safety_class: "frontend_react_build",
                 },
               ],
             };

@@ -1,21 +1,32 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   Archive,
+  Bot,
+  Check,
   ChevronDown,
-  Circle,
+  Copy,
+  Gamepad2,
+  Hash,
   LayoutDashboard,
+  LogOut,
+  Plus,
   Radio,
   Settings,
-  ShieldCheck,
+  Sparkles,
+  UserPlus,
   Users,
-  Zap,
+  X,
 } from "lucide-react";
 import {
   fetchLiveAgentFlow,
+  fetchRoomSettings,
   fetchMafiaGame,
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
   fetchSideChat,
+  saveRoomSettings,
   applyMeetingStreamUpdate,
   initialMeetingStreamState,
   mergeSideChatEvents,
@@ -36,27 +47,225 @@ import {
 import { usePoll } from "./hooks";
 import AdminPanel from "./views/AdminPanel";
 import BoardView from "./views/BoardView";
-import DiscordRoomSidebar, {
-  type DiscordRoomChannel,
-  type DiscordRoomChannelId,
-} from "./views/components/DiscordRoomSidebar";
-import HomeFriendsView from "./views/HomeFriendsView";
+import FriendsView from "./views/FriendsView";
 import LiveView from "./views/LiveView";
 import LobbyView from "./views/LobbyView";
 import RecordsView from "./views/RecordsView";
-import RoomCommandStrip from "./views/components/RoomCommandStrip";
-import RoomInvitePanel from "./views/components/RoomInvitePanel";
+import HomeSidebar from "./views/components/HomeSidebar";
+import type { HomeFilter } from "./views/components/HomeSidebar";
+import MemberList from "./views/components/MemberList";
+import type { RoleId } from "./views/components/MemberList";
+import RoomSettingsModal from "./views/components/RoomSettingsModal";
+import SideChatDock from "./views/components/SideChatDock";
+import UserPanel from "./views/components/UserPanel";
+import {
+  completeRoomAppearance,
+  loadRoomAppearances,
+  persistRoomAppearances,
+  roomAppearanceStyle,
+  type RoomAppearance,
+} from "./lib/roomAppearance";
 
-type Channel = "home" | DiscordRoomChannelId;
-type CoreChannel = Exclude<Channel, "home">;
-type RoomSurface = CoreChannel | "admin";
+type Channel = "friends" | "lobby" | "live" | "board" | "records";
 
-const CHANNELS: DiscordRoomChannel[] = [
-  { id: "lobby", label: "로비", icon: Users, description: "준비, 초대, 시작 전 대화" },
-  { id: "live", label: "실황", icon: Radio, description: "회의 흐름과 사이드챗" },
-  { id: "board", label: "작전판", icon: LayoutDashboard, description: "작업 상태와 결정 후보" },
-  { id: "records", label: "아카이브", icon: Archive, description: "기록, 결정, 산출물" },
+type ChannelConfig = {
+  id: Channel;
+  label: string;
+  icon: LucideIcon;
+};
+
+type RoomMenuState = {
+  roomId: string;
+  x: number;
+  y: number;
+} | null;
+
+type InviteModalState = {
+  roomId: string;
+} | null;
+
+type RoomSettingsState = {
+  roomId: string;
+} | null;
+
+type RightPanelMode = "room-info" | "side-chat";
+
+export type RoomDockItem = {
+  id: string;
+  label: string;
+  meetingId: string;
+  topic: string;
+  shortLabel: string;
+  inviteScope?: RoomAppearance["inviteScope"];
+  icon: LucideIcon;
+  createdAt: string;
+  tone: "fresh" | "resident" | "mafia" | "work";
+};
+
+const CHANNELS: ChannelConfig[] = [
+  { id: "lobby", label: "채팅", icon: Hash },
+  { id: "live", label: "진행 로그", icon: Radio },
+  { id: "board", label: "작전판", icon: LayoutDashboard },
+  { id: "records", label: "아카이브", icon: Archive },
 ];
+
+const CHANNEL_SECTIONS: Array<{ label: string; channels: Channel[] }> = [
+  { label: "대화", channels: ["lobby", "live"] },
+  { label: "작업 채널", channels: ["board", "records"] },
+];
+
+const PINNED_ROOMS: RoomDockItem[] = [
+  {
+    id: "resident-m1",
+    label: "AgentsAssemble",
+    meetingId: "resident-m1",
+    topic: "상주 회의실",
+    shortLabel: "A",
+    icon: Bot,
+    createdAt: "",
+    tone: "resident",
+  },
+  {
+    id: "mafia-room",
+    label: "Mafia Night",
+    meetingId: "mafia-room",
+    topic: "추론 게임",
+    shortLabel: "M",
+    icon: Gamepad2,
+    createdAt: "",
+    tone: "mafia",
+  },
+  {
+    id: "work-room",
+    label: "Work Room",
+    meetingId: "work-room",
+    topic: "개발 회의",
+    shortLabel: "W",
+    icon: LayoutDashboard,
+    createdAt: "",
+    tone: "work",
+  },
+];
+
+function compactTimestamp(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    "T",
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join("");
+}
+
+function createFreshRoom(now = new Date()): RoomDockItem {
+  const suffix = compactTimestamp(now);
+  return {
+    id: `fresh-${suffix}`,
+    label: "새 회의실",
+    meetingId: `room-${suffix}`,
+    topic: "빈 채팅방에서 시작",
+    shortLabel: "N",
+    icon: Sparkles,
+    createdAt: now.toISOString(),
+    tone: "fresh",
+  };
+}
+
+function cleanInviteValue(value: string | null, fallback: string, limit: number) {
+  const text = (value || "").replace(/[\r\n\t]/g, " ").trim();
+  return (text || fallback).slice(0, limit);
+}
+
+function roomFromInviteParams(): RoomDockItem | null {
+  try {
+    const query = new URLSearchParams(window.location.search);
+    const guestMode =
+      query.get("guest") === "1" ||
+      query.get("invite") === "1" ||
+      query.get("invite") === "room";
+    const meetingId = cleanInviteValue(
+      query.get("room") || query.get("meeting") || query.get("meeting_id"),
+      "",
+      128
+    );
+    if (!guestMode || !meetingId) return null;
+    const label = cleanInviteValue(query.get("roomName") || query.get("name"), meetingId, 80);
+    const topic = cleanInviteValue(query.get("topic"), "초대받은 방", 160);
+    const inviteScope = query.get("scope") || query.get("inviteScope") || "room";
+    return {
+      id: `guest-${meetingId}`,
+      label: label || meetingId,
+      meetingId,
+      topic,
+      shortLabel: (label || meetingId).slice(0, 1).toUpperCase() || "G",
+      inviteScope: inviteScope === "read_only" ? "read_only" : "room",
+      icon: Users,
+      createdAt: "",
+      tone: "resident",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function roomFromFlow(flow: FlowResponse["flow"]): RoomDockItem | null {
+  if (!flow.meeting_id) return null;
+  return {
+    id: `flow-${flow.meeting_id}`,
+    label: flow.meeting_id,
+    meetingId: flow.meeting_id,
+    topic: flow.topic || "최근 회의",
+    shortLabel: "R",
+    icon: Radio,
+    createdAt: "",
+    tone: "resident",
+  };
+}
+
+function roomHasAgent(room: RoomDockItem, agent: LiveAgent) {
+  return Boolean(agent.meeting_id && agent.meeting_id === room.meetingId);
+}
+
+function roomSettingsKey(room: RoomDockItem) {
+  return room.meetingId || room.id;
+}
+
+function inviteUrlForRoom(room: RoomDockItem, appearance?: RoomAppearance) {
+  const url = new URL(window.location.href);
+  const inviteScope = appearance?.inviteScope || room.inviteScope || "room";
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("guest", "1");
+  url.searchParams.set("room", room.meetingId);
+  url.searchParams.set("roomName", room.label);
+  if (room.topic) url.searchParams.set("topic", room.topic);
+  url.searchParams.set("scope", inviteScope);
+  return url.toString();
+}
+
+async function copyText(value: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // Fall through to the textarea path when browser permissions reject clipboard writes.
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  return copied;
+}
 
 function statusText(status?: string) {
   if (status === "running") return "라이브";
@@ -65,57 +274,32 @@ function statusText(status?: string) {
   return "대기";
 }
 
-function roomName(flow: FlowResponse["flow"], fallbackRoomId = "") {
-  return flow.meeting_id || flow.flow_id || fallbackRoomId || "resident-room";
-}
-
-function roomIdFromLocation() {
-  try {
-    const query = new URLSearchParams(window.location.search);
-    return query.get("meeting") || query.get("room") || "";
-  } catch {
-    return "";
-  }
-}
-
-function isPublicJoinRoute() {
-  try {
-    return window.location.pathname === "/join" || window.location.pathname === "/join/";
-  } catch {
-    return false;
-  }
-}
-
-function PublicJoinApp() {
-  return (
-    <div className="ops-shell min-h-screen text-text-primary">
-      <main className="mx-auto flex min-h-screen w-full max-w-[520px] flex-col justify-center px-4 py-8">
-        <div className="ops-panel ops-cut space-y-4 p-4">
-          <div className="flex items-center gap-3">
-            <span className="ops-logo-mark shrink-0" aria-hidden />
-            <div className="min-w-0">
-              <h1 className="text-[18px] font-black text-text-primary">AgentsAssemble 입장</h1>
-              <p className="text-[12px] text-text-muted">초대받은 방에 참가합니다.</p>
-            </div>
-          </div>
-          <RoomInvitePanel meetingId="" guestOnly />
-        </div>
-      </main>
-    </div>
-  );
+function statusDotClass(status?: string) {
+  if (status === "running") return "bg-online live-pulse";
+  if (status === "stopped" || status === "finished") return "bg-offline";
+  return "bg-idle";
 }
 
 export default function App() {
-  if (isPublicJoinRoute()) {
-    return <PublicJoinApp />;
-  }
-  return <OperatorApp />;
-}
-
-function OperatorApp() {
-  const [channel, setChannel] = useState<Channel>("lobby");
+  const [guestInvite] = useState(() => roomFromInviteParams());
+  const guestLocked = Boolean(guestInvite);
+  const [channel, setChannel] = useState<Channel>(() => (guestInvite ? "lobby" : "friends"));
+  const [homeFilter, setHomeFilter] = useState<HomeFilter>("friends");
   const [adminOpen, setAdminOpen] = useState(false);
-  const [requestedRoomId] = useState(roomIdFromLocation);
+  const [membersOpen, setMembersOpen] = useState(true);
+  const [rightPanelMode, setRightPanelMode] = useState<RightPanelMode>("room-info");
+  const [rooms, setRooms] = useState<RoomDockItem[]>(() =>
+    guestInvite ? [guestInvite] : [createFreshRoom(), ...PINNED_ROOMS]
+  );
+  const [activeRoomId, setActiveRoomId] = useState(() => guestInvite?.id || "");
+  const [roomMenu, setRoomMenu] = useState<RoomMenuState>(null);
+  const [inviteModal, setInviteModal] = useState<InviteModalState>(null);
+  const [settingsModal, setSettingsModal] = useState<RoomSettingsState>(null);
+  const [inviteCopyStatus, setInviteCopyStatus] = useState("");
+  const [roomAppearances, setRoomAppearances] = useState<Record<string, RoomAppearance>>(() =>
+    loadRoomAppearances()
+  );
+  const [roomMemberRoles, setRoomMemberRoles] = useState<Record<string, Record<string, string>>>({});
   const [mafiaGameId, setMafiaGameId] = useState(() => {
     try {
       const query = new URLSearchParams(window.location.search);
@@ -130,26 +314,26 @@ function OperatorApp() {
     }
   });
   const [meetingStreamState, setMeetingStreamState] = useState<MeetingStreamState>(() =>
-    initialMeetingStreamState(requestedRoomId)
+    initialMeetingStreamState("")
   );
   const [meetingStreamError, setMeetingStreamError] = useState<Error | null>(null);
   const [sideChatEvents, setSideChatEvents] = useState<SideChatEvent[]>([]);
   const [sideChatError, setSideChatError] = useState<Error | null>(null);
 
-  const flowFetcher = useCallback(() => fetchLiveAgentFlow(), []);
+  const guestMeetingId = guestInvite?.meetingId || "";
+  const guestReadOnly = guestInvite?.inviteScope === "read_only";
+  const flowFetcher = useCallback(() => fetchLiveAgentFlow(guestMeetingId), [guestMeetingId]);
   const [flowData, flowLoading, flowError, refreshFlow] = usePoll<FlowResponse>(flowFetcher, 4000);
   const flow = flowData?.flow ?? { status: "idle" };
-  const activeRoomId = flow.meeting_id || requestedRoomId;
   const lifecycleFetcher = useCallback((): Promise<MeetingLifecycleResponse> => {
-    if (!activeRoomId) return Promise.resolve({ meeting_id: "", lifecycle: null });
-    return fetchMeetingLifecycle(activeRoomId);
-  }, [activeRoomId]);
-  const [lifecycleData, lifecycleLoading, lifecycleError] =
-    usePoll<MeetingLifecycleResponse>(lifecycleFetcher, 5000);
+    if (!flow.meeting_id) return Promise.resolve({ meeting_id: "", lifecycle: null });
+    return fetchMeetingLifecycle(flow.meeting_id);
+  }, [flow.meeting_id]);
+  const [lifecycleData] = usePoll<MeetingLifecycleResponse>(lifecycleFetcher, 5000);
   const workroomQueueFetcher = useCallback((): Promise<WorkroomQueueEvidence | null> => {
-    if (!activeRoomId || adminOpen || channel !== "board") return Promise.resolve(null);
-    return fetchWorkroomQueueEvidence(activeRoomId);
-  }, [activeRoomId, adminOpen, channel]);
+    if (!flow.meeting_id || adminOpen || channel !== "board") return Promise.resolve(null);
+    return fetchWorkroomQueueEvidence(flow.meeting_id);
+  }, [adminOpen, channel, flow.meeting_id]);
   const [workroomQueueEvidence] = usePoll<WorkroomQueueEvidence | null>(
     workroomQueueFetcher,
     8000
@@ -163,9 +347,49 @@ function OperatorApp() {
   const agents: LiveAgent[] = Array.isArray(flowData?.agents)
     ? flowData.agents
     : [];
-  const sideChatMeetingId = activeRoomId || "";
+  const activeRoom = rooms.find((room) => room.id === activeRoomId) ?? rooms[0] ?? createFreshRoom();
+  const activeSideChatMeetingId = activeRoom.meetingId || "";
+
   useEffect(() => {
-    const meetingId = activeRoomId || "";
+    if (guestLocked) return;
+    const flowRoom = roomFromFlow(flow);
+    if (!flowRoom) return;
+    setRooms((previous) => {
+      const existingIndex = previous.findIndex((room) => room.meetingId === flowRoom.meetingId);
+      if (existingIndex >= 0) {
+        const next = [...previous];
+        next[existingIndex] = {
+          ...next[existingIndex],
+          label: next[existingIndex].label || flowRoom.label,
+          topic: flowRoom.topic,
+        };
+        return next;
+      }
+      const [firstRoom, ...restRooms] = previous;
+      return firstRoom ? [firstRoom, flowRoom, ...restRooms] : [flowRoom];
+    });
+  }, [flow.meeting_id, flow.topic, guestLocked]);
+
+  useEffect(() => {
+    if (!roomMenu) return;
+    function closeMenu() {
+      setRoomMenu(null);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMenu();
+    }
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [roomMenu]);
+
+  useEffect(() => {
+    const meetingId = flow.meeting_id || "";
     setMeetingStreamState(initialMeetingStreamState(meetingId));
     setMeetingStreamError(null);
     if (!meetingId || adminOpen || channel !== "live") return;
@@ -188,16 +412,17 @@ function OperatorApp() {
       cancelled = true;
       unsubscribe();
     };
-  }, [activeRoomId, adminOpen, channel]);
+  }, [adminOpen, channel, flow.meeting_id]);
 
   useEffect(() => {
     let cancelled = false;
     setSideChatEvents([]);
-    fetchSideChat(sideChatMeetingId)
+    setSideChatError(null);
+    fetchSideChat(activeSideChatMeetingId)
       .then((payload) => {
         if (cancelled) return;
         if (Array.isArray(payload.events)) {
-          setSideChatEvents((previous) => mergeSideChatEvents(previous, payload.events));
+          setSideChatEvents(payload.events);
         }
         setSideChatError(null);
       })
@@ -207,7 +432,7 @@ function OperatorApp() {
         }
       });
     const unsubscribe = subscribeSideChat(
-      sideChatMeetingId,
+      activeSideChatMeetingId,
       (incoming) => {
         if (cancelled) return;
         setSideChatError(null);
@@ -221,7 +446,7 @@ function OperatorApp() {
       cancelled = true;
       unsubscribe();
     };
-  }, [sideChatMeetingId]);
+  }, [activeSideChatMeetingId]);
 
   const handleSideChatPosted = useCallback((events: SideChatEvent[]) => {
     setSideChatEvents((previous) => mergeSideChatEvents(previous, events));
@@ -229,13 +454,13 @@ function OperatorApp() {
 
   const activeMeetingStreamState = meetingStreamStateForActiveMeeting(
     meetingStreamState,
-    activeRoomId || ""
+    flow.meeting_id || ""
   );
   const lifecycle: LifecycleProjection | null =
     activeMeetingStreamState.lifecycle ??
-    (lifecycleData?.meeting_id === activeRoomId ? lifecycleData?.lifecycle ?? null : null);
+    (lifecycleData?.meeting_id === flow.meeting_id ? lifecycleData?.lifecycle ?? null : null);
   const scopedWorkroomQueueEvidence =
-    workroomQueueEvidence?.meeting_id === activeRoomId ? workroomQueueEvidence : null;
+    workroomQueueEvidence?.meeting_id === flow.meeting_id ? workroomQueueEvidence : null;
   const flowEvents = Array.isArray(flowData?.flow_events)
     ? flowData.flow_events
     : Array.isArray(flowData?.events)
@@ -243,18 +468,109 @@ function OperatorApp() {
       : [];
   const officialTimelineEvents = meetingLiveEventsToTimelineEvents(activeMeetingStreamState.events);
   const liveTimelineEvents = flowEvents.length ? flowEvents : officialTimelineEvents;
-  const activeSurface: RoomSurface = adminOpen || channel === "home" ? "admin" : channel;
 
-  const onlineCount = agents.filter(
-    (agent) => agent.status === "online" || agent.status === "working"
-  ).length;
   const flowRunning = flow.status === "running";
   const mafiaGame = mafiaData?.game ?? null;
+  const activeRoomFlowVisible = Boolean(flow.meeting_id && flow.meeting_id === activeRoom.meetingId);
+  const scopedFlow = activeRoomFlowVisible
+    ? flow
+    : {
+        status: "idle",
+        meeting_id: activeRoom.meetingId,
+        topic: activeRoom.topic,
+      };
+  const scopedLiveTimelineEvents = activeRoomFlowVisible ? liveTimelineEvents : [];
+  const scopedTimelineSource = activeRoomFlowVisible
+    ? flowEvents.length
+      ? "flow"
+      : "official"
+    : "flow";
+  const scopedAgents = agents.filter((agent) => roomHasAgent(activeRoom, agent));
+  const scopedOnlineCount = scopedAgents.filter(
+    (agent) => agent.status === "online" || agent.status === "working"
+  ).length;
+  const activeRoomKey = roomSettingsKey(activeRoom);
+  const menuRoom = roomMenu ? rooms.find((room) => room.id === roomMenu.roomId) : undefined;
+  const visibleChannels = guestLocked
+    ? CHANNELS.filter((item) => item.id !== "records")
+    : CHANNELS;
   const backendStatusText = flowLoading
     ? "백엔드 확인 중"
     : flowError
       ? "백엔드 응답 없음"
       : "백엔드 응답";
+
+  function selectRoom(roomId: string) {
+    setActiveRoomId(roomId);
+    setAdminOpen(false);
+    setChannel("lobby");
+    setRoomMenu(null);
+  }
+
+  function addFreshRoom() {
+    if (guestLocked) return;
+    const room = createFreshRoom();
+    setRooms((previous) => [room, ...previous]);
+    setActiveRoomId(room.id);
+    setAdminOpen(false);
+    setChannel("lobby");
+    setRoomMenu(null);
+  }
+
+  function openRoomMenu(event: ReactMouseEvent, room: RoomDockItem) {
+    event.preventDefault();
+    setActiveRoomId(room.id);
+    setAdminOpen(false);
+    setRoomMenu({
+      roomId: room.id,
+      x: Math.min(event.clientX, window.innerWidth - 220),
+      y: Math.min(event.clientY, window.innerHeight - 160),
+    });
+  }
+
+  function markRoomRead(roomId: string) {
+    const readAt = new Date().toISOString();
+    setRooms((previous) =>
+      previous.map((room) => (room.id === roomId ? { ...room, createdAt: readAt } : room))
+    );
+    setRoomMenu(null);
+  }
+
+  function inviteRoom(roomId: string) {
+    setActiveRoomId(roomId);
+    setChannel("lobby");
+    setAdminOpen(false);
+    setInviteModal({ roomId });
+    setInviteCopyStatus("");
+    setRoomMenu(null);
+  }
+
+  function openRoomSettings(roomId: string) {
+    if (guestLocked) return;
+    setActiveRoomId(roomId);
+    setAdminOpen(false);
+    setSettingsModal({ roomId });
+    setRoomMenu(null);
+  }
+
+  function leaveRoom(roomId: string) {
+    if (guestLocked) {
+      const url = new URL(window.location.href);
+      url.search = "";
+      url.hash = "";
+      window.location.href = url.toString();
+      return;
+    }
+    const remainingRooms = rooms.filter((room) => room.id !== roomId);
+    const nextRooms = remainingRooms.length ? remainingRooms : [createFreshRoom()];
+    setRooms(nextRooms);
+    if (activeRoom.id === roomId) {
+      setActiveRoomId(nextRooms[0]?.id || "");
+      setChannel("lobby");
+      setAdminOpen(false);
+    }
+    setRoomMenu(null);
+  }
 
   function handleMafiaStarted(game: MafiaGame) {
     try {
@@ -279,216 +595,515 @@ function OperatorApp() {
     setAdminOpen(false);
   }
 
-  function handleCommandSurface(surface: RoomSurface) {
-    if (surface === "admin") {
-      setAdminOpen(true);
-      return;
-    }
-    setChannel(surface);
+  function goToChannel(next: Channel) {
+    setChannel(next);
     setAdminOpen(false);
   }
 
+  async function copyInviteLink(room: RoomDockItem, appearance?: RoomAppearance) {
+    setInviteCopyStatus("");
+    const copied = await copyText(inviteUrlForRoom(room, appearance));
+    setInviteCopyStatus(copied ? "복사됨" : "복사 실패");
+  }
+
+  const toggleMembers = useCallback(() => setMembersOpen((value) => !value), []);
+  const showMembers = !adminOpen && channel !== "records" && channel !== "friends";
+  const inviteModalRoom = inviteModal ? rooms.find((room) => room.id === inviteModal.roomId) : undefined;
+  const settingsModalRoom = settingsModal
+    ? rooms.find((room) => room.id === settingsModal.roomId)
+    : undefined;
+  const inviteModalAppearance = inviteModalRoom
+    ? completeRoomAppearance(
+        roomAppearances[roomSettingsKey(inviteModalRoom)] || roomAppearances[inviteModalRoom.id]
+      )
+    : undefined;
+  const inviteUrl = inviteModalRoom ? inviteUrlForRoom(inviteModalRoom, inviteModalAppearance) : "";
+  const activeAppearance = completeRoomAppearance(
+    roomAppearances[activeRoomKey] || roomAppearances[activeRoom.id]
+  );
+  const activeRoomStyle = useMemo(() => roomAppearanceStyle(activeAppearance), [activeAppearance]);
+  const activeMemberRoles = roomMemberRoles[activeRoomKey] || {};
+
+  useEffect(() => {
+    if (!activeRoom.meetingId) return;
+    let cancelled = false;
+    fetchRoomSettings(activeRoom.meetingId)
+      .then((settings) => {
+        if (cancelled) return;
+        if (settings.label || settings.topic || settings.shortLabel) {
+          setRooms((previous) =>
+            previous.map((room) =>
+              room.meetingId === activeRoom.meetingId
+                ? {
+                    ...room,
+                    label: settings.label || room.label,
+                    topic: settings.topic || room.topic,
+                    shortLabel: settings.shortLabel || room.shortLabel,
+                  }
+                : room
+            )
+          );
+        }
+        setRoomAppearances((previous) => ({
+          ...previous,
+          [activeRoom.meetingId]: settings.appearance,
+        }));
+        setRoomMemberRoles((previous) => ({
+          ...previous,
+          [activeRoom.meetingId]: settings.memberRoles,
+        }));
+      })
+      .catch(() => {
+        // Room settings are a UI enhancement; an unavailable endpoint should not blank the room.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRoom.meetingId]);
+
+  function updateRoom(roomId: string, updates: Partial<RoomDockItem>) {
+    setRooms((previous) =>
+      previous.map((room) => (room.id === roomId ? { ...room, ...updates } : room))
+    );
+  }
+
+  function persistRoomSettings(room: RoomDockItem, nextAppearance: RoomAppearance, nextRoles?: Record<string, string>) {
+    void saveRoomSettings({
+      roomId: room.meetingId,
+      label: room.label,
+      topic: room.topic,
+      shortLabel: room.shortLabel,
+      appearance: nextAppearance,
+      memberRoles: nextRoles ?? roomMemberRoles[roomSettingsKey(room)] ?? {},
+    }).catch(() => {
+      // Saving is reflected again by the next explicit settings read; keep the optimistic UI state.
+    });
+  }
+
+  function updateRoomAppearance(room: RoomDockItem, updates: Partial<RoomAppearance>) {
+    const key = roomSettingsKey(room);
+    const previousAppearance = completeRoomAppearance(roomAppearances[key] || roomAppearances[room.id]);
+    const nextAppearance = completeRoomAppearance({ ...previousAppearance, ...updates });
+    setRoomAppearances((previous) => {
+      const next = {
+        ...previous,
+        [key]: nextAppearance,
+      };
+      persistRoomAppearances(next);
+      return next;
+    });
+    persistRoomSettings(room, nextAppearance);
+  }
+
+  function updateMemberRole(memberId: string, role: RoleId) {
+    const key = roomSettingsKey(activeRoom);
+    const nextRoles = { ...activeMemberRoles, [memberId]: role };
+    setRoomMemberRoles((previous) => ({ ...previous, [key]: nextRoles }));
+    persistRoomSettings(activeRoom, activeAppearance, nextRoles);
+  }
+
   return (
-    <div className="ops-shell h-screen max-h-screen overflow-hidden text-text-primary">
-      <div className="relative z-[1] flex h-full min-h-0 flex-col">
-        <header className="ops-topbar shrink-0 px-3 py-2 lg:px-5">
-          <div className="flex flex-wrap items-center gap-3">
+    <div
+      className="ops-shell flex h-screen max-h-screen overflow-hidden text-text-primary"
+      style={activeRoomStyle}
+      data-banner-preset={activeAppearance.bannerPreset}
+    >
+      {/* Server / room rail */}
+      <nav
+        className="dc-rail flex shrink-0 flex-col items-center gap-2 py-3"
+        aria-label="룸 레일"
+      >
+        <button
+          type="button"
+          onClick={() => (guestLocked ? goToChannel("lobby") : goToChannel("friends"))}
+          className="dc-rail-home"
+          data-active={!adminOpen && channel === "friends"}
+          aria-label="친구와 DM"
+          title="친구"
+        >
+          <Users size={20} />
+        </button>
+        <span className="dc-server-divider" aria-hidden />
+        <div className="dc-room-stack min-h-0 flex-1 overflow-y-auto chat-scroll" aria-label="방 목록">
+          {rooms.map((room) => {
+            const Icon = room.icon;
+            const active = !adminOpen && activeRoom.id === room.id;
+            const roomAppearance = completeRoomAppearance(
+              roomAppearances[roomSettingsKey(room)] || roomAppearances[room.id]
+            );
+            return (
+              <button
+                key={room.id}
+                type="button"
+                onClick={() => selectRoom(room.id)}
+                onContextMenu={(event) => openRoomMenu(event, room)}
+                data-active={active}
+                data-tone={room.tone}
+                data-has-image={Boolean(roomAppearance.iconImage)}
+                style={roomAppearanceStyle(roomAppearance)}
+                className="dc-server-btn"
+                aria-label={room.label}
+                title={`${room.label} · ${room.topic}`}
+              >
+                {roomAppearance.iconImage ? null : <Icon size={18} aria-hidden />}
+                <span className="sr-only">{room.shortLabel}</span>
+              </button>
+            );
+          })}
+          {!guestLocked && (
             <button
               type="button"
-              onClick={() => {
-                setChannel("home");
-                setAdminOpen(false);
-              }}
-              className="flex min-w-0 items-center gap-3 pr-2"
-              aria-label="AgentsAssemble Discord 홈으로 이동"
+              onClick={addFreshRoom}
+              className="dc-server-btn dc-server-add"
+              aria-label="새 방 만들기"
+              title="새 방"
             >
-              <span className="ops-logo-mark shrink-0" aria-hidden />
-              <span className="hidden text-[18px] font-black uppercase tracking-tight text-text-primary drop-shadow-[0_0_10px_rgba(34,211,238,0.25)] sm:block">
-                AgentsAssemble
-              </span>
+              <Plus size={20} />
             </button>
-            <div className="ops-client-marker hidden items-center gap-2 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wide md:flex">
-              <span className="text-accent">Discord</span>
-              <span className="h-1 w-1 rounded-full bg-text-muted/60" aria-hidden />
-              <span className="text-text-muted">room client</span>
-            </div>
+          )}
+        </div>
+        {menuRoom && roomMenu && (
+          <div
+            className="dc-context-menu"
+            style={{ left: roomMenu.x, top: roomMenu.y }}
+            role="menu"
+            aria-label={`${menuRoom.label} 서버 메뉴`}
+            onClick={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <p className="dc-context-title preserve-words">{menuRoom.label}</p>
+            <button type="button" role="menuitem" onClick={() => markRoomRead(menuRoom.id)}>
+              <Check size={16} />
+              읽음으로 표시하기
+            </button>
+            {!guestLocked && (
+              <button type="button" role="menuitem" onClick={() => inviteRoom(menuRoom.id)}>
+                <UserPlus size={16} />
+                서버에 초대하기
+              </button>
+            )}
+            {!guestLocked && (
+              <button type="button" role="menuitem" onClick={() => openRoomSettings(menuRoom.id)}>
+                <Settings size={16} />
+                서버 설정
+              </button>
+            )}
+            <span className="dc-context-separator" aria-hidden />
+            <button
+              type="button"
+              role="menuitem"
+              className="danger"
+              onClick={() => leaveRoom(menuRoom.id)}
+            >
+              <LogOut size={16} />
+              서버 나가기
+            </button>
+          </div>
+        )}
+        <div className="mt-auto" />
+        {!guestLocked && (
+          <button
+            type="button"
+            aria-label="관리 패널"
+            aria-pressed={adminOpen}
+            onClick={() => setAdminOpen((value) => !value)}
+            data-active={adminOpen}
+            className="dc-rail-btn"
+            title="관리"
+          >
+            <Settings size={20} />
+          </button>
+        )}
+      </nav>
 
-            <nav className="ops-nav-scroll order-3 flex min-w-full flex-1 items-center justify-start gap-1 overflow-x-auto rounded-xl border border-accent/10 bg-black/18 px-1 py-1 sm:order-none sm:min-w-0 sm:justify-center md:hidden">
-              {CHANNELS.map(({ id, label, icon: Icon }) => {
-                const active = !adminOpen && channel === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    data-active={active}
-                    onClick={() => {
-                      setChannel(id);
-                      setAdminOpen(false);
-                    }}
-                    className="ops-tab flex h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-[14px] font-bold transition-colors hover:bg-accent/10 hover:text-text-primary"
-                  >
-                    <Icon size={16} className="sm:hidden lg:block" />
-                    {label}
-                  </button>
-                );
-              })}
-            </nav>
-
-            <div className="ml-auto flex items-center gap-2">
-              <div className="hidden items-center gap-2 rounded-lg border border-accent/16 bg-panel-soft/60 px-3 py-2 text-[12px] font-semibold text-text-secondary md:flex">
-                <span
-                  className={`h-2.5 w-2.5 rounded-full ${
-                    flowRunning ? "bg-online live-pulse" : "bg-online"
-                  }`}
-                />
-                Local-first
+      {inviteModalRoom && (
+        <div className="dc-modal-backdrop" role="presentation" onClick={() => setInviteModal(null)}>
+          <section
+            className="dc-invite-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="room-invite-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 id="room-invite-title" className="truncate text-[18px] font-black text-text-primary preserve-words">
+                  {inviteModalRoom.label}에 초대하기
+                </h2>
+                <p className="mt-1 text-[13px] text-text-muted preserve-words">
+                  이 링크로 들어온 사람은 이 방만 보고 채팅합니다.
+                </p>
               </div>
-
-              <div className="hidden items-center gap-2 rounded-lg border border-accent/16 bg-black/20 px-3 py-2 text-[12px] font-semibold text-text-secondary lg:flex">
-                <span
-                  className={`h-2.5 w-2.5 rounded-full ${
-                    flowError ? "bg-offline" : flowLoading ? "bg-idle" : "bg-online"
-                  }`}
-                />
-                <span>{backendStatusText}</span>
-              </div>
-
-              <div className="hidden max-w-[230px] items-center gap-2 rounded-lg border border-accent/18 bg-black/22 px-3 py-2 text-[12px] text-text-secondary md:flex">
-                <span className="truncate preserve-words">
-                  Meeting: {roomName(flow, activeRoomId)}
-                </span>
-                <ChevronDown size={14} className="shrink-0 text-text-muted" />
-              </div>
-
               <button
                 type="button"
-                onClick={() => {
-                  setChannel("lobby");
-                  setAdminOpen(false);
-                }}
-                className="ops-cta ops-cut hidden h-11 items-center gap-2 px-4 text-[13px] font-black sm:flex"
+                className="dc-modal-close"
+                onClick={() => setInviteModal(null)}
+                aria-label="초대 닫기"
               >
-                <Zap size={16} />
-                빠른 시작
+                <X size={18} />
               </button>
+            </header>
+            <label className="mt-5 grid gap-2 text-[12px] font-bold text-text-muted">
+              초대 링크
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px]">
+                <input
+                  className="ops-input min-w-0 rounded px-3 py-2.5 text-[13px]"
+                  value={inviteUrl}
+                  readOnly
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <button
+                  type="button"
+                  className="ops-cta inline-flex items-center justify-center gap-2 px-3 py-2.5 text-[13px]"
+                  onClick={() => void copyInviteLink(inviteModalRoom, inviteModalAppearance)}
+                >
+                  <Copy size={15} />
+                  링크 복사
+                </button>
+              </div>
+            </label>
+            <p className="mt-3 text-[12px] text-text-muted preserve-words">
+              {inviteCopyStatus || "브라우저 게스트 링크입니다. provider/CLI 실행 권한은 주지 않습니다."}
+            </p>
+          </section>
+        </div>
+      )}
 
-              <button
-                type="button"
-                aria-label="관리 패널"
-                onClick={() => setAdminOpen((value) => !value)}
-                className={`grid h-11 w-11 place-items-center rounded-xl border transition-colors ${
-                  adminOpen
-                    ? "border-idle/70 bg-idle/12 text-idle"
-                    : "border-accent/20 bg-panel-soft/60 text-text-secondary hover:border-accent/50 hover:text-text-primary"
-                }`}
-              >
-                <Settings size={18} />
-              </button>
+      {settingsModalRoom && (
+        <RoomSettingsModal
+          room={settingsModalRoom}
+          appearance={completeRoomAppearance(
+            roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
+          )}
+          canInvite={!guestLocked}
+          onClose={() => setSettingsModal(null)}
+          onInvite={() => {
+            setSettingsModal(null);
+            inviteRoom(settingsModalRoom.id);
+          }}
+          onRoomChange={(updates) => {
+            const nextRoom = { ...settingsModalRoom, ...updates };
+            updateRoom(settingsModalRoom.id, updates);
+            persistRoomSettings(
+              nextRoom,
+              completeRoomAppearance(
+                roomAppearances[roomSettingsKey(settingsModalRoom)] || roomAppearances[settingsModalRoom.id]
+              )
+            );
+          }}
+          onAppearanceChange={(updates) => updateRoomAppearance(settingsModalRoom, updates)}
+        />
+      )}
+
+      {/* Channel sidebar */}
+      {channel === "friends" && !guestLocked ? (
+        <HomeSidebar
+          activeFilter={homeFilter}
+          onFilterChange={setHomeFilter}
+          backendStatusText={backendStatusText}
+          onlineCount={scopedOnlineCount}
+          agentCount={scopedAgents.length || 0}
+          hasBackendError={Boolean(flowError)}
+        />
+      ) : (
+      <aside className="dc-sidebar flex shrink-0 flex-col" aria-label="채널 목록">
+        <header className="dc-sidebar-head shrink-0" data-tone={activeRoom.tone}>
+          <button
+            type="button"
+            className="dc-server-header-button"
+            onClick={(event) => openRoomMenu(event, activeRoom)}
+            onContextMenu={(event) => openRoomMenu(event, activeRoom)}
+            aria-label={`${activeRoom.label} 서버 메뉴 열기`}
+          >
+            <span className="truncate preserve-words">{activeRoom.label}</span>
+            <ChevronDown size={16} />
+          </button>
+          <div className="dc-sidebar-banner">
+            <span
+              className="dc-sidebar-server-icon"
+              data-has-image={Boolean(activeAppearance.iconImage)}
+            >
+              {activeAppearance.iconImage ? "" : activeAppearance.iconLabel || activeRoom.shortLabel}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-black uppercase tracking-wide text-white/70">
+                Room
+              </p>
+              <p className="truncate text-[12px] font-semibold text-text-muted preserve-words">
+                {activeRoom.topic}
+              </p>
             </div>
+            <span
+              className={`dc-sidebar-status ${
+                activeRoomFlowVisible && flowRunning ? "text-online" : "text-text-muted"
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${statusDotClass(activeRoomFlowVisible ? flow.status : "idle")}`}
+                aria-hidden
+              />
+              {activeRoomFlowVisible ? statusText(flow.status) : "대기"}
+            </span>
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          <DiscordRoomSidebar
-            channels={CHANNELS}
-            activeChannel={channel}
-            adminOpen={adminOpen}
-            meetingId={activeRoomId || ""}
-            roomName={roomName(flow, activeRoomId)}
-            onlineCount={onlineCount}
-            totalAgents={agents.length || 0}
-            onSelectHome={() => {
-              setChannel("home");
-              setAdminOpen(false);
-            }}
-            onSelectChannel={(nextChannel) => {
-              setChannel(nextChannel);
-              setAdminOpen(false);
-            }}
-            onSelectAdmin={() => setAdminOpen(true)}
-            onLeaveRoom={() => {
-              setChannel("home");
-              setAdminOpen(false);
-            }}
+        <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3 chat-scroll" aria-label="채널">
+          {CHANNEL_SECTIONS.map((section) => {
+            const channels = section.channels
+              .map((id) => visibleChannels.find((item) => item.id === id))
+              .filter(Boolean) as ChannelConfig[];
+            if (!channels.length) return null;
+            return (
+              <section key={section.label} className="dc-channel-section">
+                <p className="dc-channel-category">
+                  <ChevronDown size={12} />
+                  {section.label}
+                </p>
+                {channels.map(({ id, label, icon: Icon }) => (
+                  <div key={id}>
+                    <button
+                      type="button"
+                      data-active={!adminOpen && channel === id}
+                      onClick={() => goToChannel(id)}
+                      className="dc-channel"
+                    >
+                      <Icon size={18} className="shrink-0 opacity-70" />
+                      <span className="truncate">{label}</span>
+                      {id === "live" && activeRoomFlowVisible && flowRunning && (
+                        <span className="dc-channel-live-dot" aria-label="진행 중" />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </section>
+            );
+          })}
+        </nav>
+
+        <footer className="dc-user-area shrink-0 px-2 py-2">
+          <UserPanel
+            backendStatusText={backendStatusText}
+            onlineCount={scopedOnlineCount}
+            agentCount={scopedAgents.length || 0}
+            hasBackendError={Boolean(flowError)}
           />
-
-          <div className="flex min-h-0 flex-1 flex-col">
-            {channel !== "home" && (
-              <RoomCommandStrip
-                activeSurface={activeSurface}
-                agents={agents}
-                flow={flow}
-                lifecycle={lifecycle}
-                onSelectSurface={handleCommandSurface}
-              />
-            )}
-
-            <main className="min-h-0 flex-1 overflow-y-auto px-3 pb-16 pt-3 chat-scroll lg:px-4 lg:pb-3 xl:overflow-hidden">
-              {adminOpen ? (
-                <AdminPanel onClose={() => setAdminOpen(false)} />
-              ) : channel === "home" ? (
-                <HomeFriendsView meetingId={activeRoomId || ""} />
-              ) : channel === "lobby" ? (
-                <LobbyView
-                  flow={flow}
-                  agents={agents}
-                  lifecycle={lifecycle}
-                  refreshFlow={refreshFlow}
-                  onMafiaStarted={handleMafiaStarted}
-                  onFlowStarted={handleFlowStarted}
-                />
-              ) : channel === "live" ? (
-                <LiveView
-                  flow={flow}
-                  flowEvents={liveTimelineEvents}
-                  timelineSource={flowEvents.length ? "flow" : "official"}
-                  agents={agents}
-                  mafiaGame={mafiaGame}
-                  refreshMafia={refreshMafia}
-                  lifecycle={lifecycle}
-                  lifecycleLoading={Boolean(activeRoomId) && lifecycleLoading}
-                  lifecycleError={Boolean(activeRoomId) ? lifecycleError || meetingStreamError : null}
-                  sideChatEvents={sideChatEvents}
-                  sideChatError={sideChatError}
-                  onSideChatPosted={handleSideChatPosted}
-                  sideChatMeetingId={sideChatMeetingId}
-                />
-              ) : channel === "board" ? (
-                <BoardView
-                  flow={flow}
-                  agents={agents}
-                  events={flowEvents}
-                  lifecycle={lifecycle}
-                  workroomQueueEvidence={scopedWorkroomQueueEvidence}
-                />
-              ) : (
-                <RecordsView agents={agents} />
-              )}
-            </main>
-          </div>
-        </div>
-
-        <footer className="relative z-[1] flex shrink-0 items-center justify-between border-t border-accent/10 bg-black/25 px-4 py-2 text-[11px] text-text-muted lg:hidden">
-          <span className="flex items-center gap-1.5">
-            <ShieldCheck size={13} />
-            {statusText(flow.status)}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Circle size={8} className="fill-online text-online" />
-            {onlineCount}/{agents.length || 0}
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setChannel("lobby");
-              setAdminOpen(false);
-            }}
-            className="font-bold text-idle"
-          >
-            빠른 시작
-          </button>
         </footer>
-      </div>
+      </aside>
+      )}
+
+      {/* Central channel column */}
+      <main className="dc-chat flex min-w-0 flex-1 flex-col" aria-label="채널 내용">
+        {channel === "friends" && !guestLocked ? (
+          <FriendsView typeFilter={homeFilter === "friends" ? null : homeFilter} />
+        ) : adminOpen ? (
+          <AdminPanel onClose={() => setAdminOpen(false)} activeMeetingId={activeRoom.meetingId} />
+        ) : channel === "lobby" ? (
+          <LobbyView
+            activeRoom={activeRoom}
+            flow={scopedFlow}
+            agents={scopedAgents}
+            refreshFlow={refreshFlow}
+            onMafiaStarted={handleMafiaStarted}
+            onFlowStarted={handleFlowStarted}
+            canManageRoom={!guestLocked}
+            canPostMessages={!guestReadOnly}
+            membersOpen={membersOpen}
+            onToggleMembers={toggleMembers}
+            appearance={activeAppearance}
+          />
+        ) : channel === "live" ? (
+          <LiveView
+            flow={scopedFlow}
+            flowEvents={scopedLiveTimelineEvents}
+            timelineSource={scopedTimelineSource}
+            agents={scopedAgents}
+            mafiaGame={mafiaGame}
+            refreshMafia={refreshMafia}
+            streamError={activeRoomFlowVisible ? meetingStreamError : null}
+            membersOpen={membersOpen}
+            onToggleMembers={toggleMembers}
+          />
+        ) : channel === "board" ? (
+          <BoardView
+            flow={scopedFlow}
+            agents={scopedAgents}
+            events={activeRoomFlowVisible ? flowEvents : []}
+            lifecycle={lifecycle}
+            workroomQueueEvidence={activeRoomFlowVisible ? scopedWorkroomQueueEvidence : null}
+            membersOpen={membersOpen}
+            onToggleMembers={toggleMembers}
+          />
+        ) : (
+          <RecordsView />
+        )}
+      </main>
+
+      {/* Member list */}
+      {showMembers && membersOpen && (
+        <aside
+          className="dc-members hidden shrink-0 xl:flex xl:flex-col"
+          aria-label="방 정보와 멤버"
+          data-testid="room-right-panel"
+          data-panel-mode={rightPanelMode}
+        >
+          <div className="dc-right-panel-tabs" role="tablist" aria-label="우측 패널">
+            <button
+              type="button"
+              role="tab"
+              id="room-info-panel-tab"
+              data-active={rightPanelMode === "room-info"}
+              aria-selected={rightPanelMode === "room-info"}
+              aria-controls="room-info-panel"
+              onClick={() => setRightPanelMode("room-info")}
+            >
+              방 연결 정보
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="side-chat-panel-tab"
+              data-active={rightPanelMode === "side-chat"}
+              aria-selected={rightPanelMode === "side-chat"}
+              aria-controls="side-chat-panel"
+              onClick={() => setRightPanelMode("side-chat")}
+            >
+              사이드챗
+            </button>
+          </div>
+          {rightPanelMode === "room-info" ? (
+            <section
+              id="room-info-panel"
+              role="tabpanel"
+              aria-labelledby="room-info-panel-tab"
+              className="min-h-0 flex-1"
+              data-testid="room-info-panel"
+            >
+              <MemberList
+                agents={scopedAgents}
+                roomId={activeRoom.id}
+                roomName={activeRoom.label}
+                roleOverrides={activeMemberRoles}
+                onRoleChange={updateMemberRole}
+              />
+            </section>
+          ) : (
+            <section
+              id="side-chat-panel"
+              role="tabpanel"
+              aria-labelledby="side-chat-panel-tab"
+              className="min-h-0 flex-1"
+              data-testid="side-chat-panel"
+            >
+              <SideChatDock
+                meetingId={activeSideChatMeetingId}
+                events={sideChatEvents}
+                error={sideChatError}
+                onPosted={handleSideChatPosted}
+              />
+            </section>
+          )}
+        </aside>
+      )}
     </div>
   );
 }

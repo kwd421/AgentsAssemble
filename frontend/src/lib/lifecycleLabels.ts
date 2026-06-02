@@ -78,7 +78,7 @@ const LIFECYCLE_COPY: Record<string, LifecycleCopy> = {
   },
   none: {
     stepLabel: "회의 없음",
-    nextAction: "로비에서 새 회의를 시작하거나 기존 회의를 선택하세요.",
+    nextAction: "채팅 채널에서 새 회의를 시작하거나 기존 회의를 선택하세요.",
   },
 };
 

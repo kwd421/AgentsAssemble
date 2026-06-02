@@ -76,7 +76,7 @@ class LegacyReactParityInventoryTests(unittest.TestCase):
         matrix_text = (ROOT / "docs" / "product" / "legacy-react-parity-matrix.md").read_text(encoding="utf-8")
 
         self.assertIn("Discord-style room client (default entry point)", matrix_text)
-        self.assertIn("vanilla fallback", matrix_text)
+        self.assertIn("legacy static routes are retired", matrix_text)
         self.assertIn("/legacy/", matrix_text)
 
 

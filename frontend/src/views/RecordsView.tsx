@@ -1,34 +1,14 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Archive,
-  CalendarDays,
-  ChevronLeft,
-  Clock3,
-  Download,
-  FileDown,
-  FileText,
-  FolderTree,
-  Search,
-  Tag,
-  Users,
-} from "lucide-react";
+import { Archive, FileText, Hash } from "lucide-react";
 import {
   fetchMeetingDetail,
   fetchMeetings,
-  type LiveAgent,
   type MeetingDetailResponse,
   type MeetingSummary,
 } from "../api";
 import { usePoll } from "../hooks";
-import {
-  agentTruthBadges,
-  lastObservedSummary,
-  providerExecutionLabel,
-} from "../lib/agentLabels";
-import { summarizeCompactLifecycle } from "../lib/lifecycleLabels";
-import LifecycleBanner from "./components/LifecycleBanner";
-import ProviderTruthChips from "./components/ProviderTruthChips";
+import ChannelHeader from "./components/ChannelHeader";
 
 export type ArchiveArtifactMap = Record<string, string | null | undefined>;
 
@@ -45,7 +25,7 @@ export type CanonicalArchiveArtifactRow = CanonicalArchiveArtifact & {
 export const CANONICAL_FINAL_ARTIFACTS: CanonicalArchiveArtifact[] = [
   {
     path: "transcript.md",
-    label: "실황 기록 / Transcript",
+    label: "진행 기록 / Transcript",
     description: "공식 발언으로 만든 회의록",
   },
   {
@@ -130,20 +110,7 @@ function statusClass(status: string) {
   if (status === "complete" || status === "finalized") {
     return "border-accent/35 bg-accent/10 text-accent";
   }
-  return "border-text-muted/25 bg-panel-soft/50 text-text-muted";
-}
-
-function dateLabel(value?: string) {
-  if (!value) return "--";
-  try {
-    return new Date(value).toLocaleDateString("ko-KR", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-  } catch {
-    return value;
-  }
+  return "border-line bg-panel-soft text-text-muted";
 }
 
 function timeFromMtime(value?: number) {
@@ -164,69 +131,38 @@ function MeetingList({
   selectedId?: string;
   onSelect: (id: string) => void;
 }) {
+  if (meetings.length === 0) {
+    return (
+      <p className="px-3 py-2 text-[13px] text-text-muted preserve-words">
+        기록된 회의가 없습니다.
+      </p>
+    );
+  }
   return (
-    <div className="space-y-3">
-      <label className="ops-input flex items-center gap-2 rounded-lg px-3 py-2.5 text-[13px] text-text-muted">
-        <Search size={15} />
-        <input
-          readOnly
-          value=""
-          placeholder="세션 검색"
-          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-text-muted"
-        />
-      </label>
-      <div className="flex flex-wrap gap-2">
-        {["전체", "Council", "Brainstorm", "War Room"].map((tag, index) => (
+    <div className="space-y-0.5">
+      {meetings.map((meeting) => {
+        const selected = selectedId === meeting.meeting_id;
+        return (
           <button
-            key={tag}
+            key={meeting.meeting_id}
             type="button"
-            className={`rounded-md border px-2.5 py-1.5 text-[11px] font-bold ${
-              index === 0
-                ? "border-accent/60 bg-accent/12 text-accent"
-                : "border-accent/16 bg-panel-soft/45 text-text-muted"
-            }`}
+            onClick={() => onSelect(meeting.meeting_id)}
+            data-active={selected}
+            className="dc-channel flex-col items-start gap-0.5 py-2"
           >
-            {tag}
+            <span className="flex w-full items-center gap-1.5">
+              <Hash size={14} className="shrink-0 opacity-60" />
+              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold preserve-words">
+                {meeting.topic || meeting.meeting_id}
+              </span>
+              <span className="shrink-0 text-[10px] text-text-muted">{timeFromMtime(meeting.mtime)}</span>
+            </span>
+            <span className="truncate pl-5 text-[11px] text-text-muted preserve-words">
+              {meeting.question || meeting.meeting_id}
+            </span>
           </button>
-        ))}
-      </div>
-
-      <div className="space-y-2">
-        {meetings.length === 0 ? (
-          <div className="ops-inner rounded-lg p-4 text-[13px] text-text-muted preserve-words">
-            기록된 회의가 없습니다.
-          </div>
-        ) : (
-          meetings.map((meeting) => {
-            const selected = selectedId === meeting.meeting_id;
-            return (
-              <button
-                key={meeting.meeting_id}
-                type="button"
-                onClick={() => onSelect(meeting.meeting_id)}
-                className={`ops-inner flex w-full items-center gap-3 rounded-lg p-3 text-left transition-colors ${
-                  selected ? "border-accent/80 shadow-[0_0_22px_rgba(34,211,238,0.16)]" : "hover:border-accent/40"
-                }`}
-              >
-                <span className={selected ? "hex-badge h-10 w-10" : "hex-badge h-10 w-10 opacity-70"}>
-                  <Archive size={16} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-black text-text-primary preserve-words">
-                    {meeting.topic || meeting.meeting_id}
-                  </p>
-                  <p className="truncate text-[11px] text-text-muted preserve-words">
-                    {meeting.question || meeting.meeting_id}
-                  </p>
-                </div>
-                <div className="text-right text-[11px] text-text-muted">
-                  <p>{timeFromMtime(meeting.mtime)}</p>
-                </div>
-              </button>
-            );
-          })
-        )}
-      </div>
+        );
+      })}
     </div>
   );
 }
@@ -279,13 +215,7 @@ function artifactDisplayName(path: string): string {
   return path.replace("shared_memory/", "").replace(".md", "").replace(".json", "");
 }
 
-function ArchiveDetail({
-  detail,
-  onBack,
-}: {
-  detail: MeetingDetailResponse | null;
-  onBack: () => void;
-}) {
+function ArchiveDetail({ detail }: { detail: MeetingDetailResponse | null }) {
   const [activeArtifact, setActiveArtifact] = useState<string | null>(null);
   const meeting = detail?.meeting ?? {};
   const artifacts = detail?.artifacts ?? {};
@@ -295,8 +225,6 @@ function ArchiveDetail({
     [artifacts]
   );
   const availableCanonicalCount = canonicalArtifacts.filter((artifact) => artifact.available).length;
-  const detailLifecycle = detail?.lifecycle ?? null;
-  const lifecycleSummary = summarizeCompactLifecycle(detailLifecycle);
   const meetingId = String(meeting.meeting_id || "");
   const previousMeetingIdRef = useRef(meetingId);
 
@@ -314,281 +242,123 @@ function ArchiveDetail({
 
   if (!detail) {
     return (
-      <section className="ops-panel ops-cut flex min-h-[620px] items-center justify-center p-8 text-center">
-        <div className="w-full max-w-2xl">
-          <LifecycleBanner lifecycle={null} surface="archive" emptyHint="selectMeeting" />
-          <span className="ops-logo-mark mx-auto mb-5 h-16 w-16" aria-hidden />
-          <h1 className="text-[30px] font-black">아카이브</h1>
-          <p className="mt-2 max-w-md text-[14px] text-text-muted preserve-words">
-            왼쪽에서 세션을 선택하면 요약, 산출물, 하이라이트를 검토할 수 있습니다.
+      <div className="flex h-full items-center justify-center p-8 text-center">
+        <div className="max-w-md">
+          <Archive size={28} className="mx-auto mb-3 text-text-muted" />
+          <h2 className="text-[16px] font-bold text-text-primary">기록을 선택하세요</h2>
+          <p className="mt-2 text-[13px] text-text-muted preserve-words">
+            왼쪽에서 세션을 선택하면 transcript, decision, shared memory를 확인할 수 있습니다.
           </p>
-          <p className="mx-auto mt-4 max-w-md text-[13px] text-text-secondary preserve-words">
-            회의가 없다면 로비에서 새 회의를 시작하세요. 완료된 회의는 transcript, decision,
-            shared memory를 여기서 확인합니다.
+          <p className="mt-3 text-[13px] text-text-secondary preserve-words">
+            회의가 없다면 채팅 채널에서 새 회의를 시작하세요.
           </p>
         </div>
-      </section>
+      </div>
     );
   }
 
   return (
-    <section className="ops-panel ops-cut min-h-[720px] overflow-hidden">
-      <div className="ops-hero min-h-[210px] p-6">
-        <div className="relative z-[1] flex flex-wrap items-start gap-5">
-          <span className="ops-logo-mark h-16 w-16 shrink-0" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <button
-              type="button"
-              onClick={onBack}
-              className="mb-3 flex items-center gap-1 text-[12px] font-bold text-text-muted hover:text-text-primary xl:hidden"
-            >
-              <ChevronLeft size={14} />
-              목록
-            </button>
-            <h1 className="truncate text-[32px] font-black preserve-words">
-              {String(meeting.topic || meeting.meeting_id || "session")}
-            </h1>
-            <p className="mt-2 text-[14px] text-text-secondary preserve-words">
-              {String(meeting.question || "전략 방향 설정 및 역할 분담")}
-            </p>
-            <div className="mt-4 flex flex-wrap gap-3 text-[12px] text-text-muted">
-              <span className="ops-chip flex items-center gap-2 rounded-md px-3 py-2">
-                <CalendarDays size={14} />
-                {dateLabel(String(meeting.created_at || ""))}
-              </span>
-              <span className="ops-chip flex items-center gap-2 rounded-md px-3 py-2">
-                <Clock3 size={14} />
-                {String(meeting.duration || "--")}
-              </span>
-              {meeting.live_status && (
-                <span className={`rounded-md border px-3 py-2 text-[12px] font-bold ${statusClass(String(meeting.live_status))}`}>
-                  {statusLabel(String(meeting.live_status))}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
+    <div className="space-y-3 p-3 lg:p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="min-w-0 flex-1 truncate text-[20px] font-black preserve-words">
+          {String(meeting.topic || meeting.meeting_id || "session")}
+        </h1>
+        {meeting.live_status && (
+          <span className={`rounded-md border px-2.5 py-1 text-[12px] font-bold ${statusClass(String(meeting.live_status))}`}>
+            {statusLabel(String(meeting.live_status))}
+          </span>
+        )}
       </div>
+      <p className="text-[13px] text-text-secondary preserve-words">
+        {String(meeting.question || "전략 방향 설정 및 역할 분담")}
+      </p>
 
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_410px]">
-        <div className="space-y-4">
-          <LifecycleBanner lifecycle={detailLifecycle} surface="archive" emptyHint="selectMeeting" />
-
-          <section className="ops-inner rounded-lg p-4">
-            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-[17px] font-black">최종 산출물 / Final artifacts</h2>
-                <p className="mt-1 text-[12px] text-text-muted preserve-words">
-                  최종화 후 확인해야 하는 공식 회의록, 결정문, 공유 메모리입니다.
-                </p>
-              </div>
-              <span className="rounded border border-accent/25 bg-accent/10 px-2.5 py-1.5 text-[11px] font-black text-accent">
-                {availableCanonicalCount}/{canonicalArtifacts.length} 생성
-              </span>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {canonicalArtifacts.map((artifact) => (
-                <button
-                  key={artifact.path}
-                  type="button"
-                  disabled={!artifact.available}
-                  onClick={() => artifact.available && setActiveArtifact(artifact.path)}
-                  className={`rounded-lg border p-3 text-left transition ${
+      <section className="ops-panel p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[15px] font-bold">최종 산출물 / Final artifacts</h2>
+          <span className="rounded border border-line px-2 py-1 text-[11px] font-bold text-text-muted">
+            {availableCanonicalCount}/{canonicalArtifacts.length} 생성
+          </span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {canonicalArtifacts.map((artifact) => (
+            <button
+              key={artifact.path}
+              type="button"
+              disabled={!artifact.available}
+              onClick={() => artifact.available && setActiveArtifact(artifact.path)}
+              className={`rounded-lg border p-3 text-left transition ${
+                artifact.available
+                  ? activeArtifact === artifact.path
+                    ? "border-accent/70 bg-accent/12 text-text-primary"
+                    : "border-line bg-panel-soft text-text-secondary hover:border-accent/45 hover:text-text-primary"
+                  : "cursor-not-allowed border-line bg-panel/30 text-text-muted opacity-65"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-bold preserve-words">{artifact.label}</p>
+                  <p className="mt-1 text-[11px] preserve-words">{artifact.description}</p>
+                </div>
+                <span
+                  className={`shrink-0 rounded border px-2 py-1 text-[10px] font-black ${
                     artifact.available
-                      ? activeArtifact === artifact.path
-                        ? "border-accent/70 bg-accent/12 text-text-primary"
-                        : "border-accent/18 bg-black/16 text-text-secondary hover:border-accent/45 hover:text-text-primary"
-                      : "cursor-not-allowed border-line/55 bg-panel/30 text-text-muted opacity-65"
+                      ? "border-online/30 bg-online/10 text-online"
+                      : "border-line bg-panel/45 text-text-muted"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-black preserve-words">
-                        {artifact.label}
-                      </p>
-                      <p className="mt-1 text-[11px] preserve-words">
-                        {artifact.description}
-                      </p>
-                    </div>
-                    <span
-                      className={`shrink-0 rounded border px-2 py-1 text-[10px] font-black ${
-                        artifact.available
-                          ? "border-online/30 bg-online/10 text-online"
-                          : "border-line/60 bg-panel/45 text-text-muted"
-                      }`}
-                    >
-                      {artifact.available ? "생성됨" : "미생성"}
-                    </span>
-                  </div>
-                  <p className="mt-2 truncate font-mono text-[10px] text-text-muted">
-                    {artifact.path}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          {artifactNames.length > 0 && (
-            <section className="ops-inner rounded-lg p-4">
-              <h2 className="mb-3 text-[15px] font-black">기타 산출물 / Other artifacts</h2>
-              <div className="flex gap-2 overflow-x-auto pb-1 chat-scroll">
-                {artifactNames.map((name) => (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => setActiveArtifact(name)}
-                    className={`shrink-0 rounded-md border px-3 py-2 text-[12px] font-bold transition-colors ${
-                      activeArtifact === name
-                        ? "border-accent/70 bg-accent/12 text-accent"
-                        : "border-accent/16 bg-panel-soft/45 text-text-muted hover:text-text-primary"
-                    }`}
-                  >
-                    {artifactDisplayName(name)}
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section className="ops-inner rounded-lg p-4">
-            <h2 className="mb-3 flex items-center gap-2 text-[17px] font-black">
-              <FileText size={18} className="text-accent" />
-              핵심 결론
-            </h2>
-            {activeArtifact && artifacts[activeArtifact] ? (
-              <ArtifactContent content={artifacts[activeArtifact]!} />
-            ) : (
-              <p className="text-[13px] text-text-muted preserve-words">
-                아직 생성된 문서가 없습니다. 일반적으로 회의 최종화 후 transcript,
-                decision, shared memory 산출물이 생성됩니다.
-              </p>
-            )}
-          </section>
-        </div>
-
-        <aside className="space-y-4">
-          <section className="ops-inner rounded-lg p-4">
-            <h2 className="mb-3 text-[15px] font-black">다음 단계</h2>
-            <div className="space-y-2 text-[13px] text-text-secondary">
-              <div className="flex items-center justify-between gap-3 border-b border-accent/10 py-2">
-                <span className="preserve-words">{lifecycleSummary.nextAction}</span>
-                <span className="text-text-muted preserve-words">
-                  {lifecycleSummary.stepLabel}
+                  {artifact.available ? "생성됨" : "미생성"}
                 </span>
               </div>
-              {["미결 질문 검토", "필요 시 Work Mode 승격"].map((item) => (
-                <div key={item} className="flex items-center justify-between gap-3 border-b border-accent/10 py-2 last:border-b-0">
-                  <span className="preserve-words">{item}</span>
-                  <span className="text-text-muted">참고</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="ops-inner rounded-lg p-4">
-            <h2 className="mb-3 text-[15px] font-black">하이라이트 발언</h2>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              {artifactNames.slice(0, 4).map((name, index) => (
-                <div key={name} className="rounded-lg border border-accent/14 bg-black/18 p-3">
-                  <div className="mb-2 flex items-center justify-between text-[11px] text-text-muted">
-                    <span>#{index + 1}</span>
-                    <span>{name.replace(".md", "")}</span>
-                  </div>
-                  <p className="line-clamp-3 text-[12px] leading-relaxed text-text-secondary preserve-words">
-                    {artifacts[name]?.split("\n").find((line) => line.trim()) || "기록 요약"}
-                  </p>
-                  <div className="mt-3 h-8 rounded bg-accent/10">
-                    <div className="h-full w-3/4 rounded bg-[linear-gradient(90deg,rgba(34,211,238,0.1),rgba(34,211,238,0.7),rgba(34,211,238,0.08))]" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </aside>
-      </div>
-    </section>
-  );
-}
-
-function ArchiveSide({ agents }: { agents: LiveAgent[] }) {
-  const activeAgents = agents.filter((agent) => agent.status !== "offline");
-  return (
-    <aside className="space-y-4">
-      <section className="ops-panel ops-cut p-4">
-        <h2 className="mb-4 flex items-center gap-2 text-[17px] font-black">
-          <Users size={18} className="text-accent" />
-          참가자 ({activeAgents.length})
-        </h2>
-        <div className="space-y-3">
-          {activeAgents.slice(0, 6).map((agent) => {
-            const observation = lastObservedSummary(agent);
-            return (
-              <div key={agent.agent_id} className="flex items-start gap-3">
-                <span className="hex-badge h-9 w-9">
-                  <Users size={14} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-bold preserve-words">
-                    {agent.display_name || agent.agent_id}
-                  </p>
-                  <p className="truncate text-[11px] text-text-muted preserve-words">
-                    {providerExecutionLabel(agent)}
-                  </p>
-                  <ProviderTruthChips badges={agentTruthBadges(agent)} compact limit={6} />
-                  {observation && (
-                    <p className="mt-1 text-[10px] text-text-muted preserve-words">
-                      {observation}
-                    </p>
-                  )}
-                </div>
-                <span className="h-2.5 w-2.5 rounded-full bg-online" />
-              </div>
-            );
-          })}
-          {activeAgents.length === 0 && (
-            <p className="text-[13px] text-text-muted">표시할 참가자가 없습니다.</p>
-          )}
-        </div>
-      </section>
-
-      <section className="ops-panel ops-cut p-4">
-        <h2 className="mb-4 flex items-center gap-2 text-[17px] font-black">
-          <Tag size={18} className="text-accent" />
-          태그
-        </h2>
-        <div className="flex flex-wrap gap-2">
-          {["전략", "역할분담", "Play Mode", "로컬", "기록경계", "+"].map((tag) => (
-            <span key={tag} className="ops-chip rounded-md px-3 py-2 text-[12px] font-bold">
-              {tag}
-            </span>
-          ))}
-        </div>
-      </section>
-
-      <section className="ops-panel ops-cut p-4">
-        <h2 className="mb-4 flex items-center gap-2 text-[17px] font-black">
-          <Download size={18} className="text-accent" />
-          내보내기 / 다운로드
-        </h2>
-        <div className="grid grid-cols-2 gap-3">
-          {["요약 리포트", "전체 기록", "하이라이트", "결정사항"].map((label) => (
-            <button key={label} type="button" disabled className="ops-button rounded-lg px-3 py-3 text-[12px] font-bold">
-              <FileDown className="mx-auto mb-2 text-text-secondary" size={17} />
-              {label}
+              <p className="mt-2 truncate font-mono text-[10px] text-text-muted">{artifact.path}</p>
             </button>
           ))}
         </div>
       </section>
-    </aside>
+
+      {artifactNames.length > 0 && (
+        <section className="ops-panel p-4">
+          <h2 className="mb-3 text-[15px] font-bold">기타 산출물 / Other artifacts</h2>
+          <div className="flex gap-2 overflow-x-auto pb-1 chat-scroll">
+            {artifactNames.map((name) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => setActiveArtifact(name)}
+                className={`shrink-0 rounded-md border px-3 py-2 text-[12px] font-bold transition-colors ${
+                  activeArtifact === name
+                    ? "border-accent/70 bg-accent/12 text-accent"
+                    : "border-line bg-panel-soft text-text-muted hover:text-text-primary"
+                }`}
+              >
+                {artifactDisplayName(name)}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="ops-panel p-4">
+        <h2 className="mb-3 flex items-center gap-2 text-[15px] font-bold">
+          <FileText size={17} className="text-accent" />
+          핵심 결론
+        </h2>
+        {activeArtifact && artifacts[activeArtifact] ? (
+          <ArtifactContent content={artifacts[activeArtifact]!} />
+        ) : (
+          <p className="text-[13px] text-text-muted preserve-words">
+            아직 생성된 문서가 없습니다. 일반적으로 회의 최종화 후 transcript, decision, shared memory
+            산출물이 생성됩니다.
+          </p>
+        )}
+      </section>
+    </div>
   );
 }
 
-export default function RecordsView({ agents }: { agents: LiveAgent[] }) {
+export default function RecordsView() {
   const meetingsFetcher = useCallback(() => fetchMeetings(), []);
-  const [data, loading] = usePoll<{ meetings: MeetingSummary[] }>(
-    meetingsFetcher,
-    10000
-  );
+  const [data, loading] = usePoll<{ meetings: MeetingSummary[] }>(meetingsFetcher, 10000);
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [detail, setDetail] = useState<MeetingDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -623,45 +393,30 @@ export default function RecordsView({ agents }: { agents: LiveAgent[] }) {
   }
 
   return (
-    <div className="grid min-h-full gap-4 xl:grid-cols-[350px_minmax(0,1fr)_340px]">
-      <aside className="space-y-4">
-        <section className="ops-panel ops-cut p-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-[17px] font-black">
-              <Archive size={18} className="text-accent" />
-              세션 기록
-            </h2>
-            <span className="text-[12px] font-bold text-text-muted">
-              {loading && !data ? "조회 중" : `${meetings.length}개`}
-            </span>
+    <div className="flex h-full min-h-0 flex-col">
+      <ChannelHeader
+        icon={<Archive size={20} />}
+        title="아카이브"
+        subtitle="완료된 세션의 transcript · decision · shared memory"
+      />
+      <div className="flex min-h-0 flex-1">
+        <div className="flex w-60 shrink-0 flex-col border-r border-line bg-sidebar/40">
+          <div className="dc-chat-head flex h-10 shrink-0 items-center justify-between px-3 text-[12px] font-bold text-text-muted">
+            <span>세션 기록</span>
+            <span>{loading && !data ? "조회 중" : `${meetings.length}개`}</span>
           </div>
-          <MeetingList meetings={meetings} selectedId={selectedId} onSelect={handleSelect} />
-        </section>
-
-        <section className="ops-panel ops-cut p-4">
-          <h2 className="mb-4 flex items-center gap-2 text-[17px] font-black">
-            <FolderTree size={18} className="text-accent" />
-            아카이브 트리
-          </h2>
-          <div className="ops-inner rounded-lg p-4 text-[13px] text-text-secondary">
-            <p className="font-bold text-text-primary">2026</p>
-            <p className="mt-2 pl-4 text-text-muted">05. May</p>
-            <p className="mt-2 rounded border border-accent/20 bg-accent/8 px-3 py-2 preserve-words">
-              {selectedId || meetings[0]?.meeting_id || "세션을 선택하세요"}
-            </p>
+          <div className="min-h-0 flex-1 overflow-y-auto p-2 chat-scroll">
+            <MeetingList meetings={meetings} selectedId={selectedId} onSelect={handleSelect} />
           </div>
-        </section>
-      </aside>
-
-      {detailLoading ? (
-        <section className="ops-panel ops-cut flex min-h-[620px] items-center justify-center text-[14px] text-text-muted">
-          불러오는 중...
-        </section>
-      ) : (
-        <ArchiveDetail detail={detail} onBack={() => setDetail(null)} />
-      )}
-
-      <ArchiveSide agents={agents} />
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto chat-scroll">
+          {detailLoading ? (
+            <p className="p-6 text-[14px] text-text-muted">불러오는 중...</p>
+          ) : (
+            <ArchiveDetail detail={detail} />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

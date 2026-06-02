@@ -1,4 +1,5 @@
 // API client for the AgentsAssemble GUI backend.
+import type { RoomAppearance } from "./lib/roomAppearance";
 
 export interface LobbyAttachmentRef {
   id: string;
@@ -9,6 +10,54 @@ export interface LobbyAttachmentRef {
   url: string;
   download_url: string;
 }
+
+export interface RoomSettings {
+  roomId: string;
+  label: string;
+  topic: string;
+  shortLabel: string;
+  appearance: RoomAppearance;
+  memberRoles: Record<string, string>;
+}
+
+export type ParticipantType = "human" | "subscription_ai" | "api" | "local" | "remote" | "unknown";
+
+export interface RoomFriend {
+  friend_id: string;
+  display_name: string;
+  participant_type: ParticipantType;
+  provider_kind: string;
+  connection_kind: string;
+  source_agent_id: string;
+  last_meeting_id: string;
+  status: string;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoomFriendsResponse {
+  friends: RoomFriend[];
+  candidates: RoomFriend[];
+}
+
+type ApiRoomAppearance = {
+  banner_preset?: RoomAppearance["bannerPreset"];
+  banner_image_url?: string;
+  icon_image_url?: string;
+  icon_label?: string;
+  notifications?: RoomAppearance["notifications"];
+  invite_scope?: RoomAppearance["inviteScope"];
+};
+
+type ApiRoomSettings = {
+  room_id?: string;
+  label?: string;
+  topic?: string;
+  short_label?: string;
+  appearance?: ApiRoomAppearance;
+  member_roles?: Record<string, string>;
+};
 
 export interface LobbyEvent {
   id: string;
@@ -83,6 +132,18 @@ export interface LiveAgent {
   last_reply_at: string;
   last_observed_event_id?: string;
   last_observed_live_event_id?: string;
+  quota_5h?: string;
+  quota_1w?: string;
+  quota_state?: "ok" | "low" | "exhausted" | "unknown" | "";
+  quota_windows?: Array<{
+    label: string;
+    percent: number;
+    resetsAt?: string | number | null;
+    used?: number;
+    limit?: number;
+    remaining?: number;
+    unit?: string;
+  }>;
   persona_card_id?: string;
   character_mode?: string;
   join_semantics?: string;
@@ -90,61 +151,11 @@ export interface LiveAgent {
   sandbox_enforcement: string;
   admission_status?: string;
   host_approved_binding?: boolean;
+  binding_role_id?: string;
+  binding_permission_profile_id?: string;
+  binding_join_mode?: string;
   binding_conflicts?: string[];
   capabilities: string[];
-}
-
-export type RoomFriendType = "human" | "subscription_ai" | "api" | "local" | "unknown";
-
-export interface RoomFriend {
-  friend_id: string;
-  display_name: string;
-  handle: string;
-  participant_type: RoomFriendType;
-  provider_kind?: string;
-  connection_kind?: string;
-  agent_id?: string;
-  source?: string;
-  created_at?: string;
-  updated_at?: string;
-  last_seen_at?: string;
-}
-
-export interface RoomFriendsResponse {
-  friends: RoomFriend[];
-  suggestions: RoomFriend[];
-  types: RoomFriendType[];
-  friend?: RoomFriend;
-}
-
-export type RoomMemberRole = "human" | "director" | "implementer" | "reviewer" | "observer";
-
-export interface RoomMemberRoleOption {
-  id: RoomMemberRole;
-  label: string;
-  description?: string;
-}
-
-export interface RoomMember {
-  meeting_id?: string;
-  participant_id: string;
-  display_name: string;
-  role: RoomMemberRole;
-  participant_type: RoomFriendType;
-  provider_kind?: string;
-  connection_kind?: string;
-  status?: string;
-  source?: string;
-  created_at?: string;
-  updated_at?: string;
-  last_seen_at?: string;
-}
-
-export interface RoomMembersResponse {
-  meeting_id: string;
-  members: RoomMember[];
-  roles: RoomMemberRoleOption[];
-  member?: RoomMember;
 }
 
 export interface LiveAgentJoinBriefRequest {
@@ -495,10 +506,10 @@ async function fetchJson<T>(url: string): Promise<T> {
   return res.json();
 }
 
-async function postJson<T>(url: string, body: object, extraHeaders?: Record<string, string>): Promise<T> {
+async function postJson<T>(url: string, body: object): Promise<T> {
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...extraHeaders },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -534,15 +545,77 @@ function fileToBase64(file: File): Promise<string> {
 
 function queryString(params: Record<string, string | undefined>) {
   const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
+  Object.entries(params).forEach(([key, value]) => {
     if (value) query.set(key, value);
-  }
-  const serialized = query.toString();
-  return serialized ? `?${serialized}` : "";
+  });
+  const text = query.toString();
+  return text ? `?${text}` : "";
 }
 
-export function fetchLobby() {
-  return fetchJson<{ events: LobbyEvent[] }>("/api/lobby");
+function normalizeRoomSettings(payload: ApiRoomSettings | undefined, fallbackRoomId: string): RoomSettings {
+  const appearance = payload?.appearance || {};
+  return {
+    roomId: String(payload?.room_id || fallbackRoomId || ""),
+    label: String(payload?.label || ""),
+    topic: String(payload?.topic || ""),
+    shortLabel: String(payload?.short_label || ""),
+    appearance: {
+      bannerPreset: appearance.banner_preset || "default",
+      bannerImage: appearance.banner_image_url || undefined,
+      iconImage: appearance.icon_image_url || undefined,
+      iconLabel: appearance.icon_label || undefined,
+      notifications: appearance.notifications || "mentions",
+      inviteScope: appearance.invite_scope || "room",
+    },
+    memberRoles: payload?.member_roles && typeof payload.member_roles === "object" ? payload.member_roles : {},
+  };
+}
+
+function roomAppearanceToApi(appearance: Partial<RoomAppearance> | undefined): ApiRoomAppearance {
+  return {
+    banner_preset: appearance?.bannerPreset,
+    banner_image_url: appearance?.bannerImage,
+    icon_image_url: appearance?.iconImage,
+    icon_label: appearance?.iconLabel,
+    notifications: appearance?.notifications,
+    invite_scope: appearance?.inviteScope,
+  };
+}
+
+export function fetchLobby(meetingId = "") {
+  return fetchJson<{ events: LobbyEvent[] }>(`/api/lobby${queryString({ meeting_id: meetingId })}`);
+}
+
+export function fetchRoomSettings(roomId: string): Promise<RoomSettings> {
+  return fetchJson<{ room_id: string; settings: ApiRoomSettings }>(
+    `/api/room-settings${queryString({ room_id: roomId })}`
+  ).then((payload) => normalizeRoomSettings(payload.settings, payload.room_id || roomId));
+}
+
+export function saveRoomSettings({
+  roomId,
+  label,
+  topic,
+  shortLabel,
+  appearance,
+  memberRoles,
+}: Partial<Omit<RoomSettings, "roomId">> & { roomId: string }): Promise<RoomSettings> {
+  return postJson<{ room_id: string; settings: ApiRoomSettings }>("/api/room-settings", {
+    room_id: roomId,
+    label,
+    topic,
+    short_label: shortLabel,
+    appearance: roomAppearanceToApi(appearance),
+    member_roles: memberRoles,
+  }).then((payload) => normalizeRoomSettings(payload.settings, payload.room_id || roomId));
+}
+
+export function fetchRoomFriends() {
+  return fetchJson<RoomFriendsResponse>("/api/room-friends");
+}
+
+export function addRoomFriend(friend: Partial<RoomFriend>) {
+  return postJson<{ friend: RoomFriend; friends: RoomFriend[] }>("/api/room-friends", friend);
 }
 
 export function uploadLobbyAttachment(file: File): Promise<LobbyAttachmentRef> {
@@ -563,12 +636,14 @@ export function postLobbyMessage({
   kind = "message",
   message,
   attachments = [],
+  meetingId = "",
 }: {
   name: string;
   side?: string;
   kind?: "message" | "ready" | "deploy";
   message: string;
   attachments?: LobbyAttachmentRef[];
+  meetingId?: string;
 }) {
   return postJson<LobbyPostResponse>("/api/lobby", {
     name,
@@ -576,29 +651,12 @@ export function postLobbyMessage({
     kind,
     message,
     attachments,
+    flow_meeting_id: meetingId,
   });
 }
 
 export function fetchSideChat(meetingId = "") {
-  return fetchJson<{ events: SideChatEvent[] }>(
-    `/api/side-chat${queryString({ meeting_id: meetingId })}`
-  );
-}
-
-export function fetchRoomFriends() {
-  return fetchJson<RoomFriendsResponse>("/api/room-friends");
-}
-
-export function saveRoomFriend(friend: Partial<RoomFriend>) {
-  return postJson<RoomFriendsResponse>("/api/room-friends", friend);
-}
-
-export function fetchRoomMembers(meetingId = "") {
-  return fetchJson<RoomMembersResponse>(`/api/room-members${queryString({ meeting_id: meetingId })}`);
-}
-
-export function saveRoomMemberRole(member: Partial<RoomMember>) {
-  return postJson<RoomMembersResponse>("/api/room-members", member);
+  return fetchJson<{ events: SideChatEvent[] }>(`/api/side-chat${queryString({ meeting_id: meetingId })}`);
 }
 
 export function postSideChatMessage({
@@ -627,8 +685,8 @@ export function createLiveAgentJoinBrief(params: LiveAgentJoinBriefRequest) {
   return postJson<LiveAgentJoinBrief>("/api/live-agent-join-brief", params);
 }
 
-export function fetchLiveAgentFlow() {
-  return fetchJson<FlowResponse>("/api/live-agent-flow");
+export function fetchLiveAgentFlow(meetingId = "") {
+  return fetchJson<FlowResponse>(`/api/live-agent-flow${queryString({ meeting_id: meetingId })}`);
 }
 
 export function fetchMeetings() {
@@ -968,9 +1026,10 @@ export function stopFlow(meetingId: string) {
  */
 export function subscribeLobby(
   onEvents: (events: LobbyEvent[]) => void,
-  onError?: (err: Event) => void
+  onError?: (err: Event) => void,
+  meetingId = ""
 ): () => void {
-  const source = new EventSource("/api/events/lobby");
+  const source = new EventSource(`/api/events/lobby${queryString({ meeting_id: meetingId })}`);
 
   function handleData(raw: string) {
     const events = parseLobbyStreamData(raw);
@@ -1018,217 +1077,4 @@ export function subscribeMeetingEvents(
   source.onmessage = (event) => handleData(event.data);
   if (onError) source.onerror = onError;
   return () => source.close();
-}
-
-// --- Room Invite (Web Multi) ---
-
-export interface RoomInvite {
-  invite_id: string;
-  invite_token: string;
-  meeting_id: string;
-  agent_id: string;
-  display_name: string;
-  expires_at: string;
-  room_url: string;
-  join_url?: string;
-}
-
-export interface RoomJoinResult {
-  status: string;
-  session_token?: string;
-  agent_id?: string;
-  display_name?: string;
-  meeting_id?: string;
-  connection_kind?: string;
-  expires_at?: string;
-  reason?: string;
-}
-
-export interface RoomSession {
-  agent_id: string;
-  display_name: string;
-  meeting_id: string;
-  joined_at: string;
-  expires_at: string;
-}
-
-export interface PendingInvite {
-  invite_id: string;
-  agent_id: string;
-  display_name: string;
-  meeting_id: string;
-  expires_at: string;
-  created_at: string;
-  revoked: boolean;
-}
-
-export interface PublicInviteTunnelStatus {
-  available: boolean;
-  running: boolean;
-  phase: string;
-  public_url: string;
-  local_url: string;
-  started_at: number;
-  last_error: string;
-  recent_log: string[];
-}
-
-export interface PublicInviteStatus {
-  host_token_configured: boolean;
-  host_gate_required: boolean;
-  public_url: string;
-  tunnel: PublicInviteTunnelStatus;
-  can_generate_host_token: boolean;
-}
-
-export interface GenerateHostTokenResponse {
-  status: string;
-  host_token?: string;
-  host_token_configured: boolean;
-  public_invite?: PublicInviteStatus;
-}
-
-export interface SetPublicInviteUrlResponse {
-  status: string;
-  public_url: string;
-  public_invite: PublicInviteStatus;
-}
-
-export interface PublicInviteMutationResponse {
-  status: string;
-  public_invite: PublicInviteStatus;
-}
-
-/** Get/set the host token for gated endpoints. Stored in sessionStorage. */
-export function getHostToken(): string {
-  if (typeof sessionStorage === "undefined") return "";
-  return sessionStorage.getItem("agentsassemble_host_token") || "";
-}
-
-export function setHostToken(token: string): void {
-  if (typeof sessionStorage === "undefined") return;
-  if (token) {
-    sessionStorage.setItem("agentsassemble_host_token", token);
-  } else {
-    sessionStorage.removeItem("agentsassemble_host_token");
-  }
-}
-
-function hostHeaders(): Record<string, string> {
-  const token = getHostToken();
-  return token ? { "X-Host-Token": token } : {};
-}
-
-export function createRoomInvite(params: {
-  meeting_id: string;
-  agent_id?: string;
-  display_name?: string;
-  ttl_seconds?: number;
-}): Promise<RoomInvite> {
-  return postJson<RoomInvite>("/api/room-invite/create", params, hostHeaders());
-}
-
-export function joinRoomWithInvite(params: {
-  invite_token: string;
-  meeting_id?: string;
-  display_name?: string;
-}): Promise<RoomJoinResult> {
-  return postJson<RoomJoinResult>("/api/room-invite/join", params);
-}
-
-export function leaveRoom(sessionToken: string): Promise<{ status: string }> {
-  return postJson<{ status: string }>("/api/room-invite/leave", {}, { Authorization: `Bearer ${sessionToken}` });
-}
-
-export function fetchRoomInviteSessions(): Promise<{ sessions: RoomSession[] }> {
-  return fetch("/api/room-invite/sessions", { headers: hostHeaders() }).then((r) => r.json());
-}
-
-export function fetchPendingInvites(): Promise<{ invites: PendingInvite[] }> {
-  return fetch("/api/room-invite/invites", { headers: hostHeaders() }).then((r) => r.json());
-}
-
-export function revokeRoomInvite(inviteId: string): Promise<{ status: string }> {
-  return postJson<{ status: string }>("/api/room-invite/revoke", { invite_id: inviteId }, hostHeaders());
-}
-
-export function fetchPublicInviteStatus(): Promise<PublicInviteStatus> {
-  return fetch("/api/public-invite/status").then((r) => {
-    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-    return r.json();
-  });
-}
-
-export function generateHostToken(): Promise<GenerateHostTokenResponse> {
-  return postJson<GenerateHostTokenResponse>("/api/public-invite/host-token", {}, hostHeaders());
-}
-
-export function setPublicInviteUrl(publicUrl: string): Promise<SetPublicInviteUrlResponse> {
-  return postJson<SetPublicInviteUrlResponse>("/api/public-invite/public-url", { public_url: publicUrl }, hostHeaders());
-}
-
-export function startPublicInviteTunnel(): Promise<PublicInviteMutationResponse> {
-  return postJson<PublicInviteMutationResponse>("/api/public-invite/tunnel/start", {}, hostHeaders());
-}
-
-export function stopPublicInviteTunnel(): Promise<PublicInviteMutationResponse> {
-  return postJson<PublicInviteMutationResponse>("/api/public-invite/tunnel/stop", {}, hostHeaders());
-}
-
-export function fetchRoomLobby(sessionToken: string): Promise<{ events: LobbyEvent[]; session: { agent_id: string; display_name: string } }> {
-  return fetch("/api/room/lobby", {
-    headers: { Authorization: `Bearer ${sessionToken}` },
-  }).then((r) => r.json());
-}
-
-export function postRoomMessage(
-  sessionToken: string,
-  params: { message: string }
-): Promise<{ event: LobbyEvent }> {
-  return postJson<{ event: LobbyEvent }>("/api/room/say", params, { Authorization: `Bearer ${sessionToken}` });
-}
-
-export function subscribeRoomEvents(
-  sessionToken: string,
-  onEvents: (events: LobbyEvent[]) => void,
-  onError?: (err: Event) => void
-): () => void {
-  // EventSource doesn't support custom headers, so we use fetch + ReadableStream
-  const controller = new AbortController();
-  const url = "/api/room/events";
-
-  fetch(url, {
-    headers: { Authorization: `Bearer ${sessionToken}` },
-    signal: controller.signal,
-  })
-    .then((response) => {
-      if (!response.ok || !response.body) {
-        onError?.(new Event("error"));
-        return;
-      }
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      function pump(): Promise<void> {
-        return reader.read().then(({ done, value }) => {
-          if (done) return;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const events = parseLobbyStreamData(line.slice(6));
-              if (events.length) onEvents(events);
-            }
-          }
-          return pump();
-        });
-      }
-
-      pump().catch(() => onError?.(new Event("error")));
-    })
-    .catch(() => onError?.(new Event("error")));
-
-  return () => controller.abort();
 }

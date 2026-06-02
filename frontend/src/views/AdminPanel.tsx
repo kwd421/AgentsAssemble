@@ -1,11 +1,13 @@
-import { useCallback } from "react";
-import { Activity, ClipboardCheck, Cpu, Shield, Terminal, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Activity, ClipboardCheck, Cpu, FilePlus2, Globe2, Shield, Terminal, X } from "lucide-react";
 import {
+  createLiveAgentJoinBrief,
   fetchHealth,
   fetchLocalResources,
   fetchReleaseHealth,
   fetchReleaseHealthQueue,
   type HealthStatus,
+  type LiveAgentJoinBrief,
   type ReleaseHealthCheck,
   type ReleaseHealthQueueCheck,
   type LocalResourceStatus,
@@ -31,6 +33,20 @@ import {
   releaseHealthStatusLabel,
   releaseHealthStatusTone,
 } from "../lib/releaseHealthLabels";
+
+const JOIN_BRIEF_COMMAND =
+  "assemble live-agent join-brief --server http://<host-lan-ip>:8765 --meeting-id <meeting-id> --agent-id <agent-id>";
+
+const LAN_INVITE_CREATE_COMMAND =
+  "assemble live-agent lan-invite create --server http://<host-lan-ip>:8765 --meeting-id <meeting-id> --agent-id <agent-id> --secret-ref env:AGENTSASSEMBLE_LAN_INVITE_SECRET --ttl-seconds 600";
+
+const LAN_INVITE_VERIFY_COMMAND =
+  'assemble live-agent lan-invite verify --token "$AGENTSASSEMBLE_LAN_INVITE_TOKEN" --secret-ref env:AGENTSASSEMBLE_LAN_INVITE_SECRET --expected-meeting-id <meeting-id> --expected-agent-id <agent-id>';
+
+function joinBriefPreview(packet: LiveAgentJoinBrief | null): string {
+  if (!packet) return "";
+  return JSON.stringify(packet, null, 2);
+}
 
 function formatSnapshotAge(generatedAt?: string) {
   if (!generatedAt) {
@@ -137,7 +153,13 @@ function ReleaseHealthCard({
   );
 }
 
-export default function AdminPanel({ onClose }: { onClose: () => void }) {
+export default function AdminPanel({
+  onClose,
+  activeMeetingId,
+}: {
+  onClose: () => void;
+  activeMeetingId?: string;
+}) {
   const healthFetcher = useCallback(() => fetchHealth(), []);
   const resourcesFetcher = useCallback(() => fetchLocalResources(), []);
   const releaseHealthFetcher = useCallback(() => fetchReleaseHealth(), []);
@@ -161,8 +183,51 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
   } = partitionReleaseHealthChecks(releaseHealth);
   const latestStatusById = releaseHealthLatestById(releaseHealthQueue);
 
+  const prefillMeetingId = activeMeetingId?.trim() || "resident-m1";
+  const [joinBriefMeetingId, setJoinBriefMeetingId] = useState(prefillMeetingId);
+  const [meetingIdEdited, setMeetingIdEdited] = useState(false);
+  // Keep the invite meeting id in sync with the active meeting until the
+  // operator edits it; manual edits are then preserved.
+  useEffect(() => {
+    if (!meetingIdEdited) setJoinBriefMeetingId(prefillMeetingId);
+  }, [prefillMeetingId, meetingIdEdited]);
+  const [joinBriefAgentId, setJoinBriefAgentId] = useState("external-agent");
+  const [joinBriefDisplayName, setJoinBriefDisplayName] = useState("External Agent");
+  const [joinBrief, setJoinBrief] = useState<LiveAgentJoinBrief | null>(null);
+  const [joinBriefBusy, setJoinBriefBusy] = useState(false);
+  const [joinBriefError, setJoinBriefError] = useState("");
+  const renderedJoinBrief = joinBriefPreview(joinBrief);
+
+  async function handleCreateJoinBrief() {
+    const agentId = joinBriefAgentId.trim();
+    if (!agentId) {
+      setJoinBriefError("agent id를 입력하세요");
+      return;
+    }
+    setJoinBriefBusy(true);
+    setJoinBriefError("");
+    try {
+      const packet = await createLiveAgentJoinBrief({
+        agent_id: agentId,
+        display_name: joinBriefDisplayName.trim() || agentId,
+        provider_kind: "manual",
+        connection_kind: "manual",
+        meeting_id: joinBriefMeetingId.trim() || "resident-m1",
+        engagement_mode: "mentioned",
+        timeout: 30,
+        poll_interval: 2,
+        max_chain_depth: 1,
+      });
+      setJoinBrief(packet);
+    } catch (errorValue) {
+      setJoinBriefError(errorValue instanceof Error ? errorValue.message : "입장 패킷 생성 실패");
+    } finally {
+      setJoinBriefBusy(false);
+    }
+  }
+
   return (
-    <div className="ops-panel ops-cut mx-auto flex min-h-full max-w-5xl flex-col overflow-hidden">
+    <div className="ops-panel ops-cut mx-auto flex h-full min-h-0 max-w-5xl flex-col overflow-hidden">
       <div className="flex shrink-0 items-center justify-between border-b border-accent/14 px-5 py-4">
         <div className="flex items-center gap-3">
           <span className="hex-badge">
@@ -274,6 +339,136 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
           ) : (
             <p className="text-[13px] text-text-muted">연결 확인 중...</p>
           )}
+        </section>
+
+        <section className="ops-inner rounded-xl p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <FilePlus2 size={17} className="text-accent" />
+              <h2 className="text-[15px] font-black">외부 참여</h2>
+            </div>
+            <span className="rounded border border-line bg-panel/45 px-2 py-0.5 text-[10px] font-black text-text-muted">
+              고급
+            </span>
+          </div>
+          <p className="mb-3 rounded-lg border border-line/60 bg-panel/35 px-4 py-3 text-[12px] text-text-secondary preserve-words">
+            로컬·신뢰 네트워크 전용 · 호스트 승인 필요 · provider 실행 아님. 원격 admission이나 인증은
+            아직 없습니다.
+          </p>
+          <details className="overflow-hidden rounded-lg border border-line bg-panel/40 text-[12px] text-text-secondary">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 outline-none transition hover:text-text-primary focus-visible:ring-2 focus-visible:ring-accent/60">
+              <span className="flex min-w-0 items-center gap-2">
+                <FilePlus2 size={15} className="shrink-0 text-text-muted" />
+                <span className="text-[12px] font-bold text-text-secondary preserve-words">CLI 초대 명령 보기</span>
+              </span>
+              <span className="shrink-0 rounded border border-accent/25 bg-accent/10 px-2 py-0.5 text-[10px] font-black text-accent">
+                열기
+              </span>
+            </summary>
+            <div className="divide-y divide-line border-t border-line">
+              <article className="p-4">
+                <div className="mb-3 flex items-start gap-3">
+                  <FilePlus2 size={18} className="mt-0.5 shrink-0 text-accent" />
+                  <div className="min-w-0">
+                    <h3 className="text-[13px] font-black text-text-primary">Join Brief</h3>
+                    <p className="mt-1 preserve-words">
+                      승인된 매뉴얼 레지던트용 입장 패킷 생성 · provider 시작 아님
+                    </p>
+                  </div>
+                </div>
+                <div className="mb-3 flex flex-wrap gap-1.5 text-[10px] font-black">
+                  <span className="rounded border border-accent/25 bg-accent/10 px-2 py-1 text-accent">React 생성</span>
+                  <span className="rounded border border-online/25 bg-online/10 px-2 py-1 text-online">호스트 승인 필요</span>
+                  <span className="rounded border border-line bg-panel/45 px-2 py-1 text-text-muted">provider 시작 아님</span>
+                  <span className="rounded border border-line bg-panel/45 px-2 py-1 text-text-muted">not_started_by_join_brief</span>
+                </div>
+                <div className="mb-3 grid gap-2 sm:grid-cols-3">
+                  <label className="grid gap-1 text-[11px] font-bold text-text-muted">
+                    Meeting ID
+                    <input
+                      className="min-w-0 rounded border border-line bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30"
+                      value={joinBriefMeetingId}
+                      onChange={(event) => {
+                        setMeetingIdEdited(true);
+                        setJoinBriefMeetingId(event.target.value);
+                      }}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-[11px] font-bold text-text-muted">
+                    Agent ID
+                    <input
+                      className="min-w-0 rounded border border-line bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30"
+                      value={joinBriefAgentId}
+                      onChange={(event) => setJoinBriefAgentId(event.target.value)}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-[11px] font-bold text-text-muted">
+                    Display name
+                    <input
+                      className="min-w-0 rounded border border-line bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30"
+                      value={joinBriefDisplayName}
+                      onChange={(event) => setJoinBriefDisplayName(event.target.value)}
+                      spellCheck={false}
+                    />
+                  </label>
+                </div>
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+                  <span className="rounded border border-line bg-panel/50 px-2 py-1">
+                    {joinBrief?.safety?.provider_executed ? "Provider 실행됨" : "Provider 실행 없음"}
+                  </span>
+                  <span className="rounded border border-line bg-panel/50 px-2 py-1">
+                    {joinBrief?.safety?.room_contacted ? "room write 발생" : "room write 없음"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCreateJoinBrief}
+                  disabled={joinBriefBusy}
+                  className="mb-3 w-full rounded-lg border border-accent/45 bg-accent/10 px-3 py-2 text-[12px] font-black text-accent transition hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {joinBriefBusy ? "생성 중" : "입장 패킷 생성"}
+                </button>
+                {joinBriefError && (
+                  <p className="mb-3 rounded border border-danger/35 bg-danger/10 px-3 py-2 text-[12px] font-bold text-danger preserve-words">
+                    {joinBriefError}
+                  </p>
+                )}
+                {renderedJoinBrief && (
+                  <pre className="mb-3 max-h-64 overflow-auto rounded-lg border border-online/25 bg-black/25 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
+                    <code>{renderedJoinBrief}</code>
+                  </pre>
+                )}
+                <pre className="overflow-x-auto rounded-lg border border-line bg-black/20 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
+                  <code>{JOIN_BRIEF_COMMAND}</code>
+                </pre>
+              </article>
+
+              <article className="p-4">
+                <div className="mb-3 flex items-start gap-3">
+                  <Globe2 size={18} className="mt-0.5 shrink-0 text-accent" />
+                  <div className="min-w-0">
+                    <h3 className="text-[13px] font-black text-text-primary">LAN Invite (PoC)</h3>
+                    <p className="mt-1 preserve-words">LAN 한정 초대 토큰 PoC · CLI 전용 · HMAC 입장 증명만</p>
+                  </div>
+                </div>
+                <div className="mb-3 flex flex-wrap gap-1.5 text-[10px] font-black">
+                  <span className="rounded border border-accent/25 bg-accent/10 px-2 py-1 text-accent">CLI 전용</span>
+                  <span className="rounded border border-online/25 bg-online/10 px-2 py-1 text-online">호스트 승인 필요</span>
+                  <span className="rounded border border-line bg-panel/45 px-2 py-1 text-text-muted">provider 시작 아님</span>
+                  <span className="rounded border border-line bg-panel/45 px-2 py-1 text-text-muted">remote registration 아님</span>
+                  <span className="rounded border border-line bg-panel/45 px-2 py-1 text-text-muted">relay/WebRTC 아님</span>
+                </div>
+                <pre className="overflow-x-auto rounded-lg border border-line bg-black/20 p-3 font-mono text-[11px] leading-relaxed text-text-secondary">
+                  <code>{`${LAN_INVITE_CREATE_COMMAND}\n${LAN_INVITE_VERIFY_COMMAND}`}</code>
+                </pre>
+                <p className="mt-3 preserve-words">
+                  URL·로그·roster·artifact에 토큰 비표시. 자세한 경계는 docs/no-tailscale-multi-host.md 참고.
+                </p>
+              </article>
+            </div>
+          </details>
         </section>
 
         <section className="ops-inner rounded-xl p-5">

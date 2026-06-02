@@ -44,7 +44,8 @@ class DocsArchitectureTests(unittest.TestCase):
 
         self.assertIn("Discord-style React room client", combined)
         self.assertIn("React/Vite frontend", combined)
-        self.assertIn("vanilla fallback", combined)
+        self.assertIn("build-required response", combined)
+        self.assertIn("retired vanilla console", combined)
         self.assertIn("python3 -m agentsassemble.cli frontend-info", combined)
         self.assertIn("http://127.0.0.1:8765", frontend_readme)
         self.assertNotIn("/legacy/", frontend_readme)
@@ -71,7 +72,7 @@ class DocsArchitectureTests(unittest.TestCase):
             "## Surface Inventory",
             "## API/SSE Inventory Appendix",
             "## Room-Event Contract Signals",
-            "## Legacy Fallback Status",
+            "## Legacy Route Status",
             "## Verification Index",
             "## Explicit Non-Goals",
         ):
@@ -81,11 +82,11 @@ class DocsArchitectureTests(unittest.TestCase):
             "is_default_entry_point",
             "API/SSE parity",
             "room-event contracts",
-            "legacy fallback",
+            "Legacy fallback routes are retired",
             "operator-verified",
             "tests/test_legacy_react_parity_inventory.py",
             "| Full REST/SSE inventory | `agentsassemble/gui.py` | `frontend/src/api.ts` | verified |",
-            "tests/test_gui_server.py::test_root_falls_back_to_vanilla_console_when_react_build_missing",
+            "tests/test_gui_server.py::test_root_reports_missing_react_build_without_serving_legacy_console",
         ):
             self.assertIn(required, matrix)
         for doc in (readme, live_agent_ops, frontend_readme, operating_model, release_checklist):

@@ -1,39 +1,24 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import {
-  Activity,
   Bot,
-  Flag,
-  MessageSquare,
   Moon,
-  Pause,
-  Play,
   Radio,
-  RefreshCw,
   Send,
   Skull,
-  Square,
   Sun,
   Vote,
 } from "lucide-react";
 import {
   castMafiaVote,
-  postSideChatMessage,
   resolveMafiaPhase,
   sendMafiaChat,
   subscribeLobby,
   type FlowState,
-  type LifecycleProjection,
   type LiveAgent,
   type LobbyEvent,
   type MafiaGame,
   type MafiaPlayer,
-  type SideChatEvent,
 } from "../api";
-import {
-  agentTruthBadges,
-  lastObservedSummary,
-  providerExecutionLabel,
-} from "../lib/agentLabels";
 import {
   filterFlowTimelineEvents,
   liveTimelineResetReason,
@@ -41,23 +26,15 @@ import {
   nextTimelinePinnedToLatest,
   sortLiveTimelineEvents,
 } from "../lib/liveTimelineState";
-import {
-  lifecycleAttentionLabel,
-  lifecycleStateLabel,
-  lifecycleStatusSourceLabel,
-  type LifecycleTone,
-} from "../lib/lifecycleLabels";
 import LobbyAttachments from "./components/LobbyAttachments";
-import DiscordMemberPanel from "./components/DiscordMemberPanel";
-import ParticipantContextSummary from "./components/ParticipantContextSummary";
-import ProviderTruthChips from "./components/ProviderTruthChips";
+import ChannelHeader from "./components/ChannelHeader";
+import DiscordText from "./components/DiscordText";
 
 function formatTime(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString("ko-KR", {
       hour: "2-digit",
       minute: "2-digit",
-      second: "2-digit",
     });
   } catch {
     return "";
@@ -69,323 +46,41 @@ function liveTimelineIsNearBottom(element: HTMLDivElement) {
   return scrollHeight - scrollTop - clientHeight <= 64;
 }
 
-function actionTone(event: LobbyEvent) {
-  const action = event.flow_action || event.flow_event_type || "";
-  if (action.includes("start") || action.includes("join")) return "border-accent/70";
-  if (action.includes("stop") || action.includes("end") || action.includes("leave")) {
-    return "border-danger/70";
-  }
-  if (action.includes("wait")) return "border-text-muted/35";
-  if (action.includes("challenge")) return "border-idle/70";
-  return "border-online/55";
-}
-
-function agentName(agent: LiveAgent) {
-  return agent.display_name || agent.agent_id;
-}
-
-function agentStatusLabel(status: string) {
-  if (status === "working") return "발언 중";
-  if (status === "online") return "대기 중";
-  if (status === "idle") return "준비";
-  if (status === "error") return "오류";
-  return "오프라인";
-}
-
-function lifecycleToneClass(tone: LifecycleTone) {
-  if (tone === "online") return "border-online/30 bg-online/10 text-online";
-  if (tone === "idle") return "border-idle/35 bg-idle/10 text-idle";
-  if (tone === "danger") return "border-danger/35 bg-danger/10 text-danger";
-  if (tone === "muted") return "border-text-muted/25 bg-black/18 text-text-muted";
-  return "border-accent/30 bg-accent/10 text-accent";
-}
-
-function LifecyclePanel({
-  lifecycle,
-  loading,
-  error,
-  embedded = false,
-}: {
-  lifecycle: LifecycleProjection | null;
-  loading: boolean;
-  error: Error | null;
-  embedded?: boolean;
-}) {
-  const state = lifecycle
-    ? lifecycleStateLabel(lifecycle.state)
-    : { label: "기록 없음", tone: "muted" as LifecycleTone };
-  const counts = lifecycle?.counts;
-  const roleHints = lifecycle?.role_hints ?? [];
-  const missingRoles = roleHints.filter((role) => role.admission_status !== "bound_to_meeting").length;
-  const unsafeCount = roleHints.reduce(
-    (total, role) => total + Math.max(0, role.unsafe_permission_violations || 0),
-    0
-  );
-
-  // Lifecycle is the meeting-record state projection, not the Play Mode flow status.
-  return (
-    <section className={embedded ? "rounded-xl border border-accent/14 bg-black/12 p-4" : "ops-panel ops-cut p-4"}>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="text-[17px] font-black">라이프사이클</h2>
-        <span className={`rounded-md border px-2 py-1 text-[11px] font-black ${lifecycleToneClass(state.tone)}`}>
-          {loading ? "확인 중" : error ? "응답 없음" : state.label}
-        </span>
-      </div>
-
-      {!lifecycle && (
-        <div className="ops-inner rounded-lg p-4 text-[13px] leading-relaxed text-text-muted preserve-words">
-          {error ? "라이프사이클 응답 없음" : loading ? "라이프사이클 확인 중" : "선택된 회의 기록 없음"}
-        </div>
-      )}
-
-      {lifecycle && (
-        <div className="space-y-3">
-          <div className="ops-inner rounded-lg p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-              상태 근거
-            </p>
-            <p className="mt-1 text-[14px] font-bold text-text-secondary preserve-words">
-              {lifecycleStatusSourceLabel(lifecycle.status_source)}
-            </p>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-[12px] sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
-              <div className="rounded-md border border-accent/10 bg-black/18 p-2">
-                <p className="text-text-muted">바인딩</p>
-                <p className="text-[16px] font-black text-text-primary">{counts?.bindings ?? 0}</p>
-              </div>
-              <div className="rounded-md border border-accent/10 bg-black/18 p-2">
-                <p className="text-text-muted">입장</p>
-                <p className="text-[16px] font-black text-text-primary">{counts?.live_agents ?? 0}</p>
-              </div>
-              <div className="rounded-md border border-accent/10 bg-black/18 p-2">
-                <p className="text-text-muted">공식</p>
-                <p className="text-[16px] font-black text-text-primary">{counts?.official_messages ?? 0}</p>
-              </div>
-              <div className="rounded-md border border-accent/10 bg-black/18 p-2">
-                <p className="text-text-muted">대기</p>
-                <p className="text-[16px] font-black text-text-primary">{counts?.pending_turns ?? 0}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <span className="rounded-md border border-accent/20 bg-accent/8 px-2 py-1 text-[11px] font-bold text-accent">
-              역할 {roleHints.length}
-            </span>
-            {missingRoles > 0 && (
-              <span className="rounded-md border border-idle/30 bg-idle/10 px-2 py-1 text-[11px] font-bold text-idle">
-                미입실 {missingRoles}
-              </span>
-            )}
-            {unsafeCount > 0 && (
-              <span className="rounded-md border border-idle/35 bg-idle/10 px-2 py-1 text-[11px] font-bold text-idle">
-                권한 검토 필요 {unsafeCount}
-              </span>
-            )}
-            {lifecycle.attention.map((code) => (
-              <span
-                key={code}
-                className="rounded-md border border-danger/25 bg-danger/10 px-2 py-1 text-[11px] font-bold text-danger"
-              >
-                {lifecycleAttentionLabel(code)}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function FlowMessage({ event }: { event: LobbyEvent }) {
   const action = event.flow_action || event.flow_event_type || event.kind;
   const actor = event.name || event.actor_id || "Room";
   const systemLike = event.kind === "system" || event.kind === "flow_event";
 
   return (
-    <article className="relative grid gap-4 pl-8 md:grid-cols-[92px_minmax(0,1fr)]">
-      <span className="absolute left-[7px] top-6 h-3 w-3 rounded-full border border-accent/70 bg-[#03101d] shadow-[0_0_15px_rgba(34,211,238,0.45)]" />
-      <div className="hidden pt-5 text-right font-mono text-[11px] text-text-muted md:block">
-        {formatTime(event.created_at)}
-      </div>
-      <div className={`ops-inner rounded-lg border-l-2 ${actionTone(event)} p-4`}>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className={systemLike ? "hex-badge h-9 w-9" : "hex-badge gold h-9 w-9"}>
-            {systemLike ? <Radio size={15} /> : <Bot size={15} />}
+    <div className="dc-message grid grid-cols-[40px_minmax(0,1fr)] gap-3 px-3 py-1.5 lg:px-4">
+      <span className={`hex-badge mt-0.5 h-10 w-10 ${systemLike ? "" : "gold"}`}>
+        {systemLike ? <Radio size={16} /> : <Bot size={16} />}
+      </span>
+      <div className="min-w-0">
+        <p className="flex flex-wrap items-baseline gap-2">
+          <span className="truncate text-[15px] font-semibold text-text-primary preserve-words">
+            {actor}
           </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-black text-text-primary preserve-words">
-              {actor}
-            </p>
-            <p className="font-mono text-[11px] text-text-muted md:hidden">
-              {formatTime(event.created_at)}
-            </p>
-          </div>
+          <span className="shrink-0 text-[11px] text-text-muted">{formatTime(event.created_at)}</span>
           {action && (
-            <span className="rounded-md border border-accent/20 bg-accent/8 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-accent preserve-words">
+            <span className="rounded bg-panel-soft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-text-muted preserve-words">
               {action}
             </span>
           )}
           {event.official_record && (
-            <span className="rounded-md border border-online/25 bg-online/10 px-2 py-1 text-[10px] font-black text-online">
+            <span className="rounded bg-online/15 px-1.5 py-0.5 text-[10px] font-black text-online">
               공식 기록
             </span>
           )}
-        </div>
+        </p>
         {event.message && (
           <p className="text-[14px] leading-relaxed text-text-secondary preserve-words">
-            {event.message}
+            <DiscordText text={event.message} />
           </p>
         )}
         <LobbyAttachments attachments={event.attachments} />
       </div>
-    </article>
-  );
-}
-
-function AgentLiveRow({ agent }: { agent: LiveAgent }) {
-  const active = agent.status === "working" || agent.status === "online";
-  const observation = lastObservedSummary(agent);
-  return (
-    <div className="ops-inner flex items-center gap-3 rounded-lg px-3 py-2.5">
-      <span className="hex-badge h-9 w-9">
-        <Bot size={15} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-bold text-text-primary preserve-words">
-          {agentName(agent)}
-        </p>
-        <p className="truncate text-[11px] text-text-muted preserve-words">
-          {providerExecutionLabel(agent)}
-        </p>
-        <ProviderTruthChips badges={agentTruthBadges(agent)} compact limit={6} />
-        {observation && (
-          <p className="mt-1 text-[10px] text-text-muted preserve-words">
-            {observation}
-          </p>
-        )}
-      </div>
-      <span className={`h-2.5 w-2.5 rounded-full ${active ? "bg-online live-pulse" : "bg-offline"}`} />
-      <span className={active ? "text-[11px] font-bold text-online" : "text-[11px] text-text-muted"}>
-        {agentStatusLabel(agent.status)}
-      </span>
     </div>
-  );
-}
-
-function SideChatPanel({
-  events,
-  error,
-  onPosted,
-  meetingId,
-}: {
-  events: SideChatEvent[];
-  error: Error | null;
-  onPosted: (events: SideChatEvent[]) => void;
-  meetingId: string;
-}) {
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [sendError, setSendError] = useState("");
-  const visibleEvents = events;
-
-  async function handleSend() {
-    const trimmed = message.trim();
-    if (!trimmed || busy) return;
-    const previousMessage = message;
-    setMessage("");
-    setBusy(true);
-    setSendError("");
-    try {
-      const payload = await postSideChatMessage({
-        name: "나",
-        side: "mine",
-        message: trimmed,
-        meetingId,
-      });
-      onPosted(payload.events?.length ? payload.events : payload.event ? [payload.event] : []);
-    } catch (errorValue) {
-      setMessage(previousMessage);
-      setSendError(errorValue instanceof Error ? errorValue.message : "사이드챗 전송 실패");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="flex min-h-0 flex-1 flex-col" aria-label="비공식 사이드챗">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-[17px] font-black">비공식 사이드챗</h2>
-          <p className="mt-1 text-[11px] font-bold text-text-muted">
-            공식 기록 제외
-          </p>
-        </div>
-        <span className="rounded-md border border-text-muted/25 px-2 py-1 text-[10px] font-black text-text-muted">
-          {events.length}개
-        </span>
-      </div>
-
-      {(error || sendError) && (
-        <p className="mb-3 rounded-lg border border-danger/25 bg-danger/10 px-3 py-2 text-[12px] text-danger preserve-words">
-          {sendError || "사이드챗 연결 대기 중"}
-        </p>
-      )}
-
-      <div className="ops-inner mb-3 min-h-[220px] flex-1 overflow-y-auto rounded-lg p-3 chat-scroll">
-        {visibleEvents.length === 0 ? (
-          <div className="flex h-[120px] items-center justify-center text-center text-[13px] text-text-muted preserve-words">
-            아직 비공식 사이드챗이 없습니다.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {visibleEvents.map((event) => (
-              <article
-                key={event.id}
-                className={`rounded-lg border p-3 ${
-                  event.side === "mine" || event.side === "my-agent"
-                    ? "border-accent/18 bg-accent/8"
-                    : "border-accent/10 bg-black/16"
-                }`}
-              >
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <p className="truncate text-[12px] font-black text-text-primary preserve-words">
-                    {event.name || "side"}
-                  </p>
-                  <span className="font-mono text-[10px] text-text-muted">
-                    {formatTime(event.created_at)}
-                  </span>
-                </div>
-                <p className="text-[12px] leading-relaxed text-text-secondary preserve-words">
-                  {event.message}
-                </p>
-              </article>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="grid shrink-0 gap-2 sm:grid-cols-[minmax(0,1fr)_40px]">
-        <input
-          value={message}
-          maxLength={2000}
-          onChange={(event) => setMessage(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void handleSend();
-          }}
-          className="ops-input min-w-0 rounded-lg px-3 py-2.5 text-[13px]"
-          placeholder="실황 보면서 한마디"
-        />
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={busy || !message.trim()}
-          className="grid h-10 place-items-center rounded-lg border border-accent/35 bg-accent/10 text-accent disabled:opacity-40"
-          aria-label="사이드챗 보내기"
-        >
-          <Send size={16} />
-        </button>
-      </div>
-    </section>
   );
 }
 
@@ -405,13 +100,7 @@ function winnerLabel(winner: string) {
   return "진행 중";
 }
 
-function MafiaPanel({
-  game,
-  refreshMafia,
-}: {
-  game: MafiaGame;
-  refreshMafia: () => void;
-}) {
+function MafiaPanel({ game, refreshMafia }: { game: MafiaGame; refreshMafia: () => void }) {
   const [channel, setChannel] = useState<"all" | "mafia_team">("all");
   const [speakerId, setSpeakerId] = useState("");
   const [voterId, setVoterId] = useState("");
@@ -501,210 +190,172 @@ function MafiaPanel({
   }
 
   return (
-    <section className="ops-panel ops-cut flex min-h-[620px] flex-col overflow-hidden">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-accent/14 px-5 py-4">
-        <div>
-          <div className="flex items-center gap-2">
-            {game.phase === "night" ? (
-              <Moon size={18} className="text-violet-300" />
-            ) : (
-              <Sun size={18} className="text-idle" />
-            )}
-            <h1 className="text-[20px] font-black">Mafia Night</h1>
-            <span className="rounded-md border border-danger/35 bg-danger/10 px-2 py-1 text-[11px] font-black text-danger">
-              {phaseLabel(game.phase)}
-            </span>
-          </div>
-          <p className="mt-1 text-[12px] text-text-muted preserve-words">
-            전체채팅과 마피아 팀채팅이 분리된 Play Mode 게임입니다.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="rounded-md border border-accent/20 px-3 py-2 text-[12px] font-bold text-text-secondary">
-            {game.day_number}일차
+    <div className="grid min-h-0 flex-1 gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_280px] lg:p-4">
+      <div className="ops-inner flex min-h-0 flex-col overflow-hidden">
+        <div className="flex shrink-0 items-center gap-2 border-b border-line p-2">
+          <button
+            type="button"
+            onClick={() => setChannel("all")}
+            data-active={channel === "all"}
+            className="ops-button rounded px-3 py-1.5 text-[12px] font-bold data-[active=true]:border-accent/70 data-[active=true]:text-accent"
+          >
+            전체채팅
+          </button>
+          <button
+            type="button"
+            onClick={() => setChannel("mafia_team")}
+            disabled={!canUseTeamChat}
+            data-active={channel === "mafia_team"}
+            className="ops-button rounded px-3 py-1.5 text-[12px] font-bold data-[active=true]:border-danger/70 data-[active=true]:text-danger disabled:opacity-40"
+          >
+            마피아 팀채팅
+          </button>
+          <span className="ml-auto flex items-center gap-1.5 text-[12px] font-bold text-text-muted">
+            {game.phase === "night" ? <Moon size={15} className="text-violet-300" /> : <Sun size={15} className="text-idle" />}
+            {phaseLabel(game.phase)} · {game.day_number}일차 · {winnerLabel(game.winner)}
           </span>
-          <span className="rounded-md border border-online/20 px-3 py-2 text-[12px] font-bold text-online">
-            {winnerLabel(game.winner)}
-          </span>
         </div>
-      </div>
-
-      <div className="grid min-h-0 flex-1 gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="ops-inner flex min-h-[460px] flex-col overflow-hidden rounded-lg">
-          <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-accent/10 p-3">
-            <button
-              type="button"
-              onClick={() => setChannel("all")}
-              data-active={channel === "all"}
-              className="ops-button whitespace-nowrap rounded-lg px-3 py-2 text-[12px] font-black data-[active=true]:border-accent/70 data-[active=true]:text-accent"
-            >
-              전체채팅
-            </button>
-            <button
-              type="button"
-              onClick={() => setChannel("mafia_team")}
-              disabled={!canUseTeamChat}
-              data-active={channel === "mafia_team"}
-              className="ops-button whitespace-nowrap rounded-lg px-3 py-2 text-[12px] font-black data-[active=true]:border-danger/70 data-[active=true]:text-danger disabled:opacity-40"
-            >
-              마피아 팀채팅
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 chat-scroll">
-            {visibleEvents.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-center text-[13px] text-text-muted preserve-words">
-                아직 이 채널에 메시지가 없습니다.
-              </div>
-            ) : (
-              visibleEvents.map((event) => (
-                <article key={event.id} className="rounded-lg border border-accent/12 bg-black/20 p-3">
-                  <div className="mb-1 flex items-center justify-between gap-3">
-                    <p className="font-bold text-text-primary preserve-words">
-                      {event.name}
-                    </p>
-                    <span className="font-mono text-[11px] text-text-muted">
-                      {formatTime(event.created_at)}
-                    </span>
-                  </div>
-                  <p className="text-[13px] leading-relaxed text-text-secondary preserve-words">
-                    {event.message}
-                  </p>
-                </article>
-              ))
-            )}
-          </div>
-          <div className="shrink-0 border-t border-accent/10 p-3">
-            {error && (
-              <p className="mb-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger preserve-words">
-                {error}
-              </p>
-            )}
-            <div className="grid gap-2 md:grid-cols-[170px_minmax(0,1fr)_44px]">
-              <select
-                value={speakerId}
-                onChange={(event) => setSpeakerId(event.target.value)}
-                className="ops-input rounded-lg px-3 py-2.5 text-[13px]"
-              >
-                {speakerOptions.map((player) => (
-                  <option key={player.agent_id} value={player.agent_id}>
-                    {playerName(player)}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") void handleSend();
-                }}
-                className="ops-input min-w-0 rounded-lg px-3 py-2.5 text-[13px]"
-                placeholder={channel === "mafia_team" ? "마피아 팀채팅..." : "전체채팅..."}
-              />
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={busy || !message.trim() || !speakerId}
-                className="grid h-11 place-items-center rounded-lg border border-accent/35 bg-accent/10 text-accent disabled:opacity-40"
-                aria-label="마피아 채팅 보내기"
-              >
-                <Send size={17} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <aside className="space-y-4">
-          <section className="ops-inner rounded-lg p-4">
-            <h2 className="mb-3 flex items-center gap-2 text-[15px] font-black">
-              <Skull size={16} className="text-danger" />
-              생존자
-            </h2>
-            <div className="space-y-2">
-              {game.players.map((player) => (
-                <div key={player.agent_id} className="flex items-center justify-between gap-3 rounded-lg border border-accent/10 bg-black/18 px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-bold preserve-words">
-                      {playerName(player)}
-                    </p>
-                    <p className={player.role === "mafia" ? "text-[11px] text-danger" : "text-[11px] text-text-muted"}>
-                      {player.role || "비공개"}
-                    </p>
-                  </div>
-                  <span className={player.alive ? "text-[11px] font-bold text-online" : "text-[11px] font-bold text-danger"}>
-                    {player.alive ? "생존" : "탈락"}
-                  </span>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 chat-scroll">
+          {visibleEvents.length === 0 ? (
+            <p className="flex h-full items-center justify-center text-center text-[13px] text-text-muted preserve-words">
+              아직 이 채널에 메시지가 없습니다.
+            </p>
+          ) : (
+            visibleEvents.map((event) => (
+              <article key={event.id} className="rounded-lg bg-panel-soft/60 p-2.5">
+                <div className="mb-1 flex items-center justify-between gap-3">
+                  <p className="font-semibold text-text-primary preserve-words">{event.name}</p>
+                  <span className="text-[11px] text-text-muted">{formatTime(event.created_at)}</span>
                 </div>
+                <p className="text-[13px] leading-relaxed text-text-secondary preserve-words">{event.message}</p>
+              </article>
+            ))
+          )}
+        </div>
+        <div className="shrink-0 border-t border-line p-2">
+          {error && (
+            <p className="mb-2 rounded border border-danger/30 bg-danger/10 px-3 py-1.5 text-[12px] text-danger preserve-words">
+              {error}
+            </p>
+          )}
+          <div className="grid gap-2 md:grid-cols-[150px_minmax(0,1fr)_40px]">
+            <select
+              value={speakerId}
+              onChange={(event) => setSpeakerId(event.target.value)}
+              className="ops-input rounded px-2.5 py-2 text-[13px]"
+              aria-label="발언자"
+            >
+              {speakerOptions.map((player) => (
+                <option key={player.agent_id} value={player.agent_id}>
+                  {playerName(player)}
+                </option>
               ))}
-            </div>
-          </section>
-
-          <section className="ops-inner rounded-lg p-4">
-            <h2 className="mb-3 flex items-center gap-2 text-[15px] font-black">
-              <Vote size={16} className="text-idle" />
-              투표 / 진행
-            </h2>
-            <div className="space-y-2">
-              <select
-                value={voterId}
-                onChange={(event) => setVoterId(event.target.value)}
-                className="ops-input w-full rounded-lg px-3 py-2.5 text-[13px]"
-              >
-                {voterOptions.map((player) => (
-                  <option key={player.agent_id} value={player.agent_id}>
-                    {playerName(player)}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={targetId}
-                onChange={(event) => setTargetId(event.target.value)}
-                className="ops-input w-full rounded-lg px-3 py-2.5 text-[13px]"
-              >
-                {targetOptions.map((player) => (
-                  <option key={player.agent_id} value={player.agent_id}>
-                    {playerName(player)}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={handleVote}
-                disabled={busy || game.phase === "ended" || !voterId || !targetId}
-                className="ops-button flex w-full items-center justify-center gap-2 rounded-lg px-3 py-3 text-[13px] font-black disabled:opacity-40"
-              >
-                <Vote size={15} />
-                투표
-              </button>
-              <button
-                type="button"
-                onClick={handleResolve}
-                disabled={busy || game.phase === "ended"}
-                className="ops-cta ops-cut flex w-full items-center justify-center gap-2 px-3 py-3 text-[14px] font-black disabled:opacity-40"
-              >
-                다음 단계 처리
-              </button>
-            </div>
-          </section>
-        </aside>
+            </select>
+            <input
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void handleSend();
+              }}
+              className="ops-input min-w-0 rounded px-3 py-2 text-[13px]"
+              placeholder={channel === "mafia_team" ? "마피아 팀채팅..." : "전체채팅..."}
+            />
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={busy || !message.trim() || !speakerId}
+              className="grid h-10 place-items-center rounded border border-line bg-accent/10 text-accent disabled:opacity-40"
+              aria-label="마피아 채팅 보내기"
+            >
+              <Send size={16} />
+            </button>
+          </div>
+        </div>
       </div>
-    </section>
+
+      <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto chat-scroll">
+        <section className="ops-inner p-3">
+          <h2 className="mb-2 flex items-center gap-2 text-[14px] font-bold">
+            <Skull size={15} className="text-danger" />
+            생존자
+          </h2>
+          <div className="space-y-1.5">
+            {game.players.map((player) => (
+              <div key={player.agent_id} className="flex items-center justify-between gap-3 rounded bg-panel-soft/60 px-2.5 py-1.5">
+                <span className="min-w-0 truncate text-[13px] font-semibold preserve-words">{playerName(player)}</span>
+                <span className={player.alive ? "text-[11px] font-bold text-online" : "text-[11px] font-bold text-danger"}>
+                  {player.alive ? "생존" : "탈락"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="ops-inner p-3">
+          <h2 className="mb-2 flex items-center gap-2 text-[14px] font-bold">
+            <Vote size={15} className="text-idle" />
+            투표 / 진행
+          </h2>
+          <div className="space-y-2">
+            <select
+              value={voterId}
+              onChange={(event) => setVoterId(event.target.value)}
+              className="ops-input w-full rounded px-2.5 py-2 text-[13px]"
+              aria-label="투표자"
+            >
+              {voterOptions.map((player) => (
+                <option key={player.agent_id} value={player.agent_id}>
+                  {playerName(player)}
+                </option>
+              ))}
+            </select>
+            <select
+              value={targetId}
+              onChange={(event) => setTargetId(event.target.value)}
+              className="ops-input w-full rounded px-2.5 py-2 text-[13px]"
+              aria-label="대상"
+            >
+              {targetOptions.map((player) => (
+                <option key={player.agent_id} value={player.agent_id}>
+                  {playerName(player)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleVote}
+              disabled={busy || game.phase === "ended" || !voterId || !targetId}
+              className="ops-button flex w-full items-center justify-center gap-2 rounded px-3 py-2 text-[13px] font-bold disabled:opacity-40"
+            >
+              <Vote size={15} />
+              투표
+            </button>
+            <button
+              type="button"
+              onClick={handleResolve}
+              disabled={busy || game.phase === "ended"}
+              className="ops-cta flex w-full items-center justify-center gap-2 px-3 py-2 text-[13px] disabled:opacity-40"
+            >
+              다음 단계 처리
+            </button>
+          </div>
+        </section>
+      </aside>
+    </div>
   );
 }
+
+type FeedItem =
+  | { kind: "official"; key: string; at: string; event: LobbyEvent };
 
 export default function LiveView({
   flow,
   flowEvents,
   timelineSource,
-  agents,
   mafiaGame,
   refreshMafia,
-  lifecycle,
-  lifecycleLoading,
-  lifecycleError,
-  sideChatEvents,
-  sideChatError,
-  onSideChatPosted,
-  sideChatMeetingId,
+  streamError,
+  membersOpen,
+  onToggleMembers,
 }: {
   flow: FlowState;
   flowEvents: LobbyEvent[];
@@ -712,13 +363,9 @@ export default function LiveView({
   agents: LiveAgent[];
   mafiaGame: MafiaGame | null;
   refreshMafia: () => void;
-  lifecycle: LifecycleProjection | null;
-  lifecycleLoading: boolean;
-  lifecycleError: Error | null;
-  sideChatEvents: SideChatEvent[];
-  sideChatError: Error | null;
-  onSideChatPosted: (events: SideChatEvent[]) => void;
-  sideChatMeetingId: string;
+  streamError: Error | null;
+  membersOpen?: boolean;
+  onToggleMembers?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToLatestRef = useRef(true);
@@ -727,38 +374,21 @@ export default function LiveView({
   const lastMeetingIdRef = useRef<string | undefined>(flow.meeting_id);
   const [events, setEvents] = useState<LobbyEvent[]>(flowEvents);
   const [pinnedToLatest, setPinnedToLatest] = useState(true);
-  const [rightPanelTab, setRightPanelTab] = useState<"room-info" | "side-chat">("room-info");
   const isRunning = flow.status === "running";
   const isFinished = flow.status === "finished" || flow.status === "stopped";
   const activeFlowId = flow.flow_id;
   const activeMeetingId = flow.meeting_id;
-  const activeAgents = agents.filter(
-    (agent) => agent.status === "online" || agent.status === "working"
-  );
 
-  const statusCards = useMemo(
-    () => [
-      {
-        label: "현재 단계",
-        value: isRunning ? "라이브" : isFinished ? "종료" : "대기",
-        icon: isRunning ? Flag : Pause,
-        tone: isRunning ? "text-online" : "text-text-muted",
-      },
-      {
-        label: "네트워크",
-        value: "Local",
-        icon: Activity,
-        tone: "text-accent",
-      },
-      {
-        label: "이벤트 수",
-        value: String(events.length),
-        icon: Radio,
-        tone: "text-idle",
-      },
-    ],
-    [events.length, isFinished, isRunning]
-  );
+  const feedItems = useMemo<FeedItem[]>(() => {
+    return events
+      .map((event) => ({
+        kind: "official" as const,
+        key: `o:${event.id}`,
+        at: event.created_at || "",
+        event,
+      }))
+      .sort((left, right) => left.at.localeCompare(right.at));
+  }, [events]);
 
   const updatePinnedToLatest = useCallback((nextPinned: boolean) => {
     pinnedToLatestRef.current = nextPinned;
@@ -772,9 +402,12 @@ export default function LiveView({
     updatePinnedToLatest(true);
   }, [updatePinnedToLatest]);
 
-  const handleTimelineScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
-    updatePinnedToLatest(liveTimelineIsNearBottom(event.currentTarget));
-  }, [updatePinnedToLatest]);
+  const handleTimelineScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      updatePinnedToLatest(liveTimelineIsNearBottom(event.currentTarget));
+    },
+    [updatePinnedToLatest]
+  );
 
   useLayoutEffect(() => {
     const element = scrollRef.current;
@@ -832,246 +465,77 @@ export default function LiveView({
 
   useEffect(() => subscribeLobby(mergeFlowEvents), [mergeFlowEvents]);
 
-  return (
-    <div className="grid min-h-full gap-4 overflow-y-auto xl:h-full xl:min-h-0 xl:overflow-hidden xl:grid-cols-[390px_minmax(0,1fr)_390px]">
-      <aside className="flex min-h-0 flex-col gap-4 overflow-visible chat-scroll xl:overflow-y-auto xl:pr-1">
-        <section className="ops-panel ops-cut p-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-[17px] font-black">세션 요약</h2>
-            <span className={`rounded-md border px-2 py-1 text-[11px] font-black ${isRunning ? "border-online/35 text-online" : "border-text-muted/25 text-text-muted"}`}>
-              {isRunning ? "LIVE" : isFinished ? "CLOSED" : "IDLE"}
-            </span>
-          </div>
-          <div className="ops-inner rounded-lg p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-              룸 이름
-            </p>
-            <p className="mt-2 truncate text-[22px] font-black text-online preserve-words">
-              {flow.meeting_id || "resident-room"}
-            </p>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-[11px] text-text-muted">남은 시간</p>
-                <p className="text-[18px] font-black">
-                  {flow.remaining_seconds != null && isRunning
-                    ? `${Math.ceil(flow.remaining_seconds)}초`
-                    : "--"}
-                </p>
-              </div>
-              <div>
-                <p className="text-[11px] text-text-muted">참여자</p>
-                <p className="text-[18px] font-black">{activeAgents.length}</p>
-              </div>
-            </div>
-            <p className="mt-4 text-[13px] leading-relaxed text-text-secondary preserve-words">
-              {flow.topic || "대기실에서 Play Mode를 시작하면 실황 타임라인이 열립니다."}
-            </p>
-          </div>
-        </section>
-
-        <section className="ops-panel ops-cut p-4">
-          <div className="mb-4 flex items-center justify-between border-b border-accent/14 pb-3">
-            <h2 className="text-[17px] font-black">참가자</h2>
-            <span className="text-[13px] font-bold text-text-muted">
-              {activeAgents.length} / {agents.length || 0}
-            </span>
-          </div>
-          <ParticipantContextSummary agents={agents} />
-          <div className="space-y-2">
-            {agents.length === 0 ? (
-              <p className="ops-inner rounded-lg p-4 text-[13px] text-text-muted">
-                표시할 resident agent가 없습니다.
-              </p>
-            ) : (
-              agents.slice(0, 8).map((agent) => (
-                <AgentLiveRow key={agent.agent_id} agent={agent} />
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="ops-panel ops-cut p-4">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-[17px] font-black">호스트 컨트롤</h2>
-            <span className="rounded-md border border-text-muted/25 px-2 py-1 text-[10px] font-black text-text-muted">
-              보기 전용
-            </span>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <button type="button" disabled className="ops-button rounded-lg px-2 py-4 text-center text-[12px] font-bold">
-              <Play className="mx-auto mb-2 text-online" size={19} />
-              다음 단계
-            </button>
-            <button type="button" disabled className="ops-button rounded-lg px-2 py-4 text-center text-[12px] font-bold">
-              <Pause className="mx-auto mb-2 text-text-muted" size={19} />
-              일시 정지
-            </button>
-            <button type="button" disabled className="ops-button rounded-lg px-2 py-4 text-center text-[12px] font-bold">
-              <Square className="mx-auto mb-2 text-danger" size={19} />
-              종료
-            </button>
-          </div>
-        </section>
-      </aside>
-
-      {mafiaGame ? (
+  if (mafiaGame) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <ChannelHeader
+          icon={<Skull size={20} />}
+          title="진행 로그 · Mafia Night"
+          subtitle="전체채팅과 마피아 팀채팅이 분리된 Play Mode 게임"
+          membersOpen={membersOpen}
+          onToggleMembers={onToggleMembers}
+        />
         <MafiaPanel game={mafiaGame} refreshMafia={refreshMafia} />
-      ) : (
-        <section className="ops-panel ops-cut flex min-h-[620px] flex-col overflow-hidden xl:h-full xl:min-h-0">
-          <div className="flex shrink-0 items-center justify-between border-b border-accent/14 px-5 py-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <Radio size={18} className={isRunning ? "text-online" : "text-text-muted"} />
-                <h1 className="text-[20px] font-black">실황 타임라인</h1>
-                {isRunning && (
-                  <span className="rounded-md border border-online/30 bg-online/10 px-2 py-1 text-[11px] font-black text-online">
-                    라이브
-                  </span>
-                )}
-              </div>
-              <p className="mt-1 text-[12px] text-text-muted preserve-words">
-                Play Mode 발언은 비공식 회의 흐름으로 표시됩니다.
-              </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <ChannelHeader
+        icon={<Radio size={20} />}
+        title="진행 로그"
+        subtitle="에이전트와 시스템 이벤트만 보는 보조 기록"
+        membersOpen={membersOpen}
+        onToggleMembers={onToggleMembers}
+      >
+        {isRunning && (
+          <span className="flex items-center gap-1.5 rounded bg-online/15 px-2 py-0.5 text-[11px] font-black text-online">
+            <span className="h-1.5 w-1.5 rounded-full bg-online live-pulse" />
+            라이브
+          </span>
+        )}
+        {streamError && <span className="text-[11px] font-bold text-idle">연결 재시도 중</span>}
+      </ChannelHeader>
+
+      <div
+        ref={scrollRef}
+        onScroll={handleTimelineScroll}
+        className="relative min-h-0 flex-1 overflow-y-auto py-3 chat-scroll"
+      >
+        {!pinnedToLatest && feedItems.length > 0 && (
+          <button
+            type="button"
+            onClick={scrollToLatest}
+            aria-label="최신 메시지로 이동"
+            className="ops-button sticky top-2 z-[1] mr-3 ml-auto block rounded-full px-3 py-1.5 text-[12px] font-bold text-accent shadow-lg lg:mr-4"
+          >
+            최신으로
+          </button>
+        )}
+        {feedItems.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+            <div className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-panel-soft text-text-muted">
+              <Radio size={24} />
             </div>
-            <button type="button" disabled className="ops-button grid h-9 w-9 place-items-center rounded-lg">
-              <RefreshCw size={15} />
-            </button>
+            <p className="max-w-md text-[14px] text-text-secondary preserve-words">
+              {isRunning
+                ? "방은 열려 있습니다. 에이전트 이벤트를 기다리는 중입니다."
+                : isFinished
+                  ? "세션이 종료되었습니다. 채팅 채널에서 새 세션을 시작할 수 있습니다."
+                  : "채팅 채널에서 Play Mode를 시작하면 이곳에 진행 로그가 흐릅니다."}
+            </p>
           </div>
+        ) : (
+          feedItems.map((item) =>
+            <FlowMessage key={item.key} event={item.event} />
+          )
+        )}
+      </div>
 
-          <div ref={scrollRef} onScroll={handleTimelineScroll} className="relative flex-1 overflow-y-auto px-4 py-5 chat-scroll">
-            <div className="absolute bottom-6 left-[35px] top-6 w-px bg-accent/20" />
-            {!pinnedToLatest && events.length > 0 && (
-              <button
-                type="button"
-                onClick={scrollToLatest}
-                aria-label="최신 메시지로 이동"
-                className="ops-button sticky top-3 z-[1] ml-auto mb-3 block rounded-lg px-3 py-2 text-[12px] font-black text-accent shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
-              >
-                최신으로
-              </button>
-            )}
-            {events.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-accent/24 bg-accent/8 text-accent">
-                  <MessageSquare size={26} />
-                </div>
-                <p className="max-w-md text-[15px] font-semibold text-text-secondary preserve-words">
-                  {isRunning
-                    ? "방은 열려 있습니다. 에이전트 발언을 기다리는 중입니다."
-                    : "로비에서 Play Mode를 시작하면 이곳에 타임라인이 흐릅니다."}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-5">
-                {events.map((event) => (
-                  <FlowMessage key={event.id} event={event} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="shrink-0 border-t border-accent/14 p-4">
-            <div className="ops-inner flex items-center gap-3 rounded-lg p-3">
-              <input
-                readOnly
-                value=""
-                placeholder="지시, 공지, 또는 메모를 입력하세요..."
-                className="min-w-0 flex-1 bg-transparent text-[13px] text-text-primary outline-none placeholder:text-text-muted"
-              />
-              <button type="button" disabled className="grid h-10 w-10 cursor-not-allowed place-items-center rounded-md border border-accent/25 bg-accent/5 text-accent/60">
-                <Send size={17} />
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-
-      <aside className="flex min-h-0 flex-col overflow-visible xl:overflow-hidden">
-        <section className="ops-panel ops-cut flex min-h-[560px] flex-col overflow-hidden xl:h-full xl:min-h-0" aria-label="실황 우측 패널">
-          <div className="grid shrink-0 grid-cols-2 gap-2 border-b border-accent/14 p-2" role="tablist" aria-label="실황 우측 패널">
-            <button
-              type="button"
-              role="tab"
-              id="live-room-info-tab"
-              aria-selected={rightPanelTab === "room-info"}
-              aria-controls="live-room-info-panel"
-              onClick={() => setRightPanelTab("room-info")}
-              className={`rounded-lg px-3 py-2.5 text-[12px] font-black transition-colors ${
-                rightPanelTab === "room-info"
-                  ? "border border-accent/55 bg-accent/12 text-accent"
-                  : "border border-accent/10 bg-black/16 text-text-muted hover:text-text-primary"
-              }`}
-            >
-              방 연결 정보
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="live-side-chat-tab"
-              aria-selected={rightPanelTab === "side-chat"}
-              aria-controls="live-side-chat-panel"
-              onClick={() => setRightPanelTab("side-chat")}
-              className={`rounded-lg px-3 py-2.5 text-[12px] font-black transition-colors ${
-                rightPanelTab === "side-chat"
-                  ? "border border-accent/55 bg-accent/12 text-accent"
-                  : "border border-accent/10 bg-black/16 text-text-muted hover:text-text-primary"
-              }`}
-            >
-              사이드챗
-            </button>
-          </div>
-
-          {rightPanelTab === "room-info" ? (
-            <div
-              id="live-room-info-panel"
-              role="tabpanel"
-              aria-labelledby="live-room-info-tab"
-              className="flex-1 overflow-y-auto p-4 chat-scroll"
-            >
-              <div className="space-y-4">
-                <DiscordMemberPanel
-                  meetingId={sideChatMeetingId || activeMeetingId || ""}
-                  agents={agents}
-                  lifecycle={lifecycle}
-                />
-
-                <LifecyclePanel lifecycle={lifecycle} loading={lifecycleLoading} error={lifecycleError} embedded />
-
-                <section className="rounded-xl border border-accent/14 bg-black/12 p-4">
-                  <h2 className="mb-4 text-[17px] font-black">방 연결 정보</h2>
-                  <div className="grid gap-3">
-                    {statusCards.map(({ label, value, icon: Icon, tone }) => (
-                      <div key={label} className="ops-inner flex items-center gap-3 rounded-lg p-4">
-                        <Icon size={18} className={tone} />
-                        <div>
-                          <p className="text-[11px] font-bold uppercase tracking-wider text-text-muted">
-                            {label}
-                          </p>
-                          <p className={`text-[18px] font-black ${tone}`}>{value}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </div>
-            </div>
-          ) : (
-            <div
-              id="live-side-chat-panel"
-              role="tabpanel"
-              aria-labelledby="live-side-chat-tab"
-              className="flex min-h-0 flex-1 flex-col overflow-hidden p-4"
-            >
-              <SideChatPanel
-                events={sideChatEvents}
-                error={sideChatError}
-                onPosted={onSideChatPosted}
-                meetingId={sideChatMeetingId}
-              />
-            </div>
-          )}
-        </section>
-      </aside>
+      <div className="shrink-0 border-t border-line px-4 py-3 text-[12px] font-semibold text-text-muted preserve-words">
+        모두가 보는 대화는 #채팅에 남습니다. 이 화면은 진행 로그만 분리해서 보여줍니다.
+      </div>
     </div>
   );
 }

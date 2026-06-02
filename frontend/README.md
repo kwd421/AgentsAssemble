@@ -10,8 +10,8 @@ python3 -m agentsassemble.cli gui --port 8765
 ```
 
 `/` serves this Discord-style React room client once a production build exists;
-until then it falls back to the dependency-light vanilla console. The React app
-is also aliased at `/app/`. The
+until then the backend returns a build-required response instead of serving the
+retired vanilla console. The React app is also aliased at `/app/`. The
 completed default-route flip and its operator-verified browser-parity caveat
 live in `docs/product/legacy-react-parity-matrix.md`.
 
@@ -25,8 +25,8 @@ python3 -m agentsassemble.cli gui --port 8765
 Open http://127.0.0.1:8765/ (or the `/app/` alias).
 
 The GUI startup banner prints the React default URL when the build is present;
-otherwise it prints the build command and serves the vanilla console at `/`
-until the build exists.
+otherwise it prints the build command and keeps `/` and `/app/` on the same
+React-build-required contract until the build exists.
 
 ## Prerequisites
 

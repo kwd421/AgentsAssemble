@@ -77,7 +77,7 @@ class ReleaseHealthCheck:
 
 
 RELEASE_HEALTH_SAFETY_CLASSES = {
-    "frontend_static_syntax",
+    "frontend_react_build",
     "python_unit",
     "python_integration",
     "python_compile",
@@ -88,12 +88,12 @@ RELEASE_HEALTH_SAFETY_CLASSES = {
 
 RELEASE_HEALTH_CHECKS: tuple[ReleaseHealthCheck, ...] = (
     ReleaseHealthCheck(
-        id="node_check_static",
-        label="Node syntax check for vanilla static JavaScript",
-        kind="syntax",
-        category="frontend_static",
-        requires=("node",),
-        safety_class="frontend_static_syntax",
+        id="frontend_react_build",
+        label="React frontend build",
+        kind="build",
+        category="frontend_react",
+        requires=("npm",),
+        safety_class="frontend_react_build",
     ),
     ReleaseHealthCheck(
         id="unittest_static_ui_assets",
@@ -530,8 +530,8 @@ def _run_release_health_check(
 
 
 def _commands_for_check(check: ReleaseHealthCheck, *, repo_root: Path) -> list[list[str]]:
-    if check.id == "node_check_static":
-        return [["node", "--check", str(path.relative_to(repo_root))] for path in sorted((repo_root / "agentsassemble" / "static").glob("*.js"))]
+    if check.id == "frontend_react_build":
+        return [["npm", "--prefix", "frontend", "run", "build"]]
     if check.id == "unittest_static_ui_assets":
         return [["python3", "-m", "unittest", "tests.test_static_ui_assets", "-v"]]
     if check.id == "unittest_docs_architecture":

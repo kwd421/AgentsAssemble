@@ -70,7 +70,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(
             RELEASE_HEALTH_CHECK_IDS,
             [
-                "node_check_static",
+                "frontend_react_build",
                 "unittest_static_ui_assets",
                 "unittest_docs_architecture",
                 "unittest_mcp_server",
@@ -135,7 +135,7 @@ class ReleaseHealthTests(unittest.TestCase):
             "summary": {"total": 2, "passed": 1, "failed": 1, "skipped": 0, "ok": False},
             "results": [
                 {
-                    "id": "node_check_static",
+                    "id": "frontend_react_build",
                     "status": "passed",
                     "duration_seconds": 1.5,
                     "stdout_tail": f"private output {ROOT}",
@@ -165,8 +165,8 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(payload["source"]["latest_duration_seconds"], 80.25)
         self.assertEqual(payload["summary"]["latest_passed"], 1)
         self.assertEqual(payload["summary"]["latest_failed"], 1)
-        self.assertEqual(by_id["node_check_static"]["latest_status"], "passed")
-        self.assertEqual(by_id["node_check_static"]["latest_duration_seconds"], 1.5)
+        self.assertEqual(by_id["frontend_react_build"]["latest_status"], "passed")
+        self.assertEqual(by_id["frontend_react_build"]["latest_duration_seconds"], 1.5)
         self.assertEqual(by_id["git_diff_check"]["latest_status"], "failed")
         self.assertEqual(by_id["unittest_static_ui_assets"]["latest_status"], "not_run")
 
@@ -201,7 +201,7 @@ class ReleaseHealthTests(unittest.TestCase):
         report = {
             "status": "ok",
             "completed_at": "2026-05-29T00:01:20+00:00",
-            "results": [{"id": "node_check_static", "status": "passed"}],
+            "results": [{"id": "frontend_react_build", "status": "passed"}],
         }
         with tempfile.TemporaryDirectory() as temp_dir:
             output_root = Path(temp_dir)
@@ -218,7 +218,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(
             RELEASE_HEALTH_SAFETY_CLASSES,
             {
-                "frontend_static_syntax",
+                "frontend_react_build",
                 "python_unit",
                 "python_integration",
                 "python_compile",
@@ -237,7 +237,7 @@ class ReleaseHealthTests(unittest.TestCase):
         self.assertEqual(
             [check.id for check in selected],
             [
-                "node_check_static",
+                "frontend_react_build",
                 "unittest_static_ui_assets",
                 "unittest_docs_architecture",
                 "unittest_mcp_server",

@@ -94,18 +94,18 @@ Default URL:
 http://127.0.0.1:8765
 ```
 
-`/` serves the React operator console once the frontend is built; until then it
-falls back to the dependency-light vanilla console. The vanilla console always
-stays reachable at `/legacy/`, and the React app is also aliased at `/app/`.
-Build the React default with:
+`/` serves the React operator console once the frontend is built. If the build
+is missing, the GUI returns a build-required message instead of showing the
+retired vanilla console. The React app is also aliased at `/app/`. Build the
+React default with:
 
 ```bash
 npm --prefix frontend run build
 ```
 
 The `frontend/` React/Vite frontend is the default operator surface and the
-default entry point at `/`; the vanilla console is the dependency-light
-fallback. To see the current launch commands, proxy target, and build status:
+default entry point at `/`; legacy static routes are retired. To see the current
+launch commands, proxy target, and build status:
 
 ```bash
 python3 -m agentsassemble.cli frontend-info

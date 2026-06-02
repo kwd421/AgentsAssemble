@@ -22,7 +22,7 @@ Run the broad proof set with `python3 -m agentsassemble.cli release-health run`
 
 | # | Requirement | Status | Primary evidence |
 | --- | --- | --- | --- |
-| 1 | React is the default operator surface; `/legacy/` stays fallback | pass + operator-verified | route curl + tests below; browser console errors operator/Codex-verified |
+| 1 | React is the default operator surface; legacy fallback routes are retired | pass + operator-verified | route curl + tests below; browser console errors operator/Codex-verified |
 | 2 | UI polish is clean, not intimidating, no external font/network dependency | pass | `index.css` external-ref grep + `npm run build` |
 | 3 | Scheduler fairness prevents first-speaker anchoring / unfair dominance | pass | `room-benchmark` off-vs-on numbers + fairness tests |
 | 4 | Agent-owned room model; honest persistent-vs-stateless labels | pass | roster-truth/agent-label/live-agent tests + docs test |
@@ -35,26 +35,28 @@ Run the broad proof set with `python3 -m agentsassemble.cli release-health run`
 
 ## Evidence
 
-### 1. React default surface, `/legacy/` fallback
+### 1. React default surface, retired legacy routes
 
 ```text
 $ python3 -m agentsassemble.cli gui --port 8902 ...   # then curl:
 /        -> 200  react (id="root")
 /app/    -> 200  react (/app/assets/ refs)
-/legacy/ -> 200  vanilla (<title>AgentsAssemble</title>)
+/legacy/ -> 200  react alias when built; 404 when React build is missing
+/static/base.css -> 404
 /app/assets/index-DHpFvw0x.js -> 200
 ```
 
 - `agentsassemble/gui.py` `do_GET` `/` serves the React index when
-  `frontend_dist_status(react_app_root).static_available`, else the vanilla
-  console; `/legacy/` always serves vanilla.
+  `frontend_dist_status(react_app_root).static_available`, else returns the
+  React build-required response; legacy static routes are no longer public
+  fallback assets.
 - Tests: `tests/test_gui_server.py::GuiServerTests::test_root_and_app_serve_react_when_build_available`,
-  `::test_root_falls_back_to_vanilla_console_when_react_build_missing`,
+  `::test_root_reports_missing_react_build_without_serving_legacy_console`,
   `::test_react_app_preview_route_reports_missing_dist_without_crashing`.
 - `frontend-info` reports `is_default_entry_point: true`.
 - Independent check: Codex verified the current-code server on port 8899 — `/`
-  and `/app/` serve React root/assets, `/legacy/` serves vanilla, and browser
-  console errors were 0.
+  and `/app/` serve React root/assets, retired static routes do not serve the
+  old console, and browser console errors were 0.
 
 ### 2. UI polish, no external font/network dependency
 
@@ -194,7 +196,7 @@ $ git status --short   -> clean
   surfaces (`로비`, `실황`, `작전판`, `아카이브`) are operator-verified, not
   asserted headlessly here. Codex independently confirmed 0 browser console
   errors on the current code (port 8899).
-- A fresh clone serves the vanilla console at `/` until
+- A fresh clone returns a React-build-required response at `/` until
   `npm --prefix frontend run build` produces `frontend/dist` (gitignored by
   design); after a build, `/` serves React.
 - Benchmark numbers are same-machine regression tripwires, not portable SLAs.

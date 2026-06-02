@@ -17,14 +17,14 @@ http://127.0.0.1:8765
 ```
 
 `/` serves the Discord-style React room client once `npm --prefix frontend run build`
-exists; until then it falls back to this dependency-light vanilla console. The
-React app is also aliased at `/app/`. The React/Vite dev server in `frontend/` runs on port 5173 and
+exists; until then it returns a build-required response instead of serving the
+retired vanilla console. The React app is also aliased at `/app/`. The React/Vite dev server in `frontend/` runs on port 5173 and
 proxies API calls to this backend by default. Use
 `python3 -m agentsassemble.cli frontend-info` for read-only launch guidance;
 that command prints a recommended current UI URL based on whether the built
 React app is available. Its JSON also includes `app_build_status` and
 `app_referenced_assets_present` so partial or stale builds explain why the
-vanilla fallback is recommended. It does not start a dev server, GUI backend, or
+React build is required. It does not start a dev server, GUI backend, or
 provider CLI. The completed default-route flip is tracked in
 `docs/product/legacy-react-parity-matrix.md`.
 
@@ -45,8 +45,8 @@ The GUI's `세션시작` button pairs that resident config with `configs/demo-co
 
 The live-agent roster and supervised process panel auto-refresh in the GUI every 5 seconds. This keeps stale presence, process crashes, pending auto-restart state, and recovered groups visible during long sessions without relying only on the manual refresh buttons. Background refreshes ignore volatile heartbeat age and monitor tick timestamps when deciding whether to re-render the lobby, so the room stays live without visually resetting every poll. Play Mode flow status polling patches the compact status line in place while the visible control shape is unchanged, so a running timer does not reset lobby scroll or input drafts on every poll. The GUI server also starts a backend supervisor monitor, so owned process crash detection and due auto-restarts continue without an open browser or `/api/live-agent-processes` polling client. The manual refresh buttons remain useful when you want an immediate read after changing files or process state from another terminal.
 
-The current frontend is still the dependency-light vanilla HTML/CSS/JS operator
-console. Natural-language room text should keep human-readable tokens intact
+The current frontend is the Discord-style React room client. Natural-language
+room text should keep human-readable tokens intact
 (`Kiro Opus 4.7`, `0.5`, `80kg`, ellipses, and similar prose tokens), while
 technical surfaces such as URLs, ids, logs, paths, and command output may use
 stronger wrapping to avoid horizontal overflow. Live-event stream updates should

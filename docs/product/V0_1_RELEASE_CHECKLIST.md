@@ -172,9 +172,9 @@ Completed evidence:
      track starts.
 6. Record the React default-route flip:
    - use `docs/product/legacy-react-parity-matrix.md` for the API/SSE parity,
-     room-event contracts, and legacy fallback evidence behind the flip.
-   - `/` now serves the React operator console when built and falls back to the
-     vanilla console otherwise; `/legacy/` stays the tested fallback.
+     room-event contracts, and retired legacy-route evidence behind the flip.
+   - `/` now serves the React operator console when built and reports a
+     build-required response otherwise; legacy static routes are retired.
    - browser-rendered parity for the four React surfaces stays operator-verified
      after each build.
 

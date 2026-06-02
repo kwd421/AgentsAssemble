@@ -238,7 +238,7 @@ class FrontendWorkroomQueueTests(unittest.TestCase):
         self.assertIn('channel !== "board"', app_source)
         self.assertIn('channel !== "live"', app_source)
         self.assertIn("scopedWorkroomQueueEvidence", app_source)
-        self.assertIn("workroomQueueEvidence={scopedWorkroomQueueEvidence}", app_source)
+        self.assertIn("workroomQueueEvidence={activeRoomFlowVisible ? scopedWorkroomQueueEvidence : null}", app_source)
         self.assertNotIn("fetchMeetingDetail", app_source)
         self.assertNotIn("meetingDetail={", app_source)
         self.assertIn("summarizeWorkroomQueue", panel_source)

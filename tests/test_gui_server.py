@@ -7821,10 +7821,15 @@ class GuiServerTests(unittest.TestCase):
                         serve_gui(host="127.0.0.1", port=0, output_root=root, frontend_dist_root=missing_dist)
 
         output = stdout.getvalue()
-        self.assertIn("Operator console (default): http://127.0.0.1:48766/ (legacy vanilla fallback)", output)
+        self.assertIn(
+            "Operator console unavailable until the React build exists: http://127.0.0.1:48766/",
+            output,
+        )
         self.assertIn("Build React for the default console: npm --prefix frontend run build", output)
-        self.assertIn("Legacy fallback while React is unavailable: http://127.0.0.1:48766/legacy/", output)
+        self.assertIn("React console alias: http://127.0.0.1:48766/app/ (build required)", output)
         self.assertNotIn("(React)", output)
+        self.assertNotIn("/legacy/", output)
+        self.assertNotIn("legacy vanilla fallback", output)
 
     def test_serve_gui_startup_banner_treats_partial_react_dist_as_missing(self):
         class FakeServer:
@@ -7863,9 +7868,15 @@ class GuiServerTests(unittest.TestCase):
                         serve_gui(host="127.0.0.1", port=0, output_root=root, frontend_dist_root=partial_dist)
 
         output = stdout.getvalue()
-        self.assertIn("Operator console (default): http://127.0.0.1:48767/ (legacy vanilla fallback)", output)
+        self.assertIn(
+            "Operator console unavailable until the React build exists: http://127.0.0.1:48767/",
+            output,
+        )
         self.assertIn("Build React for the default console: npm --prefix frontend run build", output)
+        self.assertIn("React console alias: http://127.0.0.1:48767/app/ (build required)", output)
         self.assertNotIn("(React)", output)
+        self.assertNotIn("/legacy/", output)
+        self.assertNotIn("legacy vanilla fallback", output)
 
     def test_serve_gui_autostarts_explicit_live_agent_config_after_server_bind(self):
         class FakeServer:
@@ -20298,7 +20309,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(_safe_static_path(static_root, "app.js"), (static_root / "app.js").resolve())
             self.assertIsNone(_safe_static_path(static_root, "../secret.txt"))
 
-    def test_root_falls_back_to_vanilla_console_when_react_build_missing(self):
+    def test_root_reports_missing_react_build_without_serving_legacy_console(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             missing_dist = Path(temp_dir) / "missing-dist"
@@ -20307,22 +20318,42 @@ class GuiServerTests(unittest.TestCase):
             thread.start()
             try:
                 base = f"http://127.0.0.1:{server.server_port}"
-                root_html = urlopen(f"{base}/", timeout=4).read()
-                legacy_html = urlopen(f"{base}/legacy/", timeout=4).read()
-                root_css = urlopen(f"{base}/static/base.css", timeout=4).read()
-                legacy_css = urlopen(f"{base}/legacy/static/base.css", timeout=4).read()
-                with self.assertRaises(HTTPError) as raised:
+                with self.assertRaises(HTTPError) as root_raised:
+                    urlopen(f"{base}/", timeout=4)
+                with self.assertRaises(HTTPError) as app_raised:
+                    urlopen(f"{base}/app/", timeout=4)
+                with self.assertRaises(HTTPError) as legacy_raised:
+                    urlopen(f"{base}/legacy/", timeout=4)
+                with self.assertRaises(HTTPError) as root_static_raised:
+                    urlopen(f"{base}/static/base.css", timeout=4)
+                with self.assertRaises(HTTPError) as legacy_static_raised:
+                    urlopen(f"{base}/legacy/static/base.css", timeout=4)
+                with self.assertRaises(HTTPError) as escaped:
                     urlopen(f"{base}/legacy/static/../secret.txt", timeout=4)
             finally:
                 server.shutdown()
                 server.server_close()
 
-        self.assertEqual(legacy_html, root_html)
-        self.assertEqual(legacy_css, root_css)
+        raised_errors = [
+            root_raised.exception,
+            app_raised.exception,
+            legacy_raised.exception,
+            root_static_raised.exception,
+            legacy_static_raised.exception,
+            escaped.exception,
+        ]
         try:
-            self.assertEqual(raised.exception.code, 404)
+            self.assertEqual(root_raised.exception.code, 503)
+            self.assertEqual(app_raised.exception.code, 503)
+            self.assertIn("npm --prefix frontend run build", root_raised.exception.read().decode("utf-8"))
+            self.assertIn("npm --prefix frontend run build", app_raised.exception.read().decode("utf-8"))
+            self.assertEqual(legacy_raised.exception.code, 404)
+            self.assertEqual(root_static_raised.exception.code, 404)
+            self.assertEqual(legacy_static_raised.exception.code, 404)
+            self.assertEqual(escaped.exception.code, 404)
         finally:
-            raised.exception.close()
+            for error in raised_errors:
+                error.close()
 
     def test_root_and_app_serve_react_when_build_available(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -20357,7 +20388,7 @@ class GuiServerTests(unittest.TestCase):
         self.assertEqual(root_html, app_html)
         self.assertIn('src="/app/assets/app.js"', root_html)
         self.assertIn('href="/app/assets/app.css"', root_html)
-        self.assertNotEqual(root_html, legacy_html)
+        self.assertEqual(root_html, legacy_html)
         self.assertEqual(root_response.headers.get("Content-Type"), "text/html; charset=utf-8")
         self.assertEqual(root_response.headers.get("Cache-Control"), "no-cache")
         self.assertIn("javascript", asset_response.headers.get("Content-Type", ""))
@@ -20657,11 +20688,11 @@ class GuiServerTests(unittest.TestCase):
             serialized = json.dumps(payload, ensure_ascii=False)
             self.assertEqual(payload["status"], "ok")
             self.assertEqual(payload["schema_version"], 1)
-            self.assertIn("node_check_static", [check["id"] for check in payload["checks"]])
+            self.assertIn("frontend_react_build", [check["id"] for check in payload["checks"]])
             first_check = payload["checks"][0]
             self.assertEqual(first_check["order"], 1)
             self.assertTrue(first_check["default_run"])
-            self.assertEqual(first_check["safety_class"], "frontend_static_syntax")
+            self.assertEqual(first_check["safety_class"], "frontend_react_build")
             benchmark = next(check for check in payload["checks"] if check["id"] == "room_event_benchmark")
             self.assertIsNone(benchmark["order"])
             self.assertFalse(benchmark["default_run"])
@@ -20687,7 +20718,7 @@ class GuiServerTests(unittest.TestCase):
                         "summary": {"total": 1, "passed": 0, "failed": 1, "skipped": 0, "ok": False},
                         "results": [
                             {
-                                "id": "node_check_static",
+                                "id": "frontend_react_build",
                                 "status": "failed",
                                 "duration_seconds": 0.7,
                                 "stdout_tail": f"private output {root}",
@@ -20713,8 +20744,8 @@ class GuiServerTests(unittest.TestCase):
             self.assertTrue(payload["source"]["has_latest_run"])
             self.assertEqual(payload["source"]["latest_status"], "failed")
             by_id = {check["id"]: check for check in payload["checks"]}
-            self.assertEqual(by_id["node_check_static"]["latest_status"], "failed")
-            self.assertEqual(by_id["node_check_static"]["latest_duration_seconds"], 0.7)
+            self.assertEqual(by_id["frontend_react_build"]["latest_status"], "failed")
+            self.assertEqual(by_id["frontend_react_build"]["latest_duration_seconds"], 0.7)
             self.assertNotIn("stdout_tail", serialized)
             self.assertNotIn("stderr_tail", serialized)
             self.assertNotIn("SECRET_TOKEN", serialized)
@@ -20735,7 +20766,7 @@ class GuiServerTests(unittest.TestCase):
                         "summary": {"total": float("inf"), "passed": 1, "failed": 0, "skipped": 0, "ok": True},
                         "results": [
                             {
-                                "id": "node_check_static",
+                                "id": "frontend_react_build",
                                 "status": "passed",
                                 "duration_seconds": 0.1,
                                 "benchmark_summary": {
@@ -20801,7 +20832,7 @@ class GuiServerTests(unittest.TestCase):
 
             serialized = json.dumps(payload, ensure_ascii=False)
             by_id = {check["id"]: check for check in payload["checks"]}
-            self.assertNotIn("benchmark_summary", by_id["node_check_static"])
+            self.assertNotIn("benchmark_summary", by_id["frontend_react_build"])
             benchmark = by_id["room_event_benchmark"]["benchmark_summary"]
             self.assertEqual(benchmark["status"], "ok")
             self.assertEqual(benchmark["metrics_summary"]["flow_anchor_share_improvement"], 0.4)

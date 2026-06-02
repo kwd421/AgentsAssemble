@@ -8,6 +8,15 @@ export type AgentTruthBadge = {
   title?: string;
 };
 
+export type AgentQuotaWindowSignal = {
+  label: string;
+  percent: number;
+  resetsAt?: string | number | null;
+  usageLabel?: string;
+  tone: Tone;
+  title: string;
+};
+
 export type RoomContextSummary = {
   total: number;
   resident_session: number;
@@ -73,6 +82,13 @@ const CONTEXT_DURABILITY_KIND_LABELS: Record<string, string> = {
   provider_owned: "기억 유지",
   external_owned: "외부",
   unknown: "알 수 없음",
+};
+
+const QUOTA_STATE_LABELS: Record<string, string> = {
+  ok: "정상",
+  low: "낮음",
+  exhausted: "소진",
+  unknown: "미확인",
 };
 
 export function humanizeToken(value?: string): string {
@@ -236,6 +252,126 @@ export function agentTruthBadges(agent: LiveAgent): AgentTruthBadge[] {
     sandboxBadge(agent),
     admissionBadge(agent),
   ].filter(Boolean) as AgentTruthBadge[];
+}
+
+function quotaTone(agent: Pick<LiveAgent, "quota_5h" | "quota_1w" | "quota_state">): Tone {
+  if (agent.quota_state === "exhausted") return "danger";
+  if (agent.quota_state === "low") return "idle";
+  if (agent.quota_state === "ok") return "online";
+  return agent.quota_5h || agent.quota_1w ? "accent" : "muted";
+}
+
+function quotaTitle(agent: Pick<LiveAgent, "quota_state">, windowLabel: string, value: string): string {
+  const state = agent.quota_state ? QUOTA_STATE_LABELS[agent.quota_state] || agent.quota_state : "제공 안 됨";
+  return `${windowLabel} quota signal: ${value === "—" ? "not provided" : value} · ${state}`;
+}
+
+function quotaWindowTone(percent: number): Tone {
+  if (percent >= 90) return "danger";
+  if (percent >= 60) return "idle";
+  return "online";
+}
+
+function shortQuotaWindowLabel(label: string): string {
+  const value = label.trim();
+  return value
+    .replace("-hour", "h")
+    .replace("-day", "d")
+    .replace(" Sonnet", "")
+    .replace(" Opus", "")
+    .replace("Premium", "30d");
+}
+
+function quotaResetLabel(value: string | number | null | undefined): string {
+  if (value == null || value === "") return "";
+  const date = new Date(typeof value === "number" ? value * 1000 : value);
+  if (!Number.isFinite(date.getTime())) return String(value);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function quotaNumberLabel(value: number | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  if (Math.abs(value) >= 1000) {
+    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1, notation: "compact" }).format(value);
+  }
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
+}
+
+function quotaUsageLabel(window: NonNullable<LiveAgent["quota_windows"]>[number]): string {
+  const used = quotaNumberLabel(window.used);
+  const limit = quotaNumberLabel(window.limit);
+  const remaining = quotaNumberLabel(window.remaining);
+  const unit = String(window.unit || "").trim();
+  if (used && limit) return `${used}/${limit}${unit ? ` ${unit}` : ""}`;
+  if (remaining) return `${remaining}${unit ? ` ${unit}` : ""} left`;
+  return "";
+}
+
+export function agentQuotaWindowSignals(agent: LiveAgent): AgentQuotaWindowSignal[] {
+  const windows = Array.isArray(agent.quota_windows) ? agent.quota_windows : [];
+  return windows
+    .filter((window) => typeof window?.label === "string" && typeof window?.percent === "number")
+    .slice(0, 4)
+    .map((window) => {
+      const percent = Math.max(0, Math.min(100, Math.round(window.percent)));
+      const label = shortQuotaWindowLabel(window.label);
+      const reset = quotaResetLabel(window.resetsAt);
+      const usage = quotaUsageLabel(window);
+      const title = `${window.label}: ${percent}% used${usage ? ` · ${usage}` : ""}${reset ? ` · reset ${reset}` : ""}`;
+      return {
+        label,
+        percent,
+        resetsAt: window.resetsAt,
+        usageLabel: usage,
+        tone: quotaWindowTone(percent),
+        title,
+      };
+    });
+}
+
+export function agentMemberSignals(agent: LiveAgent): AgentTruthBadge[] {
+  const fiveHour = String(agent.quota_5h || "").trim() || "—";
+  const oneWeek = String(agent.quota_1w || "").trim() || "—";
+  const contextKind = contextDurabilityKind(agent.context_durability);
+  const contextLabel = CONTEXT_DURABILITY_KIND_LABELS[contextKind] || CONTEXT_DURABILITY_KIND_LABELS.unknown;
+  const contextTone =
+    contextKind === "provider_owned"
+      ? "online"
+      : contextKind === "process_lifetime"
+        ? "accent"
+        : contextKind === "stateless"
+          ? "idle"
+          : "muted";
+  const quotaSignalTone = quotaTone(agent);
+  const quotaWindows = agentQuotaWindowSignals(agent);
+  const quotaFallbackSignals =
+    quotaWindows.length > 0
+      ? []
+      : [
+          {
+            label: `5h ${fiveHour}`,
+            tone: quotaSignalTone,
+            title: quotaTitle(agent, "5-hour", fiveHour),
+          },
+          {
+            label: `1w ${oneWeek}`,
+            tone: quotaSignalTone,
+            title: quotaTitle(agent, "1-week", oneWeek),
+          },
+        ];
+
+  return [
+    ...quotaFallbackSignals,
+    {
+      label: `맥락 ${contextLabel}`,
+      tone: contextTone,
+      title: contextDurabilityLabel(agent.context_durability) || "Context durability unknown",
+    },
+  ];
 }
 
 export function summarizeRoomContext(agents: LiveAgent[]): RoomContextSummary {
