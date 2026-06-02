@@ -58,6 +58,21 @@ export interface RoomFriendsResponse {
   candidates: RoomFriend[];
 }
 
+export interface RoomFriendDmEvent {
+  id: string;
+  friend_id: string;
+  created_at: string;
+  name: string;
+  side: "mine" | "other";
+  message: string;
+}
+
+export interface RoomFriendDmResponse {
+  friend: RoomFriend;
+  events: RoomFriendDmEvent[];
+  event?: RoomFriendDmEvent;
+}
+
 export interface RoomMembersResponse {
   meeting_id: string;
   members: RoomMember[];
@@ -743,6 +758,29 @@ export function fetchRoomFriends() {
 
 export function addRoomFriend(friend: Partial<RoomFriend>) {
   return postJson<{ friend: RoomFriend; friends: RoomFriend[] }>("/api/room-friends", friend);
+}
+
+export function fetchRoomFriendDm(friendId: string) {
+  return fetchJson<RoomFriendDmResponse>(`/api/room-friends/dm${queryString({ friend_id: friendId })}`);
+}
+
+export function postRoomFriendDm({
+  friendId,
+  message,
+  name = "나",
+  side = "mine",
+}: {
+  friendId: string;
+  message: string;
+  name?: string;
+  side?: "mine" | "other";
+}) {
+  return postJson<RoomFriendDmResponse>("/api/room-friends/dm", {
+    friend_id: friendId,
+    message,
+    name,
+    side,
+  });
 }
 
 export function fetchRoomMembers(meetingId: string) {

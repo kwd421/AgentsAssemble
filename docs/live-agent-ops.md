@@ -71,6 +71,11 @@ the selected room writes a `friend_invite` member record through
 beside live residents. This does not send a Discord message, create an internet
 invite, start a provider CLI, or resume a stopped provider session; it only
 records who should be admitted or expected in the local AgentsAssemble room.
+The right profile panel also has a local DM log backed by
+`/api/room-friends/dm`. That log is local room memory for saved friends only:
+it persists short operator notes or follow-up messages for the saved friend id,
+but it does not contact Discord, call a provider, grant room permissions, or
+turn the friend into a live resident.
 
 The main room composer and side-chat composer share the same mention model.
 Their `@` suggestions should include the local user, scoped live residents, and

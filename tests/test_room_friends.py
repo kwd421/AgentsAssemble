@@ -8,6 +8,11 @@ from agentsassemble.room_friends import (
     room_friend_type_for_agent,
     upsert_room_friend,
 )
+from agentsassemble.room_friend_dms import (
+    append_room_friend_dm_event,
+    read_room_friend_dm,
+    room_friend_dm_payload,
+)
 
 
 class RoomFriendsTests(unittest.TestCase):
@@ -64,6 +69,64 @@ class RoomFriendsTests(unittest.TestCase):
             },
         )
         self.assertEqual(room_friend_type_for_agent(agents[0]), "subscription_ai")
+
+    def test_room_friend_dm_persists_only_for_saved_friend(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            saved = upsert_room_friend(
+                root,
+                {
+                    "friend_id": "friend:codex-lead",
+                    "display_name": "Codex Lead",
+                    "participant_type": "subscription_ai",
+                    "provider_kind": "codex",
+                },
+            )
+
+            event = append_room_friend_dm_event(
+                root,
+                {
+                    "friend_id": saved["friend_id"],
+                    "name": "나",
+                    "side": "mine",
+                    "message": "다시 회의실로 초대할게",
+                },
+            )
+            payload = room_friend_dm_payload(root, str(saved["friend_id"]))
+
+        self.assertEqual(event["friend_id"], "friend:codex-lead")
+        self.assertEqual(event["message"], "다시 회의실로 초대할게")
+        self.assertEqual(payload["friend"]["display_name"], "Codex Lead")
+        self.assertEqual(payload["events"][0]["id"], event["id"])
+
+    def test_room_friend_dm_rejects_unknown_or_path_shaped_friend_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            saved = upsert_room_friend(
+                root,
+                {
+                    "friend_id": "../../escape",
+                    "display_name": "Escaped Friend",
+                    "participant_type": "human",
+                },
+            )
+
+            append_room_friend_dm_event(
+                root,
+                {
+                    "friend_id": saved["friend_id"],
+                    "name": "나",
+                    "message": "safe local dm",
+                },
+            )
+
+            with self.assertRaises(ValueError):
+                read_room_friend_dm(root, "missing")
+
+            dm_files = list((root / "room_friend_dms").glob("*.jsonl"))
+
+        self.assertEqual(len(dm_files), 1)
+        self.assertFalse((Path(temp_dir).parent / "escape.jsonl").exists())
 
 
 if __name__ == "__main__":

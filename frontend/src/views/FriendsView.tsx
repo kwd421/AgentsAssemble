@@ -8,6 +8,7 @@ import {
   type RoomFriendsResponse,
 } from "../api";
 import { PARTICIPANT_TYPE_OPTIONS, participantTypeMeta } from "../lib/participantTypes";
+import FriendDmPanel from "./components/FriendDmPanel";
 import FriendProfileCard from "./components/FriendProfileCard";
 
 function statusLabel(status: string) {
@@ -355,6 +356,7 @@ export default function FriendsView({
             }
             onInvite={onInviteFriendToRoom ? handleInvite : undefined}
           />
+          <FriendDmPanel friend={selectedFriend} />
         </aside>
       </div>
     </div>

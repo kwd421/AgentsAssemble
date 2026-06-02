@@ -9,6 +9,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from io import StringIO
 from pathlib import Path
+from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from unittest.mock import ANY, patch
 from urllib.error import HTTPError
@@ -19310,6 +19311,68 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(initial_payload["suggestions"][0]["participant_type"], "subscription_ai")
             self.assertEqual(saved_payload["friend"]["participant_type"], "human")
             self.assertEqual(saved_payload["friends"][0]["display_name"], "SeiNel")
+
+    def test_room_friend_dm_api_posts_local_messages_only_for_saved_friends(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                server_url = f"http://127.0.0.1:{server.server_port}"
+                friend_request = Request(
+                    f"{server_url}/api/room-friends",
+                    data=json.dumps(
+                        {
+                            "friend_id": "friend:codex-dm",
+                            "display_name": "Codex DM",
+                            "participant_type": "subscription_ai",
+                            "provider_kind": "codex",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(friend_request, timeout=4) as response:
+                    saved_friend = json.loads(response.read().decode("utf-8"))["friend"]
+
+                with urlopen(f"{server_url}/api/room-friends/dm?friend_id=friend%3Acodex-dm", timeout=4) as response:
+                    initial_dm = json.loads(response.read().decode("utf-8"))
+
+                dm_request = Request(
+                    f"{server_url}/api/room-friends/dm",
+                    data=json.dumps(
+                        {
+                            "friend_id": saved_friend["friend_id"],
+                            "name": "나",
+                            "side": "mine",
+                            "message": "로컬 DM으로 다시 초대할게",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(dm_request, timeout=4) as response:
+                    posted_dm = json.loads(response.read().decode("utf-8"))
+
+                bad_request = Request(
+                    f"{server_url}/api/room-friends/dm",
+                    data=json.dumps({"friend_id": "missing", "message": "nope"}).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as error_context:
+                    urlopen(bad_request, timeout=4)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(initial_dm["friend"]["display_name"], "Codex DM")
+            self.assertEqual(initial_dm["events"], [])
+            self.assertEqual(posted_dm["event"]["message"], "로컬 DM으로 다시 초대할게")
+            self.assertEqual(posted_dm["events"][0]["friend_id"], "friend:codex-dm")
+            self.assertEqual(error_context.exception.code, HTTPStatus.BAD_REQUEST)
+            error_context.exception.close()
 
     def test_user_profile_api_saves_local_discord_identity(self):
         with tempfile.TemporaryDirectory() as temp_dir:

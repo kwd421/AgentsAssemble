@@ -119,6 +119,7 @@ from agentsassemble.frontend_runtime import (
     frontend_dist_status,
 )
 from agentsassemble.release_health import release_health_catalog_payload, release_health_queue_payload
+from agentsassemble.room_friend_dms import append_room_friend_dm_event, room_friend_dm_payload
 from agentsassemble.room_friends import room_friends_payload, upsert_room_friend
 from agentsassemble.room_members import room_members_payload, upsert_room_member
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
@@ -7732,6 +7733,17 @@ def _make_handler(
             if path == "/api/room-settings":
                 self._send_json(room_settings_payload(output_root, room_id=str(query.get("room_id", [""])[0] or "")))
                 return
+            if path == "/api/room-friends/dm":
+                try:
+                    self._send_json(
+                        room_friend_dm_payload(
+                            output_root,
+                            str(query.get("friend_id", [""])[0] or ""),
+                        )
+                    )
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                return
             if path == "/api/room-friends":
                 self._send_json(room_friends_payload(output_root, read_live_agents(output_root)))
                 return
@@ -8096,6 +8108,27 @@ def _make_handler(
                     return
                 try:
                     self._send_json(update_room_settings(output_root, payload))
+                except ValueError as error:
+                    self._send_error(HTTPStatus.BAD_REQUEST, str(error))
+                return
+            if parsed.path == "/api/room-friends/dm":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                try:
+                    event = append_room_friend_dm_event(output_root, payload)
+                    self._send_json(
+                        {
+                            "event": event,
+                            **room_friend_dm_payload(output_root, str(event.get("friend_id") or "")),
+                        }
+                    )
                 except ValueError as error:
                     self._send_error(HTTPStatus.BAD_REQUEST, str(error))
                 return

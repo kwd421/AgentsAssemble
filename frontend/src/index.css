@@ -2254,6 +2254,123 @@ textarea {
   padding-top: 12px;
 }
 
+.dc-friend-dm-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  border-radius: 8px;
+  background: #232428;
+  padding: 12px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.dc-friend-dm-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dc-friend-dm-head h3 {
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.dc-friend-dm-head p,
+.dc-friend-dm-head span {
+  margin-top: 2px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.dc-friend-dm-feed {
+  display: grid;
+  max-height: min(34vh, 320px);
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.dc-friend-dm-message {
+  border-radius: 6px;
+  background: #2b2d31;
+  padding: 9px 10px;
+}
+
+.dc-friend-dm-message[data-side="mine"] {
+  background: rgba(88, 101, 242, 0.18);
+}
+
+.dc-friend-dm-message-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dc-friend-dm-message-meta strong {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.dc-friend-dm-message-meta time {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.dc-friend-dm-message p,
+.dc-friend-dm-empty,
+.dc-friend-dm-status {
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.dc-friend-dm-empty {
+  border-radius: 6px;
+  background: #1e1f22;
+  padding: 14px;
+  text-align: center;
+}
+
+.dc-friend-dm-status {
+  color: var(--color-warning);
+}
+
+.dc-friend-dm-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 8px;
+}
+
+.dc-friend-dm-composer input {
+  min-width: 0;
+  border-radius: 6px;
+  background: #383a40;
+  padding: 9px 10px;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.dc-friend-dm-composer button {
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.dc-friend-dm-composer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 /* Room settings modal. */
 .dc-settings-backdrop {
   position: fixed;
