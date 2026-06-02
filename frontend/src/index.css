@@ -637,7 +637,7 @@ textarea {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--color-accent);
+  background: var(--profile-accent, var(--color-accent));
   font-size: 12px;
 }
 
@@ -686,7 +686,31 @@ textarea {
   height: 78px;
   background:
     radial-gradient(circle at 72% 10%, rgba(255, 255, 255, 0.2), transparent 26%),
-    linear-gradient(135deg, #f23f42, #5865f2 75%);
+    linear-gradient(135deg, #f23f42, var(--profile-accent, #5865f2) 75%);
+}
+
+.dc-profile-banner[data-preset="forest"] {
+  background:
+    radial-gradient(circle at 78% 12%, rgba(255, 255, 255, 0.16), transparent 24%),
+    linear-gradient(135deg, #1f8b4c, #244c73 76%);
+}
+
+.dc-profile-banner[data-preset="midnight"] {
+  background:
+    radial-gradient(circle at 70% 0%, rgba(88, 101, 242, 0.46), transparent 28%),
+    linear-gradient(135deg, #111214, #343a74 82%);
+}
+
+.dc-profile-banner[data-preset="ember"] {
+  background:
+    radial-gradient(circle at 74% 10%, rgba(255, 255, 255, 0.18), transparent 22%),
+    linear-gradient(135deg, #ed4245, #f0a04b 78%);
+}
+
+.dc-profile-banner[data-preset="custom"] {
+  background:
+    radial-gradient(circle at 70% 10%, rgba(255, 255, 255, 0.2), transparent 24%),
+    linear-gradient(135deg, var(--profile-accent, #5865f2), #111214 92%);
 }
 
 .dc-profile-close {
@@ -727,7 +751,7 @@ textarea {
   height: 72px;
   place-items: center;
   border-radius: 50%;
-  background: #f23f42;
+  background: var(--profile-accent, #f23f42);
   color: #fff;
   font-size: 19px;
   font-weight: 950;
@@ -749,6 +773,14 @@ textarea {
 
 .dc-profile-status.offline {
   background: var(--color-danger);
+}
+
+.dc-profile-status.idle {
+  background: #f0b232;
+}
+
+.dc-profile-status.dnd {
+  background: #ed4245;
 }
 
 .dc-profile-body {
@@ -834,6 +866,84 @@ textarea {
 .dc-profile-menu button svg:last-child {
   margin-left: auto;
   color: var(--color-text-muted);
+}
+
+.dc-user-settings-panel {
+  margin-top: 12px;
+  border-radius: 8px;
+  background: #111214;
+  padding: 12px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.dc-user-settings-grid {
+  display: grid;
+  gap: 9px;
+}
+
+.dc-user-settings-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.dc-user-settings-grid input,
+.dc-user-settings-grid select {
+  min-width: 0;
+  border-radius: 5px;
+  background: #1e1f22;
+  padding: 8px 9px;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  outline: 1px solid transparent;
+}
+
+.dc-user-settings-grid input[type="color"] {
+  height: 34px;
+  padding: 3px;
+}
+
+.dc-user-settings-grid input:focus,
+.dc-user-settings-grid select:focus {
+  outline-color: var(--profile-accent, var(--color-accent));
+}
+
+.dc-user-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dc-user-settings-actions button {
+  border-radius: 5px;
+  background: #2b2d31;
+  padding: 8px 10px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dc-user-settings-actions button:last-child {
+  background: var(--profile-accent, var(--color-accent));
+  color: #fff;
+}
+
+.dc-user-settings-actions button:disabled {
+  cursor: wait;
+  opacity: 0.66;
+}
+
+.dc-user-settings-error {
+  margin-top: 8px;
+  color: #ff8b8d;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 /* Central chat column. */

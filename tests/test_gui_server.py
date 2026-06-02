@@ -19311,6 +19311,50 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(saved_payload["friend"]["participant_type"], "human")
             self.assertEqual(saved_payload["friends"][0]["display_name"], "SeiNel")
 
+    def test_user_profile_api_saves_local_discord_identity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/user-profile", timeout=4) as response:
+                    initial_payload = json.loads(response.read().decode("utf-8"))
+                request = Request(
+                    f"http://127.0.0.1:{server.server_port}/api/user-profile",
+                    data=json.dumps(
+                        {
+                            "display_name": "Discord Owner",
+                            "handle": "owner.local",
+                            "status": "idle",
+                            "custom_status": "프론트 비교 중",
+                            "avatar_label": "DO",
+                            "banner_preset": "midnight",
+                            "accent_color": "#23a55a",
+                            "mic_muted": False,
+                            "deafened": True,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(request, timeout=4) as response:
+                    saved_payload = json.loads(response.read().decode("utf-8"))
+                with urlopen(f"http://127.0.0.1:{server.server_port}/api/user-profile", timeout=4) as response:
+                    loaded_payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+            self.assertEqual(initial_payload["profile"]["display_name"], "SeiNel")
+            self.assertEqual(saved_payload["profile"]["display_name"], "Discord Owner")
+            self.assertEqual(saved_payload["profile"]["handle"], "owner.local")
+            self.assertEqual(saved_payload["profile"]["banner_preset"], "midnight")
+            self.assertEqual(saved_payload["profile"]["accent_color"], "#23a55a")
+            self.assertFalse(saved_payload["profile"]["mic_muted"])
+            self.assertTrue(saved_payload["profile"]["deafened"])
+            self.assertEqual(loaded_payload["profile"], saved_payload["profile"])
+
     def test_room_members_api_saves_roles_and_suggests_live_agents(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

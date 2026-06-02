@@ -122,6 +122,7 @@ from agentsassemble.release_health import release_health_catalog_payload, releas
 from agentsassemble.room_friends import room_friends_payload, upsert_room_friend
 from agentsassemble.room_members import room_members_payload, upsert_room_member
 from agentsassemble.room_settings import room_settings_payload, update_room_settings
+from agentsassemble.user_profile import read_user_profile, update_user_profile
 from agentsassemble.room_invite import (
     NATIVE_REMOTE_ROOM_CLIENT_KIND,
     active_sessions_summary,
@@ -7738,6 +7739,9 @@ def _make_handler(
             if path == "/api/room-friends":
                 self._send_json(room_friends_payload(output_root, read_live_agents(output_root)))
                 return
+            if path == "/api/user-profile":
+                self._send_json(read_user_profile(output_root))
+                return
             if path == "/api/room-members":
                 self._send_json(
                     room_members_payload(
@@ -8116,6 +8120,18 @@ def _make_handler(
                         **room_friends_payload(output_root, read_live_agents(output_root)),
                     }
                 )
+                return
+            if parsed.path == "/api/user-profile":
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                try:
+                    payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                except json.JSONDecodeError:
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                if not isinstance(payload, dict):
+                    self._send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON")
+                    return
+                self._send_json(update_user_profile(output_root, payload))
                 return
             if parsed.path == "/api/room-members":
                 length = int(self.headers.get("Content-Length", "0") or "0")

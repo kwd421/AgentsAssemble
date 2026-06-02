@@ -41,6 +41,20 @@ export interface RoomFriendsResponse {
   candidates: RoomFriend[];
 }
 
+export interface UserProfile {
+  displayName: string;
+  handle: string;
+  status: "online" | "idle" | "dnd" | "offline";
+  customStatus: string;
+  avatarLabel: string;
+  bannerPreset: "default" | "forest" | "midnight" | "ember" | "custom";
+  accentColor: string;
+  micMuted: boolean;
+  deafened: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 type ApiRoomAppearance = {
   banner_preset?: RoomAppearance["bannerPreset"];
   banner_image_url?: string;
@@ -57,6 +71,20 @@ type ApiRoomSettings = {
   short_label?: string;
   appearance?: ApiRoomAppearance;
   member_roles?: Record<string, string>;
+};
+
+type ApiUserProfile = {
+  display_name?: string;
+  handle?: string;
+  status?: UserProfile["status"];
+  custom_status?: string;
+  avatar_label?: string;
+  banner_preset?: UserProfile["bannerPreset"];
+  accent_color?: string;
+  mic_muted?: boolean;
+  deafened?: boolean;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export interface LobbyEvent {
@@ -582,6 +610,36 @@ function roomAppearanceToApi(appearance: Partial<RoomAppearance> | undefined): A
   };
 }
 
+function normalizeUserProfile(payload: ApiUserProfile | undefined): UserProfile {
+  return {
+    displayName: String(payload?.display_name || "SeiNel"),
+    handle: String(payload?.handle || "seinel."),
+    status: payload?.status || "online",
+    customStatus: String(payload?.custom_status || "AgentsAssemble"),
+    avatarLabel: String(payload?.avatar_label || "나"),
+    bannerPreset: payload?.banner_preset || "default",
+    accentColor: String(payload?.accent_color || "#5865f2"),
+    micMuted: Boolean(payload?.mic_muted ?? true),
+    deafened: Boolean(payload?.deafened ?? false),
+    createdAt: payload?.created_at,
+    updatedAt: payload?.updated_at,
+  };
+}
+
+function userProfileToApi(profile: UserProfile): ApiUserProfile {
+  return {
+    display_name: profile.displayName,
+    handle: profile.handle,
+    status: profile.status,
+    custom_status: profile.customStatus,
+    avatar_label: profile.avatarLabel,
+    banner_preset: profile.bannerPreset,
+    accent_color: profile.accentColor,
+    mic_muted: profile.micMuted,
+    deafened: profile.deafened,
+  };
+}
+
 export function fetchLobby(meetingId = "") {
   return fetchJson<{ events: LobbyEvent[] }>(`/api/lobby${queryString({ meeting_id: meetingId })}`);
 }
@@ -616,6 +674,18 @@ export function fetchRoomFriends() {
 
 export function addRoomFriend(friend: Partial<RoomFriend>) {
   return postJson<{ friend: RoomFriend; friends: RoomFriend[] }>("/api/room-friends", friend);
+}
+
+export function fetchUserProfile(): Promise<UserProfile> {
+  return fetchJson<{ profile: ApiUserProfile }>("/api/user-profile").then((payload) =>
+    normalizeUserProfile(payload.profile)
+  );
+}
+
+export function saveUserProfile(profile: UserProfile): Promise<UserProfile> {
+  return postJson<{ profile: ApiUserProfile }>("/api/user-profile", userProfileToApi(profile)).then(
+    (payload) => normalizeUserProfile(payload.profile)
+  );
 }
 
 export function uploadLobbyAttachment(file: File): Promise<LobbyAttachmentRef> {

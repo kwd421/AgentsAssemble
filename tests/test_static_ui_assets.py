@@ -239,6 +239,33 @@ class StaticUiAssetTests(unittest.TestCase):
         self.assertIn("현재 활동 중", home_source)
         self.assertIn("이전 세션에서 추가", home_source)
 
+    def test_react_user_panel_uses_persisted_discord_profile(self):
+        api_source = frontend_file("api.ts")
+        user_panel_source = frontend_file("views/components/UserPanel.tsx")
+        css = (FRONTEND_DIR / "index.css").read_text()
+        matrix = (ROOT / "docs" / "product" / "legacy-react-parity-matrix.md").read_text(encoding="utf-8")
+
+        self.assertIn("export interface UserProfile", api_source)
+        self.assertIn("export function fetchUserProfile", api_source)
+        self.assertIn("export function saveUserProfile", api_source)
+        self.assertIn('"/api/user-profile"', api_source)
+
+        self.assertIn("fetchUserProfile", user_panel_source)
+        self.assertIn("saveUserProfile", user_panel_source)
+        self.assertIn("profile.displayName", user_panel_source)
+        self.assertIn("profile.handle", user_panel_source)
+        self.assertIn("profile.customStatus", user_panel_source)
+        self.assertIn("profile.bannerPreset", user_panel_source)
+        self.assertIn("profile.accentColor", user_panel_source)
+        self.assertIn("프로필 편집", user_panel_source)
+        self.assertIn("상태", user_panel_source)
+        self.assertIn("저장", user_panel_source)
+        self.assertNotIn("<h2>SeiNel</h2>", user_panel_source)
+
+        self.assertIn(".dc-user-settings-panel", css)
+        self.assertIn(".dc-profile-banner[data-preset=", css)
+        self.assertIn("User profile", matrix)
+
     def test_react_discord_room_sidebar_uses_real_invite_and_context_actions(self):
         app_source = frontend_file("App.tsx")
 
