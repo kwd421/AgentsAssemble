@@ -461,6 +461,7 @@ def run_live_agent_session_smoke(
                 probe_event_ids, replies = _session_smoke_lobby_probe_replies(
                     server,
                     clean_group_id=clean_group_id,
+                    meeting_id=clean_meeting_id,
                     expected_messages=expected_messages,
                     lobby_probe_count=clean_lobby_probe_count,
                     request_json=request_json,
@@ -504,6 +505,7 @@ def run_live_agent_session_smoke(
                 post_restart_probe_event_ids, post_restart_replies = _session_smoke_lobby_probe_replies(
                     server,
                     clean_group_id=clean_group_id,
+                    meeting_id=clean_meeting_id,
                     expected_messages=expected_messages,
                     lobby_probe_count=clean_lobby_probe_count,
                     request_json=request_json,
@@ -537,6 +539,7 @@ def run_live_agent_session_smoke(
                 post_recover_probe_event_ids, post_recover_replies = _session_smoke_lobby_probe_replies(
                     server,
                     clean_group_id=clean_group_id,
+                    meeting_id=clean_meeting_id,
                     expected_messages=expected_messages,
                     lobby_probe_count=clean_lobby_probe_count,
                     request_json=request_json,
@@ -561,6 +564,7 @@ def run_live_agent_session_smoke(
                     cycle_probe_event_ids, cycle_replies = _session_smoke_lobby_probe_replies(
                         server,
                         clean_group_id=clean_group_id,
+                        meeting_id=clean_meeting_id,
                         expected_messages=expected_messages,
                         lobby_probe_count=1,
                         request_json=request_json,
@@ -1512,6 +1516,7 @@ def _session_smoke_lobby_probe_replies(
     server: str,
     *,
     clean_group_id: str,
+    meeting_id: str,
     expected_messages: dict[str, str],
     lobby_probe_count: int,
     request_json: RequestJson,
@@ -1529,6 +1534,7 @@ def _session_smoke_lobby_probe_replies(
             payload={
                 "name": "AgentsAssemble Session Smoke",
                 "side": "mine",
+                "flow_meeting_id": meeting_id,
                 "message": (
                     f"live-agent session-smoke{phase_label} "
                     f"{clean_group_id} {index + 1}/{lobby_probe_count} {int(time.time() * 1000)}"

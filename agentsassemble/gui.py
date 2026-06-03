@@ -2861,7 +2861,7 @@ def live_agent_room_payload(output_root: Path, agent_id: str) -> dict[str, objec
         "meeting_id": meeting_id,
         "shared_memory": shared_memory,
         "live_events": live_events,
-        "lobby_events": read_lobby(output_root, limit=LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT),
+        "lobby_events": read_lobby(output_root, limit=LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT, meeting_id=meeting_id),
         "side_chat_events": read_side_chat(output_root),
     }
 
@@ -2964,8 +2964,9 @@ def live_agent_lobby_message_payload(output_root: Path, agent_id: str, payload: 
             )
             return {"agent": updated_agent, "event": existing_event, "events": read_lobby(output_root)}
         flow_metadata = _live_agent_lobby_flow_metadata(payload)
-        if flow_metadata.get("flow_id"):
-            flow_metadata["flow_meeting_id"] = clean_lobby_text(agent.get("meeting_id"), limit=128)
+        agent_meeting_id = clean_lobby_text(agent.get("meeting_id"), limit=128)
+        if agent_meeting_id:
+            flow_metadata["flow_meeting_id"] = agent_meeting_id
         event = append_lobby_event(
             output_root,
             {

@@ -110,6 +110,34 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertIn("AgentsAssemble", prompts[0][1])
         self.assertIn("상태 어때?", prompts[0][1])
 
+    def test_always_runner_preserves_configured_room_scope_when_replying(self):
+        clock = FakeClock()
+        room = {
+            "agent": {"agent_id": "agent-a", "meeting_id": "room-a"},
+            "lobby_events": [
+                {
+                    "id": "evt-room-a",
+                    "name": "나",
+                    "message": "room-a에서만 보여야 하는 말",
+                    "flow_meeting_id": "room-a",
+                }
+            ],
+        }
+        client = FakeRoomClient([room])
+        runner = LiveAgentRunner(
+            config(meeting_id="room-a"),
+            request_json=client,
+            command_runner=lambda command, prompt, *, timeout_seconds: "scoped reply",
+            sleep_fn=clock.sleep,
+            now_fn=clock,
+        )
+
+        self.assertEqual(runner.run(), 1)
+
+        lobby_payloads = [payload for url, method, payload in client.calls if url.endswith("/lobby")]
+        self.assertEqual(lobby_payloads[0]["source_event_id"], "evt-room-a")
+        self.assertEqual(lobby_payloads[0]["flow_meeting_id"], "room-a")
+
     def test_runner_does_not_reply_to_the_same_event_twice(self):
         clock = FakeClock()
         repeated = {"lobby_events": [{"id": "evt1", "name": "나", "message": "한 번만"}]}
@@ -228,6 +256,37 @@ class LiveAgentRunnerTests(unittest.TestCase):
         self.assertEqual(
             event_reply_candidate(events, "agent-a", "Agent A", "evicted-cursor", max_chain_depth=1),
             events[0],
+        )
+
+    def test_lobby_candidate_skips_events_with_conflicting_room_scope(self):
+        events = [
+            {"id": "global-old", "side": "mine", "name": "나", "message": "전역에 남은 말"},
+            {
+                "id": "room-b",
+                "side": "mine",
+                "name": "나",
+                "message": "다른 방 말",
+                "flow_meeting_id": "room-b",
+            },
+            {
+                "id": "room-a",
+                "side": "mine",
+                "name": "나",
+                "message": "이 방 말",
+                "flow_meeting_id": "room-a",
+            },
+        ]
+
+        self.assertEqual(
+            event_reply_candidate(
+                events,
+                "agent-a",
+                "Agent A",
+                "global-old",
+                max_chain_depth=1,
+                meeting_id="room-a",
+            ),
+            events[2],
         )
 
     def test_runner_ignores_cursor_snapshot_without_matching_agent_id(self):

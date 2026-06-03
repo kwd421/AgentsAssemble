@@ -207,6 +207,7 @@ class LiveAgentRunner:
             self.last_observed_event_id,
             max_chain_depth=self.config.max_chain_depth,
             engagement_mode=engagement_mode,
+            meeting_id=self.config.meeting_id,
         )
         if candidate is None:
             self._advance_cursor(events)
@@ -239,6 +240,7 @@ class LiveAgentRunner:
                     "actor_id": self.config.agent_id,
                     "source_event_id": source_event_id,
                     "auto_chain_depth": source_depth + 1,
+                    "flow_meeting_id": self.config.meeting_id,
                 },
             )
         except Exception as error:
@@ -814,8 +816,11 @@ def event_reply_candidate(
     *,
     max_chain_depth: int,
     engagement_mode: str = "always",
+    meeting_id: str = "",
 ) -> dict[str, object] | None:
     for event in _events_after(events, last_observed_event_id):
+        if not _event_matches_room_scope(event, meeting_id):
+            continue
         if _is_self_event(event, agent_id, display_name):
             continue
         if _chain_depth(event) > max_chain_depth:
@@ -826,6 +831,14 @@ def event_reply_candidate(
             continue
         return event
     return None
+
+
+def _event_matches_room_scope(event: dict[str, object], meeting_id: str) -> bool:
+    scoped_meeting_id = str(meeting_id or "").strip()
+    if not scoped_meeting_id:
+        return True
+    event_meeting_id = str(event.get("flow_meeting_id") or "").strip()
+    return not event_meeting_id or event_meeting_id == scoped_meeting_id
 
 
 def flow_event_candidate(

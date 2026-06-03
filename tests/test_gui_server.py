@@ -43,6 +43,7 @@ from agentsassemble.gui import (
     _readiness_health_operation_details,
     _session_start_operation_details,
     live_agent_lobby_message_payload,
+    live_agent_room_payload,
     LIVE_AGENT_ROOM_LOBBY_EVENT_LIMIT,
     LiveAgentFlowSupervisor,
     live_agents_payload,
@@ -4363,6 +4364,59 @@ class GuiServerTests(unittest.TestCase):
         self.assertIn("0.5", events[0]["message"])
         self.assertIn("80kg", events[0]["message"])
         self.assertIn("모르겠다...", events[0]["message"])
+
+    def test_live_agent_room_payload_scopes_lobby_events_to_agent_meeting(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "codex-room",
+                    "display_name": "Codex Room QA",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                    "meeting_id": "room-a",
+                    "status": "online",
+                },
+            )
+            append_lobby_event(root, {"name": "old", "side": "mine", "message": "global old"})
+            append_lobby_event(
+                root,
+                {"name": "room b", "side": "mine", "message": "other room", "flow_meeting_id": "room-b"},
+                allow_flow_metadata=True,
+            )
+            room_event = append_lobby_event(
+                root,
+                {"name": "room a", "side": "mine", "message": "current room", "flow_meeting_id": "room-a"},
+                allow_flow_metadata=True,
+            )
+
+            payload = live_agent_room_payload(root, "codex-room")
+
+        self.assertEqual([event["id"] for event in payload["lobby_events"]], [room_event["id"]])
+
+    def test_live_agent_lobby_payload_preserves_agent_meeting_scope_without_flow_id(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            connect_live_agent(
+                root,
+                {
+                    "agent_id": "codex-room",
+                    "display_name": "Codex Room QA",
+                    "provider_kind": "codex_live_session",
+                    "connection_kind": "live_session",
+                    "meeting_id": "room-a",
+                    "status": "online",
+                },
+            )
+
+            result = live_agent_lobby_message_payload(
+                root,
+                "codex-room",
+                {"message": "방 안에서만 보이는 답", "source_event_id": "human-event"},
+            )
+
+        self.assertEqual(result["event"]["flow_meeting_id"], "room-a")
 
     def test_live_agent_readiness_endpoint_rejects_negative_session_smoke_soak_payload(self):
         with tempfile.TemporaryDirectory() as temp_dir:
