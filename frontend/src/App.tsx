@@ -8,8 +8,10 @@ import {
   Hash,
   LayoutDashboard,
   Radio,
+  UserPlus,
 } from "lucide-react";
 import {
+  createRoomInvite,
   fetchLiveAgentFlow,
   fetchRoomFriends,
   fetchRoomSettings,
@@ -18,6 +20,7 @@ import {
   fetchMeetingLifecycle,
   fetchWorkroomQueueEvidence,
   fetchSideChat,
+  postRoomFriendDm,
   saveRoomSettings,
   upsertRoomMember,
   applyMeetingStreamUpdate,
@@ -206,6 +209,7 @@ export default function App() {
   const [inviteModal, setInviteModal] = useState<InviteModalState>(null);
   const [settingsModal, setSettingsModal] = useState<RoomSettingsState>(null);
   const [inviteCopyStatus, setInviteCopyStatus] = useState("");
+  const [inviteFriendStatuses, setInviteFriendStatuses] = useState<Record<string, string>>({});
   const [roomAppearances, setRoomAppearances] = useState<Record<string, RoomAppearance>>(() =>
     loadRoomAppearances()
   );
@@ -579,6 +583,7 @@ export default function App() {
     setAdminOpen(false);
     setInviteModal({ roomId });
     setInviteCopyStatus("");
+    setInviteFriendStatuses({});
     setRoomMenu(null);
     setChannelMenu(null);
   }
@@ -647,6 +652,46 @@ export default function App() {
     setInviteCopyStatus("");
     const copied = await copyText(inviteUrlForRoom(room, appearance));
     setInviteCopyStatus(copied ? "복사됨" : "복사 실패");
+  }
+
+  async function inviteFriendToRoom(friend: RoomFriend) {
+    if (!inviteModalRoom) return;
+    const friendId = friend.friend_id;
+    setInviteFriendStatuses((previous) => ({ ...previous, [friendId]: "초대 중" }));
+    try {
+      let link = inviteUrl;
+      const isAiFriend = friend.participant_type !== "human";
+      const isLiveSession = ["online", "working", "ready", "running"].includes(friend.status);
+      try {
+        const invite = await createRoomInvite({
+          meetingId: inviteModalRoom.meetingId,
+          agentId: friend.source_agent_id || friend.friend_id,
+          displayName: friend.display_name,
+        });
+        link = invite.join_url || link;
+      } catch {
+        // Public invite token creation can be host-token gated; the friend DM still carries the scoped room link.
+      }
+      await postRoomFriendDm({
+        friendId,
+        name: "AgentsAssemble",
+        side: "mine",
+        message: isAiFriend
+          ? isLiveSession
+            ? `${inviteModalRoom.label} 호출: ${link}`
+            : `${inviteModalRoom.label} 초대 링크가 생성됐지만 이 AI 세션은 현재 실행 중이 아닙니다. provider 세션을 시작하거나 resume해야 참가할 수 있습니다: ${link}`
+          : `${inviteModalRoom.label} 초대: ${link}`,
+      });
+      setInviteFriendStatuses((previous) => ({
+        ...previous,
+        [friendId]: isAiFriend ? (isLiveSession ? "호출됨" : "실행 필요") : "초대됨",
+      }));
+    } catch (error) {
+      setInviteFriendStatuses((previous) => ({
+        ...previous,
+        [friendId]: error instanceof Error ? error.message : "초대 실패",
+      }));
+    }
   }
 
   const toggleMembers = useCallback(() => setMembersOpen((value) => !value), []);
@@ -865,9 +910,12 @@ export default function App() {
         <RoomInviteModal
           roomLabel={inviteModalRoom.label}
           inviteUrl={inviteUrl}
+          friends={homeFriendsPayload.friends}
+          friendStatuses={inviteFriendStatuses}
           copyStatus={inviteCopyStatus}
           onClose={() => setInviteModal(null)}
           onCopy={() => void copyInviteLink(inviteModalRoom, inviteModalAppearance)}
+          onInviteFriend={(friend) => void inviteFriendToRoom(friend)}
         />
       )}
 
@@ -972,6 +1020,20 @@ export default function App() {
               />
               {activeRoomFlowVisible ? statusText(flow.status) : "대기"}
             </span>
+            {!guestLocked && (
+              <button
+                type="button"
+                className="dc-sidebar-invite-button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  inviteRoom(activeRoom.id);
+                }}
+                aria-label="서버에 초대하기"
+                title="서버에 초대하기"
+              >
+                <UserPlus size={20} />
+              </button>
+            )}
           </div>
         </header>
 

@@ -58,6 +58,17 @@ export interface RoomFriendsResponse {
   candidates: RoomFriend[];
 }
 
+export interface RoomInviteCreateResponse {
+  invite_id: string;
+  invite_token: string;
+  meeting_id: string;
+  agent_id: string;
+  display_name: string;
+  expires_at: string;
+  room_url: string;
+  join_url?: string;
+}
+
 export interface RoomFriendDmEvent {
   id: string;
   friend_id: string;
@@ -773,6 +784,25 @@ export function deleteRoomFriend(friendId: string) {
   return deleteJson<RoomFriendsResponse & { deleted: { friend_id: string } }>(
     `/api/room-friends${queryString({ friend_id: friendId })}`
   );
+}
+
+export function createRoomInvite({
+  meetingId,
+  agentId,
+  displayName,
+  ttlSeconds = 604800,
+}: {
+  meetingId: string;
+  agentId: string;
+  displayName: string;
+  ttlSeconds?: number;
+}) {
+  return postJson<RoomInviteCreateResponse>("/api/room-invite/create", {
+    meeting_id: meetingId,
+    agent_id: agentId,
+    display_name: displayName,
+    ttl_seconds: ttlSeconds,
+  });
 }
 
 export function fetchRoomFriendDm(friendId: string) {
