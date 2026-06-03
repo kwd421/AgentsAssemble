@@ -70,6 +70,8 @@ class FrontendRosterTruthTests(unittest.TestCase):
         self.assertIn("roomContextSummaryBadges(agents)", component)
         self.assertIn("ProviderTruthChips", component)
         self.assertIn('aria-label="참가자 맥락 요약"', component)
+        self.assertIn("고급 연결 요약", component)
+        self.assertLess(component.index("ROLE_OPTIONS.map"), component.index("고급 연결 요약"))
         self.assertIn("<RoomConnectionPanel", app)
         self.assertIn("<MemberList", room_connection)
         self.assertNotIn("ParticipantContextSummary", app)

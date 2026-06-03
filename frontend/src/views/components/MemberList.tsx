@@ -324,14 +324,6 @@ export default function MemberList({
         </label>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3 chat-scroll">
-        {contextBadges.length > 0 && (
-          <details className="dc-member-context mb-3 px-2" aria-label="참가자 맥락 요약">
-            <summary className="cursor-pointer list-none text-[11px] font-bold text-text-muted hover:text-text-secondary">
-              연결 상태
-            </summary>
-            <ProviderTruthChips badges={contextBadges} compact />
-          </details>
-        )}
         {agents.length === 0 && members.length === 0 && (
           <p className="mb-2 px-2 text-[13px] text-text-muted preserve-words">
             {roomName}에는 아직 멤버가 없습니다.
@@ -352,6 +344,14 @@ export default function MemberList({
             </section>
           );
         })}
+        {contextBadges.length > 0 && (
+          <details className="dc-member-context mt-3 px-2" aria-label="참가자 맥락 요약">
+            <summary className="cursor-pointer list-none text-[11px] font-bold text-text-muted hover:text-text-secondary">
+              고급 연결 요약
+            </summary>
+            <ProviderTruthChips badges={contextBadges} compact />
+          </details>
+        )}
       </div>
     </div>
   );
