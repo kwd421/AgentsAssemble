@@ -10,6 +10,25 @@ from agentsassemble.meeting_events import clean_lobby_text
 
 ROOM_FRIENDS_FILE = "room_friends.json"
 ROOM_FRIEND_TYPES = {"human", "subscription_ai", "api", "local", "remote", "unknown"}
+_REMOTE_AGENT_MARKERS = ("remote_http_bridge", "native_remote_room_client", "remote_bridge")
+_LOCAL_MODEL_MARKERS = ("lmstudio", "llama", "ollama", "local_model")
+_API_AGENT_MARKERS = ("api", "deepseek", "openai", "anthropic")
+_SUBSCRIPTION_AGENT_MARKERS = (
+    "claude",
+    "codex",
+    "kiro",
+    "cursor",
+    "antigravity",
+    "gemini",
+    "grok",
+    "hermes",
+    "gpt",
+    "opus",
+    "sonnet",
+    "haiku",
+    "xhigh",
+)
+_HUMAN_AGENT_MARKERS = ("manual", "guest", "human")
 
 
 def normalize_room_friend_type(value: object) -> str:
@@ -37,28 +56,16 @@ def room_friend_type_for_agent(agent: dict[str, object]) -> str:
         clean_lobby_text(agent.get(key), limit=128).lower()
         for key in ("provider_kind", "connection_kind", "join_semantics", "agent_id", "display_name")
     )
-    if any(token in text for token in ("remote_http_bridge", "native_remote_room_client", "remote_bridge")):
+    if any(token in text for token in _REMOTE_AGENT_MARKERS):
         return "remote"
-    if any(token in text for token in ("manual", "guest", "human")):
-        return "human"
-    if any(token in text for token in ("lmstudio", "llama", "ollama", "local_model")):
+    if any(token in text for token in _LOCAL_MODEL_MARKERS):
         return "local"
-    if any(token in text for token in ("api", "deepseek", "openai", "anthropic")):
+    if any(token in text for token in _API_AGENT_MARKERS):
         return "api"
-    if any(
-        token in text
-        for token in (
-            "claude",
-            "codex",
-            "kiro",
-            "cursor",
-            "antigravity",
-            "gemini",
-            "grok",
-            "hermes",
-        )
-    ):
+    if any(token in text for token in _SUBSCRIPTION_AGENT_MARKERS):
         return "subscription_ai"
+    if any(token in text for token in _HUMAN_AGENT_MARKERS):
+        return "human"
     return "unknown"
 
 
@@ -152,6 +159,9 @@ def _normalize_friend_record(payload: dict[str, Any]) -> dict[str, object]:
     agent_id = clean_lobby_text(payload.get("agent_id") or payload.get("source_agent_id"), limit=128)
     handle = clean_lobby_text(payload.get("handle") or agent_id, limit=128)
     participant_type = normalize_room_friend_type(payload.get("participant_type") or payload.get("type"))
+    inferred_type = room_friend_type_for_agent(payload)
+    if participant_type in {"human", "unknown"} and inferred_type not in {"human", "unknown"}:
+        participant_type = inferred_type
     return {
         "friend_id": clean_lobby_text(payload.get("friend_id"), limit=96),
         "display_name": display_name or handle or "Friend",

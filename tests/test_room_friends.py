@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -53,6 +54,12 @@ class RoomFriendsTests(unittest.TestCase):
             {"agent_id": "deepseek-api", "display_name": "DeepSeek", "provider_kind": "deepseek_api"},
             {"agent_id": "llama-local", "display_name": "Llama", "provider_kind": "lmstudio_llama"},
             {"agent_id": "guest-human", "display_name": "Guest", "provider_kind": "manual"},
+            {
+                "agent_id": "gpt-54-mini-smoke",
+                "display_name": "GPT-5.4 Mini",
+                "provider_kind": "codex",
+                "connection_kind": "manual",
+            },
             {"agent_id": "remote-user", "display_name": "Remote", "connection_kind": "native_remote_room_client"},
         ]
         saved = [{"agent_id": "codex-a"}]
@@ -65,10 +72,45 @@ class RoomFriendsTests(unittest.TestCase):
                 "deepseek-api": "api",
                 "llama-local": "local",
                 "guest-human": "human",
+                "gpt-54-mini-smoke": "subscription_ai",
                 "remote-user": "remote",
             },
         )
         self.assertEqual(room_friend_type_for_agent(agents[0]), "subscription_ai")
+
+    def test_read_room_friends_repairs_stale_human_ai_records(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "room_friends.json").write_text(
+                json.dumps(
+                    {
+                        "friends": [
+                            {
+                                "friend_id": "agent:gpt-54-mini-smoke",
+                                "display_name": "GPT-5.4 Mini",
+                                "handle": "gpt-54-mini-smoke",
+                                "participant_type": "human",
+                                "provider_kind": "codex",
+                                "connection_kind": "manual",
+                            },
+                            {
+                                "friend_id": "friend:seinel",
+                                "display_name": "SeiNel",
+                                "handle": "seinel",
+                                "participant_type": "human",
+                            },
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            friends = read_room_friends(root)
+
+        by_id = {str(friend["friend_id"]): friend for friend in friends}
+        self.assertEqual(by_id["agent:gpt-54-mini-smoke"]["participant_type"], "subscription_ai")
+        self.assertEqual(by_id["friend:seinel"]["participant_type"], "human")
 
     def test_room_friend_dm_persists_only_for_saved_friend(self):
         with tempfile.TemporaryDirectory() as temp_dir:
