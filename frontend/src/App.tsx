@@ -451,6 +451,7 @@ export default function App() {
     candidates: [],
   });
   const [selectedHomeFriendId, setSelectedHomeFriendId] = useState("");
+  const [activeHomeDmFriendId, setActiveHomeDmFriendId] = useState("");
   const [roomMemberRoles, setRoomMemberRoles] = useState<Record<string, Record<string, string>>>({});
   const [roomMembersByRoom, setRoomMembersByRoom] = useState<Record<string, RoomMember[]>>({});
   const [roomChannelSettings, setRoomChannelSettings] = useState<
@@ -730,12 +731,22 @@ export default function App() {
     };
   }, [guestLocked]);
 
-  function selectHomeFriend(friend: RoomFriend) {
+  function changeHomeFilter(filter: HomeFilter) {
+    setHomeFilter(filter);
+    setActiveHomeDmFriendId("");
+  }
+
+  function selectHomeFriend(friend: RoomFriend, intent: "profile" | "dm" = "profile") {
     setSelectedHomeFriendId(friend.friend_id);
     setChannel("friends");
     setAdminOpen(false);
     setChannelMenu(null);
     setFriendListFilter("all");
+    if (intent === "dm") {
+      setActiveHomeDmFriendId(friend.friend_id);
+      setHomeFilter("friends");
+      return;
+    }
     if (friend.participant_type === "human") setHomeFilter("human");
     else if (friend.participant_type === "subscription_ai") setHomeFilter("subscription_ai");
     else if (friend.participant_type === "api") setHomeFilter("api");
@@ -749,6 +760,7 @@ export default function App() {
     setAdminOpen(false);
     setChannelMenu(null);
     setHomeFilter("friends");
+    setActiveHomeDmFriendId("");
     setFriendListFilter("add");
   }
 
@@ -1277,7 +1289,7 @@ export default function App() {
       {channel === "friends" && !guestLocked ? (
         <HomeSidebar
           activeFilter={homeFilter}
-          onFilterChange={setHomeFilter}
+          onFilterChange={changeHomeFilter}
           onlineCount={scopedOnlineCount}
           agentCount={scopedAgents.length || 0}
           hasBackendError={Boolean(flowError)}
@@ -1415,6 +1427,8 @@ export default function App() {
               setSelectedHomeFriendId((previous) => previous || payload.friends[0]?.friend_id || "");
             }}
             selectedFriendId={selectedHomeFriendId}
+            activeDmFriendId={activeHomeDmFriendId}
+            onActiveDmFriendChange={setActiveHomeDmFriendId}
             onSelectFriend={(friend) => setSelectedHomeFriendId(friend.friend_id)}
           />
         ) : adminOpen ? (

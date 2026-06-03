@@ -178,6 +178,8 @@ export default function FriendsView({
   onInviteFriendToRoom,
   onFriendsChanged,
   selectedFriendId,
+  activeDmFriendId,
+  onActiveDmFriendChange,
   onSelectFriend,
 }: {
   typeFilter: ParticipantType | null;
@@ -187,6 +189,8 @@ export default function FriendsView({
   onInviteFriendToRoom?: (friend: RoomFriend) => Promise<void>;
   onFriendsChanged?: (payload: RoomFriendsResponse) => void;
   selectedFriendId?: string;
+  activeDmFriendId?: string;
+  onActiveDmFriendChange?: (friendId: string) => void;
   onSelectFriend?: (friend: RoomFriend) => void;
 }) {
   const [payload, setPayload] = useState<RoomFriendsResponse>({ friends: [], candidates: [] });
@@ -239,9 +243,20 @@ export default function FriendsView({
       null,
     [payload.friends, selectedFriendId, visibleFriends]
   );
+  const activeDmFriend = useMemo(
+    () => payload.friends.find((friend) => friend.friend_id === activeDmFriendId) || null,
+    [activeDmFriendId, payload.friends]
+  );
+  const profileFriend = selectedFriend || activeDmFriend;
+
+  function showDirectory(nextFilter: FriendListFilter) {
+    onFilterChange(nextFilter);
+    onActiveDmFriendChange?.("");
+  }
 
   function openFriendDm(friend: RoomFriend) {
     onSelectFriend?.(friend);
+    onActiveDmFriendChange?.(friend.friend_id);
     setDmFocusSignal((value) => value + 1);
   }
 
@@ -316,17 +331,17 @@ export default function FriendsView({
           <span>친구</span>
         </div>
         <nav className="dc-friends-tabs" aria-label="친구 필터">
-          <button type="button" data-active={filter === "online"} onClick={() => onFilterChange("online")}>
+          <button type="button" data-active={filter === "online" && !activeDmFriend} onClick={() => showDirectory("online")}>
             온라인
           </button>
-          <button type="button" data-active={filter === "all"} onClick={() => onFilterChange("all")}>
+          <button type="button" data-active={filter === "all" && !activeDmFriend} onClick={() => showDirectory("all")}>
             모두
           </button>
           <button
             type="button"
             className="add-tab"
-            data-active={filter === "add"}
-            onClick={() => onFilterChange("add")}
+            data-active={filter === "add" && !activeDmFriend}
+            onClick={() => showDirectory("add")}
           >
             친구 추가하기
           </button>
@@ -334,7 +349,11 @@ export default function FriendsView({
       </header>
 
       <div className="dc-friends-body">
-        <main className="dc-friends-main">
+        <main className="dc-friends-main" data-mode={activeDmFriend ? "dm" : "directory"}>
+          {activeDmFriend ? (
+            <FriendDmPanel friend={activeDmFriend} focusSignal={dmFocusSignal} layout="channel" />
+          ) : (
+          <>
           <label className="dc-friends-search">
             <Search size={16} />
             <input
@@ -418,20 +437,21 @@ export default function FriendsView({
               <p className="dc-friend-empty">추가할 수 있는 새 세션 후보가 없습니다.</p>
             )}
           </section>
+          </>
+          )}
         </main>
 
         <aside className="dc-friends-activity">
-          <h2>{selectedFriend ? "프로필" : "현재 활동 중"}</h2>
+          <h2>{profileFriend ? "프로필" : "현재 활동 중"}</h2>
           <FriendProfileCard
-            friend={selectedFriend}
+            friend={profileFriend}
             activeRoomName={activeRoomName}
             onStartDm={openFriendDm}
             inviteLabel={
-              selectedFriend && busyId === `invite:${selectedFriend.friend_id}` ? "초대 중" : "방에 초대"
+              profileFriend && busyId === `invite:${profileFriend.friend_id}` ? "초대 중" : "방에 초대"
             }
             onInvite={onInviteFriendToRoom ? handleInvite : undefined}
           />
-          <FriendDmPanel friend={selectedFriend} focusSignal={dmFocusSignal} />
         </aside>
       </div>
     </div>

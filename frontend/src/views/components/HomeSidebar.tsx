@@ -32,7 +32,7 @@ export default function HomeSidebar({
   hasBackendError: boolean;
   friends?: RoomFriend[];
   selectedFriendId?: string;
-  onFriendSelect?: (friend: RoomFriend) => void;
+  onFriendSelect?: (friend: RoomFriend, intent?: "profile" | "dm") => void;
   onStartAddFriend?: () => void;
 }) {
   const [dmQuery, setDmQuery] = useState("");
@@ -98,7 +98,7 @@ export default function HomeSidebar({
                   className="dc-dm-row"
                   data-status={friend.status || "offline"}
                   data-active={selectedFriendId === friend.friend_id}
-                  onClick={() => onFriendSelect?.(friend)}
+                  onClick={() => onFriendSelect?.(friend, "dm")}
                   title={`${friend.display_name} · ${meta?.label || "미분류"}`}
                 >
                   <span className="dc-dm-avatar">

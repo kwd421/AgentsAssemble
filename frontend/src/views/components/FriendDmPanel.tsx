@@ -6,6 +6,7 @@ import {
   type RoomFriend,
   type RoomFriendDmEvent,
 } from "../../api";
+import { participantTypeMeta } from "../../lib/participantTypes";
 
 function timeLabel(value: string) {
   const date = new Date(value);
@@ -16,9 +17,11 @@ function timeLabel(value: string) {
 export default function FriendDmPanel({
   friend,
   focusSignal = 0,
+  layout = "card",
 }: {
   friend: RoomFriend | null;
   focusSignal?: number;
+  layout?: "card" | "channel";
 }) {
   const [events, setEvents] = useState<RoomFriendDmEvent[]>([]);
   const [draft, setDraft] = useState("");
@@ -29,6 +32,8 @@ export default function FriendDmPanel({
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const friendId = friend?.friend_id || "";
+  const meta = friend ? participantTypeMeta(friend.participant_type) : null;
+  const Icon = meta?.icon;
   const placeholder = useMemo(
     () => (friend ? `${friend.display_name}에게 로컬 메시지` : "저장된 친구를 선택하세요"),
     [friend]
@@ -96,15 +101,31 @@ export default function FriendDmPanel({
   if (!friend) return null;
 
   return (
-    <section className="dc-friend-dm-panel" aria-label={`${friend.display_name} 로컬 DM`}>
+    <section className="dc-friend-dm-panel" data-layout={layout} aria-label={`${friend.display_name} 로컬 DM`}>
       <header className="dc-friend-dm-head">
         <div>
-          <h3>로컬 DM</h3>
-          <p>외부 Discord로 전송되지 않습니다.</p>
+          <h3>{layout === "channel" ? friend.display_name : "로컬 DM"}</h3>
+          <p>
+            {layout === "channel"
+              ? `${meta?.label || "저장된 친구"} · AgentsAssemble 로컬 DM`
+              : "외부 Discord로 전송되지 않습니다."}
+          </p>
         </div>
         {loading && <span>동기화 중</span>}
       </header>
       <div ref={scrollRef} className="dc-friend-dm-feed">
+        {layout === "channel" && (
+          <div className="dc-friend-dm-intro">
+            <span className="dc-friend-dm-intro-avatar" data-type={friend.participant_type}>
+              {Icon ? <Icon size={28} /> : friend.display_name.slice(0, 1).toUpperCase()}
+            </span>
+            <h2 className="preserve-words">{friend.display_name}</h2>
+            <p className="preserve-words">
+              이 대화는 AgentsAssemble 안에 저장되는 로컬 DM입니다. 외부 Discord로 전송되지 않고,
+              저장된 세션이나 에이전트를 다시 초대하기 전 맥락을 남길 때 씁니다.
+            </p>
+          </div>
+        )}
         {events.length ? (
           events.map((item) => (
             <article key={item.id} className="dc-friend-dm-message" data-side={item.side}>
