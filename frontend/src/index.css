@@ -2491,6 +2491,14 @@ textarea {
   outline: none;
 }
 
+.dc-role-label {
+  max-width: 104px;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .dc-member-context {
   opacity: 0.55;
 }

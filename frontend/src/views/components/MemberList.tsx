@@ -158,13 +158,16 @@ function MemberRow({
   entry,
   onOpenDetails,
   onRoleChange,
+  canEditRoles,
 }: {
   entry: MemberEntry;
   onOpenDetails: (entry: MemberEntry) => void;
   onRoleChange: (memberId: string, role: RoleId) => void;
+  canEditRoles: boolean;
 }) {
   const Icon = entry.icon;
   const quotaChips = entry.agent ? inlineQuotaChips(entry.agent) : [];
+  const roleLabel = ROLE_OPTIONS.find((option) => option.id === entry.role)?.label || "에이전트";
   return (
     <div
       className="dc-member group"
@@ -220,20 +223,24 @@ function MemberRow({
           </p>
         </div>
         <div className="dc-member-role-row">
-          <select
-            className="dc-role-select"
-            value={entry.role}
-            aria-label={`${entry.displayName} 역할`}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-            onChange={(event) => onRoleChange(entry.id, event.target.value as RoleId)}
-          >
-            {ROLE_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          {canEditRoles ? (
+            <select
+              className="dc-role-select"
+              value={entry.role}
+              aria-label={`${entry.displayName} 역할`}
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+              onChange={(event) => onRoleChange(entry.id, event.target.value as RoleId)}
+            >
+              {ROLE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="dc-role-label">{roleLabel}</span>
+          )}
         </div>
       </div>
     </div>
@@ -430,6 +437,7 @@ export default function MemberList({
   roomName,
   roleOverrides,
   onRoleChange,
+  canEditRoles = true,
   sessionGroup,
   onSessionActionComplete,
 }: {
@@ -439,6 +447,7 @@ export default function MemberList({
   roomName: string;
   roleOverrides?: Record<string, string>;
   onRoleChange?: (memberId: string, role: RoleId) => void;
+  canEditRoles?: boolean;
   sessionGroup?: LiveAgentProcessGroup;
   onSessionActionComplete?: () => void;
 }) {
@@ -576,6 +585,7 @@ export default function MemberList({
                   entry={entry}
                   onOpenDetails={setDetailEntry}
                   onRoleChange={handleRoleChange}
+                  canEditRoles={canEditRoles}
                 />
               ))}
             </section>

@@ -123,6 +123,7 @@ export default function RoomConnectionPanel({
         roomName={room.label}
         roleOverrides={roleOverrides}
         onRoleChange={onRoleChange}
+        canEditRoles={!guestLocked}
         sessionGroup={sessionGroup}
         onSessionActionComplete={onSessionActionComplete}
       />
