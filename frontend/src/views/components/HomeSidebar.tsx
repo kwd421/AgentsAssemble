@@ -127,7 +127,7 @@ export default function HomeSidebar({
           )}
         </div>
       </nav>
-      <footer className="dc-user-area shrink-0 px-2 py-2">
+      <footer className="dc-user-area shrink-0">
         <UserPanel
           onlineCount={onlineCount}
           agentCount={agentCount}

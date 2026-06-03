@@ -312,18 +312,7 @@ export default function UserPanel({
         >
           <span className="relative shrink-0">
             <span className="dc-self-avatar">{profile.avatarLabel}</span>
-            <span
-              className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-sidebar ${
-                statusClass === "offline"
-                  ? "bg-danger"
-                  : statusClass === "idle"
-                    ? "bg-yellow-400"
-                    : statusClass === "dnd"
-                      ? "bg-red-500"
-                      : "bg-online"
-              }`}
-              aria-hidden
-            />
+            <span className={`dc-self-status ${statusClass}`} aria-hidden />
           </span>
           <span className="min-w-0 flex-1 text-left">
             <span className="block truncate text-[13px] font-bold text-text-primary">
@@ -352,9 +341,19 @@ export default function UserPanel({
             aria-label={profile.micMuted ? "마이크 음소거 해제" : "마이크 음소거"}
             aria-pressed={profile.micMuted}
             data-danger={profile.micMuted}
+            className="dc-user-action-primary"
             onClick={() => updateProfileFlag("micMuted", !profile.micMuted)}
           >
             {profile.micMuted ? <MicOff size={16} /> : <Mic size={16} />}
+          </button>
+          <button
+            type="button"
+            aria-label="마이크 옵션"
+            data-danger={profile.micMuted}
+            className="dc-user-action-caret"
+            onClick={() => openSettings("voice")}
+          >
+            <ChevronDown size={14} />
           </button>
           <button
             type="button"
@@ -363,6 +362,9 @@ export default function UserPanel({
             onClick={() => updateProfileFlag("deafened", !profile.deafened)}
           >
             <Headphones size={16} />
+          </button>
+          <button type="button" aria-label="오디오 옵션" onClick={() => openSettings("voice")}>
+            <ChevronDown size={14} />
           </button>
           <button type="button" aria-label="사용자 설정" onClick={() => openSettings("account")}>
             <Settings size={16} />

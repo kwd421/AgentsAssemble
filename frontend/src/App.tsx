@@ -1045,7 +1045,7 @@ export default function App() {
           )}
         </nav>
 
-        <footer className="dc-user-area shrink-0 px-2 py-2">
+        <footer className="dc-user-area shrink-0">
           <UserPanel
             onlineCount={scopedOnlineCount}
             agentCount={scopedAgents.length || 0}

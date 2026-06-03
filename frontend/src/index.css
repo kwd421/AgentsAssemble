@@ -9,20 +9,20 @@
  */
 
 @theme {
-  --color-server-rail: #1e1f22;
-  --color-sidebar: #2b2d31;
-  --color-sidebar-hover: #35373c;
-  --color-sidebar-active: #404249;
+  --color-server-rail: #111214;
+  --color-sidebar: #17181c;
+  --color-sidebar-hover: #26272c;
+  --color-sidebar-active: #303136;
   --color-sidebar-text: #949ba4;
   --color-sidebar-text-active: #f2f3f5;
-  --color-chat-bg: #313338;
-  --color-chat-hover: #2e3035;
-  --color-panel: #2b2d31;
-  --color-panel-bg: #2b2d31;
-  --color-panel-soft: #383a40;
+  --color-chat-bg: #1e1f22;
+  --color-chat-hover: #292a2f;
+  --color-panel: #242529;
+  --color-panel-bg: #242529;
+  --color-panel-soft: #2b2d31;
   --color-panel-border: rgba(255, 255, 255, 0.06);
-  --color-line: rgba(255, 255, 255, 0.08);
-  --color-text-primary: #dbdee1;
+  --color-line: rgba(255, 255, 255, 0.07);
+  --color-text-primary: #f2f3f5;
   --color-text-secondary: #b5bac1;
   --color-text-muted: #949ba4;
   --color-accent: #5865f2;
@@ -42,6 +42,26 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-color: #111214 transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #111214;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #0b0c0d;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 html,
@@ -52,8 +72,8 @@ body,
 
 body {
   margin: 0;
-  background: #1e1f22;
-  color: #dbdee1;
+  background: #111214;
+  color: #f2f3f5;
   font-family: var(--font-body);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -70,7 +90,7 @@ textarea {
 /* ---------------------------------------------------------------- shell ---- */
 
 .dc-shell {
-  background: #1e1f22;
+  background: #111214;
 }
 
 /* Server rail: far-left narrow column of round icons. */
@@ -736,7 +756,8 @@ textarea {
 
 .dc-user-area {
   position: relative;
-  background: rgba(0, 0, 0, 0.16);
+  background: #232428;
+  padding: 8px;
 }
 
 .dc-user-panel {
@@ -745,11 +766,11 @@ textarea {
 
 .dc-current-user {
   display: flex;
-  min-height: 52px;
+  min-height: 56px;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   border-radius: 8px;
-  padding: 4px 6px;
+  padding: 6px 8px;
 }
 
 .dc-current-user:hover {
@@ -763,7 +784,7 @@ textarea {
   align-items: center;
   gap: 8px;
   border-radius: 6px;
-  padding: 4px;
+  padding: 5px 4px;
 }
 
 .dc-user-identity:hover,
@@ -773,11 +794,41 @@ textarea {
 }
 
 .dc-self-avatar {
-  width: 32px;
-  height: 32px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
   border-radius: 50%;
   background: var(--profile-accent, var(--color-accent));
+  color: #fff;
   font-size: 12px;
+  font-weight: 900;
+}
+
+.dc-self-status {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 13px;
+  height: 13px;
+  border: 3px solid #232428;
+  border-radius: 999px;
+}
+
+.dc-self-status.online {
+  background: var(--color-online);
+}
+
+.dc-self-status.offline {
+  background: var(--color-danger);
+}
+
+.dc-self-status.idle {
+  background: #f0b232;
+}
+
+.dc-self-status.dnd {
+  background: #ed4245;
 }
 
 .dc-user-actions {
@@ -809,11 +860,12 @@ textarea {
 
 .dc-profile-card {
   position: absolute;
-  left: 0;
+  left: 8px;
   bottom: calc(100% + 10px);
   z-index: 70;
-  width: 340px;
+  width: min(600px, calc(100vw - 32px));
   max-height: calc(100vh - 92px);
+  max-height: min(640px, calc(100vh - 92px), calc(100vh - 192px));
   overflow-x: hidden;
   overflow-y: auto;
   border-radius: 8px;
@@ -824,7 +876,7 @@ textarea {
 }
 
 .dc-profile-banner {
-  height: 78px;
+  height: 124px;
   background: var(--profile-accent, #5865f2);
 }
 
@@ -866,11 +918,11 @@ textarea {
 
 .dc-profile-avatar-wrap {
   position: absolute;
-  top: 42px;
-  left: 18px;
+  top: 74px;
+  left: 24px;
   display: grid;
-  width: 84px;
-  height: 84px;
+  width: 116px;
+  height: 116px;
   place-items: center;
   border-radius: 50%;
   background: #232428;
@@ -878,23 +930,23 @@ textarea {
 
 .dc-profile-avatar {
   display: grid;
-  width: 72px;
-  height: 72px;
+  width: 102px;
+  height: 102px;
   place-items: center;
   border-radius: 50%;
   background: var(--profile-accent, #f23f42);
   color: #fff;
-  font-size: 19px;
+  font-size: 26px;
   font-weight: 950;
 }
 
 .dc-profile-status {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  width: 20px;
-  height: 20px;
-  border: 5px solid #232428;
+  right: 11px;
+  bottom: 11px;
+  width: 24px;
+  height: 24px;
+  border: 6px solid #232428;
   border-radius: 50%;
 }
 
@@ -915,7 +967,7 @@ textarea {
 }
 
 .dc-profile-body {
-  padding: 52px 16px 16px;
+  padding: 72px 24px 22px;
 }
 
 .dc-profile-card-title {
@@ -2765,7 +2817,13 @@ textarea {
 }
 
 .dc-friends-tabs .add-tab {
-  background: var(--color-online);
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.dc-friends-tabs .add-tab:hover,
+.dc-friends-tabs .add-tab[data-active="true"] {
+  background: var(--color-accent-hover);
   color: #fff;
 }
 
@@ -3175,7 +3233,7 @@ textarea {
   display: grid;
   gap: 2px;
   border-radius: 6px;
-  background: #1e1f22;
+  background: var(--color-panel-soft);
   padding: 9px 10px;
 }
 
