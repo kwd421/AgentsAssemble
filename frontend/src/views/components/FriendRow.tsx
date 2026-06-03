@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { MessageCircle, MoreVertical, Trash2, UserPlus } from "lucide-react";
 import type { RoomFriend } from "../../api";
 import { participantTypeMeta } from "../../lib/participantTypes";
@@ -30,6 +31,7 @@ export default function FriendRow({
   onSelect?: (friend: RoomFriend) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const meta = participantTypeMeta(friend.participant_type);
   const Icon = meta.icon;
@@ -69,9 +71,31 @@ export default function FriendRow({
         setMenuOpen(false);
       }
     }
+    function closeOnViewportChange() {
+      setMenuOpen(false);
+    }
     window.addEventListener("mousedown", closeOnOutside);
-    return () => window.removeEventListener("mousedown", closeOnOutside);
+    window.addEventListener("resize", closeOnViewportChange);
+    window.addEventListener("scroll", closeOnViewportChange, true);
+    return () => {
+      window.removeEventListener("mousedown", closeOnOutside);
+      window.removeEventListener("resize", closeOnViewportChange);
+      window.removeEventListener("scroll", closeOnViewportChange, true);
+    };
   }, [menuOpen]);
+
+  function toggleMenu(event: ReactMouseEvent<HTMLButtonElement>) {
+    if (!menuOpen) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const menuWidth = 190;
+      const menuHeight = 148;
+      setMenuPosition({
+        left: Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)),
+        top: Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - menuHeight - 8)),
+      });
+    }
+    setMenuOpen((value) => !value);
+  }
 
   return (
     <div ref={rowRef} className="dc-friend-row" data-type={meta.tone} data-selected={selected ? "true" : "false"}>
@@ -103,12 +127,17 @@ export default function FriendRow({
             className="dc-friend-icon-action"
             aria-label={`${friend.display_name} 작업`}
             aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((value) => !value)}
+            onClick={toggleMenu}
           >
             <MoreVertical size={18} />
           </button>
           {menuOpen && (
-            <div className="dc-friend-row-menu" role="menu" aria-label={`${friend.display_name} 작업 메뉴`}>
+            <div
+              className="dc-friend-row-menu"
+              role="menu"
+              aria-label={`${friend.display_name} 작업 메뉴`}
+              style={menuPosition ? { left: menuPosition.left, top: menuPosition.top } : undefined}
+            >
               {onStartDm && (
                 <button
                   type="button"
