@@ -9,11 +9,11 @@
  */
 
 @theme {
-  --color-server-rail: #1a1b1e;
+  --color-server-rail: #1e1f22;
   --color-sidebar: #2b2d31;
   --color-sidebar-hover: #35373c;
   --color-sidebar-active: #404249;
-  --color-sidebar-text: #969ba4;
+  --color-sidebar-text: #949ba4;
   --color-sidebar-text-active: #f2f3f5;
   --color-chat-bg: #313338;
   --color-chat-hover: #2e3035;
@@ -22,9 +22,9 @@
   --color-panel-soft: #383a40;
   --color-panel-border: rgba(255, 255, 255, 0.06);
   --color-line: rgba(255, 255, 255, 0.08);
-  --color-text-primary: #f2f3f5;
-  --color-text-secondary: #c3c7cd;
-  --color-text-muted: #969ba4;
+  --color-text-primary: #dbdee1;
+  --color-text-secondary: #b5bac1;
+  --color-text-muted: #949ba4;
   --color-accent: #5865f2;
   --color-accent-hover: #4752c4;
   --color-accent-soft: #404bb5;
@@ -52,8 +52,8 @@ body,
 
 body {
   margin: 0;
-  background: #1a1b1e;
-  color: #f2f3f5;
+  background: #1e1f22;
+  color: #dbdee1;
   font-family: var(--font-body);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -70,7 +70,7 @@ textarea {
 /* ---------------------------------------------------------------- shell ---- */
 
 .dc-shell {
-  background: #1a1b1e;
+  background: #1e1f22;
 }
 
 /* Server rail: far-left narrow column of round icons. */
@@ -442,19 +442,17 @@ textarea {
   border-radius: 8px;
   padding: 12px 10px;
   background:
-    radial-gradient(circle at 78% 18%, rgba(255, 255, 255, 0.14), transparent 28%),
-    linear-gradient(135deg, rgba(88, 101, 242, 0.75), rgba(17, 18, 20, 0.72)),
-    #1e1f22;
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.4)),
+    #2b2d31;
   box-shadow:
     inset 0 -42px 48px rgba(0, 0, 0, 0.34),
-    0 1px 0 rgba(255, 255, 255, 0.05);
+    0 1px 0 rgba(0, 0, 0, 0.24);
 }
 
 .dc-sidebar-banner {
   background-image:
     var(--room-banner-image),
-    radial-gradient(circle at 78% 18%, rgba(255, 255, 255, 0.14), transparent 28%),
-    linear-gradient(135deg, rgba(88, 101, 242, 0.75), rgba(17, 18, 20, 0.72));
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.4));
   background-position: center;
   background-size: cover;
 }
@@ -462,50 +460,46 @@ textarea {
 [data-banner-preset="forest"] .dc-sidebar-banner {
   background-image:
     var(--room-banner-image),
-    radial-gradient(circle at 18% 22%, rgba(35, 165, 90, 0.42), transparent 32%),
-    linear-gradient(135deg, #214638, #1e1f22);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.42)),
+    linear-gradient(135deg, #315c46, #2b2d31);
 }
 
 [data-banner-preset="midnight"] .dc-sidebar-banner {
   background-image:
     var(--room-banner-image),
-    radial-gradient(circle at 75% 22%, rgba(88, 101, 242, 0.35), transparent 30%),
-    linear-gradient(135deg, #23265a, #111214);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.42)),
+    linear-gradient(135deg, #343663, #2b2d31);
 }
 
 [data-banner-preset="ember"] .dc-sidebar-banner {
   background-image:
     var(--room-banner-image),
-    radial-gradient(circle at 80% 20%, rgba(240, 178, 50, 0.38), transparent 30%),
-    linear-gradient(135deg, #5a321f, #1e1f22);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.42)),
+    linear-gradient(135deg, #6f4935, #2b2d31);
 }
 
 .dc-sidebar-head[data-tone="fresh"] .dc-sidebar-banner {
   background:
-    radial-gradient(circle at 78% 18%, rgba(255, 255, 255, 0.16), transparent 28%),
-    linear-gradient(135deg, rgba(88, 101, 242, 0.86), rgba(30, 31, 34, 0.76)),
-    #1e1f22;
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.44)),
+    #5865f2;
 }
 
 .dc-sidebar-head[data-tone="resident"] .dc-sidebar-banner {
   background:
-    radial-gradient(circle at 82% 22%, rgba(87, 242, 135, 0.2), transparent 30%),
-    linear-gradient(135deg, rgba(35, 165, 90, 0.74), rgba(30, 31, 34, 0.78)),
-    #1e1f22;
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.44)),
+    #23a55a;
 }
 
 .dc-sidebar-head[data-tone="mafia"] .dc-sidebar-banner {
   background:
-    radial-gradient(circle at 78% 20%, rgba(199, 125, 255, 0.23), transparent 30%),
-    linear-gradient(135deg, rgba(138, 76, 214, 0.8), rgba(30, 31, 34, 0.78)),
-    #1e1f22;
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.44)),
+    #5865f2;
 }
 
 .dc-sidebar-head[data-tone="work"] .dc-sidebar-banner {
   background:
-    radial-gradient(circle at 80% 18%, rgba(255, 204, 77, 0.24), transparent 30%),
-    linear-gradient(135deg, rgba(228, 161, 27, 0.72), rgba(30, 31, 34, 0.78)),
-    #1e1f22;
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.44)),
+    #b5891f;
 }
 
 .dc-sidebar-server-icon,
@@ -831,33 +825,23 @@ textarea {
 
 .dc-profile-banner {
   height: 78px;
-  background:
-    radial-gradient(circle at 72% 10%, rgba(255, 255, 255, 0.2), transparent 26%),
-    linear-gradient(135deg, #f23f42, var(--profile-accent, #5865f2) 75%);
+  background: var(--profile-accent, #5865f2);
 }
 
 .dc-profile-banner[data-preset="forest"] {
-  background:
-    radial-gradient(circle at 78% 12%, rgba(255, 255, 255, 0.16), transparent 24%),
-    linear-gradient(135deg, #1f8b4c, #244c73 76%);
+  background: #315c46;
 }
 
 .dc-profile-banner[data-preset="midnight"] {
-  background:
-    radial-gradient(circle at 70% 0%, rgba(88, 101, 242, 0.46), transparent 28%),
-    linear-gradient(135deg, #111214, #343a74 82%);
+  background: #343663;
 }
 
 .dc-profile-banner[data-preset="ember"] {
-  background:
-    radial-gradient(circle at 74% 10%, rgba(255, 255, 255, 0.18), transparent 22%),
-    linear-gradient(135deg, #ed4245, #f0a04b 78%);
+  background: #6f4935;
 }
 
 .dc-profile-banner[data-preset="custom"] {
-  background:
-    radial-gradient(circle at 70% 10%, rgba(255, 255, 255, 0.2), transparent 24%),
-    linear-gradient(135deg, var(--profile-accent, #5865f2), #111214 92%);
+  background: var(--profile-accent, #5865f2);
 }
 
 .dc-profile-close {
@@ -2944,7 +2928,7 @@ textarea {
 }
 
 .dc-friend-row[data-type="api"] .dc-friend-avatar {
-  background: #3b82f6;
+  background: #4e5058;
 }
 
 .dc-friend-row[data-type="local"] .dc-friend-avatar {
@@ -2956,7 +2940,7 @@ textarea {
 }
 
 .dc-friend-row[data-type="remote"] .dc-friend-avatar {
-  background: #06b6d4;
+  background: #80848e;
 }
 
 .dc-friend-row[data-type="unknown"] .dc-friend-avatar {
@@ -3075,33 +3059,23 @@ textarea {
 
 .dc-friend-profile-banner {
   height: 92px;
-  background:
-    radial-gradient(circle at 78% 16%, rgba(255, 255, 255, 0.18), transparent 24%),
-    linear-gradient(135deg, #5865f2, #232428 78%);
+  background: #5865f2;
 }
 
 .dc-friend-profile-card[data-type="human"] .dc-friend-profile-banner {
-  background:
-    radial-gradient(circle at 78% 16%, rgba(255, 255, 255, 0.18), transparent 24%),
-    linear-gradient(135deg, #f23f42, #232428 78%);
+  background: #f23f42;
 }
 
 .dc-friend-profile-card[data-type="api"] .dc-friend-profile-banner {
-  background:
-    radial-gradient(circle at 78% 16%, rgba(255, 255, 255, 0.18), transparent 24%),
-    linear-gradient(135deg, #3b82f6, #232428 78%);
+  background: #4e5058;
 }
 
 .dc-friend-profile-card[data-type="local"] .dc-friend-profile-banner {
-  background:
-    radial-gradient(circle at 78% 16%, rgba(255, 255, 255, 0.18), transparent 24%),
-    linear-gradient(135deg, #23a55a, #232428 78%);
+  background: #23a55a;
 }
 
 .dc-friend-profile-card[data-type="remote"] .dc-friend-profile-banner {
-  background:
-    radial-gradient(circle at 78% 16%, rgba(255, 255, 255, 0.18), transparent 24%),
-    linear-gradient(135deg, #06b6d4, #232428 78%);
+  background: #80848e;
 }
 
 .dc-friend-profile-body {
@@ -3319,7 +3293,7 @@ textarea {
 }
 
 .dc-friend-dm-intro-avatar[data-type="api"] {
-  background: #3b82f6;
+  background: #4e5058;
 }
 
 .dc-friend-dm-intro-avatar[data-type="local"] {
@@ -3327,7 +3301,7 @@ textarea {
 }
 
 .dc-friend-dm-intro-avatar[data-type="remote"] {
-  background: #06b6d4;
+  background: #80848e;
 }
 
 .dc-friend-dm-intro h2 {
@@ -3574,7 +3548,8 @@ textarea {
   border-radius: 8px;
   background-image:
     var(--room-banner-image),
-    linear-gradient(135deg, rgba(88, 101, 242, 0.55), rgba(17, 18, 20, 0.76));
+    linear-gradient(180deg, rgba(0, 0, 0, 0.02), rgba(0, 0, 0, 0.42)),
+    linear-gradient(135deg, #5865f2, #2b2d31);
   background-position: center;
   background-size: cover;
   padding: 16px;
@@ -3830,7 +3805,7 @@ textarea {
 
 .chat-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #1a1b1e transparent;
+  scrollbar-color: #1e1f22 transparent;
 }
 
 .chat-scroll::-webkit-scrollbar {
@@ -3839,7 +3814,7 @@ textarea {
 }
 
 .chat-scroll::-webkit-scrollbar-thumb {
-  background: #1a1b1e;
+  background: #1e1f22;
   border-radius: 999px;
 }
 
