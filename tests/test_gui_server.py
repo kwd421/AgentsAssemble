@@ -19479,6 +19479,7 @@ class GuiServerTests(unittest.TestCase):
                             "status": "idle",
                             "custom_status": "프론트 비교 중",
                             "avatar_label": "DO",
+                            "avatar_image_url": "/api/attachments/profile01?view=1",
                             "banner_preset": "midnight",
                             "accent_color": "#23a55a",
                             "mic_muted": False,
@@ -19499,6 +19500,7 @@ class GuiServerTests(unittest.TestCase):
             self.assertEqual(initial_payload["profile"]["display_name"], "SeiNel")
             self.assertEqual(saved_payload["profile"]["display_name"], "Discord Owner")
             self.assertEqual(saved_payload["profile"]["handle"], "owner.local")
+            self.assertEqual(saved_payload["profile"]["avatar_image_url"], "/api/attachments/profile01?view=1")
             self.assertEqual(saved_payload["profile"]["banner_preset"], "midnight")
             self.assertEqual(saved_payload["profile"]["accent_color"], "#23a55a")
             self.assertFalse(saved_payload["profile"]["mic_muted"])

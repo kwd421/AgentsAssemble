@@ -8,6 +8,7 @@ from pathlib import Path
 PROFILE_TEXT_LIMIT = 120
 CUSTOM_STATUS_LIMIT = 160
 AVATAR_LABEL_LIMIT = 2
+IMAGE_URL_LIMIT = 240
 VALID_STATUSES = {"online", "idle", "dnd", "offline"}
 VALID_BANNER_PRESETS = {"default", "forest", "midnight", "ember", "custom"}
 DEFAULT_PROFILE = {
@@ -16,6 +17,7 @@ DEFAULT_PROFILE = {
     "status": "online",
     "custom_status": "AgentsAssemble",
     "avatar_label": "나",
+    "avatar_image_url": "",
     "banner_preset": "default",
     "accent_color": "#5865f2",
     "mic_muted": True,
@@ -53,6 +55,7 @@ def public_user_profile(value: object) -> dict[str, object]:
             limit=CUSTOM_STATUS_LIMIT,
         ),
         "avatar_label": clean_avatar_label(source.get("avatar_label") or DEFAULT_PROFILE["avatar_label"]),
+        "avatar_image_url": clean_avatar_image_url(source.get("avatar_image_url")),
         "banner_preset": clean_banner_preset(source.get("banner_preset")),
         "accent_color": clean_accent_color(source.get("accent_color")),
         "mic_muted": bool(source.get("mic_muted", DEFAULT_PROFILE["mic_muted"])),
@@ -75,6 +78,8 @@ def _clean_profile_update(payload: dict[str, object]) -> dict[str, object]:
         update["custom_status"] = clean_profile_text(payload.get("custom_status"), limit=CUSTOM_STATUS_LIMIT)
     if "avatar_label" in payload:
         update["avatar_label"] = clean_avatar_label(payload.get("avatar_label"))
+    if "avatar_image_url" in payload:
+        update["avatar_image_url"] = clean_avatar_image_url(payload.get("avatar_image_url"))
     if "banner_preset" in payload:
         update["banner_preset"] = clean_banner_preset(payload.get("banner_preset"))
     if "accent_color" in payload:
@@ -95,6 +100,18 @@ def clean_profile_text(value: object, *, limit: int = PROFILE_TEXT_LIMIT) -> str
 def clean_avatar_label(value: object) -> str:
     text = clean_profile_text(value, limit=AVATAR_LABEL_LIMIT).upper()
     return text or str(DEFAULT_PROFILE["avatar_label"])
+
+
+def clean_avatar_image_url(value: object) -> str:
+    text = clean_profile_text(value, limit=IMAGE_URL_LIMIT)
+    if not text:
+        return ""
+    if text.startswith("/api/attachments/") and re.fullmatch(
+        r"/api/attachments/[A-Za-z0-9_-]{8,64}\?view=1",
+        text,
+    ):
+        return text
+    return ""
 
 
 def clean_status(value: object) -> str:

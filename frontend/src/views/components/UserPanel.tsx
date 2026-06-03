@@ -41,6 +41,7 @@ export default function UserPanel({
   const [profileError, setProfileError] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const statusClass = profileStatusClass(profile, hasBackendError);
+  const hasAvatarImage = Boolean(profile.avatarImage);
 
   useEffect(() => {
     let ignore = false;
@@ -133,7 +134,11 @@ export default function UserPanel({
   return (
     <div className="dc-user-panel" ref={rootRef} style={profileCssVars(profile)}>
       {profileOpen && (
-        <section className="dc-profile-card" aria-label="내 프로필 카드">
+        <section
+          className="dc-profile-card"
+          data-settings={settingsOpen}
+          aria-label="내 프로필 카드"
+        >
           <div
             className="dc-profile-banner"
             data-preset={profile.bannerPreset}
@@ -151,7 +156,9 @@ export default function UserPanel({
             <X size={16} />
           </button>
           <span className="dc-profile-avatar-wrap">
-            <span className="dc-profile-avatar">{profile.avatarLabel}</span>
+            <span className="dc-profile-avatar" data-has-image={hasAvatarImage}>
+              {hasAvatarImage ? null : profile.avatarLabel}
+            </span>
             <span className={`dc-profile-status ${statusClass}`} aria-hidden />
           </span>
           <div className="dc-profile-body">
@@ -311,7 +318,9 @@ export default function UserPanel({
           aria-expanded={profileOpen}
         >
           <span className="relative shrink-0">
-            <span className="dc-self-avatar">{profile.avatarLabel}</span>
+            <span className="dc-self-avatar" data-has-image={hasAvatarImage}>
+              {hasAvatarImage ? null : profile.avatarLabel}
+            </span>
             <span className={`dc-self-status ${statusClass}`} aria-hidden />
           </span>
           <span className="min-w-0 flex-1 text-left">

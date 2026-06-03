@@ -923,7 +923,7 @@ textarea {
   width: calc(100% + 64px);
   margin-left: -64px;
   background: transparent;
-  padding: 8px 8px 8px 10px;
+  padding: 8px;
 }
 
 .dc-user-panel {
@@ -932,19 +932,19 @@ textarea {
 
 .dc-current-user {
   display: flex;
-  min-height: 60px;
+  min-height: 64px;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   border-radius: 8px;
-  background: var(--color-panel);
+  background: #232428;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.04),
     0 8px 24px rgba(0, 0, 0, 0.22);
-  padding: 6px 8px;
+  padding: 6px;
 }
 
 .dc-current-user:hover {
-  background: var(--color-panel-soft);
+  background: #292b2f;
 }
 
 .dc-user-identity {
@@ -965,14 +965,22 @@ textarea {
 
 .dc-self-avatar {
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   place-items: center;
   border-radius: 50%;
   background: var(--profile-accent, var(--color-accent));
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 900;
+}
+
+.dc-self-avatar[data-has-image="true"],
+.dc-profile-avatar[data-has-image="true"] {
+  background-image: var(--profile-avatar-image);
+  background-position: center;
+  background-size: cover;
+  color: transparent;
 }
 
 .dc-self-status {
@@ -1011,8 +1019,8 @@ textarea {
 
 .dc-user-actions button {
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: 31px;
+  height: 31px;
   place-items: center;
   border-radius: 4px;
   color: var(--color-text-muted);
@@ -1034,7 +1042,7 @@ textarea {
   left: 8px;
   bottom: calc(100% + 10px);
   z-index: 70;
-  width: min(600px, calc(100vw - 32px));
+  width: min(340px, calc(100vw - 32px));
   max-height: calc(100vh - 92px);
   max-height: min(640px, calc(100vh - 92px), calc(100vh - 192px));
   overflow-x: hidden;
@@ -1046,8 +1054,12 @@ textarea {
     0 0 0 1px rgba(0, 0, 0, 0.32);
 }
 
+.dc-profile-card[data-settings="true"] {
+  width: min(560px, calc(100vw - 32px));
+}
+
 .dc-profile-banner {
-  height: 124px;
+  height: 108px;
   background: var(--profile-accent, #5865f2);
 }
 
@@ -1089,11 +1101,11 @@ textarea {
 
 .dc-profile-avatar-wrap {
   position: absolute;
-  top: 74px;
-  left: 24px;
+  top: 60px;
+  left: 16px;
   display: grid;
-  width: 116px;
-  height: 116px;
+  width: 96px;
+  height: 96px;
   place-items: center;
   border-radius: 50%;
   background: #232428;
@@ -1101,23 +1113,23 @@ textarea {
 
 .dc-profile-avatar {
   display: grid;
-  width: 102px;
-  height: 102px;
+  width: 82px;
+  height: 82px;
   place-items: center;
   border-radius: 50%;
   background: var(--profile-accent, #f23f42);
   color: #fff;
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 950;
 }
 
 .dc-profile-status {
   position: absolute;
-  right: 11px;
-  bottom: 11px;
-  width: 24px;
-  height: 24px;
-  border: 6px solid #232428;
+  right: 9px;
+  bottom: 9px;
+  width: 22px;
+  height: 22px;
+  border: 5px solid #232428;
   border-radius: 50%;
 }
 
@@ -1138,7 +1150,7 @@ textarea {
 }
 
 .dc-profile-body {
-  padding: 72px 24px 22px;
+  padding: 58px 16px 16px;
 }
 
 .dc-profile-card-title {
@@ -1179,7 +1191,7 @@ textarea {
 
 .dc-profile-body h2 {
   color: #fff;
-  font-size: 23px;
+  font-size: 22px;
   font-weight: 950;
   letter-spacing: 0;
 }

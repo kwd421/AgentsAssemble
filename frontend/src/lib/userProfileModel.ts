@@ -7,6 +7,7 @@ export const DEFAULT_USER_PROFILE: UserProfile = {
   status: "online",
   customStatus: "AgentsAssemble",
   avatarLabel: "나",
+  avatarImage: undefined,
   bannerPreset: "default",
   accentColor: "#5865f2",
   micMuted: true,
@@ -36,7 +37,10 @@ export function profileStatusLabel(status: UserProfile["status"]) {
 }
 
 export function profileCssVars(profile: UserProfile): CSSProperties {
-  return { "--profile-accent": profile.accentColor } as CSSProperties;
+  return {
+    "--profile-accent": profile.accentColor,
+    "--profile-avatar-image": profile.avatarImage ? `url("${profile.avatarImage}")` : undefined,
+  } as CSSProperties;
 }
 
 export function saveDisplayNameForComposers(profile: UserProfile) {

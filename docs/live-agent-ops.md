@@ -123,11 +123,13 @@ start providers, or grant access.
 
 The lower-left user panel is the local Discord-style identity surface. Its
 profile card, quick status buttons, mic/headset display toggles, banner preset,
-avatar label, accent color, handle, and custom status are persisted through
-`/api/user-profile`. Profile boost, Nitro, store, and account-switch labels are
-local UI affordances only: they may show a local notice, but they must not open
-external Discord, change accounts, send messages, start providers, or grant room
-access.
+avatar label, optional local attachment-backed avatar image URL, accent color,
+handle, and custom status are persisted through `/api/user-profile`. Avatar
+image URLs are limited to local attachment preview URLs; external URLs and
+arbitrary file paths are dropped by the backend. Profile boost, Nitro, store,
+and account-switch labels are local UI affordances only: they may show a local
+notice, but they must not open external Discord, change accounts, send
+messages, start providers, or grant room access.
 
 Lobby chat can attach local files through the `첨부` control. The browser reads
 the selected file and sends a JSON/base64 upload to `/api/attachments`; the GUI

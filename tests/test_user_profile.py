@@ -19,6 +19,7 @@ class UserProfileTests(unittest.TestCase):
                     "status": "dnd",
                     "custom_status": "  작업 중\r\n",
                     "avatar_label": "SN",
+                    "avatar_image_url": "/api/attachments/abcDEF12?view=1",
                     "banner_preset": "ember",
                     "accent_color": "#5865f2",
                     "mic_muted": False,
@@ -33,6 +34,7 @@ class UserProfileTests(unittest.TestCase):
         self.assertEqual(saved["profile"]["status"], "dnd")
         self.assertEqual(saved["profile"]["custom_status"], "작업 중")
         self.assertEqual(saved["profile"]["avatar_label"], "SN")
+        self.assertEqual(saved["profile"]["avatar_image_url"], "/api/attachments/abcDEF12?view=1")
         self.assertEqual(saved["profile"]["banner_preset"], "ember")
         self.assertEqual(saved["profile"]["accent_color"], "#5865f2")
         self.assertFalse(saved["profile"]["mic_muted"])
@@ -50,6 +52,7 @@ class UserProfileTests(unittest.TestCase):
                     "handle": "seinel.",
                     "custom_status": "처음 상태",
                     "avatar_label": "SN",
+                    "avatar_image_url": "/api/attachments/profile_123?view=1",
                     "banner_preset": "midnight",
                     "accent_color": "#5865f2",
                     "mic_muted": False,
@@ -61,9 +64,25 @@ class UserProfileTests(unittest.TestCase):
         self.assertEqual(updated["profile"]["display_name"], "SeiNel")
         self.assertEqual(updated["profile"]["custom_status"], "처음 상태")
         self.assertEqual(updated["profile"]["avatar_label"], "SN")
+        self.assertEqual(updated["profile"]["avatar_image_url"], "/api/attachments/profile_123?view=1")
         self.assertEqual(updated["profile"]["banner_preset"], "midnight")
         self.assertTrue(updated["profile"]["mic_muted"])
         self.assertFalse(updated["profile"]["deafened"])
+
+    def test_user_profile_rejects_external_avatar_image_urls(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            saved = update_user_profile(
+                root,
+                {
+                    "avatar_label": "SN",
+                    "avatar_image_url": "https://discord.example/avatar.png",
+                },
+            )
+            updated = update_user_profile(root, {"avatar_image_url": "/private/tmp/avatar.png"})
+
+        self.assertEqual(saved["profile"]["avatar_image_url"], "")
+        self.assertEqual(updated["profile"]["avatar_image_url"], "")
 
 
 if __name__ == "__main__":

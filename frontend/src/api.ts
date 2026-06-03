@@ -103,6 +103,7 @@ export interface UserProfile {
   status: "online" | "idle" | "dnd" | "offline";
   customStatus: string;
   avatarLabel: string;
+  avatarImage?: string;
   bannerPreset: "default" | "forest" | "midnight" | "ember" | "custom";
   accentColor: string;
   micMuted: boolean;
@@ -141,6 +142,7 @@ type ApiUserProfile = {
   status?: UserProfile["status"];
   custom_status?: string;
   avatar_label?: string;
+  avatar_image_url?: string;
   banner_preset?: UserProfile["bannerPreset"];
   accent_color?: string;
   mic_muted?: boolean;
@@ -752,6 +754,7 @@ function normalizeUserProfile(payload: ApiUserProfile | undefined): UserProfile 
     status: payload?.status || "online",
     customStatus: String(payload?.custom_status || "AgentsAssemble"),
     avatarLabel: String(payload?.avatar_label || "나"),
+    avatarImage: payload?.avatar_image_url || undefined,
     bannerPreset: payload?.banner_preset || "default",
     accentColor: String(payload?.accent_color || "#5865f2"),
     micMuted: Boolean(payload?.mic_muted ?? true),
@@ -768,6 +771,7 @@ function userProfileToApi(profile: UserProfile): ApiUserProfile {
     status: profile.status,
     custom_status: profile.customStatus,
     avatar_label: profile.avatarLabel,
+    avatar_image_url: profile.avatarImage,
     banner_preset: profile.bannerPreset,
     accent_color: profile.accentColor,
     mic_muted: profile.micMuted,

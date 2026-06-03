@@ -143,6 +143,17 @@ export default function UserSettingsPanel({
                   />
                 </label>
                 <label>
+                  아바타 이미지 URL
+                  <input
+                    value={draft.avatarImage || ""}
+                    onChange={(event) =>
+                      onDraftChange({ ...draft, avatarImage: event.target.value || undefined })
+                    }
+                    placeholder="/api/attachments/<id>?view=1"
+                    maxLength={240}
+                  />
+                </label>
+                <label>
                   포인트 색상
                   <input
                     type="color"
