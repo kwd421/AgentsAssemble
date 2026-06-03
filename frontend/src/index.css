@@ -933,15 +933,15 @@ textarea {
 
 .dc-current-user {
   display: flex;
-  min-height: 58px;
+  min-height: 68px;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   border-radius: 8px;
   background: #232428;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.04),
     0 8px 24px rgba(0, 0, 0, 0.22);
-  padding: 6px 8px;
+  padding: 8px 10px;
 }
 
 .dc-current-user:hover {
@@ -951,11 +951,11 @@ textarea {
 .dc-user-identity {
   display: flex;
   min-width: 0;
-  flex: 1 1 0;
+  flex: 1 1 auto;
   align-items: center;
   gap: 8px;
   border-radius: 6px;
-  padding: 5px 6px;
+  padding: 5px 4px;
 }
 
 .dc-user-identity:hover,
@@ -966,13 +966,13 @@ textarea {
 
 .dc-self-avatar {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 46px;
+  height: 46px;
   place-items: center;
   border-radius: 50%;
   background: var(--profile-accent, var(--color-accent));
   color: #fff;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 900;
 }
 
@@ -1015,16 +1015,20 @@ textarea {
   flex-shrink: 0;
   align-items: center;
   gap: 0;
-  margin-left: 2px;
+  margin-left: auto;
 }
 
 .dc-user-actions button {
   display: grid;
-  width: 31px;
-  height: 31px;
+  width: 34px;
+  height: 34px;
   place-items: center;
   border-radius: 4px;
   color: var(--color-text-muted);
+}
+
+.dc-user-actions .dc-user-action-caret {
+  width: 24px;
 }
 
 .dc-user-actions button:hover,
@@ -2317,23 +2321,23 @@ textarea {
 
 .dc-member-inline-quota {
   display: inline-flex;
-  max-width: 132px;
+  max-width: 176px;
   flex-shrink: 0;
-  gap: 4px;
+  gap: 5px;
   margin-left: auto;
 }
 
 .dc-member-inline-quota span {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   border-radius: 4px;
   background: rgba(148, 155, 164, 0.12);
-  padding: 1px 4px;
+  padding: 2px 6px;
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 900;
-  line-height: 1.45;
+  line-height: 1.2;
   white-space: nowrap;
 }
 

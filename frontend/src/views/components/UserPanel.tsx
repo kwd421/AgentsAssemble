@@ -368,7 +368,12 @@ export default function UserPanel({
           >
             <Headphones size={16} />
           </button>
-          <button type="button" aria-label="오디오 옵션" onClick={() => openSettings("voice")}>
+          <button
+            type="button"
+            aria-label="오디오 옵션"
+            className="dc-user-action-caret"
+            onClick={() => openSettings("voice")}
+          >
             <ChevronDown size={14} />
           </button>
           <button type="button" aria-label="사용자 설정" onClick={() => openSettings("account")}>
