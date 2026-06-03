@@ -19360,6 +19360,16 @@ class GuiServerTests(unittest.TestCase):
                     "status": "online",
                 },
             )
+            connect_live_agent_payload(
+                root,
+                {
+                    "agent_id": "yanagi-local",
+                    "display_name": "츠키시로 야나기",
+                    "provider_kind": "local_cli",
+                    "connection_kind": "local_cli",
+                    "status": "offline",
+                },
+            )
             server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(root))
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
@@ -19391,13 +19401,16 @@ class GuiServerTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
 
-            self.assertEqual(initial_payload["suggestions"][0]["agent_id"], "codex-lead")
-            self.assertEqual(initial_payload["suggestions"][0]["participant_type"], "subscription_ai")
+            suggestions_by_agent = {friend["agent_id"]: friend for friend in initial_payload["suggestions"]}
+            self.assertEqual(suggestions_by_agent["codex-lead"]["participant_type"], "subscription_ai")
+            self.assertEqual(suggestions_by_agent["yanagi-local"]["participant_type"], "local")
             self.assertEqual(saved_payload["friend"]["participant_type"], "human")
             self.assertEqual(saved_payload["friends"][0]["display_name"], "SeiNel")
             self.assertEqual(deleted_payload["deleted"]["friend_id"], saved_payload["friend"]["friend_id"])
             self.assertEqual(deleted_payload["friends"], [])
-            self.assertEqual(deleted_payload["suggestions"][0]["agent_id"], "codex-lead")
+            deleted_suggestions_by_agent = {friend["agent_id"]: friend for friend in deleted_payload["suggestions"]}
+            self.assertEqual(deleted_suggestions_by_agent["codex-lead"]["participant_type"], "subscription_ai")
+            self.assertEqual(deleted_suggestions_by_agent["yanagi-local"]["participant_type"], "local")
 
     def test_room_friend_dm_api_posts_local_messages_only_for_saved_friends(self):
         with tempfile.TemporaryDirectory() as temp_dir:

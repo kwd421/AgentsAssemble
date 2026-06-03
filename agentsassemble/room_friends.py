@@ -11,7 +11,7 @@ from agentsassemble.meeting_events import clean_lobby_text
 ROOM_FRIENDS_FILE = "room_friends.json"
 ROOM_FRIEND_TYPES = {"human", "subscription_ai", "api", "local", "remote", "unknown"}
 _REMOTE_AGENT_MARKERS = ("remote_http_bridge", "native_remote_room_client", "remote_bridge")
-_LOCAL_MODEL_MARKERS = ("lmstudio", "llama", "ollama", "local_model")
+_LOCAL_MODEL_MARKERS = ("local_cli", "lmstudio", "llama", "ollama", "local_model")
 _API_AGENT_MARKERS = ("api", "deepseek", "openai", "anthropic")
 _SUBSCRIPTION_AGENT_MARKERS = (
     "claude",
