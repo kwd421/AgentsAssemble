@@ -1,10 +1,13 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
+  Gift,
   Headphones,
   Mic,
   MicOff,
   Settings,
+  ShoppingBag,
+  Sparkles,
   UserPen,
   X,
 } from "lucide-react";
@@ -164,7 +167,7 @@ export default function UserPanel({
   return (
     <div className="dc-user-panel" ref={rootRef} style={profileCssVars(profile)}>
       {profileOpen && (
-        <section className="dc-profile-card" aria-label="내 프로필">
+        <section className="dc-profile-card" aria-label="내 프로필 카드">
           <div
             className="dc-profile-banner"
             data-preset={profile.bannerPreset}
@@ -188,7 +191,7 @@ export default function UserPanel({
           <div className="dc-profile-body">
             <div className="dc-profile-card-title">
               <div>
-                <span>프로필 및 상태 관리</span>
+                <span>내 프로필</span>
                 <h2>{profile.displayName}</h2>
               </div>
               <button type="button" onClick={() => openSettings("profile")}>
@@ -211,6 +214,31 @@ export default function UserPanel({
                 <small>{profile.customStatus || "방금 플레이를 마쳤어요..."}</small>
               </span>
             </button>
+            <div className="dc-profile-boost-card">
+              <div className="dc-profile-boost-copy">
+                <Sparkles size={18} />
+                <span>
+                  <strong>프로필 강화하기</strong>
+                  <small>로컬 룸 클라이언트의 배너, 색상, 상태를 저장합니다.</small>
+                </span>
+              </div>
+              <div className="dc-profile-boost-actions">
+                <button
+                  type="button"
+                  onClick={() => reportLocalOnlyAction("Nitro 구독은 외부 Discord로 연결하지 않습니다.")}
+                >
+                  <Gift size={15} />
+                  Nitro 구독하기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => reportLocalOnlyAction("상점은 로컬 프로필 설정으로만 대체됩니다.")}
+                >
+                  <ShoppingBag size={15} />
+                  상점
+                </button>
+              </div>
+            </div>
             <div className="dc-profile-card-actions">
               <button type="button" onClick={() => openSettings("profile")}>
                 <UserPen size={15} />
@@ -239,6 +267,16 @@ export default function UserPanel({
                 onSave={() => void saveDraft()}
               />
             )}
+            {profileError && !settingsOpen && (
+              <p className="dc-profile-notice" role="status">
+                {profileError}
+              </p>
+            )}
+            <div className="dc-profile-room-summary" aria-label="방 접속 요약">
+              <span>방 접속 요약</span>
+              <strong>{onlineCount}명 온라인</strong>
+              <small>{agentCount}명 참가자/에이전트 표시 중</small>
+            </div>
             <div className="dc-profile-menu">
               <button type="button" onClick={() => openSettings("account")}>
                 <span className={`dc-profile-menu-dot ${statusClass}`} aria-hidden />
@@ -338,7 +376,7 @@ export default function UserPanel({
                 }`}
                 aria-hidden
               />
-              {profileStatusLabel(profile.status)} · {onlineCount}/{agentCount}
+              {profileStatusLabel(profile.status)}
             </span>
           </span>
         </button>

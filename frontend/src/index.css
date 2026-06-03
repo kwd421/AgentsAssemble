@@ -1017,6 +1017,76 @@ textarea {
   margin-top: 14px;
 }
 
+.dc-profile-boost-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 156, 247, 0.52);
+  background:
+    linear-gradient(135deg, rgba(88, 101, 242, 0.22), rgba(88, 101, 242, 0.04)),
+    #2b2d31;
+  padding: 10px;
+}
+
+.dc-profile-boost-copy {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.dc-profile-boost-copy svg {
+  flex-shrink: 0;
+  color: #b5a6ff;
+}
+
+.dc-profile-boost-copy span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.dc-profile-boost-copy strong {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.dc-profile-boost-copy small {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dc-profile-boost-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.dc-profile-boost-actions button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dc-profile-boost-actions button:hover,
+.dc-profile-boost-actions button:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+  outline: none;
+}
+
 .dc-profile-card-actions button,
 .dc-profile-menu button {
   display: flex;
@@ -1041,6 +1111,45 @@ textarea {
   background: #35373c;
   color: #fff;
   outline: none;
+}
+
+.dc-profile-notice {
+  margin-top: 10px;
+  border-radius: 8px;
+  background: rgba(240, 178, 50, 0.12);
+  padding: 8px 10px;
+  color: #f0d28a;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.dc-profile-room-summary {
+  display: grid;
+  gap: 2px;
+  margin-top: 10px;
+  border-radius: 10px;
+  background: #111214;
+  padding: 10px;
+}
+
+.dc-profile-room-summary span {
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dc-profile-room-summary strong {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.dc-profile-room-summary small {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .dc-profile-menu {
