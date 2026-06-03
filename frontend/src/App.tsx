@@ -3,17 +3,11 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Archive,
-  Check,
   ChevronDown,
   Gamepad2,
   Hash,
   LayoutDashboard,
-  LogOut,
-  Plus,
   Radio,
-  Settings,
-  UserPlus,
-  Users,
 } from "lucide-react";
 import {
   fetchLiveAgentFlow,
@@ -63,6 +57,8 @@ import type { HomeFilter } from "./views/components/HomeSidebar";
 import type { RoleId } from "./views/components/MemberList";
 import RoomConnectionPanel from "./views/components/RoomConnectionPanel";
 import RoomInviteModal from "./views/components/RoomInviteModal";
+import RoomRail from "./views/components/RoomRail";
+import type { RoomMenuState } from "./views/components/RoomRail";
 import RoomSettingsModal from "./views/components/RoomSettingsModal";
 import SideChatDock, { type SideChatThreadContext } from "./views/components/SideChatDock";
 import UserPanel from "./views/components/UserPanel";
@@ -94,12 +90,6 @@ type ChannelConfig = {
   label: string;
   icon: LucideIcon;
 };
-
-type RoomMenuState = {
-  roomId: string;
-  x: number;
-  y: number;
-} | null;
 
 type ChannelMenuState = {
   channelId: Channel;
@@ -882,100 +872,24 @@ export default function App() {
       style={activeRoomStyle}
       data-banner-preset={activeAppearance.bannerPreset}
     >
-      {/* Server / room rail */}
-      <nav
-        className="dc-rail flex shrink-0 flex-col items-center gap-2 py-3"
-        aria-label="룸 레일"
-      >
-        <button
-          type="button"
-          onClick={() => (guestLocked ? goToChannel("lobby") : goToChannel("friends"))}
-          className="dc-rail-home"
-          data-active={!adminOpen && channel === "friends"}
-          aria-label="친구와 DM"
-          title="친구"
-        >
-          <Users size={20} />
-        </button>
-        <span className="dc-server-divider" aria-hidden />
-        <div className="dc-room-stack min-h-0 flex-1 overflow-y-auto chat-scroll" aria-label="방 목록">
-          {rooms.map((room) => {
-            const Icon = room.icon;
-            const active = !adminOpen && activeRoom.id === room.id;
-            const roomAppearance = completeRoomAppearance(
-              roomAppearances[roomSettingsKey(room)] || roomAppearances[room.id]
-            );
-            return (
-              <button
-                key={room.id}
-                type="button"
-                onClick={() => selectRoom(room.id)}
-                onContextMenu={(event) => openRoomMenu(event, room)}
-                data-active={active}
-                data-tone={room.tone}
-                data-has-image={Boolean(roomAppearance.iconImage)}
-                style={roomAppearanceStyle(roomAppearance)}
-                className="dc-server-btn"
-                aria-label={room.label}
-                title={`${room.label} · ${room.topic}`}
-              >
-                {roomAppearance.iconImage ? null : <Icon size={18} aria-hidden />}
-                <span className="sr-only">{room.shortLabel}</span>
-              </button>
-            );
-          })}
-          {!guestLocked && (
-            <button
-              type="button"
-              onClick={addFreshRoom}
-              className="dc-server-btn dc-server-add"
-              aria-label="새 방 만들기"
-              title="새 방"
-            >
-              <Plus size={20} />
-            </button>
-          )}
-        </div>
-        {menuRoom && roomMenu && (
-          <div
-            className="dc-context-menu"
-            style={{ left: roomMenu.x, top: roomMenu.y }}
-            role="menu"
-            aria-label={`${menuRoom.label} 서버 메뉴`}
-            onClick={(event) => event.stopPropagation()}
-            onContextMenu={(event) => event.preventDefault()}
-          >
-            <p className="dc-context-title preserve-words">{menuRoom.label}</p>
-            <button type="button" role="menuitem" onClick={() => markRoomRead(menuRoom.id)}>
-              <Check size={16} />
-              읽음으로 표시하기
-            </button>
-            {!guestLocked && (
-              <button type="button" role="menuitem" onClick={() => inviteRoom(menuRoom.id)}>
-                <UserPlus size={16} />
-                서버에 초대하기
-              </button>
-            )}
-            {!guestLocked && (
-              <button type="button" role="menuitem" onClick={() => openRoomSettings(menuRoom.id)}>
-                <Settings size={16} />
-                서버 설정
-              </button>
-            )}
-            <span className="dc-context-separator" aria-hidden />
-            <button
-              type="button"
-              role="menuitem"
-              className="danger"
-              onClick={() => leaveRoom(menuRoom.id)}
-            >
-              <LogOut size={16} />
-              서버 나가기
-            </button>
-          </div>
-        )}
-        <div className="mt-auto" />
-      </nav>
+      <RoomRail
+        rooms={rooms}
+        activeRoom={activeRoom}
+        roomAppearances={roomAppearances}
+        guestLocked={guestLocked}
+        adminOpen={adminOpen}
+        channelIsFriends={channel === "friends"}
+        menuRoom={menuRoom}
+        roomMenu={roomMenu}
+        onHomeClick={() => (guestLocked ? goToChannel("lobby") : goToChannel("friends"))}
+        onSelectRoom={selectRoom}
+        onAddRoom={addFreshRoom}
+        onOpenRoomMenu={openRoomMenu}
+        onMarkRoomRead={markRoomRead}
+        onInviteRoom={inviteRoom}
+        onOpenRoomSettings={openRoomSettings}
+        onLeaveRoom={leaveRoom}
+      />
 
       {inviteModalRoom && (
         <RoomInviteModal
