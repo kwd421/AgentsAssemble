@@ -119,17 +119,20 @@ class JsonlLiveSession:
                 selector.register(self.process.stdin, selectors.EVENT_WRITE)
                 offset = 0
                 while offset < len(data):
+                    if self._closed:
+                        raise RuntimeError("Live session closed while writing request.")
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         self.close(timeout_seconds=0.1)
                         raise TimeoutError(f"Live session timed out after {timeout_seconds} seconds.")
                     try:
-                        events = selector.select(timeout=remaining)
+                        events = selector.select(timeout=min(remaining, 0.05))
                     except (OSError, ValueError) as error:
                         raise RuntimeError("Live session closed while writing request.") from error
+                    if self._closed:
+                        raise RuntimeError("Live session closed while writing request.")
                     if not events:
-                        self.close(timeout_seconds=0.1)
-                        raise TimeoutError(f"Live session timed out after {timeout_seconds} seconds.")
+                        continue
                     try:
                         written = os.write(fd, data[offset:])
                     except BlockingIOError:
